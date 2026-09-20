@@ -1,5 +1,5 @@
 import "./css/_main.css";
-import { h, render } from "preact";
+import { Fragment, h, render } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./base/api.jsx";
 import { hiddenRoutes } from "./capabilities.jsx";
@@ -17,7 +17,7 @@ import { logsPage } from "./logs/logs.jsx";
 import { capturesPage } from "./captures/captures.jsx";
 import { mappingsPage } from "./mappings/mappings.jsx";
 import { bindingsPage } from "./bindings/bindings.jsx";
-import { ChatPage } from "./chat/chat.jsx";
+import { ChatApp } from "./chat/chat.jsx";
 import { matchRoute, navPath } from "./routing.jsx";
 
 /**
@@ -44,7 +44,6 @@ import { matchRoute, navPath } from "./routing.jsx";
 //   :name    -- one captured path segment, e.g. /tasks/:id
 const routes = [
   { path: "/", label: "Dashboard", icon: "dashboard", view: dashboardPage },
-  { path: "/chat", label: "Chat", icon: "chat", view: ChatPage, section: "chat" },
   { path: "/tasks", label: "Tasks", icon: "tasks", view: tasksPage },
   { path: "/tasks/:id", label: "Task run", view: taskDetailPage, nav: false, navPath: "/tasks" },
   { path: "/logs", label: "Logs", icon: "logs", view: logsPage, section: "logs" },
@@ -75,7 +74,7 @@ function navEntries(hidden) {
   return routes.filter((route) => route.nav !== false && !hidden.includes(route.path));
 }
 
-function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme, onToggleTheme }) {
+function Topbar({ activePath, hidden, onNavigate, theme, onToggleTheme }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef(null);
 
@@ -159,15 +158,6 @@ function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme,
             onKeyDown={onSearchKeyDown}
           />
         </div>
-        <button
-          className="icon-btn icon-btn-chat"
-          aria-label="Open chat"
-          title="Chat with Archie"
-          aria-expanded={chatOpen ? "true" : "false"}
-          onClick={() => onToggleChat()}
-        >
-          <Icon name="chat" />
-        </button>
         <button className="icon-btn" title="Documentation" aria-label="Documentation">
           <Icon name="help" />
         </button>
@@ -187,26 +177,80 @@ function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme,
   );
 }
 
-// The chat drawer lives beside the outlet, mounted once. It is closed by
-// default and opened from the topbar launcher; because it is a slide-over
-// rather than a route, the operator can talk to Archie from any page without
-// leaving the work that prompted the question. It hosts a single ChatPage
-// instance, so session state and the stream survive navigation and are not
-// duplicated per page.
-function ChatDrawer({ open, onClose }) {
+// Chat is a floating launcher and the panel it opens, mounted once beside the
+// outlet. It is not a route: the operator asks Archie about the page they are
+// already on, so navigating must not close it and opening must not replace the
+// work that prompted the question.
+//
+// The panel anchors to the launcher and opens leftward from it, sharing its
+// bottom edge, so the button stays put and reads as the thing the panel came
+// out of. Nothing is dimmed and the page keeps scrolling: this is a companion
+// to the work, not a modal over it.
+//
+// It hosts a single ChatApp instance, so session state and the stream survive
+// navigation rather than being rebuilt per page.
+const CHAT_PANEL_ID = "chat-panel";
+
+function ChatLauncher() {
+  const [open, setOpen] = useState(false);
+  const fabRef = useRef(null);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    // Focus goes back to the control that opened the panel; otherwise a
+    // keyboard user who dismisses it lands at the top of the document.
+    fabRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event) => {
+      // A focused control (the composer dismissing its command menu, or the
+      // topbar search) already handled Escape via preventDefault; closing the
+      // panel too would make that menu impossible to dismiss on its own.
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      close();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, close]);
+
   return (
-    <aside className={`chat-drawer${open ? " is-open" : ""}`} aria-label="Chat with Archie">
-      <div className="chat-drawer-panel">
-        <div className="chat-drawer-head">
-          <strong>Archie</strong>
-          <button className="icon-btn chat-drawer-close" aria-label="Close chat" title="Close chat" onClick={onClose}>
-            <Icon name="close" />
-          </button>
+    <div className={`chat-dock${open ? " is-open" : ""}`}>
+      <aside
+        className={`chat-drawer${open ? " is-open" : ""}`}
+        id={CHAT_PANEL_ID}
+        aria-label="Chat with Archie"
+        aria-hidden={open ? undefined : "true"}
+      >
+        <div className="chat-drawer-panel">
+          <div className="chat-drawer-head">
+            <strong>Archie</strong>
+            <button className="icon-btn chat-drawer-close" aria-label="Close chat" title="Close chat" onClick={close}>
+              <Icon name="close" />
+            </button>
+          </div>
+          <ChatApp />
         </div>
-        <ChatPage />
-      </div>
-      <div className="chat-scrim" onClick={onClose} />
-    </aside>
+      </aside>
+      <button
+        ref={fabRef}
+        type="button"
+        className="chat-fab"
+        aria-label={open ? "Close chat" : "Chat with Archie"}
+        title={open ? "Close chat" : "Chat with Archie"}
+        aria-expanded={open ? "true" : "false"}
+        aria-controls={CHAT_PANEL_ID}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        <span className="chat-fab-icon chat-fab-icon-open" aria-hidden="true">
+          <Icon name="chat" size={22} />
+        </span>
+        <span className="chat-fab-icon chat-fab-icon-close" aria-hidden="true">
+          <Icon name="close" size={22} />
+        </span>
+      </button>
+    </div>
   );
 }
 
@@ -264,13 +308,6 @@ function renderRoute(rawPath) {
   const route = match?.route || routes[0];
   const params = match?.params || {};
 
-  // The chat is a drawer, not a page: /chat opens it rather than mounting a
-  // second ChatPage (which would duplicate session state and the stream).
-  if (route.path === "/chat") {
-    render(null, outlet);
-    return;
-  }
-
   // The key covers the path and its parameters, but NOT the query: the query
   // string is an entry state, so a navigation that only changes the query of
   // the page already mounted keeps the operator's own filter selection.
@@ -302,9 +339,6 @@ function show(rawPath) {
   // Tasks stays current on #/tasks/42 instead of every item losing it.
   chrome?.setActive(navPath(route));
 
-  // The chat is a drawer, not a page: /chat opens it rather than mounting a
-  // second ChatPage (which would duplicate session state and the stream).
-  chrome?.setChatOpen(route.path === "/chat");
   renderRoute(rawPath);
 }
 
@@ -314,34 +348,21 @@ function navigate(next) {
 }
 
 window.addEventListener("hashchange", () => show(location.hash.slice(1) || "/"));
-window.addEventListener("keydown", (event) => {
-  // A focused control (the composer dismissing its command menu, or the topbar
-  // search) already handled Escape via preventDefault; closing the drawer too
-  // would make the menu impossible to dismiss alone.
-  if (event.defaultPrevented) return;
-  if (event.key === "Escape") chrome?.setChatOpen(false);
-});
-
 function App() {
   const [active, setActive] = useState("/");
   const [theme, setTheme] = useState(currentTheme);
-  const [chatOpen, setChatOpen] = useState(false);
   const [hidden, setHidden] = useState([]);
 
   // Publishes the router's handles. A callback ref runs at commit time, so a
   // hashchange that lands right after the first paint already finds them.
   const publish = useCallback((element) => {
     outlet = element;
-    chrome = { setActive, setChatOpen };
+    chrome = { setActive };
   }, []);
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
-
-  useEffect(() => {
-    document.body.classList.toggle("chat-open", chatOpen);
-  }, [chatOpen]);
 
   // Asked for once, after the shell is up: the nav renders immediately and
   // loses the entries this process cannot back a moment later, rather than
@@ -368,19 +389,22 @@ function App() {
   }, []);
 
   return (
-    <div className="shell">
-      <Topbar
-        activePath={active}
-        hidden={hidden}
-        onNavigate={navigate}
-        chatOpen={chatOpen}
-        onToggleChat={() => setChatOpen((open) => !open)}
-        theme={theme}
-        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
-      />
-      <main className="main" ref={publish} />
-      <ChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
-    </div>
+    <Fragment>
+      <div className="shell">
+        <Topbar
+          activePath={active}
+          hidden={hidden}
+          onNavigate={navigate}
+          theme={theme}
+          onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        />
+        <main className="main" ref={publish} />
+      </div>
+      {/* Outside .shell on purpose: its backdrop-filter is a containing block
+          for fixed positioning, so a launcher nested inside would anchor to the
+          scrolling shell and ride off the bottom of a long page. */}
+      <ChatLauncher />
+    </Fragment>
   );
 }
 

@@ -41,6 +41,8 @@
 
 /* ── Dark (default) ─────────────────────────────────────────────────────── */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --bg: #0d1014;
   --bg-raised: #141920;
   --surface: #171d25;
@@ -88,6 +90,8 @@
 
 /* ── Light ──────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
+  color-scheme: light;
+
   --bg: #f6f8fb;
   --bg-raised: #ffffff;
   --surface: #ffffff;

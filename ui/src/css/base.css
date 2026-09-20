@@ -54,3 +54,17 @@ a {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Visible to assistive technology only. For a control whose purpose is clear
+   from its position but which still needs a name in the accessibility tree. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

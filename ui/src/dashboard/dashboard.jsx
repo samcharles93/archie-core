@@ -6,6 +6,7 @@ import { ago, compact } from "../base/format.jsx";
 import { statusKind } from "../base/task-meta.jsx";
 import { StatTile } from "../base/statTile.jsx";
 import { Gauge, SegmentBar } from "../base/gauge.jsx";
+import { activityDetail } from "./activity-detail.js";
 import { Icon } from "../base/icons.jsx";
 import { Pill } from "../base/pill.jsx";
 import { dismissSetupComplete, setupPanelState } from "./setup-preference.jsx";
@@ -401,6 +402,7 @@ function DashboardApp() {
                     activity.map((event, i) => {
                       const taskID = taskIDForEvent(event, taskIDsBySource);
                       const hasTask = taskID > 0;
+                      const detail = activityDetail(event);
                       const openTask = () => {
                         if (hasTask) location.hash = `#/tasks?task=${encodeURIComponent(taskID)}`;
                       };
@@ -423,7 +425,9 @@ function DashboardApp() {
                             <span>{event.kind || event.type || "event"}</span>
                           </td>
                           <td className="mono">{hasTask ? `#${taskID}` : "—"}</td>
-                          <td>{event.detail || event.message || ""}</td>
+                          <td className="activity-detail">
+                            <span title={detail.truncated ? detail.full : undefined}>{detail.text}</span>
+                          </td>
                           <td>{ago(event.at || Date.now())}</td>
                         </tr>
                       );

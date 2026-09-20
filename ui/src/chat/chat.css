@@ -1,8 +1,120 @@
-.chat-page-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-.chat-topbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-.chat-kicker, .chat-workspace-label { color: var(--fg-muted); font-size: .68rem; font-weight: 700; letter-spacing: .12em; }
-.chat-topbar-actions { display: flex; align-items: center; gap: .55rem; }
-.chat-topbar-actions .chat-select { max-width: 14rem; min-width: 0; }
+/* The panel's own column. ChatApp is mounted in a ~440px launcher panel, never
+   on a page, so there is one column and every row earns its height
+   (archie-core-hesx). */
+.chat-panel-content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* One row for everything that is not the conversation: which conversation,
+   a new one, and the model controls folded away behind a disclosure. */
+.chat-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-session-switch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chat-session-switch select {
+  width: 100%;
+  background: var(--surface-hover);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.chat-new,
+.chat-settings > summary {
+  flex: none;
+}
+
+.chat-settings {
+  position: relative;
+  flex: none;
+}
+
+.chat-settings > summary {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.chat-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-settings > summary:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+/* Opens over the transcript rather than pushing it down: the panel is short
+   and the conversation should not jump when the controls are consulted. */
+.chat-settings-body {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  z-index: 2;
+  display: grid;
+  gap: var(--sp-3);
+  width: 15rem;
+  padding: var(--sp-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.chat-settings-body label {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.chat-settings-body .chat-select {
+  width: 100%;
+}
+
+.chat-layout {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-workspace-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+
 .chat-update-panel { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border); border-radius: .75rem; color: var(--fg-muted); font-size: .8rem; }
 .chat-update-panel > div:first-child { display: grid; gap: .2rem; }
 .chat-update-panel strong { color: var(--fg); }
@@ -15,27 +127,21 @@
 .chat-dangerous-input { min-width: 0; flex: 1; padding: .5rem .65rem; background: var(--surface-hover); color: var(--fg); border: 1px solid var(--border-strong); border-radius: .5rem; font: inherit; }
 .chat-dangerous-pending-list { display: grid; gap: .45rem; margin-top: .75rem; }
 .chat-dangerous-pending { padding-top: .55rem; border-top: 1px solid var(--border); color: var(--fg-muted); font-size: .8rem; }
-.chat-layout { display: grid; grid-template-columns: 242px minmax(0, 1fr); gap: .75rem; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-.chat-sidebar, .chat-workspace { background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; }
-.chat-sidebar { padding: .8rem; overflow-y: auto; }
-.chat-sidebar-head, .chat-toolbar, .chat-compose-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 .chat-session-list { display: grid; gap: .35rem; margin-top: 1rem; }
 .chat-session { display: grid; gap: .25rem; text-align: left; background: transparent; color: var(--fg-muted); border: 1px solid transparent; border-radius: .65rem; padding: .7rem; cursor: pointer; }
 .chat-session:hover, .chat-session.active { background: var(--surface-hover); color: var(--fg); border-color: var(--border-strong); }
 .chat-session span { font-size: .72rem; }
-.chat-workspace { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; min-width: 0; }
-.chat-workspace-head { display: flex; align-items: center; justify-content: space-between; padding: .85rem 1.1rem; border-bottom: 1px solid var(--border); }
 .chat-session-tools { position: relative; margin-left: .6rem; color: var(--fg-muted); font-size: .78rem; }
 .chat-session-tools summary { cursor: pointer; }
 .chat-session-tool-list { position: absolute; z-index: 2; right: 0; top: calc(100% + .45rem); display: flex; flex-wrap: wrap; gap: .35rem; width: min(22rem, 72vw); padding: .55rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: .65rem; box-shadow: 0 .7rem 2rem color-mix(in srgb, #000 30%, transparent); }
 .chat-select { background: var(--surface-hover); color: var(--fg); border: 1px solid var(--border-strong); border-radius: .5rem; padding: .5rem .65rem; }
-.chat-transcript { overflow: auto; padding: 1.25rem; display: grid; align-content: start; gap: 1rem; }
-.chat-empty-state { align-self: center; justify-self: center; width: min(100%, 40rem); padding: 3rem 1rem; text-align: center; }
-.chat-empty-mark { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; margin: 0 auto 1rem; border: 1px solid var(--border-strong); border-radius: .8rem; color: var(--accent); font-weight: 700; }
-.chat-empty-state h2 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.25rem); letter-spacing: -.04em; }
-.chat-empty-state p { margin: .6rem 0 1.4rem; color: var(--fg-muted); }
-.chat-prompt-grid { display: flex; justify-content: center; flex-wrap: wrap; gap: .5rem; }
-.chat-prompt { padding: .55rem .75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-hover); color: var(--fg-muted); cursor: pointer; }
+.chat-transcript { overflow: auto; padding: var(--sp-4); display: grid; align-content: start; gap: var(--sp-4); }
+.chat-empty-state { align-self: center; justify-self: center; width: 100%; padding: var(--sp-5) 0; text-align: center; }
+.chat-empty-mark { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; margin: 0 auto var(--sp-3); border: 1px solid var(--border-strong); border-radius: .8rem; color: var(--accent); font-weight: 700; }
+.chat-empty-state h2 { margin: 0; font-size: var(--text-lg); letter-spacing: -.02em; }
+.chat-empty-state p { margin: var(--sp-2) 0 var(--sp-4); color: var(--fg-muted); font-size: var(--text-sm); }
+.chat-prompt-grid { display: grid; gap: var(--sp-2); }
+.chat-prompt { padding: var(--sp-2) var(--sp-3); font-size: var(--text-sm); text-align: left; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-hover); color: var(--fg-muted); cursor: pointer; }
 .chat-prompt:hover { color: var(--fg); border-color: var(--border-strong); }
 .chat-bubble-row { display: flex; }
 .chat-bubble-row.user { justify-content: flex-end; }
@@ -96,7 +202,7 @@
 }
 .chat-nav-chip-icon { font-size: .8rem; line-height: 1; }
 
-.chat-compose { padding: .85rem 1rem 1rem; border-top: 1px solid var(--border); }
+.chat-compose { padding: var(--sp-3); border-top: 1px solid var(--border); }
 .chat-composer-shell { position: relative; padding: .7rem .8rem .55rem; background: var(--surface-hover); border: 1px solid var(--border-strong); border-radius: .9rem; }
 .chat-composer { width: 100%; min-height: 3.3rem; resize: vertical; box-sizing: border-box; background: transparent; color: var(--fg); border: 0; padding: .25rem 0; font: inherit; }
 .chat-composer:focus { outline: 0; }
@@ -105,12 +211,14 @@
 .chat-command-option { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: .65rem; align-items: center; padding: .5rem .6rem; text-align: left; color: var(--fg-muted); background: transparent; border: 1px solid transparent; border-radius: .45rem; cursor: pointer; }
 .chat-command-option:hover, .chat-command-option[aria-selected="true"] { color: var(--fg); background: var(--surface-hover); border-color: var(--border); }
 .chat-command-option code { color: var(--fg); }
-.chat-compose-actions { margin-top: .55rem; }
+/* The hint takes the whole first row so Stop and Send always sit together on
+   the second, rather than the hint pushing Send onto a line of its own. */
+.chat-compose-actions { margin-top: var(--sp-2); flex-wrap: wrap; row-gap: var(--sp-2); justify-content: flex-end; }
+.chat-compose-actions .chat-hint { flex: 1 0 100%; font-size: var(--text-xs); color: var(--fg-muted); }
 .chat-hint, .chat-empty { color: var(--fg-muted); font-size: .78rem; }
 .chat-command-help { color: var(--fg-muted); font-size: .78rem; margin-right: auto; }
 .chat-command-help summary { cursor: pointer; }
 .chat-command-list { min-width: min(34rem, 70vw); max-width: 40rem; padding-top: .4rem; line-height: 1.45; }
 .chat-command-item { display: grid; grid-template-columns: minmax(10rem, 16rem) 1fr; gap: .7rem; padding: .3rem 0; }
 .chat-command-item code { color: var(--fg); }
-@media (max-width: 760px) { .chat-topbar, .chat-topbar-actions { align-items: flex-start; flex-direction: column; } .chat-layout { grid-template-columns: 1fr; } .chat-sidebar { max-height: 14rem; overflow: auto; } }
 @media (max-width: 520px) { .chat-update-panel { align-items: flex-start; flex-direction: column; } }

@@ -411,3 +411,18 @@
   background: var(--warn-soft);
   filter: brightness(1.1);
 }
+
+/* Live activity's detail column. activity-detail.js already cuts the payload
+   to one line; this stops a long unbroken token (a path, a URL, a hash) from
+   widening the column past the table and keeps every row the same height. */
+.activity-detail {
+  max-width: 0;
+  width: 55%;
+}
+
+.activity-detail span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

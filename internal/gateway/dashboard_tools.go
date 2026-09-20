@@ -28,7 +28,6 @@ type DashboardPage struct {
 // never points at a page it was not told about.
 var dashboardPages = []DashboardPage{
 	{Path: "/", Label: "Dashboard", Description: "The control room: what Archie is working on, what needs you, and token spend."},
-	{Path: "/chat", Label: "Chat", Description: "Conversations with Archie and the web chat session tools."},
 	{Path: "/tasks", Label: "Tasks", Description: "Issues Archie has picked up and where they stand: the work queue."},
 	{Path: "/logs", Label: "Logs", Description: "The daemon log stream, filterable by level and component."},
 	{Path: "/captures", Label: "Event inspector", Description: "Captured inbound events for inspection."},

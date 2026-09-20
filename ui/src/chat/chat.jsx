@@ -5,7 +5,6 @@ import { ChatMarkdown } from "./markdown.jsx";
 import { channelID } from "./chat-state.jsx";
 import { newChatTurn, retryChatTurn, resolveTurn } from "./chat-retry.jsx";
 import { sessionTitle } from "./chat-render.jsx";
-import { updateUnavailableMessage } from "./chat-update-status.jsx";
 
 import "./chat.css";
 
@@ -31,13 +30,6 @@ export function ChatApp() {
   const [commandSelection, setCommandSelection] = useState(0);
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   
-  const [updateData, setUpdateData] = useState(null);
-  const [updateSnapshot, setUpdateSnapshot] = useState(null);
-  
-  const [dangerousData, setDangerousData] = useState(null);
-  const [dangerousCheckpoint, setDangerousCheckpoint] = useState("");
-  const [dangerousStopSpec, setDangerousStopSpec] = useState("");
-  
   const [streamingTurn, setStreamingTurn] = useState(null);
   // streamingTurn: { text: string, tools: [], isError: bool, turn: object, isRetry: bool }
   
@@ -60,7 +52,6 @@ export function ChatApp() {
     refreshSessions().catch((err) => {
       setStatusText(err.message || "Chat unavailable");
     });
-    refreshUpdate();
 
     const onTeardown = () => {
       activeControllerRef.current?.abort();
@@ -71,75 +62,6 @@ export function ChatApp() {
       activeControllerRef.current?.abort();
     };
   }, []);
-
-  async function refreshUpdate() {
-    try {
-      const data = await api.chatUpdate();
-      setUpdateSnapshot(data?.snapshot || null);
-      setUpdateData(data);
-    } catch (err) {
-      const message = updateUnavailableMessage(err);
-      if (message) {
-        setUpdateData({ error: message });
-      } else {
-        setUpdateData(null);
-      }
-    }
-  }
-
-  async function deferUpdate() {
-    if (!updateSnapshot) return;
-    try {
-      await api.chatUpdateDefer(updateSnapshot);
-      setUpdateData({ snapshot: { deferred: true }, available: [] });
-      setStatusText("Update deferred");
-    } catch (err) {
-      setStatusText(err.message || "Could not defer update");
-    }
-  }
-
-  async function installUpdate() {
-    if (!updateSnapshot) return;
-    try {
-      setStatusText("Installing…");
-      const result = await api.chatUpdateInstall(updateSnapshot);
-      setUpdateSnapshot(null);
-      setUpdateData({ snapshot: {}, available: [] });
-      setStatusText(result?.result?.restart_requested ? "Update installed; restart queued" : "Update complete");
-    } catch (err) {
-      setStatusText(err.message || "Update install failed");
-    }
-  }
-
-  async function refreshDangerous() {
-    try {
-      const data = await api.chatDangerous();
-      setDangerousData(data);
-    } catch (err) {
-      setDangerousData({ error: err.message || "Dangerous actions unavailable" });
-    }
-  }
-
-  async function requestDangerousAction(kind, spec) {
-    if (!spec) return;
-    try {
-      await api.chatDangerousRequest(kind, spec);
-      setStatusText("Approval requested");
-      await refreshDangerous();
-    } catch (err) {
-      setStatusText(err.message || "Could not request action");
-    }
-  }
-
-  async function decideDangerousAction(id, decision) {
-    try {
-      await api.chatDangerousDecision(id, decision);
-      setStatusText(decision === "deny" ? "Action denied" : "Action approved");
-      await refreshDangerous();
-    } catch (err) {
-      setStatusText(err.message || "Approval failed");
-    }
-  }
 
   async function refreshSessions() {
     const data = await api.chatSessions();
@@ -157,10 +79,6 @@ export function ChatApp() {
       typeof item === "string" ? { command: item, usage: item, description: "" } : item
     );
     setCommandSpecs(specs);
-
-    if (data.dangerous_available) {
-      await refreshDangerous();
-    }
 
     if (!currentSession && sessionList[0]) {
       await selectSession(sessionList[0].session_id, data, sessionList);
@@ -256,12 +174,6 @@ export function ChatApp() {
     } catch (err) {
       setStatusText(`Model update failed: ${err.message || err}`);
     }
-  }
-
-  function handleRestartTelegram() {
-    if (!window.confirm("Reload the Telegram chat adapter?")) return;
-    setComposerText("/restart");
-    sendMessage({ textOverride: "/restart" });
   }
 
   function handleNewChat() {
@@ -487,213 +399,94 @@ export function ChatApp() {
       : selectorData.models || [];
 
   return (
-    <div className="chat-page-content">
-      <header className="chat-topbar">
-        <div>
-          <span className="chat-kicker">ARCHIE WORKSPACE</span>
-          <h1 className="page-title">Chat</h1>
-        </div>
-        <div className="chat-topbar-actions">
-          <span className="chat-status">{statusText}</span>
-          {selectorData.restart_available && (
-            <button className="btn" type="button" onClick={handleRestartTelegram}>
-              Reload Telegram
-            </button>
-          )}
-          <button className="btn" type="button" onClick={refreshUpdate}>
-            Check updates
-          </button>
+    <div className="chat-panel-content">
+      <div className="chat-bar">
+        <label className="chat-session-switch">
+          <span className="sr-only">Conversation</span>
           <select
-            className="chat-select"
-            aria-label="Personality"
-            value={selectedPersona}
-            onChange={handlePersonaChange}
+            value={currentSession}
+            onChange={(e) => selectSession(e.target.value)}
+            disabled={!sessions.length}
           >
-            <option value="">Personality</option>
-            {(selectorData.personas || []).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          {(selectorData.providers || []).length > 0 && (
-            <select
-              className="chat-select"
-              aria-label="Provider"
-              value={selectedProvider}
-              onChange={handleProviderChange}
-            >
-              <option value="">Provider</option>
-              {(selectorData.providers || []).map((p) => (
-                <option key={p} value={p}>
-                  {p}
+            {!sessions.length ? (
+              <option value="">No conversations yet</option>
+            ) : (
+              sessions.map((session) => (
+                <option key={session.session_id} value={session.session_id}>
+                  {sessionTitle(session)}
                 </option>
-              ))}
-            </select>
-          )}
-          <select
-            className="chat-select"
-            aria-label="Model"
-            value={selectedModel}
-            onChange={handleModelChange}
-          >
-            <option value="">Model</option>
-            {currentModels.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
+              ))
+            )}
           </select>
-        </div>
-      </header>
+        </label>
 
-      {/* Update Panel */}
-      {updateData && (
-        <div className="chat-update-panel">
-          {updateData.error ? (
-            <span>{updateData.error}</span>
-          ) : updateData.available?.length ? (
-            <Fragment>
-              <div>
-                <strong>Update available</strong>
-                <span>
-                  {updateData.available
-                    .map((c) => `${c.Label || c.label}: ${c.Available || c.available}`)
-                    .join(" · ")}
-                </span>
-              </div>
-              <div className="chat-update-actions">
-                <button className="btn" type="button" onClick={deferUpdate}>
-                  Defer
-                </button>
-                {updateData.can_install && (
-                  <button className="btn btn-primary" type="button" onClick={installUpdate}>
-                    Install update
-                  </button>
-                )}
-              </div>
-            </Fragment>
-          ) : (
-            <span>{updateData.snapshot?.deferred ? "Update deferred." : "Archie is up to date."}</span>
-          )}
-        </div>
-      )}
+        <button className="icon-btn chat-new" type="button" title="New chat" aria-label="New chat" onClick={handleNewChat}>
+          +
+        </button>
 
-      {/* Dangerous Panel */}
-      {selectorData.dangerous_available && dangerousData && (
-        <div className="chat-dangerous-panel">
-          <div className="chat-dangerous-head">
-            <strong>Dangerous actions</strong>
-            <span className="chat-hint">Every action requires approval.</span>
-          </div>
-          <div className="chat-dangerous-controls">
-            <div>
+        <details className="chat-settings">
+          <summary aria-label="Chat settings" title="Chat settings">
+            <span aria-hidden="true">⚙</span>
+          </summary>
+          <div className="chat-settings-body">
+            <span className="chat-status">{statusText}</span>
+            <label>
+              Personality
               <select
                 className="chat-select"
-                aria-label="Checkpoint"
-                value={dangerousCheckpoint}
-                onChange={(e) => setDangerousCheckpoint(e.target.value)}
+                aria-label="Personality"
+                value={selectedPersona}
+                onChange={handlePersonaChange}
               >
-                <option value="">Select checkpoint</option>
-                {(dangerousData.checkpoints || []).map((cp) => (
-                  <option key={cp.Number ?? cp.number} value={cp.Number ?? cp.number}>
-                    {cp.Number ?? cp.number} — {cp.Label ?? cp.label ?? "checkpoint"}
+                <option value="">Default</option>
+                {(selectorData.personas || []).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => requestDangerousAction("rollback", dangerousCheckpoint)}
-              >
-                Request rollback
-              </button>
-            </div>
-            <div>
-              <input
-                className="chat-dangerous-input"
-                placeholder="Process name or id"
-                aria-label="Process name or id"
-                value={dangerousStopSpec}
-                onInput={(e) => setDangerousStopSpec(e.target.value)}
-              />
-              <button
-                className="btn"
-                type="button"
-                onClick={() => requestDangerousAction("stop", dangerousStopSpec)}
-              >
-                Request stop
-              </button>
-            </div>
-          </div>
-          <div className="chat-dangerous-pending-list">
-            {(dangerousData.pending || []).length ? (
-              dangerousData.pending.map((action) => (
-                <div className="chat-dangerous-pending" key={action.id}>
-                  <span>{action.description}</span>
-                  <div className="chat-update-actions">
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => decideDangerousAction(action.id, "approve")}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => decideDangerousAction(action.id, "permanent")}
-                    >
-                      Approve for 24h
-                    </button>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => decideDangerousAction(action.id, "deny")}
-                    >
-                      Deny
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <span className="chat-hint">No pending dangerous actions.</span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Main Layout */}
-      <div className="chat-layout">
-        <aside className="chat-sidebar">
-          <div className="chat-sidebar-head">
-            <strong>Conversations</strong>
-            <button className="btn btn-primary" type="button" onClick={handleNewChat}>
-              + New chat
-            </button>
-          </div>
-          <div className="chat-session-list">
-            {!sessions.length ? (
-              <div className="chat-empty">Your conversations will appear here.</div>
-            ) : (
-              sessions.map((session) => (
-                <button
-                  key={session.session_id}
-                  className={`chat-session ${currentSession === session.session_id ? "active" : ""}`}
-                  type="button"
-                  onClick={() => selectSession(session.session_id)}
+            </label>
+            {(selectorData.providers || []).length > 0 && (
+              <label>
+                Provider
+                <select
+                  className="chat-select"
+                  aria-label="Provider"
+                  value={selectedProvider}
+                  onChange={handleProviderChange}
                 >
-                  <strong>{sessionTitle(session)}</strong>
-                  <span>{new Date(session.last_active_at).toLocaleString()}</span>
-                </button>
-              ))
+                  <option value="">Default</option>
+                  {(selectorData.providers || []).map((provider) => (
+                    <option key={provider} value={provider}>
+                      {provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
+            <label>
+              Model
+              <select
+                className="chat-select"
+                aria-label="Model"
+                value={selectedModel}
+                onChange={handleModelChange}
+              >
+                <option value="">Default</option>
+                {currentModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-        </aside>
+        </details>
+      </div>
 
+      <div className="chat-layout">
         <section className="chat-workspace">
           <div className="chat-workspace-head">
-            <span className="chat-workspace-label">PERSONAL ASSISTANT</span>
             <details className="chat-command-help">
               <summary>Available commands ({commandSpecs.length})</summary>
               <div className="chat-command-list">
@@ -937,7 +730,7 @@ export function ChatApp() {
                 ref={composerRef}
                 className="chat-composer"
                 rows={3}
-                placeholder="Message Archie…  (commands like /status and /new work here)"
+                placeholder="Message Archie, or type / for commands"
                 aria-label="Message Archie"
                 disabled={isSending}
                 value={composerText}
@@ -992,8 +785,4 @@ export function ChatApp() {
       </div>
     </div>
   );
-}
-
-export function ChatPage() {
-  return <ChatApp />;
 }

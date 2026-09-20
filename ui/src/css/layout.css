@@ -74,14 +74,28 @@ body {
   align-items: center;
   gap: 2px;
   margin: 0 auto;
+  /* The nav is the only region that can afford to lose width, so it is the
+     only one allowed to shrink. min-width:0 lets it actually do so inside a
+     flex row, and the scroll is the last resort before anything clips --
+     .app sets overflow:hidden, so an unshrinkable row loses the utility
+     cluster off the right edge with no way to reach it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 3px;
   border-radius: var(--radius-pill);
   background: var(--surface-glass-strong);
   border: 1px solid var(--hairline);
 }
 
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
 .nav-item {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
@@ -192,28 +206,86 @@ body {
   overflow-x: hidden;
 }
 
-/* ── Chat drawer ─────────────────────────────────────────────────────── */
-/* The chat is a persistent slide-over, not a route: it is mounted once and
-   opened from the topbar, so the operator can talk to Archie from any page
-   without leaving the work that prompted the question. It overlays the
-   layout rather than replacing it, and the navigation/outlet stay interactive
-   behind the scrim. */
-.chat-drawer {
+/* ── Chat launcher and panel ─────────────────────────────────────────── */
+/* A floating launcher, bottom-right, and the panel it opens immediately to
+   its left. The two share a bottom edge and the panel grows out of the button,
+   so the launcher never moves and always reads as the thing that produced the
+   panel.
+
+   Deliberately not a modal: no scrim, no body scroll lock, no focus trap. The
+   operator asks Archie about the page they are on, so that page has to stay
+   readable, scrollable and clickable while the panel is open. */
+.chat-dock {
+  --fab-size: 56px;
+  --fab-inset: var(--sp-5);
+  --fab-gap: var(--sp-3);
   position: fixed;
-  inset: var(--sp-4);
-  display: flex;
-  align-items: stretch;
-  justify-content: flex-end;
-  pointer-events: none;
+  right: var(--fab-inset);
+  bottom: var(--fab-inset);
   z-index: 40;
 }
+
+.chat-fab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--fab-size);
+  height: var(--fab-size);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.chat-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.chat-fab:active {
+  transform: translateY(0);
+}
+
+/* Both glyphs are stacked and cross-faded, so the button keeps one size and
+   the swap cannot reflow the dock. */
+.chat-fab-icon {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.chat-fab-icon-close,
+.chat-dock.is-open .chat-fab-icon-open {
+  opacity: 0;
+  transform: scale(0.7) rotate(-45deg);
+}
+
+.chat-fab-icon-open,
+.chat-dock.is-open .chat-fab-icon-close {
+  opacity: 1;
+  transform: none;
+}
+
+/* The panel is positioned off the dock, not the viewport: it sits one gap to
+   the left of the launcher and rises from the shared bottom edge. */
+.chat-drawer {
+  position: absolute;
+  right: calc(var(--fab-size) + var(--fab-gap));
+  bottom: 0;
+  width: min(440px, calc(100vw - var(--fab-size) - var(--fab-gap) - var(--fab-inset) * 2));
+  height: min(640px, calc(100vh - var(--fab-inset) * 2));
+  pointer-events: none;
+}
+
 .chat-drawer-panel {
   pointer-events: auto;
-  position: relative;
-  z-index: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(430px, 100%);
+  width: 100%;
   height: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -221,19 +293,25 @@ body {
   box-shadow: var(--shadow-md);
   overflow: hidden;
   opacity: 0;
-  transform: translateX(1.2rem);
+  /* Grows out of the launcher: the origin is the corner nearest the button. */
+  transform-origin: bottom right;
+  transform: scale(0.92) translateX(var(--sp-3));
   transition: opacity var(--transition), transform var(--transition);
 }
-/* A closed (opacity-0, still mounted) panel must not block the page behind
-   it: opacity does not disable hit-testing, so without this the invisible
-   430px panel would make the whole right column unclickable at z-index 40. */
+
+/* A closed panel is still mounted so the session and its stream survive. It
+   must not take hits or reach the tab order while invisible. */
 .chat-drawer:not(.is-open) .chat-drawer-panel {
   pointer-events: none;
+  visibility: hidden;
 }
+
 .chat-drawer.is-open .chat-drawer-panel {
   opacity: 1;
   transform: none;
+  visibility: visible;
 }
+
 .chat-drawer-head {
   display: flex;
   align-items: center;
@@ -242,28 +320,89 @@ body {
   padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--border);
 }
-.chat-scrim {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--bg) 40%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition);
+
+/* Below this there is no room beside the launcher, so the panel stops being
+   anchored to it and becomes a sheet on the viewport. The launcher hides while
+   the sheet is up: its own close button is the way out. */
+@media (max-width: 720px) {
+  .chat-dock {
+    --fab-inset: var(--sp-4);
+  }
+
+  .chat-drawer {
+    position: fixed;
+    right: var(--fab-inset);
+    left: var(--fab-inset);
+    bottom: var(--fab-inset);
+    width: auto;
+    height: min(78vh, calc(100vh - var(--fab-inset) * 2));
+  }
+
+  .chat-drawer-panel {
+    transform-origin: bottom center;
+    transform: scale(0.98) translateY(var(--sp-3));
+  }
+
+  .chat-dock.is-open .chat-fab {
+    opacity: 0;
+    pointer-events: none;
+  }
 }
-/* The scrim shows and closes from outside clicks only when the drawer is
-   open; it is driven by the drawer's own state so it can never be on top of
-   a closed drawer. */
-.chat-drawer.is-open .chat-scrim {
-  opacity: 1;
-  pointer-events: auto;
-}
-body.chat-open {
-  overflow: hidden;
+
+/* ── Collapsed search ───────────────────────────────────────────────────── */
+
+/* The always-open "Jump to" field is the widest thing in the utility cluster
+   and the least often used. Past this width it collapses to its icon and
+   expands on demand, which is what keeps the nav from having to scroll at
+   ordinary laptop sizes. Measured: the labelled nav needs 917px and the
+   collapsed cluster 160px, so an expanded field does not fit beside them until
+   about 1430px -- collapsing to 1500 keeps 1440 comfortable rather than
+   marginal. */
+@media (max-width: 1500px) {
+  .topbar-search {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    overflow: hidden;
+  }
+
+  .topbar-search-icon {
+    display: none;
+  }
+
+  .mobile-search-toggle {
+    display: grid;
+  }
+
+  .topbar-search input {
+    width: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: width var(--transition), opacity var(--transition);
+  }
+
+  .topbar-search.is-open,
+  .topbar-search:focus-within {
+    padding-right: var(--sp-2);
+    border: 1px solid var(--hairline);
+    background: var(--surface-glass-strong);
+  }
+
+  .topbar-search.is-open input,
+  .topbar-search:focus-within input {
+    width: min(9rem, 34vw);
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* ── Constrained desktop ────────────────────────────────────────────────── */
 
-@media (max-width: 1220px) and (min-width: 901px) {
+/* The nav needs 917px on one line. Below the width where it still fits beside
+   the brand and the collapsed cluster it takes a row of its own, which reads
+   better than the scroll that would otherwise kick in. */
+@media (max-width: 1270px) and (min-width: 901px) {
 	.topbar {
 		flex-wrap: wrap;
 	}
@@ -319,43 +458,6 @@ body.chat-open {
     display: inline;
   }
 
-
-	.topbar-search {
-		padding: 0;
-		border: 0;
-		background: transparent;
-		overflow: hidden;
-	}
-
-	.topbar-search-icon {
-		display: none;
-	}
-
-	.mobile-search-toggle {
-		display: grid;
-	}
-
-	.topbar-search input {
-		width: 0;
-		padding: 0;
-		opacity: 0;
-		pointer-events: none;
-		transition: width var(--transition), opacity var(--transition);
-	}
-
-	.topbar-search.is-open,
-	.topbar-search:focus-within {
-		padding-right: var(--sp-2);
-		border: 1px solid var(--hairline);
-		background: var(--surface-glass-strong);
-	}
-
-	.topbar-search.is-open input,
-	.topbar-search:focus-within input {
-		width: min(9rem, 34vw);
-		opacity: 1;
-		pointer-events: auto;
-	}
 
   .main {
     padding: var(--sp-4);
