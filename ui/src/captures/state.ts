@@ -1,4 +1,4 @@
-import { onMounted, ref } from "vue";
+import { ref } from "vue";
 
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
@@ -6,7 +6,7 @@ import { useLiveResource } from "@/stores/live-updates";
 /**
  * The event inspector's shared state.
  *
- * The list, the stream's state beside it and the sheet that shows one
+ * The list, the stream's state beside it and the detail pane that shows one
  * capture's payload all read it, so it lives in a module rather than being
  * threaded down through a chain of props.
  */
@@ -44,9 +44,9 @@ export const error = ref<string | null>(null);
 export const loading = ref(true);
 
 /**
- * The open row's capture, or null. Held by value rather than by id: the list
- * is re-read on every capture event, so resolving an id again would close the
- * sheet under an operator reading a capture that has just aged out of the
+ * The selected capture, or null. Held by value rather than by id: the list is
+ * re-read on every capture event, so resolving an id again would blank the
+ * pane under an operator reading a capture that has just aged out of the
  * window.
  */
 export const selected = ref<Capture | null>(null);
@@ -72,9 +72,25 @@ export async function load(): Promise<void> {
   }
 }
 
-/** Owns the initial read and the live stream that invalidates it, for the
- * page's lifetime. */
+/** selectById restores the selection the URL names, if the window still holds
+ * it. A capture that has aged out cannot be resolved: the list is the only
+ * read of a capture's body, so an id it no longer carries has nothing to show.
+ * Reports whether it found one. */
+export function selectById(id: number): boolean {
+  const found = captures.value.find((capture) => capture.id === id);
+  if (found) selected.value = found;
+  return Boolean(found);
+}
+
+/** selectNewest fills a page opened without a selection, so the pane is useful
+ * on arrival rather than an empty box beside the list. */
+export function selectNewest(): void {
+  if (captures.value.length) selected.value = captures.value[0];
+}
+
+/** Owns the live stream that invalidates the list, for the page's lifetime.
+ * The initial read belongs to the page, which has to await it before it can
+ * restore a selection from the address bar. */
 export function useCaptures(): void {
   useLiveResource("captures", () => void load());
-  onMounted(load);
 }

@@ -9,9 +9,9 @@ import { selected, type Capture } from "./state";
 
 /**
  * One captured event. The row is the control, not a button sitting in one
- * cell: opening the payload is the row's whole job, and a keyboard user has to
- * reach what a mouse user clicks -- which is why it is focusable and both
- * Enter and Space open it.
+ * cell: selecting is the row's whole job, and a keyboard user has to reach what
+ * a mouse user clicks -- which is why it is focusable and both Enter and Space
+ * select it.
  */
 const props = defineProps<{ capture: Capture }>();
 
@@ -19,7 +19,7 @@ const isSelected = computed(() => selected.value?.id === props.capture.id);
 
 // The name is set here because role="button" makes the cells presentational:
 // what a screen reader reads is this, not five unrelated columns.
-const label = computed(() => `View the payload received from ${props.capture.source || "an unknown source"}`);
+const label = computed(() => `Show the payload received from ${props.capture.source || "an unknown source"}`);
 
 function open(): void {
   selected.value = props.capture;
@@ -31,7 +31,7 @@ function open(): void {
     :data-state="isSelected ? 'selected' : undefined"
     role="button"
     tabindex="0"
-    aria-haspopup="dialog"
+    :aria-current="isSelected ? 'true' : undefined"
     :aria-label="label"
     class="cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     @click="open"
