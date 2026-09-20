@@ -15,7 +15,9 @@ import (
 
 const (
 	dangerousApprovalLifetime = 10 * time.Minute
-	permanentApprovalLifetime = 24 * time.Hour
+	// The "permanent" decision on the wire grants an extended, but still
+	// bounded, approval: 24 hours, then requests queue again.
+	extendedApprovalLifetime = 24 * time.Hour
 )
 
 // DangerousService adapts the daemon-owned sandbox authority to an
@@ -24,9 +26,9 @@ const (
 type DangerousService struct {
 	Authority messaging.DangerousCommandAuthority
 
-	mu        sync.Mutex
-	actions   map[string]dangerousAction
-	permanent map[string]time.Time
+	mu       sync.Mutex
+	actions  map[string]dangerousAction
+	extended map[string]time.Time
 }
 
 type dangerousAction struct {
@@ -48,7 +50,7 @@ func NewDangerousService(authority messaging.DangerousCommandAuthority) *Dangero
 	return &DangerousService{
 		Authority: authority,
 		actions:   make(map[string]dangerousAction),
-		permanent: make(map[string]time.Time),
+		extended:  make(map[string]time.Time),
 	}
 }
 
@@ -87,7 +89,7 @@ func (s *DangerousService) Pending() []DangerousActionView {
 }
 
 // Request creates a pending action unless the local operator has granted a
-// still-valid permanent approval for this operation family.
+// still-valid extended (24-hour) approval for this operation family.
 func (s *DangerousService) Request(ctx context.Context, kind, spec string) (DangerousActionView, string, bool, error) {
 	if err := s.enabled(); err != nil {
 		return DangerousActionView{}, "", false, err
@@ -100,7 +102,7 @@ func (s *DangerousService) Request(ctx context.Context, kind, spec string) (Dang
 	description := fmt.Sprintf("%s %s", kind, spec)
 	s.mu.Lock()
 	now := time.Now()
-	if expires := s.permanent[kind]; expires.After(now) {
+	if expires := s.extended[kind]; expires.After(now) {
 		s.mu.Unlock()
 		result, err := s.execute(ctx, kind, spec)
 		return DangerousActionView{Kind: kind, Description: description, ExpiresAt: expires}, result, true, err
@@ -131,8 +133,11 @@ func (s *DangerousService) Decide(ctx context.Context, id, decision string) (str
 	case "approve":
 		return s.execute(ctx, action.Kind, action.Spec)
 	case "permanent":
+		// Wire kind "permanent" grants the 24-hour extended approval, not an
+		// unlimited one; the literal string is part of the contract with the
+		// channels that dispatch decisions (see the telegram gateway).
 		s.mu.Lock()
-		s.permanent[action.Kind] = time.Now().Add(permanentApprovalLifetime)
+		s.extended[action.Kind] = time.Now().Add(extendedApprovalLifetime)
 		s.mu.Unlock()
 		return s.execute(ctx, action.Kind, action.Spec)
 	default:

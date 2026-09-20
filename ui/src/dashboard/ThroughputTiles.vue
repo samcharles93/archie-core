@@ -3,6 +3,7 @@ import { computed } from "vue";
 
 import StatTile from "@/base/StatTile.vue";
 import { compact } from "@/lib/format";
+import { attentionStatusIds } from "@/lib/task-meta";
 import { summary } from "./state";
 
 /** The throughput row: what is running, what needs a human, what shipped. */
@@ -12,7 +13,17 @@ const tokensByDay = computed(() => summary.value?.tokens_by_day ?? []);
 const series = computed(() => tokensByDay.value.map((d) => d.tokens || 0));
 
 const done = computed(() => (counts.value.merged || 0) + (counts.value.pr_open || 0));
-const attention = computed(() => (counts.value.parked || 0) + (counts.value.waiting_human || 0));
+// "Needs you" is the server's grouping, not a local pair of ids: it is the
+// same attentionStatusIds() source TasksSummary and the needs_you filter read,
+// so a status that joins the grouping on the backend is counted here without
+// a frontend change.
+const attention = computed(() => {
+  const attentionStatuses = attentionStatusIds();
+  return Object.entries(counts.value).reduce(
+    (sum, [status, n]) => (attentionStatuses.has(status) ? sum + (n || 0) : sum),
+    0,
+  );
+});
 const total = computed(() => Object.values(counts.value).reduce((a, b) => a + b, 0));
 const used = computed(() => series.value.reduce((a, b) => a + b, 0));
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Ellipsis } from "@lucide/vue";
 import { computed, ref } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,6 +14,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
 import { actionFor, type ActionMeta } from "@/lib/task-meta";
 import type { Task } from "./TaskRow.vue";
@@ -52,6 +59,20 @@ const controls = computed<Control[]>(() =>
     .filter((meta): meta is ActionMeta => meta !== null)
     .map((meta) => ({ ...meta, href: meta.kind === "link" ? forgeLink(meta.id) : "" })),
 );
+
+//
+// One primary plus overflow: a server-declared action list can hold seven
+// controls and two forge links, and a row that shows all of them as buttons in
+// one line is unreadable. So the first non-link control keeps a visible button
+// of its own; every other non-link control folds behind a '···' menu that runs
+// the identical request path, and the forge links stay inline after the
+// primary because they navigate rather than act.
+const nonLinkControls = computed<Control[]>(() => controls.value.filter((c) => c.kind !== "link"));
+const primaryControl = computed<Control | null>(() => nonLinkControls.value[0] ?? null);
+const overflowControls = computed<Control[]>(() => nonLinkControls.value.slice(1));
+const linkControls = computed<Control[]>(() => controls.value.filter((c) => c.kind === "link"));
+
+const menuOpen = ref(false);
 
 const confirmingMeta = computed(() => (confirmingId.value ? actionFor(confirmingId.value) : null));
 const confirmText = computed(() =>
@@ -123,6 +144,14 @@ function onConfirmationOpen(open: boolean) {
   if (!open) confirming.value = null;
 }
 
+// A menu item must close its menu before the dialog can take focus, so both
+// surfaces funnel through the same request() once the menu is down; the
+// inFlight disabling and the error handling stay identical either way.
+function requestFromMenu(id: string) {
+  menuOpen.value = false;
+  request(id);
+}
+
 // A full reload, not a router navigation: the point is to re-establish the
 // session with whatever is in front of archied, which a client-side route
 // change would leave exactly as it was.
@@ -149,29 +178,49 @@ function reloadPage() {
 
     <!--
       One line, never wrapped: three controls on two lines doubled the height of
-      every actionable row. Keystrokes stop at this container rather than
-      bubbling to the row, which would open the task as well as press the button.
+      every actionable row. The one-primary-plus-overflow rule (see the script)
+      keeps the line short; keystrokes stop at this container rather than
+      bubbling to the row, which would open the task as well as press the
+      button.
     -->
     <div class="flex items-center gap-1" @keydown.stop>
-      <template v-for="control in controls" :key="control.id">
-        <template v-if="control.kind === 'link'">
-          <Button v-if="control.href" as-child variant="outline" size="sm">
-            <a :href="control.href" target="_blank" rel="noreferrer" @click.stop>{{ control.label }}</a>
-          </Button>
-          <Button v-else variant="outline" size="sm" disabled :title="`${control.label} is unavailable`">
-            {{ control.label }}
-          </Button>
-        </template>
-        <Button
-          v-else
-          :variant="variantFor(control.kind)"
-          size="sm"
-          :disabled="inFlight"
-          @click.stop="request(control.id)"
-        >
+      <Button
+        v-if="primaryControl"
+        :variant="variantFor(primaryControl.kind)"
+        size="sm"
+        :disabled="inFlight"
+        @click.stop="request(primaryControl.id)"
+      >
+        {{ primaryControl.label }}
+      </Button>
+
+      <template v-for="control in linkControls" :key="control.id">
+        <Button v-if="control.href" as-child variant="ghost" size="sm">
+          <a :href="control.href" target="_blank" rel="noreferrer" @click.stop>{{ control.label }}</a>
+        </Button>
+        <Button v-else variant="ghost" size="sm" disabled :title="`${control.label} is unavailable`">
           {{ control.label }}
         </Button>
       </template>
+
+      <DropdownMenu v-if="overflowControls.length" v-model:open="menuOpen">
+        <DropdownMenuTrigger as-child>
+          <Button variant="ghost" size="icon-sm" aria-label="More actions" :disabled="inFlight" @click.stop>
+            <Ellipsis :size="14" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            v-for="control in overflowControls"
+            :key="control.id"
+            :variant="control.kind === 'danger' ? 'destructive' : 'default'"
+            :disabled="inFlight"
+            @click.stop="requestFromMenu(control.id)"
+          >
+            {{ control.label }}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
 
     <AlertDialog :open="confirming !== null" @update:open="onConfirmationOpen">

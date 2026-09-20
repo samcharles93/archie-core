@@ -1,6 +1,16 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import ConfigCard from "./ConfigCard.vue";
 import { deferUpdate, installUpdate, update } from "./state";
@@ -23,11 +33,21 @@ const summary = computed(() => {
   return "Archie is up to date.";
 });
 
+// Installing restarts archied, so it is confirmed first: the operator needs
+// to know that this dashboard, and any tasks archied is running, go down with
+// it before the install call fires.
+const confirmingInstall = ref(false);
+
 function defer(): void {
   void deferUpdate(update.value?.snapshot);
 }
 
+function onInstallOpen(open: boolean): void {
+  if (!open) confirmingInstall.value = false;
+}
+
 function install(): void {
+  confirmingInstall.value = false;
   void installUpdate(update.value?.snapshot);
 }
 </script>
@@ -43,8 +63,24 @@ function install(): void {
     <div v-if="available.length" class="mt-3 flex flex-wrap gap-2">
       <Button variant="outline" @click="defer">Defer</Button>
       <!-- Installing restarts archied, so it is offered only when the server
-           says it can perform one. -->
-      <Button v-if="update.can_install" @click="install">Install update</Button>
+           says it can perform one, and confirmed before it runs. -->
+      <Button v-if="update.can_install" variant="destructive" @click="confirmingInstall = true">Install update</Button>
     </div>
+
+    <AlertDialog :open="confirmingInstall" @update:open="onInstallOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Install update</AlertDialogTitle>
+          <AlertDialogDescription>
+            Installing restarts archied. This dashboard will be unavailable until it comes back, and
+            any tasks archied is running are interrupted.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" @click="install">Install update</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </ConfigCard>
 </template>
