@@ -19,8 +19,8 @@ listen = "127.0.0.1:8484"
 # a matching target and passing -listen, and it read as a code fault.
 # (docs/prds/state-store-contract.md §12 step 7).
 [services.state]
-target = "127.0.0.1:9090"
-listen = "127.0.0.1:9090"
+target = "127.0.0.1:9091"
+listen = "127.0.0.1:9091"
 
 # `task dev` runs archie-gateway via dev:gateway, which also passes no -listen:
 # the listen below is what it binds. Stated explicitly so the value archie-ui
