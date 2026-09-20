@@ -37,11 +37,11 @@ function chooseMotion(value: unknown): void {
 </script>
 
 <template>
-  <div class="max-w-4xl">
+  <div>
     <PageHeader title="Appearance" subtitle="How this dashboard looks and responds in this browser." />
 
     <ConfigCard title="Dashboard preferences" description="Saved only in this browser and applied immediately.">
-      <div class="grid gap-8 min-[700px]:grid-cols-2">
+      <div class="grid gap-8 min-[700px]:grid-cols-2 min-[1100px]:grid-cols-4">
         <section class="flex min-w-0 flex-col items-start">
           <div>
             <h2 id="appearance-theme" class="text-sm font-medium">Theme</h2>

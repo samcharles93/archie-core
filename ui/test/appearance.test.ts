@@ -46,6 +46,7 @@ test("appearance preferences are owned by Pinia and stay close to their labels",
   assert.match(page, /useAppearanceStore/);
   assert.match(tooltip, /useAppearanceStore/);
   assert.match(page, /min-\[700px\]:grid-cols-2/);
+  assert.match(page, /min-\[1100px\]:grid-cols-4/);
 });
 
 test("system theme follows the browser preference and remains the stored choice", () => {
