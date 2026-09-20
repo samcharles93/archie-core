@@ -4,24 +4,52 @@ import { onMounted } from "vue";
 import Topbar from "@/components/topbar/Topbar.vue";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
+import { loadTaskMeta } from "@/lib/task-meta";
 
 onMounted(() => {
+  // Asked for once, after the shell is up: the nav paints immediately and
+  // loses the entries this process cannot back a moment later, rather than
+  // holding the page behind a request. A failed read hides nothing.
   void loadCapabilities();
+
+  // The lifecycle vocabulary -- status labels, pill severity, "needs you"
+  // grouping, and the operator actions -- is served by /api/task-meta. Asked
+  // for once, after the shell is up: the freeze-dried defaults paint
+  // immediately and this replaces them, so a catalogue change on the server
+  // reaches the browser without a UI release. loadTaskMeta never throws (a
+  // failed read keeps the defaults), so it needs no catch here.
+  void loadTaskMeta();
 });
 </script>
 
 <template>
   <TooltipProvider :delay-duration="350">
-    <Topbar :hidden="hidden" />
-    <main class="min-h-[calc(100svh-3.5rem)]">
-      <!--
-        Keyed on the path and its parameters but not the query: a query-only
-        change is an entry state, so the page keeps the operator's filters,
-        while two different :id values get fresh instances.
-      -->
-      <RouterView v-slot="{ Component, route }">
-        <component :is="Component" :key="route.path" />
-      </RouterView>
-    </main>
+    <!--
+      One contained, rounded surface floating on the canvas `body` carries:
+      framing the workspace gives the panels an edge to sit against, and lets
+      the light behind read through rather than stopping at the first opaque
+      card. The frame is a desktop affordance, so at the narrow breakpoint it
+      goes edge to edge instead of insetting a rounded card on a phone.
+
+      `backdrop-filter` makes this a containing block for `position: fixed`,
+      so the chat launcher has to render outside this element.
+    -->
+    <div
+      class="flex min-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--workspace)] shadow-[var(--shadow-workspace)] backdrop-blur-[28px] backdrop-saturate-[1.2] max-[900px]:min-h-screen max-[900px]:rounded-none max-[900px]:border-0 max-[900px]:shadow-none"
+    >
+      <Topbar :hidden="hidden" />
+      <main class="w-full flex-1 overflow-x-hidden p-8 max-[900px]:p-4">
+        <!--
+          Keyed on the path and its parameters but not the query: a query-only
+          change is an entry state, so the page keeps the operator's filters,
+          while two different :id values get fresh instances -- without that
+          the second id diffs the first one in place and the previous task's
+          open tab stays open on the next (W11).
+        -->
+        <RouterView v-slot="{ Component, route }">
+          <component :is="Component" :key="route.path" />
+        </RouterView>
+      </main>
+    </div>
   </TooltipProvider>
 </template>

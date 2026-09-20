@@ -4,6 +4,14 @@
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
 
+/* ui/dist is committed, so nothing ignores it and Tailwind's automatic content
+   detection scans it. That makes every build an input to the next one: class
+   strings left in the committed bundle generate utilities for classes nothing
+   references any more, so rebuilding an unchanged tree produced a different
+   bundle and tools/uidist.sh's freshness check failed on the first build after
+   every change. The bundle is generated, never a source. */
+@source not "../dist";
+
 /* The theme is an attribute on <html>, not a class, so the inline script in
    index.html can set it before the first paint and a reload does not flash the
    wrong palette. */
@@ -220,5 +228,42 @@
     body {
         @apply bg-background text-foreground;
         @apply font-sans;
+        /* The luminous canvas the shell floats on. Large, off-axis and
+           low-frequency, so it lights the workspace rather than competing with
+           it, and fixed so the surface above reads as glass rather than a
+           scrolling image. The padding is the margin the frame sits inside. */
+        background:
+            radial-gradient(70rem 40rem at 8% -10%, var(--wash-a), transparent 62%),
+            radial-gradient(56rem 34rem at 92% 4%, var(--wash-b), transparent 58%),
+            radial-gradient(48rem 30rem at 50% 108%, var(--wash-c), transparent 60%),
+            var(--background);
+        background-attachment: fixed;
+        padding: 1rem;
+    }
+    /* The focus floor. A component may style its own focus state; this
+       guarantees that nothing is ever focused and invisible for a keyboard
+       user. `:focus-visible` rather than `:focus` so a mouse click does not
+       draw a ring around what was clicked. */
+    :focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+    /* The frame is a desktop affordance: below this width the workspace goes
+       edge to edge, because a rounded card inset on a phone wastes the only
+       axis that matters. */
+    @media (max-width: 900px) {
+        body {
+            padding: 0;
+        }
+    }
+    /* An accessibility invariant, not a nicety: nothing animates for someone
+       who has asked it not to. */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+        }
     }
 }

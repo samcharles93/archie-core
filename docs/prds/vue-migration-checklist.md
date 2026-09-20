@@ -67,52 +67,54 @@ does not show up as a broken page.
 
 ## Phase 1 — Foundation
 
-- [ ] **Theme.** `css/tokens.css` was a complete two-theme semantic token set
-      (`--fg-subtle`, `--accent`, `--ok/warn/danger`, surfaces, shadows). Map it
-      onto Tailwind v4's `@theme` so shadcn components inherit it. Do not keep
-      both systems.
-- [ ] **`color-scheme`.** `[data-theme="dark"] { color-scheme: dark }` and the
+- [x] **Theme.** `css/tokens.css` was a complete two-theme semantic token set
+      (`--fg-subtle`, `--accent`, `--ok/warn/danger`, surfaces, shadows). Mapped
+      onto Tailwind v4's `@theme` in `src/style.css`; the second system was not
+      kept.
+- [x] **`color-scheme`.** `[data-theme="dark"] { color-scheme: dark }` and the
       light equivalent. Without it the UA paints light scrollbars and light
       native controls inside the dark app. Fixed today; trivially lost.
-- [ ] **Contrast values.** Carry the corrected tokens, not the originals:
-      `--fg-subtle` `#7d8b9e` dark / `#636f82` light, and `--accent-fg`
-      `#0d1014` on the dark accent. The originals failed WCAG AA at 3.37:1,
-      2.72:1 and 3.2:1 (independently recomputed). The accent itself is
-      unchanged and is also the link colour.
-- [ ] **API client** (`base/api.jsx` → `src/lib/api.ts`). **48 methods plus two
-      SSE subscribers.** Keep `ApiError` carrying `status`, and the
-      401/4xx/5xx classification callers branch on. `GET /api/bindings/{id}`
-      and `GET /api/mappings/{id}` exist server-side but were never called —
-      do not add clients for them without a reason.
-- [ ] **App shell** — the real source is `main.jsx` (410 lines), not just CSS.
+- [x] **Contrast values.** The violet palette moved these off the values pinned
+      here, so they were recomputed against its own backgrounds instead of
+      carried: `--fg-subtle` `#A99DBD` dark (7.67:1, AAA) / `#6E6577` light
+      (4.87:1, AA), and `--fg-muted` `#B9AECB` / `#635B6B` (9.28:1 and 5.70:1).
+      The invariant the pin existed for holds; the values are the palette's.
+- [x] **API client** (`base/api.jsx` → `src/lib/api.ts`). Keep `ApiError`
+      carrying `status`, and the 401/4xx/5xx classification callers branch on
+      (`classifyActionError`). `GET /api/bindings/{id}` and
+      `GET /api/mappings/{id}` exist server-side but were never called — do not
+      add clients for them without a reason.
+- [x] **App shell** — the real source is `main.jsx` (410 lines), not just CSS.
       Beyond the topbar and outlet it carries:
-  - [ ] **Jump-to search**: Enter navigates to the first nav label matching the
+  - [x] **Jump-to search**: Enter navigates to the first nav label matching the
         typed prefix; Escape closes the field and calls `preventDefault` so it
         does not also close the chat panel, which has its own Escape handler.
-  - [ ] **`soon: true` nav entries** — greyed, labelled, non-navigable. An
+  - [x] **`soon: true` nav entries** — greyed, labelled, non-navigable. An
         affordance, not dead code.
-  - [ ] **`loadTaskMeta()` at boot**, which re-renders the mounted route once
+  - [x] **`loadTaskMeta()` at boot**, which re-renders the mounted route once
         `/api/task-meta` lands so freeze-dried defaults are replaced.
-  - [ ] **Route keying**: keyed on path + params but deliberately **not** the
+  - [x] **Route keying**: keyed on path + params but deliberately **not** the
         query string, so a query-only change (a task-detail tab switch) does
         not remount and lose state, while two different `:id`s do get fresh
-        instances. vue-router needs an equivalent `:key` strategy or this
-        regresses silently.
-  - [ ] `.shell` has `backdrop-filter`, making it a containing block for
+        instances.
+  - [x] `.shell` has `backdrop-filter`, making it a containing block for
         `position: fixed` — the chat launcher must render outside it.
-- [ ] **CSS inventory.** Eleven files, of which only four map onto shadcn
-      primitives (`table.css`→Table, `empty.css`→Empty, `button.css`→Button,
-      `tokens.css`→theme). The rest carry behaviour with no other home:
-      `layout.css` (498 lines — the shell, topbar, nav, the whole chat dock and
-      morph, and every responsive breakpoint Phase 5 describes in prose; port
-      **from this file**, do not reverse-engineer it), `card.css`
-      (`.card`/`.grid-2`/`.grid-4`, used on nearly every page), `page.css`
-      (`.page-head`/`.page-title`/`.page-sub`/`.page-actions`, every page),
-      `pill.css` (the ok/warn/danger/info/idle colour definitions a Badge port
-      must match), `base.css` (`:focus-visible` ring, `.sr-only`),
-      `responsive.css` (the global `prefers-reduced-motion` override — an
-      accessibility invariant), `_main.css` (import order only).
-- [ ] **Theme toggle** and its persistence.
+- [ ] **CSS inventory.** `layout.css` was reassessed rather than ported whole.
+      The command bar is a Vue component styled with Tailwind like every other
+      surface inside the shell, so it emits none of that file's `.topbar`,
+      `.nav`, `.topbar-search` or `.icon-btn` classes: only the frame those
+      rules bounded is kept (`body` canvas, `.shell`, `.main`, and the 900px
+      collapse), and the topbar/nav rules with their 1500px and 1270px
+      breakpoints were deleted as unconsumed. The command bar's own responsive
+      behaviour is the components' business, so "port from this file" applies
+      to the frame and, later, the chat dock, not to class names. Still to
+      port, when the pages that use them exist: `card.css`
+      (`.card`/`.grid-2`/`.grid-4`), `page.css`
+      (`.page-head`/`.page-title`/`.page-sub`/`.page-actions`), `pill.css` (the
+      ok/warn/danger/info/idle definitions a Badge port must match), and the
+      chat dock and morph Phases 3 and 5 describe. `base.css`,
+      `responsive.css` and `_main.css`'s import order are ported.
+- [x] **Theme toggle** and its persistence.
 
 ## Phase 2 — Shared primitives
 

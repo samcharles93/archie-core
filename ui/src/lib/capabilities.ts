@@ -1,24 +1,39 @@
+// Which dashboard sections the serving process can actually back.
+//
+// From the UI cutover the dashboard is served by more than one composition,
+// and a section with nothing behind it still answers -- an empty list, a
+// "disabled" marker, a 501 -- which the browser cannot tell from a quiet
+// deployment. GET /api/capabilities says which sections are backed here, and
+// the nav drops the rest.
 import { ref } from "vue";
 
+import { api } from "@/lib/api";
 import { routes } from "@/router";
 
+/** The `sections` map GET /api/capabilities returns. */
 export type CapabilitySections = Record<string, boolean>;
 
-interface RouteMeta {
-  section?: string;
+/**
+ * The route fields hiddenRoutes reads. The section lives under `meta` because
+ * the route table is an untyped literal: internal/gateway's registry test
+ * parses `const routes = [` and one route per line out of the source, so it
+ * cannot carry a type annotation.
+ */
+export interface SectionedRoute {
+  path: string;
+  meta?: { section?: string };
 }
 
 /** hidden lists the route paths this composition cannot serve. */
 export const hidden = ref<string[]>([]);
 
-function hiddenFor(sections: CapabilitySections | undefined): string[] {
+// hiddenRoutes returns the paths whose section the server reported it cannot
+// serve. An unreported section stays visible: a page that says "unavailable"
+// is recoverable, a navigation entry that silently vanished is not, so an
+// older server or a failed capabilities read shows everything.
+export function hiddenRoutes(sections: CapabilitySections | null | undefined, table: SectionedRoute[]): string[] {
   if (!sections) return [];
-  return (routes as Array<{ path: string; meta?: RouteMeta }>)
-    .filter((route) => {
-      const section = route.meta?.section;
-      return typeof section === "string" && sections[section] === false;
-    })
-    .map((route) => route.path);
+  return table.filter((r) => typeof r.meta?.section === "string" && sections[r.meta.section] === false).map((r) => r.path);
 }
 
 /**
@@ -28,10 +43,8 @@ function hiddenFor(sections: CapabilitySections | undefined): string[] {
  */
 export async function loadCapabilities(): Promise<void> {
   try {
-    const response = await fetch("/api/capabilities", { headers: { Accept: "application/json" } });
-    if (!response.ok) return;
-    const body = (await response.json()) as { sections?: CapabilitySections } | null;
-    hidden.value = hiddenFor(body?.sections);
+    const body = await api.capabilities<{ sections?: CapabilitySections } | null>();
+    hidden.value = hiddenRoutes(body?.sections, routes as SectionedRoute[]);
   } catch {
     // Offline or an older server: every section stays visible.
   }
