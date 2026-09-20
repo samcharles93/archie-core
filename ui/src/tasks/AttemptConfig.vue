@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 
 import JsonBlock from "./JsonBlock.vue";
 import PanelError from "./PanelError.vue";
@@ -44,31 +44,18 @@ const recognised = computed(() => schema.value === CONFIG_SCHEMA);
 
   <Empty v-else-if="!event">
     <EmptyHeader>
-      <EmptyTitle>Not captured for this run</EmptyTitle>
-      <EmptyDescription>
-        Archie records the effective configuration when it dispatches an attempt. Attempt {{ attempt }} has no such
-        record — it predates the record, or the capture did not run. Nothing here says the run used the defaults.
-      </EmptyDescription>
+      <EmptyTitle>No configuration captured for attempt {{ attempt }}</EmptyTitle>
     </EmptyHeader>
   </Empty>
 
   <div v-else>
-    <p class="mb-2 max-w-[75ch] text-sm text-fg-muted">
-      This is attempt {{ event.attempt }}'s effective task-runtime configuration: a non-secret subset covering bot
-      identity, models, limits, budgets, dispatch, diff cap, notifications, forge host and tool policy. It is not the
-      dashboard configuration view — providers, repositories, identities, credentials and lock state are not part of
-      it.
-    </p>
     <div class="mb-3 text-xs text-fg-muted">
       Captured {{ event.at || "at an unrecorded time"
       }}<span v-if="event.stage"> in stage {{ event.stage }}</span>
     </div>
     <JsonBlock v-if="recognised" :value="document" />
     <template v-else>
-      <p class="mb-2 text-sm text-warn">
-        Recorded in an unknown schema{{ schema ? ` (${schema})` : "" }}. The raw payload is shown verbatim; nothing
-        here reinterprets it.
-      </p>
+      <p class="mb-2 text-sm text-warn">Unknown schema{{ schema ? ` (${schema})` : "" }} — shown verbatim.</p>
       <JsonBlock :value="event.data" />
     </template>
   </div>

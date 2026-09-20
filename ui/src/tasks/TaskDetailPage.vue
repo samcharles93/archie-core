@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 
 import AttemptSelector from "./AttemptSelector.vue";
-import StartNewRun from "./StartNewRun.vue";
 import TabBar from "./TabBar.vue";
 import TaskDetailNotice from "./TaskDetailNotice.vue";
 import TaskHeader from "./TaskHeader.vue";
@@ -46,7 +45,6 @@ const run = provideTaskRun(taskId);
     <TaskHeader :id="rawId" />
     <TaskMetaBar />
     <TaskNotes :id="rawId" />
-    <StartNewRun :id="rawId" />
     <AttemptSelector />
 
     <Card>

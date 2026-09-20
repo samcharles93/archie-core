@@ -20,10 +20,10 @@ const run = useTaskRun();
 
 const note = computed(() => {
   if (run.taskList === null) {
-    return "The task list could not be read, so this page cannot show the task's current status or its operator controls. The run history below comes from the task's own endpoints.";
+    return "The task list could not be read, so the current status and operator controls are unavailable.";
   }
   if (Array.isArray(run.taskList) && !run.task) {
-    return `Task ${props.id} is not among the tasks this dashboard lists (the list covers the 100 most recently updated). Its recorded attempts are shown below; the Debug tab holds the stored record verbatim.`;
+    return `Task ${props.id} is outside the recent-tasks list (the 100 most recently updated). Its recorded attempts are shown below.`;
   }
   return "";
 });

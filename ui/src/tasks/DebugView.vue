@@ -31,10 +31,7 @@ defineEmits<{ retry: [] }>();
     @retry="$emit('retry')"
   />
   <div v-else>
-    <p class="mb-3 text-sm text-fg-muted">
-      The stored task record and its events, verbatim. Events are unfiltered on purpose: this is every event the task
-      has, and each one carries the attempt it belongs to. Attempt {{ attempt }} is the one selected above.
-    </p>
+    <p class="mb-3 text-sm text-fg-muted">The stored record and every event, verbatim.</p>
     <JsonBlock :value="state" />
   </div>
 </template>

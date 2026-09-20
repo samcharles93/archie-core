@@ -43,20 +43,13 @@ const nothingRecorded = computed(() => !props.state?.found || !captures.value.le
   <Empty v-else-if="undecodable">
     <EmptyHeader>
       <EmptyTitle>A change capture was recorded but could not be read</EmptyTitle>
-      <EmptyDescription>
-        This attempt has a change capture event, but this dashboard could not decode its payload. That is a read
-        failure, not a statement about what the attempt changed.
-      </EmptyDescription>
     </EmptyHeader>
   </Empty>
 
   <Empty v-else-if="nothingRecorded">
     <EmptyHeader>
-      <EmptyTitle>No change capture was recorded for this attempt</EmptyTitle>
-      <EmptyDescription>
-        Archie records what an attempt changed when it commits or pushes that work. Nothing was recorded here — the
-        attempt may predate capture, or it produced no commit. This is not the same as "no files changed".
-      </EmptyDescription>
+      <EmptyTitle>No change capture recorded for this attempt</EmptyTitle>
+      <EmptyDescription>The attempt may predate capture, or it produced no commit.</EmptyDescription>
     </EmptyHeader>
   </Empty>
 
