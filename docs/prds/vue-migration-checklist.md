@@ -19,8 +19,8 @@ These are not features; they are things other processes depend on. Breaking one
 does not show up as a broken page.
 
 - [ ] **Embed contract.** `ui/embed.go` embeds a committed `ui/dist`. The build
-      must keep `base: "./"` and unhashed `assets/index.{js,css}`. Already set
-      in `vite.config.ts`; do not let a later Vite change reintroduce hashing.
+      must keep unhashed `assets/index.{js,css}`: dist/ lives in git, and
+      hashed names orphan a file on every rebuild.
 - [ ] **Route registry.** `internal/gateway/dashboard_tools.go` hand-copies the
       route table and `TestDashboardPagesRegistryCoversEveryRoute` parses
       `ui/src/router/index.ts` to hold them in step. The parser needs
@@ -33,8 +33,9 @@ does not show up as a broken page.
       (`internal/webui/api_tasks.go:376`, `authorizeTaskMutation`). GET sends
       neither. This is the single most likely thing to silently break every
       write after the port.
-- [ ] **Hash routing.** Every existing bookmark, dashboard link and
-      agent-issued navigation is `#/tasks`. `createWebHashHistory`, already set.
+- [x] **History routing.** `createWebHistory`, `base: "/"`. Legacy `#/path`
+      links are rewritten by `src/legacy-hash-redirect.ts`. The chat navigate
+      chip should emit `/tasks`; the Go side already stores bare paths.
 - [ ] **Capability gating.** `GET /api/capabilities`
       (`internal/webui/api_capabilities.go:20`) returns a `sections` map of ten
       booleans: chat, logs, skills, curators, channels, captures, mappings,

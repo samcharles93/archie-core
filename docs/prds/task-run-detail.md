@@ -38,7 +38,7 @@ that has since moved on.
 | R5 | Log pane filters by attempt, stage and level; absence stays distinct from an unreadable deployment | `logging.Query.Stage` + `ReadTaskLogRequest.stage = 9`; the pane keeps `disabled` and `found=false` apart |
 | R6 | Retry is reachable from the run view and produces a new attempt shown as a new run | Existing retry action, labelled as a NEW run whose confirm states the previous attempt's commits are discarded |
 | R7 | Raw JSON of the task record and its events for the selected attempt | `GET /api/tasks/{id}/debug` |
-| R8 | Deep-linkable, reload-safe per-task detail page that keeps existing URLs working | `#/tasks/{id}` route beside the existing `#/tasks?task=N` and `#/tasks?status=...` |
+| R8 | Deep-linkable, reload-safe per-task detail page that keeps existing URLs working | `/tasks/{id}` route beside the existing `/tasks?task=N` and `/tasks?status=...` |
 | R9 | Design polish: hierarchy, tokens, both themes, responsive rail, a11y, loading/empty/error states | UI lane; measured at 480px and 700px in both themes |
 | R10 | Documentation of record | This document plus `docs/architecture/observability.md` |
 | R11 | Red-first tests for every new behaviour, full gate, `task ui`, forced `go build ./...`, `go test -race` on touched packages | Per lane; the anti-cost-cutting requirement lives here |
@@ -228,8 +228,8 @@ rendering rule, not a caveat in a comment:
 
 ## Route and compatibility
 
-`#/tasks/{id}` is the detail route; it is deep-linkable and reload-safe.
-`#/tasks?task=N` and `#/tasks?status=...` keep working and keep their existing
+`/tasks/{id}` is the detail route; it is deep-linkable and reload-safe.
+`/tasks?task=N` and `/tasks?status=...` keep working and keep their existing
 behaviour, including the nav highlight. The debug view is why the raw view
 exists at all: the task list response is capped, so a client-side join has no
 row for an older task, and a debug view that silently hid events would be worse
@@ -282,7 +282,7 @@ than useless.
    stating the previous attempt's commits are discarded.
 7. The log stage filter narrows to stage-bound lines and the pane states the
    coverage limit; `disabled` and `found=false` remain distinguishable.
-8. `#/tasks/{id}` survives reload, and `#/tasks?task=N` / `#/tasks?status=...`
+8. `/tasks/{id}` survives reload, and `/tasks?task=N` / `/tasks?status=...`
    are unchanged.
 9. The debug view returns the task record and its unfiltered events, each
    carrying `attempt`.

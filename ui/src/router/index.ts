@@ -1,19 +1,8 @@
-import { createRouter, createWebHashHistory } from "vue-router";
+import { createRouter, createWebHistory } from "vue-router";
 
 import Placeholder from "@/views/Placeholder.vue";
 
-// The dashboard's route table, and the single source of truth for what the
-// dashboard exposes.
-//
-// internal/gateway/dashboard_tools.go hand-copies this list so the chat agent
-// can navigate the operator, and TestDashboardPagesRegistryCoversEveryRoute
-// parses this file to hold the two in step. That test reads `const routes = [`
-// through to `];`, one route per line, skipping `nav: false` entries -- keep
-// the shape below literal enough for it to parse.
-//
-// Hash history, not web history: the dashboard is served from a path the build
-// does not know (ui/embed.go embeds a relative-base bundle), and every existing
-// link, bookmark and agent-issued navigation is of the form #/tasks.
+// internal/gateway/dashboard_tools.go mirrors this table; its test parses this file.
 const routes = [
   { path: "/", name: "dashboard", label: "Dashboard", component: Placeholder },
   { path: "/tasks", name: "tasks", label: "Tasks", component: Placeholder },
@@ -32,7 +21,7 @@ const routes = [
 export const dashboardRoutes = routes;
 
 export const router = createRouter({
-  history: createWebHashHistory(),
+  history: createWebHistory(),
   routes,
 });
 

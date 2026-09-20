@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
 
-// Every route resolves here until its view is ported. Named so an unported
-// page is obvious in the running app rather than rendering blank -- the
-// failure mode the Preact /chat route had.
 const route = useRoute();
 </script>
 
