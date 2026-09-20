@@ -281,22 +281,51 @@ body {
   pointer-events: none;
 }
 
+/* The panel grows out of the launcher. Closed, it is collapsed to a small
+   round shape sitting exactly over the button; open, it is the full panel
+   beside it. Scaling from the bottom-right corner and translating by the
+   launcher's own width is what makes the button appear to become the panel,
+   rather than a panel merely fading in next to it. */
 .chat-drawer-panel {
   pointer-events: auto;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* One child: ChatApp, which owns its own header row. A second track here
+     left an empty band under the composer. */
+  grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   overflow: hidden;
+
   opacity: 0;
-  /* Grows out of the launcher: the origin is the corner nearest the button. */
+  border-radius: var(--radius-pill);
   transform-origin: bottom right;
-  transform: scale(0.92) translateX(var(--sp-3));
-  transition: opacity var(--transition), transform var(--transition);
+  transform: translateX(calc(var(--fab-size) + var(--fab-gap))) scale(0.16);
+  transition:
+    opacity 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chat-drawer.is-open .chat-drawer-panel {
+  opacity: 1;
+  border-radius: var(--radius-lg);
+  transform: none;
+}
+
+/* The contents follow the shape rather than stretching with it: they fade in
+   once the panel is most of the way open, so the morph reads as a container
+   opening instead of a page being scaled up. */
+.chat-drawer-panel > * {
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+
+.chat-drawer.is-open .chat-drawer-panel > * {
+  opacity: 1;
+  transition: opacity 160ms linear 120ms;
 }
 
 /* A closed panel is still mounted so the session and its stream survive. It
@@ -304,12 +333,11 @@ body {
 .chat-drawer:not(.is-open) .chat-drawer-panel {
   pointer-events: none;
   visibility: hidden;
-}
-
-.chat-drawer.is-open .chat-drawer-panel {
-  opacity: 1;
-  transform: none;
-  visibility: visible;
+  transition:
+    opacity 140ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 200ms cubic-bezier(0.4, 0, 1, 1),
+    border-radius 200ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s linear 200ms;
 }
 
 .chat-drawer-head {
@@ -333,19 +361,24 @@ body {
     position: fixed;
     right: var(--fab-inset);
     left: var(--fab-inset);
-    bottom: var(--fab-inset);
+    /* Clears the launcher, which stays put as the close control. */
+    bottom: calc(var(--fab-inset) + var(--fab-size) + var(--fab-gap));
     width: auto;
-    height: min(78vh, calc(100vh - var(--fab-inset) * 2));
+    height: min(72vh, calc(100vh - var(--fab-inset) * 2 - var(--fab-size) - var(--fab-gap)));
   }
 
+  /* The sheet sits above the launcher rather than beside it, so it grows down
+     toward the button instead of sideways. */
   .chat-drawer-panel {
-    transform-origin: bottom center;
-    transform: scale(0.98) translateY(var(--sp-3));
+    transform-origin: bottom right;
+    transform: translateY(calc(var(--fab-size) + var(--fab-gap))) scale(0.16);
   }
 
-  .chat-dock.is-open .chat-fab {
-    opacity: 0;
-    pointer-events: none;
+  /* The launcher is the only way to close the panel, so it stays above the
+     sheet rather than hiding under it. */
+  .chat-fab {
+    position: relative;
+    z-index: 1;
   }
 }
 

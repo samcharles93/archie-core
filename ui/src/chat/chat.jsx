@@ -1,10 +1,12 @@
 import { h, Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import { api } from "../base/api.jsx";
+import { Icon } from "../base/icons.jsx";
 import { ChatMarkdown } from "./markdown.jsx";
 import { channelID } from "./chat-state.jsx";
 import { newChatTurn, retryChatTurn, resolveTurn } from "./chat-retry.jsx";
-import { sessionTitle } from "./chat-render.jsx";
+import { commandScrollTop } from "./command-scroll.js";
+import { panelTitle, sessionTitle } from "./chat-render.jsx";
 
 import "./chat.css";
 
@@ -12,7 +14,7 @@ function currentPage() {
   return location.hash.slice(1) || "/";
 }
 
-export function ChatApp() {
+export function ChatApp({ open = true }) {
   const [sessions, setSessions] = useState([]);
   const [currentSession, setCurrentSession] = useState("");
   const [messages, setMessages] = useState([]);
@@ -38,8 +40,45 @@ export function ChatApp() {
   const activeControllerRef = useRef(null);
   const sessionToolsRef = useRef(null);
   const commandMenuRef = useRef(null);
+  const settingsRef = useRef(null);
   const isSendingRef = useRef(isSending);
   isSendingRef.current = isSending;
+
+  useEffect(() => {
+    const closeSettings = (event) => {
+      const details = settingsRef.current;
+      if (!details?.open) return;
+      if (event.target instanceof Node && details.contains(event.target)) return;
+      details.open = false;
+    };
+    document.addEventListener("pointerdown", closeSettings);
+    document.addEventListener("focusin", closeSettings);
+    return () => {
+      document.removeEventListener("pointerdown", closeSettings);
+      document.removeEventListener("focusin", closeSettings);
+    };
+  }, []);
+
+  // The panel stays mounted so the session survives navigation, so opening it
+  // is a prop change rather than a mount: focus the composer on that edge.
+  useEffect(() => {
+    if (open) composerRef.current?.focus();
+  }, [open]);
+
+  // Arrow keys move the palette selection; the list scrolls so the highlight
+  // stays visible once the matches run past the visible rows.
+  useEffect(() => {
+    if (!isCommandMenuOpen) return;
+    const menu = commandMenuRef.current;
+    const option = menu?.children?.[commandSelection];
+    if (!menu || !option) return;
+    menu.scrollTop = commandScrollTop({
+      scrollTop: menu.scrollTop,
+      viewportHeight: menu.clientHeight,
+      optionTop: option.offsetTop,
+      optionHeight: option.offsetHeight,
+    });
+  }, [commandSelection, isCommandMenuOpen]);
 
   // Auto scroll transcript to bottom on new messages or streaming tokens
   useEffect(() => {
@@ -400,6 +439,15 @@ export function ChatApp() {
 
   return (
     <div className="chat-panel-content">
+      <div className="chat-drawer-head">
+        <strong className="chat-panel-title">{panelTitle(sessions, currentSession)}</strong>
+        <div className="chat-head-actions">
+          <button className="icon-btn chat-new" type="button" title="New chat" aria-label="New chat" onClick={handleNewChat}>
+            <Icon name="message-circle-plus" />
+          </button>
+        </div>
+      </div>
+
       <div className="chat-bar">
         <label className="chat-session-switch">
           <span className="sr-only">Conversation</span>
@@ -420,11 +468,7 @@ export function ChatApp() {
           </select>
         </label>
 
-        <button className="icon-btn chat-new" type="button" title="New chat" aria-label="New chat" onClick={handleNewChat}>
-          +
-        </button>
-
-        <details className="chat-settings">
+        <details className="chat-settings" ref={settingsRef}>
           <summary aria-label="Chat settings" title="Chat settings">
             <span aria-hidden="true">⚙</span>
           </summary>
@@ -487,21 +531,6 @@ export function ChatApp() {
       <div className="chat-layout">
         <section className="chat-workspace">
           <div className="chat-workspace-head">
-            <details className="chat-command-help">
-              <summary>Available commands ({commandSpecs.length})</summary>
-              <div className="chat-command-list">
-                {!commandSpecs.length ? (
-                  <span>Send a message to begin.</span>
-                ) : (
-                  commandSpecs.map((spec) => (
-                    <div className="chat-command-item" key={spec.command}>
-                      <code>{spec.usage || spec.command}</code>
-                      <span>{spec.description || ""}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </details>
             <details
               className="chat-session-tools"
               ref={sessionToolsRef}
@@ -602,7 +631,6 @@ export function ChatApp() {
                       className={`chat-bubble-row ${isAssistant ? "assistant" : "user"}`}
                     >
                       <div className="chat-bubble">
-                        <div className="chat-bubble-meta">{isAssistant ? "Archie" : "You"}</div>
                         {isAssistant ? (
                           <Fragment>
                             {tools.length > 0 && (
@@ -665,7 +693,6 @@ export function ChatApp() {
                 {streamingTurn && (
                   <div className="chat-bubble-row assistant">
                     <div className="chat-bubble">
-                      <div className="chat-bubble-meta">Archie</div>
                       {streamingTurn.tools?.length > 0 && (
                         <div className="chat-tools">
                           {streamingTurn.tools.map((tool, tIdx) => {
@@ -732,7 +759,6 @@ export function ChatApp() {
                 rows={3}
                 placeholder="Message Archie, or type / for commands"
                 aria-label="Message Archie"
-                disabled={isSending}
                 value={composerText}
                 onInput={handleComposerInput}
                 onKeyDown={handleComposerKeyDown}
@@ -761,15 +787,11 @@ export function ChatApp() {
                 </div>
               )}
               <div className="chat-compose-actions">
-                <span className="chat-hint">Enter to send · Shift+Enter for a new line</span>
-                <button
-                  className="btn"
-                  type="button"
-                  disabled={!isSending}
-                  onClick={handleStop}
-                >
-                  Stop
-                </button>
+                {isSending && (
+                  <button className="btn" type="button" onClick={handleStop}>
+                    Stop
+                  </button>
+                )}
                 <button
                   className="btn btn-primary"
                   type="button"

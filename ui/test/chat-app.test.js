@@ -32,7 +32,6 @@ test("conversations are a switcher in the bar, not a column", () => {
   const bar = container.querySelector(".chat-bar");
   assert.ok(bar, "compact bar should render");
   assert.ok(bar.querySelector(".chat-session-switch"), "session switcher should live in the bar");
-  assert.ok(bar.querySelector(".chat-new"), "new chat should live in the bar");
   unmount();
 });
 

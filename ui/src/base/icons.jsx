@@ -32,6 +32,7 @@ const paths = {
   trendDown: '<path d="M4 7l6 6 4-4 6 6"/><path d="M14 17h6v-6"/>',
   check: '<path d="M4.5 12.5l5 5 10-11"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  "message-circle-plus": '<path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/><path d="M8 12h8"/><path d="M12 8v8"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4"/><path d="M12 17.2h.01"/>',
 };
 

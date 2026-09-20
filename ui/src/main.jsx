@@ -224,13 +224,10 @@ function ChatLauncher() {
         aria-hidden={open ? undefined : "true"}
       >
         <div className="chat-drawer-panel">
-          <div className="chat-drawer-head">
-            <strong>Archie</strong>
-            <button className="icon-btn chat-drawer-close" aria-label="Close chat" title="Close chat" onClick={close}>
-              <Icon name="close" />
-            </button>
-          </div>
-          <ChatApp />
+          {/* ChatApp owns the header: the title is the open conversation. It
+              carries no close button -- the launcher stays visible and is the
+              one control that opens and closes the panel. */}
+          <ChatApp open={open} />
         </div>
       </aside>
       <button
