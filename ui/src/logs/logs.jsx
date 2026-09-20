@@ -4,6 +4,7 @@ import "./logs.css";
 import { api, subscribeLogs } from "../base/api.jsx";
 import { LOG_LEVELS, LogRow } from "../base/log-row.jsx";
 import { Pill } from "../base/pill.jsx";
+import { logsEmptyTitle, logsEmptyDetail } from "./logs-empty.js";
 
 function Empty({ title, detail }) {
   return (
@@ -48,7 +49,7 @@ function LogsApp() {
       });
       setDurableUnavailable(!!res.disabled);
       
-      const newMeta = res.disabled ? "Durable history unavailable; live daemon logs continue." : res.truncated
+      const newMeta = res.disabled ? "Live only" : res.truncated
         ? `showing the most recent matches from ${res.file}`
         : res.file || "";
       setMeta(newMeta);
@@ -170,7 +171,10 @@ function LogsApp() {
           </div>
           <div className="log-status">
             <span className="log-meta">{meta}</span>
-            <Pill text={streamState} kind={streamState === "live" ? "ok" : "warn"} />
+            <Pill
+              text={streamState}
+              kind={streamState === "live" ? "ok" : streamState === "unavailable" ? "danger" : "warn"}
+            />
           </div>
         </div>
         
@@ -178,9 +182,9 @@ function LogsApp() {
           {meta === "Cannot read logs" ? (
             <Empty title="Cannot read logs" />
           ) : !entriesToRender.length ? (
-            <Empty 
-              title={durableUnavailable ? "Durable history unavailable" : "Nothing matches"} 
-              detail={durableUnavailable ? "Live daemon logs will appear here while this page is open." : "Try a wider level or clear the search."} 
+            <Empty
+              title={logsEmptyTitle(durableUnavailable, streamState)}
+              detail={logsEmptyDetail(durableUnavailable, streamState)}
             />
           ) : (
             entriesToRender.map(entry => <LogRow key={entryKey(entry)} entry={entry} />)

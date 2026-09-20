@@ -5,6 +5,7 @@
 // fetch() call appears here, and it fails if any method omits a header the
 // server requires.
 import { randomUUID } from "./uuid.jsx";
+import { streamStateFor } from "./stream-state.js";
 
 // DEFAULT_TIMEOUT_MS bounds a request so a daemon that accepts the connection
 // but never answers cannot leave the UI in a loading state with no way back.
@@ -186,7 +187,9 @@ export function subscribeEvents(onEvent, onStateChange) {
 export function subscribeLogs(onEntry, onStateChange) {
   const src = new EventSource("/api/logs/stream");
   src.onopen = () => onStateChange?.("live");
-  src.onerror = () => onStateChange?.("reconnecting");
+  // onerror fires both for a drop the browser will retry and for one it has
+  // given up on; readyState is what tells them apart.
+  src.onerror = () => onStateChange?.(streamStateFor(src.readyState));
   src.onmessage = (event) => {
     try { onEntry(JSON.parse(event.data)); } catch { /* malformed log frame */ }
   };

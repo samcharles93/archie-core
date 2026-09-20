@@ -2,6 +2,7 @@ import { h, Fragment } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import "./workflows.css";
 import { api } from "../base/api.jsx";
+import { workflowRows } from "./workflow-rows.js";
 
 const WORKFLOW_LABELS = {
   bootstrap: "Bootstrap",
@@ -162,11 +163,7 @@ function StartWork({ definitions }) {
 }
 
 function Workflows({ workflows, definitions }) {
-  const byID = new Map(workflows.map((workflow) => [workflow.workflow, workflow]));
-  const rows = definitions.map((definition) => ({
-    ...definition,
-    ...(byID.get(definition.id) || { workflow: definition.id, runs: 0, merged: 0 }),
-  }));
+  const rows = workflowRows(workflows, definitions);
 
   if (!rows.length) {
     return (

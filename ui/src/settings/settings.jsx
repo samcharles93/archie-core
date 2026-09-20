@@ -399,13 +399,23 @@ function SettingsApp() {
       </div>
       
       <div>
-        {!versionMissing && (
-          versionError ? (
-            <div className="card"><Empty title="Update status unavailable" detail={versionError} /></div>
-          ) : versionData ? (
-            <UpdateStatusCard components={versionData} />
-          ) : null
-        )}
+        {/* A 501 is a deployment that did not wire update checking, which is a
+            legitimate state and a different thing from a broken one. Saying so
+            once here covers the absent UpdateActionsCard below too. */}
+        {versionMissing ? (
+          <div className="card cfg-section">
+            <div className="card-head">
+              <div>
+                <h2 className="card-title">Update status</h2>
+                <p className="card-sub">Not configured on this deployment, so there is nothing to check against.</p>
+              </div>
+            </div>
+          </div>
+        ) : versionError ? (
+          <div className="card"><Empty title="Update status unavailable" detail={versionError} /></div>
+        ) : versionData ? (
+          <UpdateStatusCard components={versionData} />
+        ) : null}
       </div>
 
       {updateData && (

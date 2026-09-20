@@ -197,19 +197,14 @@
   min-width: 0;
 }
 
-/* The grid row stretches each column wrapper to the taller card's height by
-   default, but a block-level .card child doesn't fill that stretched height
-   on its own -- it shrinks to its own content, leaving the shorter card
-   (typically Gate pulse's empty state) sitting flush at the top with dead
-   space below it instead of matching its sibling. Flexing the wrapper and
-   growing the card to fill it makes both HEALTH cards the same height while
-   each card's own content still flows from the top. */
-.dash-top > div {
-  display: flex;
-}
-
-.dash-top > div > .card {
-  flex: 1;
+/* Each HEALTH card takes its own content height. Equalising them (the earlier
+   fix for this row) was right when both held a checklist, but once setup is
+   complete that card is a title and one line while Gate pulse carries a gauge
+   and four rows, so matching heights left a ~400px empty box taking a quarter
+   of the first screen. A ragged bottom edge is the lesser cost.
+   (archie-core-1786637500926-421-7c63bcd3) */
+.dash-top {
+  align-items: start;
 }
 
 /* No setup panel to show: the gate pulse spans the whole row instead of

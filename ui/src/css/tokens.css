@@ -52,10 +52,13 @@
 
   --fg: #e8edf4;
   --fg-muted: #8b97a8;
-  --fg-subtle: #5d6878;
+  --fg-subtle: #7d8b9e;
 
   --accent: #4c8dff;
-  --accent-fg: #ffffff;
+  /* Near-black, not white: white on this blue is 3.2:1 and fails AA on the
+     active nav item and every primary button. The accent stays as-is because
+     it is also the link colour, where it reads correctly on the dark canvas. */
+  --accent-fg: #0d1014;
   --accent-soft: rgba(76, 141, 255, 0.14);
 
   /* Status. Used for task state, gate results and trend direction alike, so
@@ -101,7 +104,7 @@
 
   --fg: #16202e;
   --fg-muted: #5a6779;
-  --fg-subtle: #8c99ab;
+  --fg-subtle: #636f82;
 
   --accent: #2563eb;
   --accent-fg: #ffffff;
