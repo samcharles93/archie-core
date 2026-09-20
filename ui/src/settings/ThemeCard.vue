@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Field, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { setTheme, theme, type Theme } from "@/lib/theme";
 import ConfigCard from "./ConfigCard.vue";
@@ -20,15 +19,12 @@ function apply(value: unknown): void {
 </script>
 
 <template>
-  <ConfigCard title="Appearance" description="How this browser renders the dashboard.">
-    <FieldGroup>
-      <Field orientation="horizontal">
-        <FieldTitle id="theme-label">Theme</FieldTitle>
-        <ToggleGroup :model-value="theme" aria-labelledby="theme-label" @update:model-value="apply">
-          <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
-          <ToggleGroupItem value="light">Light</ToggleGroupItem>
-        </ToggleGroup>
-      </Field>
-    </FieldGroup>
+  <ConfigCard title="Theme" description="The palette this browser renders the dashboard in.">
+    <div class="flex justify-end">
+      <ToggleGroup :model-value="theme" aria-label="Theme" @update:model-value="apply">
+        <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
+        <ToggleGroupItem value="light">Light</ToggleGroupItem>
+      </ToggleGroup>
+    </div>
   </ConfigCard>
 </template>
