@@ -3,7 +3,7 @@ import { computed } from "vue";
 
 import LogRow from "@/base/LogRow.vue";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api } from "@/lib/api";
 
 import PanelLoading from "./PanelLoading.vue";
@@ -129,11 +129,6 @@ const download = computed(() =>
       <EmptyHeader>
         <EmptyTitle>Nothing recorded</EmptyTitle>
       </EmptyHeader>
-      <EmptyContent v-if="download">
-        <Button variant="outline" size="sm" as-child>
-          <a :href="download" download>Download log</a>
-        </Button>
-      </EmptyContent>
     </Empty>
 
     <template v-else>

@@ -147,11 +147,22 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
     if (started.has(cacheKey) && !force) return;
     started.add(cacheKey);
     cache.value = new Map(cache.value).set(cacheKey, undefined);
-    fetcher()
+    // A read that never settles would pin the panel's loading line forever:
+    // after a quiet minute the read is declared broken so the retry button
+    // can appear. A late response after the timeout is discarded by the race.
+    let timedOut = false;
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        timedOut = true;
+        reject(new Error("read timed out"));
+      }, 30_000);
+    });
+    Promise.race([fetcher(), timeout])
       .then((res) => {
         cache.value = new Map(cache.value).set(cacheKey, res);
       })
       .catch(() => {
+        if (!timedOut) started.delete(cacheKey);
         cache.value = new Map(cache.value).set(cacheKey, null);
       });
   }
