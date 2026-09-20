@@ -30,10 +30,16 @@ const selected = computed(() =>
   attempts.value.findIndex((a) => Number(a.attempt) === Number(run.attemptNumber)),
 );
 
+// Hidden for zero or one attempt: a one-page pager is the text fact with
+// extra chrome. The URL names an attempt either way, and the panels below
+// show which attempt is on screen.
+const loaded = computed(() => (run.attempts?.attempts ?? []).length > 1);
+const total = computed(() => (run.attempts?.attempts ?? []).length);
+
 // reka's pagination counts pages over items; one attempt per page makes the
 // page number an index into the run history. The controlled page keeps the
 // URL (`?attempt=N`) the single source of truth.
-const page = computed(() => (selected.value >= 0 ? selected.value + 1 : undefined));
+const page = computed(() => (selected.value >= 0 ? selected.value + 1 : 1));
 
 function select(p: number): void {
   const attempt = attempts.value[p - 1];
@@ -43,9 +49,9 @@ function select(p: number): void {
 
 <template>
   <Pagination
-    v-if="attempts.length && selected >= 0"
+    v-if="loaded"
     :items-per-page="1"
-    :total="attempts.length"
+    :total="total"
     :page="page"
     :sibling-count="1"
     aria-label="Attempts of this task"
