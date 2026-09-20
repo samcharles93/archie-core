@@ -15,12 +15,12 @@ export function revealBehavior(): ScrollBehavior {
 
 <script setup lang="ts">
 import { RefreshCw } from "@lucide/vue";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { api, subscribeEvents } from "@/lib/api";
 import TaskFilters, { initialTaskFilter, taskMatchesStatus } from "./TaskFilters.vue";
 import type { Task } from "./TaskRow.vue";
 import TaskTable from "./TaskTable.vue";
@@ -82,7 +82,36 @@ const state = computed<"loading" | "error" | "empty" | "no-match">(() => {
 
 onMounted(() => {
   void load();
+  unsubscribe = subscribeEvents(handleEvent);
 });
+
+onUnmounted(() => {
+  clearTimeout(refreshTimer);
+  unsubscribe?.();
+});
+
+// The live stream is an invalidation signal, not data (the same rule the
+// captures page follows): every task-shaped event says the authoritative list
+// changed, and load() asks for it again. Stage progress fires several events a
+// minute, so the re-read is debounced -- 500ms trailing, so a burst of events
+// collapses into one fetch that lands after the last one.
+const REFRESH_DEBOUNCE_MS = 500;
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let unsubscribe: (() => void) | undefined;
+
+function handleEvent(raw: unknown): void {
+  const ev = raw as { kind?: string; task_id?: number | string } | null;
+  if (!ev) return;
+  // Task-shaped: anything carrying a task id (stage_start, agent_finish,
+  // outcome, parked, human_approved, ...) or a lifecycle kind of its own
+  // (task_queued, task_retried, ...). Chat turns and log lines never re-read
+  // the board.
+  if (!ev.task_id && !(typeof ev.kind === "string" && ev.kind.startsWith("task_"))) return;
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    void load();
+  }, REFRESH_DEBOUNCE_MS);
+}
 
 async function load() {
   error.value = null;

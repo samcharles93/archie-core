@@ -2,6 +2,7 @@
 import { onMounted } from "vue";
 
 import ChatLauncher from "@/chat/ChatLauncher.vue";
+import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
@@ -60,5 +61,13 @@ onMounted(() => {
       ride off the bottom of a long page.
     -->
     <ChatLauncher />
+
+    <!--
+      Outside the shell for the same reason as the launcher above: the frame's
+      backdrop-filter would otherwise become the containing block for the
+      palette's fixed overlay. One instance for the whole app -- its global
+      shortcut listener lives and dies with this mount.
+    -->
+    <CommandPalette :hidden="hidden" />
   </TooltipProvider>
 </template>

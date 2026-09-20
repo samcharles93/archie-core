@@ -100,7 +100,17 @@ async function reset(): Promise<void> {
          pushing every row apart. -->
     <Tooltip v-if="field?.description">
       <TooltipTrigger as-child>
-        <span class="text-sm text-fg-muted">{{ label }}</span>
+        <!--
+          tabindex="0" is the keyboard path to the description: reka wires the
+          trigger's focus/blur to the tooltip's open state, so Tab reaches the
+          label and holding focus keeps the description on screen. The
+          aria-label carries the label and the description together, because
+          the tooltip content itself is out of the accessibility tree when the
+          trigger is not hovered or focused. No visual change -- the focus
+          floor in style.css draws the only new affordance, and only on
+          keyboard focus.
+        -->
+        <span tabindex="0" :aria-label="`${label}: ${field.description}`" class="text-sm text-fg-muted">{{ label }}</span>
       </TooltipTrigger>
       <TooltipContent :side-offset="8" class="max-w-80">{{ field.description }}</TooltipContent>
     </Tooltip>

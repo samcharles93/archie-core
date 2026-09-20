@@ -23,6 +23,11 @@ const detail = computed(() => activityDetail(props.event));
 function open() {
   if (taskID.value > 0) emit("open", taskID.value);
 }
+
+// A missing timestamp gets an em-dash, not a call to ago(): substituting
+// Date.now() would render "just now" for an event whose time the daemon never
+// recorded -- a claim the row cannot back.
+const when = computed(() => (props.event.at ? ago(props.event.at) : "\u2014"));
 </script>
 
 <template>
@@ -40,6 +45,6 @@ function open() {
     <TableCell class="w-[55%] max-w-0">
       <span class="block truncate" :title="detail.truncated ? detail.full : undefined">{{ detail.text }}</span>
     </TableCell>
-    <TableCell>{{ ago(props.event.at || Date.now()) }}</TableCell>
+    <TableCell>{{ when }}</TableCell>
   </TableRow>
 </template>

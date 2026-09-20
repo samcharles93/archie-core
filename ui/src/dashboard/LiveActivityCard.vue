@@ -27,29 +27,38 @@ function openTask(taskID: number) {
       </CardAction>
     </CardHeader>
     <CardContent>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Event</TableHead>
-            <TableHead>Task</TableHead>
-            <TableHead>Detail</TableHead>
-            <TableHead>When</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <TableRow v-if="!activity.length">
-            <TableCell colspan="4">
-              <Empty>
-                <EmptyHeader>
-                  <EmptyTitle>Waiting for activity</EmptyTitle>
-                  <EmptyDescription>Events appear here as Archie works.</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </TableCell>
-          </TableRow>
-          <ActivityRow v-for="(event, i) in activity" v-else :key="i" :event="event" @open="openTask" />
-        </TableBody>
-      </Table>
+      <!--
+        role="region" names the table for landmark navigation; aria-live is
+        polite, not assertive, because rows arrive constantly while the stream
+        is live and an assertive region would talk over the operator. The live
+        region is the table's wrapper, so new rows are announced as they
+        appear without a second hidden summary to keep in sync.
+      -->
+      <div role="region" aria-label="Live activity" aria-live="polite">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Event</TableHead>
+              <TableHead>Task</TableHead>
+              <TableHead>Detail</TableHead>
+              <TableHead>When</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="!activity.length">
+              <TableCell colspan="4">
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>Waiting for activity</EmptyTitle>
+                    <EmptyDescription>Events appear here as Archie works.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </TableCell>
+            </TableRow>
+            <ActivityRow v-for="(event, i) in activity" v-else :key="i" :event="event" @open="openTask" />
+          </TableBody>
+        </Table>
+      </div>
     </CardContent>
   </Card>
 </template>
