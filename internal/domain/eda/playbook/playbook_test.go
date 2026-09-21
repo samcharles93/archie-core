@@ -4,6 +4,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -149,6 +150,12 @@ actions:
 	_, err := Load(dir)
 	if err == nil {
 		t.Fatal("Load(bad when) = nil, want compile failure reported")
+	}
+	if !strings.Contains(err.Error(), "pb.yaml") {
+		t.Errorf("Load error = %q, want the playbook path named", err.Error())
+	}
+	if !strings.Contains(err.Error(), "when condition") {
+		t.Errorf("Load error = %q, want the `when condition` field label named", err.Error())
 	}
 }
 
@@ -556,5 +563,256 @@ func TestDispatchNilStoreMatchesNothing(t *testing.T) {
 	var store *Store
 	if decision, ok := store.Dispatch(DispatchInput{Labels: []string{"bug"}, Kind: "bug"}); ok {
 		t.Fatalf("Dispatch = %v, want no match from a nil store", decision)
+	}
+}
+
+// TestLoadActionArgsEvaluates: a workflow action's args values are compiled as
+// CEL at load (a quoted string literal, a number literal, and an event read)
+// and EvalArgs evaluates them against the dispatch context to the expected
+// name->value map.
+func TestLoadActionArgsEvaluates(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      message: '"build finished"'
+      priority: '3'
+      label: 'event.label'
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	pb := store.Playbooks[0]
+	if len(pb.Actions[0].Args) != 3 {
+		t.Fatalf("Action.Args = %#v, want 3 compiled programs", pb.Actions[0].Args)
+	}
+	for _, key := range []string{"message", "priority", "label"} {
+		if pb.Actions[0].Args[key] == nil {
+			t.Errorf("Action.Args[%q] = nil, want a compiled program", key)
+		}
+	}
+
+	got, err := store.EvalArgs(pb.Actions[0], DispatchInput{
+		Event: map[string]any{"label": "bug"},
+	})
+	if err != nil {
+		t.Fatalf("EvalArgs: %v", err)
+	}
+	want := map[string]any{
+		"message":  "build finished",
+		"priority": int64(3),
+		"label":    "bug",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("EvalArgs = %#v, want %#v", got, want)
+	}
+}
+
+// TestLoadActionArgsFailures: every args value is compiled at load and the
+// same reject-at-load rule as `when` applies -- a CEL syntax error, an
+// undeclared root, a reference to an unknown actions.<id>, and an
+// unresolvable actions reference all fail the whole load, naming the playbook
+// path and the offending args key.
+func TestLoadActionArgsFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		doc     string
+		wantSub []string
+	}{
+		{
+			name: "syntax error",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      message: 'build finished'
+`,
+			wantSub: []string{"pb.yaml", `args["message"]`},
+		},
+		{
+			name: "undeclared root",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      label: 'foo.bar == 1'
+`,
+			wantSub: []string{"pb.yaml", `args["label"]`, "foo"},
+		},
+		{
+			name: "unknown action id",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      label: 'actions.notify.result.x == true'
+`,
+			wantSub: []string{"pb.yaml", `args["label"]`, "notify"},
+		},
+		{
+			name: "unresolvable actions reference",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      label: 'actions[event.kind].result.x == true'
+`,
+			wantSub: []string{"pb.yaml", `args["label"]`},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", tc.doc)
+			_, err := Load(dir)
+			if err == nil {
+				t.Fatal("Load = nil, want load failure")
+			}
+			for _, want := range tc.wantSub {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Load error = %q, want it to contain %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestCompileArgsReportsFirstKeyDeterministically: ranging a Go map would
+// report a random offending key when more than one args value is invalid; the
+// loader must report the alphabetically-first key every time.
+func TestCompileArgsReportsFirstKeyDeterministically(t *testing.T) {
+	env := expr.NewEnv()
+	raw := map[string]string{
+		"z.bad": "event.missing ==",
+		"a.bad": "event.missing ==",
+	}
+	for range 64 {
+		_, err := compileArgs("pb.yaml", raw, env, nil)
+		if err == nil {
+			t.Fatal("compileArgs = nil, want error")
+		}
+		if !strings.Contains(err.Error(), `args["a.bad"]`) {
+			t.Fatalf("compileArgs error = %q, want the alphabetically-first key args[%q]", err.Error(), "a.bad")
+		}
+		if strings.Contains(err.Error(), `args["z.bad"]`) {
+			t.Fatalf("compileArgs error = %q, must name the alphabetically-first key, not %q", err.Error(), "z.bad")
+		}
+	}
+}
+
+// TestEvalArgsMissingEventFieldReturnsError: evaluating an args value that
+// reads a missing event field returns an error (never a panic).
+func TestEvalArgsMissingEventFieldReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      label: 'event.missing'
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	_, err = store.EvalArgs(store.Playbooks[0].Actions[0], DispatchInput{Event: map[string]any{}})
+	if err == nil {
+		t.Fatal("EvalArgs(missing event field) = nil error, want error (not panic)")
+	}
+}
+
+// TestEvalArgsNoArgsReturnsEmptyMap: an action that declares no args
+// evaluates to an empty map and no error.
+func TestEvalArgsNoArgsReturnsEmptyMap(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, err := store.EvalArgs(store.Playbooks[0].Actions[0], DispatchInput{Event: map[string]any{}})
+	if err != nil {
+		t.Fatalf("EvalArgs: %v", err)
+	}
+	if !reflect.DeepEqual(got, map[string]any{}) {
+		t.Fatalf("EvalArgs = %#v, want a non-nil empty map", got)
+	}
+}
+
+// TestEvalArgsSkipsNilProgram: a nil entry in the exported Args map is
+// expressible and must be skipped like the when path tolerates a nil program,
+// not panic inside expr.Eval.
+func TestEvalArgsSkipsNilProgram(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    args:
+      message: '"hello"'
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	a := store.Playbooks[0].Actions[0]
+	a.Args["missing"] = nil
+	got, err := store.EvalArgs(a, DispatchInput{Event: map[string]any{}})
+	if err != nil {
+		t.Fatalf("EvalArgs: %v", err)
+	}
+	want := map[string]any{"message": "hello"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("EvalArgs = %#v, want %#v", got, want)
+	}
+}
+
+// TestEvalArgsNilStoreSafe: a nil store (the pre-load composition phase) is
+// an empty args map rather than a panic.
+func TestEvalArgsNilStoreSafe(t *testing.T) {
+	// A real compiled program on the action proves the early return is the
+	// nil-store guard and not the no-args guard: with an empty Action, the
+	// len(a.Args) == 0 branch would satisfy this test even without the s == nil
+	// check.
+	env := expr.NewEnv()
+	prg, err := env.Compile(`"hello"`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	a := Action{Args: map[string]*expr.Program{"message": prg}}
+	var store *Store
+	got, err := store.EvalArgs(a, DispatchInput{Event: map[string]any{}})
+	if err != nil {
+		t.Fatalf("EvalArgs(nil store) = %v, want nil error", err)
+	}
+	if !reflect.DeepEqual(got, map[string]any{}) {
+		t.Fatalf("EvalArgs(nil store) = %#v, want empty non-nil map", got)
 	}
 }

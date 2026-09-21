@@ -764,12 +764,13 @@ func (b *boot) loadModules(cfg config.Config, log *slog.Logger) error {
 }
 
 // loadEDAPlaybooks loads the EDA playbook documents (t2db.15): trigger +
-// single workflow-kind action with CEL when conditions. Loaded at startup
-// with the same reject-at-load rule -- any malformed playbook,
-// multi-action playbook, non-workflow position, or when compile failure
-// aborts startup, matching the routing-file load pattern (not
-// degrade-and-skip). A nonexistent dir is an empty store. Split out of
-// loadWorkflows (t2db.16); pure extraction, same log messages as before.
+// single workflow-kind action with CEL when conditions and args values.
+// Loaded at startup with the same reject-at-load rule -- any malformed
+// playbook, multi-action playbook, non-workflow position, when compile
+// failure, or args compile failure aborts startup, matching the routing-file
+// load pattern (not degrade-and-skip). A nonexistent dir is an empty store.
+// Split out of loadWorkflows (t2db.16); pure extraction, same log messages as
+// before.
 func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
 	var err error
 	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir)

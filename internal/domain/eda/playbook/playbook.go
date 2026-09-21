@@ -1,7 +1,7 @@
 // Package playbook is the EDA playbook document type and its event
 // coordinator: the rich trigger+actions YAML shape (docs/prds/
-// eda-playbook-engine.md) with CEL `when` conditions (open question 1,
-// resolved to CEL). This slice is deliberately single-action,
+// eda-playbook-engine.md) with CEL `when` conditions and `args` values
+// (open question 1, resolved to CEL). This slice is deliberately single-action,
 // workflow-position only: multi-action playbooks and Module/Channel/Forge
 // action positions remain blocked on the unresolved execution-time gaps
 // (mid-run failure semantics, idempotency for non-workflow actions) and are
@@ -79,6 +79,9 @@ type Action struct {
 	Workflow string
 	// When is a compiled CEL condition; nil means unconditional.
 	When *expr.Program
+	// Args holds the action's compiled CEL args values, keyed by arg name.
+	// Nil or empty means the action takes no args.
+	Args map[string]*expr.Program
 }
 
 // rawPlaybook is the YAML document shape before compilation.
@@ -93,11 +96,12 @@ type rawTrigger struct {
 }
 
 type rawAction struct {
-	Position string `yaml:"position"`
-	ID       string `yaml:"id"`
-	Workflow string `yaml:"workflow"`
-	Kind     string `yaml:"kind"`
-	When     string `yaml:"when"`
+	Position string            `yaml:"position"`
+	ID       string            `yaml:"id"`
+	Workflow string            `yaml:"workflow"`
+	Kind     string            `yaml:"kind"`
+	When     string            `yaml:"when"`
+	Args     map[string]string `yaml:"args"`
 }
 
 // actionIDPattern is the stable-identifier shape an action id must match when
@@ -152,10 +156,11 @@ func unknownActionReference(raw []rawAction, idx int, ids []string) (string, boo
 
 // Load reads every *.yaml/*.yml playbook in dir, validates each against the
 // hard boundary (exactly one action, position workflow), and compiles each
-// when expression. ANY failure -- malformed YAML, a multi-action playbook, a
-// non-workflow position, a when compile error -- fails the whole load: the
-// reject-at-load philosophy of the parent design doc. A missing directory is
-// an empty store (matching the flat binding loaders' convention).
+// when expression and args value. ANY failure -- malformed YAML, a
+// multi-action playbook, a non-workflow position, a when compile error, an
+// args compile error -- fails the whole load: the reject-at-load philosophy
+// of the parent design doc. A missing directory is an empty store (matching
+// the flat binding loaders' convention).
 func Load(dir string) (*Store, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -261,29 +266,69 @@ func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
 		}
 		action.When = prg
 	}
+	args, err := compileArgs(path, a.Args, env, raw.Actions)
+	if err != nil {
+		return nil, err
+	}
+	action.Args = args
 	pb.Actions = []Action{action}
 	return pb, nil
 }
 
 // compileWhen compiles a raw `when` expression and validates its action
-// references against the actions declared before it. It returns the compiled
-// program so loadOne can attach it to the action, or the same error loadOne
-// previously produced for a compile failure, an unresolvable `actions`
-// context root, or a reference to an unknown action id.
+// references against the actions declared before it. The wording of the
+// returned errors is the loader's existing contract, preserved verbatim by
+// passing the `when condition` field label to compileExpr.
 func compileWhen(path, when string, env *expr.Env, prior []rawAction) (*expr.Program, error) {
-	prg, err := env.Compile(strings.TrimSpace(when))
+	return compileExpr(path, "when condition", when, env, prior)
+}
+
+// compileArgs compiles every args value as a CEL expression at load, keyed by
+// arg name. J2 has no literal/expression split: the YAML scalar text IS the
+// CEL source, so a string literal is quoted inside YAML and a number or
+// context read is written as CEL. Each program goes through the same
+// compile/reference validation as `when`, with the field label naming the
+// offending args key.
+func compileArgs(path string, raw map[string]string, env *expr.Env, prior []rawAction) (map[string]*expr.Program, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	args := make(map[string]*expr.Program, len(raw))
+	for _, key := range keys {
+		prg, err := compileExpr(path, fmt.Sprintf("args[%q]", key), raw[key], env, prior)
+		if err != nil {
+			return nil, err
+		}
+		args[key] = prg
+	}
+	return args, nil
+}
+
+// compileExpr compiles one playbook expression and applies the two load-time
+// reference checks: every `actions` read must be statically resolvable to a
+// prior action id, and every resolved id must be declared on an earlier
+// action. field is the human-readable expression location used in errors
+// (`when condition` or `args["name"]`), so a failure names the playbook path
+// and the offending expression.
+func compileExpr(path, field, src string, env *expr.Env, prior []rawAction) (*expr.Program, error) {
+	prg, err := env.Compile(strings.TrimSpace(src))
 	if err != nil {
-		return nil, fmt.Errorf("playbook %s: when condition: %w", path, err)
+		return nil, fmt.Errorf("playbook %s: %s: %w", path, field, err)
 	}
 	ids, resolvable := prg.ActionReferences()
 	if !resolvable {
 		return nil, fmt.Errorf(
-			"playbook %s: when condition contains an `actions` reference that cannot be statically resolved to an action id (the `actions` context root must be read as a prior action id)",
-			path,
+			"playbook %s: %s contains an `actions` reference that cannot be statically resolved to an action id (the `actions` context root must be read as a prior action id)",
+			path, field,
 		)
 	}
 	if id, unknown := unknownActionReference(prior, 0, ids); unknown {
-		return nil, fmt.Errorf("playbook %s: when condition references unknown action id %q", path, id)
+		return nil, fmt.Errorf("playbook %s: %s references unknown action id %q", path, field, id)
 	}
 	return prg, nil
 }
@@ -376,16 +421,14 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 	if s == nil {
 		return Decision{}, false
 	}
+	ctx := evalContext(input)
 	for _, pb := range s.Playbooks {
 		if !pb.Match(input) {
 			continue
 		}
 		a := pb.Actions[0]
 		if a.When != nil {
-			val, err := s.exprEnv.Eval(a.When, expr.Context{
-				Event:   input.Event,
-				Actions: map[string]map[string]any{},
-			})
+			val, err := s.exprEnv.Eval(a.When, ctx)
 			if err != nil {
 				// J3: evaluation error -> false (skip), caller logs.
 				continue
@@ -398,4 +441,49 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow, ActionID: a.ID, ActionPosition: 1}, true
 	}
 	return Decision{}, false
+}
+
+// evalContext is the single evaluation context every CEL expression reads at
+// dispatch time. `when` and `args` are both CEL expressions evaluated against
+// this one context (J2), so the two can never observe different data.
+func evalContext(input DispatchInput) expr.Context {
+	return expr.Context{
+		Event:   input.Event,
+		Actions: map[string]map[string]any{},
+	}
+}
+
+// EvalArgs evaluates a compiled action's args against the dispatch context,
+// returning the resulting name->value map. No shipped position consumes args
+// yet; the consumer arrives with the first side-effecting position (t2db.31).
+// An action declaring no args evaluates to an empty map, nil-program entries
+// are skipped, and the first evaluation error is returned. Nil-receiver-safe
+// for the pre-load composition phase.
+//
+// Asymmetry with `when`: `when` is a predicate, so an evaluation error is
+// false (J3: skip + log); `args` is data, so an evaluation error has no
+// meaningful substitute and is returned to the caller to abort the dispatch.
+// Ratifying that rule against a real consumer is tracked by archie-core-1h05.
+func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) {
+	if s == nil || len(a.Args) == 0 {
+		return map[string]any{}, nil
+	}
+	ctx := evalContext(input)
+	out := make(map[string]any, len(a.Args))
+	keys := make([]string, 0, len(a.Args))
+	for key := range a.Args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if a.Args[key] == nil {
+			continue
+		}
+		val, err := s.exprEnv.Eval(a.Args[key], ctx)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate args[%q]: %w", key, err)
+		}
+		out[key] = val
+	}
+	return out, nil
 }
