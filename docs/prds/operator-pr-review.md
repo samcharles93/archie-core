@@ -50,18 +50,20 @@ planner/builder.
 
 4. **Command.** A gateway tool `review_pr` (toolset `tasks`) bound to the
    channel's identity at construction — the model never names an identity,
-   matching `task_spawn`/`task_action`. The daemon supplies `ChatPRReviewer`,
-   a narrow gateway interface; the daemon adapter maps `workflow.ReviewReport`
-   into a gateway-owned result shape (gateway states what it needs, the daemon
-   adapts — the `ChatTaskActor` pattern).
+   matching `task_spawn`/`task_action`. The Gateway process serves it: it
+   composes the worktree manager it needs to materialise the PR head, and the
+   composition root supplies `ChatPRReviewer`, a narrow gateway interface
+   whose adapter maps `workflow.ReviewReport` into a gateway-owned result
+   shape (gateway states what it needs, the composition root adapts — the
+   `ChatTaskActor` pattern).
 
 5. **Authorization.** Identity-scoped repository allow-list, the
    `task_spawn` rule: a chat identity may only review a repo in its
    `TaskProfile.Repos`. `identity == nil` denotes an authenticated dashboard
    operator who may review any configured repository.
 
-6. **Determinism.** One review per (owner, repo, number) at a time: the daemon
-   holds an in-flight set; a concurrent request for the same PR returns
+6. **Determinism.** One review per (owner, repo, number) at a time: the
+   Gateway holds an in-flight set; a concurrent request for the same PR returns
    "review already in progress" rather than launching a second reviewer and
    racing on the snapshot.
 

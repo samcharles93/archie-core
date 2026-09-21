@@ -142,6 +142,14 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	b.addCleanup(b.bus.Close)
 	b.capabilityHost = plugin.NewHost()
 	b.startRateLimiter(ctx, b.cfg.Chat.RateLimit)
+	// The Gateway owns PR review (docs/prds/operator-pr-review.md §4), so it
+	// composes the process-wide worktree manager before setupGatewayChat
+	// resolves boot.prReviewer: prReviewer returns nil without a manager, and
+	// a nil reviewer omits review_pr from every channel's tool set. The
+	// manager is the only part of the daemon's tree composition the Gateway
+	// takes -- it must not own identity runners, so it does not call
+	// buildTreesAndIdentities.
+	b.buildWorktreeManager()
 	// setupMemoryEngine must run before setupGatewayChat: setupGatewayChat
 	// constructs the turn runner, which captures b.memEngines at
 	// construction time (see the identical ordering note in main.go's Run).

@@ -811,6 +811,27 @@ func (b *boot) loadPlugins() error {
 	return nil
 }
 
+// buildWorktreeManager composes the process-wide worktree manager from the
+// resolved primary forge credential and the loaded config. Both process roots
+// own one: the daemon works tasks in it, and the Gateway materialises a pull
+// request head in it when an operator asks for a review (boot.prReviewer
+// refuses to build a reviewer without one, so a Gateway that skips this step
+// advertises no review_pr). It reads only, so it has nothing to report.
+//
+// Identity managers are not built here: buildTreesAndIdentities builds one per
+// identity, each in its own WorkDir, because the Gateway must not own daemon
+// identity runners.
+func (b *boot) buildWorktreeManager() {
+	cfg := b.cfg
+	b.trees = &worktree.Manager{
+		WorkDir:  cfg.WorkDir,
+		Token:    b.token,
+		BotUser:  cfg.BotUser,
+		BotEmail: cfg.BotEmail,
+		BaseURL:  cfg.Forge.Host,
+	}
+}
+
 // buildTreesAndIdentities composes the worktree manager and the
 // multi-identity runners. Each configured identity gets its own forge
 // client (its own token, possibly its own forge type/host) and its own
@@ -820,13 +841,7 @@ func (b *boot) loadPlugins() error {
 // unchanged.
 func (b *boot) buildTreesAndIdentities(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
-	b.trees = &worktree.Manager{
-		WorkDir:  cfg.WorkDir,
-		Token:    b.token,
-		BotUser:  cfg.BotUser,
-		BotEmail: cfg.BotEmail,
-		BaseURL:  cfg.Forge.Host,
-	}
+	b.buildWorktreeManager()
 
 	for _, idCfg := range cfg.Identities {
 		// Same reasoning as the primary forge: one identity whose credential is

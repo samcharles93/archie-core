@@ -32,3 +32,29 @@ func TestStartGatewayRuntimeSetsUpMemoryBeforeGatewayChat(t *testing.T) {
 		t.Fatal("startGatewayRuntime wires setupGatewayChat before setupMemoryEngine; the turn runner would capture a nil memory engine")
 	}
 }
+
+// TestStartGatewayRuntimeBuildsWorktreeManagerBeforeGatewayChat pins the
+// Gateway's own worktree-manager ordering. The Gateway owns PR review, so
+// startGatewayRuntime must compose the process-wide worktree manager before
+// setupGatewayChat resolves boot.prReviewer: prReviewer returns nil without a
+// manager, and a nil reviewer omits review_pr from every channel's tool set
+// (internal/gateway/review_tools.go). The Gateway deliberately does not call
+// buildTreesAndIdentities -- that also registers daemon identity runners it
+// must not own -- so nothing at runtime connects the manager to this
+// composition phase except the call this asserts on.
+func TestStartGatewayRuntimeBuildsWorktreeManagerBeforeGatewayChat(t *testing.T) {
+	fileset := token.NewFileSet()
+	file, err := parser.ParseFile(fileset, "gateway.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := methodBody(t, file, "startGatewayRuntime")
+	trees := methodCallPosition(run, "buildWorktreeManager")
+	chat := methodCallPosition(run, "setupGatewayChat")
+	if trees == token.NoPos || chat == token.NoPos {
+		t.Fatalf("startGatewayRuntime call positions: buildWorktreeManager=%v setupGatewayChat=%v, want both present", trees, chat)
+	}
+	if chat < trees {
+		t.Fatal("startGatewayRuntime wires setupGatewayChat before buildWorktreeManager; the Gateway would resolve a nil reviewer and never advertise review_pr")
+	}
+}
