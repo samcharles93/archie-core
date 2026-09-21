@@ -88,6 +88,21 @@ tasks:
 
   lint:
     desc: Run golangci-lint
+    summary: |
+      Both modules. ./... from the root stops at the root module, so the tools
+      module was never linted and drifted unseen -- the same hole task check
+      already closes for tests with test:tools.
+    cmds:
+      - golangci-lint run ./...
+      - task: lint:tools
+
+  lint:tools:
+    desc: Run golangci-lint over the tools module
+    summary: |
+      ./... from the root stops at the root module, so the tools module was
+      never linted and drifted unseen -- the same hole task check already
+      closes for tests with test:tools.
+    dir: tools
     cmds:
       - golangci-lint run ./...
 

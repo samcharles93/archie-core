@@ -217,47 +217,67 @@ func scanFile(rel, body string) ([]string, error) {
 func stripJSComments(src string) string {
 	var b strings.Builder
 	b.Grow(len(src))
-	var quote byte
 	for i := 0; i < len(src); {
-		c := src[i]
-		var next byte
-		if i+1 < len(src) {
-			next = src[i+1]
-		}
-		if quote != 0 {
-			b.WriteByte(c)
-			if c == '\\' && i+1 < len(src) {
-				b.WriteByte(next)
-				i += 2
-				continue
-			}
-			if c == quote {
-				quote = 0
-			}
-			i++
-			continue
-		}
 		switch {
-		case c == '"' || c == '\'' || c == '`':
-			quote = c
-			b.WriteByte(c)
-			i++
-		case c == '/' && next == '/':
-			for i < len(src) && src[i] != '\n' {
-				i++
-			}
-		case c == '/' && next == '*':
-			i += 2
-			for i < len(src) && !(src[i] == '*' && i+1 < len(src) && src[i+1] == '/') {
-				i++
-			}
-			i += 2
+		case opensComment(src, i, '/'):
+			i = skipLineComment(src, i)
+		case opensComment(src, i, '*'):
+			i = skipBlockComment(src, i)
+		case src[i] == '"' || src[i] == '\'' || src[i] == '`':
+			i = copyLiteral(&b, src, i)
 		default:
-			b.WriteByte(c)
+			b.WriteByte(src[i])
 			i++
 		}
 	}
 	return b.String()
+}
+
+// opensComment reports whether a comment introduced by "/" plus second opens
+// at i.
+func opensComment(src string, i int, second byte) bool {
+	return src[i] == '/' && i+1 < len(src) && src[i+1] == second
+}
+
+// skipLineComment returns the index of the newline that ends the // comment at
+// i, leaving the newline itself to be copied: dropping it would join two
+// statements into one line.
+func skipLineComment(src string, i int) int {
+	for i < len(src) && src[i] != '\n' {
+		i++
+	}
+	return i
+}
+
+// skipBlockComment returns the index just past the "*/" closing the comment at
+// i, or the end of src when the comment is unterminated.
+func skipBlockComment(src string, i int) int {
+	for i += 2; i < len(src); i++ {
+		if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
+			return i + 2
+		}
+	}
+	return i
+}
+
+// copyLiteral copies the string, template or regex literal opening at i,
+// escapes included, and returns the index just past its closing quote. An
+// unterminated literal copies to the end rather than discarding the tail.
+func copyLiteral(b *strings.Builder, src string, i int) int {
+	quote := src[i]
+	b.WriteByte(quote)
+	for i++; i < len(src); i++ {
+		b.WriteByte(src[i])
+		if src[i] == '\\' && i+1 < len(src) {
+			i++
+			b.WriteByte(src[i])
+			continue
+		}
+		if src[i] == quote {
+			return i + 1
+		}
+	}
+	return i
 }
 
 // normalizeRoute strips query strings and replaces both `${...}` template

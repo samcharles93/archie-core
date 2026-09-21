@@ -195,8 +195,8 @@ func TestCheckReportsChangedSchema(t *testing.T) {
 		t.Fatalf("run() error = %v", err)
 	}
 	mutateGeneratedData(t, output, func(data map[string]any) {
-		schemas := data["schemas"].(map[string]any)
-		schemas["AgentExecutionResult"].(map[string]any)["title"] = "tampered"
+		schemas := mapAt(t, data, "schemas")
+		mapAt(t, schemas, "AgentExecutionResult")["title"] = "tampered"
 	})
 
 	err := check(repoRoot, output)
@@ -217,7 +217,7 @@ func TestCheckReportsRemovedSchema(t *testing.T) {
 		t.Fatalf("run() error = %v", err)
 	}
 	mutateGeneratedData(t, output, func(data map[string]any) {
-		delete(data["schemas"].(map[string]any), "MessageEvent")
+		delete(mapAt(t, data, "schemas"), "MessageEvent")
 	})
 
 	err := check(repoRoot, output)
@@ -504,4 +504,15 @@ func walkJSON(value any, visitRef func(string)) {
 			walkJSON(child, visitRef)
 		}
 	}
+}
+
+// mapAt returns the nested object at key, failing the test rather than panicking
+// when the generated artifact does not have the shape the case assumes.
+func mapAt(t *testing.T, parent map[string]any, key string) map[string]any {
+	t.Helper()
+	child, ok := parent[key].(map[string]any)
+	if !ok {
+		t.Fatalf("%s is %T, want an object", key, parent[key])
+	}
+	return child
 }

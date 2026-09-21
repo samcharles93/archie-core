@@ -135,7 +135,7 @@ func check(repoRoot, outPath string) error {
 	committed, err := os.ReadFile(committedPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf(
-			"%s is missing; regenerate it with: go -C tools run ./docsgen --repo-root ..",
+			"%s is missing; regenerate it by running `go -C tools run ./docsgen --repo-root ..` from the tools module",
 			relative,
 		)
 	}

@@ -131,3 +131,28 @@ func TestParseDeclarations(t *testing.T) {
 		}
 	})
 }
+
+// TestStripJSComments pins the behaviour the extractor depends on: a commented
+// call must not read as a live consumer, and a literal that merely looks like a
+// comment must survive intact.
+func TestStripJSComments(t *testing.T) {
+	for _, tc := range []struct{ name, src, want string }{
+		{"line comment goes", "a // gone\nb", "a \nb"},
+		{"newline survives a line comment", "a // gone\nb", "a \nb"},
+		{"block comment goes", "a/* gone */b", "ab"},
+		{"unterminated block comment eats the tail", "a/* gone", "a"},
+		{"comment marker inside a string survives", `f("// not a comment")`, `f("// not a comment")`},
+		{"block marker inside a string survives", `f("/* kept */")`, `f("/* kept */")`},
+		{"template literal survives", "f(`/* kept */`)", "f(`/* kept */`)"},
+		{"escaped quote does not end the literal", `f("a\"// kept")`, `f("a\"// kept")`},
+		{"unterminated literal keeps its tail", `f("abc`, `f("abc`},
+		{"adjacent literals", `a("x")+b('y')`, `a("x")+b('y')`},
+		{"code either side of a block comment", "a/*x*/b/*y*/c", "abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripJSComments(tc.src); got != tc.want {
+				t.Fatalf("stripJSComments(%q) = %q, want %q", tc.src, got, tc.want)
+			}
+		})
+	}
+}
