@@ -1,6 +1,6 @@
 # Multi-action playbooks and typed action results
 
-**Status:** Draft
+**Status:** Approved
 **Date:** 2026-09-22
 **Parent:** `docs/prds/eda-playbook-engine.md`, epic `archie-core-t2db`
 **Beads issue:** `archie-core-nx30` (unblocks `archie-core-t2db.27` and `archie-core-t2db.31`)
