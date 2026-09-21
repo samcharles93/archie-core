@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -104,6 +105,11 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 		}
 		if tok := r.URL.Query().Get("t"); tok != "" {
 			if !tokenEqual(tok, s.Token) {
+				if wantsDocument(r) {
+					s.authPage(w, "That token was not accepted.")
+					return
+				}
+				w.Header().Set("Cache-Control", "no-store")
 				http.Error(w, "unauthorised", http.StatusUnauthorized)
 				return
 			}
@@ -133,10 +139,81 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 			return
 		}
 
+		if wantsDocument(r) {
+			s.authPage(w, "")
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "unauthorised: open the dashboard URL archied logged at startup", http.StatusUnauthorized)
 	})
 }
+
+// wantsDocument reports whether a request is a browser navigation rather than an
+// API or stream call. A navigation sends text/html in Accept; fetch() sends */*
+// or a JSON type, and EventSource sends text/event-stream.
+func wantsDocument(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// authPage answers an unauthenticated or rejected browser navigation with a page
+// a human can act on: the access token is pasted once, the existing ?t=
+// exchange sets the cookie, and the redirect lands on the dashboard.
+//
+// The page is deliberately self-contained. index.html, the bundle and every
+// other asset sit behind requireToken too, so a page that referenced anything
+// would render unstyled for exactly the visitor who needs it.
+//
+// The status stays 401: a login page served as 200 is cached, and reads as
+// success to anything that only checks the status.
+func (s *Server) authPage(w http.ResponseWriter, reason string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
+	w.WriteHeader(http.StatusUnauthorized)
+	notice := ""
+	if reason != "" {
+		notice = `<p class="error">` + reason + `</p>`
+	}
+	_, _ = io.WriteString(w, strings.Replace(authPageHTML, "<!--auth-error-->", notice, 1))
+}
+
+// authPageHTML is the unauthenticated document response. The form reuses the
+// ?t= exchange, so its action is the same path a startup URL uses.
+const authPageHTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archie dashboard</title>
+<style>
+:root { color-scheme: dark light; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 15px/1.5 system-ui, sans-serif; background: #0b0b10; color: #e8e8ee; }
+main { width: min(26rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #2a2a38; border-radius: 0.75rem; background: #14141c; }
+h1 { margin: 0 0 0.75rem; font-size: 1.25rem; }
+p { margin: 0 0 1rem; color: #b9b9c8; }
+label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+input { width: 100%; box-sizing: border-box; padding: 0.6rem 0.7rem; border: 1px solid #3a3a4c; border-radius: 0.5rem; background: #0b0b10; color: inherit; font: inherit; }
+button { margin-top: 1rem; width: 100%; padding: 0.6rem 0.7rem; border: 0; border-radius: 0.5rem; background: #7c5cff; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.error { padding: 0.6rem 0.7rem; border: 1px solid #7f2b3b; border-radius: 0.5rem; background: #2a1118; color: #ffb4c0; }
+.hint { margin: 1rem 0 0; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Archie dashboard</h1>
+<p>This dashboard needs its access token before it will load.</p>
+<!--auth-error-->
+<form method="get" action="/">
+<label for="t">Access token</label>
+<input id="t" name="t" type="password" autocomplete="off" autofocus required>
+<button type="submit">Open the dashboard</button>
+</form>
+<p class="hint">Paste the token from the dashboard URL archied printed at startup, or the token your deployment issued.</p>
+</main>
+</body>
+</html>
+`
 
 // sameOriginPath rebuilds a redirect target from a request path and raw
 // query, collapsing any leading "//" down to a single slash first.

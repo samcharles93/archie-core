@@ -1,17 +1,34 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
-import { onMounted } from "vue";
+import { onMounted, ref } from "vue";
 
 import ChatLauncher from "@/chat/ChatLauncher.vue";
 import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
+import { createSessionRetry } from "@/lib/session-retry";
 import { loadTaskMeta } from "@/lib/task-meta";
 import { useLiveUpdatesStore } from "@/stores/live-updates";
 
 const { authenticationRequired } = storeToRefs(useLiveUpdatesStore());
+
+// Re-runs the reads that report their own 401s to the live-updates store. A
+// session that came back clears the banner without a document reload; one that
+// did not leaves it up.
+const retrying = ref(false);
+const retrySession = createSessionRetry([loadCapabilities, loadTaskMeta]);
+
+async function retryAuthentication(): Promise<void> {
+  retrying.value = true;
+  try {
+    await retrySession();
+  } finally {
+    retrying.value = false;
+  }
+}
 
 onMounted(() => {
   // Asked for once, after the shell is up: the nav paints immediately and
@@ -51,6 +68,11 @@ onMounted(() => {
           <AlertDescription>
             Open the dashboard URL Archie logged at startup to establish a new authenticated session.
           </AlertDescription>
+          <AlertAction>
+            <Button variant="outline" size="sm" :disabled="retrying" @click="retryAuthentication">
+              {{ retrying ? "Retrying…" : "Retry" }}
+            </Button>
+          </AlertAction>
         </Alert>
         <!--
           Keyed on the path and its parameters but not the query: a query-only
