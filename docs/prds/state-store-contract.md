@@ -262,9 +262,10 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 | Dispatch | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures` |
 | BindingTaskCreator | `EnqueueBindingTask` |
 | Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
+| Apply status | `PutApplyStatus`, `ListApplyStatus` |
 | Task log | `ReadTaskLog`, `StreamTaskLogContent` |
 
-That is **45 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **47 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The config-snapshot pair was added by `archie-core-ymut` (see
@@ -274,6 +275,15 @@ administrative: `authorizesTaskScopedCall` is deny-by-default, so a task-scoped 
 neither. `ConfigSnapshot.document` is opaque to this contract — the store neither parses nor
 validates it, and `schema` names the projection so a reader can refuse a shape it does not
 understand.
+
+The apply-status pair was added by `archie-core-pskb` (see
+`docs/prds/control-plane-apply-status.md`). It is administrative for the same reason as the
+config-snapshot pair, and deny-by-default in `authorizesTaskScopedCall` covers it without a
+new rule. Unlike that pair, the read is a list: `ListApplyStatus` returns every process's
+record and an empty slice means nothing has reported yet, so the `found=false` convention for
+absent single rows does not apply. The rows are keyed on `(process, kind)` and replaced in
+place, because each process re-stamps its record on an interval and no reader wants a history
+of re-stamps.
 
 The task-log pair was added by `archie-core-iaqx` (see `docs/prds/ui-service-boundary.md`'s
 route inventory). It is the one surface whose payload is not a row: the store service reads
@@ -664,7 +674,7 @@ an explicit operator decision.
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`
   is superseded by `workflow.Store`.
-- **One `StateStore` gRPC service** (45 contract RPCs, grouped by contract) + narrow Go consumer facades
+- **One `StateStore` gRPC service** (47 contract RPCs, grouped by contract) + narrow Go consumer facades
   (≤8) on `staterpc.Client` — mirrors the single-`ChatService` precedent.
 - **Domain type relocation** (`Task`/`Status`/`Source` → `internal/domain/workflow`) is a
   Phase 2 prerequisite, pulled forward from migration-decisions §4 (minimal bound,

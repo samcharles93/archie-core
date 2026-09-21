@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
@@ -86,6 +87,14 @@ type Server struct {
 	// never carries actor, source, or request IDs.
 	ControlPlane controlpb.ControlPlaneServiceClient
 	Identities   identity.Repository
+
+	// ApplyStatus reports which control-plane resource version each process
+	// is running. Optional: nil renders an empty page rather than failing the
+	// dashboard (docs/prds/control-plane-apply-status.md).
+	ApplyStatus storecontract.ApplyStatusStore
+	// now is the clock applyState reads staleness against. Nil means
+	// time.Now; tests set it to pin a record's age.
+	now func() time.Time
 
 	// Token gates access. Empty means no check, which is how loopback binds
 	// stay frictionless -- see IsLoopback.
@@ -247,6 +256,7 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
+	mux.HandleFunc("GET /api/control-plane/apply-status", s.handleApplyStatus)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}", s.handleControlPlaneQuery)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}/history", s.handleControlPlaneHistory)
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)

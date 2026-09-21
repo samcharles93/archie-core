@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { useControlPlaneStore, type ResourceDescriptor } from "@/stores/control-plane";
+import ApplyStatusRows from "./ApplyStatusRows.vue";
 import ConfigCard from "./ConfigCard.vue";
 import ResourceHistory from "./ResourceHistory.vue";
 
@@ -114,6 +115,7 @@ async function save(): Promise<void> {
         </Button>
       </div>
     </form>
+    <ApplyStatusRows :kind="descriptor.kind" />
     <ResourceHistory :kind="descriptor.kind" />
   </ConfigCard>
 </template>

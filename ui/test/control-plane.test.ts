@@ -6,6 +6,7 @@ import {
   resourcesForPage,
   upsertWorkflowDefinition,
   removeWorkflowDefinition,
+  applyStatusForKind,
 } from "../src/stores/control-plane.ts";
 
 test("control-plane commands keep the edited version and typed values", () => {
@@ -54,4 +55,32 @@ test("workflow edits replace by id without dropping sibling definitions", () => 
   assert.deepEqual(removeWorkflowDefinition(original, "implement"), {
     definitions: [{ id: "tdd", yaml: "id: tdd\nsteps: []\n" }],
   });
+});
+
+test("apply status names a process behind the stored version and one that stopped reporting", () => {
+  const records = [
+    { process: "archied", kind: "tool-settings", applied_version: 7, reported_at: "", state: "current" },
+    { process: "archie-gateway", kind: "tool-settings", applied_version: 6, reported_at: "", state: "current" },
+    { process: "archie-messaging", kind: "tool-settings", applied_version: 7, reported_at: "", state: "unknown" },
+    { process: "archied", kind: "plugin-settings", applied_version: 2, reported_at: "", state: "current" },
+  ];
+  const processes = ["archied", "archie-gateway", "archie-messaging"];
+
+  assert.deepEqual(applyStatusForKind(records, processes, "tool-settings", 7), [
+    { process: "archied", state: "running", version: 7, error: "" },
+    { process: "archie-gateway", state: "pending-restart", version: 6, error: "" },
+    { process: "archie-messaging", state: "unknown", version: 7, error: "" },
+  ]);
+});
+
+test("apply status shows a process that has never reported, and one that rejected the edit", () => {
+  const processes = ["archied", "archie-gateway"];
+  const records = [
+    { process: "archied", kind: "tool-settings", applied_version: 6, reported_at: "", state: "failed", error: "validate database settings: bad policy" },
+  ];
+
+  assert.deepEqual(applyStatusForKind(records, processes, "tool-settings", 7), [
+    { process: "archied", state: "failed", version: 6, error: "validate database settings: bad policy" },
+    { process: "archie-gateway", state: "not-reporting", version: 0, error: "" },
+  ]);
 });

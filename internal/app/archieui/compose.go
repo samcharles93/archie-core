@@ -79,6 +79,9 @@ func compose(d deps) *webui.Server {
 	// client already carries them: withholding them would degrade two pages
 	// that have an owner, which is a different thing from the intake surfaces
 	// below.
+	if applyStatus, ok := d.Store.(storecontract.ApplyStatusStore); ok {
+		srv.ApplyStatus = applyStatus
+	}
 	if mappings, ok := d.Store.(storecontract.MappingStore); ok {
 		srv.Mappings = mappings
 	}

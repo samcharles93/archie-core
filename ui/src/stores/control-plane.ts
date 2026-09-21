@@ -22,6 +22,55 @@ export interface ControlPlaneResource {
 
 interface ResourceResponse { resource: ControlPlaneResource }
 
+/** One process's report about one resource kind, as the server derives it.
+ * `state` is liveness only: the server knows whether a record went stale, not
+ * which version the page is showing. */
+export interface ApplyStatusRecord {
+  process: string;
+  kind: string;
+  applied_version: number;
+  error?: string;
+  reported_at: string;
+  state: "current" | "failed" | "unknown";
+}
+
+export interface ApplyStatusResponse {
+  records: ApplyStatusRecord[];
+  processes: string[];
+}
+
+/** What the settings page says about one process for one resource. */
+export type ApplyState = "running" | "pending-restart" | "failed" | "unknown" | "not-reporting";
+
+export interface ApplyStatusRow {
+  process: string;
+  state: ApplyState;
+  version: number;
+  error: string;
+}
+
+/** applyStatusForKind reads every known process against the stored version, so
+ * a process that has never reported is a row saying so rather than a missing
+ * one. Staleness wins over the version comparison: a record that stopped being
+ * re-stamped describes a process that may no longer exist, so it can never
+ * read as running. */
+export function applyStatusForKind(
+  records: ApplyStatusRecord[],
+  processes: string[],
+  kind: string,
+  storedVersion: number,
+): ApplyStatusRow[] {
+  return processes.map((process) => {
+    const record = records.find((entry) => entry.process === process && entry.kind === kind);
+    if (!record) return { process, state: "not-reporting" as const, version: 0, error: "" };
+    const row = { process, version: record.applied_version, error: record.error ?? "" };
+    if (record.state === "unknown") return { ...row, state: "unknown" as const };
+    if (record.state === "failed") return { ...row, state: "failed" as const };
+    if (record.applied_version < storedVersion) return { ...row, state: "pending-restart" as const };
+    return { ...row, state: "running" as const };
+  });
+}
+
 /** One entry of a resource's audit trail. `value` is what that version held,
  * which is also the payload a restore replays through the replace command. */
 export interface ResourceRevision {
@@ -108,6 +157,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
   const catalogError = ref("");
   const states = reactive<Record<string, ResourceState>>({});
   const streams = new Map<string, EventSource>();
+  const applyStatus = ref<ApplyStatusResponse>({ records: [], processes: [] });
 
   const genericResources = computed(() => catalog.value.filter((item) =>
     item.apply_mode !== "domain-managed" && !item.query_service && item.commands.includes("replace"),
@@ -150,11 +200,31 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     streams.set(kind, stream);
   }
 
+  /** Re-read on every load and after each save, so the page reflects what the
+   * processes did with the edit rather than what was stored. A failure leaves
+   * the previous rows: apply status is a diagnostic, and losing it must not
+   * take the settings page with it. */
+  async function loadApplyStatus(): Promise<void> {
+    try {
+      applyStatus.value = await request<ApplyStatusResponse>("/api/control-plane/apply-status");
+    } catch {
+      // Keep whatever was last read.
+    }
+  }
+
+  /** Rows for one resource, every known process included. */
+  function applyStatusFor(kind: string): ApplyStatusRow[] {
+    return applyStatusForKind(
+      applyStatus.value.records, applyStatus.value.processes, kind, stateFor(kind).resource?.version ?? 0,
+    );
+  }
+
   async function load(): Promise<void> {
     try {
       const response = await request<{ resources?: ResourceDescriptor[] }>("/api/control-plane/catalog");
       catalog.value = response.resources ?? [];
       catalogError.value = "";
+      await loadApplyStatus();
       await Promise.all(genericResources.value.map(async ({ kind }) => {
         await loadResource(kind);
         watchResource(kind);
@@ -176,6 +246,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
         { method: "POST", body: commandBody(value, state.resource.version) },
       );
       apply(response.resource);
+      await loadApplyStatus();
       return true;
     } catch (error) {
       if (error instanceof ControlPlaneError && error.status === 409) {
@@ -207,5 +278,8 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
-  return { catalog, catalogError, states, genericResources, history, load, replace, shippedWorkflows, stateFor };
+  return {
+    applyStatusFor, catalog, catalogError, states, genericResources,
+    history, load, loadApplyStatus, replace, shippedWorkflows, stateFor,
+  };
 });
