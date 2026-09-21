@@ -1,36 +1,3 @@
-<script lang="ts">
-import { attentionStatusIds, statusIds } from "@/lib/task-meta";
-
-// The vocabulary is the server catalog, not a hand-synced copy: the "needs
-// you" grouping and the set of known statuses come straight from task-meta so
-// a status added on the backend shows up here without a frontend change.
-// "needs_you" is a UI pseudo-status (work waiting on a human), so it is
-// prepended rather than stored in the catalog.
-//
-// Both are read at call time rather than captured at import. The catalog
-// arrives after this module loads, so module-level constants here would freeze
-// the defaults for the life of the process -- which is what they did, leaving
-// the task filter unable to see a served status no matter when it landed.
-export function taskStatuses(): Set<string> {
-  return new Set(["needs_you", ...statusIds()]);
-}
-
-/**
- * A ?status= value, kept only when the catalog knows it: the query string is
- * operator input, and an unknown status would filter the whole board away with
- * no control showing why.
- */
-export function initialTaskFilter(requested: string | null | undefined): string {
-  return requested && taskStatuses().has(requested) ? requested : "";
-}
-
-export function taskMatchesStatus(task: { status?: string }, status: string): boolean {
-  if (!status) return true;
-  if (status === "needs_you") return attentionStatusIds().has(task.status ?? "");
-  return task.status === status;
-}
-</script>
-
 <script setup lang="ts">
 import { computed } from "vue";
 

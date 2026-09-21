@@ -19,8 +19,10 @@ import { useRoute, useRouter } from "vue-router";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { statusList } from "@/lib/task-meta";
 import { useLiveResource } from "@/stores/live-updates";
-import TaskFilters, { initialTaskFilter, taskMatchesStatus } from "./TaskFilters.vue";
+import TaskFilters from "./TaskFilters.vue";
+import { initialTaskFilter, taskMatchesStatus } from "./task-filter";
 import type { Task } from "./TaskRow.vue";
 import TaskTable from "./TaskTable.vue";
 import TasksState from "./TasksState.vue";
@@ -50,14 +52,14 @@ const requestedTaskId = computed(() => {
 
 // The filter follows the URL as well as writing to it: a dashboard link or a
 // back-button step has to move the control, not just load the page behind it.
-const status = ref(initialTaskFilter(statusQuery.value));
-watch(statusQuery, (value) => {
-  status.value = initialTaskFilter(value);
-});
+// It is derived from the query rather than captured from it, because the
+// served catalog lands after this page sets up -- a drop to the freeze-dried
+// defaults here would drop a shared link to a status the server serves.
+const status = computed(() => initialTaskFilter(statusQuery.value, statusList()));
 
 const visible = computed(() =>
   (tasks.value ?? []).filter((task) => {
-    if (!taskMatchesStatus(task, status.value)) return false;
+    if (!taskMatchesStatus(task, status.value, statusList())) return false;
     const needle = search.value.trim().toLowerCase();
     if (!needle) return true;
     return `${task.title ?? ""} ${task.repo ?? ""}`.toLowerCase().includes(needle);
@@ -93,12 +95,13 @@ useLiveResource("tasks", () => void load(), 500);
 onMounted(load);
 
 // A filter change is a query-only route change, so it must not remount the
-// list: the table keeps its identity and only its rows move. An empty status is
+// list: the table keeps its identity and only its rows move. The query is the
+// only filter state -- the control re-derives from it -- and an empty status is
 // dropped from the query rather than written as `?status=`.
 function setStatus(value: string) {
-  status.value = initialTaskFilter(value);
+  const requested = initialTaskFilter(value, statusList());
   const query = { ...route.query };
-  if (status.value) query.status = status.value;
+  if (requested) query.status = requested;
   else delete query.status;
   void router.replace({ query });
 }
