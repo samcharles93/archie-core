@@ -968,18 +968,26 @@ type ChatConfig struct {
 	// RateLimit budgets inbound messages per (channel, sender) across
 	// every chat channel. Zero MaxRequests (the default) leaves rate
 	// limiting off entirely -- it is an opt-in control, not a default
-	// throttle that could surprise an existing deployment.
+	// throttle that could surprise an existing deployment. This key seeds
+	// the Channel settings resource, which the Web UI owns at runtime
+	// (restart-required): editing the file does not change a stored value.
 	RateLimit RateLimitConfig `toml:"rate_limit" yaml:"rate_limit"`
 }
 
 // RateLimitConfig configures the sliding-window inbound rate limiter
-// (internal/ratelimit) shared by every chat channel. A sender is
-// identified per channel: Telegram by numeric user ID, email by the SMTP
-// from address, webhook by the configured route path -- which is a source,
+// (internal/ratelimit) shared by every chat channel. This type is the shape of
+// the Channel settings resource (channel-settings,
+// internal/app/controlplane); the file key is only that resource's seed, and
+// the Web UI owns the value a running deployment limits with. Applied by
+// boot.startRateLimiter from the config boot.loadRuntimeConfig layers, so a
+// stored value takes effect on restart and the resource is restart-required.
+//
+// A sender is identified per channel: Telegram by numeric user ID, email by the
+// SMTP from address, webhook by the configured route path -- which is a source,
 // not a person, so it reaches the limiter through the transport-only
 // Inbound.BudgetKey rather than through SenderID (see
-// docs/prds/memory-engine-unification.md §3). Disabled unless both fields
-// are set to a positive value.
+// docs/prds/memory-engine-unification.md §3). Disabled unless both fields are
+// set to a positive value.
 type RateLimitConfig struct {
 	// Window is the rolling interval MaxRequests is budgeted over.
 	Window time.Duration `toml:"window" yaml:"window"`

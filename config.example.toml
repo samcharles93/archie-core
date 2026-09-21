@@ -189,6 +189,10 @@ class = "ollama"
 # its configured route path -- a source, not a person, so it reaches the
 # limiter as a transport-only budget key rather than as an identity. Off by
 # default -- both fields must be set to a positive value.
+#
+# This section is the seed for the Channel settings resource. The Web UI owns
+# the value a running deployment limits with (restart-required), so edit it
+# there rather than here; a stored value is not overwritten by this file.
 # [chat.rate_limit]
 # window = "1m"
 # max_requests = 20
