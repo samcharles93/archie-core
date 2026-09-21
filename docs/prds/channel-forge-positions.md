@@ -1,6 +1,6 @@
 # Channel and Forge action positions (resolves `t2db.19`)
 
-**Status:** Draft
+**Status:** Approved
 **Date:** 2026-09-03
 **Parent:** `docs/prds/eda-playbook-engine.md`, epic `archie-core-t2db`
 **Blocked on:** `archie-core-t2db.24` (the `playbook_dispatches` ledger) for
