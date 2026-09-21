@@ -269,34 +269,49 @@ around is no longer a boundary.
   infrastructure.
 - The schema derivation, which describes the documents the server advertises.
 
-**Placement, the decision the PRD does not cover.** Recommended:
-`internal/domain/controlplane` for the vocabulary (kinds, documents, decode) and
-`internal/infrastructure/controlplanerpc` for the client, mirroring `gatewayrpc`
-and `staterpc`. A service client belongs in infrastructure by the convention
-`organisation.md` already fixes, and a domain vocabulary carries no store or
-engine dependency by construction. Rejected: one
-`internal/infrastructure/controlplane` holding both halves, because the client
-would still import a package that links the store, which is the thing the gate
-exists to measure.
+**Placement as landed (2026-09-22, `archie-core-1ng1`).** One new package,
+`internal/infrastructure/controlplanerpc`, holding both the vocabulary (kinds, the
+channel-settings document and its decode) and the client
+(`NewRPCClient`, `Query`, `RuntimeChatConfig`, the exported `ResourceReader`, the
+wire sentinels and `ClientError`). A second `internal/domain/controlplane` package
+for the vocabulary was planned and then measured out of the design: the vocabulary
+has exactly one consumer, the client that projects it, and the store-backed side
+reads the same definitions through type aliases rather than a copy -- so a separate
+domain package would have been a package with one consumer and a second name for
+one thing. What made that safe is a measurement, not a preference:
+`internal/app/controlplane` was the ONLY direct import of the Messaging Service
+that dragged a banned runtime (`gatewayrpc`, `staterpc`, `applystatus`, `messaging`,
+`configuration`, `readiness` and `health` were all clean), so severing that one
+dependency is sufficient, and the severance needed no third package. Promoting the
+vocabulary to a domain package stays open for the day a second consumer appears.
 
-**Open questions this decision deliberately does not settle**, listed so
-`archie-core-8cda.6.5` does not inherit them:
+**Settled by the implementation.** Two of the four open questions this decision
+originally left are answered, in both cases by measuring rather than by preference:
+
+- The client did NOT become two packages. `WatchWorkflowExecutionSettings` and
+  `WatchPersonas` stayed on `internal/app/controlplane`'s `Client`, which now
+  *embeds* the new one, so the daemon's validated watch is still defined once and
+  the read path still has one implementation -- which is what the second package
+  was for -- with one fewer package to keep in step.
+- The schedules and workflow documents stayed put, and
+  `internal/domain/workflow/task` is linked deliberately: it carries the Task
+  status and view vocabulary, its own dependency set holds none of the banned
+  runtimes, and `cmd/archie-messaging/architecture_test.go` carries it as an
+  exception checked in both directions (the same entry, for the same reason, as
+  `cmd/archie-ui/architecture_test.go`).
+
+**Still open.**
 
 1. Does the server also leave `internal/app/`? `organisation.md` reserves
    `internal/app/` for wiring and composition, and a store-backed gRPC server is
-   infrastructure -- but the gate does not require the move, and it would
-   multiply the diff across archied's wiring and the State Store binary.
-2. Where does `WatchWorkflowExecutionSettings` live, given it cannot share a
-   package with the Messaging Service's client? Either a second, workflow-aware
-   client package, or the watch returns the raw document and its caller decodes
-   it. Recommended: the second package, because the client-side validation it
-   performs is what the daemon's apply flow relies on.
-3. Does `internal/domain/workflow`'s contract/engine split happen, and when? A
+   infrastructure -- but the gate does not require the move, and it would multiply
+   the diff across archied's wiring and the State Store binary. Tracked as
+   `archie-core-8f4n`.
+2. Does `internal/domain/workflow`'s contract/engine split happen, and when? A
    contract type (`WorkflowDefinitionCollection`) drags `internal/agentexec` only
-   because `agent.go` sits beside it. Independent of this severance, and it is
-   the other half of the PRD's workflow-engine ban.
-4. Do archied's watches move with the client, or stay with the composition?
-   archied is the only other consumer of the client half.
+   because `agent.go` sits beside it. Independent of this severance, tracked as
+   `archie-core-inh6`, and the shape `archie-core-8cda.7` will meet again.
+3. Does the vocabulary move to a domain package when a second consumer appears?
 
 **Both consumers keep compiling.** archied imports the new vocabulary for the
 kinds it names and the new client package for `RuntimeConfig` and the persona
