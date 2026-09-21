@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -68,6 +69,11 @@ type Trigger struct {
 // slice, position MUST be "workflow".
 type Action struct {
 	Position string
+	// ID is an optional stable identifier for this action. When present it
+	// is the key later actions read this action's result under
+	// (actions.<id>); the shape is the shared stable-identifier grammar
+	// (internal/plugin/host.go, internal/domain/workflow/vocabulary.go).
+	ID string
 	// Workflow is the name of the workflow definition to dispatch to
 	// (position: workflow only).
 	Workflow string
@@ -88,9 +94,60 @@ type rawTrigger struct {
 
 type rawAction struct {
 	Position string `yaml:"position"`
+	ID       string `yaml:"id"`
 	Workflow string `yaml:"workflow"`
 	Kind     string `yaml:"kind"`
 	When     string `yaml:"when"`
+}
+
+// actionIDPattern is the stable-identifier shape an action id must match when
+// declared: a lowercase, dotted/dashed identifier (shared with
+// internal/plugin/host.go:21 and internal/domain/workflow/vocabulary.go:19),
+// so an id has exactly one spelling and cannot smuggle whitespace or case into
+// the vocabulary two processes compare.
+var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
+
+// validateActionIDs enforces the id shape and uniqueness across a playbook's
+// raw actions. An absent id is fine (ids are optional); a declared id must
+// match the stable-identifier grammar and may not repeat. Uniqueness is
+// unreachable through Load while the one-action boundary holds, so this helper
+// is unit-tested directly for the duplicate case.
+func validateActionIDs(actions []rawAction) error {
+	seen := make(map[string]struct{}, len(actions))
+	for _, a := range actions {
+		id := a.ID
+		if id == "" {
+			continue
+		}
+		if !actionIDPattern.MatchString(id) {
+			return fmt.Errorf("action id %q is not a valid stable identifier (want %s)", id, actionIDPattern.String())
+		}
+		if _, dup := seen[id]; dup {
+			return fmt.Errorf("duplicate action id %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+// unknownActionReference returns the first action id a compiled `when` reads
+// through actions.<id> that is not declared on any action before index idx.
+// The comparison is against earlier actions' declared ids (the general rule
+// from J1), so it stays correct when the one-action boundary later relaxes;
+// today idx is always 0, so any actions.<id> reference is unknown.
+func unknownActionReference(raw []rawAction, idx int, prg *expr.Program) (string, bool) {
+	declared := make(map[string]struct{}, idx)
+	for _, prior := range raw[:idx] {
+		if prior.ID != "" {
+			declared[prior.ID] = struct{}{}
+		}
+	}
+	for _, id := range prg.ReferencedActionIDs() {
+		if _, ok := declared[id]; !ok {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // Load reads every *.yaml/*.yml playbook in dir, validates each against the
@@ -188,15 +245,22 @@ func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
 	if strings.TrimSpace(a.Workflow) == "" {
 		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", path)
 	}
+	if err := validateActionIDs(raw.Actions); err != nil {
+		return nil, fmt.Errorf("playbook %s: %w", path, err)
+	}
 
 	action := Action{
 		Position: a.Position,
+		ID:       a.ID,
 		Workflow: strings.TrimSpace(a.Workflow),
 	}
 	if strings.TrimSpace(a.When) != "" {
 		prg, err := env.Compile(strings.TrimSpace(a.When))
 		if err != nil {
 			return nil, fmt.Errorf("playbook %s: when condition: %w", path, err)
+		}
+		if id, unknown := unknownActionReference(raw.Actions, 0, prg); unknown {
+			return nil, fmt.Errorf("playbook %s: when condition references unknown action id %q", path, id)
 		}
 		action.When = prg
 	}
@@ -261,6 +325,10 @@ type Decision struct {
 	PlaybookID string
 	Version    string
 	Workflow   string
+	// ActionID is the dispatched action's declared id; empty when the action
+	// declares none. It is the `actions.<id>` key later actions (and the
+	// dispatch ledger) read this action under.
+	ActionID string
 }
 
 // Dispatch returns the workflow name the first matching playbook selects for
@@ -302,7 +370,7 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 				continue
 			}
 		}
-		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow}, true
+		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow, ActionID: a.ID}, true
 	}
 	return Decision{}, false
 }

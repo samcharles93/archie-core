@@ -420,6 +420,90 @@ func TestShippedExamplePlaybookLoads(t *testing.T) {
 	}
 }
 
+// TestLoadActionIDDispatches: a valid action id survives load and is
+// threaded into the dispatch Decision's ActionID.
+func TestLoadActionIDDispatches(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    id: notify
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	pb := store.Playbooks[0]
+	if pb.Actions[0].ID != "notify" {
+		t.Errorf("action id = %q, want notify", pb.Actions[0].ID)
+	}
+	decision, ok := store.Dispatch(DispatchInput{Kind: "bug", Event: map[string]any{}})
+	if !ok {
+		t.Fatal("Dispatch matched nothing, want the tdd workflow")
+	}
+	if decision.ActionID != "notify" {
+		t.Errorf("decision ActionID = %q, want notify", decision.ActionID)
+	}
+}
+
+// TestLoadMalformedActionIDFails: an action id outside the stable-identifier
+// shape is a reported load failure (the same reject-at-load rule).
+func TestLoadMalformedActionIDFails(t *testing.T) {
+	for _, id := range []string{"Notify", "foo bar", "1st", "-dash", "trailing-", "a..b"} {
+		t.Run(id, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    id: "+id+"\n")
+			_, err := Load(dir)
+			if err == nil {
+				t.Fatalf("Load(id %q) = nil, want load failure", id)
+			}
+		})
+	}
+}
+
+// TestValidateActionIDs: the shape/uniqueness helper is the load-boundary's
+// id gate, unit-tested directly because the one-action boundary makes
+// duplicates unreachable through Load today.
+func TestValidateActionIDs(t *testing.T) {
+	if err := validateActionIDs([]rawAction{{ID: "notify"}, {ID: "notify"}}); err == nil {
+		t.Fatal("validateActionIDs(duplicate) = nil, want error")
+	}
+	if err := validateActionIDs([]rawAction{{ID: "notify"}, {ID: "build"}}); err != nil {
+		t.Fatalf("validateActionIDs(distinct) = %v, want nil", err)
+	}
+	if err := validateActionIDs([]rawAction{{ID: ""}, {ID: "build"}}); err != nil {
+		t.Fatalf("validateActionIDs(optional empty id) = %v, want nil", err)
+	}
+}
+
+// TestLoadWhenReferencesUnknownActionIDFails: a when reading actions.<id>
+// with no prior action declaring that id is a load failure naming the
+// playbook path and the id -- never a runtime miss.
+func TestLoadWhenReferencesUnknownActionIDFails(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    when: actions.notify.result.delivered == true
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("Load(when referencing undeclared action id) = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "pb.yaml") {
+		t.Errorf("Load error = %q, want the playbook path named", err.Error())
+	}
+	if !strings.Contains(err.Error(), "notify") {
+		t.Errorf("Load error = %q, want the unknown id named", err.Error())
+	}
+}
+
 // TestDispatchNilStoreMatchesNothing: a nil store is the state a composition
 // root is in before the playbook load runs, and callers hold it through an
 // interface where a typed nil is not a nil interface.

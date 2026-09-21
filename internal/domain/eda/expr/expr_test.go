@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,6 +77,51 @@ func TestEvalHasMacroPresence(t *testing.T) {
 	}
 	if b, ok := got.(bool); !ok || b {
 		t.Fatalf("has() on missing field = %#v, want false", got)
+	}
+}
+
+// TestReferencedActionIDs: a compiled program exposes the action ids its
+// expression reads through actions.<id>, sorted and de-duplicated, so the
+// playbook loader can reject references to undeclared prior actions.
+func TestReferencedActionIDs(t *testing.T) {
+	env := NewEnv()
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "single action reference",
+			src:  `actions.notify.result.delivered == true`,
+			want: []string{"notify"},
+		},
+		{
+			name: "no action reference",
+			src:  `event.priority == 3`,
+			want: nil,
+		},
+		{
+			name: "multiple references deduped and sorted",
+			src:  `actions.b.result == true || actions.a.result == true || actions.b.result2 == true`,
+			want: []string{"a", "b"},
+		},
+		{
+			name: "has macro over action",
+			src:  `has(actions.notify.result.delivered)`,
+			want: []string{"notify"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prg, err := env.Compile(tc.src)
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
+			}
+			got := prg.ReferencedActionIDs()
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("ReferencedActionIDs() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -16,7 +16,10 @@
 package expr
 
 import (
+	"sort"
+
 	"cel.dev/cel-go/cel"
+	celast "cel.dev/cel-go/common/ast"
 )
 
 // DefaultCostLimit bounds evaluation of every playbook expression (J5 in the
@@ -79,12 +82,56 @@ func (e *Env) Compile(src string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Program{prg: prg}, nil
+	return &Program{prg: prg, actionIDs: referencedActionIDs(ast)}, nil
+}
+
+// referencedActionIDs walks the compiled AST and returns the sorted, de-
+// duplicated set of action ids an expression reads through `actions.<id>`.
+// `actions` is declared map(string,dyn), so CEL type-checking cannot reject
+// an unknown id; the playbook loader compares this set against the ids of
+// prior actions to reject unknown references at load (J1 in
+// docs/prds/playbook-expression-syntax.md). The map-index form
+// (`actions["notify"]`) is a runtime lookup, not a field selection, and is
+// intentionally not collected here.
+func referencedActionIDs(ast *cel.Ast) []string {
+	if ast == nil || ast.NativeRep() == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	visitor := celast.NewExprVisitor(func(e celast.Expr) {
+		if e.Kind() != celast.SelectKind {
+			return
+		}
+		sel := e.AsSelect()
+		operand := sel.Operand()
+		if operand.Kind() != celast.IdentKind || operand.AsIdent() != "actions" {
+			return
+		}
+		seen[sel.FieldName()] = struct{}{}
+	})
+	celast.PreOrderVisit(ast.NativeRep().Expr(), visitor)
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // Program is a compiled, cost-limited playbook expression.
 type Program struct {
-	prg cel.Program
+	prg       cel.Program
+	actionIDs []string
+}
+
+// ReferencedActionIDs returns the sorted, de-duplicated action ids the
+// expression reads through `actions.<id>`. It is empty when the expression
+// reads no prior-action result.
+func (p *Program) ReferencedActionIDs() []string {
+	if p == nil {
+		return nil
+	}
+	return p.actionIDs
 }
 
 // Eval evaluates the program against a dispatch-time context. A missing
