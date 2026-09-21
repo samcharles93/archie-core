@@ -3,7 +3,11 @@
 // side (archie-agent) compiles it. Two packages that each pass their own tests
 // and disagree with each other is the failure archie-core-fwmp exists to
 // prevent, so this is the one test that registers a provider through the
-// production Manager and drives every production resolution site with it.
+// production Manager and drives the production entry points that resolve a step
+// type with it: the State Store server, the daemon's workflow-definitions
+// client (its read path, and its write path, which no production caller reaches
+// yet) and agentworker.CompilePinnedWorkflow. A site these do not enumerate is
+// caught by TestNoProductionSiteReachesForTheBuiltinStepRegistry below.
 //
 // "Agreement" here means within one build: archie-state-store and archie-agent
 // are separately deployed binaries, so a State Store built from newer source
@@ -15,6 +19,11 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -318,4 +327,71 @@ func (c *definitionsClient) Command(_ context.Context, request *pb.CommandReques
 
 func (c *definitionsClient) Watch(context.Context, *pb.WatchRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[pb.WatchResponse], error) {
 	panic("Watch is not part of the workflow-definitions path")
+}
+
+// TestNoProductionSiteReachesForTheBuiltinStepRegistry guards the class of
+// defect archie-core-fwmp exists to remove: a call site that resolves workflow
+// step types out of workflow.BuiltinStepRegistry() instead of the manager its
+// composition root registered. The agreement test above can only drive the
+// entry points it enumerates, so a sixth one added later would validate, or
+// fail to compile, against a vocabulary no other process has. Exactly two
+// non-test files may name it: the domain file that declares it, and the shipped
+// provider that bundles the shipped stages through it.
+func TestNoProductionSiteReachesForTheBuiltinStepRegistry(t *testing.T) {
+	allowed := map[string]string{
+		filepath.Join("internal", "domain", "workflow", "definition.go"):                 "declares BuiltinStepRegistry",
+		filepath.Join("internal", "infrastructure", "workflowsteps", "workflowsteps.go"): "bundles the shipped stages as a provider",
+	}
+	// The module root, three levels up from this package.
+	root := filepath.Join("..", "..", "..")
+	scanned := 0
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			// The root is "../../..", whose own name starts with a dot: only
+			// directories below it are filtered.
+			if path == root {
+				return nil
+			}
+			// tools is a separate module, and the rest carry no Archie source.
+			if name == "tools" || name == "node_modules" || name == "testdata" || name == "vendor" || strings.HasPrefix(name, ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		if _, permitted := allowed[relative]; permitted {
+			return nil
+		}
+		file, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		scanned++
+		ast.Inspect(file, func(node ast.Node) bool {
+			if ident, ok := node.(*ast.Ident); ok && ident.Name == "BuiltinStepRegistry" {
+				t.Errorf("%s names BuiltinStepRegistry; only %s (%s) and %s (%s) may, or that resolution site keeps a step vocabulary of its own",
+					relative,
+					filepath.Join("internal", "domain", "workflow", "definition.go"), allowed[filepath.Join("internal", "domain", "workflow", "definition.go")],
+					filepath.Join("internal", "infrastructure", "workflowsteps", "workflowsteps.go"), allowed[filepath.Join("internal", "infrastructure", "workflowsteps", "workflowsteps.go")])
+			}
+			return true
+		})
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatalf("scan the module for BuiltinStepRegistry: %v", walkErr)
+	}
+	if scanned == 0 {
+		t.Fatal("the scan read no non-test Go file; it is not looking at the module")
+	}
 }

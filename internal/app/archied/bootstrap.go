@@ -27,6 +27,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
@@ -116,6 +117,11 @@ type boot struct {
 	stateStoreGrants *staterpc.GrantIssuer
 	stateStoreToken  string
 	controlPlane     *controlplane.Client
+	// controlPlaneRPC is the State Store's control-plane transport, kept so the
+	// daemon root can build its workflow-definitions client from it
+	// (openDaemonWorkflowDefinitions). The gateway root never builds that client:
+	// it resolves no workflow step type.
+	controlPlaneRPC controlpb.ControlPlaneServiceClient
 	// workflowDefinitions is the one control-plane surface that resolves
 	// workflow step types. It is separate from controlPlane because it is the
 	// only surface that needs the process's step vocabulary.
@@ -361,24 +367,15 @@ func (b *boot) openStateStoreAdapter() error {
 		return err
 	}
 	b.stateStore = client
-	// The daemon reads and replaces workflow definitions through the
-	// workflow-definitions client, so it resolves the same step vocabulary the
-	// State Store server validates against: registered here, at the composition
-	// root, before the first read, through stepVocabulary (see
-	// step_vocabulary_test.go, which pins both archied roots to it). That
-	// agreement holds within one build: the State Store is a separate binary,
-	// and a skewed deploy is only fixed by a matching deploy.
-	steps, err := stepVocabulary()
-	if err != nil {
-		b.log.Error("register workflow step vocabulary", "err", err)
-		return err
-	}
-	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane())
-	b.workflowDefinitions, err = controlplane.NewWorkflowDefinitionsClient(client.ControlPlane(), steps)
-	if err != nil {
-		b.log.Error("workflow definitions client", "err", err)
-		return err
-	}
+	// The daemon reads workflow definitions through the workflow-definitions
+	// client, built by the daemon root (openDaemonWorkflowDefinitions) on this
+	// process's step vocabulary, so the daemon resolves the same vocabulary the
+	// State Store server validates against. It is not built here because the
+	// gateway root shares this adapter and resolves no step type. That agreement
+	// holds within one build: the State Store is a separate binary, and a skewed
+	// deploy is only fixed by a matching deploy.
+	b.controlPlaneRPC = client.ControlPlane()
+	b.controlPlane = controlplane.NewRPCClient(b.controlPlaneRPC)
 	b.applyStatus = applystatus.New(b.processName, client, b.log)
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)

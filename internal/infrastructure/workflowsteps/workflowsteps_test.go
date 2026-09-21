@@ -22,13 +22,20 @@ func TestShippedVocabularyCoversEveryShippedStage(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	want := make([]string, 0, len(workflow.BuiltinStepRegistry()))
+	got := manager.StepTypes()
+	// Every shipped stage is present...
 	for name := range workflow.BuiltinStepRegistry() {
-		want = append(want, name)
+		if !slices.Contains(got, name) {
+			t.Errorf("registered vocabulary %v is missing the shipped stage %q", got, name)
+		}
 	}
-	slices.Sort(want)
-	if got := manager.StepTypes(); !slices.Equal(got, want) {
-		t.Fatalf("registered vocabulary = %v, want the shipped stages %v", got, want)
+	// ...and the vocabulary is exactly what the provider set declares. The
+	// expectation is derived from Providers() rather than from
+	// workflow.BuiltinStepRegistry(): adding a provider to this set is the
+	// documented way a step type arrives, and that must move both sides of this
+	// assertion together instead of having to edit it.
+	if want := declaredStepTypes(); !slices.Equal(got, want) {
+		t.Fatalf("registered vocabulary = %v, want the provider set's declared step types %v", got, want)
 	}
 
 	// The vocabulary arrives by registration, not by implication: a manager
@@ -39,6 +46,19 @@ func TestShippedVocabularyCoversEveryShippedStage(t *testing.T) {
 	}
 }
 
+// declaredStepTypes returns every step type the provider set contributes,
+// sorted, so a test can hold a manager to the set it was built from.
+func declaredStepTypes() []string {
+	names := make([]string, 0)
+	for _, provider := range Providers() {
+		for _, stepType := range provider.StepTypes() {
+			names = append(names, stepType.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
 // TestShippedStagesKeepTheirBehaviourThroughTheManager pins that the provider
 // hands the builtin factories through unchanged. The shipped stages are typed,
 // non-interpreted steps: each compiles to the stage the builtin registry's own
@@ -46,7 +66,8 @@ func TestShippedVocabularyCoversEveryShippedStage(t *testing.T) {
 // the same way -- and refuses settings. The one way this enumeration could keep
 // every name and lose that guard is to rebuild the factories instead of
 // forwarding them, and definition_test.go's assertion cannot see it -- that test
-// drives BuiltinStepRegistry, which production no longer calls.
+// drives BuiltinStepRegistry directly, which no resolution site does any more:
+// production reaches it only inside the shipped provider below.
 func TestShippedStagesKeepTheirBehaviourThroughTheManager(t *testing.T) {
 	t.Parallel()
 

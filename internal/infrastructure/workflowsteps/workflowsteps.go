@@ -1,13 +1,15 @@
 // Package workflowsteps is the compiled-in workflow step-type provider set:
-// the one place a step type is bundled into every Archie binary.
+// the one place a step type is bundled into the Archie binaries that resolve
+// one, so no such binary can keep a provider set of its own.
 //
-// Three composition roots import it, and each resolves a workflow step type:
-// archied's RunStateStore (the State Store's validating side), archied's
-// openStateStoreAdapter (the daemon's workflow-definitions client) and
-// agentworker's productionWorkerDependencies (the executing side). Sharing one
-// package is what keeps them registering the same vocabulary rather than one
-// of them keeping a provider set of its own. archie-messaging resolves no step
-// type and does not import it.
+// Two composition roots register it, both of them roots that resolve a step
+// type: archied's RunStateStore (the State Store's validating side) and
+// archied's daemon root (openDaemonWorkflowDefinitions, the executing side's
+// workflow-definitions client, alongside agentworker's
+// productionWorkerDependencies). Sharing one package is what keeps them
+// registering the same vocabulary. Processes that resolve no step type do not
+// import it and register nothing: archie-gateway, archie-messaging,
+// archie-playbooks and archie-ui.
 package workflowsteps
 
 import (
@@ -36,8 +38,10 @@ func (shippedStages) StepTypes() []workflow.StepType {
 	return stepTypes
 }
 
-// Providers returns the provider set every Archie process registers at its
-// composition root, before the first resolution. A step type added here becomes
+// Providers returns the provider set the roots that resolve a workflow step
+// type register at their composition root, before the first resolution: it is
+// what NewManager registers, and what the roots' guards read to hold a
+// registered vocabulary to the set it came from. A step type added here becomes
 // reachable from the validating side and the executing side at once.
 //
 // The set is a compiled-in constant rather than a directory scan: a step type

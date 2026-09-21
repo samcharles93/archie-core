@@ -379,6 +379,15 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.openStateStoreAdapter(); err != nil {
 		return 1
 	}
+	// The daemon resolves workflow step types through its workflow-definitions
+	// client, so it registers the step vocabulary here, at its own composition
+	// root, before buildDaemon captures the client. The gateway root shares
+	// openStateStoreAdapter and resolves no step type, so the vocabulary is built
+	// by this root alone (step_vocabulary_test.go pins the cut).
+	if err := b.openDaemonWorkflowDefinitions(); err != nil {
+		b.log.Error("workflow definitions client", "err", err)
+		return 1
+	}
 	if err := b.loadRuntimeConfig(ctx); err != nil {
 		b.log.Error("runtime settings unavailable", "err", err)
 		return 1

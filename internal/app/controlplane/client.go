@@ -20,7 +20,8 @@ import (
 // Client is the control-plane client for every resource that does not resolve
 // a workflow step type: catalog, history, settings, personas, schedules. It
 // carries no step vocabulary, so a process that never reads or writes a
-// workflow definition -- archie-messaging, which only loads channel settings --
+// workflow definition -- archie-messaging, which only loads channel settings,
+// and archie-gateway, which reads catalog, runtime settings and personas --
 // needs no provider set and cannot be failed by one.
 type Client struct{ rpc pb.ControlPlaneServiceClient }
 
@@ -69,6 +70,10 @@ func (c *WorkflowDefinitionsClient) WorkflowDefinitions(ctx context.Context) (wo
 // ReplaceWorkflowDefinitions replaces the collection. Passing
 // workflow.ShippedDefinitions() restores all shipped definitions while keeping
 // the previous override in resource history.
+//
+// No production process calls it today: the daemon's only consumer of this
+// surface reads (internal/daemon's WorkflowDefinitions interface), so this half
+// is reached by tests until a writer exists.
 func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Context, definitions workflow.WorkflowDefinitionCollection, expectedVersion int64, actor, source, requestID string) (int64, error) {
 	value, err := encodeWorkflowDefinitions(definitions, c.steps)
 	if err != nil {

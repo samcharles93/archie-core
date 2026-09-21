@@ -7,6 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 )
 
 // stepVocabularyProbe is a provider set of one, used only to prove the
@@ -44,13 +45,27 @@ func requireSharedStepVocabulary(t *testing.T, steps *workflow.Manager) {
 	if steps == nil {
 		t.Fatal("the composition root registered no workflow step vocabulary")
 	}
-	want := make([]string, 0, len(workflow.BuiltinStepRegistry()))
+	got := steps.StepTypes()
+	// Containment, not equality: adding a provider to the shared set
+	// (workflowsteps.Providers) is the documented way a step type arrives, and
+	// that must not have to edit this guard. What it holds is that the shipped
+	// stages are all present, which is what a root regressing to
+	// workflow.NewManager() loses.
 	for name := range workflow.BuiltinStepRegistry() {
-		want = append(want, name)
+		if !slices.Contains(got, name) {
+			t.Errorf("the composition root resolves %v, which is missing the shipped stage %q", got, name)
+		}
 	}
-	slices.Sort(want)
-	if got := steps.StepTypes(); !slices.Equal(got, want) {
-		t.Fatalf("the composition root resolves %v, want the shared provider set's shipped stages %v", got, want)
+	// The other half is provenance: every name the root resolves must be
+	// declared by the shared provider set, not by a near-identical provider of
+	// the root's own, because that set is what ties this process's vocabulary to
+	// the State Store that validates against it. It is content, not identity --
+	// the shipped provider rebuilds its factories on every call.
+	declared := sharedStepTypeNames()
+	for _, name := range got {
+		if !slices.Contains(declared, name) {
+			t.Errorf("the composition root resolves %q, which no provider in the shared set declares", name)
+		}
 	}
 	if err := steps.Register(stepVocabularyProbe{}); err != nil {
 		t.Fatalf("register a provider through the root's manager: %v", err)
@@ -58,4 +73,17 @@ func requireSharedStepVocabulary(t *testing.T, steps *workflow.Manager) {
 	if _, resolved := steps.Registry()["probe.registered"]; !resolved {
 		t.Fatal("a provider registered through the root's manager did not reach its vocabulary")
 	}
+}
+
+// sharedStepTypeNames returns the step types the shared provider set declares,
+// read through the same Providers() seam the composition roots register.
+func sharedStepTypeNames() []string {
+	names := make([]string, 0)
+	for _, provider := range workflowsteps.Providers() {
+		for _, stepType := range provider.StepTypes() {
+			names = append(names, stepType.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
 }
