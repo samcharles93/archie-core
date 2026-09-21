@@ -2,10 +2,12 @@ package archiemessaging
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/status"
+	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
@@ -20,14 +22,47 @@ func channelDescriptors(instances []channelInstance) []status.Descriptor {
 			ID:         instance.name,
 			Name:       instance.name,
 			Configured: true,
-			// Telegram is the only front-end that carries a reload seam today
-			// (archiemessaging.telegramFeatures rewires it on request). Declaring
-			// the others would invite the dashboard to offer a button that
-			// answers "reloaded" and changed nothing.
-			ReloadSupported: instance.name == "telegram",
+			// The capability comes from the same place the action does, so a
+			// channel cannot declare reload support and then answer nothing.
+			ReloadSupported: reloadable(instance),
 		})
 	}
 	return descriptors
+}
+
+// reloadable reports whether this channel can re-read its configuration. It is
+// the single source for both the capability a descriptor declares and the action
+// a reload performs; deriving them separately is how a dashboard ends up offering
+// a button that reports success and changes nothing (archie-core-np7l).
+func reloadable(instance channelInstance) bool {
+	gateway, ok := instance.channel.(*telegram.Gateway)
+	return ok && gateway.Reload != nil
+}
+
+// ReloadChannel asks one channel to re-read its configuration. A channel that
+// does not support reload is refused with a reason rather than accepted and
+// ignored: the dashboard offers the action on the strength of the capability its
+// descriptor declares, so an accepted-then-nothing reload is a lie the operator
+// has no way to see through.
+//
+// The reload itself is the channel's own seam -- the telegram front-end re-reads
+// its token and allowlist -- so this function adds routing and a truthful
+// refusal, not a second implementation.
+func (s *Service) ReloadChannel(_ context.Context, id string) error {
+	for _, instance := range s.channels {
+		if instance.name != id {
+			continue
+		}
+		gateway, ok := instance.channel.(*telegram.Gateway)
+		if !ok || gateway.Reload == nil {
+			return fmt.Errorf("messaging: channel %q does not support reload", id)
+		}
+		if err := gateway.Reload(gateway); err != nil {
+			return fmt.Errorf("messaging: reload %q: %w", id, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("messaging: no channel %q", id)
 }
 
 // lifecycleFor returns the report a channel writes its own state through. Each

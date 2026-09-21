@@ -11,6 +11,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/status"
+	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
@@ -138,8 +139,13 @@ func TestServiceRecordsAChannelThatCannotStart(t *testing.T) {
 // acts on. Reload is the one with a real consequence: a channel declaring it
 // invites a button that must do something.
 func TestChannelDescriptorsDeclareCapabilities(t *testing.T) {
+	// Telegram is a real gateway with a reload seam: the capability now derives
+	// from the channel and its seam, not from its name, so a fakeChannel named
+	// "telegram" correctly declares nothing.
+	withReload := telegram.New("token-123", []int64{1}, slog.New(slog.DiscardHandler))
+	withReload.Reload = func(*telegram.Gateway) error { return nil }
 	descriptors := channelDescriptors([]channelInstance{
-		{name: "telegram", channel: fakeChannel{}},
+		{name: "telegram", channel: withReload},
 		{name: "email", channel: fakeChannel{}},
 		{name: "webhook", channel: fakeChannel{}},
 	})
