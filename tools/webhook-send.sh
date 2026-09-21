@@ -23,7 +23,7 @@
 #   tools/webhook-send.sh --body '{"a":1}'         # an exact payload
 #   tools/webhook-send.sh --file /tmp/event.json
 #   tools/webhook-send.sh --count 5 --delay 1
-#   tools/webhook-send.sh --forge --url http://127.0.0.1:8646 \
+#   tools/webhook-send.sh --forge --url http://127.0.0.1:8645 \
 #     --secret "$WH_SECRET" --assignee my-bot --label archie
 #   tools/webhook-send.sh --list                   # kinds, and exit
 #
