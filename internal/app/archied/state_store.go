@@ -100,7 +100,12 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if !ok {
 		return fmt.Errorf("state store does not support control-plane resources")
 	}
-	control := controlplane.NewServer(resources)
+	// The validating side's control plane, built here at the composition root
+	// before the first definition is read or replaced.
+	control, err := openStateStoreControlPlane(resources)
+	if err != nil {
+		return err
+	}
 	versions, err := control.ImportConfig(ctx, b.cfg)
 	if err != nil {
 		return fmt.Errorf("import control-plane resources: %w", err)
@@ -135,6 +140,29 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	deps := b.stateStoreDeps(grants)
 	deps.ControlPlane = control
 	return serveStateStore(ctx, listener, deps, opts)
+}
+
+// openStateStoreControlPlane builds the State Store's control plane server: the
+// validating side of the workflow step vocabulary, registered here at the
+// composition root before the first definition is read or replaced. The same
+// provider set (internal/infrastructure/workflowsteps) is what archie-agent
+// registers before it compiles one, so within one build a definition this
+// server admits is compilable there; a skewed deploy is only fixed by a
+// matching deploy.
+//
+// It is separate from RunStateStore so that function stays within its
+// complexity budget, and step_vocabulary_test.go pins both the call to
+// stepVocabulary below and RunStateStore's call to this function.
+func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlplane.Server, error) {
+	steps, err := stepVocabulary()
+	if err != nil {
+		return nil, fmt.Errorf("register workflow step vocabulary: %w", err)
+	}
+	server, err := controlplane.NewServer(resources, steps)
+	if err != nil {
+		return nil, fmt.Errorf("build control plane server: %w", err)
+	}
+	return server, nil
 }
 
 func migrateLegacySchedules(ctx context.Context, control *controlplane.Server, dbPath string, version int64) error {

@@ -370,13 +370,18 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.openStores(ctx); err != nil {
 		return 1
 	}
-	// Resolve the State Store contract adapter as the remote *staterpc.Client
-	// dialed to [services.state].target; the daemon no longer owns archie.db
-	// in-process, so an empty target is a composition error
-	// (docs/prds/state-store-contract.md §12 step 7). This runs after
-	// openStores has resolved b.secrets and before setupObservability wires the
-	// dashboard's storage surfaces (§10).
-	if err := b.openStateStoreAdapter(); err != nil {
+	// Resolve the State Store surfaces before setupObservability wires the
+	// dashboard's storage surfaces (§10): the shared contract adapter (the
+	// remote *staterpc.Client dialed to [services.state].target; the daemon no
+	// longer owns archie.db in-process, so an empty target is a composition
+	// error, docs/prds/state-store-contract.md §12 step 7) and then, daemon
+	// root only, the workflow-definitions client on this process's step
+	// vocabulary. The daemon resolves step types through that client, so it is
+	// built here -- after the adapter, whose transport it wraps -- and before
+	// buildDaemon captures it. The gateway root shares only the adapter and
+	// resolves no step type, so openDaemonStateSurfaces owns the order and
+	// step_vocabulary_test.go pins the cut.
+	if err := b.openDaemonStateSurfaces(); err != nil {
 		return 1
 	}
 	if err := b.loadRuntimeConfig(ctx); err != nil {

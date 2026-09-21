@@ -17,6 +17,12 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
+// Client is the control-plane client for every resource that does not resolve
+// a workflow step type: catalog, history, settings, personas, schedules. It
+// carries no step vocabulary, so a process that never reads or writes a
+// workflow definition -- archie-messaging, which only loads channel settings,
+// and archie-gateway, which reads catalog, runtime settings and personas --
+// needs no provider set and cannot be failed by one.
 type Client struct{ rpc pb.ControlPlaneServiceClient }
 
 func NewClient(conn grpc.ClientConnInterface) *Client {
@@ -24,6 +30,25 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 }
 
 func NewRPCClient(client pb.ControlPlaneServiceClient) *Client { return &Client{rpc: client} }
+
+// WorkflowDefinitionsClient reads and replaces the workflow-definitions
+// resource, the one control-plane surface whose stored values name workflow
+// step types. Resolving those names needs the step vocabulary the process
+// registered at its composition root, so the vocabulary is a constructor
+// dependency of this surface and of no other: a caller that cannot reach
+// workflow definitions cannot ask for one.
+type WorkflowDefinitionsClient struct {
+	rpc   pb.ControlPlaneServiceClient
+	steps workflow.StepRegistry
+}
+
+func NewWorkflowDefinitionsClient(client pb.ControlPlaneServiceClient, steps *workflow.Manager) (*WorkflowDefinitionsClient, error) {
+	registry, err := stepRegistry(steps)
+	if err != nil {
+		return nil, err
+	}
+	return &WorkflowDefinitionsClient{rpc: client, steps: registry}, nil
+}
 
 func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) {
 	response, err := c.rpc.Catalog(ctx, &pb.CatalogRequest{})
@@ -33,20 +58,24 @@ func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) 
 	return response.Resources, nil
 }
 
-func (c *Client) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefinitionCollection, int64, error) {
+func (c *WorkflowDefinitionsClient) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefinitionCollection, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowDefinitionsKind})
 	if err != nil {
 		return workflow.WorkflowDefinitionCollection{}, 0, clientError(err)
 	}
-	definitions, err := workflow.DecodeDefinitionCollection(response.Resource.ValueJson, workflow.BuiltinStepRegistry())
+	definitions, err := workflow.DecodeDefinitionCollection(response.Resource.ValueJson, c.steps)
 	return definitions, response.Resource.Version, err
 }
 
 // ReplaceWorkflowDefinitions replaces the collection. Passing
 // workflow.ShippedDefinitions() restores all shipped definitions while keeping
 // the previous override in resource history.
-func (c *Client) ReplaceWorkflowDefinitions(ctx context.Context, definitions workflow.WorkflowDefinitionCollection, expectedVersion int64, actor, source, requestID string) (int64, error) {
-	value, err := encodeWorkflowDefinitions(definitions)
+//
+// No production process calls it today: the daemon's only consumer of this
+// surface reads (internal/daemon's WorkflowDefinitions interface), so this half
+// is reached by tests until a writer exists.
+func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Context, definitions workflow.WorkflowDefinitionCollection, expectedVersion int64, actor, source, requestID string) (int64, error) {
+	value, err := encodeWorkflowDefinitions(definitions, c.steps)
 	if err != nil {
 		return 0, err
 	}
