@@ -6,8 +6,8 @@ Event Driven Agentic Automation.
 assigned or labelled to it, works each one in an isolated git worktree through a
 routed workflow, and opens a pull request for human review.
 
-It is not a chat wrapper around a repository. Work arrives as events, each task
-runs in its own sandbox with its own credentials, and the model never runs git.
+Work arrives as events. Each task runs in its own sandbox with a task-scoped
+credential, and the daemon performs all git operations.
 
 ## Start here
 
