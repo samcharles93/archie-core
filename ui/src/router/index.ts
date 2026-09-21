@@ -1,12 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
 
-import BindingsPage from "@/bindings/BindingsPage.vue";
-import CapturesPage from "@/captures/CapturesPage.vue";
 import ChannelsPage from "@/channels/ChannelsPage.vue";
 import CuratorsPage from "@/curators/CuratorsPage.vue";
 import DashboardPage from "@/dashboard/DashboardPage.vue";
+import EventsPage from "@/events/EventsPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
-import MappingsPage from "@/mappings/MappingsPage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -37,9 +35,14 @@ const routes = [
   { path: "/workflows", name: "workflows", component: WorkflowsPage, meta: { label: "Workflows", description: "The routed workflows and their run history.", section: "workflows" } },
   { path: "/skills", name: "skills", component: SkillsPage, meta: { label: "Skills", description: "The SKILL.md capabilities Archie can activate.", section: "skills" } },
   { path: "/curators", name: "curators", component: CuratorsPage, meta: { label: "Curators", description: "Scheduled passes that curate Archie's memory and captures.", section: "curators" } },
-  { path: "/captures", name: "captures", component: CapturesPage, meta: { label: "Inspector", description: "Captured inbound events for inspection.", section: "captures" } },
-  { path: "/mappings", name: "mappings", component: MappingsPage, meta: { label: "Mappings", description: "How inbound event fields map onto internal ones.", section: "mappings" } },
-  { path: "/bindings", name: "bindings", component: BindingsPage, meta: { label: "Bindings", description: "Which workflow a captured event starts.", section: "bindings" } },
+  { path: "/events", name: "events", component: EventsPage, meta: { label: "Events", description: "Captured inbound events, how their fields map, and which workflow they start." } },
+  // The three former destinations, kept as bookmarks rather than removed: a
+  // link, a bookmark or an agent that learned these URLs still lands somewhere
+  // that works. `nav: false` is what the page registry's test reads to skip
+  // them -- they are addressed by URL, not offered as destinations.
+  { path: "/captures", name: "captures", redirect: "/events?tab=inspector", meta: { label: "Inspector", nav: false } },
+  { path: "/mappings", name: "mappings", redirect: "/events?tab=mappings", meta: { label: "Mappings", nav: false } },
+  { path: "/bindings", name: "bindings", redirect: "/events?tab=bindings", meta: { label: "Bindings", nav: false } },
   { path: "/system/status", name: "system-status", component: SystemStatusPage, meta: { label: "Status", description: "Update state, configuration sources, and the listen address.", section: "settings" } },
   { path: "/logs", name: "logs", component: LogsPage, meta: { label: "Logs", description: "The daemon log stream, filterable by level and component.", section: "logs" } },
   { path: "/system/appearance", name: "system-appearance", component: SystemAppearancePage, meta: { label: "Appearance", description: "Theme and display preferences." } },

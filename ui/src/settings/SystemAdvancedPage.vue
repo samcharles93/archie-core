@@ -28,9 +28,9 @@ onMounted(load);
     <StructuredResourceCard v-for="descriptor in resources" :key="descriptor.kind" :descriptor="descriptor" />
     <ConfigCard title="Managed elsewhere">
       <div class="flex flex-wrap gap-2">
-        <Button as-child variant="outline"><RouterLink to="/captures">Captured events</RouterLink></Button>
-        <Button as-child variant="outline"><RouterLink to="/mappings">Capture mappings</RouterLink></Button>
-        <Button as-child variant="outline"><RouterLink to="/bindings">Capture bindings</RouterLink></Button>
+        <Button as-child variant="outline"><RouterLink :to="'/events?tab=inspector'">Captured events</RouterLink></Button>
+        <Button as-child variant="outline"><RouterLink :to="'/events?tab=mappings'">Capture mappings</RouterLink></Button>
+        <Button as-child variant="outline"><RouterLink :to="'/events?tab=bindings'">Capture bindings</RouterLink></Button>
       </div>
     </ConfigCard>
     <DangerousActionsCard />

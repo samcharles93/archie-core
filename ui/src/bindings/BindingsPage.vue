@@ -2,7 +2,6 @@
 import { Plus } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
-import PageHeader from "@/base/PageHeader.vue";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useLiveResource } from "@/stores/live-updates";
@@ -70,12 +69,14 @@ async function handleDelete(binding: Binding): Promise<void> {
 
 <template>
   <div>
-    <PageHeader title="Playbook bindings">
+    <!-- The tab owns the actions that belong to it. The page's header names the
+         page, not this panel, so nothing here repeats "Events". -->
+    <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
       <Button v-if="!failure" @click="startCreate">
         <Plus data-icon="inline-start" />
         New binding
       </Button>
-    </PageHeader>
+    </div>
 
     <!-- A mutation that failed leaves the list on screen accurate, so its
          failure sits beside the list rather than replacing it. -->

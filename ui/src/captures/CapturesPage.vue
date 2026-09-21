@@ -4,8 +4,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import CaptureDetail from "./CaptureDetail.vue";
+import CaptureStatus from "./CaptureStatus.vue";
 import CapturesCard from "./CapturesCard.vue";
-import CapturesHeader from "./CapturesHeader.vue";
 import { load, selectById, selectNewest, selected, useCaptures } from "./state";
 
 /**
@@ -89,7 +89,11 @@ watch(selected, (capture) => {
 </script>
 
 <template>
-  <CapturesHeader />
+  <!-- The stream's state belongs to this panel, not the page: the page carries
+       tabs whose other two have nothing to do with the capture stream. -->
+  <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
+    <CaptureStatus />
+  </div>
   <div class="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
     <div ref="listColumn" class="min-w-0">
       <CapturesCard />

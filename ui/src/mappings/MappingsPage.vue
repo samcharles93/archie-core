@@ -23,14 +23,12 @@ onMounted(loadMappings);
 
 <template>
   <div>
-    <div class="mb-5 flex flex-wrap items-start justify-between gap-5">
-      <h1 class="text-3xl font-semibold tracking-[-0.03em]">Field mappings</h1>
-      <div class="flex flex-wrap items-center gap-2">
-        <Button @click="startCreate">
-          <Plus data-icon="inline-start" />
-          New mapping
-        </Button>
-      </div>
+    <!-- The tab owns its own action row; the page header names the page. -->
+    <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
+      <Button @click="startCreate">
+        <Plus data-icon="inline-start" />
+        New mapping
+      </Button>
     </div>
 
     <MappingActionError v-if="actionError" class="mb-4" :failure="actionError" />

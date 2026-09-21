@@ -27,6 +27,18 @@ export interface SectionedRoute {
 /** hidden lists the route paths this composition cannot serve. */
 export const hidden = ref<string[]>([]);
 
+/**
+ * sections is the server's raw map, where `hidden` is that map already applied
+ * to this route table. A surface that owns several capabilities rather than one
+ * -- the Events page, whose tabs are separately backable -- reads this to decide
+ * which parts of itself it can serve.
+ *
+ * Null means nothing has been reported (an older server, a failed read), and
+ * every surface stays visible: a page that says "unavailable" is recoverable,
+ * one that silently vanished is not.
+ */
+export const sections = ref<CapabilitySections | null>(null);
+
 // hiddenRoutes returns the paths whose section the server reported it cannot
 // serve. An unreported section stays visible: a page that says "unavailable"
 // is recoverable, a navigation entry that silently vanished is not, so an
@@ -44,6 +56,7 @@ export function hiddenRoutes(sections: CapabilitySections | null | undefined, ta
 export async function loadCapabilities(): Promise<void> {
   try {
     const body = await api.capabilities<{ sections?: CapabilitySections } | null>();
+    sections.value = body?.sections ?? null;
     hidden.value = hiddenRoutes(body?.sections, routes as SectionedRoute[]);
   } catch {
     // Offline or an older server: every section stays visible.

@@ -33,19 +33,21 @@ interface RouteMeta {
 
 const table = routes as Array<{ path: string; meta?: RouteMeta }>;
 
-// The group owns the context, so the items inside it are named for what they
-// are rather than what they belong to. Order is the reading order of the menu.
-interface GroupSpec {
-  label: string;
-  paths: string[];
-  dividerBefore?: { path: string; label: string };
-}
+// The bar reads left to right. A destination that is its own top-level thing is
+// a link rather than a group of one: Events carries the three surfaces that used
+// to sit in a dropdown, and a group whose only child shares its name is a menu
+// that says nothing.
+type NavSpec =
+  | { kind: "link"; path: string }
+  | { kind: "group"; label: string; paths: string[]; dividerBefore?: { path: string; label: string } };
 
-const groups: GroupSpec[] = [
-  { label: "Work", paths: ["/tasks", "/workflows", "/channels", "/logs"] },
-  { label: "Agent", paths: ["/skills", "/curators"] },
-  { label: "Events", paths: ["/captures", "/mappings", "/bindings"] },
+const specs: NavSpec[] = [
+  { kind: "link", path: "/" },
+  { kind: "group", label: "Work", paths: ["/tasks", "/workflows", "/channels", "/logs"] },
+  { kind: "group", label: "Agent", paths: ["/skills", "/curators"] },
+  { kind: "link", path: "/events" },
   {
+    kind: "group",
     label: "System",
     paths: [
       "/system/status",
@@ -79,14 +81,19 @@ function entryFor(path: string): NavEntry {
  */
 export function navTree(hidden: string[] = []): NavNode[] {
   const visible = (e: NavEntry) => !hidden.includes(e.path);
-  const nodes: NavNode[] = [{ kind: "link", entry: entryFor("/") }];
-  for (const group of groups) {
-    const items = group.paths.map(entryFor).filter(visible);
+  const nodes: NavNode[] = [];
+  for (const spec of specs) {
+    if (spec.kind === "link") {
+      const entry = entryFor(spec.path);
+      if (visible(entry)) nodes.push({ kind: "link", entry });
+      continue;
+    }
+    const items = spec.paths.map(entryFor).filter(visible);
     const divided = items.map((item) => ({
       ...item,
-      dividerBefore: item.path === group.dividerBefore?.path ? group.dividerBefore.label : undefined,
+      dividerBefore: item.path === spec.dividerBefore?.path ? spec.dividerBefore.label : undefined,
     }));
-    if (divided.length > 0) nodes.push({ kind: "group", label: group.label, items: divided });
+    if (divided.length > 0) nodes.push({ kind: "group", label: spec.label, items: divided });
   }
   return nodes;
 }
