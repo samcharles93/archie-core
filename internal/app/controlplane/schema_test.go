@@ -19,27 +19,33 @@ type schemaFixtureEmbedded struct {
 
 type schemaFixture struct {
 	schemaFixtureEmbedded
-	Name     string              `json:"name" title:"Display name"`
-	Skipped  string              `json:"-"`
-	Untagged string              // no json tag: the document key is the Go name
-	Count    int                 `json:"count"`
-	Ratio    float64             `json:"ratio"`
-	Enabled  bool                `json:"enabled"`
-	Window   config.Duration     `json:"window"`
-	Lifetime channelDuration     `json:"lifetime"`
-	When     time.Time           `json:"when"`
-	Tags     []string            `json:"tags"`
-	Roles    map[string]string   `json:"roles"`
-	Nested   schemaFixtureNested `json:"nested"`
-	Hinted   string              `json:"hinted" format:"duration" doc:"A hint."`
+	Name     string          `json:"name" title:"Display name"`
+	Skipped  string          `json:"-"`
+	Untagged string          // no json tag: the document key is the Go name
+	Count    int             `json:"count"`
+	Ratio    float64         `json:"ratio"`
+	Enabled  bool            `json:"enabled"`
+	Window   config.Duration `json:"window"`
+	Lifetime channelDuration `json:"lifetime"`
+	// A bare time.Duration marshals as its nanosecond count, unlike the two
+	// named types above, which marshal as the string time.ParseDuration reads.
+	// The schema describes the wire form, not the Go type's name, or a client
+	// renders a text box for a number.
+	Timeout time.Duration       `json:"timeout"`
+	When    time.Time           `json:"when"`
+	Tags    []string            `json:"tags"`
+	Roles   map[string]string   `json:"roles"`
+	Nested  schemaFixtureNested `json:"nested"`
+	Hinted  string              `json:"hinted" format:"duration" doc:"A hint."`
 
 	unexported string
 }
 
 // TestSchemaDerivesKeysTypesAndAnnotations pins the derivation itself, including
-// the two rules that are easy to get subtly wrong: a field with no json tag is
-// described by the Go name the document actually stores, and a duration is a
-// string with a format rather than the integer its Go type would suggest.
+// the rules that are easy to get subtly wrong: a field with no json tag is
+// described by the Go name the document actually stores, a named duration type
+// is a string with a format because that is what it marshals as, and a bare
+// time.Duration stays an integer for the same reason.
 func TestSchemaDerivesKeysTypesAndAnnotations(t *testing.T) {
 	expected := map[string]any{
 		"type": "object",
@@ -52,6 +58,7 @@ func TestSchemaDerivesKeysTypesAndAnnotations(t *testing.T) {
 			"enabled":  map[string]any{"type": "boolean"},
 			"window":   map[string]any{"type": "string", "format": "duration"},
 			"lifetime": map[string]any{"type": "string", "format": "duration"},
+			"timeout":  map[string]any{"type": "integer"},
 			"when":     map[string]any{"type": "string", "format": "date-time"},
 			"tags":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"roles":    map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
