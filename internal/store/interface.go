@@ -28,6 +28,7 @@ type (
 	TaskLogStore        = storecontract.TaskLogStore
 	CaptureStore        = storecontract.CaptureStore
 	ConfigSnapshotStore = storecontract.ConfigSnapshotStore
+	ChannelStatusStore  = storecontract.ChannelStatusStore
 	ApplyStatusStore    = storecontract.ApplyStatusStore
 	MappingStore        = storecontract.MappingStore
 	BindingStore        = storecontract.BindingStore
@@ -36,6 +37,7 @@ type (
 	PlaybookDispatcher  = storecontract.PlaybookDispatcher
 	CapturedEvent       = storecontract.CapturedEvent
 	ConfigSnapshot      = storecontract.ConfigSnapshot
+	ChannelStatus       = storecontract.ChannelStatus
 	ApplyStatus         = storecontract.ApplyStatus
 	WorkflowStat        = storecontract.WorkflowStat
 	StageStat           = storecontract.StageStat
@@ -53,6 +55,9 @@ var (
 
 // Compile-time check: *Store satisfies TaskStore.
 var _ TaskStore = (*Store)(nil)
+
+// Compile-time check: *Store satisfies ChannelStatusStore.
+var _ ChannelStatusStore = (*Store)(nil)
 
 // Compile-time check: *Store satisfies workflow.Store.
 var _ workflow.Store = (*Store)(nil)

@@ -407,6 +407,45 @@ func configSnapshotValue(snapshot *pb.ConfigSnapshot) storecontract.ConfigSnapsh
 	}
 }
 
+// channelStatusesProto and channelStatusesValue carry the channel runtime state
+// the hosting process reports. The state is a string rather than an enum on the
+// wire: the vocabulary belongs to internal/channels/status, and a reader that
+// does not know a state it receives must show it rather than reject the report.
+func channelStatusesProto(channels []storecontract.ChannelStatus) []*pb.ChannelStatus {
+	out := make([]*pb.ChannelStatus, 0, len(channels))
+	for _, channel := range channels {
+		out = append(out, &pb.ChannelStatus{
+			Id:              channel.ID,
+			Name:            channel.Name,
+			State:           channel.State,
+			Detail:          channel.Detail,
+			Configured:      channel.Configured,
+			ReloadSupported: channel.ReloadSupported,
+			ObservedAt:      timestamp(channel.ObservedAt),
+		})
+	}
+	return out
+}
+
+func channelStatusesValue(channels []*pb.ChannelStatus) []storecontract.ChannelStatus {
+	out := make([]storecontract.ChannelStatus, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		out = append(out, storecontract.ChannelStatus{
+			ID:              channel.Id,
+			Name:            channel.Name,
+			State:           channel.State,
+			Detail:          channel.Detail,
+			Configured:      channel.Configured,
+			ReloadSupported: channel.ReloadSupported,
+			ObservedAt:      timeValue(channel.ObservedAt),
+		})
+	}
+	return out
+}
+
 func applyStatusProto(status storecontract.ApplyStatus) *pb.ApplyStatus {
 	return &pb.ApplyStatus{
 		Process:        status.Process,

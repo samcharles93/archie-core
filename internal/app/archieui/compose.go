@@ -75,6 +75,13 @@ func compose(d deps) *webui.Server {
 	if snapshots, ok := d.Store.(storecontract.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)
 	}
+	// Channel lifecycle follows the same split as the config view: the process
+	// hosting the channels publishes, this one reads. Withholding it left
+	// /api/channels answering with nothing while channels were running
+	// (archie-core-8cda.6.8).
+	if channels, ok := d.Store.(storecontract.ChannelStatusStore); ok {
+		srv.Channels = webui.RemoteChannelStatus(channels)
+	}
 	// Mappings and bindings are ratified State Store contracts, and the same
 	// client already carries them: withholding them would degrade two pages
 	// that have an owner, which is a different thing from the intake surfaces

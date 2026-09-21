@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/channels/status"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
@@ -54,10 +53,11 @@ type Server struct {
 	// of them is about configuration.
 	TaskLogs TaskLogSource
 
-	// Channels reports actual adapter lifecycle, independently of configuration
-	// presence. Nil preserves the configuration-only fallback for tests and
-	// minimal embedding.
-	Channels *status.Manager
+	// Channels reports actual adapter lifecycle, independently of configuration.
+	// A process that hosts channels satisfies it from its own manager; the
+	// dashboard process satisfies it by reading the State Store, where the
+	// hosting process publishes (webui.RemoteChannelStatus).
+	Channels ChannelStatusSource
 
 	// ReloadChannel invokes a channel-specific reload seam. Only adapters that
 	// explicitly support reload are wired here; nil means reload is unavailable.

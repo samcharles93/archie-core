@@ -51,6 +51,7 @@ var (
 	_ storecontract.BindingTaskCreator  = (*Client)(nil)
 	_ storecontract.PlaybookDispatcher  = (*Client)(nil)
 	_ storecontract.ConfigSnapshotStore = (*Client)(nil)
+	_ storecontract.ChannelStatusStore  = (*Client)(nil)
 	_ storecontract.ApplyStatusStore    = (*Client)(nil)
 	_ identity.Repository               = (*Client)(nil)
 )
@@ -289,6 +290,26 @@ func (c *Client) ConfigSnapshot(ctx context.Context) (storecontract.ConfigSnapsh
 		return storecontract.ConfigSnapshot{}, false, nil
 	}
 	return configSnapshotValue(reply.Snapshot), true, nil
+}
+
+// PutChannelStatus publishes the channel state the hosting process observes.
+// Administrative, like the config snapshot pair: the server admits it on the
+// administrative token only, so a task-scoped grant cannot reach it.
+func (c *Client) PutChannelStatus(ctx context.Context, channels []storecontract.ChannelStatus) error {
+	_, err := c.client.PutChannelStatus(ctx, &pb.PutChannelStatusRequest{Channels: channelStatusesProto(channels)})
+	if err != nil {
+		return unmapError(err)
+	}
+	return nil
+}
+
+// ChannelStatus reads every reported channel.
+func (c *Client) ChannelStatus(ctx context.Context) ([]storecontract.ChannelStatus, error) {
+	reply, err := c.client.ListChannelStatus(ctx, &pb.ListChannelStatusRequest{})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	return channelStatusesValue(reply.Channels), nil
 }
 
 // PutApplyStatus reports what this process applied for one resource kind.

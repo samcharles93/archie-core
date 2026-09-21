@@ -362,6 +362,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if as, ok := b.st.(storecontract.ApplyStatusStore); ok {
 		deps.ApplyStatus = as
 	}
+	if cs, ok := b.st.(storecontract.ChannelStatusStore); ok {
+		deps.ChannelStatus = cs
+	}
 	return deps
 }
 

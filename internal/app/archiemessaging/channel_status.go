@@ -1,8 +1,12 @@
 package archiemessaging
 
 import (
+	"context"
+	"time"
+
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/status"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
 // channelDescriptors declares the operator-facing identity of each composed
@@ -38,8 +42,57 @@ func channelDescriptors(instances []channelInstance) []status.Descriptor {
 // ReportStarting and ReportRunning on whichever lifecycle they are handed.
 func (s *Service) lifecycleFor(id string) channels.Lifecycle {
 	return channels.Lifecycle{
-		Starting: func() { s.status.MarkStarting(id) },
-		Running:  func() { s.status.MarkRunning(id) },
+		Starting: func() { s.status.MarkStarting(id); s.signalPublish() },
+		Running:  func() { s.status.MarkRunning(id); s.signalPublish() },
+	}
+}
+
+// signalPublish asks the publisher to report the current set. The signal
+// coalesces: a burst of transitions is one write, because a reader only ever
+// wants the latest state of every channel.
+func (s *Service) signalPublish() {
+	if s.statusWriter == nil {
+		return
+	}
+	select {
+	case s.publish <- struct{}{}:
+	default:
+	}
+}
+
+// publishStatus writes the current set, or deletes it when the service hosts no
+// channels -- an empty report is a report, and leaving the previous set standing
+// would show channels that are gone.
+func (s *Service) publishStatus(ctx context.Context) error {
+	reported := s.ChannelStatus()
+	rows := make([]storecontract.ChannelStatus, 0, len(reported))
+	for _, channel := range reported {
+		rows = append(rows, storecontract.ChannelStatus{
+			ID:              channel.ID,
+			Name:            channel.Name,
+			State:           string(channel.State),
+			Detail:          channel.Detail,
+			Configured:      channel.Configured,
+			ReloadSupported: channel.ReloadSupported,
+			ObservedAt:      time.Now(),
+		})
+	}
+	return s.statusWriter.PutChannelStatus(ctx, rows)
+}
+
+// publishLoop reports channel state until ctx ends. A failed write is logged and
+// retried on the next signal: the dashboard losing channel state is worth a
+// warning, and never worth failing a channel start over.
+func (s *Service) publishLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.publish:
+			if err := s.publishStatus(ctx); err != nil && ctx.Err() == nil {
+				s.log.Warn("publishing channel status failed", "err", err)
+			}
+		}
 	}
 }
 

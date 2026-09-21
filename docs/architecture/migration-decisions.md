@@ -348,12 +348,24 @@ What that decides, so the implementation need not invent it:
   change that adds the RPCs -- the table is the contract's own index, and a
   surface it does not list is a surface nobody finds.
 
-**Left open here, deliberately.** Reload runs the other way -- the UI asks the
-service to reload a channel -- and the config-snapshot precedent only describes a
-writer-to-reader direction. Two candidates: a second surface carrying a request
-the service observes and clears, or a field on the same surface the service
-watches. Deciding it now would be choosing a lifetime for a request queue by
-analogy with a status report; they are not the same object.
+**Reload gets its own surface, with its own lifetime (decided 2026-09-22).** Reload
+runs the other way -- the UI asks the service to reload a channel -- and the two
+candidates were a request surface the service observes and clears, or a field on
+the status surface the service watches. It is the first. The reasoning, recorded
+because it would look arbitrary later:
+
+- A request queue and a status report do not share a lifetime, so they should not
+  share a surface. A pending request is transient and has an outcome; a channel's
+  state is durable and has a current value.
+- A "please reload" field on the status resource makes READING status capable of
+  RETRIGGERING an action, and makes a transient request indistinguishable from
+  state the moment anything polls it.
+- It would also invert the writer/reader relationship the precedent establishes:
+  the service would have to clear a field on an object whose whole contract is
+  that the service reports it.
+
+So the status surface stays writer-is-service, and the request carrier is its own
+object with its own states.
 
 `archie-core-8cda.6.9`'s component self-report is the **same shape**: a process
 reporting something about itself for the UI to read. Whether it shares this

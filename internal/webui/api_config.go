@@ -418,6 +418,48 @@ func chatChannelConfigured(chat config.ChatConfig) bool {
 // RemoteConfigView reads the projection the configuration owner published.
 // The reading process cannot edit it: it has no update path, and the page is
 // told so rather than offering a control that would 503.
+// ChannelStatusSource reports the live state of each configured channel.
+type ChannelStatusSource interface {
+	Snapshot() []status.Status
+}
+
+// RemoteChannelStatus reads channel state from the State Store, where the
+// process hosting the channels publishes it. It is the reader half of the same
+// split RemoteConfigView serves: the writer is another process and the reader is
+// this one, so a reader that cannot reach the store reports nothing rather than
+// inventing a state, and the page shows no channels instead of wrong ones.
+func RemoteChannelStatus(channels storecontract.ChannelStatusStore) ChannelStatusSource {
+	return remoteChannelStatus{channels: channels}
+}
+
+type remoteChannelStatus struct {
+	channels storecontract.ChannelStatusStore
+}
+
+func (r remoteChannelStatus) Snapshot() []status.Status {
+	// The handler has no error to return, so a failed read is an empty report.
+	// That is the honest answer: the dashboard must not show a stale "running"
+	// for a channel it cannot currently ask about.
+	rows, err := r.channels.ChannelStatus(context.Background())
+	if err != nil {
+		return nil
+	}
+	out := make([]status.Status, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, status.Status{
+			Descriptor: status.Descriptor{
+				ID:              row.ID,
+				Name:            row.Name,
+				Configured:      row.Configured,
+				ReloadSupported: row.ReloadSupported,
+				Detail:          row.Detail,
+			},
+			State: status.State(row.State),
+		})
+	}
+	return out
+}
+
 func RemoteConfigView(snapshots storecontract.ConfigSnapshotStore) ConfigViewSource {
 	return func(ctx context.Context) (ConfigView, bool, error) {
 		snapshot, found, err := snapshots.ConfigSnapshot(ctx)

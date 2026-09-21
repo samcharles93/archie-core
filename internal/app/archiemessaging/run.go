@@ -8,6 +8,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -32,6 +33,9 @@ func Run(ctx context.Context, o Options) error {
 	health := newReadinessRegistry(cfg.Options, chat)
 	var settings *messaging.SettingsCommand
 	var closeStateStore func()
+	// channelStatusStore is the same client, held where compose can reach it: the
+	// channel report is published to the store this process already dials.
+	var channelStatusStore storecontract.ChannelStatusStore
 	if cfg.Options.StateStore.Target != "" {
 		stateStore, closeClient, dialErr := staterpc.Dial(cfg.Options.StateStore.Target, cfg.Options.StateStore.Token)
 		if dialErr != nil {
@@ -59,14 +63,16 @@ func Run(ctx context.Context, o Options) error {
 			return fmt.Errorf("resolve database webhook secret: %w", settingsErr)
 		}
 		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
+		channelStatusStore = stateStore
 	}
 
 	srv, err := compose(ctx, deps{
-		Config:   cfg,
-		Log:      log,
-		Chat:     chat,
-		Health:   health,
-		Settings: settings,
+		ChannelStatus: channelStatusStore,
+		Config:        cfg,
+		Log:           log,
+		Chat:          chat,
+		Health:        health,
+		Settings:      settings,
 	})
 	if err != nil {
 		return err

@@ -259,10 +259,13 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 | BindingTaskCreator | `EnqueueBindingTask` |
 | Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
 | Apply status | `PutApplyStatus`, `ListApplyStatus` |
+| Channel status | `PutChannelStatus`, `ListChannelStatus` |
 | Task log | `ReadTaskLog`, `StreamTaskLogContent` |
 
-That is **49 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **51 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
+
+The channel-status pair follows the config snapshot's split for the same reason: the writer is the process that HOSTS the channels -- the Messaging Service, which alone observes whether a channel is starting, running or failed -- and the reader is the UI process. Both RPCs are administrative, so a task-scoped grant reaches neither. A channel's state is runtime state rather than a settings document, which is why it is not a `ControlPlaneService` resource kind: a failed channel is not a document anybody edits. Asking for a reload travels on its own surface rather than through this one; see `docs/architecture/migration-decisions.md`, "Channel state to the dashboard".
 
 The config-snapshot pair was added by `archie-core-ymut` (see
 `docs/architecture/migration-decisions.md`, "Dashboard configuration page"). It is the one

@@ -513,10 +513,14 @@ func TestHandleChannelsWithoutManagerIsEmpty(t *testing.T) {
 
 func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Channels = status.NewManager([]status.Descriptor{{
+	// Channels is a source rather than a concrete manager now: a process that
+	// hosts channels supplies its own, and the dashboard process supplies a reader
+	// over the State Store. This test drives the first.
+	manager := status.NewManager([]status.Descriptor{{
 		ID: "telegram", Name: "Telegram", Configured: true, ReloadSupported: true,
 	}})
-	srv.Channels.MarkFailed("telegram", "token rejected")
+	manager.MarkFailed("telegram", "token rejected")
+	srv.Channels = manager
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/channels", nil)
 	w := httptest.NewRecorder()

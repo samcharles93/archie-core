@@ -53,6 +53,8 @@ const (
 	StateStoreService_TokensByDay_FullMethodName                = "/state.v1.StateStoreService/TokensByDay"
 	StateStoreService_PutConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/PutConfigSnapshot"
 	StateStoreService_GetConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/GetConfigSnapshot"
+	StateStoreService_PutChannelStatus_FullMethodName           = "/state.v1.StateStoreService/PutChannelStatus"
+	StateStoreService_ListChannelStatus_FullMethodName          = "/state.v1.StateStoreService/ListChannelStatus"
 	StateStoreService_PutApplyStatus_FullMethodName             = "/state.v1.StateStoreService/PutApplyStatus"
 	StateStoreService_ListApplyStatus_FullMethodName            = "/state.v1.StateStoreService/ListApplyStatus"
 	StateStoreService_ReadTaskLog_FullMethodName                = "/state.v1.StateStoreService/ReadTaskLog"
@@ -137,6 +139,14 @@ type StateStoreServiceClient interface {
 	// configuration page").
 	PutConfigSnapshot(ctx context.Context, in *PutConfigSnapshotRequest, opts ...grpc.CallOption) (*PutConfigSnapshotResponse, error)
 	GetConfigSnapshot(ctx context.Context, in *GetConfigSnapshotRequest, opts ...grpc.CallOption) (*GetConfigSnapshotResponse, error)
+	// Channel status is what the process HOSTING the channels observes about them:
+	// one row per channel, written by the Messaging Service and read by the UI
+	// process. Administrative like the config snapshot, and for the same reason --
+	// a task-scoped grant reaches neither, so authorizesTaskScopedCall admits only
+	// the administrative token. It is runtime state rather than a settings
+	// document, which is why it is not a ControlPlaneService resource kind.
+	PutChannelStatus(ctx context.Context, in *PutChannelStatusRequest, opts ...grpc.CallOption) (*PutChannelStatusResponse, error)
+	ListChannelStatus(ctx context.Context, in *ListChannelStatusRequest, opts ...grpc.CallOption) (*ListChannelStatusResponse, error)
 	// Apply status: which version of a control-plane resource each process is
 	// running, and why it could not. Every process that applies a resource
 	// publishes; the UI process reads (docs/prds/control-plane-apply-status.md).
@@ -545,6 +555,26 @@ func (c *stateStoreServiceClient) GetConfigSnapshot(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) PutChannelStatus(ctx context.Context, in *PutChannelStatusRequest, opts ...grpc.CallOption) (*PutChannelStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutChannelStatusResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PutChannelStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListChannelStatus(ctx context.Context, in *ListChannelStatusRequest, opts ...grpc.CallOption) (*ListChannelStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListChannelStatusResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListChannelStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) PutApplyStatus(ctx context.Context, in *PutApplyStatusRequest, opts ...grpc.CallOption) (*PutApplyStatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PutApplyStatusResponse)
@@ -881,6 +911,14 @@ type StateStoreServiceServer interface {
 	// configuration page").
 	PutConfigSnapshot(context.Context, *PutConfigSnapshotRequest) (*PutConfigSnapshotResponse, error)
 	GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error)
+	// Channel status is what the process HOSTING the channels observes about them:
+	// one row per channel, written by the Messaging Service and read by the UI
+	// process. Administrative like the config snapshot, and for the same reason --
+	// a task-scoped grant reaches neither, so authorizesTaskScopedCall admits only
+	// the administrative token. It is runtime state rather than a settings
+	// document, which is why it is not a ControlPlaneService resource kind.
+	PutChannelStatus(context.Context, *PutChannelStatusRequest) (*PutChannelStatusResponse, error)
+	ListChannelStatus(context.Context, *ListChannelStatusRequest) (*ListChannelStatusResponse, error)
 	// Apply status: which version of a control-plane resource each process is
 	// running, and why it could not. Every process that applies a resource
 	// publishes; the UI process reads (docs/prds/control-plane-apply-status.md).
@@ -1050,6 +1088,12 @@ func (UnimplementedStateStoreServiceServer) PutConfigSnapshot(context.Context, *
 }
 func (UnimplementedStateStoreServiceServer) GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetConfigSnapshot not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PutChannelStatus(context.Context, *PutChannelStatusRequest) (*PutChannelStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutChannelStatus not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListChannelStatus(context.Context, *ListChannelStatusRequest) (*ListChannelStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListChannelStatus not implemented")
 }
 func (UnimplementedStateStoreServiceServer) PutApplyStatus(context.Context, *PutApplyStatusRequest) (*PutApplyStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PutApplyStatus not implemented")
@@ -1759,6 +1803,42 @@ func _StateStoreService_GetConfigSnapshot_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_PutChannelStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutChannelStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PutChannelStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PutChannelStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PutChannelStatus(ctx, req.(*PutChannelStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListChannelStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListChannelStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListChannelStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListChannelStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListChannelStatus(ctx, req.(*ListChannelStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_PutApplyStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PutApplyStatusRequest)
 	if err := dec(in); err != nil {
@@ -2330,6 +2410,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetConfigSnapshot",
 			Handler:    _StateStoreService_GetConfigSnapshot_Handler,
+		},
+		{
+			MethodName: "PutChannelStatus",
+			Handler:    _StateStoreService_PutChannelStatus_Handler,
+		},
+		{
+			MethodName: "ListChannelStatus",
+			Handler:    _StateStoreService_ListChannelStatus_Handler,
 		},
 		{
 			MethodName: "PutApplyStatus",

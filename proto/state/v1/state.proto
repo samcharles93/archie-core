@@ -62,6 +62,15 @@ service StateStoreService {
   rpc PutConfigSnapshot(PutConfigSnapshotRequest) returns (PutConfigSnapshotResponse);
   rpc GetConfigSnapshot(GetConfigSnapshotRequest) returns (GetConfigSnapshotResponse);
 
+  // Channel status is what the process HOSTING the channels observes about them:
+  // one row per channel, written by the Messaging Service and read by the UI
+  // process. Administrative like the config snapshot, and for the same reason --
+  // a task-scoped grant reaches neither, so authorizesTaskScopedCall admits only
+  // the administrative token. It is runtime state rather than a settings
+  // document, which is why it is not a ControlPlaneService resource kind.
+  rpc PutChannelStatus(PutChannelStatusRequest) returns (PutChannelStatusResponse);
+  rpc ListChannelStatus(ListChannelStatusRequest) returns (ListChannelStatusResponse);
+
   // Apply status: which version of a control-plane resource each process is
   // running, and why it could not. Every process that applies a resource
   // publishes; the UI process reads (docs/prds/control-plane-apply-status.md).
@@ -469,6 +478,25 @@ message GetConfigSnapshotResponse {
   ConfigSnapshot snapshot = 1;
   bool found = 2;
 }
+
+// ChannelStatus is one channel's runtime state, as the process hosting it
+// observes it. ReloadSupported is a capability declaration, not a request: the
+// service reports it, so a reader may offer a reload action -- but asking for one
+// travels on its own surface, because a transient request and a durable state do
+// not share a lifetime.
+message ChannelStatus {
+  string id = 1;
+  string name = 2;
+  string state = 3;
+  string detail = 4;
+  bool configured = 5;
+  bool reload_supported = 6;
+  google.protobuf.Timestamp observed_at = 7;
+}
+message PutChannelStatusRequest { repeated ChannelStatus channels = 1; }
+message PutChannelStatusResponse {}
+message ListChannelStatusRequest {}
+message ListChannelStatusResponse { repeated ChannelStatus channels = 1; }
 
 // ApplyStatus is one process's report about one control-plane resource kind.
 // applied_version is the version that process is running; error is set when it

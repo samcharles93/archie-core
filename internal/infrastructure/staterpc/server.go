@@ -31,6 +31,7 @@ import (
 var (
 	errCaptureUnavailable            = status.Error(codes.Unavailable, "capture store unavailable")
 	errConfigSnapshotsUnavailable    = status.Error(codes.Unavailable, "config snapshot store unavailable")
+	errChannelStatusUnavailable      = status.Error(codes.Unavailable, "channel status store unavailable")
 	errApplyStatusUnavailable        = status.Error(codes.Unavailable, "apply status store unavailable")
 	errMappingUnavailable            = status.Error(codes.Unavailable, "mapping store unavailable")
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
@@ -59,12 +60,16 @@ const taskLogChunkBytes = 256 << 10
 // codes.Unavailable) exactly as their daemon-side consumers already treat a
 // nil Mappings/Bindings/BindingDispatcher/BindingTaskCreator as "disabled".
 type Deps struct {
-	ControlPlane       controlpb.ControlPlaneServiceServer
-	Identities         identity.Repository
-	Grants             *TaskGrants
-	Tasks              storecontract.TaskStore
-	Captures           storecontract.CaptureStore
-	ConfigSnapshots    storecontract.ConfigSnapshotStore
+	ControlPlane    controlpb.ControlPlaneServiceServer
+	Identities      identity.Repository
+	Grants          *TaskGrants
+	Tasks           storecontract.TaskStore
+	Captures        storecontract.CaptureStore
+	ConfigSnapshots storecontract.ConfigSnapshotStore
+	// ChannelStatus is the channel runtime state the process hosting the channels
+	// reports. Optional: nil disables the pair with codes.Unavailable, which is
+	// the honest answer for a store service no messaging process is writing to.
+	ChannelStatus      storecontract.ChannelStatusStore
 	ApplyStatus        storecontract.ApplyStatusStore
 	Mappings           storecontract.MappingStore
 	Bindings           storecontract.BindingStore
@@ -387,6 +392,36 @@ func (s *server) GetConfigSnapshot(ctx context.Context, _ *pb.GetConfigSnapshotR
 		return &pb.GetConfigSnapshotResponse{}, nil
 	}
 	return &pb.GetConfigSnapshotResponse{Snapshot: configSnapshotProto(snapshot), Found: true}, nil
+}
+
+func (s *server) channelStatuses() (storecontract.ChannelStatusStore, error) {
+	if s.deps.ChannelStatus == nil {
+		return nil, errChannelStatusUnavailable
+	}
+	return s.deps.ChannelStatus, nil
+}
+
+func (s *server) PutChannelStatus(ctx context.Context, r *pb.PutChannelStatusRequest) (*pb.PutChannelStatusResponse, error) {
+	cs, err := s.channelStatuses()
+	if err != nil {
+		return nil, err
+	}
+	if err := cs.PutChannelStatus(ctx, channelStatusesValue(r.Channels)); err != nil {
+		return nil, s.logErr("PutChannelStatus", err)
+	}
+	return &pb.PutChannelStatusResponse{}, nil
+}
+
+func (s *server) ListChannelStatus(ctx context.Context, _ *pb.ListChannelStatusRequest) (*pb.ListChannelStatusResponse, error) {
+	cs, err := s.channelStatuses()
+	if err != nil {
+		return nil, err
+	}
+	channels, err := cs.ChannelStatus(ctx)
+	if err != nil {
+		return nil, s.logErr("ListChannelStatus", err)
+	}
+	return &pb.ListChannelStatusResponse{Channels: channelStatusesProto(channels)}, nil
 }
 
 func (s *server) InsertCapture(ctx context.Context, r *pb.InsertCaptureRequest) (*pb.InsertCaptureResponse, error) {

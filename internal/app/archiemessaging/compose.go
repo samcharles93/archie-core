@@ -16,15 +16,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 type deps struct {
-	Config   ResolvedConfig
-	Log      *slog.Logger
-	Chat     messaging.ChatContract
-	Health   *health.Registry
-	Settings *messaging.SettingsCommand
+	// ChannelStatus is where the service publishes channel lifecycle for the
+	// dashboard. Optional: nil leaves the report in-process only.
+	ChannelStatus storecontract.ChannelStatusStore
+	Config        ResolvedConfig
+	Log           *slog.Logger
+	Chat          messaging.ChatContract
+	Health        *health.Registry
+	Settings      *messaging.SettingsCommand
 }
 
 type channelInstance struct {
@@ -38,7 +42,14 @@ type Service struct {
 	// status owns channel lifecycle facts, one entry per composed channel. It is
 	// the single writer channels report through (see lifecycleFor), and the
 	// producer a dashboard surface reads.
-	status   *status.Manager
+	status *status.Manager
+	// statusWriter publishes that report where the dashboard reads it. Nil means
+	// this composition has no store to publish to, which is the honest state for a
+	// test or a process run without one.
+	statusWriter storecontract.ChannelStatusStore
+	// publish coalesces a burst of transitions into one write: a reader only ever
+	// wants the latest state of every channel.
+	publish  chan struct{}
 	cfg      ResolvedConfig
 	log      *slog.Logger
 	chat     messaging.ChatContract
@@ -95,6 +106,8 @@ func compose(ctx context.Context, d deps) (*Service, error) {
 	}
 
 	srv.status = status.NewManager(channelDescriptors(srv.channels))
+	srv.statusWriter = d.ChannelStatus
+	srv.publish = make(chan struct{}, 1)
 	return srv, nil
 }
 
@@ -161,6 +174,13 @@ func (s *Service) Start(ctx context.Context) error {
 
 	s.log.Info("messaging service started", "gateway_target", s.cfg.Options.Gateway.Target, "channels", len(s.channels))
 
+	if s.statusWriter != nil {
+		go s.publishLoop(ctx)
+		// Report the composed set before any channel reports itself, so a dashboard
+		// opened during startup shows configured channels rather than none.
+		s.signalPublish()
+	}
+
 	var wg sync.WaitGroup
 	for _, ch := range s.channels {
 		c := ch
@@ -191,6 +211,16 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 
 	wg.Wait()
+
+	if s.statusWriter != nil {
+		// The final report carries the stopped states the loop above recorded.
+		// Its own context, because ctx is already cancelled.
+		finalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.Options.ShutdownTimeout)
+		defer cancel()
+		if err := s.publishStatus(finalCtx); err != nil {
+			s.log.Warn("publishing final channel status failed", "err", err)
+		}
+	}
 	return nil
 }
 

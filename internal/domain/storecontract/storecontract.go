@@ -109,6 +109,23 @@ type ConfigSnapshotStore interface {
 	ConfigSnapshot(ctx context.Context) (ConfigSnapshot, bool, error)
 }
 
+// ChannelStatusStore holds channel runtime state as the process HOSTING the
+// channels observes it. Same split as ConfigSnapshotStore and for the same
+// reason: the writer is the Messaging Service, the reader is the UI process, and
+// a task-scoped credential must reach neither.
+//
+// It is runtime state rather than a settings document -- a channel that is
+// failed is not a document anybody edits -- which is why it is not a
+// ControlPlaneService resource kind.
+// See docs/architecture/migration-decisions.md, "Channel state to the dashboard".
+type ChannelStatusStore interface {
+	// PutChannelStatus records the reporting process's whole set: a channel it no
+	// longer reports is removed rather than left behind, because a stale "running"
+	// row is a lie the dashboard would show indefinitely.
+	PutChannelStatus(ctx context.Context, channels []ChannelStatus) error
+	ChannelStatus(ctx context.Context) ([]ChannelStatus, error)
+}
+
 // ApplyStatusStore holds which version of each control-plane resource each
 // process is running. Same split as ConfigSnapshotStore and for the same
 // reason: the writers are the processes that apply a resource, the reader is
@@ -238,6 +255,20 @@ type ConfigSnapshot struct {
 	Schema      string
 	Document    []byte
 	PublishedAt time.Time
+}
+
+// ChannelStatus is one channel's runtime state as the process hosting it
+// reports it. ReloadSupported is a capability declaration rather than a request:
+// asking for a reload travels on its own surface, because a transient request and
+// a durable state do not share a lifetime.
+type ChannelStatus struct {
+	ID              string
+	Name            string
+	State           string
+	Detail          string
+	Configured      bool
+	ReloadSupported bool
+	ObservedAt      time.Time
 }
 
 // ApplyStatus is one process's report about one control-plane resource kind.
