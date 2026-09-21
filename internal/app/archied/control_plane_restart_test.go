@@ -1,44 +1,39 @@
 package archied
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// The task limits this test moves between the file document and the database.
-// Every field differs between the two, so a process that came back on the
-// file's value is distinguishable from one that came back on the stored one.
-var (
-	restartFileLimits   = workflow.ExecutionSettings{MaxModelToolSteps: 10, MaxRuntime: 5 * time.Minute, MaxConsecutiveGateFailures: 3}
-	restartStoredLimits = workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4}
-)
-
-// restartStoredDocument is what the dashboard's editor sends for
-// restartStoredLimits: the resource's own document shape, spelled the way the
-// control plane's executionSettingsDocument spells it.
-const restartStoredDocument = `{"max_model_tool_steps": 25, "max_runtime_seconds": 3600, "max_consecutive_gate_failures": 4}`
+// restartAdminToken is the administrative credential the State Store's
+// TaskGrants interceptor accepts. PutApplyStatus and ListApplyStatus are
+// administrative (docs/prds/control-plane-apply-status.md): a task-scoped
+// grant is denied by authorizesTaskScopedCall's deny-by-default arm, so the
+// harness that reads and writes apply status must dial as the administrator.
+const restartAdminToken = "eju6-admin-token"
 
 // documentedStaleWindow is the window the operator-facing contract documents:
 // every process re-stamps its records every 30 seconds, and "a record is stale
@@ -51,335 +46,270 @@ const restartStoredDocument = `{"max_model_tool_steps": 25, "max_runtime_seconds
 // that never went stale at all.
 const documentedStaleWindow = 90 * time.Second
 
-// settingsDocument mirrors the stored document, so an assertion can read a
-// revision's value back as the limits it means rather than as bytes.
-type settingsDocument struct {
-	MaxModelToolSteps          int   `json:"max_model_tool_steps"`
-	MaxRuntimeSeconds          int64 `json:"max_runtime_seconds"`
-	MaxConsecutiveGateFailures int   `json:"max_consecutive_gate_failures"`
+// restartEditedSettings is the change the dashboard writes. It differs from
+// fileConfig()'s [budgets] on all three fields, so a process that comes back on
+// any file value is detectably not on the stored one.
+var restartEditedSettings = workflow.ExecutionSettings{
+	MaxModelToolSteps: 40, MaxRuntime: 10 * time.Minute, MaxConsecutiveGateFailures: 2,
 }
 
-func (d settingsDocument) limits() workflow.ExecutionSettings {
-	return workflow.ExecutionSettings{
-		MaxModelToolSteps:          d.MaxModelToolSteps,
-		MaxRuntime:                 time.Duration(d.MaxRuntimeSeconds) * time.Second,
-		MaxConsecutiveGateFailures: d.MaxConsecutiveGateFailures,
-	}
+// controlPlaneRestartFixture is a real State Store for the restart test: the
+// production control plane and apply-status surfaces registered on the real
+// gRPC service, behind TaskGrants' admin/task-grant interceptors, over a real
+// SQLite store. It is the composition state_store.go serves, not a stub.
+type controlPlaneRestartFixture struct {
+	listener *bufconn.Listener
+	admin    *staterpc.Client
 }
 
-// TestControlPlaneSettingsChangeSurvivesProcessRestart is archie-core-eju6: the
-// end-to-end restart check docs/prds/runtime-control-plane.md ("First
-// implementation") lists as a deliverable. In one test it writes a task-limit
-// change the way the dashboard writes one, sees the audit trail record it as an
-// ordinary edit, stops the process that consumes it, and starts it again --
-// against the same State Store and the same file document -- and asserts the
-// restarted process is running the stored limits rather than the file's, that
-// the apply-status row for it reports the version it applied, and that a record
-// older than the staleness window reads as not reporting rather than as current.
-//
-// Everything below the assertions is the production path: the State Store's own
-// control-plane composition over the store it owns, seeded from the same file
-// document the daemon reads (ImportConfig), served on the token-protected
-// topology every deployment profile uses; the dashboard's HTTP adapter, whose
-// attribution the test never supplies itself; and archied's own boot sequence.
-func TestControlPlaneSettingsChangeSurvivesProcessRestart(t *testing.T) {
-	const adminToken = "state-store-admin-token"
-	kind := controlplane.WorkflowExecutionSettingsKind
-
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	// The listener comes first so the file document can name the endpoint every
-	// process here dials: one document, read by the State Store and by both
-	// boots of the daemon.
-	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	target := listener.Addr().String()
-	writeConfig(t, cfgPath, restartConfigTOML(dir, target, adminToken))
-
-	dashboard, admin := serveRestartControlPlane(t, listener, cfgPath, target, adminToken)
-
-	// The process that consumes task limits is already running when the
-	// operator edits, on the limits the file document carries, and it has
-	// reported the version it applied.
-	first, stopFirst := bootRestartProcess(t, cfgPath)
-	if got, want := first.cfgHolder.Get().Budgets, budgetsFor(restartFileLimits); got != want {
-		t.Fatalf("running budgets before the edit = %+v, want the file document's %+v", got, want)
-	}
-	if row := reportedRow(t, admin, kind); row.AppliedVersion != 1 || row.Error != "" {
-		t.Fatalf("apply status before the edit = %+v, want version 1 and no error", row)
-	}
-
-	// 1. The dashboard writes the change. The actor, source and request ID are
-	// the adapter's (webui's webAudit), not this test's: a request body cannot
-	// claim them.
-	replaceThroughDashboard(t, dashboard, kind, restartStoredDocument, 1)
-
-	// 2. The audit trail carries it as an ordinary edit: the operator's
-	// identity, the dashboard as its source, and the value that was written.
-	revisions := historyThroughDashboard(t, dashboard, kind)
-	if len(revisions) != 2 {
-		t.Fatalf("audit trail holds %d revisions, want the migration seed and the edit", len(revisions))
-	}
-	if edit := revisions[0]; edit.Version != 2 || edit.Actor != string(identity.SystemID) || edit.Source != "archie-ui" || !strings.HasPrefix(edit.RequestID, "ui-") {
-		t.Fatalf("the edit was recorded as %+v, want an ordinary archie-ui edit by the System identity at version 2", edit)
-	}
-	if got, err := documentLimits(revisions[0].Value); err != nil || got != restartStoredLimits {
-		t.Fatalf("the audit trail recorded %s, want %+v: %v", revisions[0].Value, restartStoredLimits, err)
-	}
-	// The revision under it is the migration seed. Without it the row above
-	// would be indistinguishable from a resource that had only ever been
-	// written by the importer.
-	if seed := revisions[1]; seed.Actor != "system:migration" || seed.Source != "legacy-config" {
-		t.Fatalf("the first revision = %+v, want the legacy-config migration seed", seed)
-	}
-
-	// 3. The process stops, and comes back against the same State Store and the
-	// same file document.
-	stopFirst()
-	restarted, stopRestarted := bootRestartProcess(t, cfgPath)
-	defer stopRestarted()
-
-	// 4. It came back on the stored value, not the file's.
-	if got, want := restarted.cfgHolder.Get().Budgets, budgetsFor(restartStoredLimits); got != want {
-		t.Fatalf("running budgets after the restart = %+v, want the stored %+v (the file document still says %+v)", got, want, budgetsFor(restartFileLimits))
-	}
-	if got := restarted.executionSettings.Load(); got == nil || *got != restartStoredLimits {
-		t.Fatalf("the restarted process records %v as the settings it applied, want %+v", got, restartStoredLimits)
-	}
-
-	// 5. The apply-status row for the restarted process reports the version it
-	// applied, and the settings page reads that row as current: it was reported
-	// at now, which is the fresh half of the age pair the aged read below
-	// completes.
-	if row := reportedRow(t, admin, kind); row.AppliedVersion != 2 || row.Error != "" {
-		t.Fatalf("apply status after the restart = %+v, want version 2 and no error", row)
-	}
-	if state := applyStatusState(t, dashboard, kind); state != applyStateCurrentWire {
-		t.Fatalf("the settings page reads the row reported at now as %q, want %q", state, applyStateCurrentWire)
-	}
-
-	// ...and reads a row older than the documented staleness window as not
-	// reporting rather than as current. The row is re-stamped every 30 seconds
-	// by the process that wrote it, so a row that stopped being re-stamped is a
-	// process that stopped -- the reader must not present its last report as
-	// live. Ageing it through the same administrative surface is what the clock
-	// would have done to it, and the age is the documented 90 seconds rather
-	// than whatever the reader's own constant happens to be, so a window that
-	// stopped expiring really does fail the reading.
-	if err := admin.PutApplyStatus(t.Context(), storecontract.ApplyStatus{
-		Process: applystatus.Daemon, Kind: kind, AppliedVersion: 2,
-		ReportedAt: time.Now().UTC().Add(-documentedStaleWindow - time.Second),
-	}); err != nil {
-		t.Fatalf("age the apply status row: %v", err)
-	}
-	if state := applyStatusState(t, dashboard, kind); state != applyStateNotReportingWire {
-		t.Fatalf("the settings page reads the aged row as %q, want %q (not reporting, never current)", state, applyStateNotReportingWire)
-	}
-}
-
-// The two readings the dashboard renders for a row it holds. They are the
-// wire's values, not this package's: webui's applyState returns them and
-// ui/src/settings/ApplyStatusRows.vue shows "Not reporting" for the second, so
-// asserting the wire value asserts what the operator is shown.
-const (
-	applyStateCurrentWire      = "current"
-	applyStateNotReportingWire = "unknown"
-)
-
-// restartConfigTOML is the operator's file document: the bootstrap settings a
-// process reads before it can reach the State Store, the task limits the file
-// still carries (the values the database replaces), the container image
-// configuration.Validate requires, and the State Store endpoint.
-func restartConfigTOML(dir, target, adminToken string) string {
-	return fmt.Sprintf(`bot_user = "widget"
-db_path = %q
-
-[forge]
-type = "github"
-host = "https://github.example.com"
-
-[[repos]]
-owner = "acme"
-name = "app"
-
-[containers]
-image = "archie:test"
-pull_policy = "missing"
-
-[budgets]
-max_steps = %d
-wall_clock = %q
-gate_max_failures = %d
-
-[services.state]
-target = %q
-target_token = %q
-`, filepath.Join(dir, "archie"), restartFileLimits.MaxModelToolSteps, restartFileLimits.MaxRuntime,
-		restartFileLimits.MaxConsecutiveGateFailures, target, adminToken)
-}
-
-// serveRestartControlPlane serves the State Store contract the way the
-// standalone process serves it -- the production control-plane composition
-// (openStateStoreControlPlane) over the store the process owns, seeded from the
-// file document by the same ImportConfig call RunStateStore makes -- and
-// returns the dashboard's own view of it plus the administratively dialed
-// client.
-//
-// The credential is the administrative token, the only one PutApplyStatus and
-// ListApplyStatus admit: a task-scoped grant is refused both of them by the
-// deny-by-default arm of authorizesTaskScopedCall. The listener is the token
-// interceptor pair stateStoreServerOpts installs for the non-loopback topology
-// every container-mode deployment uses; the socket stays on loopback because
-// this deployment is one host and the credential is what the harness needs.
-func serveRestartControlPlane(t *testing.T, listener net.Listener, cfgPath, target, adminToken string) (*webui.Server, *staterpc.Client) {
+// newControlPlaneRestartFixture opens the store, seeds it the way
+// archie-state-store does on a fresh database, serves the contract over
+// bufconn, and returns an administrative client for the dashboard and for
+// reading apply status back.
+func newControlPlaneRestartFixture(t *testing.T) *controlPlaneRestartFixture {
 	t.Helper()
-	ctx := t.Context()
+	local := store.OpenTest(t)
+	t.Cleanup(func() { _ = local.Close() })
 
-	st, err := store.Open(ctx, filepath.Join(filepath.Dir(cfgPath), "archie.db-tasks.sqlite"))
+	steps, err := stepVocabulary()
 	if err != nil {
-		t.Fatalf("open state store: %v", err)
+		t.Fatalf("build step vocabulary: %v", err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	storeBoot := newBootstrap()
-	storeBoot.stderrLog = true
-	storeBoot.log = slog.New(slog.DiscardHandler)
-	if err := storeBoot.loadConfig(ctx, cfgPath, ""); err != nil {
-		t.Fatalf("state store load config: %v", err)
-	}
-
-	control, err := openStateStoreControlPlane(st)
+	control, err := controlplane.NewServer(local, steps)
 	if err != nil {
-		t.Fatalf("build the control plane server: %v", err)
+		t.Fatalf("build control plane server: %v", err)
 	}
-	versions, skipped, err := control.ImportConfig(ctx, storeBoot.cfg)
+	// The seed the State Store runs before it serves: every kind lands at
+	// version 1 holding the file document's value. A kind the validator refused
+	// would be absent, and the assertions below would then be testing a missing
+	// resource rather than a restart, so this test names the two kinds it needs.
+	versions, _, err := control.ImportConfig(t.Context(), fileConfig())
 	if err != nil {
-		t.Fatalf("seed control-plane resources: %v", err)
+		t.Fatalf("seed control plane resources: %v", err)
 	}
-	for _, skip := range skipped {
-		// Not fatal, by design: a kind the file config cannot seed stays absent
-		// and the file's value stays in effect. Reported so a kind this test
-		// cares about cannot be skipped silently.
-		t.Logf("control-plane resource not seeded from the file document: %s: %v", skip.Kind, skip.Err)
-	}
-	if got := versions[controlplane.WorkflowExecutionSettingsKind]; got != 1 {
-		t.Fatalf("the file document seeded workflow execution settings at version %d, want 1", got)
+	for _, kind := range []string{controlplane.WorkflowExecutionSettingsKind, controlplane.PluginSettingsKind} {
+		if versions[kind] != 1 {
+			t.Fatalf("%s seeded at version %d, want 1", kind, versions[kind])
+		}
 	}
 
 	grants := &staterpc.TaskGrants{}
-	opts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
-		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
-	}
-	storeBoot.st = st
-	deps := storeBoot.stateStoreDeps(grants)
-	deps.ControlPlane = control
-	go func() { _ = serveStateStore(ctx, listener, deps, opts) }()
+	listener := bufconn.Listen(1 << 20)
+	server := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(restartAdminToken)),
+		grpc.ChainStreamInterceptor(grants.StreamInterceptor(restartAdminToken)),
+	)
+	staterpc.RegisterServer(server, staterpc.Deps{
+		ControlPlane: control, Tasks: local, ApplyStatus: local, Grants: grants,
+	})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
-	admin, cleanup, err := staterpc.Dial(target, adminToken)
+	return &controlPlaneRestartFixture{
+		listener: listener,
+		admin:    dialStateStore(t, listener, restartAdminToken),
+	}
+}
+
+// dial dials a fresh administrative connection, what a restarted process would
+// open to the State Store it does not own.
+func (f *controlPlaneRestartFixture) dial(t *testing.T) *staterpc.Client {
+	t.Helper()
+	return dialStateStore(t, f.listener, restartAdminToken)
+}
+
+// dialStateStore is the production client wiring (staterpc.Dial, the only dial
+// path the daemon and dashboard use) against the non-loopback bridge address
+// every container-mode profile uses, with the dialer redirected to bufconn.
+func dialStateStore(t *testing.T, listener *bufconn.Listener, token string) *staterpc.Client {
+	t.Helper()
+	client, cleanup, err := staterpc.Dial("172.17.0.1:9090", token, grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+		return listener.DialContext(ctx)
+	}))
 	if err != nil {
-		t.Fatalf("dial the state store: %v", err)
+		t.Fatalf("dial state store: %v", err)
 	}
 	t.Cleanup(cleanup)
-	return &webui.Server{ControlPlane: admin.ControlPlane(), ApplyStatus: admin}, admin
+	return client
 }
 
-// bootRestartProcess boots one archied process against the State Store at
-// cfgPath and returns it with the stop func that ends it. The phases are Run's,
-// in Run's order, for the surfaces this feature runs through: resolve the file
-// document, dial the State Store surfaces, layer the restart-required kinds
-// over that document, then apply the settings that arrive on the watch and
-// record what it applied.
-//
-// Run's later phases (forge, containers, NATS, chat) consume no task limit, so
-// they stay out: this is the process the feature runs in, not a second
-// composition. A stub would not do -- the point of the test is that the value
-// survives a real boot reading a real store.
-func bootRestartProcess(t *testing.T, cfgPath string) (*boot, func()) {
+// startRestartProcess composes the consuming half of archied the way run()
+// composes it: boot.runtimeConfig layers the stored restart-required kinds over
+// the file document, and the watched execution settings are applied and
+// recorded from there. Apply status is reported through the State Store
+// contract by the process's own reporter.
+func startRestartProcess(ctx context.Context, t *testing.T, client *staterpc.Client) *boot {
 	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	b := newBootstrap()
-	// The daemon's log destination is a deployment file this test does not
-	// create, so this boot logs where every other test's boot does.
-	b.stderrLog = true
-	b.log = slog.New(slog.DiscardHandler)
-	// The process name is what an apply-status record carries; a boot
-	// reporting under any other name would be invisible to the settings page.
-	b.processName = applystatus.Daemon
-	if err := b.loadConfig(ctx, cfgPath, ""); err != nil {
-		cancel()
-		t.Fatalf("load config: %v", err)
+	base := fileConfig()
+	b := &boot{
+		cfg:          base,
+		log:          slog.New(slog.DiscardHandler),
+		processName:  applystatus.Daemon,
+		cfgHolder:    config.NewHolder(base),
+		controlPlane: controlplane.NewRPCClient(client.ControlPlane()),
 	}
-	// openStores' own secret registry is not part of this feature: the file
-	// document carries the State Store token explicitly, so the dial resolves
-	// its credential without a forge credential this harness has no use for.
-	b.secrets = &secret.Registry{}
-	if err := b.openDaemonStateSurfaces(); err != nil {
-		cancel()
-		t.Fatalf("open the State Store surfaces: %v", err)
-	}
+	b.applyStatus = applystatus.New(b.processName, client, b.log)
 	if err := b.loadRuntimeConfig(ctx); err != nil {
-		cancel()
-		t.Fatalf("layer the database settings over the file document: %v", err)
+		t.Fatalf("load runtime config: %v", err)
 	}
 	if err := b.startWorkflowExecutionSettings(ctx); err != nil {
-		cancel()
-		t.Fatalf("apply the stored workflow execution settings: %v", err)
+		t.Fatalf("start workflow execution settings: %v", err)
 	}
-	var once sync.Once
-	stop := func() {
-		once.Do(func() {
-			// Cancel first, then release: a watch stream that fails on a live
-			// context is reported as a failed apply, and this process is being
-			// shut down, not failing.
-			cancel()
-			b.cleanup()
-		})
-	}
-	t.Cleanup(stop)
-	return b, stop
+	return b
 }
 
-// documentLimits reads a stored or recorded document back as the limits it
-// means.
-func documentLimits(value []byte) (workflow.ExecutionSettings, error) {
-	var document settingsDocument
-	if err := json.Unmarshal(value, &document); err != nil {
-		return workflow.ExecutionSettings{}, err
+// TestRestartKeepsADatabaseOwnedSettingsChange is archie-core-eju6, the
+// end-to-end restart test docs/prds/runtime-control-plane.md ("First
+// implementation") lists as a deliverable. It drives settings changes through
+// the dashboard's own control-plane handler, reads one back from the audit
+// trail, restarts the process that consumes it, and asserts the restarted
+// process is running the stored values rather than the file's -- across both
+// halves of boot.runtimeConfig: the queried restart-required kinds and the
+// watched execution budgets (archie-core-ju85).
+//
+// The restart is a fresh boot composition dialing a fresh connection to the
+// State Store that holds the change. State Store persistence is what an OS
+// restart preserves; re-creating the consumer is what an OS restart does to
+// the consumer, so nothing in the property under test is substituted.
+func TestRestartKeepsADatabaseOwnedSettingsChange(t *testing.T) {
+	fixture := newControlPlaneRestartFixture(t)
+	dashboard := &webui.Server{ControlPlane: fixture.admin.ControlPlane(), ApplyStatus: fixture.admin}
+
+	// A process is already running on the seeded values. It is stopped before
+	// the edit so the restart below -- not the live watch -- is what reads the
+	// change back.
+	firstCtx, stopFirst := context.WithCancel(t.Context())
+	first := startRestartProcess(firstCtx, t, fixture.dial(t))
+	stopFirst()
+	if got := first.cfgHolder.Get().Budgets; got != budgetsFor(workflow.ExecutionSettings{MaxModelToolSteps: 1, MaxRuntime: time.Minute}) {
+		t.Fatalf("first process budgets = %+v, want the seeded file budgets", got)
 	}
-	return document.limits(), nil
-}
-
-// dashboardRequest runs one request against the dashboard's own HTTP adapter.
-func dashboardRequest(t *testing.T, dashboard *webui.Server, request *http.Request) *httptest.ResponseRecorder {
-	t.Helper()
-	recorder := httptest.NewRecorder()
-	dashboard.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("%s %s = %d: %s", request.Method, request.URL.Path, recorder.Code, recorder.Body.String())
+	if got := first.cfgHolder.Get().PluginDir; got != fileConfig().PluginDir {
+		t.Fatalf("first process plugin dir = %q, want the file's", got)
 	}
-	return recorder
+
+	// 1. The dashboard writes the change. Its handler, not this test, supplies
+	// the attribution: webAudit attributes to identity.SystemID.
+	expectedVersion := int64(1)
+	executionSettingsDocument := []byte(`{"max_model_tool_steps":40,"max_runtime_seconds":600,"max_consecutive_gate_failures":2}`)
+	if version := dashboardReplace(t, dashboard, controlplane.WorkflowExecutionSettingsKind, executionSettingsDocument, expectedVersion); version != 2 {
+		t.Fatalf("workflow execution settings after edit = version %d, want 2", version)
+	}
+	pluginDocument := []byte(`{"plugin_dir":"/db/plugins","module_dir":"/db/modules","secret_engine_dir":"/db/secrets","skills_dir":"/db/skills"}`)
+	if version := dashboardReplace(t, dashboard, controlplane.PluginSettingsKind, pluginDocument, expectedVersion); version != 2 {
+		t.Fatalf("plugin settings after edit = version %d, want 2", version)
+	}
+
+	// 2. The change lands in the audit trail as an ordinary operator edit: the
+	// newest revision names the dashboard and the System identity, and carries
+	// the version it replaced.
+	revisions := dashboardHistory(t, dashboard, controlplane.WorkflowExecutionSettingsKind)
+	if len(revisions) != 2 {
+		t.Fatalf("revisions = %d, want the seed and the edit", len(revisions))
+	}
+	edit := revisions[0]
+	if edit.Version != 2 || edit.Actor != string(identity.SystemID) || edit.Source != "archie-ui" || edit.RequestID == "" {
+		t.Fatalf("newest revision audit = %+v, want the dashboard's System-attributed edit at version 2", edit)
+	}
+	if revisions[1].Actor != "system:migration" || revisions[1].Version != 1 {
+		t.Fatalf("older revision = %+v, want the migration seed it replaced", revisions[1])
+	}
+	// The value rides along, so a restore is an ordinary replace of it.
+	if got := decodeExecutionSettingsRevision(t, edit.Value); got != restartEditedSettings {
+		t.Fatalf("revision value = %+v, want the edited %+v", got, restartEditedSettings)
+	}
+
+	// 3-4. Restart the consumer. It re-resolves the same file document and
+	// must come back on the stored values for both the queried kind and the
+	// watched budgets.
+	restartCtx, stopRestart := context.WithCancel(t.Context())
+	defer stopRestart()
+	restarted := startRestartProcess(restartCtx, t, fixture.dial(t))
+
+	settings := restarted.executionSettings.Load()
+	if settings == nil {
+		t.Fatal("restarted process recorded no workflow execution settings")
+	}
+	if *settings != restartEditedSettings {
+		t.Errorf("restarted settings = %+v, want the stored %+v", *settings, restartEditedSettings)
+	}
+	if got := restarted.cfgHolder.Get().Budgets; got != budgetsFor(restartEditedSettings) {
+		t.Errorf("restarted budgets = %+v, want the stored %+v", got, budgetsFor(restartEditedSettings))
+	}
+	if got := restarted.cfgHolder.Get().PluginDir; got != "/db/plugins" {
+		t.Errorf("restarted plugin dir = %q, want the stored /db/plugins, not the file's %q", got, fileConfig().PluginDir)
+	}
+
+	// The SIGHUP reload re-resolves the file document alone. It runs the same
+	// boot.runtimeConfig, so it must not revert either half to its file value
+	// (archie-core-ju85).
+	if err := restarted.reloadConfig(restartCtx, &configuration.Document{Config: fileConfig()}); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := restarted.cfgHolder.Get().Budgets; got != budgetsFor(restartEditedSettings) {
+		t.Errorf("budgets after reload = %+v, want the stored %+v re-applied", got, budgetsFor(restartEditedSettings))
+	}
+	if got := restarted.cfgHolder.Get().PluginDir; got != "/db/plugins" {
+		t.Errorf("plugin dir after reload = %q, want the stored /db/plugins", got)
+	}
+
+	// 5. The restarted process reports the version it applied, for both halves,
+	// and a record that has stopped being re-stamped reads as not reporting.
+	reported, err := fixture.admin.ListApplyStatus(t.Context())
+	if err != nil {
+		t.Fatalf("list apply status: %v", err)
+	}
+	for _, kind := range []string{controlplane.WorkflowExecutionSettingsKind, controlplane.PluginSettingsKind} {
+		record := applyStatusFor(t, reported, applystatus.Daemon, kind)
+		if record.AppliedVersion != 2 {
+			t.Errorf("%s apply status version = %d, want the applied 2", kind, record.AppliedVersion)
+		}
+		if record.Error != "" {
+			t.Errorf("%s apply status error = %q, want none for an applied version", kind, record.Error)
+		}
+	}
+
+	statusView := dashboardApplyStatus(t, dashboard)
+	live := applyStatusViewFor(t, statusView, applystatus.Daemon, controlplane.WorkflowExecutionSettingsKind)
+	if live.State != "current" {
+		t.Errorf("a record re-stamped at restart reads %q, want current", live.State)
+	}
+
+	// One record per (process, kind), replaced in place: an old report for the
+	// same key replaces the live one rather than sitting beside it.
+	stale := time.Now().Add(-documentedStaleWindow - time.Second)
+	if err := fixture.admin.PutApplyStatus(t.Context(), storecontract.ApplyStatus{
+		Process: applystatus.Daemon, Kind: controlplane.WorkflowExecutionSettingsKind,
+		AppliedVersion: 2, ReportedAt: stale,
+	}); err != nil {
+		t.Fatalf("put stale apply status: %v", err)
+	}
+	statusView = dashboardApplyStatus(t, dashboard)
+	aged := applyStatusViewFor(t, statusView, applystatus.Daemon, controlplane.WorkflowExecutionSettingsKind)
+	if aged.State != "unknown" {
+		t.Errorf("a record older than %v reads %q, want unknown rather than current", documentedStaleWindow, aged.State)
+	}
+	if count := countApplyStatusViews(statusView, applystatus.Daemon, controlplane.WorkflowExecutionSettingsKind); count != 1 {
+		t.Errorf("rows for (%s, %s) = %d, want the report replaced in place", applystatus.Daemon, controlplane.WorkflowExecutionSettingsKind, count)
+	}
+
+	// The administrative credential is what admits the report: a task-scoped
+	// grant, which the daemon issues to agent containers, is refused by both
+	// apply-status RPCs.
+	grant, err := fixture.admin.RegisterTaskGrant(t.Context(), 1, time.Hour)
+	if err != nil {
+		t.Fatalf("register task grant: %v", err)
+	}
+	taskScoped := dialStateStore(t, fixture.listener, grant)
+	if _, err := taskScoped.ListApplyStatus(t.Context()); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("ListApplyStatus with a task-scoped grant = %v, want PermissionDenied", err)
+	}
+	if err := taskScoped.PutApplyStatus(t.Context(), storecontract.ApplyStatus{Process: applystatus.Daemon, Kind: controlplane.PluginSettingsKind, AppliedVersion: 9}); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("PutApplyStatus with a task-scoped grant = %v, want PermissionDenied", err)
+	}
 }
 
-// replaceThroughDashboard writes document as the dashboard's editor does, over
-// the replace command, against the version the editor read. The attribution is
-// the adapter's: the request body carries only the value and the version.
-func replaceThroughDashboard(t *testing.T, dashboard *webui.Server, kind, document string, expectedVersion int64) {
-	t.Helper()
-	body := fmt.Sprintf(`{"value": %s, "expected_version": %d}`, document, expectedVersion)
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
-		"/api/control-plane/resources/"+kind+"/commands/replace", strings.NewReader(body))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Archie-CSRF", "1")
-	dashboardRequest(t, dashboard, request)
-}
-
-// revision is one row of the audit trail as the dashboard's history route
-// renders it.
-type revision struct {
+type controlPlaneRevision struct {
 	Version   int64           `json:"version"`
 	Value     json.RawMessage `json:"value"`
 	Actor     string          `json:"actor"`
@@ -387,62 +317,122 @@ type revision struct {
 	RequestID string          `json:"request_id"`
 }
 
-func historyThroughDashboard(t *testing.T, dashboard *webui.Server, kind string) []revision {
-	t.Helper()
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/control-plane/resources/"+kind+"/history", nil)
-	recorder := dashboardRequest(t, dashboard, request)
-	var response struct {
-		Revisions []revision `json:"revisions"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode the audit trail: %v (body %s)", err, recorder.Body.String())
-	}
-	if len(response.Revisions) == 0 {
-		t.Fatalf("the audit trail for %s is empty", kind)
-	}
-	return response.Revisions
+type applyStatusRecord struct {
+	Process        string `json:"process"`
+	Kind           string `json:"kind"`
+	AppliedVersion int64  `json:"applied_version"`
+	Error          string `json:"error"`
+	State          string `json:"state"`
 }
 
-// reportedRow is the apply-status row the settings page shows for the daemon
-// and kind. It is read through the administrative token, which is the only
-// credential that reaches ListApplyStatus.
-func reportedRow(t *testing.T, admin *staterpc.Client, kind string) storecontract.ApplyStatus {
+// decodeExecutionSettingsRevision reads a revision's value in the same shape
+// the stored document uses, so the audit assertion compares values rather than
+// just versions.
+func decodeExecutionSettingsRevision(t *testing.T, value json.RawMessage) workflow.ExecutionSettings {
 	t.Helper()
-	rows, err := admin.ListApplyStatus(t.Context())
-	if err != nil {
-		t.Fatalf("list apply status: %v", err)
+	var document struct {
+		MaxModelToolSteps          int   `json:"max_model_tool_steps"`
+		MaxRuntimeSeconds          int64 `json:"max_runtime_seconds"`
+		MaxConsecutiveGateFailures int   `json:"max_consecutive_gate_failures"`
 	}
-	for _, row := range rows {
-		if row.Process == applystatus.Daemon && row.Kind == kind {
-			return row
+	if err := json.Unmarshal(value, &document); err != nil {
+		t.Fatalf("decode revision value: %v (%s)", err, value)
+	}
+	return workflow.ExecutionSettings{
+		MaxModelToolSteps:          document.MaxModelToolSteps,
+		MaxRuntime:                 time.Duration(document.MaxRuntimeSeconds) * time.Second,
+		MaxConsecutiveGateFailures: document.MaxConsecutiveGateFailures,
+	}
+}
+
+// dashboardReplace writes a resource the way the dashboard does -- through the
+// HTTP handler, which supplies the operator attribution the request body never
+// carries -- and returns the new version.
+func dashboardReplace(t *testing.T, server *webui.Server, kind string, value []byte, expectedVersion int64) int64 {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"value": json.RawMessage(value), "expected_version": expectedVersion})
+	if err != nil {
+		t.Fatalf("encode %s request: %v", kind, err)
+	}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/control-plane/resources/"+kind+"/commands/replace", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("dashboard replace %s = %d, want 200: %s", kind, recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Resource struct {
+			Version int64 `json:"version"`
+		} `json:"resource"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode %s replace response: %v (%s)", kind, err, recorder.Body.String())
+	}
+	return response.Resource.Version
+}
+
+// dashboardHistory reads a resource's audit trail through the dashboard route,
+// so the edit observed is the one the UI would show.
+func dashboardHistory(t *testing.T, server *webui.Server, kind string) []controlPlaneRevision {
+	t.Helper()
+	var view struct {
+		Revisions []controlPlaneRevision `json:"revisions"`
+	}
+	dashboardGET(t, server, "/api/control-plane/resources/"+kind+"/history", &view)
+	return view.Revisions
+}
+
+// dashboardApplyStatus reads the apply-status page the dashboard renders.
+func dashboardApplyStatus(t *testing.T, server *webui.Server) []applyStatusRecord {
+	t.Helper()
+	var view struct {
+		Records []applyStatusRecord `json:"records"`
+	}
+	dashboardGET(t, server, "/api/control-plane/apply-status", &view)
+	return view.Records
+}
+
+func dashboardGET(t *testing.T, server *webui.Server, path string, target any) {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200: %s", path, recorder.Code, recorder.Body.String())
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
+		t.Fatalf("decode %s: %v (%s)", path, err, recorder.Body.String())
+	}
+}
+
+func applyStatusFor(t *testing.T, statuses []storecontract.ApplyStatus, process, kind string) storecontract.ApplyStatus {
+	t.Helper()
+	for _, record := range statuses {
+		if record.Process == process && record.Kind == kind {
+			return record
 		}
 	}
-	t.Fatalf("no apply-status row for %s/%s in %+v", applystatus.Daemon, kind, rows)
+	t.Fatalf("no apply status for (%s, %s) among %+v", process, kind, statuses)
 	return storecontract.ApplyStatus{}
 }
 
-// applyStatusState is the reading the settings page renders for the daemon's
-// row for kind.
-func applyStatusState(t *testing.T, dashboard *webui.Server, kind string) string {
+func applyStatusViewFor(t *testing.T, records []applyStatusRecord, process, kind string) applyStatusRecord {
 	t.Helper()
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/control-plane/apply-status", nil)
-	recorder := dashboardRequest(t, dashboard, request)
-	var page struct {
-		Records []struct {
-			Process string `json:"process"`
-			Kind    string `json:"kind"`
-			State   string `json:"state"`
-		} `json:"records"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &page); err != nil {
-		t.Fatalf("decode the apply-status page: %v (body %s)", err, recorder.Body.String())
-	}
-	for _, record := range page.Records {
-		if record.Process == applystatus.Daemon && record.Kind == kind {
-			return record.State
+	for _, record := range records {
+		if record.Process == process && record.Kind == kind {
+			return record
 		}
 	}
-	t.Fatalf("the apply-status page carries no row for %s/%s: %+v", applystatus.Daemon, kind, page.Records)
-	return ""
+	t.Fatalf("no apply-status row for (%s, %s) among %+v", process, kind, records)
+	return applyStatusRecord{}
+}
+
+func countApplyStatusViews(records []applyStatusRecord, process, kind string) int {
+	count := 0
+	for _, record := range records {
+		if record.Process == process && record.Kind == kind {
+			count++
+		}
+	}
+	return count
 }
