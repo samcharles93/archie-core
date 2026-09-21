@@ -13,23 +13,18 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/archieui"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
 func main() { os.Exit(run()) }
 
 func run() int {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
 	var options archieui.Options
-	flag.StringVar(&options.Config, "config", filepath.Join(base, "archie", "config.toml"), "configuration file or directory (only [services.*] targets and [web] are read)")
+	flag.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory (only [services.*] targets and [web] are read)")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	flag.StringVar(&options.Listen, "listen", "", "dashboard HTTP listen address (defaults to [web].listen, else 127.0.0.1:8484)")
 	flag.StringVar(&options.Token, "token", "", "dashboard token; required for a non-loopback listener")

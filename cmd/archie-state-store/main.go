@@ -14,11 +14,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
 func main() { os.Exit(run()) }
@@ -31,13 +31,8 @@ func run() int {
 	if args := os.Args[1:]; len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		return runRecovery(args, os.Stdout, os.Stderr)
 	}
-	base, err := os.UserConfigDir()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
 	var options archied.StateStoreOptions
-	flag.StringVar(&options.Config, "config", filepath.Join(base, "archie", "config.toml"), "configuration file or directory")
+	flag.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	flag.StringVar(&options.Listen, "listen", "", "state store gRPC listen address (defaults to [services.state].listen, else 127.0.0.1:9090)")
 	flag.StringVar(&options.Token, "token", "", "bearer token required for a non-loopback listener (defaults to [services.state].target_token)")

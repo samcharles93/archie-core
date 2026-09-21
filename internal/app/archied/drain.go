@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/drain"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	drainio "github.com/samcharles93/archie-core/internal/infrastructure/drain"
 )
 
@@ -17,14 +18,14 @@ import (
 const defaultDrainPollInterval = 5 * time.Second
 
 // DefaultDrainRequestPath returns the marker file path the daemon watches. It
-// lives under the repo's config home (${XDG_CONFIG_HOME:-~/.config}/archie) --
-// the established convention for archied's per-user paths -- rather than the
+// lives under the config home (${XDG_CONFIG_HOME:-~/.config}/archie) -- the
+// established convention for archied's per-user paths -- rather than the
 // epic's literal ~/.archie, which is not a path this daemon ever uses. The
 // discrepancy is intentional: every other archied path reads from the XDG
 // config home, so the drain marker must too, or an operator pointing at the
 // documented location would miss it.
 func DefaultDrainRequestPath() string {
-	return filepath.Join(configHome(), "archie", drainio.DefaultMarkerFilename)
+	return filepath.Join(configuration.DefaultConfigDir(), drainio.DefaultMarkerFilename)
 }
 
 // monitorDrainRequests polls check for a live drain request and invokes

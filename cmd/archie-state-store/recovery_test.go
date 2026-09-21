@@ -388,24 +388,55 @@ func TestRecoveryValidateLeavesTheDaemonLogAlone(t *testing.T) {
 }
 
 // validate's verdict is the daemon's verdict only if it reads the configuration
-// the daemon reads. archied resolves that default from its own configHome, which
-// honours a relative XDG_CONFIG_HOME; os.UserConfigDir rejects a relative one
-// outright, which left the command with no config and no verdict at all.
-func TestRecoveryDefaultConfigFollowsTheDaemonsConfigHome(t *testing.T) {
-	relative := filepath.Join("relative", "config")
-	t.Setenv("XDG_CONFIG_HOME", relative)
-	if got, want := defaultConfigPath(), filepath.Join(relative, "archie", "config.toml"); got != want {
-		t.Errorf("defaultConfigPath() with a relative XDG_CONFIG_HOME = %q, want %q", got, want)
+// the daemon reads, and with no -config it reads whatever the one shared
+// helper resolves. The resolution rule itself is pinned where it lives
+// (internal/infrastructure/configuration); what only this test can pin is that
+// the command takes its default from that helper rather than deriving it.
+//
+// A relative XDG_CONFIG_HOME is the case that separates the two: the command
+// has to resolve ${XDG_CONFIG_HOME}/archie/config.toml relative to its working
+// directory, and a second derivation through os.UserConfigDir rejects a
+// relative value outright, leaving the command with no config to answer about.
+func TestRecoveryDefaultConfigResolvesWhereTheDaemonReads(t *testing.T) {
+	// The second layout is the teeth: the command has to read the config at the
+	// resolved path, not merely find some config somewhere under the config home.
+	// A resolution that drifts finds nothing and validate has no verdict.
+	tests := []struct {
+		name      string
+		configDir string // relative to $XDG_CONFIG_HOME
+		wantOK    bool
+	}{
+		{name: "$XDG_CONFIG_HOME/archie/config.toml", configDir: "archie", wantOK: true},
+		{name: "a config elsewhere in the config home is not the default", configDir: "wrong-place"},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv("XDG_CONFIG_HOME", "xdg")
 
-	absolute := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", absolute)
-	if got, want := defaultConfigPath(), filepath.Join(absolute, "archie", "config.toml"); got != want {
-		t.Errorf("defaultConfigPath() = %q, want %q", got, want)
-	}
-	// The equality itself: one helper, so the two cannot drift apart again.
-	if got, want := defaultConfigPath(), archied.DefaultConfigPath(); got != want {
-		t.Errorf("defaultConfigPath() = %q, but the daemon resolves %q", got, want)
+			configDir := filepath.Join(root, "xdg", tc.configDir)
+			if err := os.MkdirAll(configDir, 0o700); err != nil {
+				t.Fatalf("create %s: %v", configDir, err)
+			}
+			configPath := writeMinimalConfig(t, configDir)
+			db := filepath.Join(root, "archie.db-tasks.sqlite")
+			seedStoreResources(t, openTaskStore(t, db), configPath)
+
+			code, stdout, stderr := runRecoveryCmd(t, "validate", "-db", db)
+			if !tc.wantOK {
+				if code == 0 {
+					t.Fatalf("validate exited 0 with no config at the resolved path %s: %s", configPath, stdout)
+				}
+				return
+			}
+			if code != 0 {
+				t.Fatalf("validate with no -config exited %d, so it did not read %s: %s", code, configPath, stderr)
+			}
+			if !strings.Contains(stdout, "stored resources validate") {
+				t.Errorf("validate reported %q, want the verdict on the store seeded from the resolved config", stdout)
+			}
+		})
 	}
 }
 

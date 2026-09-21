@@ -67,7 +67,7 @@ type setupFlags struct {
 
 func bindSetupFlags(fs *flag.FlagSet) *setupFlags {
 	f := &setupFlags{}
-	fs.StringVar(&f.cfgPath, "config", filepath.Join(configHome(), "archie", "config.toml"), "path to write config.toml")
+	fs.StringVar(&f.cfgPath, "config", configuration.DefaultConfigPath(), "path to write config.toml")
 	fs.BoolVar(&f.defaults, "defaults", false, "write a known-valid unattended baseline config without prompting")
 	fs.StringVar(&f.botUser, "bot-user", "", "forge username for archied's commits and API calls")
 	fs.StringVar(&f.operator, "operator", "", "operator display name (optional)")

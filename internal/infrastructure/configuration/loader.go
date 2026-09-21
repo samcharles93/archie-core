@@ -79,6 +79,24 @@ func xdgDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
+// xdgConfigHome returns $XDG_CONFIG_HOME, falling back to ~/.config, and
+// finally to a relative path when the home directory is unknowable.
+//
+// os.UserConfigDir is the XDG-spec-shaped function and is deliberately not
+// used: it resolves to ~/Library/Application Support on darwin and returns an
+// error rather than a relative path for a relative $XDG_CONFIG_HOME, so two
+// archie processes would read two different configuration files.
+func xdgConfigHome() string {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".config"
+	}
+	return filepath.Join(home, ".config")
+}
+
 // File loads a single configuration file. TOML remains supported for existing
 // deployments; YAML files use the same defaults and validation path.
 func (l *Loader) File(path string) (*Document, error) {

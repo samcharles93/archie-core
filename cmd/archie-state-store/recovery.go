@@ -8,14 +8,8 @@ import (
 	"io"
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
-
-// defaultConfigPath is the configuration the serve path reads by default, and
-// the one the daemon boots with. It is the daemon's own rule rather than a
-// second derivation of it: os.UserConfigDir (what the sibling processes use)
-// disagrees with archied on darwin and rejects a relative XDG_CONFIG_HOME
-// outright, which would leave validate answering about a file nobody boots.
-func defaultConfigPath() string { return archied.DefaultConfigPath() }
 
 // recoveryUsage is the whole flag surface of the offline recovery commands.
 // They are subcommands of this binary rather than a recovery binary of their
@@ -68,7 +62,7 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 	// Only validate asks a question about the process rather than the file, so
 	// only validate takes the configuration the process would boot with.
 	if command == archied.RecoveryValidate {
-		flags.StringVar(&options.Config, "config", defaultConfigPath(), "configuration file or directory the daemon boots with")
+		flags.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory the daemon boots with")
 		flags.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	}
 	if err := flags.Parse(args[1:]); err != nil {

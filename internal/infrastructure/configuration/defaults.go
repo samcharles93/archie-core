@@ -199,6 +199,25 @@ func DefaultWorkDir() string {
 	return filepath.Join(xdgDataHome(), "archie", "work")
 }
 
+// DefaultConfigDir returns the directory archie's configuration lives in:
+// $XDG_CONFIG_HOME/archie, or ~/.config/archie. It is the base every
+// config-home-derived path is built on. It is not the -config source
+// directory, which is whichever file or directory the operator names.
+func DefaultConfigDir() string {
+	return filepath.Join(xdgConfigHome(), "archie")
+}
+
+// DefaultConfigPath returns the configuration file an archie binary reads when
+// -config is not given. Every binary that asks a question about a deployment
+// has to read this path to be answering about the same deployment, so the rule
+// lives here once and the binaries take it from here. Deriving it a second way
+// is what went wrong before: os.UserConfigDir is a plausible-looking source for
+// the same value that disagrees with this one on darwin and for a relative
+// $XDG_CONFIG_HOME.
+func DefaultConfigPath() string {
+	return filepath.Join(DefaultConfigDir(), "config.toml")
+}
+
 // applyGeneralDefaults derives the paths and limits that have no owning
 // section.
 func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
