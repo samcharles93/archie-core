@@ -200,12 +200,17 @@ class = "ollama"
 # a Playwright/Puppeteer-based server fetching a browser binary from a CDN
 # via its postinstall script) -- consult that package's own env vars for
 # those.
+# Most MCP servers are single-threaded and get one tools/call at a time.
+# parallel_tool_calls = true (default false) drops that serialization for
+# this server only, for a server whose own implementation handles
+# concurrent requests. It never affects another configured server.
 # [[tools.mcp_servers]]
 # name = "desktop-commander"
 # transport = "stdio"
 # command = "npx"
 # args = ["-y", "@wonderwhy-er/desktop-commander@0.2.46", "--no-onboarding"]
 # work_dir = "/path/to/workspace"
+# parallel_tool_calls = false
 
 # Workspace code-search index. Paths default under work_dir when unset.
 [indexing]

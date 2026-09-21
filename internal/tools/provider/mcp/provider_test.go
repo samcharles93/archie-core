@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/tools"
 	protocol "github.com/samcharles93/archie-core/internal/tools/mcp"
@@ -21,7 +22,7 @@ func TestProviderInitializesDiscoversAndCallsOriginalMCPTool(t *testing.T) {
 		Description: "Search repositories",
 		InputSchema: tools.JSONSchema{"type": "object"},
 	}}
-	provider := New("Git Hub/Prod", transport)
+	provider := New("Git Hub/Prod", transport, false)
 
 	manifest := provider.Manifest()
 	if manifest.ID != "mcp.git-hub-prod" {
@@ -71,6 +72,83 @@ func TestProviderInitializesDiscoversAndCallsOriginalMCPTool(t *testing.T) {
 	}
 }
 
+// callOverlapWindow bounds how long a test gives tool calls to reach the
+// transport. A call allowed to overlap gets there microseconds after its
+// goroutine starts, so one still absent after this window is held back by
+// the client, not by the scheduler.
+const callOverlapWindow = 500 * time.Millisecond
+
+// reachedSend reports how many of n calls reached Send within window.
+func reachedSend(entered <-chan struct{}, n int, window time.Duration) int {
+	count := 0
+	for range n {
+		select {
+		case <-entered:
+			count++
+		case <-time.After(window):
+			return count
+		}
+	}
+	return count
+}
+
+// TestProviderParallelToolCallsReachTheMCPClient pins the wiring half of the
+// per-server flag: the choice made at construction has to reach the client
+// the provider builds in Start, or a server that opted in stays serialized
+// with no other symptom.
+func TestProviderParallelToolCallsReachTheMCPClient(t *testing.T) {
+	tests := []struct {
+		name              string
+		parallelToolCalls bool
+		wantInFlight      int
+	}{
+		{
+			name:         "provider for a server that has not opted in keeps one tool call in flight",
+			wantInFlight: 1,
+		},
+		{
+			name:              "provider for an opted-in server overlaps tool calls",
+			parallelToolCalls: true,
+			wantInFlight:      2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := newFakeTransport()
+			transport.listed = []protocol.ToolSchema{{Name: "slow"}}
+			transport.callEntered = make(chan struct{}, 2)
+			transport.callRelease = make(chan struct{})
+			provider := New("slow-server", transport, tt.parallelToolCalls)
+			if err := provider.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := provider.Discover(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 {
+				t.Fatalf("Discover() count = %d, want 1", len(entries))
+			}
+
+			var wg sync.WaitGroup
+			for range 2 {
+				wg.Go(func() {
+					if _, err := entries[0].Handler(context.Background(), nil); err != nil {
+						t.Errorf("handler: %v", err)
+					}
+				})
+			}
+
+			if got := reachedSend(transport.callEntered, 2, callOverlapWindow); got != tt.wantInFlight {
+				t.Fatalf("tool calls in flight at once = %d, want %d", got, tt.wantInFlight)
+			}
+
+			close(transport.callRelease)
+			wg.Wait()
+		})
+	}
+}
+
 func TestProviderSurfacesMCPToolLevelErrors(t *testing.T) {
 	transport := newFakeTransport()
 	transport.listed = []protocol.ToolSchema{{Name: "fails"}}
@@ -78,7 +156,7 @@ func TestProviderSurfacesMCPToolLevelErrors(t *testing.T) {
 		Content: []protocol.ContentBlock{{Type: "text", Text: "denied"}},
 		IsError: true,
 	}
-	provider := New("errors", transport)
+	provider := New("errors", transport, false)
 	if err := provider.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +182,7 @@ func TestProviderPreservesResourceTextAndMultimodalResults(t *testing.T) {
 		{Type: "resource", Resource: &protocol.ResourceContent{Text: " resource context"}},
 		{Type: "image", Data: "aW1hZ2U=", MimeType: "image/png"},
 	}}
-	provider := New("media", transport)
+	provider := New("media", transport, false)
 	if err := provider.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +213,7 @@ func TestProviderWritesBinaryContentToDeliverableMediaRefs(t *testing.T) {
 		{Type: "audio", Data: "YXVkaW8=", MimeType: "audio/wav"},
 		{Type: "resource", Resource: &protocol.ResourceContent{MimeType: "application/pdf", Blob: "cGRm"}},
 	}}
-	provider := New("media", transport)
+	provider := New("media", transport, false)
 	if err := provider.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +292,7 @@ func TestProviderStartFailureStopsTransport(t *testing.T) {
 			transport := newFakeTransport()
 			transport.startErr = tt.startErr
 			transport.sendErr = tt.sendErr
-			provider := New("failure", transport)
+			provider := New("failure", transport, false)
 			if err := provider.Start(context.Background()); err == nil {
 				t.Fatal("Start() succeeded")
 			}
@@ -237,7 +315,7 @@ func TestProviderRejectsInvalidConfiguration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider := New(tt.server, tt.transport)
+			provider := New(tt.server, tt.transport, false)
 			if err := provider.Start(context.Background()); err == nil {
 				t.Fatal("Start() succeeded")
 			}
@@ -246,7 +324,7 @@ func TestProviderRejectsInvalidConfiguration(t *testing.T) {
 }
 
 func TestProviderSatisfiesEngine(t *testing.T) {
-	var _ toolprovider.Engine = New("compile", newFakeTransport())
+	var _ toolprovider.Engine = New("compile", newFakeTransport(), false)
 }
 
 // Compile-time checks: HTTP and SSE transports satisfy LifecycleTransport.
@@ -293,6 +371,13 @@ type fakeTransport struct {
 	notifyMethods []string
 	calledName    string
 	calledArgs    map[string]any
+
+	// callEntered receives one token per tools/call that reaches Send, and
+	// the call then blocks until callRelease is closed. Set both before
+	// Start to hold tool calls open and observe how many the client let
+	// overlap.
+	callEntered chan struct{}
+	callRelease chan struct{}
 }
 
 func newFakeTransport() *fakeTransport {
@@ -332,11 +417,6 @@ func (t *fakeTransport) State() protocol.TransportState {
 }
 
 func (t *fakeTransport) Send(_ context.Context, body []byte) ([]byte, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.sendErr != nil {
-		return nil, t.sendErr
-	}
 	var request struct {
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
@@ -344,6 +424,23 @@ func (t *fakeTransport) Send(_ context.Context, body []byte) ([]byte, error) {
 	}
 	if err := json.Unmarshal(body, &request); err != nil {
 		return nil, err
+	}
+
+	// Outside the lock: holding it here would serialize the calls this hook
+	// exists to observe, making a parallel client look serialized.
+	if request.Method == "tools/call" {
+		if t.callEntered != nil {
+			t.callEntered <- struct{}{}
+		}
+		if t.callRelease != nil {
+			<-t.callRelease
+		}
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.sendErr != nil {
+		return nil, t.sendErr
 	}
 	var result any
 	switch request.Method {

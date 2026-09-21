@@ -33,15 +33,23 @@ type Client struct {
 	nextID     atomic.Int64
 	// callMu serializes tools/call requests to this server. Most MCP
 	// servers are single-threaded processes and don't expect or handle
-	// concurrent requests safely.
+	// concurrent requests safely, so serializing is the default. A server
+	// whose config declares it handles concurrent requests gets no callMu:
+	// nil means this server's calls are never held apart.
 	callMu *sync.Mutex
 }
 
 // NewClient builds a Client over transport. serverName identifies this
 // MCP server in log/error messages; it need not match the server's own
-// self-reported name.
-func NewClient(transport Transport, serverName string) *Client {
-	return &Client{transport: transport, serverName: serverName, callMu: &sync.Mutex{}}
+// self-reported name. parallelToolCalls drops the per-server serialization
+// of tools/call: false (the default) keeps one call in flight at a time,
+// true lets the caller's own concurrency through.
+func NewClient(transport Transport, serverName string, parallelToolCalls bool) *Client {
+	c := &Client{transport: transport, serverName: serverName}
+	if !parallelToolCalls {
+		c.callMu = &sync.Mutex{}
+	}
+	return c
 }
 
 // InitializeResult is the server's response to initialize.
@@ -155,8 +163,10 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolSchema, error) {
 // reported via CallToolResult.IsError, not a Go error  --  see
 // [CallToolResult].
 func (c *Client) CallTool(ctx context.Context, name string, arguments map[string]any) (CallToolResult, error) {
-	c.callMu.Lock()
-	defer c.callMu.Unlock()
+	if c.callMu != nil {
+		c.callMu.Lock()
+		defer c.callMu.Unlock()
+	}
 
 	params := map[string]any{"name": name, "arguments": arguments}
 	var result CallToolResult

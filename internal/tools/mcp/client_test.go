@@ -51,7 +51,7 @@ func (f *fakeSender) Notify(_ context.Context, body []byte) error {
 }
 
 func newTestClient(f *fakeSender) *Client {
-	return NewClient(f, "test-server")
+	return NewClient(f, "test-server", false)
 }
 
 func TestInitializeSendsInitializeThenInitializedNotification(t *testing.T) {
@@ -157,7 +157,7 @@ func TestListToolsFollowsPaginationCursor(t *testing.T) {
 			return page1, nil
 		}
 		return page2, nil
-	}), "test-server")
+	}), "test-server", false)
 
 	toolList, err := c.ListTools(context.Background())
 	if err != nil {

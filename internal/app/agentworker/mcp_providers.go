@@ -89,7 +89,7 @@ func buildMCPProvider(server config.MCPServer) (toolprovider.Engine, string, err
 	if err != nil {
 		return nil, transportType, err
 	}
-	return mcptoolprovider.New(name, transport), transportType, nil
+	return mcptoolprovider.New(name, transport, server.ParallelToolCalls), transportType, nil
 }
 
 func mcpTransportForServer(

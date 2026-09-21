@@ -221,7 +221,7 @@ func configuredMCPProvider(server config.MCPServer, workDir string) (toolprovide
 			Dir:     server.WorkDir,
 			Env:     npmCacheServerEnv(command, workDir),
 		})
-		return mcptoolprovider.New(name, transport), nil
+		return mcptoolprovider.New(name, transport, server.ParallelToolCalls), nil
 
 	case "http", "streamablehttp":
 		url := strings.TrimSpace(server.URL)
@@ -232,7 +232,7 @@ func configuredMCPProvider(server config.MCPServer, workDir string) (toolprovide
 			Endpoint: url,
 			Headers:  server.Headers,
 		})
-		return mcptoolprovider.New(name, transport), nil
+		return mcptoolprovider.New(name, transport, server.ParallelToolCalls), nil
 
 	case "sse":
 		sseEndpoint := strings.TrimSpace(server.SSEEndpoint)
@@ -244,7 +244,7 @@ func configuredMCPProvider(server config.MCPServer, workDir string) (toolprovide
 			MessageEndpoint: strings.TrimSpace(server.MessageEndpoint),
 			Headers:         server.Headers,
 		})
-		return mcptoolprovider.New(name, transport), nil
+		return mcptoolprovider.New(name, transport, server.ParallelToolCalls), nil
 
 	default:
 		return nil, fmt.Errorf("MCP transport %q is not supported", transportType)

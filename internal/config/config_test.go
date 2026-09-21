@@ -76,6 +76,47 @@ work_dir = "/workspace"
 	}
 }
 
+func TestMCPServerParallelToolCallsDecodesFromTOML(t *testing.T) {
+	tests := []struct {
+		name   string
+		server string
+		want   bool
+	}{
+		{
+			name: "absent key leaves the server serialized",
+			server: `
+[[tools.mcp_servers]]
+name = "desktop-commander"
+command = "npx"
+`,
+		},
+		{
+			name: "parallel_tool_calls opts the server in",
+			server: `
+[[tools.mcp_servers]]
+name = "desktop-commander"
+command = "npx"
+parallel_tool_calls = true
+`,
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+			if _, err := toml.Decode(tt.server, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			if len(cfg.Tools.MCPServers) != 1 {
+				t.Fatalf("MCPServers = %#v, want one server", cfg.Tools.MCPServers)
+			}
+			if got := cfg.Tools.MCPServers[0].ParallelToolCalls; got != tt.want {
+				t.Fatalf("ParallelToolCalls = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChatModelCatalogDecodesFromTOML(t *testing.T) {
 	var cfg Config
 	if _, err := toml.Decode(`

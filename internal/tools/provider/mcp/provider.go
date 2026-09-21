@@ -39,6 +39,12 @@ type Provider struct {
 	transport LifecycleTransport
 	client    *protocol.Client
 
+	// parallelToolCalls is the configured server's opt-in to concurrent
+	// tools/call. It is handed to the client Start builds: the client is
+	// what serializes calls, so the flag has to reach it or the server
+	// stays serialized.
+	parallelToolCalls bool
+
 	// mediaDir is the root directory binary content blocks (images, audio,
 	// resource blobs) are written under, created lazily on the first
 	// multimodal tool result. It is removed by Stop.
@@ -48,12 +54,15 @@ type Provider struct {
 	mediaCallSeq atomic.Int64
 }
 
-// New creates an MCP tool provider.
-func New(name string, transport LifecycleTransport) *Provider {
+// New creates an MCP tool provider. parallelToolCalls mirrors the
+// configured server's own flag: false (the default) has the provider's
+// client serialize tools/call, true lets them overlap.
+func New(name string, transport LifecycleTransport, parallelToolCalls bool) *Provider {
 	return &Provider{
-		name:      strings.TrimSpace(name),
-		segment:   sanitizeToolSegment(name),
-		transport: transport,
+		name:              strings.TrimSpace(name),
+		segment:           sanitizeToolSegment(name),
+		transport:         transport,
+		parallelToolCalls: parallelToolCalls,
 	}
 }
 
@@ -94,7 +103,7 @@ func (p *Provider) Start(ctx context.Context) error {
 	if err := p.transport.Start(ctx); err != nil {
 		return fmt.Errorf("start MCP server %q: %w", p.name, err)
 	}
-	client := protocol.NewClient(p.transport, p.name)
+	client := protocol.NewClient(p.transport, p.name, p.parallelToolCalls)
 	if _, err := client.Initialize(ctx); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		stopErr := p.transport.Stop(cleanupCtx)

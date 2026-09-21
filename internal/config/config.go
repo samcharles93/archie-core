@@ -340,6 +340,13 @@ type MCPServer struct {
 	// MessageEndpoint is the POST URL for client→server messages. When
 	// empty, the client discovers it from the server's "endpoint" SSE event.
 	MessageEndpoint string `toml:"message_endpoint" yaml:"message_endpoint" json:"message_endpoint,omitempty"`
+
+	// ParallelToolCalls lifts the client's serialization of tools/call for
+	// this server only, letting concurrent callers overlap. Default false:
+	// one call in flight at a time, because most MCP servers are
+	// single-threaded processes that do not handle concurrent requests
+	// safely. Set it only for a server whose implementation does.
+	ParallelToolCalls bool `toml:"parallel_tool_calls" yaml:"parallel_tool_calls" json:"parallel_tool_calls"`
 }
 
 // ToolPolicy holds tool execution limits.

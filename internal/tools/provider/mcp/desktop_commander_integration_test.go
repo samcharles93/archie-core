@@ -25,7 +25,7 @@ func TestDesktopCommanderClientCompatibility(t *testing.T) {
 		},
 		Dir: "../../..",
 	})
-	provider := New("desktop-commander", transport)
+	provider := New("desktop-commander", transport, false)
 	if err := provider.Start(ctx); err != nil {
 		t.Fatalf("start Desktop Commander through MCP client: %v", err)
 	}
