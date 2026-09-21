@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -53,6 +55,12 @@ type StateStoreRecoveryOptions struct {
 	Out string
 	// From is the snapshot restore reads.
 	From string
+	// Config and Overlay are the configuration the daemon would boot with.
+	// validate asks whether the stored settings are a state archied starts on,
+	// and that question is about the stored values *layered onto this
+	// configuration*, so the file config is part of the answer.
+	Config  string
+	Overlay string
 	// Kind is the control-plane resource kind rollback replays.
 	Kind string
 	// Revision is the revision rollback replays. Zero means the newest
@@ -84,7 +92,7 @@ func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOption
 		if options.DB == "" {
 			return "", errors.New("validate requires -db")
 		}
-		return validateStore(ctx, options.DB)
+		return validateStore(ctx, options)
 	case RecoveryRollback:
 		if options.DB == "" || options.Kind == "" {
 			return "", errors.New("rollback requires -db and -kind")
@@ -95,20 +103,35 @@ func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOption
 	}
 }
 
-// validateStore answers "would archied start against this file". The file-level
-// checks come first, so the store is only read once its schema is one this
-// binary understands; the resource check then decodes every stored value with
-// the definition that owns it, which is the same validation a write applies.
-func validateStore(ctx context.Context, path string) (string, error) {
-	version, err := store.ValidateFile(ctx, path)
+// validateStore answers the question an operator actually has: would archied
+// start against this file. It runs the checks that stop it, in the order boot
+// meets them.
+//
+// First the file itself, since a database that is corrupt, newer than this
+// binary, or not a database is one the serving process refuses to open. Then
+// the writer's own per-resource validation, which is what a hand-edited value
+// violated. Then boot's gate: the file config with every stored resource
+// layered onto it, and configuration.Validate -- the check whose failure the
+// daemon reports as "validate database settings".
+//
+// The two validation layers disagree in both directions, and both are reported
+// rather than merged. The write path is stricter about shape (it rejects
+// unknown fields boot's decode ignores), while boot is stricter about meaning
+// (only boot checks dispatch.trigger and a positive poll interval, both of
+// which the write path's own validators let through). A store either check
+// refuses is a store somebody has to look at.
+func validateStore(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
+	version, err := store.ValidateFile(ctx, options.DB)
 	if err != nil {
 		return "", err
 	}
-	st, err := store.OpenReadOnly(ctx, path)
+	st, err := store.OpenReadOnly(ctx, options.DB)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = st.Close() }()
+
+	server := controlplane.NewServer(st)
 	// The resources table is only absent from a store written before the control
 	// plane existed. That store holds no settings to validate, and the serving
 	// process creates the table on its next start -- refusing it here would send
@@ -119,12 +142,43 @@ func validateStore(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	if stored {
-		checked, err = controlplane.NewServer(st).ValidateStored(ctx)
-		if err != nil {
+		if checked, err = server.ValidateStored(ctx); err != nil {
 			return "", err
 		}
 	}
-	return fmt.Sprintf("%s is a valid store at schema version %d; %d stored resources validate", path, version, checked), nil
+
+	base, err := bootConfig(ctx, options)
+	if err != nil {
+		return "", err
+	}
+	document := base
+	if stored {
+		// A store the State Store never seeded has no kinds to layer, and the
+		// daemon cannot start against it either: the State Store seeds every kind
+		// from its own config at boot.
+		if document, _, err = server.StoredRuntimeConfig(ctx, base); err != nil {
+			return "", err
+		}
+	}
+	if err := configuration.Validate(&document); err != nil {
+		// The daemon's own wording, so an operator can match this failure to the
+		// one that stopped archied starting.
+		return "", fmt.Errorf("validate database settings: %w", err)
+	}
+	return fmt.Sprintf("%s is a valid store at schema version %d; %d stored resources validate", options.DB, version, checked), nil
+}
+
+// bootConfig resolves the configuration the daemon would boot with. validate is
+// the only recovery command that asks a question about the process rather than
+// the file, and that question is about the stored values layered onto this
+// document, so the document is part of the answer.
+func bootConfig(ctx context.Context, options StateStoreRecoveryOptions) (config.Config, error) {
+	b := newBootstrap()
+	defer b.cleanup()
+	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
+		return config.Config{}, err
+	}
+	return b.cfg, nil
 }
 
 // rollbackResource is the one operation the Web UI cannot be asked to perform

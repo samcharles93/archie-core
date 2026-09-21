@@ -133,6 +133,16 @@ func Backup(ctx context.Context, database, snapshot string) error {
 	if err := RequireDatabase(database); err != nil {
 		return err
 	}
+	// The exemption from the ownership lock below is only sound while backup
+	// never replaces the database. With -out naming the database it would
+	// rename the snapshot over a file a serving State Store may still have
+	// open, orphaning the WAL of the file it just unlinked -- so it is refused
+	// exactly as Restore refuses it.
+	if same, err := sameFile(database, snapshot); err != nil {
+		return err
+	} else if same {
+		return fmt.Errorf("snapshot %s is the database itself", snapshot)
+	}
 	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
 		return fmt.Errorf("create snapshot directory: %w", err)
 	}
@@ -163,9 +173,11 @@ func Backup(ctx context.Context, database, snapshot string) error {
 
 // Restore replaces database with the snapshot at snapshot. The snapshot is
 // verified before anything is destroyed, so a file that is not a usable store
-// cannot take the database down with it, and the database is replaced by a
-// rename, so a failure leaves either the old file or the new one rather than a
-// mixture.
+// cannot take the database down with it, and the database file itself is
+// replaced by a rename, so a failure leaves either the old file or the new one
+// rather than a mixture. The replaced file's -wal/-shm are removed first, which
+// the comment at that step explains: between the two calls the database is
+// merely incomplete, and re-running the command completes it.
 //
 // It holds the ownership lock for its duration: rewriting a database a running
 // State Store still has open would leave that process writing to an unlinked

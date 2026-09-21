@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,6 +26,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -142,6 +144,28 @@ func TestRecoveryBackupRefusesAMissingDatabase(t *testing.T) {
 	}
 }
 
+// backup is the one recovery command allowed to run against a serving store,
+// and that exemption is only sound while it never replaces the database. With
+// -out naming the database it renames the snapshot over the live file and
+// leaves the WAL of the database it just unlinked -- the state the restore path
+// refuses up front and the code elsewhere calls unrecoverable.
+func TestRecoveryBackupRefusesTheDatabaseAsItsOwnSnapshot(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "archie.db-tasks.sqlite")
+	st := openTaskStore(t, db)
+	seedTask(t, st, "live")
+
+	code, _, stderr := runRecoveryCmd(t, "backup", "-db", db, "-out", db)
+	if code == 0 {
+		t.Fatal("backup over the database itself succeeded")
+	}
+	if !strings.Contains(stderr, "is the database itself") {
+		t.Errorf("refusal must say the snapshot is the database; stderr = %q", stderr)
+	}
+	if got := taskTitles(t, db); len(got) != 1 || got[0] != "live" {
+		t.Fatalf("refused backup changed the database: tasks = %v", got)
+	}
+}
+
 // Restoring is the forward-migration escape hatch: the previous release
 // reads this file, so it must be exactly the snapshot, with the WAL that
 // belongs to the replaced database gone rather than replayed over it.
@@ -242,17 +266,67 @@ func TestRecoveryRestoreRefusesTheDatabaseAsItsOwnSnapshot(t *testing.T) {
 
 func TestRecoveryValidateAcceptsAHealthyStore(t *testing.T) {
 	dir := t.TempDir()
+	configPath := writeMinimalConfig(t, dir)
 	db := filepath.Join(dir, "archie.db-tasks.sqlite")
 	st := openTaskStore(t, db)
 	seedTask(t, st, "healthy")
-	seedResource(t, st, controlplane.ModelRoleAssignmentsKind, `{"implement":"anthropic/claude"}`, "seed")
+	seedStoreResources(t, st, configPath)
 
-	code, stdout, stderr := runRecoveryCmd(t, "validate", "-db", db)
+	code, stdout, stderr := runRecoveryCmd(t, "validate", "-db", db, "-config", configPath)
 	if code != 0 {
 		t.Fatalf("validate exited %d: %s", code, stderr)
 	}
 	if !strings.Contains(stdout, "schema version") {
 		t.Errorf("validate must report the schema version it verified; stdout = %q", stdout)
+	}
+	// The count is part of what the operator reads, and a check that reports
+	// "0 stored resources" for a store full of them is worse than no check.
+	if count := storedResourceCount(t, stdout); count == 0 {
+		t.Errorf("validate reported no stored resources for a seeded store; stdout = %q", stdout)
+	}
+}
+
+// validate's verdict is only useful if it is the daemon's verdict. Boot refuses
+// on configuration.Validate over the file config with every stored resource
+// layered onto it (internal/app/archied/control_plane.go), not on the write
+// path's own per-resource decode, and the two disagree: the write path accepts
+// a scheduling policy boot rejects.
+func TestRecoveryValidateRunsTheGateBootRuns(t *testing.T) {
+	dir := t.TempDir()
+	configPath := writeMinimalConfig(t, dir)
+	db := filepath.Join(dir, "archie.db-tasks.sqlite")
+	seedStoreResources(t, openTaskStore(t, db), configPath)
+
+	// The control: a store seeded from this config is one the daemon boots on.
+	code, _, stderr := runRecoveryCmd(t, "validate", "-db", db, "-config", configPath)
+	if code != 0 {
+		t.Fatalf("validate exited %d on a store the daemon starts on: %s", code, stderr)
+	}
+
+	// A hand-edited value, or an older revision of one: the write path's own
+	// validator never inspects dispatch.trigger, so only the config gate
+	// catches it, and the daemon exits 1 on it (validateDispatch).
+	if err := execRaw(t, db, `UPDATE resources SET value='{"poll_interval":"1m","max_retries":3,"dispatch":{"trigger":"bogus"}}' WHERE kind='scheduling-policy'`); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runRecoveryCmd(t, "validate", "-db", db, "-config", configPath)
+	if code == 0 {
+		t.Fatalf("validate accepted a stored policy the daemon refuses to boot with; stdout = %q", stdout)
+	}
+	if !strings.Contains(stderr, "dispatch.trigger") {
+		t.Errorf("refusal must name what boot rejects; stderr = %q", stderr)
+	}
+
+	// A store the State Store never seeded: the daemon cannot layer its
+	// settings from it either, so the offline check must not call it valid.
+	unseeded := filepath.Join(dir, "unseeded.db-tasks.sqlite")
+	openTaskStore(t, unseeded)
+	code, stdout, stderr = runRecoveryCmd(t, "validate", "-db", unseeded, "-config", configPath)
+	if code == 0 {
+		t.Fatalf("validate accepted a store with no stored settings; stdout = %q", stdout)
+	}
+	if !strings.Contains(stderr, "provider-settings") {
+		t.Errorf("refusal must name the resource kind boot cannot read; stderr = %q", stderr)
 	}
 }
 
@@ -318,16 +392,19 @@ func TestRecoveryValidateRefusesWhatTheDaemonRefuses(t *testing.T) {
 	})
 
 	t.Run("stored_resource_that_will_not_validate", func(t *testing.T) {
-		// The stored settings value that stops archied starting: it can only
-		// get here by bypassing the write path, which is exactly the state the
-		// control plane fails closed on and the operator has no path back from.
+		// A stored value that both gates refuse: the write path stops it at
+		// Decode (workflow.ExecutionSettings.Validate rejects a negative limit),
+		// and boot stops on it too -- startWorkflowExecutionSettings decodes the
+		// same document and exits 1. It can only get here by bypassing the write
+		// path, which is exactly the state the operator has no path back from.
 		db := newStore(t)
-		seedResource(t, openTaskStore(t, db), controlplane.ModelRoleAssignmentsKind, `{"implement":"claude"}`, "hand-edited")
+		seedResource(t, openTaskStore(t, db), controlplane.WorkflowExecutionSettingsKind,
+			`{"max_model_tool_steps":-1,"max_runtime_seconds":60,"max_consecutive_gate_failures":3}`, "hand-edited")
 		code, _, stderr := runRecoveryCmd(t, "validate", "-db", db)
 		if code == 0 {
 			t.Fatal("validate accepted a stored resource the write path would refuse")
 		}
-		if !strings.Contains(stderr, controlplane.ModelRoleAssignmentsKind) {
+		if !strings.Contains(stderr, controlplane.WorkflowExecutionSettingsKind) {
 			t.Errorf("refusal must name the resource kind; stderr = %q", stderr)
 		}
 	})
@@ -351,11 +428,14 @@ func TestRecoveryValidateRefusesWhatTheDaemonRefuses(t *testing.T) {
 		// settings. The serving process creates the table on its next start, so
 		// refusing this file would send an operator to restore a snapshot for a
 		// database that would have started perfectly well.
-		db := newStore(t)
+		dir := t.TempDir()
+		configPath := writeMinimalConfig(t, dir)
+		db := filepath.Join(dir, "archie.db-tasks.sqlite")
+		openTaskStore(t, db)
 		if err := execRaw(t, db, `DROP TABLE resources`); err != nil {
 			t.Fatal(err)
 		}
-		code, stdout, stderr := runRecoveryCmd(t, "validate", "-db", db)
+		code, stdout, stderr := runRecoveryCmd(t, "validate", "-db", db, "-config", configPath)
 		if code != 0 {
 			t.Fatalf("validate exited %d: %s", code, stderr)
 		}
@@ -500,6 +580,36 @@ func TestRecoveryRejectsAnUnknownSubcommand(t *testing.T) {
 	if !strings.Contains(stderr.String(), "backp") {
 		t.Errorf("refusal must name the unknown subcommand; stderr = %q", stderr.String())
 	}
+}
+
+// seedStoreResources seeds the store the way the State Store seeds it at boot,
+// from the same config file the operator hands validate: the command's verdict
+// is about the pair, and a store whose settings never matched the config is a
+// state boot does not recognise either.
+func seedStoreResources(t *testing.T, st *store.Store, configPath string) {
+	t.Helper()
+	doc, err := configuration.New(nil).Resolve(configPath, "")
+	if err != nil {
+		t.Fatalf("resolve %s: %v", configPath, err)
+	}
+	if _, err := controlplane.NewServer(st).ImportConfig(t.Context(), doc.Config); err != nil {
+		t.Fatalf("seed store resources: %v", err)
+	}
+}
+
+// storedResourceCount reads the count validate reports out of its summary line.
+func storedResourceCount(t *testing.T, stdout string) int {
+	t.Helper()
+	before, found := strings.CutSuffix(stdout, " stored resources validate\n")
+	if !found {
+		t.Fatalf("no resource count in %q", stdout)
+	}
+	fields := strings.Fields(before)
+	count, err := strconv.Atoi(fields[len(fields)-1])
+	if err != nil {
+		t.Fatalf("resource count in %q: %v", stdout, err)
+	}
+	return count
 }
 
 // seedResource writes one revision of a control-plane resource through the

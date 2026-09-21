@@ -127,14 +127,22 @@ Nothing skips the control plane at boot, and the only writer for a resource is
 the daemon fails closed without. `archie-state-store` therefore carries the
 offline recovery commands (`archie-core-6zw0`). They work on the task database
 file directly -- the configured `db_path` with `-tasks.sqlite` appended, not
-`db_path` itself -- and need neither `archied` nor the Web UI.
+`db_path` itself -- and need neither `archied` nor the Web UI running: `validate`
+reads the configuration file the daemon boots with, which is what makes its
+verdict the daemon's verdict.
 
 | Command | What it does | State Store |
 | --- | --- | --- |
 | `backup -db F -out F` | writes a transactionally consistent snapshot (`VACUUM INTO`), verified as a usable store before it is published | may be running |
 | `restore -db F -from F` | replaces the database with a snapshot and drops the replaced file's `-wal`/`-shm` | must be stopped |
-| `validate -db F` | checks the file the way boot meets it: readable, not corrupt, schema no newer than the binary, and every stored resource decoding under the definition that owns it | must be stopped |
+| `validate -db F [-config C]` | runs the checks that stop archied starting: the file is readable, uncorrupted and no newer than the binary; every stored resource decodes under the definition that owns it; and `configuration.Validate` accepts the stored values layered onto `C`, the check the daemon reports as `validate database settings` | may be running |
 | `rollback -db F -kind K [-revision N]` | replays an earlier revision of a stored resource through the ordinary replace, recording the rollback as a new revision | must be stopped |
+
+The two validation layers `validate` reports are not the same check, and it
+reports both rather than merging them: the write path's own decode is stricter
+about shape (it rejects unknown fields boot's decode ignores), while boot is
+stricter about meaning (only boot checks `dispatch.trigger`, and a positive
+`poll_interval`). Either one refusing is a store somebody has to look at.
 
 No rollback RPC exists and none is needed: a revision carries its own value, so
 restoring one is the same replace the dashboard and the channels already use.
@@ -144,12 +152,14 @@ which the daemon's own API cannot serve it.
 "Must be stopped" is checked rather than assumed. The serving process takes an
 exclusive flock on `<db>.lock` for its whole life, and `restore` and `rollback`
 refuse with `task database is owned by another process` while another process
-holds it. `backup` is the deliberate exception: the update installer runs inside
-the process it is replacing and cannot stop the State Store, so the snapshot
-that makes a failed update reversible is taken against a serving store -- and
-`scripts/archie-update-install` takes it through this subcommand rather than
-through its own `sqlite3` shell, so the installer and an operator run one
-implementation.
+holds it. The read-only commands -- `backup` and `validate` -- take no lock and
+are meant to run against a serving store: `backup` because the update installer
+runs inside the process it is replacing and cannot stop the State Store, and
+`validate` because an operator checks a running deployment with it. That
+`backup` exemption is only sound while backup never replaces the database, so
+naming the database as its own `-out` is refused. `scripts/archie-update-install`
+takes its pre-flight snapshot through this subcommand rather than through its
+own `sqlite3` shell, so the installer and an operator run one implementation.
 
 `rollback` is the surgical route back from a bad stored value; `restore` is the
 blunt one, and is also the way back from a schema migration a release cannot

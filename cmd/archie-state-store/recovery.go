@@ -5,9 +5,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
 )
+
+// defaultConfigPath is the configuration the serve path reads by default; the
+// offline validate asks what the daemon would boot with, so it reads the same
+// one.
+func defaultConfigPath() string {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(base, "archie", "config.toml")
+}
 
 // recoveryUsage is the whole flag surface of the offline recovery commands.
 // They are subcommands of this binary rather than a recovery binary of their
@@ -25,7 +38,8 @@ owns it, while backup takes a consistent snapshot of a serving store.
 
   backup   -db FILE -out FILE       write a snapshot of the database
   restore  -db FILE -from FILE      replace the database with a snapshot
-  validate -db FILE                 check the database the way boot does
+  validate -db FILE [-config FILE]  check the file, its stored settings and the
+                                    configuration the daemon would boot with
   rollback -db FILE -kind KIND      replay an earlier revision of a stored
            [-revision N]            resource through the ordinary replace
 `
@@ -56,6 +70,12 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&options.From, "from", "", "snapshot file restore reads")
 	flags.StringVar(&options.Kind, "kind", "", "control-plane resource kind rollback replays")
 	flags.Int64Var(&options.Revision, "revision", 0, "revision rollback replays (default: the newest one older than the current value)")
+	// Only validate asks a question about the process rather than the file, so
+	// only validate takes the configuration the process would boot with.
+	if command == archied.RecoveryValidate {
+		flags.StringVar(&options.Config, "config", defaultConfigPath(), "configuration file or directory the daemon boots with")
+		flags.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		return 2
 	}

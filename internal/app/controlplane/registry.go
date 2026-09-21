@@ -102,10 +102,13 @@ func (s *Server) Owns(kind string) bool {
 // resources it checked. Errors name the kind and the revision it was stored at,
 // which is what an operator needs to roll the value back.
 //
-// This is how an offline validate reproduces the refusal that stops archied
-// starting: the check is the writer's own, so it cannot drift from what a
-// replace would accept, and a value can only be stored unvalidated by bypassing
-// the write path entirely.
+// It is the write path's own check, not boot's: boot refuses on
+// configuration.Validate over the stored values layered onto the file config,
+// and the two disagree in both directions (this one rejects unknown fields
+// boot's decode ignores, while only boot checks dispatch.trigger and a positive
+// poll interval). A caller answering "would the daemon start" therefore needs
+// StoredRuntimeConfig and configuration.Validate as well -- see
+// validateStore in internal/app/archied/state_store_recovery.go.
 func (s *Server) ValidateStored(ctx context.Context) (int, error) {
 	checked := 0
 	var failures []error
