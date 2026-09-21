@@ -1,13 +1,13 @@
-# Channel and Forge action positions -- investigation (resolves `t2db.19`)
+# Channel and Forge action positions (resolves `t2db.19`)
 
-**Status:** Investigation complete for Forge; Channel corrected and flagged
-for a decision only Sam can make -- not a design recommendation.
-**Date:** 2026-09-03
+**Status:** Draft
+**Date:** 2026-09-03, Channel resolved 2026-09-22
 **Parent:** `docs/prds/eda-playbook-engine.md`, epic `archie-core-t2db`
-**Blocked on:** `archie-core-t2db.17` (idempotency keying) for implementation
-of either position -- both are side-effecting.
+**Blocked on:** `archie-core-t2db.24` (the `playbook_dispatches` ledger) for
+implementation of either position. Both are side-effecting, and `t2db.17`
+resolved the keying scheme in design only.
 
-## Forge: ready to design once t2db.17 lands
+## Forge: ready to implement once the ledger lands
 
 `internal/forge.Forge` is already exactly the shape a native-Go action
 position needs -- a real, typed, general-purpose interface, not something
@@ -50,8 +50,8 @@ layer today. Depend on `Forger`, not on `internal/forge`.
 starting set. `create-pr` is explicitly a heavier case -- opening a PR is a
 harder-to-reverse action with its own dedup shape beyond "did this event
 fire before" (a redelivered event must not open a second PR for the same
-logical change) -- defer it to a follow-up slice once `t2db.17`'s keying
-scheme is proven on the simpler operations, don't design it blind now.
+logical change) -- defer it to a follow-up slice once the keying scheme is
+proven on the simpler operations, don't design it blind now.
 
 **Host access:** the coordinator needs the same `Forge` instance
 `internal/daemon`'s poller already holds (constructed once at startup via
@@ -59,65 +59,97 @@ scheme is proven on the simpler operations, don't design it blind now.
 existing instance into the coordinator's constructor), not a new
 extensibility mechanism.
 
-## Channel: the crew's assumption doesn't hold -- flagged, not designed
+## Channel: resolved 2026-09-22
 
-The investigation backlog that recommended scoping this alongside Forge
-assumed `channels.Channel` already has an addressable send capability that
-just needs a name-based lookup. **That's not true.** Verified directly:
+Superseded: the 2026-09-03 section here presented two options and asked for a
+decision. The decision is below; the options are not repeated.
+
+### Constraints this satisfies
+
+Messaging is the root, Channel is the integration layer, an implementation
+such as Telegram sits under Channel. A channel is added by implementing one
+reusable interface, and every channel must implement it. A notification
+mechanism belongs under Messaging, and `channels.Channel` must not reach
+across into it.
+
+### Notification is a Messaging contract, not a channel type
+
+The contract lives in `internal/domain/messaging`. A channel implementation
+satisfies it by importing its own parent, which it already does, so the
+dependency stays `channels -> messaging` and nothing points back.
+
+`channels.Channel` does not change. It gains no notification method and no
+import, so the interface every channel must implement stays the lifecycle and
+config contract it is today. `internal/channels/telegram` satisfying both
+contracts is an implementation choosing to, not the Channel layer knowing
+about notification.
+
+A notification is not a channel type because it has no lifecycle to start and
+stop, no inbound direction, and no configuration schema of its own. Modelling
+it as one would force `Start`/`Stop`/`ConfigSchema` onto something with no
+meaning for them, and make every real channel declare whether it is a
+notification.
+
+### Destinations are configured, never named by a playbook
+
+`[notify]` today is one webhook URL, read in one place
+(`internal/domain/workflow/feasibility.go:134`). It becomes a set of named
+destinations. Each binds a name the operator chooses to a channel already
+registered in the Messaging composition (`internal/app/archiemessaging/compose.go`
+registers `telegram`, `email`, `webhook`) plus that channel's own address,
+such as a Telegram chat id. The existing single-webhook form keeps working as
+a destination named `webhook`.
+
+A playbook action names a destination. It never names an address. Playbook
+triggers are reachable from a public, unauthenticated intake surface, so an
+action that could address an arbitrary chat would be a new exfiltration
+surface; a destination the operator configured once is not.
+
+### Args and Result
 
 ```go
-// internal/gateway/gateway.go
-type Gateway interface {
-    Name() string
-    Start(ctx context.Context, router *Router, lifecycle Lifecycle) error
-    Stop(ctx context.Context) error
+type NotifyArgs struct {
+    Destination string // a name from [notify]
+    Text        string
+}
+
+type NotifyResult struct {
+    Delivered bool
 }
 ```
 
-`channels.Channel` embeds exactly this plus `ConfigSchema`/`ValidateConfig`
--- lifecycle and config introspection, nothing about sending a message.
-Grepping `internal/channels` and `internal/gateway` for any `Send` method
-returns nothing. The only generic outbound-message mechanism in the entire
-codebase is `Notify` (`internal/config`'s `[notify]` block) -- a single
-fixed webhook URL for gate failures/approvals/parked tasks, not a
-per-channel-addressable send.
+An unknown destination is a reported error at playbook load, not at dispatch:
+the destination set is known at startup, so this follows the engine's
+reject-at-load rule.
 
-Real per-channel sending exists, but deliberately not as a reusable
-capability: `telegramApprover` (`internal/channels/telegram/approval.go`)
-captures a `*bot.Bot` plus a specific `chatID`/`threadID`/`recipient` at
-construction, scoped to one conversation for one launch. This is the
-established precedent in this codebase (already in project memory from
-before this session) precisely to prevent reading a shared bot handle
-across chats -- a playbook-triggered send has no chat turn to be scoped to,
-so this precedent doesn't transfer as-is.
+### Host access: no new process surface
 
-**This means "Channel action position" is not a small wrapper over an
-existing capability -- it requires deciding whether to build a genuinely
-new send capability that doesn't exist today, and if so, what it targets.**
-Two different things could reasonably be meant by "Channel" here, and they
-have different shapes:
+`archie-messaging` is its own process (`cmd/archie-messaging`). It dials out
+to the Gateway and the State Store and serves nothing, and it deliberately
+has no NATS connection: `internal/app/archiemessaging/telegram_features.go:65`
+records that it "must not decode" the daemon's `[nats]` config. So a
+notification cannot be pushed into it today by any route.
 
-1. **A new, playbook-scoped notification capability** -- closer in spirit
-   to `Notify` (fire a message somewhere, no chat-turn context needed) but
-   addressable by name/target instead of one fixed webhook. This would be
-   new engine-family work (its own typed contract, registry, narrow host
-   access), not an extension of `channels.Channel`.
-2. **Reusing the interactive chat channels** (Telegram, email) for
-   playbook-originated sends -- requires deciding what conversation context
-   a playbook-triggered message has (which chat? whose approval flow?) when
-   there was no incoming chat turn to anchor it, and building whatever
-   capture/scoping mechanism the interactive channels use today, generalized
-   to a non-chat trigger. This is materially harder and touches the
-   gateway's session model.
+Delivery therefore travels the connection that already exists. Every process
+that needs Messaging already dials the Gateway: `archied`
+(`internal/app/archied/chat_service.go:25`), `archie-messaging`
+(`internal/app/archiemessaging/run.go:26`) and `archie-ui`. The Gateway is the
+hub. A new server-streaming RPC on `ChatService` lets `archie-messaging`
+subscribe at startup and receive notifications the daemon publishes; Messaging
+then delivers through the named channel instance it already holds in
+`Service.channels`. No new listener, no NATS in Messaging, no change to how
+any process is reached.
 
-**This is not a call to make unilaterally.** It changes what "Channel
-action" even means, and the answer affects the trust/scoping model, not
-just an implementation detail. Recommend: Sam decides which of the two (or
-a third option not listed here) before any Channel position design work
-starts. Until then, `t2db.19` should be treated as **Forge scoping only**
--- the Channel half stays genuinely open, not just unimplemented.
+The existing `Stream` RPC is not reused: it streams one chat turn's events for
+one inbound message (`internal/infrastructure/gatewayrpc/server.go:Stream`).
 
-## Packages this touches (Forge only, once `t2db.17` lands)
+### Out of scope
+
+Giving playbook-originated sends the session and approval scoping the
+interactive channels use. Configured destinations carry the address, so there
+is no conversation to anchor to and no scoping mechanism to generalize.
+
+## Packages this touches
 
 - `internal/domain/eda` (or a new sibling package, e.g.
   `internal/domain/eda/forgeaction`): typed `Args`/`Result` per operation,
@@ -128,3 +160,11 @@ starts. Until then, `t2db.19` should be treated as **Forge scoping only**
   the daemon's already-built `forge.Forge` client, passed in as the
   `workflow.Forger` it already satisfies -- no new lifecycle to manage,
   and no change to `internal/forge` itself.
+
+- `internal/domain/messaging`: the notification contract and its
+  `NotifyArgs`/`NotifyResult`.
+- `internal/config`: `[notify]` becomes named destinations.
+- `proto/gateway/v1` and `internal/infrastructure/gatewayrpc`: the
+  server-streaming notification RPC.
+- `internal/app/archiemessaging`: subscribe at startup, resolve a destination
+  to a registered channel instance, deliver.
