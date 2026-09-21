@@ -217,6 +217,96 @@ The Messaging Service consequently reads `work_dir`, `bot_user`, `[chat]` and
 polls from outside to confirm an update came back up; the rest of the PRD's
 prohibition list is untouched.
 
+**Phase 4 messaging severance: what must move, and the decision the PRD does
+not cover (2026-09-22, `archie-core-1ng1`).** The PRD's deletion gate cannot
+pass today. `cmd/archie-messaging/architecture_test.go` does not exist, and the
+check that section specifies -- `go list -deps ./cmd/archie-messaging` links
+zero banned runtime packages -- reports four:
+
+| banned package | PRD category |
+| --- | --- |
+| `modernc.org/sqlite` | State Store |
+| `internal/store` | State Store |
+| `internal/domain/workflow` | Workflow engine |
+| `internal/agentexec` | Workflow engine, via `internal/domain/workflow/agent.go` |
+
+All four arrive through one import: `internal/app/archiemessaging/run.go`
+imports `internal/app/controlplane`, whose own dependency set is exactly those
+four. The Messaging Service uses three symbols from that package
+(`NewRPCClient`, `RuntimeChatConfig`, `ChannelSettingsKind`); the package also
+carries the store-backed `ResourceStore` server, the `Definition` registry and
+the workflow step vocabulary. Sever the package. Amending the gate to tolerate
+`modernc.org/sqlite` and `internal/store` is rejected: a boundary you whitelist
+around is no longer a boundary.
+
+**What moves.**
+
+- Every kind constant. They are strings with no dependency, and the client names
+  them.
+- The channel-settings vocabulary and its decode: `channelSettings`,
+  `telegramSettings`, `webhookChannelSettings`, `emailSettings`,
+  `rateLimitSettings`, `channelDuration`, and `decodeRenamingLegacyKeys`.
+- The generic client: `Client`, `NewRPCClient`, `RuntimeConfig` with
+  `runtimeConfigFrom`, `runtimeChatConfigFrom`, the other `runtime*From`
+  projections, and the `resourceReader` interface.
+- The persona watch (`WatchPersonas`, `AppliedPersonas`), which needs only
+  `internal/domain/agent`.
+- `executionSettingsDocument`, the document alone.
+
+**What stays, and why.**
+
+- The store-backed server: `Server`, `NewServer`, `ResourceStore`,
+  `ImportConfig`, `SeedSkip`, the `Definition` registry, and every other kind's
+  seed, validator and `Normalize` hook.
+- `WorkflowDefinitionsClient` and `stepRegistry`, which decode through
+  `internal/domain/workflow`.
+- `WatchWorkflowExecutionSettings` and `decodeSettings`: `decodeSettings`
+  returns and validates `workflow.ExecutionSettings`, so any package holding it
+  links the workflow domain and therefore `internal/agentexec`. This is why the
+  client cannot move as one package -- see open question 2.
+- The schedules document, whose type is `cronstore.JobSpec` in
+  `internal/infrastructure`. A domain vocabulary package may not import
+  infrastructure.
+- The schema derivation, which describes the documents the server advertises.
+
+**Placement, the decision the PRD does not cover.** Recommended:
+`internal/domain/controlplane` for the vocabulary (kinds, documents, decode) and
+`internal/infrastructure/controlplanerpc` for the client, mirroring `gatewayrpc`
+and `staterpc`. A service client belongs in infrastructure by the convention
+`organisation.md` already fixes, and a domain vocabulary carries no store or
+engine dependency by construction. Rejected: one
+`internal/infrastructure/controlplane` holding both halves, because the client
+would still import a package that links the store, which is the thing the gate
+exists to measure.
+
+**Open questions this decision deliberately does not settle**, listed so
+`archie-core-8cda.6.5` does not inherit them:
+
+1. Does the server also leave `internal/app/`? `organisation.md` reserves
+   `internal/app/` for wiring and composition, and a store-backed gRPC server is
+   infrastructure -- but the gate does not require the move, and it would
+   multiply the diff across archied's wiring and the State Store binary.
+2. Where does `WatchWorkflowExecutionSettings` live, given it cannot share a
+   package with the Messaging Service's client? Either a second, workflow-aware
+   client package, or the watch returns the raw document and its caller decodes
+   it. Recommended: the second package, because the client-side validation it
+   performs is what the daemon's apply flow relies on.
+3. Does `internal/domain/workflow`'s contract/engine split happen, and when? A
+   contract type (`WorkflowDefinitionCollection`) drags `internal/agentexec` only
+   because `agent.go` sits beside it. Independent of this severance, and it is
+   the other half of the PRD's workflow-engine ban.
+4. Do archied's watches move with the client, or stay with the composition?
+   archied is the only other consumer of the client half.
+
+**Both consumers keep compiling.** archied imports the new vocabulary for the
+kinds it names and the new client package for `RuntimeConfig` and the persona
+watch, and keeps `internal/app/controlplane` for the server, the registry,
+`ErrVersionConflict` and the workflow-aware pieces. The State Store binary
+continues to call `NewServer` and `ResourceStore` unchanged. The Messaging
+Service then imports only `internal/infrastructure/controlplanerpc`,
+`gatewayrpc` and `staterpc`, so `go list -deps ./cmd/archie-messaging` loses all
+four banned packages and the gate can land green.
+
 ### 3. Identity data migration
 
 The migration must define:
