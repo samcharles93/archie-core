@@ -1,5 +1,17 @@
 # archie-agent changelog
 
+## [1.35.0] - 2026-09-22
+
+The sandboxed runtime links the same shared packages as archied, so this release carries the
+channel-lifecycle store contract and the stricter action-load errors with it:
+
+- The channel-status store contract (`PutChannelStatus`/`ListChannelStatus`) and its replace-the-set
+  semantics.
+- Authoritative module ids and stricter action load errors: a misspelled result field, an unknown id,
+  or a dynamic `actions` read now fails the playbook load rather than the dispatch.
+
+archied and archie-agent move together in this release.
+
 ## [1.32.0] - 2026-09-22
 
 The sandboxed runtime links `storecontract` and `staterpc`, so it carries the dispatch-ledger
