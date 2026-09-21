@@ -91,11 +91,15 @@ type Message struct {
 	Sender string
 
 	// SenderID is the channel-native stable identifier for the party that
-	// sent this message (e.g. a Telegram numeric user ID, an SMTP from
-	// address, or a webhook route path), distinct from Sender's
-	// human-readable display form. Empty when the channel has no stable
-	// per-sender identity to offer. Used to key per-identity inbound
-	// controls such as rate limiting.
+	// sent this message (e.g. a Telegram numeric user ID or an SMTP from
+	// address), distinct from Sender's human-readable display form. Empty
+	// when the channel has no stable per-person identity to offer -- which
+	// includes a webhook, whose configured route path is a source rather
+	// than a person and travels in the transport-only Inbound.BudgetKey
+	// instead (see docs/prds/memory-engine-unification.md §3). Used to key
+	// per-identity inbound controls and to derive a memory participant, so
+	// a non-person value here becomes a user identity to every consumer
+	// that reads it.
 	SenderID string
 
 	Role Role

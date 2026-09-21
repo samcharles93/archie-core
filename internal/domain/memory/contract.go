@@ -90,8 +90,8 @@ const (
 // AgentID and IdentityID are opaque. This package never resolves them,
 // canonicalises them, or invents one from a channel: resolution happens
 // where the channel's native identity is in hand (the gateway turn path),
-// because a webhook's sender id is a route path and treating it as a person
-// would give a URL an identity.
+// because a channel's sender id is not necessarily a person -- treating one
+// as a person would give a URL an identity.
 type (
 	AgentID    string
 	IdentityID string

@@ -49,6 +49,13 @@ message Message {
   string text = 6;
   string page = 7;
   google.protobuf.Timestamp at = 8;
+  // budget_key is the source an inbound message is charged against by the
+  // Gateway's inbound rate limiter, for a channel that has no per-person
+  // sender id but does have a stable, operator-controlled source of its own
+  // -- a webhook's configured route path. Transport-only: a channel frontend
+  // sets it on inbound and it is never persisted, exactly like page. Empty
+  // means the message is not rate limited.
+  string budget_key = 9;
 }
 message ToolCall {
   string id = 1;

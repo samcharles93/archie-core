@@ -186,8 +186,9 @@ class = "ollama"
 
 # Per-(channel, sender) inbound rate limiting, shared by every chat channel:
 # Telegram keys by numeric user ID, email by SMTP from address, webhook by
-# its configured route path. Off by default -- both fields must be set to a
-# positive value.
+# its configured route path -- a source, not a person, so it reaches the
+# limiter as a transport-only budget key rather than as an identity. Off by
+# default -- both fields must be set to a positive value.
 # [chat.rate_limit]
 # window = "1m"
 # max_requests = 20

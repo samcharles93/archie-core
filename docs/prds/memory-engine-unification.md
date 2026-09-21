@@ -36,11 +36,13 @@ Three further defects fall out of the same split:
    string`, and the curator fills it with a **session id** (`sessioncurator.go`)
    — which is none of the four scopes `docs/architecture/agent-system.md`
    requires, and stops meaning anything when the session ends.
-3. **The chat turn has no user identity on half the channels.** `SenderID` is
-   populated by Telegram and email (a person) and by webhook (a **route path**,
-   `webhook.go`), and not at all by the dashboard, whose gateway wire message
-   carries no sender field. It is also never persisted: `sender_id` appears
-   nowhere in `session_store_sqlite.go`.
+3. **The chat turn has no user identity on half the channels.** Telegram and
+   email populate `SenderID` with a person; the dashboard populates it with
+   nothing, and a webhook populates it with nothing either — a route path names
+   a source, not a person, so `webhook.go` leaves `SenderID` empty and carries
+   the route in `Inbound.BudgetKey` for rate limiting. `sender_id` is persisted
+   (`session_store_sqlite.go`), so whatever a channel puts there reaches the
+   consumers that read it.
 
 `agent-system.md` says the write-scope selection and cross-scope sharing
 rules "require a focused memory design decision". This is that decision.
@@ -149,10 +151,11 @@ UserIdentity func(msg messaging.Message) (IdentityID, bool)
 ```
 
 This must be injectable rather than a blanket `channel + ":" + SenderID`
-concatenation, because a **webhook's `SenderID` is a route path**
-(`webhook.go`), not a person; treating it as one would give a URL an
-identity. Telegram and email supply their sender id; the dashboard and webhook
-resolve nothing.
+concatenation, because a channel's sender id is not necessarily a person: a
+webhook's route path names a source, and treating it as an identity would give
+a URL one -- which is why `webhook.go` leaves `SenderID` empty and carries the
+route in `Inbound.BudgetKey` instead. Telegram and email supply their sender
+id; the dashboard and webhook resolve nothing.
 
 **Fail closed.** When `UserID` is empty the turn proceeds with global and agent
 scopes only, and a write targeting `user` or `agent-user` fails with a clear

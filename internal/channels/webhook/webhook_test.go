@@ -87,10 +87,10 @@ func TestWebhookHandlerNotStarted(t *testing.T) {
 func TestWebhookHandlerRoute(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	g := New("", 0, []RouteConfig{{Path: "/hook"}}, log)
-	var gotSenderID string
+	var got messaging.Inbound
 	g.client = &fakeChatContract{
-		routeFunc: func(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
-			gotSenderID = in.Message.SenderID
+		routeFunc: func(_ context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
+			got = in
 			return messaging.ChatReply{Text: "ok"}, nil
 		},
 	}
@@ -102,10 +102,21 @@ func TestWebhookHandlerRoute(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("status = %d, want 202", rec.Code)
 	}
-	// Webhook has no native per-caller identity, so the configured route
-	// path is used to key rate limiting instead (see internal/ratelimit).
-	if gotSenderID != "/hook" {
-		t.Errorf("SenderID = %q, want the route path", gotSenderID)
+	// A webhook has no per-caller identity, and the route path is not one:
+	// several consumers read SenderID as a person
+	// (internal/app/archied/chat_identity.go, sessioncurator), and criterion
+	// 7 of docs/prds/memory-engine-unification.md says a route path must
+	// never become one. It still keys this message's inbound rate limit, so
+	// it travels in the transport-only BudgetKey instead -- see
+	// internal/ratelimit and config.RateLimitConfig.
+	if got.Message.SenderID != "" {
+		t.Errorf("SenderID = %q, want empty: a route path is not a person", got.Message.SenderID)
+	}
+	if got.BudgetKey != "/hook" {
+		t.Errorf("BudgetKey = %q, want the route path", got.BudgetKey)
+	}
+	if got.Message.ConversationID.ChannelID != "/hook" {
+		t.Errorf("ConversationID.ChannelID = %q, want the route path", got.Message.ConversationID.ChannelID)
 	}
 }
 

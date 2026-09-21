@@ -170,16 +170,23 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			return
 		}
 
-		msg := messaging.Inbound{Message: messaging.Message{
-			ConversationID: messaging.ConversationID{ChannelID: route.Path},
-			Sender:         "webhook",
-			// Webhooks have no per-caller identity; the configured route
-			// is the closest thing to one, since it corresponds to a
-			// single external source.
-			SenderID: route.Path,
-			Role:     messaging.RoleUser,
-			Text:     text,
-		}}
+		msg := messaging.Inbound{
+			Message: messaging.Message{
+				ConversationID: messaging.ConversationID{ChannelID: route.Path},
+				Sender:         "webhook",
+				// A webhook has no per-caller identity, so SenderID stays
+				// empty: consumers read it as a person
+				// (internal/app/archied/chat_identity.go, sessioncurator),
+				// and a route path must never become a user identity
+				// (docs/prds/memory-engine-unification.md criterion 7).
+				Role: messaging.RoleUser,
+				Text: text,
+			},
+			// The route is still this message's source for inbound rate
+			// limiting, so it travels in the transport-only BudgetKey
+			// rather than borrowing the identity field.
+			BudgetKey: route.Path,
+		}
 		reply, err := client.Route(r.Context(), msg)
 		if err != nil {
 			g.log.Error("webhook route", "err", err, "path", route.Path)

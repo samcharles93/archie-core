@@ -358,7 +358,12 @@ func TestPassSkipsSessionsWithoutASingleParticipant(t *testing.T) {
 		wantReason string
 	}{
 		{
-			name:       "zero senders: a dashboard session carries no per-person identity",
+			// Both producers are pinned by their own packages: the webhook
+			// clears SenderID and carries the route in Inbound.BudgetKey
+			// (internal/channels/webhook), the dashboard never sets one.
+			// Either way the session arrives here with nothing that names a
+			// person, which is the input this case pins.
+			name:       "zero senders: a dashboard or webhook session carries no per-person identity",
 			messages:   []curator.ConversationMessage{{Role: "user", Content: "hello"}},
 			wantReason: "no single participant: 0 distinct sender(s), 1 unidentified user message(s)",
 		},

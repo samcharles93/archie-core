@@ -22,6 +22,19 @@ type Inbound struct {
 	// this message. Transport-only: it reaches the system prompt and
 	// is never persisted. Empty for non-web channels.
 	Page string
+	// BudgetKey is what the Gateway charges this message against in its
+	// inbound rate limiter (internal/ratelimit), for a channel whose
+	// Message.SenderID is empty because it carries no per-person
+	// identity but still has a stable, operator-controlled source to
+	// budget -- a webhook's configured route path, today. It is
+	// deliberately not SenderID: SenderID means "this is who sent it",
+	// and several consumers (internal/app/archied/chat_identity.go,
+	// sessioncurator) read it as a person, so a route path in that field
+	// becomes a user identity. BudgetKey is transport-only and never
+	// persisted, exactly like Page. Empty means the message is not
+	// rate limited, which is correct for a source with no stable key of
+	// its own (the dashboard).
+	BudgetKey string
 }
 
 // SpawnRequest is a chat-originated task creation request. Repo and

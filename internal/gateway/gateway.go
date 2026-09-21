@@ -203,10 +203,12 @@ type Router struct {
 	// path. Nil drops those diagnostics silently; nothing on this path is
 	// important enough to fail the turn over.
 	Log *slog.Logger
-	// Limiter enforces a per-(gateway, sender) inbound budget when set.
-	// Nil disables rate limiting entirely. Messages with no SenderID
-	// (channels that cannot supply a stable per-sender identity) are
-	// never limited, since there is no key to charge them against.
+	// Limiter enforces a per-(gateway, source) inbound budget when set.
+	// Nil disables rate limiting entirely. A message is charged against
+	// Inbound.BudgetKey when the channel set one (a webhook route, which
+	// has a stable source but no person), else against Message.SenderID.
+	// A message with neither is never limited: there is no key to charge
+	// it against.
 	Limiter        *ratelimit.Limiter
 	sessionTracker *sessionTracker
 	gatewayName    string
@@ -240,21 +242,34 @@ func (r *Router) SessionTracker() *sessionTracker {
 // budget, in place of normal dispatch.
 const rateLimitReply = "You're sending messages too quickly. Please wait a moment and try again."
 
-// checkRateLimit reports whether msg is over its sender's inbound budget.
-// A nil Limiter (rate limiting not configured) or an empty SenderID
-// (the channel has no stable per-sender identity to charge) always
-// allows.
-func (r *Router) checkRateLimit(msg messaging.Message) (blocked bool) {
-	if r.Limiter == nil || msg.SenderID == "" {
+// checkRateLimit reports whether in is over its source's inbound budget.
+// A nil Limiter (rate limiting not configured) or no key to charge the
+// message against (see inboundBudgetKey) always allows.
+func (r *Router) checkRateLimit(in Inbound) (blocked bool) {
+	key := inboundBudgetKey(in)
+	if r.Limiter == nil || key == "" {
 		return false
 	}
-	return !r.Limiter.Allow(r.gatewayName, msg.SenderID)
+	return !r.Limiter.Allow(r.gatewayName, key)
+}
+
+// inboundBudgetKey returns the key this message's inbound budget is charged
+// against: the channel's own transport budget key when it set one, else the
+// per-person SenderID. The two are deliberately distinct -- SenderID means
+// "who sent this", and a channel whose SenderID is not a person (a webhook
+// route path) must not put it there, because several consumers read that
+// field as a user identity (docs/prds/memory-engine-unification.md §3).
+func inboundBudgetKey(in Inbound) string {
+	if in.BudgetKey != "" {
+		return in.BudgetKey
+	}
+	return in.Message.SenderID
 }
 
 // Route dispatches msg and returns the reply. Gateway-local commands
 // are handled directly; everything else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
-	if r.checkRateLimit(in.Message) {
+	if r.checkRateLimit(in) {
 		return rateLimitReply, nil
 	}
 	return r.route(ctx, in)
@@ -433,7 +448,7 @@ func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream)
 	if r.LLMStream == nil || stream == nil {
 		return r.Route(ctx, in)
 	}
-	if r.checkRateLimit(in.Message) {
+	if r.checkRateLimit(in) {
 		return rateLimitReply, nil
 	}
 	cmd, _ := parseCmd(strings.TrimSpace(in.Message.Text), r.gatewayName)

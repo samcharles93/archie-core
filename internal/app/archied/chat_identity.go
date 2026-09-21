@@ -13,12 +13,14 @@ import (
 //
 // Telegram and email carry a native per-person sender id (a Telegram numeric
 // user id, an SMTP from address). The dashboard ("web") has one bearer
-// token, not users, and a webhook's SenderID is the configured route path
-// (internal/channels/webhook/webhook.go), not a person -- treating either as
-// an identity would give a URL or a shared token the same standing as a
-// real user, which the read path's isolation guarantee depends on never
-// happening. Both resolve nothing, so a turn on either channel gets global
-// and agent scopes only (Subject.WritableScopes' fail-closed behaviour).
+// token, not users, and a webhook carries no per-caller identity at all: its
+// route path is a source, not a person, and never enters SenderID
+// (internal/channels/webhook/webhook.go -- it travels in the transport-only
+// Inbound.BudgetKey instead). Treating a URL or a shared token as an
+// identity would give it the same standing as a real user, which the read
+// path's isolation guarantee depends on never happening. Both resolve
+// nothing, so a turn on either channel gets global and agent scopes only
+// (Subject.WritableScopes' fail-closed behaviour).
 func userIdentityResolver(channel string) func(messaging.Message) (memory.IdentityID, bool) {
 	switch channel {
 	case "telegram", "email":

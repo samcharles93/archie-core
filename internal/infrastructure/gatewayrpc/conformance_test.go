@@ -116,6 +116,18 @@ func TestWireValuesPreserveHistoryAndMedia(t *testing.T) {
 	if got := eventValue(eventProto(event)); !reflect.DeepEqual(got, event) {
 		t.Fatalf("event round trip: %+v", got)
 	}
+	// Transport-only inbound context rides alongside the record and must
+	// survive the hop: Page reaches the system prompt, and BudgetKey is what
+	// the Gateway charges the message against when the channel has no
+	// per-person SenderID to charge (a webhook route).
+	in := gateway.Inbound{
+		Message:   messaging.Message{ConversationID: messaging.ConversationID{ChannelID: "/hook"}, Role: messaging.RoleUser, Text: "hi"},
+		Page:      "/tasks",
+		BudgetKey: "/hook",
+	}
+	if got := inboundValue(inboundProto(in)); !reflect.DeepEqual(got, in) {
+		t.Fatalf("inbound round trip = %+v, want %+v", got, in)
+	}
 	if got := inboundValue(inboundProto(gateway.Inbound{})); !got.Message.At.IsZero() {
 		t.Fatalf("zero time became %v", got.Message.At)
 	}

@@ -68,9 +68,11 @@ func TestRouteNoLimiterConfiguredNeverBlocks(t *testing.T) {
 }
 
 // TestRouteEmptySenderIDNeverLimited pins the deliberate fail-open for
-// channels (webhook routes with no configured path identity, e.g.) that
-// have no stable per-sender identity to charge: there is no shared key to
-// throttle everyone under, so they are left unlimited rather than blocked.
+// channels that have no stable per-sender identity to charge and no key of
+// their own to budget against: there is no shared key to throttle everyone
+// under, so they are left unlimited rather than blocked. A channel that has
+// a stable source but no per-person identity (a webhook route) sets
+// Inbound.BudgetKey instead -- see TestRouteBudgetKeyLimitsWithoutSenderID.
 func TestRouteEmptySenderIDNeverLimited(t *testing.T) {
 	r := NewRouter(nil, fakeLLM, "test")
 	r.Limiter = ratelimit.New(time.Minute, 1)
@@ -83,6 +85,50 @@ func TestRouteEmptySenderIDNeverLimited(t *testing.T) {
 		if reply != "llm: hello" {
 			t.Fatalf("call %d reply = %q, want it to reach the LLM with no SenderID", i, reply)
 		}
+	}
+}
+
+// TestRouteBudgetKeyLimitsWithoutSenderID pins the split between a message's
+// per-person identity and the key it is rate limited against. A webhook has
+// no person to identify, so SenderID stays empty, but its route is still a
+// bounded, operator-controlled source that must keep its budget -- otherwise
+// clearing SenderID would silently exempt every webhook route from the
+// limiter config.RateLimitConfig documents.
+func TestRouteBudgetKeyLimitsWithoutSenderID(t *testing.T) {
+	r := NewRouter(nil, fakeLLM, "test")
+	r.Limiter = ratelimit.New(time.Minute, 1)
+
+	budgeted := func(budgetKey, text string) Inbound {
+		in := inbound("chat-1", text)
+		in.BudgetKey = budgetKey
+		return in
+	}
+
+	reply, err := r.Route(context.Background(), budgeted("/hook", "hello"))
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if reply != "llm: hello" {
+		t.Fatalf("first message reply = %q, want it to reach the LLM", reply)
+	}
+
+	reply, err = r.Route(context.Background(), budgeted("/hook", "hello again"))
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if reply != rateLimitReply {
+		t.Fatalf("second message reply = %q, want the rate-limit reply", reply)
+	}
+
+	// A different route is a different source, so it is unaffected by the
+	// first route's spent budget -- the same per-source property
+	// TestRouteRateLimitIsPerSender pins for real senders.
+	reply, err = r.Route(context.Background(), budgeted("/other", "hello"))
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if reply != "llm: hello" {
+		t.Fatalf("other route reply = %q, want it unaffected by /hook's budget", reply)
 	}
 }
 
