@@ -1,6 +1,7 @@
 package playbook
 
 import (
+	"context"
 	"maps"
 	"os"
 	"path/filepath"
@@ -526,7 +527,7 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 		when   string
 		wantID string
 	}{
-		{name: "undeclared field selection", when: `actions.a.result.x == true`, wantID: "a"},
+		{name: "undeclared field selection", when: `actions.build.result.x == true`, wantID: "build"},
 		{name: "dynamic index on actions", when: `actions["a"].result.x == true`},
 		{name: "non-literal index key", when: `actions[key].result.x == true`},
 		{name: "in operator on actions", when: `"notify" in actions`},
@@ -707,6 +708,32 @@ func TestCompileArgsReportsFirstKeyDeterministically(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), `args["z.bad"]`) {
 			t.Fatalf("compileArgs error = %q, must name the alphabetically-first key, not %q", err.Error(), "z.bad")
+		}
+	}
+}
+
+// TestValidateArgsKeysReportsFirstKeyDeterministically: validateArgsKeys
+// ranges a map, so it must sort keys before reporting -- otherwise the
+// offending key named depends on map iteration order.
+func TestValidateArgsKeysReportsFirstKeyDeterministically(t *testing.T) {
+	argsType, _, ok := testSchemas(t).KindSchema("log")
+	if !ok {
+		t.Fatal("KindSchema(log) = not ok")
+	}
+	raw := map[string]string{
+		"z.bad": "x",
+		"a.bad": "x",
+	}
+	for range 64 {
+		err := validateArgsKeys("pb.yaml", "log", argsType, raw)
+		if err == nil {
+			t.Fatal("validateArgsKeys = nil, want error")
+		}
+		if !strings.Contains(err.Error(), `args["a.bad"]`) {
+			t.Fatalf("validateArgsKeys error = %q, want the alphabetically-first key args[%q]", err.Error(), "a.bad")
+		}
+		if strings.Contains(err.Error(), `args["z.bad"]`) {
+			t.Fatalf("validateArgsKeys error = %q, must name the alphabetically-first key, not %q", err.Error(), "z.bad")
 		}
 	}
 }
@@ -1036,6 +1063,134 @@ actions:
 	}
 }
 
+// TestLoadActionPlaybookRejectsNonCELID: a module action id must be a CEL
+// identifier, so a dotted/dashed id (legal for a workflow id) loads nowhere.
+func TestLoadActionPlaybookRejectsNonCELID(t *testing.T) {
+	for _, id := range []string{"build.step", "build-step", "Build"} {
+		t.Run(id, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - id: "+id+"\n    position: module\n    kind: log\n    args:\n      message: '\"hello\"'\n")
+			_, err := Load(dir, testSchemas(t))
+			if err == nil {
+				t.Fatalf("Load(id %q) = nil, want load failure", id)
+			}
+			for _, want := range []string{"pb.yaml", id} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Load error = %q, want it to name %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestLoadWorkflowActionIDKeepsStableIdentifierGrammar: the CEL-identifier
+// restriction is module-only. A workflow action keeps the looser
+// stable-identifier grammar (dots/dashes) unchanged.
+func TestLoadWorkflowActionIDKeepsStableIdentifierGrammar(t *testing.T) {
+	for _, id := range []string{"build.step", "build-step"} {
+		t.Run(id, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    id: "+id+"\n")
+			if _, err := Load(dir, testSchemas(t)); err != nil {
+				t.Fatalf("Load(workflow id %q) = %v, want nil error (workflow id grammar unchanged)", id, err)
+			}
+		})
+	}
+}
+
+// TestLoadActionPlaybookRejectsMisspelledResultField: a Result field the
+// referenced kind does not define is a load failure naming the playbook and
+// the field -- the same unknown-field check, exercised at the Load boundary.
+func TestLoadActionPlaybookRejectsMisspelledResultField(t *testing.T) {
+	misspelled := "wri" + "ten"
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - id: build\n    position: module\n    kind: log\n    args:\n      message: '\"build started\"'\n  - id: done\n    position: module\n    kind: log\n    args:\n      message: '\"done\"'\n    when: actions.build.result."+misspelled+" == true\n")
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(misspelled result field) = nil, want load failure")
+	}
+	for _, want := range []string{"pb.yaml", misspelled, "undefined field"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load error = %q, want it to contain %q", err.Error(), want)
+		}
+	}
+}
+
+// TestLoadActionPlaybookArgsKeysMatchDecoder ties the loader's accepted args
+// key set to the module decoder's: the loader accepts only lower-case keys,
+// the decoder decodes only lower-case keys, and the two meet when the
+// evaluated args are passed to Invoke.
+func TestLoadActionPlaybookArgsKeysMatchDecoder(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"hello"'
+      level: '"info"'
+`)
+	store, err := Load(dir, testSchemas(t))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, err := store.EvalArgs(store.Playbooks[0].Actions[0], DispatchInput{Event: map[string]any{}})
+	if err != nil {
+		t.Fatalf("EvalArgs: %v", err)
+	}
+	want := map[string]any{"message": "hello", "level": "info"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("EvalArgs = %#v, want %#v", got, want)
+	}
+
+	moduleDir := t.TempDir()
+	writeFile(t, moduleDir, "log.go", `package main
+
+import "github.com/samcharles93/archie-core/internal/domain/eda/module/log"
+
+func Run(a log.Args) log.Result {
+	return log.Result{Written: a.Message != "", Level: a.Level}
+}
+`)
+	r := module.New()
+	if err := r.Register("log", moduleDir); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	res, err := r.Invoke(context.Background(), "log", got)
+	if err != nil {
+		t.Fatalf("Invoke(evaluated args): %v", err)
+	}
+	if res["written"] != true {
+		t.Errorf("written = %v, want true", res["written"])
+	}
+	if res["level"] != "info" {
+		t.Errorf("level = %q, want info", res["level"])
+	}
+
+	// The decoder matches literal lower-case keys, so a capitalized key the
+	// loader accepted under the old lower-casing rule must now fail the load.
+	badDir := t.TempDir()
+	writeFile(t, badDir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: module
+    kind: log
+    args:
+      Message: '"hello"'
+`)
+	_, err = Load(badDir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(capitalized arg key) = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "Message") {
+		t.Errorf("Load error = %q, want the capitalized key named", err.Error())
+	}
+}
+
 // TestLoadActionPlaybookRejectsActionReferences is the classifier-enumeration
 // proof (E): every `actions` spelling the old classifier rejected must still
 // be rejected for a typed action playbook. All but the bare `actions` value
@@ -1043,6 +1198,15 @@ actions:
 // read is the one spelling CEL does not reject, kept behind the retained
 // resolvable check in expr.ActionReferences.
 func TestLoadActionPlaybookRejectsActionReferences(t *testing.T) {
+	// Positive control: the same two-action fixture with a valid `when` must
+	// load, so the rejections below fail because of the `when` spelling and
+	// not because the action-playbook shape itself is rejected.
+	controlDir := t.TempDir()
+	writeFile(t, controlDir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - id: build\n    position: module\n    kind: log\n    args:\n      message: '\"build started\"'\n  - id: done\n    position: module\n    kind: log\n    args:\n      message: '\"done\"'\n    when: actions.build.result.written == true\n")
+	if _, err := Load(controlDir, testSchemas(t)); err != nil {
+		t.Fatalf("Load(valid when control) = %v, want nil error", err)
+	}
+
 	tests := []struct {
 		name string
 		when string

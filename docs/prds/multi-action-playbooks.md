@@ -46,9 +46,10 @@ external side effect, and the Channel and Forge positions, are out of scope.
 
 Each Module kind owns a hand-written `Args` and `Result` struct
 (`internal/domain/eda/module/log` is the worked example); `ModuleRegistry.Invoke`
-returns the result as `map[string]any`. The run marshals that map into the
-kind's `Result` before a later expression reads it, so the value the checker
-validates and the value the run reads have one definition.
+returns the result as a flat `map[string]any`. `ModuleRegistry.DecodeResult`
+(`internal/domain/eda/module`) is the single site that converts that map into
+the kind's `Result` struct before a later expression reads it, so the value the
+checker validates and the value the run reads have one definition.
 
 `actions.<id>` is typed by the kind of the action that declares `<id>`:
 `{ result: <KindResult> }`. `event` stays `dyn` (J4,
@@ -67,12 +68,13 @@ naming the playbook and the offending action, for:
 - a `result` field the referenced kind's `Result` does not define;
 - a reference to an earlier action that produces no result;
 - an unknown `position`, an unknown `kind`, or a `module` action with no `kind`;
-- `args` that do not type-check against the kind's `Args` schema, or an arg key
-  the schema does not define.
+- an arg KEY the kind's `Args` schema does not define. Arg VALUE type-checking
+  is tracked as `archie-core-t2db` debt, not shipped here.
 
-The last two are new. Declaring the kind's `Args` and `Result` schemas to CEL at
-load makes an arg or result typo a load failure rather than a dispatch failure,
-which is the field-level rejection `playbook-expression-syntax.md` chose CEL for.
+Declaring the kind's `Result` schema to CEL at load makes a result-field typo a
+load failure rather than a dispatch failure. Matching arg keys against the
+kind's `Args` schema makes an arg-key typo a load failure; arg value
+type-checking is tracked as `archie-core-t2db` debt.
 
 ## The environment is per playbook
 
@@ -88,40 +90,26 @@ This document makes an action playbook load and its references type-check. It
 does not invoke a Module kind. Invocation, the `playbook_dispatches` gate, and
 stop-on-first-failure across actions are `archie-core-t2db.31`.
 
-## Decisions required
+## Decisions
 
-**D1 — dispatch before `t2db.31`.** An action playbook has no run path yet.
-Either the definition-pin dispatch considers only workflow playbooks and reports
-no match for an action playbook (loaded and validated, not routed), or the loader
-refuses an action playbook until `t2db.31` lands. The first ships the loader and
-the checker now but leaves a playbook that does nothing; the second keeps
-"loadable means runnable" but cannot ship this work alone. Recommendation: the
-first, with the daemon logging once that an action playbook has no run path.
+**D1 — dispatch before `t2db.31`.** Settled: an action playbook loads and
+validates but is not routed; the definition-pin dispatch reports no match for it,
+and the daemon logs a visible warning naming it.
 
-**D2 — mixing positions.** May one playbook mix `workflow` and `module` actions?
-A `workflow` action yields a task, not a result, so it cannot feed
-`actions.<id>.result`, and its "invoke" is the definition pin rather than an
-action call. Recommendation: one shape per playbook for this slice.
+**D2 — mixing positions.** Settled: one shape per playbook. A `workflow` action
+yields a task, not a result, so it cannot feed `actions.<id>.result`.
 
-**D3 — the CEL typing mechanism.** Two candidates: build a per-playbook
-environment whose `actions` root is an object type with one field per declared
-id, each field typed by the kind's `Result` (cel-go native or provider-defined
-types); or keep `actions` as `map(string, dyn)` and validate every static
-`actions.<id>.result.<field>` path after compiling against an id-to-result-fields
-map, in the same AST walk that already classifies `actions` references. The
-first is CEL's own checker and costs a per-playbook environment; the second
-keeps one environment and one compile path but checks fields outside CEL.
-Recommendation: the first if cel-go can declare the ids' types without a custom
-`ref.Val` adapter; otherwise the second, which is a bounded path check over a
-schema map, not the re-implemented type system the parent document rejected.
+**D3 — the CEL typing mechanism.** Settled: a per-playbook environment whose
+`actions` root is an object type with one field per declared id, each field typed
+by the kind's `Result` struct. `internal/domain/eda/expr` implements it with the
+generic `actionResultProvider`.
 
-**D4 — `args` against the kind's `Args` schema.** This document assumes the kind's
-`Args` schema is declared to CEL as well, so an arg typo or wrong type fails the
-load. Confirm, or split that check into its own bead.
+**D4 — `args` against the kind's `Args` schema.** Settled: arg KEY checking ships
+now. Arg value type-checking is tracked as `archie-core-t2db` debt.
 
-**D5 — where the result map becomes the `Result` struct.** `ModuleRegistry.Invoke`
-returns `map[string]any`. Confirm the marshalling site: the coordinator, the
-registry, or the kind itself.
+**D5 — where the result map becomes the `Result` struct.** Settled:
+`ModuleRegistry` stays schema-agnostic. `ModuleRegistry.DecodeResult`
+(`internal/domain/eda/module`) is the conversion site.
 
 ## Verification
 
@@ -129,6 +117,7 @@ registry, or the kind itself.
   loads; the same read of a field the kind's `Result` does not define fails the
   load naming the field; a read of an id no earlier action declares fails; a
   dynamically indexed `actions` read fails.
-- An `args` key or value the kind's `Args` schema rejects fails the load.
+- An arg KEY the kind's `Args` schema does not define fails the load. Arg VALUE
+  type-checking is tracked as `archie-core-t2db` debt.
 - The one-action `workflow` playbook shape, its dispatch, and its existing
   load-time checks are unchanged.

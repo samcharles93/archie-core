@@ -780,7 +780,7 @@ func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	for _, pb := range b.playbooks.Playbooks {
-		if len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow" {
+		if pb.IsActionPlaybook() {
 			log.Warn("eda action playbook loaded: action playbooks do not execute yet", "playbook", pb.ID)
 		}
 	}

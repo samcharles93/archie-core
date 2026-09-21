@@ -48,3 +48,33 @@ actions:
 		t.Errorf("warning output was logged at debug, want a visible warning: %q", out)
 	}
 }
+
+// TestLoadEDAPlaybooksNoWarningOnWorkflowPlaybook is the inverse of the D1
+// warning: a workflow playbook uses the same two-shape predicate but must not
+// be logged as a non-routing action playbook.
+func TestLoadEDAPlaybooksNoWarningOnWorkflowPlaybook(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pb.yaml"), []byte(`trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	b := &boot{cfg: config.Config{EDAPlaybookDir: dir}, modules: module.New()}
+	if err := b.loadEDAPlaybooks(b.cfg, log); err != nil {
+		t.Fatalf("loadEDAPlaybooks: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "do not execute yet") {
+		t.Errorf("workflow playbook was warned as an action playbook: %q", out)
+	}
+	if strings.Contains(out, "level=WARN") {
+		t.Errorf("workflow playbook produced a warning: %q", out)
+	}
+}

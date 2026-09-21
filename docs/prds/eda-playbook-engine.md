@@ -628,10 +628,9 @@ the side-effecting positions are gated.
    `body`, `source`, built by `playbookInput` in `internal/daemon`.
 
    The trigger shape reuses the existing workintake kind/label vocabulary.
-   Multi-action and non-workflow-position playbooks are rejected at load
-   (hard boundary), so Module/Channel/Forge positions have no production
-   dispatch path: the gap-2 `playbook_dispatches` ledger must land before a
-   side-effecting position can fire.
+   The single-action hard boundary is superseded by
+   `docs/prds/multi-action-playbooks.md` (two-shape rule); Module, Channel,
+   and Forge positions still have no production dispatch path.
 ## Standing constraint
 
 This may be commercialized, and is to be discernible from other open-source

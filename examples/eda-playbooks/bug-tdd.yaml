@@ -2,13 +2,13 @@
 #
 # Install: copy this file into the configured eda_playbook_dir (default
 # ~/.config/archie/eda-playbooks) and restart archied. It is loaded at
-# startup with the reject-at-load rule: any malformed playbook, multi-action
-# playbook, non-workflow action position, or `when` compile failure aborts
+# startup with the reject-at-load rule: any malformed playbook, a mixed
+# workflow/module action shape, or a `when`/args compile failure aborts
 # startup with a reported error -- a partially-valid set never runs.
 #
-# This slice supports exactly ONE action per playbook, position: workflow.
-# Multi-action playbooks and Module/Channel/Forge action positions stay
-# blocked on the unresolved execution-time gaps and are rejected at load.
+# This file is the workflow playbook shape: exactly one action, position:
+# workflow. Action playbooks (one or more module actions) load and type-check
+# but do not execute yet -- see docs/prds/multi-action-playbooks.md.
 #
 # A trigger matches on either axis, and both are checked when both are given:
 #

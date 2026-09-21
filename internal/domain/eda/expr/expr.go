@@ -36,8 +36,9 @@ const DefaultCostLimit = 100_000
 // DeclaredResult is one prior action's result the environment exposes to a
 // later expression. ID is the action's declared id, read as
 // `actions.<ID>.result.<field>`; Type is the reflect.Type of that action
-// kind's Go Result struct (the value the run marshals into the per-id
-// `{result: ...}` map before a later expression reads it).
+// kind's Go Result struct. `module.ModuleRegistry.DecodeResult` is the site
+// that converts Invoke's flat result map back into this struct before a later
+// expression reads it.
 type DeclaredResult struct {
 	ID   string
 	Type reflect.Type
@@ -61,8 +62,9 @@ type Context struct {
 	Event map[string]any
 	// Actions holds prior actions' results keyed by the action's id as
 	// declared in the playbook. Each id maps to the per-id wrapper
-	// `{"result": <KindResult struct>}` the run produces, so a later
-	// expression reads `actions.<id>.result.<field>`.
+	// `{"result": <KindResult struct>}` built by
+	// `module.ModuleRegistry.DecodeResult`, so a later expression reads
+	// `actions.<id>.result.<field>`.
 	Actions map[string]map[string]any
 }
 

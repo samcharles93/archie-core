@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/eda/expr"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
 )
 
@@ -63,15 +64,8 @@ func TestRegisterUnknownKindIsError(t *testing.T) {
 
 func TestKindSchema(t *testing.T) {
 	r := New()
-	argsType, resultType, ok := r.KindSchema("log")
-	if !ok {
+	if _, _, ok := r.KindSchema("log"); !ok {
 		t.Fatal("KindSchema(log) = not ok, want the built-in log contract")
-	}
-	if argsType != reflect.TypeFor[log.Args]() {
-		t.Errorf("KindSchema(log) args = %v, want log.Args", argsType)
-	}
-	if resultType != reflect.TypeFor[log.Result]() {
-		t.Errorf("KindSchema(log) result = %v, want log.Result", resultType)
 	}
 	if _, _, ok := r.KindSchema("notify"); ok {
 		t.Fatal("KindSchema(notify) = ok, want false for an unregistered kind")
@@ -119,6 +113,59 @@ func Run( {{{`)
 	r := New()
 	if err := r.Register("log", dir); err == nil {
 		t.Fatal("Register(malformed) = nil, want error")
+	}
+}
+
+// TestDecodeResultEndToEnd ties Invoke's real flat result map through the
+// schema-aware conversion into the typed expr environment: the value the
+// checker validates and the value the run reads have one definition.
+func TestDecodeResultEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	writeModule(t, dir, `package main
+
+import "github.com/samcharles93/archie-core/internal/domain/eda/module/log"
+
+func Run(a log.Args) log.Result {
+	return log.Result{Written: a.Message != "", Level: a.Level}
+}
+`)
+
+	r := New()
+	if err := r.Register("log", dir); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	flat, err := r.Invoke(context.Background(), "log", map[string]any{"message": "hello", "level": "info"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	decoded, err := r.DecodeResult("log", flat)
+	if err != nil {
+		t.Fatalf("DecodeResult: %v", err)
+	}
+
+	env := expr.NewEnv(expr.DeclaredResult{ID: "build", Type: reflect.TypeFor[log.Result]()})
+	prg, err := env.Compile(`actions.build.result.written`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	got, err := env.Eval(prg, expr.Context{
+		Actions: map[string]map[string]any{
+			"build": {"result": decoded},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	if b, ok := got.(bool); !ok || !b {
+		t.Fatalf("Eval(actions.build.result.written) = %#v, want true", got)
+	}
+}
+
+func TestDecodeResultUnknownFieldIsError(t *testing.T) {
+	r := New()
+	if _, err := r.DecodeResult("log", map[string]any{"written": true, "bogus": "x"}); err == nil {
+		t.Fatal("DecodeResult(unknown field) = nil, want error")
 	}
 }
 

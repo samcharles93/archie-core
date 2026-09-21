@@ -86,8 +86,9 @@ type Action struct {
 	Position string
 	// ID is an optional stable identifier for this action. When present it
 	// is the key later actions read this action's result under
-	// (actions.<id>); the shape is the shared stable-identifier grammar
-	// (internal/plugin/host.go, internal/domain/workflow/vocabulary.go).
+	// (actions.<id>). Workflow actions use the shared stable-identifier
+	// grammar; module actions must use a CEL identifier so the id can be
+	// read through `actions.<id>` field selection.
 	ID string
 	// Kind is the module kind name (position: module only); empty for a
 	// workflow action.
@@ -129,18 +130,24 @@ type rawAction struct {
 	Args     map[string]string `yaml:"args"`
 }
 
-// actionIDPattern is the stable-identifier shape an action id must match when
-// declared: a lowercase, dotted/dashed identifier (shared with
+// actionIDPattern is the stable-identifier shape a WORKFLOW action id must
+// match when declared: a lowercase, dotted/dashed identifier (shared with
 // internal/plugin/host.go:21 and internal/domain/workflow/vocabulary.go:19),
 // so an id has exactly one spelling and cannot smuggle whitespace or case into
-// the vocabulary two processes compare.
+// the vocabulary two processes compare. Module action ids are stricter (see
+// actionIDCELPattern) because they must also be CEL field selections.
 var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
-// validateActionIDs enforces the id shape and uniqueness across a playbook's
-// raw actions. An absent id is fine (ids are optional); a declared id must
-// match the stable-identifier grammar and may not repeat. With action
-// playbooks now loadable, duplicate ids are reachable through Load, so this
-// helper is the load-boundary's id gate for both shapes.
+// actionIDCELPattern is the id shape for MODULE actions: a lowercase CEL
+// identifier. `actions.<id>` is CEL field selection, and a `.` or `-` in an id
+// has no field-selection spelling, so a dotted/dashed id would load yet could
+// never be referenced.
+var actionIDCELPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// validateActionIDs enforces the WORKFLOW id shape and uniqueness. An absent
+// id is fine (ids are optional); a declared id must match the
+// stable-identifier grammar. The workflow shape has exactly one action, so
+// the uniqueness check is a guard against future shape changes.
 func validateActionIDs(actions []rawAction) error {
 	seen := make(map[string]struct{}, len(actions))
 	for _, a := range actions {
@@ -153,6 +160,28 @@ func validateActionIDs(actions []rawAction) error {
 		}
 		if _, dup := seen[id]; dup {
 			return fmt.Errorf("duplicate action id %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+// validateModuleActionIDs enforces the MODULE id shape and uniqueness. A
+// module id must be a CEL identifier (not the looser workflow
+// stable-identifier grammar) and may not repeat; the error names the
+// playbook and the offending id.
+func validateModuleActionIDs(path string, actions []rawAction) error {
+	seen := make(map[string]struct{}, len(actions))
+	for i, a := range actions {
+		id := a.ID
+		if id == "" {
+			continue
+		}
+		if !actionIDCELPattern.MatchString(id) {
+			return fmt.Errorf("playbook %s: action %d id %q is not a valid CEL identifier (want %s)", path, i+1, id, actionIDCELPattern.String())
+		}
+		if _, dup := seen[id]; dup {
+			return fmt.Errorf("playbook %s: duplicate action id %q", path, id)
 		}
 		seen[id] = struct{}{}
 	}
@@ -232,9 +261,6 @@ func loadOne(dir, path string, schemas KindSchemas) (*Playbook, error) {
 	if err := pb.Trigger.Kind.Validate(); err != nil {
 		return nil, fmt.Errorf("playbook %s: %w", path, err)
 	}
-	if err := validateActionIDs(raw.Actions); err != nil {
-		return nil, fmt.Errorf("playbook %s: %w", path, err)
-	}
 
 	actions, err := compileActions(path, raw.Actions, schemas)
 	if err != nil {
@@ -294,6 +320,9 @@ func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action
 // The env has no prior result ids, so a workflow `when` or `args` value that
 // reads `actions.<id>` fails at compile -- the unchanged workflow behaviour.
 func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
+	if err := validateActionIDs(raw); err != nil {
+		return nil, fmt.Errorf("playbook %s: %w", path, err)
+	}
 	a := raw[0]
 	if strings.TrimSpace(a.Workflow) == "" {
 		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", path)
@@ -326,6 +355,9 @@ func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
 // Result structs, so a later action can read an earlier result and a forward
 // or field-typo read fails at compile (multi-action-playbooks.md, D3).
 func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]Action, error) {
+	if err := validateModuleActionIDs(path, raw); err != nil {
+		return nil, err
+	}
 	actions := make([]Action, 0, len(raw))
 	var declared []expr.DeclaredResult
 	for _, a := range raw {
@@ -402,7 +434,9 @@ func compileArgs(path, kind string, raw map[string]string, env *expr.Env, argsSc
 // validateArgsKeys rejects an args key the kind's Args struct does not define
 // (multi-action-playbooks.md, D4), so an arg typo is a load failure rather
 // than a dispatch-time shape mismatch. Go field names are lower-cased to the
-// YAML spelling (Message -> message), matching the module's strict decode.
+// YAML spelling (Message -> message), and the YAML key is compared verbatim:
+// the decoder also matches literal lower-case keys, so `Message` is rejected
+// here rather than loading and then failing at dispatch.
 func validateArgsKeys(path, kind string, argsSchema reflect.Type, raw map[string]string) error {
 	t := argsSchema
 	if t.Kind() == reflect.Pointer {
@@ -412,8 +446,13 @@ func validateArgsKeys(path, kind string, argsSchema reflect.Type, raw map[string
 	for field := range t.Fields() {
 		fields[strings.ToLower(field.Name)] = struct{}{}
 	}
+	keys := make([]string, 0, len(raw))
 	for key := range raw {
-		if _, ok := fields[strings.ToLower(key)]; !ok {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, ok := fields[key]; !ok {
 			return fmt.Errorf("playbook %s: %s kind args[%q] is not a declared Args field", path, kind, key)
 		}
 	}
@@ -462,6 +501,15 @@ type DispatchInput struct {
 	// a workflow-kind dispatch this carries the label/kind fields cheaply
 	// available at this point.
 	Event map[string]any
+}
+
+// IsActionPlaybook reports whether pb is an action playbook (one or more
+// module actions), as opposed to a workflow playbook (exactly one workflow
+// action). It is the single two-shape predicate shared by Dispatch (which
+// skips action playbooks) and the daemon's D1 load warning (which logs them),
+// so the two can never disagree.
+func (pb *Playbook) IsActionPlaybook() bool {
+	return len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow"
 }
 
 // Match reports whether the playbook's trigger matches the input's labels.
@@ -539,7 +587,7 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 		if !pb.Match(input) {
 			continue
 		}
-		if len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow" {
+		if pb.IsActionPlaybook() {
 			// Action playbook: loaded and validated, not routed (D1).
 			continue
 		}

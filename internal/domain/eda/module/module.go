@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/traefik/yaegi/interp"
 
@@ -212,7 +213,10 @@ func decodeLogArgs(rawArgs map[string]any) (log.Args, error) {
 }
 
 // Invoke calls the registered kind with rawArgs and returns the marshaled
-// result. An unregistered kind is a reported error.
+// result. An unregistered kind is a reported error. Invoke is deliberately
+// schema-agnostic: it returns the flat map[string]any the kind produces and
+// does not re-apply the Result schema. DecodeResult is the single conversion
+// site that re-applies it for the typed CEL environment.
 func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[string]any) (map[string]any, error) {
 	inv, ok := r.kinds[kind]
 	if !ok {
@@ -223,4 +227,72 @@ func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[st
 		return nil, fmt.Errorf("module %s: %w", kind, err)
 	}
 	return res, nil
+}
+
+// DecodeResult converts Invoke's flat result map into the kind's registered
+// Result struct. Invoke stays schema-agnostic and returns map[string]any; this
+// method is the one place the Result schema is re-applied so the value a later
+// CEL expression reads is the same Go struct the expression environment typed
+// (`actions.<id>.result.<field>`). The map is keyed by the lower-cased Go
+// field name, the same spelling expr registers as the CEL field name. An
+// unknown field or a wrong-typed value is a reported error.
+func (r *ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, error) {
+	k, ok := registry[kind]
+	if !ok {
+		return nil, fmt.Errorf("module: unknown kind %q", kind)
+	}
+	return decodeResultStruct(kind, k.resultType, raw)
+}
+
+// decodeResultStruct marshals raw into a new value of the kind's Result
+// struct type, keyed by the lower-cased Go field name -- the same spelling
+// expr registers as the CEL field name.
+func decodeResultStruct(kind string, t reflect.Type, raw map[string]any) (any, error) {
+	if t == nil {
+		return nil, fmt.Errorf("module %s: result schema is not set", kind)
+	}
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("module %s: result type %s is not a struct", kind, t)
+	}
+
+	out := reflect.New(t).Elem()
+	fields := make(map[string]reflect.Value, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !out.Field(i).CanSet() {
+			continue
+		}
+		fields[strings.ToLower(f.Name)] = out.Field(i)
+	}
+	for key, val := range raw {
+		fv, ok := fields[key]
+		if !ok {
+			return nil, fmt.Errorf("module %s: unknown result field %q", kind, key)
+		}
+		if err := setResultField(kind, key, fv, val); err != nil {
+			return nil, err
+		}
+	}
+	return out.Interface(), nil
+}
+
+// setResultField assigns val to fv, converting compatible Go types. A nil or
+// incompatible value is a reported error, never a silent zero-value fill.
+func setResultField(kind, field string, fv reflect.Value, val any) error {
+	if val == nil {
+		return fmt.Errorf("module %s: result.%s is nil, want %s", kind, field, fv.Type())
+	}
+	rv := reflect.ValueOf(val)
+	if rv.Type().AssignableTo(fv.Type()) {
+		fv.Set(rv)
+		return nil
+	}
+	if rv.Type().ConvertibleTo(fv.Type()) {
+		fv.Set(rv.Convert(fv.Type()))
+		return nil
+	}
+	return fmt.Errorf("module %s: result.%s is %T, want %s", kind, field, val, fv.Type())
 }

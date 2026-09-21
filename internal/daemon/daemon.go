@@ -197,12 +197,12 @@ type Daemon struct {
 	// bindings the daemon loaded; nil means built-in defaults.
 	KindWorkflows  workflow.KindWorkflows
 	LabelWorkflows workflow.LabelWorkflows
-	// Playbooks is the loaded EDA playbook set (trigger + one workflow-kind
-	// action, internal/domain/eda/playbook). It is consulted before the
+	// Playbooks is the loaded EDA playbook set (workflow and action
+	// playbooks, internal/domain/eda/playbook). It is consulted before the
 	// kind/label bindings when a task's workflow definition is pinned: a
-	// playbook is an operator's explicit rule for one trigger, where the
-	// bindings are a table of defaults. Nil means no playbooks are loaded and
-	// routing is exactly the binding behaviour.
+	// workflow playbook is an operator's explicit rule for one trigger, where
+	// the bindings are a table of defaults. Nil means no playbooks are loaded
+	// and routing is exactly the binding behaviour.
 	Playbooks interface {
 		Dispatch(playbook.DispatchInput) (playbook.Decision, bool)
 	}
