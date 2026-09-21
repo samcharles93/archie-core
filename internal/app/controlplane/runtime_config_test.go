@@ -79,3 +79,69 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 		t.Fatalf("bootstrap-only secret-backed settings were dropped: chat=%+v tools=%+v", got.Chat, got.Tools)
 	}
 }
+
+// TestRuntimeConfigLayersTheStoredSchedulingLabel: the label pairs with the
+// dispatch trigger and layers with it. A policy that carries one replaces the
+// file document's label, so the store owns the half of the pairing it judged
+// at write time (archie-core-7pyj).
+func TestRuntimeConfigLayersTheStoredSchedulingLabel(t *testing.T) {
+	base := config.Config{
+		Label:        "file-label",
+		PollInterval: config.Duration(60 * 1e9),
+		Dispatch:     config.Dispatch{Trigger: "assignee"},
+	}
+	client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
+		SchedulingPolicyKind: map[string]any{"poll_interval": "2m", "max_retries": 7, "label": "stored-label", "dispatch": map[string]any{"trigger": "assignee"}},
+	}})
+	got, _, err := client.RuntimeConfig(t.Context(), base)
+	if err != nil {
+		t.Fatalf("RuntimeConfig: %v", err)
+	}
+	if got.Label != "stored-label" {
+		t.Fatalf("label after layering = %q, want the stored policy's label", got.Label)
+	}
+}
+
+// TestRuntimeConfigLeavesTheFileLabelInForceWhenThePolicyCarriesNone: a
+// policy stored before the label field existed (or one that omits it) is not
+// an instruction to clear the file document's label -- the same
+// absence-means-inherited shape a kind with no stored value has.
+func TestRuntimeConfigLeavesTheFileLabelInForceWhenThePolicyCarriesNone(t *testing.T) {
+	base := config.Config{
+		Label:        "file-label",
+		PollInterval: config.Duration(60 * 1e9),
+		Dispatch:     config.Dispatch{Trigger: "assignee"},
+	}
+	client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
+		SchedulingPolicyKind: map[string]any{"poll_interval": "2m", "max_retries": 7, "dispatch": map[string]any{"trigger": "assignee"}},
+	}})
+	got, _, err := client.RuntimeConfig(t.Context(), base)
+	if err != nil {
+		t.Fatalf("RuntimeConfig: %v", err)
+	}
+	if got.Label != "file-label" {
+		t.Fatalf("label after layering = %q, want the file document's label left in force", got.Label)
+	}
+}
+
+// TestSchedulingPolicySeedCarriesTheLabel: the seed a fresh store writes must
+// carry the file document's label, so the pairing a stored trigger requires
+// is judgeable at write time from the moment the resource exists.
+func TestSchedulingPolicySeedCarriesTheLabel(t *testing.T) {
+	server := testServer(t, nil)
+	seed, err := server.definitions[SchedulingPolicyKind].seededValue(config.Config{
+		Label:        "archie:labelled",
+		PollInterval: config.Duration(60 * 1e9),
+		Dispatch:     config.Dispatch{Trigger: "label"},
+	})
+	if err != nil {
+		t.Fatalf("seededValue: %v", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(seed, &document); err != nil {
+		t.Fatalf("decode seed: %v", err)
+	}
+	if label, _ := document["label"].(string); label != "archie:labelled" {
+		t.Fatalf("seed label = %q, want the file document's label", label)
+	}
+}

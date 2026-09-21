@@ -60,6 +60,25 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// The pairing rule the file layer's validateDispatch enforces on the
+			// effective document (the GH#445 guard): a label-requiring trigger
+			// with no label matches every open issue. The resource carries the
+			// label precisely so the write path can judge the pairing, so a
+			// stored policy without one is refused here and by boot alike.
+			name:    "label trigger without a label",
+			kind:    SchedulingPolicyKind,
+			value:   map[string]any{"poll_interval": "1m0s", "max_retries": 0, "dispatch": map[string]any{"trigger": "label"}},
+			mutate:  func(cfg *config.Config) { cfg.Dispatch.Trigger = "label" },
+			wantErr: true,
+		},
+		{
+			name:    "label trigger with a label",
+			kind:    SchedulingPolicyKind,
+			value:   map[string]any{"poll_interval": "1m0s", "max_retries": 0, "label": "archie:labelled", "dispatch": map[string]any{"trigger": "label"}},
+			mutate:  func(cfg *config.Config) { cfg.Dispatch.Trigger = "label"; cfg.Label = "archie:labelled" },
+			wantErr: false,
+		},
+		{
 			name:    "valid repository policies",
 			kind:    RepositoryPoliciesKind,
 			value:   []config.Repo{{Owner: "acme", Name: "app", TestGlob: "**/*_test.go"}},

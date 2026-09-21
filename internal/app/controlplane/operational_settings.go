@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
@@ -19,9 +20,17 @@ const (
 )
 
 type schedulingPolicy struct {
-	PollInterval string          `json:"poll_interval"`
-	MaxRetries   int             `json:"max_retries"`
-	Dispatch     config.Dispatch `json:"dispatch"`
+	PollInterval string `json:"poll_interval"`
+	MaxRetries   int    `json:"max_retries"`
+	// Label is the trigger-matching label the stored dispatch pairs with.
+	// It is a pointer, not a string, so a policy stored before the field
+	// existed decodes nil and leaves the file document's label in force when
+	// it is layered (runtime_config.go) -- the same absence-means-inherited
+	// shape a kind with no stored value has. Writes are stricter: the pairing
+	// rule below refuses a label-requiring trigger with no label, so the
+	// store can never bless the half of a pairing boot then refuses.
+	Label    *string         `json:"label,omitempty"`
+	Dispatch config.Dispatch `json:"dispatch"`
 }
 
 type pluginSettings struct {
@@ -36,7 +45,7 @@ func operationalDefinitions() []Definition {
 		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "restart-required", Schema: arraySchema, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
 		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedChannels, Validate: validateChannels},
 		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
-			return schedulingPolicy{cfg.PollInterval.Std().String(), cfg.MaxRetries, cfg.Dispatch}
+			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedTools, Validate: validateTools},
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
@@ -81,6 +90,16 @@ func validateScheduling(input []byte) error {
 		// trigger it does not know.
 		if !configuration.DispatchTriggerValid(policy.Dispatch.Trigger) {
 			return fmt.Errorf("dispatch.trigger %q is not a discovery rule the daemon can poll with", policy.Dispatch.Trigger)
+		}
+		// The pairing rule the file layer's validateDispatch enforces on the
+		// effective document, judged here on the data the resource carries:
+		// RuntimeConfig layers this label over the file's (an absent field
+		// leaves the file's label in force, which is what legacy policies
+		// decode with), so a stored label-requiring trigger with no label was
+		// a value the store blessed and boot refused -- the two-layer
+		// disagreement the parity test refuses to allow (archie-core-7pyj).
+		if workintake.RequiresLabel(policy.Dispatch.Trigger) && (policy.Label == nil || *policy.Label == "") {
+			return fmt.Errorf("label is required when dispatch.trigger is %q (an empty label matches every open issue)", policy.Dispatch.Trigger)
 		}
 		return nil
 	})

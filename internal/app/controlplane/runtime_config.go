@@ -137,6 +137,15 @@ func runtimeConfigFrom(ctx context.Context, reader resourceReader, base config.C
 			return err
 		}
 		out.PollInterval, out.MaxRetries, out.Dispatch = config.Duration(interval), policy.MaxRetries, policy.Dispatch
+		// The label pairs with the trigger and layers with it: once the store
+		// carries one, it owns it, and the file can no longer drop the label a
+		// stored label-requiring trigger depends on. A policy stored before
+		// the field existed -- the nil the seed never produces -- leaves the
+		// file document's label in force, and boot's gate judges the pairing
+		// either way.
+		if policy.Label != nil {
+			out.Label = *policy.Label
+		}
 		return nil
 	}); err != nil {
 		return config.Config{}, nil, err
