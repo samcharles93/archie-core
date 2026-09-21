@@ -44,15 +44,19 @@ type Server struct {
 
 // NewServer builds the control plane server the State Store serves. steps is
 // the workflow step vocabulary the composition root registered; this is the
-// validating side of the vocabulary archie-agent executes against.
-func NewServer(resources ResourceStore, steps *workflow.Manager) *Server {
-	registry := stepRegistry(steps)
+// validating side of the vocabulary archie-agent executes against in a
+// matching build (see stepRegistry: a skewed deploy can still disagree).
+func NewServer(resources ResourceStore, steps *workflow.Manager) (*Server, error) {
+	registry, err := stepRegistry(steps)
+	if err != nil {
+		return nil, err
+	}
 	definitions := builtinDefinitions(registry)
 	byKind := make(map[string]Definition, len(definitions))
 	for _, definition := range definitions {
 		byKind[definition.Kind] = definition
 	}
-	return &Server{store: resources, definitions: byKind, ordered: definitions}
+	return &Server{store: resources, definitions: byKind, ordered: definitions}, nil
 }
 
 func (s *Server) Catalog(context.Context, *pb.CatalogRequest) (*pb.CatalogResponse, error) {

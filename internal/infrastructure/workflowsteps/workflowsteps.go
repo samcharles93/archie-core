@@ -1,10 +1,13 @@
 // Package workflowsteps is the compiled-in workflow step-type provider set:
 // the one place a step type is bundled into every Archie binary.
 //
-// Both composition roots import it — internal/app/archied (which serves the
-// State Store's validating side) and internal/app/agentworker (the executing
-// side) — so the two sides register the same vocabulary by construction rather
-// than by convention. Neither root keeps a package-level registry of its own.
+// Three composition roots import it, and each resolves a workflow step type:
+// archied's RunStateStore (the State Store's validating side), archied's
+// openStateStoreAdapter (the daemon's workflow-definitions client) and
+// agentworker's productionWorkerDependencies (the executing side). Sharing one
+// package is what keeps them registering the same vocabulary rather than one
+// of them keeping a provider set of its own. archie-messaging resolves no step
+// type and does not import it.
 package workflowsteps
 
 import (
@@ -38,9 +41,13 @@ func (shippedStages) StepTypes() []workflow.StepType {
 // reachable from the validating side and the executing side at once.
 //
 // The set is a compiled-in constant rather than a directory scan: a step type
-// is a Go factory, and the Yaegi-interpreted plugins internal/plugin loads
-// satisfy plugin.Plugin's metadata contract but cannot hand the host a working
-// workflow.StepFactory. archie-agent links its own binary in any case.
+// is a Go factory, and no bridge has been built from the Yaegi-interpreted
+// plugins internal/plugin loads to workflow.StepFactory -- those plugins
+// satisfy plugin.Plugin's metadata contract only. Such a bridge is possible:
+// internal/secret/secretextract wraps an interpreted Engine into the typed
+// contract secret.Registry.LoadDir registers (internal/app/archied/
+// provider_secrets.go). Until one exists for step types, adding a step type
+// means adding a provider here.
 func Providers() []workflow.StepTypeProvider {
 	return []workflow.StepTypeProvider{shippedStages{}}
 }

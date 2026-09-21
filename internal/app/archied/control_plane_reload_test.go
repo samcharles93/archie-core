@@ -14,19 +14,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 )
-
-// reloadSteps builds the production workflow step vocabulary the reload tests'
-// control-plane client resolves definitions against.
-func reloadSteps(t *testing.T) *workflow.Manager {
-	t.Helper()
-	steps, err := workflowsteps.NewManager()
-	if err != nil {
-		t.Fatalf("build workflow step vocabulary: %v", err)
-	}
-	return steps
-}
 
 // controlPlaneStub answers Query from a fixed resource map. queryErr, when
 // set, fails every Query so a test can drive the unreachable-State-Store
@@ -99,7 +87,7 @@ func newReloadBoot(t *testing.T, stub *controlPlaneStub) *boot {
 	b := &boot{
 		cfg:          fileConfig(),
 		log:          slog.New(slog.DiscardHandler),
-		controlPlane: controlplane.NewRPCClient(stub, reloadSteps(t)),
+		controlPlane: controlplane.NewRPCClient(stub),
 	}
 	b.cfgHolder = config.NewHolder(b.cfg)
 	return b

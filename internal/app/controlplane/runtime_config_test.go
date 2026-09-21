@@ -53,7 +53,7 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 		ToolSettingsKind:             map[string]any{"mcp_servers": []map[string]any{{"name": "docs", "transport": "http", "url": "https://mcp.example.com", "headers_configured": true}}, "policy": map[string]any{}, "web_fetch": map[string]any{}, "minimax": map[string]any{"enabled": false, "credential_configured": false}},
 		PluginSettingsKind:           map[string]any{"plugin_dir": "/plugins", "module_dir": "/modules", "secret_engine_dir": "/secrets", "skills_dir": "/skills"},
 		ContainerRuntimePoliciesKind: config.ContainerConfig{LegacyEnabled: true, Image: "archie:next", PullPolicy: "missing"},
-	}}, testSteps(t))
+	}})
 
 	got, versions, err := client.RuntimeConfig(t.Context(), base)
 	if err != nil {

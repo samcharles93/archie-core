@@ -12,8 +12,10 @@ import (
 
 // stepTypeIdentifier is the shape a provider name and a step type name must
 // have: a lowercase, dotted identifier, so a contributed step type cannot
-// smuggle whitespace or case into the vocabulary both sides of the process
-// boundary compare, and cannot be misread as a shipped stage.
+// smuggle whitespace or case into the vocabulary two processes compare, and so
+// one step type has exactly one spelling. It reserves nothing: a contribution
+// that spells a shipped stage's name is well formed, and what refuses it is
+// Register's claimed-name check, not this rule.
 var stepTypeIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
 // StepType is one named workflow step type: the vocabulary word a YAML
@@ -40,15 +42,19 @@ type StepTypeProvider interface {
 // parsed and compiled against.
 //
 // It is a constructed, injected value. There is deliberately no package-level
-// registry and no init()-time registration: both sides of the process boundary
-// — the validating side (the State Store's control plane) and the executing
-// side (archie-agent) — build a Manager at their composition root from the same
-// provider set (internal/infrastructure/workflowsteps) and inject it, so a
-// definition that validates on one side is compilable on the other by
-// construction rather than by convention.
+// registry and no init()-time registration: each process builds a Manager at
+// its composition root from the same provider set
+// (internal/infrastructure/workflowsteps) and injects it, so within one build
+// a definition that validates on the validating side is compilable on the
+// executing side. That agreement is per build: the State Store and archie-agent
+// are separately deployed binaries, so one built from newer source than the
+// other can still disagree, and only a matching deploy fixes that.
 //
-// Registration happens before the first resolution: a Manager handed to a
-// consumer is not registered to afterwards.
+// Registration is expected to finish before the first resolution, and that
+// order is a documented constraint rather than an enforced one: Registry hands
+// back a copy, so a Register that arrives after a consumer resolved is not
+// observed by that consumer. Register every provider before injecting the
+// manager.
 type Manager struct {
 	mu       sync.Mutex
 	registry StepRegistry

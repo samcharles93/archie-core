@@ -121,13 +121,16 @@ func TestEveryProductionResolutionSiteResolvesTheRegisteredStepType(t *testing.T
 				}
 			})
 
-			t.Run("control-plane client", func(t *testing.T) {
+			t.Run("workflow-definitions client", func(t *testing.T) {
 				value, err := json.Marshal(probeCollection(test.stepType))
 				if err != nil {
 					t.Fatalf("encode definitions: %v", err)
 				}
 				rpc := &definitionsClient{value: value}
-				client := NewRPCClient(rpc, steps)
+				client, err := NewWorkflowDefinitionsClient(rpc, steps)
+				if err != nil {
+					t.Fatalf("build workflow-definitions client: %v", err)
+				}
 
 				// Read path: the daemon decodes the stored collection here.
 				collection, _, readErr := client.WorkflowDefinitions(t.Context())
@@ -170,6 +173,30 @@ func TestEveryProductionResolutionSiteResolvesTheRegisteredStepType(t *testing.T
 				}
 			})
 		})
+	}
+}
+
+// TestNilStepVocabularyFailsClosedAtEveryResolutionSite pins the guard on the
+// manager every resolution site now requires. A nil manager is a wiring bug at
+// the composition root, so each site must name it and refuse to resolve, rather
+// than dereference it: a nil-pointer panic is the same failure with no clue in
+// it.
+func TestNilStepVocabularyFailsClosedAtEveryResolutionSite(t *testing.T) {
+	resources := store.OpenTest(t)
+	t.Cleanup(func() {
+		if err := resources.Close(); err != nil {
+			t.Errorf("close test store: %v", err)
+		}
+	})
+
+	if _, err := NewServer(resources, nil); err == nil || !strings.Contains(err.Error(), "no workflow step vocabulary") {
+		t.Errorf("NewServer with no step vocabulary: error = %v, want the missing-vocabulary refusal", err)
+	}
+	if _, err := NewWorkflowDefinitionsClient(&definitionsClient{}, nil); err == nil || !strings.Contains(err.Error(), "no workflow step vocabulary") {
+		t.Errorf("NewWorkflowDefinitionsClient with no step vocabulary: error = %v, want the missing-vocabulary refusal", err)
+	}
+	if _, err := agentworker.CompilePinnedWorkflow(probeRequest(probeStepType), nil); err == nil || !strings.Contains(err.Error(), "no step vocabulary") {
+		t.Errorf("CompilePinnedWorkflow with no step vocabulary: error = %v, want the missing-vocabulary refusal", err)
 	}
 }
 
@@ -226,7 +253,10 @@ func admitThroughStateStore(t *testing.T, steps *workflow.Manager, stepType stri
 			t.Errorf("close test store: %v", closeErr)
 		}
 	})
-	server := NewServer(resources, steps)
+	server, err := NewServer(resources, steps)
+	if err != nil {
+		t.Fatalf("build control plane server: %v", err)
+	}
 
 	if resource, resourceErr := resources.Resource(t.Context(), WorkflowDefinitionsKind); resourceErr == nil {
 		before = resource.Version

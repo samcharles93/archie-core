@@ -327,6 +327,12 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 // onto req and req.Task: the run's TaskContext carries that task record, so the
 // pin has to land on the request the caller handed in.
 func CompilePinnedWorkflow(req *taskrun.Request, steps *workflow.Manager) (workflow.Workflow, error) {
+	// steps is this process's required step vocabulary, so a nil one is a wiring
+	// mistake at the composition root (productionWorkerDependencies) rather than
+	// a runtime condition: name it instead of dereferencing it.
+	if steps == nil {
+		return workflow.Workflow{}, errors.New("compile pinned workflow: no step vocabulary: the composition root must register the provider set (infrastructure/workflowsteps.NewManager) before the first compile")
+	}
 	// One resolution for the whole function: both compiles below read the
 	// vocabulary the composition root registered, never the builtin registry.
 	vocabulary := steps.Registry()

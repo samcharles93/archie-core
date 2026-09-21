@@ -54,7 +54,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
-	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -117,6 +116,10 @@ type boot struct {
 	stateStoreGrants *staterpc.GrantIssuer
 	stateStoreToken  string
 	controlPlane     *controlplane.Client
+	// workflowDefinitions is the one control-plane surface that resolves
+	// workflow step types. It is separate from controlPlane because it is the
+	// only surface that needs the process's step vocabulary.
+	workflowDefinitions *controlplane.WorkflowDefinitionsClient
 	// executionSettings is the last workflow execution settings the control
 	// plane published. They arrive on a watch rather than in the file
 	// document, so reloadConfig re-applies them from here.
@@ -359,15 +362,23 @@ func (b *boot) openStateStoreAdapter() error {
 	}
 	b.stateStore = client
 	// The daemon reads and replaces workflow definitions through the
-	// control-plane client, so it resolves the same step vocabulary the State
-	// Store server validates against: registered here, at the composition
-	// root, before the first read.
-	steps, err := workflowsteps.NewManager()
+	// workflow-definitions client, so it resolves the same step vocabulary the
+	// State Store server validates against: registered here, at the composition
+	// root, before the first read, through stepVocabulary (see
+	// step_vocabulary_test.go, which pins both archied roots to it). That
+	// agreement holds within one build: the State Store is a separate binary,
+	// and a skewed deploy is only fixed by a matching deploy.
+	steps, err := stepVocabulary()
 	if err != nil {
 		b.log.Error("register workflow step vocabulary", "err", err)
 		return err
 	}
-	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane(), steps)
+	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane())
+	b.workflowDefinitions, err = controlplane.NewWorkflowDefinitionsClient(client.ControlPlane(), steps)
+	if err != nil {
+		b.log.Error("workflow definitions client", "err", err)
+		return err
+	}
 	b.applyStatus = applystatus.New(b.processName, client, b.log)
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
@@ -1252,7 +1263,7 @@ func (b *boot) buildDaemon() {
 		AgentStatus:         b.agentStatus,
 		KindWorkflows:       b.kindWorkflows,
 		LabelWorkflows:      b.labelWorkflows,
-		WorkflowDefinitions: b.controlPlane,
+		WorkflowDefinitions: b.workflowDefinitions,
 	}
 	if identities, ok := b.stateStore.(identity.Repository); ok {
 		b.d.IdentityRepository = identities

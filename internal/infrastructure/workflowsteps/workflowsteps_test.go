@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
@@ -39,11 +41,12 @@ func TestShippedVocabularyCoversEveryShippedStage(t *testing.T) {
 
 // TestShippedStagesKeepTheirBehaviourThroughTheManager pins that the provider
 // hands the builtin factories through unchanged. The shipped stages are typed,
-// non-interpreted steps: each compiles to the stage the builtin registry
-// carries and refuses settings. The one way this enumeration could keep every
-// name and lose that guard is to rebuild the factories instead of forwarding
-// them, and definition_test.go's assertion cannot see it -- that test drives
-// BuiltinStepRegistry, which production no longer calls.
+// non-interpreted steps: each compiles to the stage the builtin registry's own
+// factory builds for that step type -- the same name, and Run present or absent
+// the same way -- and refuses settings. The one way this enumeration could keep
+// every name and lose that guard is to rebuild the factories instead of
+// forwarding them, and definition_test.go's assertion cannot see it -- that test
+// drives BuiltinStepRegistry, which production no longer calls.
 func TestShippedStagesKeepTheirBehaviourThroughTheManager(t *testing.T) {
 	t.Parallel()
 
@@ -66,9 +69,19 @@ func TestShippedStagesKeepTheirBehaviourThroughTheManager(t *testing.T) {
 			t.Fatalf("%s compiled %d stages, want %d", entry.ID, len(compiled.Stages), len(definition.Steps))
 		}
 		for i, step := range definition.Steps {
-			want := strings.TrimPrefix(step.Type, entry.ID+".")
-			if compiled.Stages[i].Name != want {
-				t.Errorf("%s step %d (%s) compiled to stage %q, want the shipped stage %q: the registered factory is not the builtin one", entry.ID, i, step.Type, compiled.Stages[i].Name, want)
+			// The expectation is the stage the builtin registry's own factory
+			// builds for this step type, not a name derived from the step type:
+			// that is what "the registered factory is the builtin one" means
+			// for a Stage, which is a name plus an uncomparable func.
+			shipped, err := workflow.BuiltinStepRegistry()[step.Type](yaml.Node{})
+			if err != nil {
+				t.Fatalf("build shipped stage %s: %v", step.Type, err)
+			}
+			if compiled.Stages[i].Name != shipped.Name {
+				t.Errorf("%s step %d (%s) compiled to stage %q, want the shipped stage %q: the registered factory is not the builtin one", entry.ID, i, step.Type, compiled.Stages[i].Name, shipped.Name)
+			}
+			if (compiled.Stages[i].Run != nil) != (shipped.Run != nil) {
+				t.Errorf("%s step %d (%s) compiled to a stage whose Run is present=%t, want the shipped stage's present=%t", entry.ID, i, step.Type, compiled.Stages[i].Run != nil, shipped.Run != nil)
 			}
 		}
 	}

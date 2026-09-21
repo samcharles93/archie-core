@@ -64,6 +64,12 @@ type workerDependencies struct {
 	steps *workflow.Manager
 }
 
+// productionWorkerDependencies builds the worker's process dependencies. The
+// workflow step vocabulary is registered here, at the executing side's
+// composition root, before the first task is served:
+// internal/app/agentworker's step_vocabulary_test.go calls this function and
+// fails if it stops using the shared provider set
+// (internal/infrastructure/workflowsteps).
 func productionWorkerDependencies() (workerDependencies, error) {
 	steps, err := workflowsteps.NewManager()
 	if err != nil {

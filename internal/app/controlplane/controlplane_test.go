@@ -29,12 +29,24 @@ func testSteps(t *testing.T) *workflow.Manager {
 	return steps
 }
 
+// testServer builds the State Store's control plane against the production
+// vocabulary, so a test that is not about the vocabulary still exercises the
+// constructor production uses.
+func testServer(t *testing.T, resources ResourceStore) *Server {
+	t.Helper()
+	server, err := NewServer(resources, testSteps(t))
+	if err != nil {
+		t.Fatalf("build control plane server: %v", err)
+	}
+	return server
+}
+
 func TestCatalogCarriesShippedWorkflowDefinitionsForRestore(t *testing.T) {
 	t.Parallel()
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	catalog, err := NewServer(resources, testSteps(t)).Catalog(t.Context(), &pb.CatalogRequest{})
+	catalog, err := testServer(t, resources).Catalog(t.Context(), &pb.CatalogRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +73,7 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	server := NewServer(resources, testSteps(t))
+	server := testServer(t, resources)
 	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +113,7 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	server := NewServer(resources, testSteps(t))
+	server := testServer(t, resources)
 	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +151,7 @@ func TestImportWorkflowExecutionSettingsDoesNotOverwriteExistingValue(t *testing
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	server := NewServer(resources, testSteps(t))
+	server := testServer(t, resources)
 	first := workflow.ExecutionSettings{MaxModelToolSteps: 10, MaxRuntime: time.Minute, MaxConsecutiveGateFailures: 2}
 	if _, err := server.ImportWorkflowExecutionSettings(t.Context(), first); err != nil {
 		t.Fatal(err)
@@ -165,7 +177,7 @@ func TestRegistryRoutesAndValidatesDefinitions(t *testing.T) {
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	server := NewServer(resources, testSteps(t))
+	server := testServer(t, resources)
 	if _, err := server.ImportConfig(t.Context(), config.Config{Containers: config.ContainerConfig{PullPolicy: "missing"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +207,7 @@ func TestProviderSeedKeepsReferencesAndNeverResolvedSecrets(t *testing.T) {
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	server := NewServer(resources, testSteps(t))
+	server := testServer(t, resources)
 	cfg := config.Config{Providers: map[string]config.Provider{"openai": {Class: "openai", APIKeyEnv: "OPENAI_API_KEY", APIKey: config.SecretRef{Engine: "env", Key: "OPENAI_API_KEY"}}}}
 	if _, err := server.ImportConfig(context.Background(), cfg); err != nil {
 		t.Fatal(err)
@@ -222,7 +234,7 @@ func TestHistoryCarriesEveryRevisionWithItsAudit(t *testing.T) {
 
 	resources := store.OpenTest(t)
 	defer resources.Close()
-	server := NewServer(resources, testSteps(t))
+	server := testServer(t, resources)
 	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
