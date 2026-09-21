@@ -100,12 +100,20 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	go func() {
 		for update := range updates {
 			if update.Err != nil {
+				// A refused update arrives here, not through
+				// applyWorkflowExecutionSettings: controlplane.Client decodes every
+				// document it is handed, so a stored value this process cannot run
+				// never reaches the apply call. Report it against the version it
+				// came from -- the reporter keeps the version it last applied --
+				// so the settings page shows the refusal instead of a version this
+				// process never ran (docs/prds/control-plane-apply-status.md).
+				//
+				// The stream is not re-established after this point; that gap is
+				// archie-core-yrmr, not this apply path.
+				b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, update.Version, update.Err)
 				b.log.Error("workflow execution settings watch failed", "err", update.Err)
 				return
 			}
-			// A refused update leaves the running component in place and is
-			// already reported through apply status, so the watch keeps
-			// streaming instead of stopping on it.
 			_ = b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
 		}
 	}()
@@ -121,20 +129,25 @@ type executionSettingsCandidate struct {
 }
 
 // buildExecutionSettingsCandidate stages a live update without touching
-// anything running: it checks the candidate the running limits would be
-// replaced with, so a change this process cannot run is refused before it
-// becomes the live one (docs/prds/runtime-control-plane.md, "API": Archie
-// starts and checks the new one before switching).
+// anything running: it builds the configuration snapshot the new limits would
+// be published as and runs this process's own runnability check on it -- the
+// same configuration.Validate that runtimeConfig applies before publishing a
+// layered config, and that the readiness probe applies to the published one. A
+// snapshot this process cannot run is refused before it becomes the live one
+// (docs/prds/runtime-control-plane.md, "API": Archie starts and checks the new
+// one before switching).
 //
-// The check runs here rather than only where the document was written because
-// a live update is promoted long after that: the store's validation describes
-// what may be stored, and this is the process that has to run it.
+// The kind's schema is deliberately not re-checked here. The store validates
+// every document before it is written (Definition.Decode) and
+// controlplane.Client validates it again as it decodes it, so re-running
+// workflow.ExecutionSettings.Validate at this point would be a guard no
+// producer can trip.
 func (b *boot) buildExecutionSettingsCandidate(settings workflow.ExecutionSettings) (executionSettingsCandidate, error) {
-	if err := settings.Validate(); err != nil {
-		return executionSettingsCandidate{}, fmt.Errorf("workflow execution settings: %w", err)
-	}
 	cfg := b.cfgHolder.Get().Clone()
 	applyExecutionBudgets(&cfg, settings)
+	if err := configuration.Validate(&cfg); err != nil {
+		return executionSettingsCandidate{}, fmt.Errorf("workflow execution settings: %w", err)
+	}
 	return executionSettingsCandidate{settings: settings, cfg: cfg}, nil
 }
 
@@ -143,16 +156,20 @@ func (b *boot) buildExecutionSettingsCandidate(settings workflow.ExecutionSettin
 // Both halves of the running component move together and only after the check
 // passes: on a refusal the previous settings keep running, the configuration
 // snapshot new tasks are built from is left as it is, and the failure is
-// reported against the version that is still live, so the settings page shows
-// a rejected edit rather than a version this process never ran.
+// reported for the version that was refused. The apply-status reporter writes
+// that record against the version it last applied, so once this process has
+// applied anything the settings page shows a rejected edit rather than a
+// version this process never ran.
 //
 // The settings are recorded as well as applied: they arrive on a watch rather
 // than in the file document, so a reload has nowhere else to read them back
 // from.
 //
-// The returned error is for a caller that cannot continue on limits that were
-// not applied -- boot, which must not start a process it cannot run. On the
-// watch path the running component stays live and the report is the outcome.
+// The returned error is propagated by boot, the caller that cannot continue on
+// limits it did not apply. Boot reaches this function only with settings the
+// control plane already decoded and over a snapshot loadRuntimeConfig already
+// validated, so that propagation is the fail-closed direction of the rule
+// above rather than a branch the daemon takes today.
 func (b *boot) applyWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings, version int64) error {
 	candidate, err := b.buildExecutionSettingsCandidate(settings)
 	if err != nil {
