@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Dial returns a State Store contract client for target, applying the
@@ -34,7 +36,28 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 			target,
 		)
 	}
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// Client keepalive. grpc-go's default client keepalive time is
+		// infinity (internal/transport.defaultClientKeepaliveTime), so a
+		// connection that half-opens under an idle client -- peer gone, socket
+		// still ESTABLISHED -- produces no error here. That is load-bearing for
+		// this dial because the control-plane Watch stream is silent by design
+		// while the watched resource's version is unchanged
+		// (internal/app/controlplane's Watch): with neither peer writing,
+		// neither notices, and the caller's watch stays frozen for the life of
+		// the process with no error and no log.
+		//
+		// Time 10s is the soonest a dead peer can be detected: gRPC clamps a
+		// client ping interval up to internal.KeepaliveMinPingTime (10s), and
+		// 10s of connection-level silence costs one HTTP/2 PING, which is far
+		// below the traffic this link already carries (the store service polls
+		// its store every 250ms per watch). Timeout 5s bounds detection at
+		// ~15s: a PING the peer does not ACK within 5s tears the transport
+		// down, turning a half-open connection into a stream error the caller
+		// can act on.
+		grpc.WithKeepaliveParams(clientKeepaliveParams()),
+	}
 	if token != "" {
 		// Both call shapes need the credential: the server's interceptors
 		// guard unary RPCs and the streaming capture reads separately, so a
@@ -50,6 +73,20 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 		return nil, nil, fmt.Errorf("create state store client: %w", err)
 	}
 	return NewClient(conn), func() { _ = conn.Close() }, nil
+}
+
+// clientKeepaliveParams are the client keepalive settings Dial installs; see
+// Dial's option comment for why each value is what it is. PermitWithoutStream
+// is deliberately left false (the library default): the pings this dial needs
+// are covered by an active stream, and pinging a connection with no streams is
+// what a peer's keepalive enforcement policy records as a ping strike --
+// against the State Store's default policy a streamless ping draws GOAWAY
+// too_many_pings and would churn connections that are healthy today.
+func clientKeepaliveParams() keepalive.ClientParameters {
+	return keepalive.ClientParameters{
+		Time:    10 * time.Second,
+		Timeout: 5 * time.Second,
+	}
 }
 
 // TargetIsLoopback reports whether addr's host is a loopback address. Both
