@@ -53,6 +53,8 @@ const (
 	StateStoreService_TokensByDay_FullMethodName                = "/state.v1.StateStoreService/TokensByDay"
 	StateStoreService_PutConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/PutConfigSnapshot"
 	StateStoreService_GetConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/GetConfigSnapshot"
+	StateStoreService_PutApplyStatus_FullMethodName             = "/state.v1.StateStoreService/PutApplyStatus"
+	StateStoreService_ListApplyStatus_FullMethodName            = "/state.v1.StateStoreService/ListApplyStatus"
 	StateStoreService_ReadTaskLog_FullMethodName                = "/state.v1.StateStoreService/ReadTaskLog"
 	StateStoreService_StreamTaskLogContent_FullMethodName       = "/state.v1.StateStoreService/StreamTaskLogContent"
 	StateStoreService_InsertCapture_FullMethodName              = "/state.v1.StateStoreService/InsertCapture"
@@ -133,6 +135,12 @@ type StateStoreServiceClient interface {
 	// configuration page").
 	PutConfigSnapshot(ctx context.Context, in *PutConfigSnapshotRequest, opts ...grpc.CallOption) (*PutConfigSnapshotResponse, error)
 	GetConfigSnapshot(ctx context.Context, in *GetConfigSnapshotRequest, opts ...grpc.CallOption) (*GetConfigSnapshotResponse, error)
+	// Apply status: which version of a control-plane resource each process is
+	// running, and why it could not. Every process that applies a resource
+	// publishes; the UI process reads (docs/prds/control-plane-apply-status.md).
+	// Both are administrative.
+	PutApplyStatus(ctx context.Context, in *PutApplyStatusRequest, opts ...grpc.CallOption) (*PutApplyStatusResponse, error)
+	ListApplyStatus(ctx context.Context, in *ListApplyStatusRequest, opts ...grpc.CallOption) (*ListApplyStatusResponse, error)
 	// Task log: one task attempt's persisted log. Task log files live in the
 	// state directory this process owns, so the dashboard reads them over this
 	// contract rather than opening them itself
@@ -529,6 +537,26 @@ func (c *stateStoreServiceClient) GetConfigSnapshot(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) PutApplyStatus(ctx context.Context, in *PutApplyStatusRequest, opts ...grpc.CallOption) (*PutApplyStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutApplyStatusResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PutApplyStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListApplyStatus(ctx context.Context, in *ListApplyStatusRequest, opts ...grpc.CallOption) (*ListApplyStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListApplyStatusResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListApplyStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) ReadTaskLog(ctx context.Context, in *ReadTaskLogRequest, opts ...grpc.CallOption) (*ReadTaskLogResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReadTaskLogResponse)
@@ -825,6 +853,12 @@ type StateStoreServiceServer interface {
 	// configuration page").
 	PutConfigSnapshot(context.Context, *PutConfigSnapshotRequest) (*PutConfigSnapshotResponse, error)
 	GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error)
+	// Apply status: which version of a control-plane resource each process is
+	// running, and why it could not. Every process that applies a resource
+	// publishes; the UI process reads (docs/prds/control-plane-apply-status.md).
+	// Both are administrative.
+	PutApplyStatus(context.Context, *PutApplyStatusRequest) (*PutApplyStatusResponse, error)
+	ListApplyStatus(context.Context, *ListApplyStatusRequest) (*ListApplyStatusResponse, error)
 	// Task log: one task attempt's persisted log. Task log files live in the
 	// state directory this process owns, so the dashboard reads them over this
 	// contract rather than opening them itself
@@ -982,6 +1016,12 @@ func (UnimplementedStateStoreServiceServer) PutConfigSnapshot(context.Context, *
 }
 func (UnimplementedStateStoreServiceServer) GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetConfigSnapshot not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PutApplyStatus(context.Context, *PutApplyStatusRequest) (*PutApplyStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutApplyStatus not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListApplyStatus(context.Context, *ListApplyStatusRequest) (*ListApplyStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListApplyStatus not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ReadTaskLog(context.Context, *ReadTaskLogRequest) (*ReadTaskLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReadTaskLog not implemented")
@@ -1679,6 +1719,42 @@ func _StateStoreService_GetConfigSnapshot_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_PutApplyStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutApplyStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PutApplyStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PutApplyStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PutApplyStatus(ctx, req.(*PutApplyStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListApplyStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListApplyStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListApplyStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListApplyStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListApplyStatus(ctx, req.(*ListApplyStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_ReadTaskLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReadTaskLogRequest)
 	if err := dec(in); err != nil {
@@ -2178,6 +2254,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetConfigSnapshot",
 			Handler:    _StateStoreService_GetConfigSnapshot_Handler,
+		},
+		{
+			MethodName: "PutApplyStatus",
+			Handler:    _StateStoreService_PutApplyStatus_Handler,
+		},
+		{
+			MethodName: "ListApplyStatus",
+			Handler:    _StateStoreService_ListApplyStatus_Handler,
 		},
 		{
 			MethodName: "ReadTaskLog",

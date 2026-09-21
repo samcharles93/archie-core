@@ -29,6 +29,7 @@ type contract interface {
 	store.BindingDispatcher
 	store.BindingTaskCreator
 	store.ConfigSnapshotStore
+	store.ApplyStatusStore
 }
 
 // taskLogContract is the task-log read group, driven separately because it is
@@ -54,7 +55,7 @@ func remoteTaskStore(t *testing.T, local *store.Store, logs store.TaskLogStore) 
 	server := grpc.NewServer()
 	RegisterServer(server, Deps{
 		Tasks: local, Captures: local, Mappings: local, Bindings: local,
-		BindingDispatcher: local, BindingTaskCreator: local, ConfigSnapshots: local,
+		BindingDispatcher: local, BindingTaskCreator: local, ConfigSnapshots: local, ApplyStatus: local,
 		TaskLogs: logs,
 	})
 	go func() { _ = server.Serve(listener) }()

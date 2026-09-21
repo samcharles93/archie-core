@@ -62,6 +62,13 @@ service StateStoreService {
   rpc PutConfigSnapshot(PutConfigSnapshotRequest) returns (PutConfigSnapshotResponse);
   rpc GetConfigSnapshot(GetConfigSnapshotRequest) returns (GetConfigSnapshotResponse);
 
+  // Apply status: which version of a control-plane resource each process is
+  // running, and why it could not. Every process that applies a resource
+  // publishes; the UI process reads (docs/prds/control-plane-apply-status.md).
+  // Both are administrative.
+  rpc PutApplyStatus(PutApplyStatusRequest) returns (PutApplyStatusResponse);
+  rpc ListApplyStatus(ListApplyStatusRequest) returns (ListApplyStatusResponse);
+
   // Task log: one task attempt's persisted log. Task log files live in the
   // state directory this process owns, so the dashboard reads them over this
   // contract rather than opening them itself
@@ -449,6 +456,24 @@ message GetConfigSnapshotResponse {
   ConfigSnapshot snapshot = 1;
   bool found = 2;
 }
+
+// ApplyStatus is one process's report about one control-plane resource kind.
+// applied_version is the version that process is running; error is set when it
+// could not apply what the store returned, and leaves applied_version at the
+// last version it did apply. reported_at is re-stamped on an interval, so a
+// record older than the staleness window belongs to a process that has stopped
+// running (docs/prds/control-plane-apply-status.md).
+message ApplyStatus {
+  string process = 1;
+  string kind = 2;
+  int64 applied_version = 3;
+  string error = 4;
+  google.protobuf.Timestamp reported_at = 5;
+}
+message PutApplyStatusRequest { ApplyStatus status = 1; }
+message PutApplyStatusResponse {}
+message ListApplyStatusRequest {}
+message ListApplyStatusResponse { repeated ApplyStatus statuses = 1; }
 
 // TaskLogEntry mirrors internal/logging.Entry: one decoded log line. fields
 // carries every remaining key as a JSON object string, the same way Event

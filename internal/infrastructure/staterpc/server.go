@@ -31,6 +31,7 @@ import (
 var (
 	errCaptureUnavailable            = status.Error(codes.Unavailable, "capture store unavailable")
 	errConfigSnapshotsUnavailable    = status.Error(codes.Unavailable, "config snapshot store unavailable")
+	errApplyStatusUnavailable        = status.Error(codes.Unavailable, "apply status store unavailable")
 	errMappingUnavailable            = status.Error(codes.Unavailable, "mapping store unavailable")
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
 	errBindingDispatchUnavailable    = status.Error(codes.Unavailable, "binding dispatcher unavailable")
@@ -63,6 +64,7 @@ type Deps struct {
 	Tasks              storecontract.TaskStore
 	Captures           storecontract.CaptureStore
 	ConfigSnapshots    storecontract.ConfigSnapshotStore
+	ApplyStatus        storecontract.ApplyStatusStore
 	Mappings           storecontract.MappingStore
 	Bindings           storecontract.BindingStore
 	BindingDispatcher  storecontract.BindingDispatcher
@@ -313,6 +315,40 @@ func (s *server) capture() (storecontract.CaptureStore, error) {
 		return nil, errCaptureUnavailable
 	}
 	return s.deps.Captures, nil
+}
+
+func (s *server) applyStatus() (storecontract.ApplyStatusStore, error) {
+	if s.deps.ApplyStatus == nil {
+		return nil, errApplyStatusUnavailable
+	}
+	return s.deps.ApplyStatus, nil
+}
+
+func (s *server) PutApplyStatus(ctx context.Context, r *pb.PutApplyStatusRequest) (*pb.PutApplyStatusResponse, error) {
+	as, err := s.applyStatus()
+	if err != nil {
+		return nil, err
+	}
+	if err := as.PutApplyStatus(ctx, applyStatusValue(r.Status)); err != nil {
+		return nil, s.logErr("PutApplyStatus", err)
+	}
+	return &pb.PutApplyStatusResponse{}, nil
+}
+
+func (s *server) ListApplyStatus(ctx context.Context, _ *pb.ListApplyStatusRequest) (*pb.ListApplyStatusResponse, error) {
+	as, err := s.applyStatus()
+	if err != nil {
+		return nil, err
+	}
+	statuses, err := as.ListApplyStatus(ctx)
+	if err != nil {
+		return nil, s.logErr("ListApplyStatus", err)
+	}
+	out := make([]*pb.ApplyStatus, 0, len(statuses))
+	for _, status := range statuses {
+		out = append(out, applyStatusProto(status))
+	}
+	return &pb.ListApplyStatusResponse{Statuses: out}, nil
 }
 
 func (s *server) configSnapshots() (storecontract.ConfigSnapshotStore, error) {

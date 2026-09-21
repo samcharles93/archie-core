@@ -28,12 +28,14 @@ type (
 	TaskLogStore        = storecontract.TaskLogStore
 	CaptureStore        = storecontract.CaptureStore
 	ConfigSnapshotStore = storecontract.ConfigSnapshotStore
+	ApplyStatusStore    = storecontract.ApplyStatusStore
 	MappingStore        = storecontract.MappingStore
 	BindingStore        = storecontract.BindingStore
 	BindingDispatcher   = storecontract.BindingDispatcher
 	BindingTaskCreator  = storecontract.BindingTaskCreator
 	CapturedEvent       = storecontract.CapturedEvent
 	ConfigSnapshot      = storecontract.ConfigSnapshot
+	ApplyStatus         = storecontract.ApplyStatus
 	WorkflowStat        = storecontract.WorkflowStat
 	StageStat           = storecontract.StageStat
 	DayTokens           = storecontract.DayTokens

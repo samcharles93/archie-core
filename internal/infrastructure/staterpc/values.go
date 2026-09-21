@@ -401,6 +401,29 @@ func configSnapshotValue(snapshot *pb.ConfigSnapshot) storecontract.ConfigSnapsh
 	}
 }
 
+func applyStatusProto(status storecontract.ApplyStatus) *pb.ApplyStatus {
+	return &pb.ApplyStatus{
+		Process:        status.Process,
+		Kind:           status.Kind,
+		AppliedVersion: status.AppliedVersion,
+		Error:          status.Error,
+		ReportedAt:     timestamp(status.ReportedAt),
+	}
+}
+
+func applyStatusValue(status *pb.ApplyStatus) storecontract.ApplyStatus {
+	if status == nil {
+		return storecontract.ApplyStatus{}
+	}
+	return storecontract.ApplyStatus{
+		Process:        status.Process,
+		Kind:           status.Kind,
+		AppliedVersion: status.AppliedVersion,
+		Error:          status.Error,
+		ReportedAt:     timeValue(status.ReportedAt),
+	}
+}
+
 // taskLogEntryProto and taskLogEntryValue mirror internal/logging.Entry, whose
 // Fields map crosses as a JSON object string exactly as events.Event.Data does
 // (see eventDataJSON above). The logging package owns that format end to end;

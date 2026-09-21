@@ -245,6 +245,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css
 	}
+	if as, ok := b.st.(storecontract.ApplyStatusStore); ok {
+		deps.ApplyStatus = as
+	}
 	return deps
 }
 

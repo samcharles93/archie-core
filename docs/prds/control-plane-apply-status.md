@@ -1,13 +1,14 @@
 # Control-plane apply status
 
-**Status:** Draft
+**Status:** Approved
 **Date:** 2026-09-21
 **Tracking:** `archie-core-pskb`, and `archie-core-nwa0` which depends on it
 
 ## Outcome
 
 An operator who edits a control-plane resource can see which processes are
-running that version, which are still on an older one, and which rejected it.
+running that version, which are still on an older one, which rejected it, and
+which have stopped reporting.
 
 `docs/prds/runtime-control-plane.md` requires this and does not say where the
 report goes. This decides that.
@@ -32,6 +33,11 @@ The read returns all records as a list, including an empty one. The
 One record per process and resource kind, replaced in place. It holds the
 process name, the resource kind, the version applied, the error if the process
 could not apply it, and the time it reported.
+
+Each process re-stamps its records every 30 seconds. A record is stale once it
+is older than 90 seconds, and a stale record means the process that wrote it is
+no longer running. The report time is therefore a liveness signal, not only a
+write timestamp.
 
 A process reports at the point it applies a resource, so the record says what
 happened rather than what was intended. Nothing probes.
@@ -75,28 +81,20 @@ and a failed write is logged rather than turned into a failed reload.
 The settings page shows, per resource, the stored version beside each process's
 applied version, error, and report time. A process on an older version of a
 restart-required resource is pending a restart. A process with an error is
-failed, with the error beside it.
+failed, with the error beside it. A process whose record is stale is unknown,
+never current.
 
-## Open question: a record outlives the process that wrote it
+## A record outlives the process that wrote it
 
 Records are replaced in place, so a process that applies a version and then
-stops leaves a record asserting that version indefinitely. The settings page
-would show a dead process as current. `docs/prds/status-health-surface.md`
-faced the same choice and stamped the start of a poll pass so a wedged poller
-reads as stale rather than healthy.
+stops would otherwise leave a record asserting that version indefinitely, and
+the settings page would show a dead process as current.
+`docs/prds/status-health-surface.md` faced the same choice and stamped the start
+of a poll pass so a wedged poller reads as stale rather than healthy.
 
-This is not settled here, because the fix is a mechanism the tracking issue
-does not ask for. Three options:
-
-1. Each process re-stamps its records on an interval, and a record that stops
-   being re-stamped reads as unknown. Costs a recurring write per process.
-2. Records carry the instance identity generated at process start, and the UI
-   reads a changed identity as a restart. Detects restarts, not deaths.
-3. Accept it. The page answers "what did each process apply" and not "is it
-   still running", and says so.
-
-Recommended: 1, because the question an operator brings to this page is whether
-their change is live now.
+Settled 2026-09-21: the re-stamp above. The alternatives considered were
+carrying the instance identity generated at process start, which detects a
+restart but not a death, and accepting the limitation with the page saying so.
 
 ## Verification
 
@@ -108,6 +106,7 @@ their change is live now.
   test binding writer to reader.
 - A task-scoped credential is refused by both RPCs.
 - A failed report does not fail the reload that produced it.
+- A record that stops being re-stamped renders as unknown rather than current.
 
 ## Not included
 

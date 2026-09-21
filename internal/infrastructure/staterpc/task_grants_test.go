@@ -31,7 +31,7 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
 	)
-	RegisterServer(server, Deps{Tasks: local, Captures: local, Bindings: local, BindingDispatcher: local, Grants: grants, ConfigSnapshots: local})
+	RegisterServer(server, Deps{Tasks: local, Captures: local, Bindings: local, BindingDispatcher: local, Grants: grants, ConfigSnapshots: local, ApplyStatus: local})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
@@ -256,6 +256,42 @@ func TestOnlyAdminPublishesTheConfigSnapshot(t *testing.T) {
 	}
 	if _, found, err := admin.ConfigSnapshot(ctx); err != nil || !found {
 		t.Fatalf("admin ConfigSnapshot = (found %v, %v), want the published snapshot", found, err)
+	}
+}
+
+// TestOnlyAdminReportsApplyStatus: apply status says which process is running
+// which settings version. A container's task-scoped credential must not be
+// able to claim a process applied something, nor to read the deployment's
+// process inventory.
+func TestOnlyAdminReportsApplyStatus(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	_, dial := grantsServer(t, adminToken)
+	admin := dial(t, adminToken)
+	ctx := t.Context()
+
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerToken, err := admin.RegisterTaskGrant(ctx, task.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("RegisterTaskGrant: %v", err)
+	}
+	worker := dial(t, workerToken)
+
+	status := store.ApplyStatus{Process: "archied", Kind: "tool-settings", AppliedVersion: 2}
+	if err := admin.PutApplyStatus(ctx, status); err != nil {
+		t.Fatalf("admin PutApplyStatus: %v", err)
+	}
+	if err := worker.PutApplyStatus(ctx, status); err == nil {
+		t.Fatal("a task grant must not authorize reporting apply status")
+	}
+	if _, err := worker.ListApplyStatus(ctx); err == nil {
+		t.Fatal("a task grant must not authorize reading apply status")
+	}
+	got, err := admin.ListApplyStatus(ctx)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("admin ListApplyStatus = (%d records, %v), want the reported one", len(got), err)
 	}
 }
 

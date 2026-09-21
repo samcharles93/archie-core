@@ -109,6 +109,16 @@ type ConfigSnapshotStore interface {
 	ConfigSnapshot(ctx context.Context) (ConfigSnapshot, bool, error)
 }
 
+// ApplyStatusStore holds which version of each control-plane resource each
+// process is running. Same split as ConfigSnapshotStore and for the same
+// reason: the writers are the processes that apply a resource, the reader is
+// the UI, and a task-scoped credential must reach neither.
+// See docs/prds/control-plane-apply-status.md.
+type ApplyStatusStore interface {
+	PutApplyStatus(ctx context.Context, status ApplyStatus) error
+	ListApplyStatus(ctx context.Context) ([]ApplyStatus, error)
+}
+
 // MappingStore persists payload field mappings (t2db.3). Deliberately
 // separate from TaskStore and CaptureStore for the same reason those are
 // split: the dashboard's mapping editor should only acquire the mapping
@@ -212,6 +222,23 @@ type ConfigSnapshot struct {
 	Schema      string
 	Document    []byte
 	PublishedAt time.Time
+}
+
+// ApplyStatus is one process's report about one control-plane resource kind.
+//
+// AppliedVersion is the version that process is running. Error is set when the
+// process could not apply what the store returned, and leaves AppliedVersion
+// at the last version it did apply, so a rejected edit never erases the fact
+// that an older one is live. ReportedAt is re-stamped on an interval: a record
+// older than the staleness window belongs to a process that has stopped
+// running, which is the only way this surface can tell a live process from a
+// dead one.
+type ApplyStatus struct {
+	Process        string    `json:"process"`
+	Kind           string    `json:"kind"`
+	AppliedVersion int64     `json:"applied_version"`
+	Error          string    `json:"error,omitempty"`
+	ReportedAt     time.Time `json:"reported_at"`
 }
 
 // WorkflowStat is one row of the per-workflow metrics table.

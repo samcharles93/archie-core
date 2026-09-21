@@ -50,6 +50,7 @@ var (
 	_ storecontract.BindingDispatcher   = (*Client)(nil)
 	_ storecontract.BindingTaskCreator  = (*Client)(nil)
 	_ storecontract.ConfigSnapshotStore = (*Client)(nil)
+	_ storecontract.ApplyStatusStore    = (*Client)(nil)
 	_ identity.Repository               = (*Client)(nil)
 )
 
@@ -287,6 +288,31 @@ func (c *Client) ConfigSnapshot(ctx context.Context) (storecontract.ConfigSnapsh
 		return storecontract.ConfigSnapshot{}, false, nil
 	}
 	return configSnapshotValue(reply.Snapshot), true, nil
+}
+
+// PutApplyStatus reports what this process applied for one resource kind.
+// Administrative, like the config snapshot pair: a task-scoped grant cannot
+// reach it.
+func (c *Client) PutApplyStatus(ctx context.Context, status storecontract.ApplyStatus) error {
+	_, err := c.client.PutApplyStatus(ctx, &pb.PutApplyStatusRequest{Status: applyStatusProto(status)})
+	if err != nil {
+		return unmapError(err)
+	}
+	return nil
+}
+
+// ListApplyStatus reads every process's report. An empty slice means nothing
+// has reported yet, which is not an error.
+func (c *Client) ListApplyStatus(ctx context.Context) ([]storecontract.ApplyStatus, error) {
+	reply, err := c.client.ListApplyStatus(ctx, &pb.ListApplyStatusRequest{})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	statuses := make([]storecontract.ApplyStatus, 0, len(reply.Statuses))
+	for _, status := range reply.Statuses {
+		statuses = append(statuses, applyStatusValue(status))
+	}
+	return statuses, nil
 }
 
 func (c *Client) ListCaptures(ctx context.Context, limit int) ([]storecontract.CapturedEvent, error) {
