@@ -12,7 +12,27 @@ tasks:
   fmt:
     desc: Fix and format Go source with the gate's configured formatters
     cmds:
-      - go fix ./...
+      # One go fix pass is not a fixpoint: it applies each fixer once, to the
+      # parse it started with, so a rewrite made by one fixer is only fixed up
+      # by the next pass. stditerators turns `for i := range t.NumField()` into
+      # a field iterator that copies its loop variable, and forvar deletes that
+      # copy on the following pass -- leaving the copy behind for copyloopvar
+      # to reject. Apply passes until a dry run reports nothing left to fix,
+      # and fail rather than hand the lint step a tree it must reject.
+      - |
+        set -eu
+        converged=false
+        for pass in 1 2 3 4 5 6 7 8 9 10; do
+          go fix ./...
+          if go fix -diff ./... >/dev/null; then
+            converged=true
+            break
+          fi
+        done
+        if [ "$converged" != true ]; then
+          echo "go fix still rewrites the tree after 10 passes" >&2
+          exit 1
+        fi
       # This must use the same engine and configuration as task lint. Running
       # standalone gofumpt cannot reproduce gci's custom import grouping, so it
       # can leave a tree that the gate rejects.
