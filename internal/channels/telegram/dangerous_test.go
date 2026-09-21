@@ -935,15 +935,9 @@ func TestDangerousCommandHelpContainsNewCommands(t *testing.T) {
 	if sentText == "" {
 		t.Fatal("help sent no rich message")
 	}
-	for _, want := range []string{"/rollback", "/stop"} {
+	for _, want := range []string{"/rollback", "/stop", "/approve", "/deny"} {
 		if !strings.Contains(sentText, want) {
 			t.Errorf("help text missing %q", want)
-		}
-	}
-	// /approve and /deny should NOT appear in help (they are hidden).
-	for _, hidden := range []string{"/approve\n", "/deny\n"} {
-		if strings.Contains(sentText, hidden) {
-			t.Errorf("help text contains hidden command %q", hidden)
 		}
 	}
 }
@@ -973,19 +967,19 @@ func TestParseDangerousCallback(t *testing.T) {
 	}
 }
 
+// Telegram-only commands must be published, not hidden: a command a user can
+// type but cannot discover is exactly the omission this surface exists to
+// prevent. /approve and /deny used to be deliberately hidden; they are
+// published now, and archie-core-ho86 records the split between Telegram's
+// dangerous-command /approve and the shared task-approval spec of the same name.
 func TestDangerousCommandSpecDescriptions(t *testing.T) {
 	found := make(map[string]bool)
 	for _, spec := range gatewayCommandSpecs {
 		found[spec.Command] = true
 	}
-	for _, cmd := range []string{"rollback", "stop"} {
-		if !found[cmd] {
-			t.Errorf("/%s is missing from gatewayCommandSpecs", cmd)
-		}
-	}
-	for _, cmd := range []string{"approve", "deny"} {
-		if found[cmd] {
-			t.Errorf("/%s should NOT be in gatewayCommandSpecs (hidden command)", cmd)
+	for _, command := range []string{"rollback", "stop", "approve", "deny"} {
+		if !found[command] {
+			t.Errorf("/%s is missing from gatewayCommandSpecs", command)
 		}
 	}
 }

@@ -250,23 +250,43 @@ func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, life
 	}
 }
 
+// telegramTextHandler is one text command the Telegram adapter answers itself,
+// before the shared router sees it.
+type telegramTextHandler struct {
+	command string
+	match   bot.MatchType
+	build   func(*Gateway, messaging.ChatContract) bot.HandlerFunc
+}
+
+// telegramTextHandlers is the single source for the commands Telegram answers
+// locally. Registration reads it, and so does
+// TestPublishedCommandsMatchExecutableSurface, which proves the published menu
+// covers the executable surface: a handler added here without a spec in
+// gatewayCommandSpecs fails that test, so a command cannot become typeable
+// without becoming discoverable.
+var telegramTextHandlers = []telegramTextHandler{
+	{"/status", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.statusHandler(c) }},
+	{"/whoami", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.whoamiHandler(c) }},
+	{"/profile", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.profileHandler(c) }},
+	{"/sessions", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.sessionsHandler(c) }},
+	{"/resume", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.resumeHandler(c) }},
+	{"/agents", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.agentsHandler(c) }},
+	{"/version", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.versionHandler() }},
+	{"/update", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.updateHandler() }},
+	{"/settings", bot.MatchTypePrefix, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.settingsHandler() }},
+	{"/start", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.startHandler() }},
+	{"/help", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.helpHandler() }},
+	{"/restart", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.restartHandler() }},
+	{"/rollback", bot.MatchTypePrefix, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.rollbackHandler() }},
+	{"/stop", bot.MatchTypePrefix, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.stopHandler(c) }},
+	{"/approve", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.approveHandler() }},
+	{"/deny", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.denyHandler() }},
+}
+
 func (g *Gateway) registerCommandHandlers(b *bot.Bot, client messaging.ChatContract) {
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/whoami", bot.MatchTypeExact, g.whoamiHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, g.profileHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/sessions", bot.MatchTypeExact, g.sessionsHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/resume", bot.MatchTypeExact, g.resumeHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/settings", bot.MatchTypePrefix, g.settingsHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/rollback", bot.MatchTypePrefix, g.rollbackHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler(client))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, g.approveHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
+	for _, handler := range telegramTextHandlers {
+		b.RegisterHandler(bot.HandlerTypeMessageText, handler.command, handler.match, handler.build(g, client))
+	}
 }
 
 func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, _ channels.Lifecycle) error {

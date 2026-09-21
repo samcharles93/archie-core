@@ -28,6 +28,14 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "settings", Description: "Inspect or change runtime settings", Usage: "/settings [list|get <kind>|set <kind> <field>=<value> ...]"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
+	// /approve and /deny are Telegram's own dangerous-command approval surface:
+	// dangerous.go lists the pending commands and the inline buttons decide. The
+	// shared command specs use /approve for task approval instead, and Telegram's
+	// exact-match handler shadows that path, so /help must describe the Telegram
+	// meaning. Reconciling the split is archie-core-ho86; do not copy the shared
+	// task-approval copy here.
+	{Command: "approve", Description: "Show pending dangerous commands to approve", Usage: "/approve"},
+	{Command: "deny", Description: "Show pending dangerous commands to deny", Usage: "/deny"},
 	{Command: "start", Description: "Confirm that Archie is running", Usage: "/start"},
 	{Command: "new", Description: "Start a fresh session, clearing conversation history", Usage: "/new [title]"},
 	{Command: "reset", Description: "Alias for /new", Usage: "/reset [title]"},

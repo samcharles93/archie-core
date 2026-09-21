@@ -76,6 +76,9 @@ func TestHelpDescribesPublishedCommandsAndChat(t *testing.T) {
 		if !strings.Contains(sentText, spec.Usage) {
 			t.Errorf("help text does not contain exact usage %q:\n%s", spec.Usage, sentText)
 		}
+		if !strings.Contains(sentText, spec.Description) {
+			t.Errorf("help text does not contain description %q for /%s:\n%s", spec.Description, spec.Command, sentText)
+		}
 	}
 	if strings.Contains(sentText, "not yet wired") {
 		t.Errorf("help text still claims working LLM chat is not wired:\n%s", sentText)

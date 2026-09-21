@@ -7,6 +7,40 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
+// The published menu and /help must describe the commands Telegram can actually
+// execute, no more and no less. A command that is typeable but unpublished is
+// undiscoverable; a published command with no handler is a lie. Both sides are
+// derived from their real sources -- the shared router's LocalCommands and the
+// local handler table -- so adding either without the other fails here.
+func TestPublishedCommandsMatchExecutableSurface(t *testing.T) {
+	executable := make(map[string]string)
+	for _, command := range messaging.LocalCommands() {
+		executable[strings.TrimPrefix(command, "/")] = "the shared router"
+	}
+	for _, handler := range telegramTextHandlers {
+		executable[strings.TrimPrefix(handler.command, "/")] = "a Telegram handler"
+	}
+
+	published := make(map[string]bool, len(gatewayCommandSpecs))
+	for _, spec := range gatewayCommandSpecs {
+		if published[spec.Command] {
+			t.Errorf("gatewayCommandSpecs publishes /%s twice", spec.Command)
+		}
+		published[spec.Command] = true
+	}
+
+	for command, source := range executable {
+		if !published[command] {
+			t.Errorf("/%s is executable via %s but missing from the menu and /help", command, source)
+		}
+	}
+	for command := range published {
+		if _, ok := executable[command]; !ok {
+			t.Errorf("/%s is published but nothing on Telegram executes it", command)
+		}
+	}
+}
+
 // TestStatusAndTasksCopyMatchesWhatEachCommandDoes pins the operator-facing
 // division of labour archie-core-wp9s restored: /status reports daemon health
 // and says nothing about the task list, /tasks reports the work view and says
