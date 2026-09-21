@@ -1566,6 +1566,13 @@ func (b *boot) runLoop(ctx context.Context, once bool) error {
 	// Boot is done: the liveness surface stops answering 503, which is what
 	// the update watchdog is waiting to see after a restart.
 	b.health.markServing()
+	// systemd's READY=1 asserts the same fact this line has just recorded, so
+	// it is sent here rather than from a second notion of "started". Not
+	// earlier: the stores, NATS, gateways and tool providers are all up by now.
+	// Not later, after the first pass: a pass polls every repo and drains the
+	// queue, and a unit whose TimeoutStartSec expires mid-pass would be
+	// restarted while the daemon was working.
+	b.announceReady()
 	if once {
 		b.d.Cycle(ctx)
 		return nil
@@ -1575,6 +1582,9 @@ func (b *boot) runLoop(ctx context.Context, once bool) error {
 	// a --once cycle exits immediately, so a drain that arrives mid-cycle is
 	// out of scope and the monitor is not started.
 	b.startDrainMonitor(ctx)
+	// Armed here, not at boot: the loop it reports on starts on the next line,
+	// and a --once invocation has no loop to watchdog.
+	b.startWatchdog(ctx)
 	if err := b.d.Run(ctx); err != nil && ctx.Err() == nil {
 		b.log.Error("daemon exited", "err", err)
 		return err
