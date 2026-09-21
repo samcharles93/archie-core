@@ -83,6 +83,13 @@ type boot struct {
 	cfg config.Config
 	log *slog.Logger
 
+	// stderrLog keeps setupLogging on stderr, never touching cfg.Log.File. An
+	// offline command reads the bootstrap config but is not the daemon: creating
+	// the deployment's log, appending a line stamped component="daemon", or
+	// rotating a log the daemon is writing are side effects a diagnosis must not
+	// have, and it needs no durable copy of its own.
+	stderrLog bool
+
 	loader            *configuration.Loader
 	doc               *configuration.Document
 	currentProvenance atomic.Pointer[configuration.Provenance]
@@ -297,6 +304,12 @@ func (b *boot) loadConfig(ctx context.Context, cfgPath, overlayPath string) erro
 // must not take the daemon down with it.
 func (b *boot) setupLogging() error {
 	cfg := b.cfg
+	if b.stderrLog {
+		// The stderr logger newBootstrap installed is the whole destination.
+		// Nothing below this line is set up: the feed, the task-log registry and
+		// the rotating file all belong to a running daemon.
+		return nil
+	}
 	logFeed := logging.NewFeed(1000)
 	b.logFeed = logFeed
 	// Task logs live alongside the store rather than under cfg.Log.File's

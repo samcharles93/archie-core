@@ -3,11 +3,13 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // resourceReader is the one read the layering performs: a resource kind's value
@@ -43,19 +45,42 @@ func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) 
 // configuration.Validate, so an offline check of that database has to make the
 // same first move with the same implementation; called with the config the
 // daemon would load, the result is the document boot decides on.
+//
+// A kind the store does not hold is read as the seed the State Store would
+// write for it from base (see storeReader.query), because that store seeds
+// every kind before it serves.
 func (s *Server) StoredRuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
-	return runtimeConfigFrom(ctx, storeReader{resources: s.store}, base)
+	seeds, err := s.seededValues(base)
+	if err != nil {
+		return config.Config{}, nil, err
+	}
+	return runtimeConfigFrom(ctx, storeReader{resources: s.store, seeds: seeds}, base)
 }
 
 // storeReader reads the server's own store. It mirrors what the gRPC read
-// answers -- a missing kind is an error, not an empty value -- so a store the
-// daemon cannot layer settings from is one this reports rather than skips.
+// answers -- a kind that is stored is the value and version it holds -- with
+// one difference: a kind the store does not hold yet is the value the State
+// Store seeds for it, since the daemon dials a store that has already run
+// ImportConfig over the same config.
 type storeReader struct {
 	resources ResourceStore
+	seeds     map[string][]byte
 }
 
 func (r storeReader) query(ctx context.Context, kind string, decode func([]byte) error) (int64, error) {
 	resource, err := r.resources.Resource(ctx, kind)
+	if errors.Is(err, store.ErrResourceNotFound) {
+		seed, ok := r.seeds[kind]
+		if !ok {
+			return 0, fmt.Errorf("read %s: %w", kind, store.ErrResourceNotFound)
+		}
+		if err := decode(seed); err != nil {
+			return 0, fmt.Errorf("decode %s seed: %w", kind, err)
+		}
+		// No version: nothing has been stored for this kind, so nothing has
+		// been applied either.
+		return 0, nil
+	}
 	if err != nil {
 		return 0, fmt.Errorf("read %s: %w", kind, err)
 	}

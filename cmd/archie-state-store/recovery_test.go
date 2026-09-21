@@ -317,16 +317,94 @@ func TestRecoveryValidateRunsTheGateBootRuns(t *testing.T) {
 		t.Errorf("refusal must name what boot rejects; stderr = %q", stderr)
 	}
 
-	// A store the State Store never seeded: the daemon cannot layer its
-	// settings from it either, so the offline check must not call it valid.
+	// A store the State Store never seeded holds no kinds at all. Its next start
+	// creates the resources table and seeds every kind from this same config
+	// (internal/app/archied/state_store.go), so archied layers those seeds and
+	// starts: refusing the file here would send an operator to restore a
+	// snapshot for a store the daemon boots on perfectly well.
 	unseeded := filepath.Join(dir, "unseeded.db-tasks.sqlite")
 	openTaskStore(t, unseeded)
 	code, stdout, stderr = runRecoveryCmd(t, "validate", "-db", unseeded, "-config", configPath)
-	if code == 0 {
-		t.Fatalf("validate accepted a store with no stored settings; stdout = %q", stdout)
+	if code != 0 {
+		t.Fatalf("validate refused a store the State Store would seed on its next start; stderr = %q", stderr)
 	}
-	if !strings.Contains(stderr, "provider-settings") {
-		t.Errorf("refusal must name the resource kind boot cannot read; stderr = %q", stderr)
+	if !strings.Contains(stdout, "0 stored resources validate") {
+		t.Errorf("validate must report that there was nothing stored to check; stdout = %q", stdout)
+	}
+
+	// The upgrade case: a release defines a kind the store does not hold yet,
+	// and validate runs before the State Store has started again. The State
+	// Store seeds the kind it is missing, so this is the same stance as the
+	// store with nothing stored at all -- the file is not the reason the daemon
+	// would refuse to start, and saying otherwise costs the operator a snapshot.
+	partial := filepath.Join(dir, "partial.db-tasks.sqlite")
+	seedStoreResources(t, openTaskStore(t, partial), configPath)
+	if err := execRaw(t, partial, `DELETE FROM resources WHERE kind='provider-settings'`); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runRecoveryCmd(t, "validate", "-db", partial, "-config", configPath)
+	if code != 0 {
+		t.Fatalf("validate refused a store missing a kind the State Store seeds; stderr = %q", stderr)
+	}
+	if count := storedResourceCount(t, stdout); count == 0 {
+		t.Errorf("validate must still check the kinds the store does hold; stdout = %q", stdout)
+	}
+}
+
+// The subcommands advertise -h as the way to read their flags, and the serve
+// path in the same binary exits 0 for the same request, so a script probing the
+// recovery surface must not read a requested help as a failure.
+func TestRecoveryHelpExitsZero(t *testing.T) {
+	commands := []string{archied.RecoveryBackup, archied.RecoveryRestore, archied.RecoveryValidate, archied.RecoveryRollback}
+	for _, command := range commands {
+		code, _, stderr := runRecoveryCmd(t, command, "-h")
+		if code != 0 {
+			t.Errorf("%s -h exited %d, want 0; stderr = %q", command, code, stderr)
+		}
+	}
+}
+
+// validate diagnoses a deployment; it is not the deployment. Resolving the boot
+// config must not create, append to, or rotate the daemon's log file or the
+// directory it lives in: a line stamped component="daemon" in archied's log is
+// indistinguishable from the daemon having written it.
+func TestRecoveryValidateLeavesTheDaemonLogAlone(t *testing.T) {
+	dir := t.TempDir()
+	configPath, logFile := writeConfigWithLogFile(t, dir)
+	db := filepath.Join(dir, "archie.db-tasks.sqlite")
+	seedStoreResources(t, openTaskStore(t, db), configPath)
+
+	code, _, stderr := runRecoveryCmd(t, "validate", "-db", db, "-config", configPath)
+	if code != 0 {
+		t.Fatalf("validate exited %d: %s", code, stderr)
+	}
+	if _, err := os.Stat(logFile); !os.IsNotExist(err) {
+		t.Fatalf("validate touched the daemon's log file %s (stat err = %v)", logFile, err)
+	}
+	if _, err := os.Stat(filepath.Dir(logFile)); !os.IsNotExist(err) {
+		t.Errorf("validate created the log directory %s (stat err = %v)", filepath.Dir(logFile), err)
+	}
+}
+
+// validate's verdict is the daemon's verdict only if it reads the configuration
+// the daemon reads. archied resolves that default from its own configHome, which
+// honours a relative XDG_CONFIG_HOME; os.UserConfigDir rejects a relative one
+// outright, which left the command with no config and no verdict at all.
+func TestRecoveryDefaultConfigFollowsTheDaemonsConfigHome(t *testing.T) {
+	relative := filepath.Join("relative", "config")
+	t.Setenv("XDG_CONFIG_HOME", relative)
+	if got, want := defaultConfigPath(), filepath.Join(relative, "archie", "config.toml"); got != want {
+		t.Errorf("defaultConfigPath() with a relative XDG_CONFIG_HOME = %q, want %q", got, want)
+	}
+
+	absolute := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", absolute)
+	if got, want := defaultConfigPath(), filepath.Join(absolute, "archie", "config.toml"); got != want {
+		t.Errorf("defaultConfigPath() = %q, want %q", got, want)
+	}
+	// The equality itself: one helper, so the two cannot drift apart again.
+	if got, want := defaultConfigPath(), archied.DefaultConfigPath(); got != want {
+		t.Errorf("defaultConfigPath() = %q, but the daemon resolves %q", got, want)
 	}
 }
 
@@ -580,6 +658,27 @@ func TestRecoveryRejectsAnUnknownSubcommand(t *testing.T) {
 	if !strings.Contains(stderr.String(), "backp") {
 		t.Errorf("refusal must name the unknown subcommand; stderr = %q", stderr.String())
 	}
+}
+
+// writeConfigWithLogFile is writeMinimalConfig plus the daemon's durable log
+// destination, which only the daemon may bring into existence.
+func writeConfigWithLogFile(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	configPath := writeMinimalConfig(t, dir)
+	logFile := filepath.Join(dir, "logs", "archied.log")
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open config to append: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close config: %v", err)
+		}
+	}()
+	if _, err := fmt.Fprintf(f, "\n[log]\nfile = %q\n", logFile); err != nil {
+		t.Fatalf("append [log]: %v", err)
+	}
+	return configPath, logFile
 }
 
 // seedStoreResources seeds the store the way the State Store seeds it at boot,

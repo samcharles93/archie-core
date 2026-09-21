@@ -132,10 +132,12 @@ func validateStore(ctx context.Context, options StateStoreRecoveryOptions) (stri
 	defer func() { _ = st.Close() }()
 
 	server := controlplane.NewServer(st)
-	// The resources table is only absent from a store written before the control
-	// plane existed. That store holds no settings to validate, and the serving
-	// process creates the table on its next start -- refusing it here would send
-	// an operator to restore a snapshot for nothing.
+	// Is there a resources table at all? A store written before the control plane
+	// existed has none, and the State Store creates it and seeds every kind from
+	// this same config on its next start -- so there is nothing stored to check
+	// with the writer's validator, and boot's gate is the config check alone.
+	// That is the same stance the layering takes for a kind the table is missing:
+	// what the daemon reads for a kind nothing was ever stored for is the seed.
 	checked := 0
 	stored, err := st.StoresResources(ctx)
 	if err != nil {
@@ -153,10 +155,8 @@ func validateStore(ctx context.Context, options StateStoreRecoveryOptions) (stri
 	}
 	document := base
 	if stored {
-		// A store the State Store never seeded has no kinds to layer, and the
-		// daemon cannot start against it either: the State Store seeds every kind
-		// from its own config at boot.
-		if document, _, err = server.StoredRuntimeConfig(ctx, base); err != nil {
+		document, _, err = server.StoredRuntimeConfig(ctx, base)
+		if err != nil {
 			return "", err
 		}
 	}
@@ -172,8 +172,13 @@ func validateStore(ctx context.Context, options StateStoreRecoveryOptions) (stri
 // the only recovery command that asks a question about the process rather than
 // the file, and that question is about the stored values layered onto this
 // document, so the document is part of the answer.
+//
+// It reads that config with the daemon's stderr logger: resolving it is a
+// diagnosis, and a diagnosis that opened, appended to or rotated cfg.Log.File
+// would edit the deployment it is inspecting.
 func bootConfig(ctx context.Context, options StateStoreRecoveryOptions) (config.Config, error) {
 	b := newBootstrap()
+	b.stderrLog = true
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
 		return config.Config{}, err

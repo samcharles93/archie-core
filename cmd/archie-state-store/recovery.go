@@ -2,25 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
 )
 
-// defaultConfigPath is the configuration the serve path reads by default; the
-// offline validate asks what the daemon would boot with, so it reads the same
-// one.
-func defaultConfigPath() string {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(base, "archie", "config.toml")
-}
+// defaultConfigPath is the configuration the serve path reads by default, and
+// the one the daemon boots with. It is the daemon's own rule rather than a
+// second derivation of it: os.UserConfigDir (what the sibling processes use)
+// disagrees with archied on darwin and rejects a relative XDG_CONFIG_HOME
+// outright, which would leave validate answering about a file nobody boots.
+func defaultConfigPath() string { return archied.DefaultConfigPath() }
 
 // recoveryUsage is the whole flag surface of the offline recovery commands.
 // They are subcommands of this binary rather than a recovery binary of their
@@ -77,6 +72,11 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 		flags.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	}
 	if err := flags.Parse(args[1:]); err != nil {
+		// A requested help is not a wrong command line: the usage above is the
+		// answer, and the serve path exits 0 for the same request.
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	if flags.NArg() > 0 {

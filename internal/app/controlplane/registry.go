@@ -72,13 +72,9 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 		if !errors.Is(err, store.ErrResourceNotFound) {
 			return nil, err
 		}
-		value, err := json.Marshal(definition.Seed(cfg))
+		value, err := definition.seededValue(cfg)
 		if err != nil {
-			return nil, fmt.Errorf("seed %s: %w", definition.Kind, err)
-		}
-		value, err = definition.Decode(value)
-		if err != nil {
-			return nil, fmt.Errorf("seed %s: %w", definition.Kind, err)
+			return nil, err
 		}
 		resource, err = s.store.PutResource(ctx, store.ResourceWrite{Kind: definition.Kind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + definition.Kind, ExpectedVersion: 0, At: time.Now().UTC()})
 		if err != nil {
@@ -87,6 +83,37 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 		versions[definition.Kind] = resource.Version
 	}
 	return versions, nil
+}
+
+// seededValue is the value the State Store writes for a kind it does not hold
+// yet: the definition's seed derived from cfg, run through the same Decode a
+// write applies. ImportConfig stores it; the offline config layering reads it
+// for the same reason, so "what the daemon sees for a kind that was never
+// stored" is one value rather than two.
+func (d Definition) seededValue(cfg config.Config) ([]byte, error) {
+	value, err := json.Marshal(d.Seed(cfg))
+	if err != nil {
+		return nil, fmt.Errorf("seed %s: %w", d.Kind, err)
+	}
+	value, err = d.Decode(value)
+	if err != nil {
+		return nil, fmt.Errorf("seed %s: %w", d.Kind, err)
+	}
+	return value, nil
+}
+
+// seededValues is what the State Store would write for every kind, keyed by
+// kind.
+func (s *Server) seededValues(cfg config.Config) (map[string][]byte, error) {
+	values := make(map[string][]byte, len(s.ordered))
+	for _, definition := range s.ordered {
+		value, err := definition.seededValue(cfg)
+		if err != nil {
+			return nil, err
+		}
+		values[definition.Kind] = value
+	}
+	return values, nil
 }
 
 // Owns reports whether kind is a resource the control plane owns, so a caller
