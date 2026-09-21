@@ -3,6 +3,8 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -121,6 +123,192 @@ func TestRuntimeConfigLeavesTheFileLabelInForceWhenThePolicyCarriesNone(t *testi
 	}
 	if got.Label != "file-label" {
 		t.Fatalf("label after layering = %q, want the file document's label left in force", got.Label)
+	}
+}
+
+// TestRuntimeConfigCarriesParallelToolCallsThroughTheProjection: the layering
+// rebuilds cfg.Tools from the control plane's own projection wholesale
+// (runtime_config.go), so a field the projection has no home for is dropped for
+// every deployment that runs a control plane -- file-level
+// parallel_tool_calls = true would be accepted, shown, and inert. The value has
+// to survive both conversions: the seed that writes the resource and the
+// layering that reads it back.
+func TestRuntimeConfigCarriesParallelToolCallsThroughTheProjection(t *testing.T) {
+	base := config.Config{Tools: config.ToolsConfig{MCPServers: []config.MCPServer{{
+		Name: "docs", Transport: "stdio", Command: "docs-server", ParallelToolCalls: true,
+	}}}}
+
+	seed := seedToolSettings(t, base)
+	if carried, _ := seededServer(t, seed)["parallel_tool_calls"].(bool); !carried {
+		t.Errorf("%s seed = %s, want the file document's parallel_tool_calls in it", ToolSettingsKind, seed)
+	}
+	got := layerToolSettings(t, seed, base)
+	if !got.Tools.MCPServers[0].ParallelToolCalls {
+		t.Fatalf("ParallelToolCalls after the control-plane round trip = false, want true: %+v", got.Tools.MCPServers[0])
+	}
+}
+
+// TestToolSettingsProjectionCarriesEveryMCPServerField is the guard the field
+// itself cannot be. mcpServerSettings mirrors config.MCPServer field by field,
+// so the next field added to MCPServer -- internal/config's Sandboxed, when
+// mcp-tool-completion's #178 lands -- silently falls out of the control-plane
+// path unless something fails when it does. This test is that something: it
+// populates every MCPServer field by reflection, so a field added later is
+// populated without editing any fixture here, then requires the seed to name
+// the field and the layering to hand it back.
+//
+// mcpServerFieldsLeftToTheFile is the only way past the check, and every entry
+// in it has to say what the projection carries in place of the field.
+func TestToolSettingsProjectionCarriesEveryMCPServerField(t *testing.T) {
+	var server config.MCPServer
+	populateEveryField(t, reflect.ValueOf(&server).Elem(), "config.MCPServer")
+	// The resource validator knows a fixed transport vocabulary, so the round
+	// trip needs one of them. It is the only value here the fixture takes from
+	// the validator rather than from the field's type; stdio requires a command,
+	// which the fixture has already set.
+	server.Transport = "stdio"
+	base := config.Config{Tools: config.ToolsConfig{MCPServers: []config.MCPServer{server}}}
+
+	seed := seedToolSettings(t, base)
+	seeded := seededServer(t, seed)
+	got := layerToolSettings(t, seed, base).Tools.MCPServers[0]
+
+	typ := reflect.TypeOf(server)
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		name := jsonFieldName(field)
+		surrogate, leftToTheFile := mcpServerFieldsLeftToTheFile[field.Name]
+		if leftToTheFile {
+			// Deliberately not carried: the stored value must not hold the
+			// field's own value, and whatever the projection carries instead
+			// must be there.
+			if _, carried := seeded[name]; carried {
+				t.Errorf("the %s seed carries MCPServer.%s (%q), which mcpServerFieldsLeftToTheFile leaves to the file document", ToolSettingsKind, field.Name, name)
+			}
+			if _, ok := seeded[surrogate]; !ok {
+				t.Errorf("the %s seed carries neither MCPServer.%s nor the %q the projection carries in its place", ToolSettingsKind, field.Name, surrogate)
+			}
+			continue
+		}
+		if _, carried := seeded[name]; !carried {
+			t.Errorf("the %s seed has no %q key, so seedTools never projects MCPServer.%s and the layering can only restore its zero value", ToolSettingsKind, name, field.Name)
+			continue
+		}
+		wantField := reflect.ValueOf(server).Field(i).Interface()
+		if gotField := reflect.ValueOf(got).Field(i).Interface(); !reflect.DeepEqual(gotField, wantField) {
+			t.Errorf("MCPServer.%s = %#v after the control-plane round trip, want %#v: carry it through mcpServerSettings, seedTools, and runtimeToolConfigFrom, or add it to mcpServerFieldsLeftToTheFile with what the projection carries in its place", field.Name, gotField, wantField)
+		}
+	}
+	// An allowlist entry for a field MCPServer no longer has is a dead pass.
+	for name := range mcpServerFieldsLeftToTheFile {
+		if _, ok := typ.FieldByName(name); !ok {
+			t.Errorf("mcpServerFieldsLeftToTheFile names MCPServer.%s, which the struct no longer has", name)
+		}
+	}
+}
+
+// mcpServerFieldsLeftToTheFile names the MCPServer fields the control plane's
+// projection deliberately does not carry, with the projection key that stands
+// in for each. It is deliberately short: a field belongs here only when the
+// file document has to stay its owner. Headers hold credentials, so the stored
+// resource records only that some are configured and the layering restores the
+// real map from the base config by server name (runtime_config.go), which
+// TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets pins.
+var mcpServerFieldsLeftToTheFile = map[string]string{
+	"Headers": "headers_configured",
+}
+
+// seedToolSettings is the value a State Store writes for the tool settings when
+// it holds none for that kind: the production seed derived from the file
+// document, run through the production Decode exactly as ImportConfig writes it.
+func seedToolSettings(t *testing.T, base config.Config) []byte {
+	t.Helper()
+	seed, err := testServer(t, nil).definitions[ToolSettingsKind].seededValue(base)
+	if err != nil {
+		t.Fatalf("seed %s: %v", ToolSettingsKind, err)
+	}
+	return seed
+}
+
+// layerToolSettings layers a stored tool-settings value over base with the
+// production layering, answering every other kind as absent -- the shape of a
+// store that has seeded nothing else, where the file document's value stays in
+// force.
+func layerToolSettings(t *testing.T, stored []byte, base config.Config) config.Config {
+	t.Helper()
+	got, _, err := runtimeConfigFrom(t.Context(), toolSettingsReader{value: stored}, base)
+	if err != nil {
+		t.Fatalf("layer %s: %v", ToolSettingsKind, err)
+	}
+	return got
+}
+
+// toolSettingsReader answers the one kind under test and reports every other
+// kind absent.
+type toolSettingsReader struct{ value []byte }
+
+func (r toolSettingsReader) query(_ context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
+	if kind != ToolSettingsKind {
+		return 0, false, nil
+	}
+	return 2, true, decode(r.value)
+}
+
+// seededServer is the MCP server entry the seed actually wrote for the one
+// server in the config: the projection's own output, which is what the layering
+// reads back.
+func seededServer(t *testing.T, seed []byte) map[string]any {
+	t.Helper()
+	var document struct {
+		MCPServers []map[string]any `json:"mcp_servers"`
+	}
+	if err := json.Unmarshal(seed, &document); err != nil {
+		t.Fatalf("decode %s seed: %v", ToolSettingsKind, err)
+	}
+	if len(document.MCPServers) != 1 {
+		t.Fatalf("%s seed carries %d MCP servers, want the one the config has: %s", ToolSettingsKind, len(document.MCPServers), seed)
+	}
+	return document.MCPServers[0]
+}
+
+// jsonFieldName is the key a field's value travels under in a stored resource.
+func jsonFieldName(field reflect.StructField) string {
+	name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+	return name
+}
+
+// populateEveryField sets every field of value to a distinct non-zero value
+// derived from its type, so a struct compared before and after a round trip
+// differs on every field that round trip drops. Nothing about the struct is
+// written down here: a field added to config.MCPServer later is populated
+// without an edit, which is what lets the projection guard fail for a field
+// nobody remembered to add to a fixture.
+func populateEveryField(t *testing.T, value reflect.Value, label string) {
+	t.Helper()
+	if !value.CanSet() {
+		t.Fatalf("%s cannot be set, so the round-trip fixture cannot populate it", label)
+	}
+	switch value.Kind() {
+	case reflect.String:
+		value.SetString("value-for-" + label)
+	case reflect.Bool:
+		value.SetBool(true)
+	case reflect.Slice:
+		value.Set(reflect.MakeSlice(value.Type(), 1, 1))
+		populateEveryField(t, value.Index(0), label)
+	case reflect.Map:
+		entry := reflect.MakeMap(value.Type())
+		key, item := reflect.New(value.Type().Key()).Elem(), reflect.New(value.Type().Elem()).Elem()
+		populateEveryField(t, key, label)
+		populateEveryField(t, item, label)
+		entry.SetMapIndex(key, item)
+		value.Set(entry)
+	case reflect.Struct:
+		for i := range value.NumField() {
+			populateEveryField(t, value.Field(i), label+"."+value.Type().Field(i).Name)
+		}
+	default:
+		t.Fatalf("%s has kind %s, which the round-trip fixture cannot populate: teach populateEveryField that kind, or the projection guard cannot see the field", label, value.Kind())
 	}
 }
 

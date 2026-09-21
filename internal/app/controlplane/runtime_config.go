@@ -165,7 +165,18 @@ func runtimeToolConfigFrom(ctx context.Context, reader resourceReader, versions 
 		}
 		servers := make([]config.MCPServer, 0, len(settings.MCPServers))
 		for _, server := range settings.MCPServers {
-			servers = append(servers, config.MCPServer{Name: server.Name, Transport: server.Transport, Command: server.Command, Args: server.Args, WorkDir: server.WorkDir, URL: server.URL, Headers: headers[server.Name], SSEEndpoint: server.SSEEndpoint, MessageEndpoint: server.MessageEndpoint})
+			servers = append(servers, config.MCPServer{
+				Name:              server.Name,
+				Transport:         server.Transport,
+				Command:           server.Command,
+				Args:              server.Args,
+				WorkDir:           server.WorkDir,
+				URL:               server.URL,
+				Headers:           headers[server.Name],
+				SSEEndpoint:       server.SSEEndpoint,
+				MessageEndpoint:   server.MessageEndpoint,
+				ParallelToolCalls: server.ParallelToolCalls,
+			})
 		}
 		out.Tools = config.ToolsConfig{MCPServers: servers, Policy: settings.Policy, WebFetch: settings.WebFetch, Minimax: config.MinimaxConfig{Enabled: settings.Minimax.Enabled, APIKey: settings.Minimax.APIKey, BaseURL: settings.Minimax.BaseURL}}
 		return nil

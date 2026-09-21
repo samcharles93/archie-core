@@ -23,6 +23,7 @@ type mcpServerSettings struct {
 	URL               string   `json:"url,omitempty"`
 	SSEEndpoint       string   `json:"sse_endpoint,omitempty"`
 	MessageEndpoint   string   `json:"message_endpoint,omitempty"`
+	ParallelToolCalls bool     `json:"parallel_tool_calls"`
 	HeadersConfigured bool     `json:"headers_configured"`
 }
 
@@ -36,7 +37,18 @@ type minimaxSettings struct {
 func seedTools(cfg config.Config) any {
 	servers := make([]mcpServerSettings, 0, len(cfg.Tools.MCPServers))
 	for _, server := range cfg.Tools.MCPServers {
-		servers = append(servers, mcpServerSettings{Name: server.Name, Transport: server.Transport, Command: server.Command, Args: server.Args, WorkDir: server.WorkDir, URL: server.URL, SSEEndpoint: server.SSEEndpoint, MessageEndpoint: server.MessageEndpoint, HeadersConfigured: len(server.Headers) > 0})
+		servers = append(servers, mcpServerSettings{
+			Name:              server.Name,
+			Transport:         server.Transport,
+			Command:           server.Command,
+			Args:              server.Args,
+			WorkDir:           server.WorkDir,
+			URL:               server.URL,
+			SSEEndpoint:       server.SSEEndpoint,
+			MessageEndpoint:   server.MessageEndpoint,
+			ParallelToolCalls: server.ParallelToolCalls,
+			HeadersConfigured: len(server.Headers) > 0,
+		})
 	}
 	return toolSettings{MCPServers: servers, Policy: cfg.Tools.Policy, WebFetch: cfg.Tools.WebFetch, Minimax: minimaxSettings{Enabled: cfg.Tools.Minimax.Enabled, APIKey: cfg.Tools.Minimax.APIKey, CredentialConfigured: cfg.Tools.Minimax.APIKey != (config.SecretRef{}), BaseURL: cfg.Tools.Minimax.BaseURL}}
 }
