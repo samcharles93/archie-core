@@ -82,7 +82,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		"RunningVersions": srv.RunningVersions,
 		"Events":          srv.Events,
 		"Curators":        srv.Curators,
-		"Channels":        srv.Channels,
 		"LogFeed":         srv.LogFeed,
 		"WorkRequests":    srv.WorkRequests,
 	}
@@ -90,6 +89,14 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		if !isNil(handle) {
 			t.Errorf("%s is wired; it is a daemon-owned callback or runtime handle with no contract behind it yet", name)
 		}
+	}
+	// Channels is the same shape as Mappings/Bindings below: the field used to
+	// hold a live *status.Manager, which is a runtime handle this process has no
+	// business owning, and it now holds a reader over the State Store's
+	// channel-status contract (webui.RemoteChannelStatus). The distinction the
+	// guard draws is the handle, not the name.
+	if srv.Channels == nil {
+		t.Error("Channels is unwired; the channel-status pair is a State Store contract the composed client implements")
 	}
 	// Mappings and bindings are the other way round: ratified State Store
 	// contracts, carried by the client this process already holds, so

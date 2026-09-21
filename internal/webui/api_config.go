@@ -447,14 +447,12 @@ func (r remoteChannelStatus) Snapshot() []status.Status {
 	out := make([]status.Status, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, status.Status{
-			Descriptor: status.Descriptor{
-				ID:              row.ID,
-				Name:            row.Name,
-				Configured:      row.Configured,
-				ReloadSupported: row.ReloadSupported,
-				Detail:          row.Detail,
-			},
-			State: status.State(row.State),
+			ID:              row.ID,
+			Name:            row.Name,
+			Configured:      row.Configured,
+			ReloadSupported: row.ReloadSupported,
+			Detail:          row.Detail,
+			State:           status.State(row.State),
 		})
 	}
 	return out
