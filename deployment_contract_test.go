@@ -2,6 +2,7 @@ package configtemplate
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -181,5 +182,57 @@ func TestSupportedProfilesUseOneExecutionTopology(t *testing.T) {
 	}
 	if strings.Contains(systemd, "still needs NATS") {
 		t.Error("systemd runbook still requires an external Compose NATS service")
+	}
+}
+
+// TestInstallerDelegatesConfigGenerationToArchiedSetup pins the contract the
+// installer already drifted from once: it hand-rolled a config.toml, hardcoded
+// the GitHub token key and the Gitea host, and choosing Gitea then produced a
+// config naming a token it never wrote. The durable fix is that the code writing
+// the config is the code reading it -- archied setup renders it, archied loads it
+// (docs/architecture/configuration.md) -- and nothing stopped the generating
+// branch growing back until this.
+func TestInstallerDelegatesConfigGenerationToArchiedSetup(t *testing.T) {
+	source := readDeploymentFile(t, "install.sh")
+
+	for _, required := range []string{
+		// It runs the binary it just built, so the installer cannot hold a
+		// second idea of what a valid config looks like.
+		`"${ARCHIE_BIN_DIR}/archied" setup`,
+		// For a fresh install only: an existing config is the operator's.
+		`if [ ! -f "${ARCHIE_CONFIG_DIR}/config.toml" ]; then`,
+		"already exists (preserving user config)",
+		// The setup run is allowed to fail, and a failure is loud. A config that
+		// never gets written is the only honest outcome after that.
+		"could not generate",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("install.sh is missing %q", required)
+		}
+	}
+
+	// Nothing here renders TOML or splices it afterwards. The splice check is
+	// per line so a legitimate sed/awk elsewhere in the installer stays allowed.
+	if strings.Contains(source, "forge_block") {
+		t.Error("install.sh still carries the forge_block helper: it is what hardcoded the GitHub token key and Gitea host")
+	}
+	redirection := regexp.MustCompile(`>>?\s*"?[^"'\s]*config\.toml`)
+	for index, line := range strings.Split(source, "\n") {
+		if !strings.Contains(line, "config.toml") {
+			continue
+		}
+		if strings.Contains(line, "sed ") || strings.Contains(line, "awk ") {
+			t.Errorf("install.sh:%d splices config.toml (%s)", index+1, strings.TrimSpace(line))
+		}
+		if redirection.MatchString(line) {
+			t.Errorf("install.sh:%d writes config.toml itself (%s)", index+1, strings.TrimSpace(line))
+		}
+	}
+	// A TOML table header in the installer is a template by definition. The
+	// systemd unit it also writes is INI, whose only sections are Unit/Service/
+	// Install, so those are no part of this list.
+	template := regexp.MustCompile(`(?m)^\s*\[(forge|models|providers|runners|containers|nats|web|budgets|notify|identit|chat)\]`)
+	if found := template.FindString(source); found != "" {
+		t.Errorf("install.sh carries a TOML template (%q): the installer must not hold its own idea of the config schema", strings.TrimSpace(found))
 	}
 }
