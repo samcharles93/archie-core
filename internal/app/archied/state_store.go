@@ -215,7 +215,25 @@ func (b *boot) openStateStore(ctx context.Context) error {
 		log.Error("configure bindings cipher", "err", err)
 		return err
 	}
-	st, err := openProductionTaskStore(ctx, taskDBPath(cfg.DBPath), store.WithBindingCipher(bindingCipher))
+	// Claim the database before opening it. This process is the file's owner
+	// for as long as it lives, and the claim is what an offline recovery
+	// command checks before it rewrites the file: without it, "the State Store
+	// is stopped" is a rule the operator is trusted to have followed rather
+	// than a fact the command can verify. A second State Store on the same
+	// database fails here, which is the single-owner invariant stated instead
+	// of merely documented.
+	path := taskDBPath(cfg.DBPath)
+	ownership, err := store.AcquireOwnership(path)
+	if err != nil {
+		log.Error("claim state store ownership", "err", err)
+		return err
+	}
+	b.addCleanup(func() {
+		if err := ownership.Release(); err != nil {
+			log.Error("release state store ownership", "err", err)
+		}
+	})
+	st, err := openProductionTaskStore(ctx, path, store.WithBindingCipher(bindingCipher))
 	if err != nil {
 		log.Error("open state store", "err", err)
 		return err

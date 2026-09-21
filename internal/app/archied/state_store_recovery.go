@@ -1,0 +1,210 @@
+// state_store_recovery.go composes the offline recovery subcommands of the
+// standalone archie-state-store process. They exist because the control plane
+// fails closed: a stored setting that will not validate stops archied
+// starting, and the in-band remedy -- replaying an earlier revision while the
+// State Store is up -- is unavailable in exactly the case that needs it
+// (docs/architecture/safe-change-and-recovery.md).
+//
+// Every operation works on the task database file directly, with the State
+// Store stopped, and the ones that write refuse when another process owns the
+// file. Backup is the exception and deliberately so: the update installer
+// cannot stop the process that runs it, so the snapshot that makes a failed
+// update reversible is taken against a serving store through SQLite's own
+// consistent copy.
+package archied
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/store"
+)
+
+// The audit identity every offline rollback records. A rollback is one more
+// revision of the resource, written through the ordinary replace, so the
+// operator can see who went back and when -- and can go forward again the same
+// way, with the State Store up or down.
+const (
+	OfflineRollbackSource = "archie-state-store rollback"
+	OfflineRollbackActor  = "operator:offline-recovery"
+)
+
+// Recovery operations, as named on the command line.
+const (
+	RecoveryBackup   = "backup"
+	RecoveryRestore  = "restore"
+	RecoveryValidate = "validate"
+	RecoveryRollback = "rollback"
+)
+
+// StateStoreRecoveryOptions are the process inputs for one offline recovery
+// operation.
+type StateStoreRecoveryOptions struct {
+	// Operation is one of backup, restore, validate, rollback.
+	Operation string
+	// DB is the task database file the State Store owns: the configured
+	// db_path with "-tasks.sqlite" appended, not the configured path itself.
+	DB string
+	// Out is the snapshot backup writes.
+	Out string
+	// From is the snapshot restore reads.
+	From string
+	// Kind is the control-plane resource kind rollback replays.
+	Kind string
+	// Revision is the revision rollback replays. Zero means the newest
+	// revision older than the one the resource carries now.
+	Revision int64
+}
+
+// RunStateStoreRecovery performs one offline operation on the task database and
+// returns the line the command reports on stdout.
+func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
+	switch options.Operation {
+	case RecoveryBackup:
+		if options.DB == "" || options.Out == "" {
+			return "", errors.New("backup requires -db and -out")
+		}
+		if err := store.Backup(ctx, options.DB, options.Out); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("backed up %s to %s", options.DB, options.Out), nil
+	case RecoveryRestore:
+		if options.DB == "" || options.From == "" {
+			return "", errors.New("restore requires -db and -from")
+		}
+		if err := store.Restore(ctx, options.DB, options.From); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("restored %s from %s; start the State Store again", options.DB, options.From), nil
+	case RecoveryValidate:
+		if options.DB == "" {
+			return "", errors.New("validate requires -db")
+		}
+		return validateStore(ctx, options.DB)
+	case RecoveryRollback:
+		if options.DB == "" || options.Kind == "" {
+			return "", errors.New("rollback requires -db and -kind")
+		}
+		return rollbackResource(ctx, options)
+	default:
+		return "", fmt.Errorf("unknown recovery command %q", options.Operation)
+	}
+}
+
+// validateStore answers "would archied start against this file". The file-level
+// checks come first, so the store is only read once its schema is one this
+// binary understands; the resource check then decodes every stored value with
+// the definition that owns it, which is the same validation a write applies.
+func validateStore(ctx context.Context, path string) (string, error) {
+	version, err := store.ValidateFile(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	st, err := store.OpenReadOnly(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = st.Close() }()
+	// The resources table is only absent from a store written before the control
+	// plane existed. That store holds no settings to validate, and the serving
+	// process creates the table on its next start -- refusing it here would send
+	// an operator to restore a snapshot for nothing.
+	checked := 0
+	stored, err := st.StoresResources(ctx)
+	if err != nil {
+		return "", err
+	}
+	if stored {
+		checked, err = controlplane.NewServer(st).ValidateStored(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("%s is a valid store at schema version %d; %d stored resources validate", path, version, checked), nil
+}
+
+// rollbackResource is the one operation the Web UI cannot be asked to perform
+// here: the daemon fails closed on the bad value, so the store that would serve
+// the rollback is the store that will not start. It replays the revision's own
+// value through the ordinary replace, so no rollback RPC exists or is needed,
+// and the rollback is audited as one more revision.
+func rollbackResource(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
+	// Before the lock and before the open: opening a store creates the file,
+	// and a rollback pointed at a mistyped path must not leave an empty
+	// database where the operator expected theirs.
+	if err := store.RequireDatabase(options.DB); err != nil {
+		return "", err
+	}
+	ownership, err := store.AcquireOwnership(options.DB)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = ownership.Release() }()
+
+	st, err := store.Open(ctx, options.DB)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = st.Close() }()
+
+	server := controlplane.NewServer(st)
+	if !server.Owns(options.Kind) {
+		return "", fmt.Errorf("unknown resource kind %q", options.Kind)
+	}
+	current, err := st.Resource(ctx, options.Kind)
+	if errors.Is(err, store.ErrResourceNotFound) {
+		return "", fmt.Errorf("%s has no stored value to roll back", options.Kind)
+	}
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", options.Kind, err)
+	}
+	revision, err := revisionToReplay(ctx, st, options.Kind, current.Version, options.Revision)
+	if err != nil {
+		return "", err
+	}
+	replaced, err := server.Command(ctx, &pb.CommandRequest{
+		Kind:            options.Kind,
+		Command:         "replace",
+		ValueJson:       revision.Value,
+		ExpectedVersion: current.Version,
+		Actor:           OfflineRollbackActor,
+		Source:          OfflineRollbackSource,
+		RequestId:       fmt.Sprintf("recovery-rollback-%s-%d", options.Kind, time.Now().UTC().UnixNano()),
+	})
+	if err != nil {
+		return "", fmt.Errorf("replay %s at revision %d: %w", options.Kind, revision.Version, err)
+	}
+	return fmt.Sprintf("rolled back %s from version %d to the value recorded at version %d; the store now holds version %d",
+		options.Kind, current.Version, revision.Version, replaced.GetResource().GetVersion()), nil
+}
+
+// revisionToReplay picks the value to put back: the revision the operator
+// named, or the newest one older than the value the resource carries now.
+func revisionToReplay(ctx context.Context, st *store.Store, kind string, current, requested int64) (store.Resource, error) {
+	history, err := st.ResourceHistory(ctx, kind, 0)
+	if err != nil {
+		return store.Resource{}, fmt.Errorf("read %s history: %w", kind, err)
+	}
+	if requested > 0 {
+		for _, revision := range history {
+			if revision.Version != requested {
+				continue
+			}
+			if revision.Version == current {
+				return store.Resource{}, fmt.Errorf("%s revision %d is the current version; there is nothing to roll back to", kind, requested)
+			}
+			return revision, nil
+		}
+		return store.Resource{}, fmt.Errorf("%s has no revision %d", kind, requested)
+	}
+	for _, revision := range history {
+		if revision.Version < current {
+			return revision, nil
+		}
+	}
+	return store.Resource{}, fmt.Errorf("%s has no earlier revision to roll back to", kind)
+}

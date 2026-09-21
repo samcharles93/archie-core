@@ -120,21 +120,40 @@ file values would restore the second source of truth the control plane exists to
 remove. The cost is that a bad stored value stops the daemon starting, and the
 value can only be corrected through the daemon's own API.
 
-### Recovery: not yet built
+### Recovery: offline commands on the State Store
 
-There is no escape hatch. Nothing skips the control plane at boot, and the only
-writer for a resource is `ControlPlaneService.Command` on a running State Store.
-An operator whose stored settings will not validate has no supported path back
-short of editing `archie.db` by hand.
+Nothing skips the control plane at boot, and the only writer for a resource is
+`ControlPlaneService.Command` on a running State Store -- which is exactly what
+the daemon fails closed without. `archie-state-store` therefore carries the
+offline recovery commands (`archie-core-6zw0`). They work on the task database
+file directly -- the configured `db_path` with `-tasks.sqlite` appended, not
+`db_path` itself -- and need neither `archied` nor the Web UI.
 
-`archie-core-6zw0` is the missing piece: offline commands that back up, restore,
-validate and roll back the database without `archied` or the Web UI. Until it
-lands, treat a settings change that requires a restart as a change that can
-prevent one, and take a copy of `archie.db` first.
+| Command | What it does | State Store |
+| --- | --- | --- |
+| `backup -db F -out F` | writes a transactionally consistent snapshot (`VACUUM INTO`), verified as a usable store before it is published | may be running |
+| `restore -db F -from F` | replaces the database with a snapshot and drops the replaced file's `-wal`/`-shm` | must be stopped |
+| `validate -db F` | checks the file the way boot meets it: readable, not corrupt, schema no newer than the binary, and every stored resource decoding under the definition that owns it | must be stopped |
+| `rollback -db F -kind K [-revision N]` | replays an earlier revision of a stored resource through the ordinary replace, recording the rollback as a new revision | must be stopped |
 
-Resource history is the in-band remedy and does exist: every write records its
-prior value, so an edit made through the dashboard or a channel can be restored
-by replaying an earlier revision while the State Store is up.
+No rollback RPC exists and none is needed: a revision carries its own value, so
+restoring one is the same replace the dashboard and the channels already use.
+The offline command is that operation with the store stopped -- the one state in
+which the daemon's own API cannot serve it.
+
+"Must be stopped" is checked rather than assumed. The serving process takes an
+exclusive flock on `<db>.lock` for its whole life, and `restore` and `rollback`
+refuse with `task database is owned by another process` while another process
+holds it. `backup` is the deliberate exception: the update installer runs inside
+the process it is replacing and cannot stop the State Store, so the snapshot
+that makes a failed update reversible is taken against a serving store -- and
+`scripts/archie-update-install` takes it through this subcommand rather than
+through its own `sqlite3` shell, so the installer and an operator run one
+implementation.
+
+`rollback` is the surgical route back from a bad stored value; `restore` is the
+blunt one, and is also the way back from a schema migration a release cannot
+grow out of.
 
 ## Gateway restart: two constraints learned the hard way
 

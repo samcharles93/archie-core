@@ -89,6 +89,42 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 	return versions, nil
 }
 
+// Owns reports whether kind is a resource the control plane owns, so a caller
+// acting on a stored value can refuse a kind nobody defines before it reaches
+// the store.
+func (s *Server) Owns(kind string) bool {
+	_, ok := s.definitions[kind]
+	return ok
+}
+
+// ValidateStored decodes every stored resource with the definition that owns
+// it, using the same Decode the write path applies, and reports how many
+// resources it checked. Errors name the kind and the revision it was stored at,
+// which is what an operator needs to roll the value back.
+//
+// This is how an offline validate reproduces the refusal that stops archied
+// starting: the check is the writer's own, so it cannot drift from what a
+// replace would accept, and a value can only be stored unvalidated by bypassing
+// the write path entirely.
+func (s *Server) ValidateStored(ctx context.Context) (int, error) {
+	checked := 0
+	var failures []error
+	for _, definition := range s.ordered {
+		resource, err := s.store.Resource(ctx, definition.Kind)
+		if errors.Is(err, store.ErrResourceNotFound) {
+			continue
+		}
+		if err != nil {
+			return checked, fmt.Errorf("read %s: %w", definition.Kind, err)
+		}
+		checked++
+		if _, err := definition.Decode(resource.Value); err != nil {
+			failures = append(failures, fmt.Errorf("%s at version %d: %w", definition.Kind, resource.Version, err))
+		}
+	}
+	return checked, errors.Join(failures...)
+}
+
 func validateAs[T any](input []byte, validate func(T) error) error {
 	var value T
 	decoder := json.NewDecoder(bytes.NewReader(input))
