@@ -108,3 +108,52 @@ func TestDaemonCarriesNoLocalWorkflowExecutionState(t *testing.T) {
 		}
 	}
 }
+
+// A repository's base branch has exactly one default and Repo.BaseBranch() is
+// where it lives: an empty base means "main". Handing the raw field to the
+// worktree manager skips that mapping, so a repository stored with no base
+// reaches git with "" and the branch is never cut from main
+// (archie-core-lwzd).
+//
+// This is a wiring invariant rather than a behaviour test because the value is
+// an argument: the worktree manager's own tests cover what it does with a base,
+// and a daemon-level test would need a real clone to reach the call.
+func TestDaemonPreparesWorktreesFromTheMappedBaseBranch(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileset := token.NewFileSet()
+	checked := 0
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, parseErr := parser.ParseFile(fileset, path, nil, 0)
+		if parseErr != nil {
+			t.Errorf("parse %s: %v", path, parseErr)
+			continue
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || len(call.Args) != 8 {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Prepare" {
+				return true
+			}
+			checked++
+			base, ok := call.Args[3].(*ast.SelectorExpr)
+			if ok && base.Sel.Name == "Base" {
+				t.Errorf("%s: worktree.Prepare receives the raw base field; pass BaseBranch() so an empty base means main",
+					fileset.Position(call.Pos()))
+			}
+			return true
+		})
+	}
+	// A rename or a move must not leave this passing without having looked.
+	if checked == 0 {
+		t.Error("no worktree.Prepare call found, so the base-branch invariant went unchecked")
+	}
+}

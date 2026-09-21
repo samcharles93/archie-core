@@ -1175,7 +1175,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	// go-git has no --dissociate, so a shared cache would stay a live
 	// dependency of each worktree and expiring one would corrupt running
 	// tasks. repo.PersistentStorage still governs the container volume.
-	_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
+	_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels)
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
 		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error())
