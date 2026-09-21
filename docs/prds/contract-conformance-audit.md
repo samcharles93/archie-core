@@ -1,7 +1,7 @@
 # Contract conformance audit — decision
 
-**Status:** Implemented as an **advisory** report. Deliberately **not** part of
-`task check`.
+**Status:** Finalised
+**Scope:** an **advisory** report, deliberately **not** part of `task check`.
 **Date:** 2026-09-15
 **Authority:** sibling to `archie-core-06ag` (standing reachability audit) and
 `docs/architecture/dependencies-and-contracts.md`. Replaces neither.

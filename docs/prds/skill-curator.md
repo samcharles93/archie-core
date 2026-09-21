@@ -1,6 +1,6 @@
 # Skill curator (reference implementation) -- decision
 
-**Status:** Approved for archie-core-1786637499206 implementation
+**Status:** Approved
 **Date:** 2026-09-02
 **Beads issue:** `archie-core-1786637499206`
 **Parent epic:** `archie-core-1786637500725` (curator engine)
@@ -25,14 +25,14 @@ framing -- is real for v1 but deliberately narrow: review is structural
 validation, improve is whitespace normalization, and prune is *reporting*
 a problem, never removing a skill. `Manifest.Skills = true` still marks
 this curator agentic (existing `agentic()` rule), so it receives model
-access from the registrar -- unused today, but nothing about the contract
+access from the registrar -- unused but nothing about the contract
 or the runtime needs to change to let a later version reason about
 content quality using it.
 
 ## Why this scope, not more
 
 An autonomous process that rewrites or deletes a user's skill content
-is a real risk with no undo path today (no draft/approval flow for
+is a real risk with no undo path (no draft/approval flow for
 curator writes exists yet, unlike the workflow engine's PR-based review).
 The epic's own stated purpose for this issue is proving the curator
 contract holds for a second, structurally different consumer than the
@@ -123,7 +123,7 @@ func (c *Curator) Pass(ctx context.Context, in curator.PassInput) (curator.PassR
 - **clean** -- no action recorded (a pass with nothing to report is not
   an error, and not every skill needs an entry every time)
 
-One pass reviews every skill currently on disk; there is no
+One pass reviews every skill on disk; there is no
 per-skill "already reviewed, skip" state; this errs toward re-checking
 over missing a regression, and the cost is cheap (no model calls, just
 file reads).

@@ -1,6 +1,6 @@
 # PR review comment remediation -- decision
 
-**Status:** Decided, not yet implemented
+**Status:** Approved
 **Date:** 2026-09-10, amended and ratified 2026-09-19
 **Beads issue:** (filed as `archie-core-…`, parent: `archie-core-7d5u` event sources and typed reactions)
 

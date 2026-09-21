@@ -1,6 +1,6 @@
 # Persistent session-memory curator (reference implementation) -- decision
 
-**Status:** Approved for archie-core-1786637499114 implementation
+**Status:** Approved
 **Date:** 2026-09-02
 **Beads issue:** `archie-core-1786637499114`
 **Parent epic:** `archie-core-1786637500725` (curator engine)
@@ -29,7 +29,7 @@ memory scopes (global, agent-wide, user-wide, agent-user relationship)
 as **still open** -- there is no decided mapping yet from a chat session
 to a durable identity that would outlive that session (a Telegram chat
 ID is not necessarily "the same person" as a web session; per-platform
-identity resolution does not exist as a memory concern today). Choosing
+identity resolution does not exist as a memory concern). Choosing
 session-as-identity sidesteps a decision this issue has no business
 making unilaterally: it is the narrowest scope that is unambiguous
 (`gateway.SessionContext.SessionID` already exists, is already unique,
@@ -139,7 +139,7 @@ honestly rather than always returning true.
   dedup index.
 - **No `Forget`.** Nothing here decides a memory is stale; that is a
   different, harder judgment call than "is this worth keeping," and nothing
-  currently reads these observations back into a chat turn to notice if
+  reads these observations back into a chat turn to notice if
   one turned out wrong.
 - **No tool declarations.** `Manifest.Tools` is empty; the model call is
   a plain completion (`ChatRequest.Tools` left nil), not agentic

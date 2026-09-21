@@ -1,6 +1,6 @@
 # Architecture Decision Index
 
-**Status:** Approved foundation; domain and package reviews are ongoing  
+**Status:** Approved  
 **Date:** 2026-07-28  
 **Beads issue:** `archie-core-5d7`
 

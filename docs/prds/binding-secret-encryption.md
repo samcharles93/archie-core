@@ -1,6 +1,6 @@
 # Binding secret at-rest encryption -- decision
 
-**Status:** Decided, to be implemented
+**Status:** Approved
 **Date:** 2026-09-02
 **Beads issue:** `archie-core-t2db.7` (P2), parent `archie-core-t2db`
 
@@ -18,7 +18,7 @@ Encrypt the `secret` column at rest with **AES-256-GCM** (stdlib
 `crypto/aes` + `crypto/cipher`, no new dependency), transparently inside the
 store: encrypt on write, decrypt on read. The store is the data boundary; its
 consumers (dispatch loop, HMAC verification) receive the plaintext secret
-exactly as today, and the webui already blanks `Secret` on every response.
+exactly as and the webui already blanks `Secret` on every response.
 
 ### Cipher parameters
 

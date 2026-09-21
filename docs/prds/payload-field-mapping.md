@@ -1,6 +1,6 @@
 # Payload field mapping -- decision
 
-**Status:** Decided, not yet implemented
+**Status:** Approved
 **Date:** 2026-08-22
 **Beads issue:** `archie-core-t2db.3`, depends on `t2db.1`, blocks `t2db.4`
 
@@ -18,7 +18,7 @@ resolve/preview rule; `internal/store` persists it (mirrors
 interface, `*store.Store` implementation); `internal/webui/api_mapping.go`
 is the transport. This follows `docs/prds/event-capture-storage.md`'s own
 placement precedent: `internal/store` is where this daemon's persistence
-already lives, not `internal/infrastructure` (that layer today holds
+already lives, not `internal/infrastructure` (that layer holds
 cross-domain services -- config, eventbus, modelcatalog -- not this
 daemon's primary store).
 
@@ -110,7 +110,7 @@ is `t2db.4`'s job, not duplicated here.
 `internal/store/mappings.go`, `field_mappings` table: `id, name,
 source_hint, fields_json, created_at, updated_at`. `fields_json` is the
 `[]Field` slice JSON-encoded into one column -- fields have no independent
-query need (nothing filters "mappings with a field named X" today), so a
+query need (nothing filters "mappings with a field named X"), so a
 join table would be structure with no consumer, the same failure mode
 `organisation.md` bans for empty layering.
 

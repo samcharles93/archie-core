@@ -1,6 +1,6 @@
 # Dynamically-defined curators -- decision
 
-**Status:** Decided, to be implemented
+**Status:** Approved
 **Date:** 2026-09-12
 **GitHub epic:** [#789](https://github.com/samcharles93/archie-core/issues/789)
 **Parent epic (curator engine):** [#435](https://github.com/samcharles93/archie-core/issues/435) (closed)
@@ -9,7 +9,7 @@
 
 ## §0 Implementation status
 
-Every claim in this document is mapped to what exists in the tree today.
+Every claim in this document is mapped to what exists in the tree.
 
 | Claim | Status | Where it stands |
 |---|---|---|
@@ -28,14 +28,14 @@ Every claim in this document is mapped to what exists in the tree today.
 | No live-path defaults for interval/cooldown/tools/model/memory engine | **Partial** | `skillcurator.DefaultInterval` / `sessioncurator.DefaultInterval` are Go consts read at registration; `curator.NewRuntime(..., RuntimeConfig{})` uses code defaults for pass timeout and concurrency |
 | Idle curators are observable in logs | **Partial** | `runtime.go` logs nothing when `Check` reports not-due; the session-memory curator's hourly pass is the only curator activity ever logged |
 | Sampler family | **Implemented** | `internal/domain/sampling`, shipped; no curator consumes a `Sampler` yet |
-| Forge/issue reach from chat | **Implemented** (via `shell`) | No dedicated issue tool exists, but the chat agent's `shell` is unconfined (`chat.unrestricted_filesystem = true`), so `gh issue edit|comment|create|close` works today. Dedicated tools (#161) are convenience, not a blocker |
+| Forge/issue reach from chat | **Implemented** (via `shell`) | No dedicated issue tool exists, but the chat agent's `shell` is unconfined (`chat.unrestricted_filesystem = true`), so `gh issue edit|comment|create|close` works. Dedicated tools (#161) are convenience, not a blocker |
 
 > **Target state, not current state.** Everything below marked aspirational is
-> design, not a description of the daemon as it runs today.
+> design, not a description of the daemon as it runs.
 
 ## Problem
 
-A curator exists today only if a Go package implements `curator.CuratorEngine`
+A curator exists only if a Go package implements `curator.CuratorEngine`
 and `bootstrap.go/1025` names it in a `Register` call. Nothing about a
 curator is definable as data. Worse, no curator can declare a tool set at all:
 the `ToolBuilder` interface has no implementation in the repo, so the registry
@@ -99,7 +99,7 @@ record actions.
    implementation fails the pass rather than silently running with fewer tools.
    This is the enforcement point, and it is why the `ToolBuilder` binding is
    load-bearing rather than a convenience: without an implementation, no curator
-   can declare tools at all (today's `registry.go` guard).
+   can declare tools at all (the `registry.go` guard).
 2. **Tool-carrying model call.** `curator.ChatRequest` already carries
    `Tools []tools.ToolEntry` and `MaxSteps`; `curatorLLMRunner` must pass them
    into `core.GenerateOptions` (which has `Tools`, `ToolChoice`, `MaxSteps`, and
@@ -117,7 +117,7 @@ the escape hatch, not the mode: the mode is tools + instructions as data.
 ## Dynamic registration and mutation
 
 A definition change must apply without a daemon restart, which the runtime
-cannot do today (`Start()` snapshots membership into one goroutine per curator;
+cannot do (`Start()` snapshots membership into one goroutine per curator;
 no `Unregister`, no `Add`/`Remove`).
 
 - `Registry.Unregister(name)` -- valid while running, same failure isolation as

@@ -1,5 +1,7 @@
 # Dynamic workflow triage
 
+**Status:** Finalised
+
 Epic: archie-core-enfj. Scope: give `workflow.Route()` a real, content-aware
 fallback instead of unconditionally defaulting every unlabeled task to the
 heaviest workflow.
@@ -7,7 +9,7 @@ heaviest workflow.
 ## Problem
 
 `Route()` (`internal/domain/workflow/workflow.go`) has exactly two real
-signals today: an explicit `t.Workflow`, and label matches via
+signals: an explicit `t.Workflow`, and label matches via
 `workflowForLabels` (`routing.go`, `bug`→tdd, `feature`→feasibility,
 bootstrap→bootstrap). Anything else — which is every chat-spawned task,
 since `task_spawn` rarely sets labels — falls straight through to
@@ -17,7 +19,7 @@ actually asks for.
 
 `task_spawn`'s own tool schema overpromises: *"workflow: … Omit to let the
 daemon route it"* (`internal/gateway/task_tools.go`) implies real
-routing exists. It doesn't — "route" currently means "check labels, then
+routing exists. It doesn't — "route" means "check labels, then
 give up and run the heaviest workflow anyway."
 
 Confirmed in production: a chat-spawned task whose
@@ -32,15 +34,15 @@ needed, but that conclusion arrives two expensive stages (`baseline`,
 
 Add a **`triage` workflow**: cheap, classifies once, then either closes the
 task immediately or hands off to the workflow the task actually needs.
-`Route()`'s final fallback (currently `reg["implement"]`) becomes
+`Route()`'s final fallback (`reg["implement"]`) becomes
 `reg["triage"]` when a `triage` entry is registered, else the existing
 `implement` fallback — a two-line change, fully backward compatible when
 `triage` isn't wired up.
 
 Triage does **not** replace label-based routing. A labeled task
 (`bug`/`feature`/bootstrap) already has a free, reliable signal and goes
-straight to its known workflow exactly as today — spending a classification
-call there would be pure waste. Triage only fires in the gap that currently
+straight to its known workflow unchanged — spending a classification
+call there would be pure waste. Triage only fires in the gap that
 defaults to `implement` blindly: no explicit workflow, no label match.
 
 ### Triage workflow shape
@@ -92,7 +94,7 @@ classification twice for the same task.
   or `Bootstrap()`/`Feasibility()`/`TDD()` themselves.
 - Triage for forge-sourced (real GitHub issue) tasks with no labels —
   in scope structurally (same fallback branch), but the dominant case this
-  fixes is chat-spawned tasks, which essentially never carry labels today.
+  fixes is chat-spawned tasks, which essentially never carry labels.
 
 ## Testing
 

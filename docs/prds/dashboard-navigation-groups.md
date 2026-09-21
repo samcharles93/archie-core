@@ -1,6 +1,6 @@
 # Dashboard navigation groups + Configuration split -- decision
 
-**Status:** Approved for implementation
+**Status:** Approved
 **Date:** 2026-09-20
 **Beads issue:** `archie-core-ocfm`
 **Related:** `archie-core-gl96` (Logs absent from the nav -- subsumed here),

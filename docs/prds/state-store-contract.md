@@ -1,19 +1,12 @@
 # State Store — contract boundary & transport (ratification)
 
-**Status:** Ratified (rev. 2e). Rev. 2e adds the `OpenTaskByPR` authorization lookup required
-by the ratified PR-review remediation contract. Rev. 2d revised §10 only: the
-`State ServiceConnection` struct-field instruction was withdrawn in favour of name-keyed
-services (`docs/prds/service-registry.md`). Rev. 1 was marked *conditionally ratified*; the three
-reviewer conditions it raised are resolved (rev. 2), and the two third-pass findings are
-resolved here: (a) the stale Q3 migration wording in `service-decomposition.md`
-(`store.WorkflowStore`, `mode = "inproc" | "remote"`) now matches the ratified ownership split
-and presence-based `[services.<name>].target`; (b) the State Store listener topology is a
-single explicit rule (bridge address + token when agent containers consume it, loopback-only
-for a daemon-local-only consumer) instead of the contradictory loopback-vs-bridge wording.
+**Status:** Approved
+**Revision:** 2e
+**Date:** 2026-09-06
+
 This is the pre-implementation design document that Phase 2 subtasks `.4.2` (generalize
 `storerpc` as the State Store gRPC contract) and `.4.3` (stand up `archie-state-store`)
 implement against.
-**Date:** 2026-09-06 (rev. 2c)
 **Beads milestone:** archie-core-8cda.4.1
 **Parent:** `docs/prds/service-decomposition.md` (open-question Q4 **RESOLVED**)
 
@@ -143,7 +136,7 @@ the same `Update`/`Transition`/`InsertEvent` RPCs.
 
 `*Store` remains the single implementation of the daemon/webui store surfaces and of
 `workflow.Store`. Ownership below is about which **process** is the primary consumer of each
-method today, and therefore which methods are genuinely cross-process on the wire today vs.
+method and therefore which methods are genuinely cross-process on the wire vs.
 daemon-internal.
 
 Process legend: **DAEMON** = `archied` (incl. in-process webui + gateway runtime +
@@ -157,7 +150,7 @@ access through daemon-side narrow adapter interfaces.
 | `TaskRetryer` (1) | DAEMON (`taskactions` retry) | not yet |
 | `TaskQueries` (7) | DAEMON + GATEWAY (status/list adapters) | not yet (`OpenPRs`/`Tasks`/`StatusCounts` cross to gateway adapters in-process) |
 | `TaskEvents` (7) | DAEMON + **AGENT** (`InsertEvent` via storerpc) | `InsertEvent` = **YES** (agent); rest DAEMON |
-| `workflow.Store` (3) | **AGENT** only | **YES** (the sole genuinely remote consumer today) |
+| `workflow.Store` (3) | **AGENT** only | **YES** (the sole genuinely remote consumer) |
 | `CaptureStore` (2) | DAEMON (webhook intake + mapping editor) | not yet |
 | `MappingStore` (5) | DAEMON (dashboard editor + dispatch loop) | not yet |
 | `BindingStore` (6) | DAEMON (dashboard editor + dispatch loop) | not yet |
@@ -165,7 +158,7 @@ access through daemon-side narrow adapter interfaces.
 | `BindingTaskCreator` (1) | DAEMON (dispatch loop) | not yet |
 
 **Consequence for migration order:** the **agent's `workflow.Store` is already cross-process
-today** (via the NATS `storerpc` surrogate), so it is the first contract to move to gRPC. The
+already** (via the NATS `storerpc` surrogate), so it is the first contract to move to gRPC. The
 daemon-internal surfaces (`Capture`/`Mapping`/`Binding`) stay in-process until the daemon
 itself points at `archie-state-store`. `TaskStore` (the large composite) moves last.
 
@@ -329,7 +322,7 @@ Production never opens the explicit transaction.
 
 **Decision:** the contract drops `*sql.Tx` from `RecordDispatch` (the method becomes
 `RecordDispatch(ctx, bindingID, bindingVersion, captureID, taskID) error`). The store service
-owns any transaction boundary internally when atomicity is wanted; today the at-most-once
+owns any transaction boundary internally when atomicity is wanted; the at-most-once
 guarantee is the `INSERT OR IGNORE` dedup row, which is already transactionless in production.
 `TestRecordDispatchViaExplicitTx` is superseded by the store service's own internal-transaction
 test. **This is a required interface migration that must land before or with `.4.2`** (the
@@ -356,7 +349,7 @@ same seam.
 **Wiring change in the transport façade:**
 
 - `internal/infrastructure/agenttransport/nats.Transport` — `Store(timeout) store.WorkflowStore`
-  currently returns `&storerpc.Client{Conn: t.conn, Timeout: timeout}`. It becomes
+  returns `&storerpc.Client{Conn: t.conn, Timeout: timeout}`. It becomes
   `Store(timeout) workflow.Store` and returns a *single long-lived* `staterpc.Client` dialed to
   `settings.StateStoreTarget` (with the token interceptor and per-call timeout).
 - `internal/app/agentworker/worker.go` `Settings` gains the three fields above; `taskServiceTransport`
@@ -402,7 +395,7 @@ across a single agent process, which is either NATS-backed or gRPC-backed, never
   `err.Error()` string and rehydrates a fresh `errors.New(string)`. The original type, `%w`
   chain, and sentinel identity are lost → `errors.Is(err, store.ErrStaleTransition)` is
   **false** across the boundary.
-- **gRPC `gatewayrpc`** currently returns raw `err` from handlers; gRPC-Go converts to
+- **gRPC `gatewayrpc`** returns raw `err` from handlers; gRPC-Go converts to
   `codes.Unknown` with only the message. The **only** explicit code in the repo is
   `codes.Unavailable` for a missing session store (`server.go`). No status-code mapping for
   store errors exists.
@@ -411,7 +404,7 @@ across a single agent process, which is either NATS-backed or gRPC-backed, never
 
 The `StateStore` service must map the store's sentinel errors to canonical gRPC codes and
 rehydrate them to the *same* sentinels on the client, so consumer `errors.Is` checks keep
-working — an improvement over today's flattening, not a regression.
+working — an improvement over the flattening it replaces, not a regression.
 
 | Store sentinel / outcome | gRPC code | Client rehydrates to |
 |---|---|---|
@@ -497,7 +490,7 @@ stated explicitly rather than left implicit.
     token**. `127.0.0.1` is reserved for the daemon-local-only case.
 - **Agent access → the container bridge.** The agent runs in a task-scoped container on the
   host and reaches the State Store over the Docker bridge gateway (the bind address from the
-  topology rule above), exactly as it reaches the daemon's NATS today. To close the "any host
+  topology rule above), exactly as it reaches the daemon's NATS. To close the "any host
   process could reach the store" gap, the agent **authenticates with a per-task bearer token**
   carried in gRPC metadata by a client interceptor (`StateStoreToken`, §6). Network
   reachability + the token is the trust boundary for the default bridge topology.
@@ -548,20 +541,18 @@ an explicit operator decision.
 
 **Follow the gateway's presence-based `target` seam, not the NATS `mode` enum.**
 
-- **Revised (rev. 2d).** This section previously instructed that
-  `internal/config/services.go` gain a `State ServiceConnection` *struct field*. That
-  instruction is withdrawn: naming each service as a field is the duplication
-  `docs/prds/service-registry.md` removes, and this document's own summary (`:7`) already
-  describes the seam as `[services.<name>]`. Services are keyed by name:
+- **Services are keyed by name, not named as struct fields.** A
+  `State ServiceConnection` field per service is the duplication
+  `docs/prds/service-registry.md` removes, and this document's summary describes
+  the seam as `[services.<name>]`:
   ```go
   type Services map[string]ServiceConnection
   ```
   registered once via `RegisterService(context, name, target, listen, tokenEnv)`. The TOML
   shape below is unchanged, so nothing else in this section is affected; read
   `cfg.Services.Get("state")` wherever it says `cfg.Services.State`.
-- **Empty `Target` → startup error** (corrected in rev. 2d). This bullet previously said an
-  empty `Target` opens a local `*store.Store` adapter. That default was withdrawn when the
-  State Store was extracted (§12 step 7): the standalone `archie-state-store` process
+- **Empty `Target` → startup error.** The local `*store.Store` adapter default was
+  withdrawn when the State Store was extracted (§12 step 7): the standalone `archie-state-store` process
   exclusively owns `archie.db`, so both `archied` and `archie-gateway` now reject an empty
   target (`internal/app/archied/bootstrap.go` and `state_store_client.go`: `services.state.target
   is required`). **Set `Target` → dial gRPC** with `*staterpc.Client`; no client opens the
@@ -679,7 +670,7 @@ an explicit operator decision.
 - **Domain type relocation** (`Task`/`Status`/`Source` → `internal/domain/workflow`) is a
   Phase 2 prerequisite, pulled forward from migration-decisions §4 (minimal bound,
   `Task → WorkflowExecution`); the rest of §4 stays a separate migration.
-- **`RecordDispatch` drops `*sql.Tx`** (wire-blocker; production passes `nil` today) — a
+- **`RecordDispatch` drops `*sql.Tx`** (wire-blocker; production passes `nil`) — a
   required interface migration landing before/with `.4.2`.
 - **`Close()` not on the wire**; remote client `Close()` is a no-op.
 - **Structured gRPC error codes** with client rehydration to store sentinels (preserves

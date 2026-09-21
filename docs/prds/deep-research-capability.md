@@ -1,6 +1,6 @@
 # Deep research capability — design
 
-**Status:** Draft for review, not yet decided
+**Status:** Draft
 **Date:** 2026-09-14
 **Scope:** A deep-research capability in archie-core: an orchestrator that
 spawns 1..N subagents to explore and research in parallel, collates their
@@ -10,7 +10,7 @@ findings, and returns one cited report. Grounded in web search and web fetch.
 
 ## §0 Implementation status
 
-Every claim in this document is mapped to what exists in the tree today.
+Every claim in this document is mapped to what exists in the tree.
 
 | Claim | Status | Where it stands |
 |---|---|---|
@@ -32,7 +32,7 @@ Every claim in this document is mapped to what exists in the tree today.
 | Citation storage / source ledger | **Aspirational — zero code** | No source, citation, or provenance store exists for research output |
 
 > **Target state, not current state.** Everything marked aspirational below is
-> design, not a description of the daemon as it runs today.
+> design, not a description of the daemon as it runs.
 
 ## Problem
 
@@ -41,7 +41,7 @@ exploration or research work. And they should collate all findings, they
 should use web search/fetch features."*
 
 None of the three primitives that sentence needs can be assembled from what
-ships today:
+ships:
 
 1. **Web search does not exist.** `web_fetch` reads a URL you already have. A
    research loop's first act is to *discover* URLs from a query, and there is

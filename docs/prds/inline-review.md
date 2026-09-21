@@ -1,6 +1,6 @@
 # Inline review -- decision
 
-**Status:** Implemented
+**Status:** Finalised
 **Beads issue:** `archie-core-q9au`
 **Builds on:** `archie-core-h019` (adversarial self-review), `docs/architecture/adversarial-review.md`
 
@@ -13,7 +13,7 @@ reviewer anchors each finding to the line it is about, so the author sees it in
 context — and, when the fix is mechanical, attaches the replacement so it can be
 applied in one click.
 
-Both halves are missing today:
+Both halves are missing:
 
 - **No line-anchored comment.** `forge.Forge.Comment` posts to the PR
   *conversation* (`Issues.CreateComment`); nothing creates a review comment at
@@ -122,7 +122,7 @@ failed to post must not park a task whose actual work succeeded, and the body
 section already carries every finding. This mirrors `OpenPR`'s existing
 best-effort `LinkBranch` call.
 
-### 5. No separate opt-in flag (for now)
+### 5. No separate opt-in flag
 
 Inline comments are posted whenever a review ran and produced line-anchored
 findings — the same `repo.review_enabled` gate already covers it. A second flag

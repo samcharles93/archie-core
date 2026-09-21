@@ -1,6 +1,6 @@
 # Memory engine unification: four scopes, CRUD, and one write path -- decision
 
-**Status:** Approved for implementation
+**Status:** Approved
 **Date:** 2026-09-16
 **Findings:** `memory-4` and its dependants in the adversarial sweep
 (`.local/issue-tracker`); the real defect is the split described below, for
@@ -120,7 +120,7 @@ gave it nothing better.
 `Record` carries what `agent-system.md` requires be retained: `Scope`,
 `Kind`, `Content`, `Revision`, `Author`, `OriginUser`, `Source`, `CreatedAt`,
 `UpdatedAt`. `Metadata` is dropped — nothing sets it and the parser never
-restores it, so it is currently a field that silently does not round-trip.
+restores it, so it is a field that silently does not round-trip.
 
 `Update` supersedes rather than overwrites. The superseded state is appended to
 the scope's `HISTORY.md` **before** the live block is replaced, so a crash
@@ -227,7 +227,7 @@ and would leak user A's extracted facts to user B through the same agent;
 user-wide would pool facts across agents; and a session id cannot survive the
 session ending, which is the whole requirement.
 
-This needs data the tree does not persist today: the SQLite `messages` table
+This needs data the tree does not persist: the SQLite `messages` table
 gains `sender_id`, and `curator.SessionSummary` / `ConversationMessage` gain the
 agent and participant. The participant is derived from the session's own
 user-role messages: exactly one distinct non-empty sender writes; zero (a
@@ -276,11 +276,11 @@ Existing data at `<workDir>/memory` is left on disk, unreferenced. No migration.
 - **No canonical user identity.** `SenderID` is channel-native, so one person on
   Telegram and email is two identities. Unifying needs an Identity aggregate that
   does not exist (`internal/domain` has no identity package and `IdentityID`
-  appears nowhere in Go today). The contract does not change when it lands.
+  appears nowhere in Go). The contract does not change when it lands.
 - **No ranked retrieval.** `Query.Text` stays, unused by the prompt path.
 - **No data migration**, per the decision above.
 - **No prompt-memory timeout mechanism.** The read is bounded by construction.
-- **No `Metadata` field.** It is write-only today; a caller needing it later
+- **No `Metadata` field.** It is write-only; a caller needing it later
   needs one field, not a speculative contract.
 
 ## Acceptance criteria

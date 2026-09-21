@@ -1,6 +1,6 @@
 # Curator sampler wave 1: `Sampler` interface + four cheap strategies -- decision
 
-**Status:** Approved for implementation
+**Status:** Approved
 **Date:** 2026-09-05
 **Beads issue:** bead `archie-core-1786637500776-416-600a66e5` / GitHub #437
 covers the embedding-backed follow-on strategy only. This PRD covers the
@@ -20,7 +20,7 @@ criteria requires that subset-picking to sit "behind a `Sampler` interface
 that wave 1 of the curator epic ships (cheap strategies: recency, random,
 all, staleness proxy)" and that the embedding-backed strategy implement "the
 same interface" later. No such interface, and none of the four cheap
-strategies, exist anywhere in the codebase today (bead 434e5bb9's closure
+strategies, exist anywhere in the codebase (bead 434e5bb9's closure
 without a linked PR was the tracker being wrong, not the code existing) --
 this PRD is the one-page settled design for it, per this repo's Scope
 Discipline rule.
@@ -130,7 +130,7 @@ like `image.GenerateRequest.Options` and `curator.Action.Detail`'s existing
 - **No curator-family wiring.** `curator.Registrar` gains no `Sampler`
   field and no curator declares one in this change. Nothing in
   `internal/domain/curator` consumes `sampling.Sampler` yet -- there is no
-  curator that samples anything today. Wiring a sampler into a real
+  curator that samples anything. Wiring a sampler into a real
   curator's `Pass` is that future curator's job, not this prerequisite's.
 - **No embedding-backed strategy.** That is GitHub #437, explicitly
   deferred behind the embeddings capability this same change also adds

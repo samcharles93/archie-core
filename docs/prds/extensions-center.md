@@ -1,5 +1,7 @@
 # Extensions center
 
+**Status:** Draft
+
 Epic: `archie-core-1786637490708-35-38424ead` / GitHub `#56` ("Replace Skills
 with a bundled Extensions center").
 
@@ -33,7 +35,7 @@ only existing reload path (`ReloadChannel`, `server.go`) is
 channel-specific and explicitly does not cover plugins or MCP servers.
 `server.go` already wires five separate optional inventories
 (Workflows, Skills, Curators, Channels, Captures/Mappings/Bindings) as
-independent fields with no unifying type — an operator today has no single
+independent fields with no unifying type — an operator has no single
 place to see "what's available, what's enabled, what's actually running,
 and what's degraded" across all of them. `ui/src/` has `settings/`,
 `skills/`, and `workflows/` directories already; there is no
@@ -114,7 +116,7 @@ adds fields to existing structs, it does not add a second config-write path.
 
 **Decision.** No new "pending restart" flag is persisted. `Inventory.List`
 computes `StatePendingRestart` by comparing the config's `Enabled` value
-against whether the family's registry currently reports that entry as
+against whether the family's registry reports that entry as
 live — if they disagree, the entry is pending restart. This is simpler than
 tracking a flag through a save-then-restart cycle and can never go stale,
 because it's recomputed on every read.

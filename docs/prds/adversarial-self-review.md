@@ -1,7 +1,8 @@
 # Adversarial self-review stage -- decision
 
-**Status:** Promoted to `docs/architecture/adversarial-review.md` (h019.7) — that document describes the stage as shipped and is authoritative. This PRD remains as the design-decision record.
-**Date:** 2026-08-22, section 1 replaced 2026-08-25
+**Status:** Finalised
+**Authority:** `docs/architecture/adversarial-review.md` describes the stage and is authoritative. This PRD remains the design-decision record.
+**Date:** 2026-08-22
 **Beads issue:** `archie-core-h019.1`, blocks `h019.2/.3/.4/.5`
 
 > **Section 1 is superseded by the decision below.**

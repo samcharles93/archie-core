@@ -1,5 +1,7 @@
 # Image capability contract and configuration
 
+**Status:** Approved
+
 Epic: archie-core-1786748942120-1-6636e629 / GitHub #496 ("Image generation
 capability: hosted API baseline plus local GPU workflows").
 
@@ -17,7 +19,7 @@ obligations inline.
 Archie needs a provider-neutral boundary for image generation/editing so a
 hosted API (gpt-image-2-class) and a future local GPU backend can both
 implement it without either one leaking into the domain contract. Nothing
-in the repo defines this today (`grep -ri image` over `internal/domain` and
+in the repo defines this (`grep -ri image` over `internal/domain` and
 `internal/config` returns nothing image-specific).
 
 ## Design
@@ -34,7 +36,7 @@ below), and narrow host access via a `Registrar`.
 long-running — they hold a background cadence or a persistent connection
 worth health-checking. An image provider is call-scoped: it either serves a
 `Generate`/`Edit` request or it does not. Health here means "is this
-provider usable right now", which is exactly what `Generate`/`Edit`
+provider usable at call time", which is exactly what `Generate`/`Edit`
 returning a typed `ErrUnavailable` already communicates — a separate
 `Health()` poll would just duplicate that. `Registry` still owns
 registration and lookup, so provider selection is testable with fakes per
@@ -245,7 +247,7 @@ provider-agnostic image facility: `image.Provider` (`Name`,
 `GenerateImage(ctx, GenerateImageRequest) (GenerateImageResponse, error)`),
 `image.Client`, and `registry.Registry.RegisterImage`/`.Image(name)` — the
 same shape chat model registration already uses. Three backends implement it
-today (azure, togetherai, xai); OpenAI does not yet.
+(azure, togetherai, xai); OpenAI does not.
 
 `internal/infrastructure/image.<name>Provider` wraps an `ai-sdk/image.Provider`
 behind this package's `Provider` interface, the same way `curatorLLMRunner`
@@ -259,7 +261,7 @@ Blocking the entire hosted provider on an upstream ai-sdk change is not
 this epic's call to make on someone else's project's timeline. Instead:
 
 - `Generate` wraps `ai-sdk/image.Client.GenerateImage` against whichever
-  backend `ImageHostedProvider.Class` names (azure/togetherai/xai today).
+  backend `ImageHostedProvider.Class` names (azure/togetherai/xai).
 - `Edit` is a direct HTTP client hitting the OpenAI-compatible
   `/images/edits` multipart endpoint, built the same way `minimax.Client`
   (`internal/tools/minimax/minimax.go`) is a direct client for an API
@@ -356,7 +358,7 @@ already use — not a new gating convention).
 The epic allows "a remembered preference only where existing session/config
 conventions support it" — and checking `Router`'s actual fields
 (`ModelPersist`, `Identity`, the rest) shows there is no generic per-session
-key/value store the neutral command path can lean on today; `/model`'s own
+key/value store the neutral command path can lean on; `/model`'s own
 `--session`/`--global` scoping lives entirely in
 `internal/channels/telegram/model.go`, a Telegram-specific enrichment, not
 something `Router` provides generically. Inventing a new generic
@@ -397,7 +399,7 @@ adapter tests only for wiring, not for re-testing the state machine.
 
 This is the smallest section because most of the delivery path **already
 exists and is already proven** — by `generate_video`
-(`internal/tools/minimax`), which ships today. Do not rebuild it.
+(`internal/tools/minimax`), which ships. Do not rebuild it.
 
 The existing pipeline: a result carrying media returns
 `tools.MultimodalResult{IsMultimodal: true, URLs: []tools.MediaRef{{Type: "image", ...}}}`
@@ -413,7 +415,7 @@ video-specific.
 |---|---|---|
 | Telegram | **already works** | `internal/channels/telegram/media.go`'s `telegramMediaSender.dispatch` already branches on `att.Type` and calls `bot.SendPhoto` for `"image"` (`SendVideo` for `"video"` is the same function) |
 | Dashboard (webui) | **tracked gap, not new** | `internal/webui/api_chat.go`'s `chatStreamSink.Media` has no inline rendering path yet and degrades to a link/error string — already tracked as archie-core-1786748942243-6-f109697e. This epic does not need to fix it, but #501's acceptance criterion ("unsupported paths report a clear limitation") is already met by the existing degrade-to-text behavior; closing the dashboard gap is that bead's job, not this one's |
-| Email | **no attachment sender exists** | `grep MediaAttachment internal/channels/email` returns nothing. Out of scope for this epic per #496's non-goals (no channel-abstraction rework) — email delivery of a generated image degrades the same way the dashboard does today, which is acceptable under #501's "or unsupported paths report a clear limitation" clause |
+| Email | **no attachment sender exists** | `grep MediaAttachment internal/channels/email` returns nothing. Out of scope for this epic per #496's non-goals (no channel-abstraction rework) — email delivery of a generated image degrades the same way the dashboard does which is acceptable under #501's "or unsupported paths report a clear limitation" clause |
 | Webhook | not applicable | webhook is an inbound intake channel (`internal/channels/webhook`), not an outbound chat reply target — no `/image` command can originate there in the first place |
 
 **The only new work `internal/tools/minimax` didn't already need**: the

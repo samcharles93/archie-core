@@ -1,6 +1,6 @@
 # Webhook intake security -- decision
 
-**Status:** Decided, not yet implemented
+**Status:** Approved
 **Date:** 2026-08-22
 **Beads issue:** `archie-core-t2db.5`, blocks `archie-core-t2db.4`
 
@@ -64,7 +64,7 @@ playbook-triggered work, and none is needed -- the existing constraints are
 the control.
 
 Mapped payload fields are treated as ordinary user-controlled text inside an
-agent prompt, exactly like an inbound chat message today, never as trusted
+agent prompt, exactly like an inbound chat message never as trusted
 instructions. "The agent should ignore instructions in the payload" is not a
 control and must not appear as one anywhere in this feature -- per
 `ARCHITECTURE.md`'s environmental-enforcement-over-prompt-rules principle,

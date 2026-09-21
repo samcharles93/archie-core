@@ -1,5 +1,7 @@
 # MCP client and tool-guardrail completion
 
+**Status:** Approved
+
 Epic: `archie-core-1786637493439-140-2cee2e9b` / GitHub `#161` ("[EPIC] Tools:
 central registry, MCP client, guardrails").
 
@@ -26,7 +28,7 @@ regardless of server — `ParallelToolCalls` does not exist on the `MCPServer`
 config struct (`internal/config/config.go`), confirming `#177` is a
 real gap, not a stale bead. `#178` (wire MCP tool servers for the chat agent,
 sandboxed) and `#179` (Firecracker substrate) have no corresponding code —
-MCP servers today run as whatever the config's `Command`/`Args` launches,
+MCP servers run as whatever the config's `Command`/`Args` launches,
 unsandboxed. `#182` (sequential tool dispatch with per-result previews) is
 open; concurrent dispatch (`#183`) is closed, so there are two dispatch paths
 and this PRD decides how they coexist.
@@ -48,9 +50,9 @@ defaulting to nil (server sampling requests get a JSON-RPC "not supported"
 error when unset — never a silent drop).
 
 **Call site.** `internal/tools/mcp/client.go` — add the handler field and a
-dispatch branch in whatever function currently demuxes incoming server
+dispatch branch in whatever function demuxes incoming server
 messages by method name (the same switch that already routes
-`notifications/*` today). Wire a concrete handler in
+`notifications/*`). Wire a concrete handler in
 `internal/app/archied/main.go` that routes the sampling request through the
 same chat-model call path `chatGenerateOptions` already uses, so a
 server-initiated sample gets the daemon's configured model, not a second
@@ -77,7 +79,7 @@ needed; belongs in `task check`.
 **Decision.** `ParallelToolCalls bool` (default `false`) goes on `MCPServer`
 in `internal/config/config.go`, next to `Transport`/`Command`. The
 mutex in `client.go` becomes per-server: when `ParallelToolCalls` is
-false (default, and the only behavior today), keep the single `callMu`
+false (default, and the only behavior), keep the single `callMu`
 serializing that server's calls exactly as now; when true, drop the mutex for
 that server's `Client` instance entirely and let the caller's own
 concurrency (already proven by the closed concurrent-dispatch bead, `#183`)
@@ -122,7 +124,7 @@ CLAUDE.md's Architectural Simplicity rule.
 client constructor (route sandboxed servers' process launch through
 `container.Pool.Acquire` instead of `os/exec` directly), and
 `internal/container/pool.go` (confirm its `Acquire` contract accepts a
-stdio-piped, non-worktree workload — if it currently assumes a git worktree
+stdio-piped, non-worktree workload — if it assumes a git worktree
 per CLAUDE.md's `WriteTaskJSON` note, add the narrower entrypoint variant
 there rather than duplicating the pool).
 
@@ -146,8 +148,8 @@ dispatch is for independent tool calls in one turn; sequential-with-preview
 is for a turn where each result should be surfaced to the operator (or the
 next tool call) before the next call fires — e.g. a mutating tool chain where
 showing intermediate state matters. Add a `DispatchMode` enum
-(`Concurrent`/`Sequential`) to whatever type currently selects the closed
-`#183` concurrent path, defaulting to `Concurrent` (today's only behavior).
+(`Concurrent`/`Sequential`) to whatever type selects the closed
+`#183` concurrent path, defaulting to `Concurrent` (its only behavior).
 
 **Call site.** The tool-dispatch entry point that `#183`'s closed
 implementation lives in (grep the concurrent-dispatch symbol added for

@@ -1,6 +1,7 @@
 # Messaging Service boundary and transport design
 
-**Status:** Ratified (rev. 1)  
+**Status:** Approved
+**Revision:** 1  
 **Date:** 2026-09-19  
 **Beads issue:** `archie-core-8cda.6.1`  
 **Parent:** [`service-decomposition.md`](service-decomposition.md)  

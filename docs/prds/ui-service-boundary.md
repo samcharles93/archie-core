@@ -1,6 +1,7 @@
 # UI Service boundary and configuration ownership
 
-**Status:** Ratified (rev. 1)
+**Status:** Approved
+**Revision:** 1
 **Date:** 2026-09-07
 **Beads issue:** `archie-core-8cda.5.1`
 **Parent:** [`service-decomposition.md`](service-decomposition.md)
@@ -114,8 +115,8 @@ is gone. `webui.Server` has no holder field, so the sharing this paragraph
 describes cannot be reintroduced by wiring; the daemon owns one Holder and
 publishes a rendered projection.
 
-Amended 2026-09-09 by `archie-core-ymut`: this section previously assumed one
-narrow admin contract carrying both the read and the write. It does not. The
+There is no single narrow admin contract carrying both the read and the write
+(`archie-core-ymut`). The
 read crosses as a daemon-published `ConfigView` snapshot over the State Store
 contract, and the write is descoped for Phase 3 rather than contracted, on the
 reasoning recorded in migration-decisions under "Dashboard configuration

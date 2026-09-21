@@ -57,6 +57,11 @@ func TestLintRejectsSessionBoundWriting(t *testing.T) {
 			rule: "phase-progress",
 		},
 		{
+			name: "temporal hedge",
+			doc:  "`[notify]` today is one webhook URL, read in one place.",
+			rule: "temporal-hedge",
+		},
+		{
 			name: "session artefact",
 			doc:  "Grounded by a crew investigation pass.",
 			rule: "session-artefact",
@@ -90,6 +95,35 @@ func TestLintAcceptsDurableWriting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if findings := Lint("x.md", tc.doc); len(findings) != 0 {
 				t.Fatalf("Lint(%q) = %v, want no findings", tc.doc, findings)
+			}
+		})
+	}
+}
+
+// TestLintRequiresACanonicalStatus: RULES.md gives three statuses, and a
+// free-text one is where "Implemented (wiring landed)" hid a progress report.
+func TestLintRequiresACanonicalStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		doc  string
+		want bool
+	}{
+		{"draft", "# T\n\n**Status:** Draft\n", false},
+		{"approved", "# T\n\n**Status:** Approved\n", false},
+		{"finalised", "# T\n\n**Status:** Finalised\n", false},
+		{"free text", "# T\n\n**Status:** Implemented (wiring landed)\n", true},
+		{"status with a changelog", "# T\n\n**Status:** Ratified (rev. 2e). Rev. 2e adds a lookup\n", true},
+		{"missing entirely", "# T\n\nBody.\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got bool
+			for _, f := range LintDocument("x.md", tc.doc) {
+				if f.Rule == "status" {
+					got = true
+				}
+			}
+			if got != tc.want {
+				t.Fatalf("status finding = %v, want %v", got, tc.want)
 			}
 		})
 	}

@@ -1,6 +1,6 @@
 # Dashboard live state
 
-**Status:** approved for implementation (2026-09-20)
+**Status:** Approved
 
 ## Decision
 

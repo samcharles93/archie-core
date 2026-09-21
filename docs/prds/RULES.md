@@ -29,9 +29,14 @@ These rules apply to every file in `docs/prds/`.
 - Write nothing whose truth expires. No `file.go:123` citations (cite the file
   and the symbol), no progress reports on the work being designed, no dated
   status claims, and no record of how a finding was produced. A phased plan is
-  durable design; which phase is finished is not. `task docs:prds` enforces
-  this.
-- Every PRD carries one of three statuses. `Draft` until the maintainer
-  explicitly approves it, `Approved` once they have and while the work is being
-  built, `Finalised` when the work is complete. A finalised PRD does not change;
-  supersede it with a new one instead.
+  durable design; which phase is finished is not. Do not refer to what this
+  document used to say: the reader cannot see it. A supersede marker is fine
+  when it names a file, a section or a symbol they can find. `task docs:prds`
+  enforces this.
+- Every PRD carries one of three statuses, and nothing else in that field.
+  `Draft` until the maintainer explicitly approves it, `Approved` once they
+  have and while the work is being built, `Finalised` when the work is
+  complete. A finalised PRD does not change; supersede it with a new one
+  instead. A revision number belongs in `**Revision:**`, a pointer to the
+  authoritative document in `**Authority:**`, and what a past revision changed
+  belongs in git.

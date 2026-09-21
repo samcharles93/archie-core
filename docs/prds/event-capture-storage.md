@@ -1,6 +1,6 @@
 # Event capture storage -- decision
 
-**Status:** Implemented
+**Status:** Finalised
 **Date:** 2026-08-22
 **Beads issue:** `archie-core-t2db.1`
 

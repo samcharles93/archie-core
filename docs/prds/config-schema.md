@@ -1,6 +1,6 @@
 # Backend-owned configuration schema for the webui -- decision
 
-**Status:** Approved for `archie-core-b6ew` implementation
+**Status:** Approved
 **Date:** 2026-09-02
 **Beads issue:** `archie-core-b6ew` (epic), with children `.1`-`.5`
 
@@ -9,7 +9,7 @@
 The dashboard's Configuration page keeps reading a secret-free,
 hand-picked view of `config.Config` -- that allowlist is a safety
 boundary and stays exactly as it is. What changes is who defines the
-page around it: today `ui/src/settings/settings.js` and
+page around it: `ui/src/settings/settings.js` and
 `config-row.js` hardcode every row's label, section, type, and
 editability by hand; after this, the backend attaches that metadata to
 each field it already allows through, and the frontend renders
@@ -78,7 +78,7 @@ type ConfigSection struct {
 `handleConfig` builds `[]ConfigSection` from the existing per-field
 values it already assembles, plus `overlay.DeniedKeys` for
 `LockedReason` and the existing `Overridden` list -- both already
-computed today, just re-attached per field instead of returned as
+computed just re-attached per field instead of returned as
 side-channel maps the frontend cross-references by key string.
 `Locked`/`Overridden`/`Reload`/`Provenance` stay as top-level
 `ConfigView` fields; they describe runtime state (what happened on
@@ -87,7 +87,7 @@ catalog, and duplicating that logic per-field would be the same drift
 risk this change exists to remove.
 
 `FieldStructured` fields (repositories, models, providers) carry
-`Value` as today's structured JSON and are rendered by dedicated
+`Value` as structured JSON and are rendered by dedicated
 editors, not the generic renderer -- see "What this does not do".
 
 ## Sections
@@ -126,7 +126,7 @@ restart. It knows how to render a section and a field of a given type.
   adds a label next to a value that was already being shown.
 - **Does not make every backend field appear automatically.** A field
   still requires someone to write its descriptor, same as it requires
-  someone to add it to `ConfigView` today -- the fix is one
+  someone to add it to `ConfigView` -- the fix is one
   source of truth instead of two, not zero review.
 - **Does not solve structured editing generically.** Repositories and
   maps get their own typed editor (`archie-core-b6ew.4`), not a
@@ -140,7 +140,7 @@ restart. It knows how to render a section and a field of a given type.
 
 ## Acceptance criteria (epic-level; see child issues for per-task detail)
 
-1. Every field currently rendered as a hardcoded row in `settings.js`
+1. Every field rendered as a hardcoded row in `settings.js`
    has a backend-authored descriptor with type, label, and section.
 2. `Repo.ReviewEnabled` reaches the API and the dashboard, alongside
    `AllowConcurrent` and `MaxRetries`.

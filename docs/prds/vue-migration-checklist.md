@@ -1,6 +1,6 @@
 # Preact → Vue 3 + shadcn-vue migration checklist
 
-**Status:** In progress
+**Status:** Approved
 **Date:** 2026-09-20
 **Bead:** `archie-core-tavn` (epic), `archie-core-ocfm` (navigation restructure)
 **Bootstrap commit:** `e18fb8b2`
@@ -26,7 +26,7 @@ does not show up as a broken page.
       `ui/src/router/index.ts` to hold them in step. The parser needs
       `const routes = [` on its own line, `path: "..."` on a single line per
       route, and `nav: false` on any entry the registry should skip. That guard
-      caught a stale `/chat` entry earlier today.
+      caught a stale `/chat` entry earlier.
 - [ ] **Mutation headers.** Every POST/PATCH/DELETE must send **both**
       `X-Archie-CSRF: 1` and `Content-Type: application/json`. The server
       returns 403 without the first and 415 without the second
@@ -73,7 +73,7 @@ does not show up as a broken page.
       kept.
 - [x] **`color-scheme`.** `[data-theme="dark"] { color-scheme: dark }` and the
       light equivalent. Without it the UA paints light scrollbars and light
-      native controls inside the dark app. Fixed today; trivially lost.
+      native controls inside the dark app. Fixed; trivially lost.
 - [x] **Contrast values.** The violet palette moved these off the values pinned
       here, so they were recomputed against its own backgrounds instead of
       carried: `--fg-subtle` `#A99DBD` dark (7.67:1, AAA) / `#6E6577` light

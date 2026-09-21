@@ -1,13 +1,13 @@
 # Dashboard-aware chat: Archie sees the page, and points the operator there
 
-**Status:** Design decision (before implementation)
+**Status:** Approved
 **Date:** 2026-08-26
 **Compound:** the "chat available on any page" surface work (global chat presence)
 
 ## Decision
 
 Make the web chat **dashboard-aware**: the agent is told which dashboard page
-the operator is on *right now*, knows what each page is for, and can **point**
+the operator has *open*, knows what each page is for, and can **point**
 the operator to the relevant page with a **clickable destination chip** the UI
 renders and follows - Option B (context + navigate), not just "tell me in text."
 
@@ -30,7 +30,7 @@ rendered, not a markdown link the model invents.
 
 This is the natural next step of the "chat on any page" work, and the original
 request named it explicitly: *"archie should be able to see what page you're on
-too. and point out where to go. so it needs plenty of resources."* Today the chat
+too. and point out where to go. so it needs plenty of resources."* The chat
 is a full-page route with no knowledge of the rest of the dashboard; the agent
 cannot see which page the operator is on and cannot reliably direct them anywhere.
 The critique of the chat UI already identified "chat is not available on any page"

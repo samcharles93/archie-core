@@ -1,11 +1,11 @@
 # Code graph over MCP (`tools/codegraph`)
 
-Status: proposed. Supersedes `symbol-reference-index.md`, which scoped only the
-data layer.
+**Status:** Draft
+**Supersedes:** `symbol-reference-index.md`, which scoped only the data layer.
 
 ## The problem
 
-Establishing what a change touches currently costs an agent eight to fifteen
+Establishing what a change touches costs an agent eight to fifteen
 greps, and the answers are wrong in specific ways. `grep -rn "Register("`
 cannot separate `plugin.Registry.Register` from `captureintake.Receiver.Register`
 from `forgerpc.Server.Register`, all of which exist here. It also matches the

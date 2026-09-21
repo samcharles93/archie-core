@@ -1,5 +1,7 @@
 # Self-update: artifact install, topology migration, journaled transaction
 
+**Status:** Draft
+
 Epic: `archie-core-hj1t` / GitHub `#804` ("[EPIC] Self-update: artifact
 install, topology migration, journaled transaction").
 
@@ -15,7 +17,7 @@ Actions-artifact-only. Artifact install is therefore a smaller change than
 the epic assumed — pointing the installer at an existing asset, not standing
 up new CI publishing. Topology migration and the journaled transaction are
 genuinely greenfield: no topology-detection or transaction-journal code
-exists anywhere in the tree today.
+exists anywhere in the tree.
 
 Out of scope: rewriting the `internal/releaseupdate` Go interfaces
 themselves, and any UI for triggering updates (channel dispatch, e.g.
@@ -174,7 +176,7 @@ digest from the active profile's config rather than falling back to
 `:latest` when none is configured; refuse the update (don't silently pull
 `:latest`) if no digest is resolvable and the profile requires a pinned
 image. Opt-in auto-update refuses to start when the daemon reports work in
-flight (reuse whatever "tasks currently running" signal the daemon already
+flight (reuse whatever "tasks running" signal the daemon already
 exposes for graceful shutdown — do not add a second in-flight tracker).
 
 **Call site.** `internal/config/config.go` (new `ReleaseChannel` field),

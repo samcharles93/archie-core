@@ -1,6 +1,6 @@
 # Progressive tool disclosure (bridge tools) — wiring
 
-**Status:** Implemented (wiring landed)
+**Status:** Finalised
 **Date:** 2026-08-15
 **Compound:** the "keep the LLM tool schema small, give full access on demand" work (issue #167)
 

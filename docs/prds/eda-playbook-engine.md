@@ -1,16 +1,16 @@
 # EDA playbook engine -- design
 
-**Status:** Draft, awaiting sign-off (not yet in `docs/architecture/`)
+**Status:** Draft
 **Date:** 2026-09-03
 
 ## Problem
 
-Today, "which workflow runs for which trigger" is hardcoded Go: a literal
+"Which workflow runs for which trigger" is hardcoded Go: a literal
 label vocabulary (`workintake.labelKinds`) and a literal label->workflow map
 (`workflow/routing.go`), extended only by adding a Go case or shipping a
 skill whose `metadata.archie.workflow` overrides one *named* built-in
 workflow. Extending the system to a new trigger, a new action, or a new
-event source today means a feature branch, a code change in a hardcoded
+event source means a feature branch, a code change in a hardcoded
 path, and new Go tests -- for every addition. That is the barrier this
 document exists to remove.
 
@@ -78,7 +78,7 @@ access. Concretely:
 
 - **Workflow** -- already exists (`internal/domain/workflow`). A playbook
   action of kind `workflow` invokes a registered `workflow.Registry` entry
-  by name, unchanged from today's execution path.
+  by name, unchanged from the existing execution path.
 - **Module** -- the new general-purpose action position. A `Module` is a
   Yaegi-evaluated implementation of a generated interface (args in, typed
   result out) for one declared action kind (e.g. `image-gen`, `notify`,
@@ -123,7 +123,7 @@ position, and they drive code generation from the start.
 - Schema versioning is explicit per position, independent of a playbook's
   own workflow version (see collision handling below).
 
-This document does not attempt to design the full generator today. It
+This document does not attempt to design the full generator. It
 records the constraint (schema-first, `go:generate`-driven, per logic
 position) so the first implementation slice builds toward it instead of
 away from it.
@@ -224,7 +224,7 @@ require its own decision. Gap 2 below is resolved by `archie-core-t2db.17`.
 
 A playbook is an ordered action list with data flowing between steps. If
 action 2 of 4 fails at runtime (an image-gen API times out, a forge call
-403s), the doc previously said nothing about what happens next. This
+403s), the run needs a defined outcome. This
 codebase already answers a structurally identical question for its
 existing workflow engine, precisely enough to reuse rather than
 re-derive: `workflow.Run` (`internal/domain/workflow/workflow.go`)
@@ -359,9 +359,8 @@ mechanism rather than designing a new one.
 #### Decision
 
 **Granularity: per-action-per-event -- one dedup record per
-(action, event) pair, not per playbook run.** This supersedes the
-earlier draft's whole-run default. Whole-run keying has two crash
-windows: the run row is written when the run starts, so a crash mid-run
+(action, event) pair, not per playbook run.** Whole-run keying, the
+obvious alternative, has two crash windows: the run row is written when the run starts, so a crash mid-run
 leaves the run "started" and a redelivery skips *every remaining
 action* (work silently lost); a crash before the row write re-runs
 *every already-fired action* (duplicate side effects -- the exact harm
@@ -369,7 +368,7 @@ this gap exists to prevent). Per-action keys collapse both into one
 window and one behavior: an action's record is written immediately
 before that action's side effect is invoked, so an action fires iff its
 own record is absent, no fired action ever re-fires, and a redelivered
-event resumes at the first unrecorded action. For today's shipped
+event resumes at the first unrecorded action. For the shipped
 single-action playbooks the two granularities are equivalent in effect;
 the difference starts with multi-action runs -- where whole-run keying
 would already be wrong.
@@ -462,7 +461,7 @@ computed by the coordinator -- not a CEL expression.** The key is the
   and stable-identifier-shaped, validated at load (the CEL resolution's
   J1 and its context table above in this document). For an action declaring no `id`
   (permitted by J1 while unreferenced), the key uses the action's 1-based
-  position in the playbook: deterministic and stable for today's
+  position in the playbook: deterministic and stable for the
   single-action playbooks, and a later reorder is a file edit whose
   content hash changes `playbook_version` with it, so a positional
   fallback cannot silently collide with a prior definition.
@@ -913,7 +912,7 @@ are unblocked on the execution-time questions.
    from a task," but this should be stated explicitly before Modules ship,
    not assumed.
 4. **First implementation slice.** Recommend: Module position + the
-   playbook loader + trigger-to-workflow dispatch only (subsuming today's
+   playbook loader + trigger-to-workflow dispatch only (subsuming the existing
    label routing) first, proving the schema-gen -> Yaegi -> playbook path
    end to end on the smallest useful case, before adding Channel/Forge
    action kinds or the linter/LSP.
@@ -926,8 +925,8 @@ are unblocked on the execution-time questions.
    **Resolved** (`archie-core-t2db.23`): the coordinator selects a real
    task's workflow. The wiring point is the daemon's definition pin
    (`Daemon.resolveWorkflowID`, consumed by `pinWorkflowFromCollection` in
-   `internal/daemon`), not `pollNATS`/`publishTask` as the earlier note
-   assumed. Routing belongs to the pin because a workflow definition is a
+   `internal/daemon`), not `pollNATS`/`publishTask`. Routing belongs to the
+   pin because a workflow definition is a
    database row pinned before dispatch, which makes the pin the one place a
    task's workflow is chosen. Precedence there is explicit `Task.Workflow`
    (the waiting_human -> approved requeue) → matching playbook →

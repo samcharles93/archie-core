@@ -1,6 +1,6 @@
 # Example-config and generated-config drift — decision
 
-**Status:** Decided, not yet implemented
+**Status:** Approved
 **Date:** 2026-09-15
 **Closes:** the checked-in-config half of audit findings `config-1` and
 `repo-root-deployment-2`; strengthens `doc-drift` findings generally.
@@ -56,7 +56,7 @@ reports exactly which keys the target did not consume.
 
 Note the second, separate gap already admitted in writing:
 `generated-documentation.md` — "`task check` does not run `docs:check`, so
-generated drift is currently ungated."
+generated drift is ungated."
 
 ## What to build
 
@@ -79,7 +79,7 @@ mechanism that would have caught a renamed key left behind in an example, and it
 needs no inventory.
 
 **3. Gate generated data in `task check`.** Done. `task docs:check` runs in the
-gate, closing the admitted "generated drift is currently ungated" hole. The
+gate, closing the admitted "generated drift is ungated" hole. The
 check mode did not exist when this was written; it was added for issue #855,
 which also made the check non-destructive so the gate can never rewrite the
 artifact it is judging.

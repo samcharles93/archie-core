@@ -52,7 +52,7 @@ decisions") and all five fields shipped.
 - **Container pool.** `container.Pool` already tracks `active int` under
   its own mutex (`pool.go`) but has no public accessor. A
   `Pool.Active() int` getter is a few lines.
-- **Last poll.** Nothing tracks this today. The daemon's poll loop
+- **Last poll.** Nothing tracks this. The daemon's poll loop
   (`internal/daemon`) needs one `lastPollAt time.Time` field (atomic or
   mutex-guarded, matching the pool's own pattern) set at the top of each
   poll tick, with a getter.
@@ -132,7 +132,7 @@ decisions") and all five fields shipped.
   running on" is worth that duplication. **Decided: keep it.** It is
   a settled product decision, not an oversight; do not remove it as a
   mechanical follow-up.
-- **`/agents` copy.** The menu still advertises "List tasks currently being
+- **`/agents` copy.** The menu still advertises "List tasks being
   worked" while `Router.Agents` is never wired (`archie-core-mxls`), so that one
   published description does not match what its command does. Deleting,
   rewiring or redefining `/agents` is that bead's call and is not folded in here.

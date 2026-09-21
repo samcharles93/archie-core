@@ -1,6 +1,6 @@
 # Module position -- design
 
-**Status:** Draft, awaiting sign-off (not yet in `docs/architecture/`)
+**Status:** Draft
 **Date:** 2026-09-03
 **Parent:** `docs/prds/eda-playbook-engine.md`, epic `archie-core-t2db`
 
@@ -12,7 +12,7 @@ and the standalone lint tool (`t2db.12`) are shipped. Module -- the
 position that makes an action "not restricted to code-generation" -- has
 not started, because it needs a schema-generation mechanism the parent
 doc deliberately deferred: "This document does not attempt to design the
-full generator today." This is that design.
+full generator." This is that design.
 
 ## Do not invent a new mechanism -- generalize the one used three times
 
@@ -33,7 +33,7 @@ fourth instance of this same shape**, parameterized by action kind instead
 of hardcoded to one fixed signature. No new interpreter construction, no
 new panic-recovery mechanism, no new symbol-table generation tool --
 `go generate ... yaegi extract` is already how `wfextract`/`gateextract`
-are produced today (see their `//go:generate` directives), and Module
+are produced that way (see their `//go:generate` directives), and Module
 schema generation reuses that exact command.
 
 ## No generic `Module` interface -- one typed contract per action kind
@@ -131,7 +131,7 @@ repository-supplied code that must run in a container. Module code is
 **operator-installed, in-process, daemon-privileged** -- the same trust
 tier as `PluginDir` (daemon plugins) and `SecretEngineDir` (secret engine
 plugins) already occupy, both Yaegi-interpreted and already running
-in-process today. It is **not** repository-supplied code from a task
+in-process. It is **not** repository-supplied code from a task
 (that stays containerized, unchanged). A Module directory is therefore a
 new config field the operator points at their own trusted directory,
 mirroring `PluginDir`'s shape exactly -- not something a forge webhook or

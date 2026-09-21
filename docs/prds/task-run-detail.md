@@ -1,9 +1,7 @@
 # Per-run task detail: attempts, stages, changes, config, debug
 
-**Status:** Settled design, landing with this change set (workflow run
-`76f8e877`). The persistence foundation is already in the tree
-(`events.attempt`, the two new event kinds, the two proto fields); the read
-endpoints and the page land with it. The surface contract itself is
+**Status:** Approved
+**Authority:** the surface contract itself is
 `docs/architecture/observability.md`.
 **Date:** 2026-09-18
 **Compounds with:** `docs/prds/task-logs-pagination.md` (a bounded read says
@@ -17,7 +15,7 @@ A task gets one detail page that answers "what did this run actually do?" per
 effective configuration the attempt ran under, the attempt's log, and the raw
 record behind all of it.
 
-The single organising idea is **attempt attribution**. Today the dashboard
+The single organising idea is **attempt attribution**. The dashboard
 renders a task's whole event stream as one flat timeline, so a retried task
 reads as one long run with two of everything. Every new panel is scoped to one
 attempt and says which one.
@@ -96,7 +94,7 @@ Both alternatives were rejected on evidence, not taste:
   called from the daemon's terminal paths) and a retry resets the branch onto
   its base (`internal/worktree.(*Manager).refresh` → `resetOnto`). There is
   nothing left to read.
-- **Reading it from the forge** is impossible today. The forge contract exposes
+- **Reading it from the forge** is impossible. The forge contract exposes
   no changed-file capability, and adding one would cost three implementations
   plus an RPC and would still fail for chat-sourced tasks with no PR.
 

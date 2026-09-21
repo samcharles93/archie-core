@@ -1,6 +1,6 @@
 # Service decomposition -- decision
 
-**Status:** Proposed -- not yet approved for implementation
+**Status:** Draft
 **Date:** 2026-09-05
 **Beads epic:** archie-core-8cda
 **Prior art:** `docs/inspiration/2026-09-05-awx-service-decomposition-and-ansible-task-model.md`,
@@ -64,7 +64,7 @@ Per `docs/inspiration/service-discovery-research-2026-09-05.md`:
   }
   ```
 
-- An optional service (Curator today; others later) that is not installed
+- An optional service (Curator; others later) that is not installed
   must resolve to a distinct `NotInstalled` outcome, never a `Down`/
   `Unhealthy` one. Under K8s this falls out of DNS returning no record;
   under the NATS fallback it requires an explicit "installed" marker in the
@@ -127,7 +127,7 @@ historical record rather than an outstanding gate.
 1. **Extraction order.** Which service gets pulled out of the monolith
    first? The webui entanglement findings above suggest Gateway Service's
    `ChatContract` should exist before UI Service is extracted, since UI is
-   the most entangled consumer today. Not yet sequenced.
+   the most entangled consumer. Not yet sequenced.
 
    **RESOLVED.** Gateway Service first, then State Store,
    then UI, then Messaging, then Execution/Runner/Scheduler, then Curator
@@ -223,7 +223,7 @@ historical record rather than an outstanding gate.
    Capture -> Mapping -> Binding -> TaskStore`. `.4.2` and `.4.3` implement
    against that doc.
 5. **Helm chart / Operator ownership.** Net-new work with no existing
-   analog in this repository (`deployments/` currently holds TOML profiles
+   analog in this repository (`deployments/` holds TOML profiles
    and a `docker-compose.yml`, not Kubernetes manifests). Scoping not yet
    started.
 

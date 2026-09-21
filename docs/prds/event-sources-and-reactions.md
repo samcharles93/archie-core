@@ -1,6 +1,6 @@
 # Event sources and reactions -- decision
 
-**Status:** Decided, not yet implemented
+**Status:** Approved
 **Date:** 2026-08-22
 **Beads issue:** `archie-core-7d5u.1`, blocks `7d5u.2/.3/.4/.5`
 
@@ -11,7 +11,7 @@ each question and saying which packages change.
 
 ## 1. In-process typed families, not out-of-process dispatch
 
-Archie has no out-of-process extension mechanism today. The plugin engine
+Archie has no out-of-process extension mechanism. The plugin engine
 rule (`ARCHITECTURE.md#plugin-engine-rule-strict`, mechanically checked by
 `internal/plugin/architecture_test.go`) keeps every capability family
 in-process behind a narrow typed registrar; NATS RPC exists for
@@ -45,7 +45,7 @@ both wanting to see the same event under `WorkQueuePolicy` hit exactly the
 trap `CLAUDE.md` already documents: overlapping filter subjects on a
 work-queue stream mean the second consumer silently gets nothing. Reactions
 need fan-out, not claim-once, so the client needs retention made a `Config`
-field (defaulting to today's `WorkQueuePolicy` so `ARCHIE_TASKS` is
+field (defaulting to `WorkQueuePolicy` so `ARCHIE_TASKS` is
 unaffected), and a second stream (`ARCHIE_REACTIONS` or similar) configured
 under a fan-out-capable policy, alongside the existing task-distribution
 stream -- not instead of it.

@@ -1,6 +1,6 @@
 # task_logs pagination and bounded retrieval -- decision
 
-**Status:** Approved for vq92 implementation
+**Status:** Approved
 **Date:** 2026-08-26
 **Beads issue:** `archie-core-vq92`
 **Compounds with:** `archie-core-p1bl` (errors serialise as `{}`)
@@ -59,7 +59,7 @@ returned page within the same call).
 `Cursor` is a byte offset rather than an entry ID for two reasons.
 First, `TaskSink` writes JSONL through `slog.NewJSONHandler` directly --
 without routing through `FeedHandler` -- so the on-disk entries carry no
-`id` field today, and a per-task attempt monotonic counter would require
+`id` field and a per-task attempt monotonic counter would require
 either a sink-side change or a reader-side reconstruction that is
 brittle against rotation. Second, the byte offset uniquely identifies
 "the next unread position" in a sequential scan, which is exactly what

@@ -1,6 +1,6 @@
 # Dashboard port: what the agent delivers
 
-**Status:** Active working agreement
+**Status:** Approved
 **Date:** 2026-09-20
 **Beads:** `archie-core-tavn` (epic), `archie-core-ocfm` (navigation)
 **Reads with:** `docs/prds/vue-migration-checklist.md` (the item-by-item),

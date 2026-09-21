@@ -1,12 +1,12 @@
 # Embedded NATS execution -- decision
 
-**Status:** Implemented
+**Status:** Finalised
 
 **Date:** 2026-08-24
 
 **Beads epic:** `archie-core-q15y`
 
-This decision supersedes the 2026-08-22 position that embedded NATS was only a
+This decision supersedes the position that embedded NATS was only a
 distribution mechanism and could not be an agent-execution topology. That was
 true only because the embedded listener was unauthenticated loopback. It left a
 second production architecture in which `archied` ran autonomous workflows in

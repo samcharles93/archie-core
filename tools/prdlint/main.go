@@ -79,7 +79,7 @@ func lintDir(dir string) ([]Finding, error) {
 		if err != nil {
 			return nil, err
 		}
-		findings = append(findings, Lint(name, string(data))...)
+		findings = append(findings, LintDocument(name, string(data))...)
 	}
 	return findings, nil
 }
@@ -89,6 +89,12 @@ func lintDir(dir string) ([]Finding, error) {
 func remedies(findings []Finding) []string {
 	seen := map[string]bool{}
 	var out []string
+	for _, f := range findings {
+		if f.Rule == "status" && !seen["status"] {
+			seen["status"] = true
+			out = append(out, "  status: "+statusRemedy)
+		}
+	}
 	for _, r := range rules {
 		for _, f := range findings {
 			if f.Rule == r.name && !seen[r.name] {
