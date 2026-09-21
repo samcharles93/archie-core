@@ -86,28 +86,38 @@ func (e *Env) Compile(src string) (*Program, error) {
 }
 
 // referencedActionIDs walks the compiled AST and returns the sorted, de-
-// duplicated set of action ids an expression reads through `actions.<id>`.
-// `actions` is declared map(string,dyn), so CEL type-checking cannot reject
-// an unknown id; the playbook loader compares this set against the ids of
-// prior actions to reject unknown references at load (J1 in
-// docs/prds/playbook-expression-syntax.md). The map-index form
-// (`actions["notify"]`) is a runtime lookup, not a field selection, and is
-// intentionally not collected here.
+// duplicated set of action ids an expression reads from `actions`. Both
+// field-selection (`actions.notify`) and literal map-index
+// (`actions["notify"]`) forms are collected; `actions` is declared
+// map(string,dyn), so CEL type-checking cannot reject an unknown id, and the
+// playbook loader compares this set against the ids of prior actions to
+// reject unknown references at load (J1 in
+// docs/prds/playbook-expression-syntax.md). A non-literal index key
+// (`actions[key]`) is a runtime lookup whose id cannot be known at load.
 func referencedActionIDs(ast *cel.Ast) []string {
 	if ast == nil || ast.NativeRep() == nil {
 		return nil
 	}
 	seen := map[string]struct{}{}
 	visitor := celast.NewExprVisitor(func(e celast.Expr) {
-		if e.Kind() != celast.SelectKind {
-			return
+		switch e.Kind() {
+		case celast.SelectKind:
+			sel := e.AsSelect()
+			if isActionsIdent(sel.Operand()) {
+				seen[sel.FieldName()] = struct{}{}
+			}
+		case celast.CallKind:
+			call := e.AsCall()
+			if call.FunctionName() != "_[_]" || len(call.Args()) != 2 {
+				return
+			}
+			if !isActionsIdent(call.Args()[0]) || call.Args()[1].Kind() != celast.LiteralKind {
+				return
+			}
+			if id, ok := call.Args()[1].AsLiteral().Value().(string); ok {
+				seen[id] = struct{}{}
+			}
 		}
-		sel := e.AsSelect()
-		operand := sel.Operand()
-		if operand.Kind() != celast.IdentKind || operand.AsIdent() != "actions" {
-			return
-		}
-		seen[sel.FieldName()] = struct{}{}
 	})
 	celast.PreOrderVisit(ast.NativeRep().Expr(), visitor)
 	ids := make([]string, 0, len(seen))
@@ -118,6 +128,11 @@ func referencedActionIDs(ast *cel.Ast) []string {
 	return ids
 }
 
+// isActionsIdent reports whether e is the `actions` context-root identifier.
+func isActionsIdent(e celast.Expr) bool {
+	return e.Kind() == celast.IdentKind && e.AsIdent() == "actions"
+}
+
 // Program is a compiled, cost-limited playbook expression.
 type Program struct {
 	prg       cel.Program
@@ -125,8 +140,9 @@ type Program struct {
 }
 
 // ReferencedActionIDs returns the sorted, de-duplicated action ids the
-// expression reads through `actions.<id>`. It is empty when the expression
-// reads no prior-action result.
+// expression reads from `actions` (either `actions.<id>` or
+// `actions["<id>"]`). It is empty when the expression reads no prior-action
+// result.
 func (p *Program) ReferencedActionIDs() []string {
 	if p == nil {
 		return nil

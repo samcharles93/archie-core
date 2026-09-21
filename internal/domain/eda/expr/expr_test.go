@@ -110,6 +110,11 @@ func TestReferencedActionIDs(t *testing.T) {
 			src:  `has(actions.notify.result.delivered)`,
 			want: []string{"notify"},
 		},
+		{
+			name: "map index literal reference",
+			src:  `actions["notify"].result.delivered == true`,
+			want: []string{"notify"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

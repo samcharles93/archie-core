@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/eda/expr"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -480,27 +482,47 @@ func TestValidateActionIDs(t *testing.T) {
 }
 
 // TestLoadWhenReferencesUnknownActionIDFails: a when reading actions.<id>
-// with no prior action declaring that id is a load failure naming the
-// playbook path and the id -- never a runtime miss.
+// (or actions["<id>"]) with no prior action declaring that id is a load
+// failure naming the playbook path and the id -- never a runtime miss.
 func TestLoadWhenReferencesUnknownActionIDFails(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "pb.yaml", `
-trigger:
-  kind: bug
-actions:
-  - position: workflow
-    workflow: tdd
-    when: actions.notify.result.delivered == true
-`)
-	_, err := Load(dir)
-	if err == nil {
-		t.Fatal("Load(when referencing undeclared action id) = nil, want load failure")
+	for _, when := range []string{
+		`actions.notify.result.delivered == true`,
+		`actions["notify"].result.delivered == true`,
+	} {
+		t.Run(when, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+when+"\n")
+			_, err := Load(dir)
+			if err == nil {
+				t.Fatal("Load(when referencing undeclared action id) = nil, want load failure")
+			}
+			if !strings.Contains(err.Error(), "pb.yaml") {
+				t.Errorf("Load error = %q, want the playbook path named", err.Error())
+			}
+			if !strings.Contains(err.Error(), "notify") {
+				t.Errorf("Load error = %q, want the unknown id named", err.Error())
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "pb.yaml") {
-		t.Errorf("Load error = %q, want the playbook path named", err.Error())
+}
+
+// TestUnknownActionReferenceGeneralRule: the reference check compares against
+// the declared ids of earlier actions, so it already behaves correctly when
+// the one-action boundary later relaxes (the Load path can only exercise the
+// empty-prior set today).
+func TestUnknownActionReferenceGeneralRule(t *testing.T) {
+	prg, err := expr.NewEnv().Compile(`actions.notify.result.delivered == true`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
 	}
-	if !strings.Contains(err.Error(), "notify") {
-		t.Errorf("Load error = %q, want the unknown id named", err.Error())
+
+	// notify declared on the prior action: known.
+	if id, unknown := unknownActionReference([]rawAction{{ID: "notify"}}, 1, prg); unknown {
+		t.Fatalf("unknownActionReference(declared prior) = (%q, true), want known", id)
+	}
+	// A different prior id leaves notify unknown.
+	if id, unknown := unknownActionReference([]rawAction{{ID: "build"}}, 1, prg); !unknown || id != "notify" {
+		t.Fatalf("unknownActionReference(undeclared) = (%q, %v), want (notify, true)", id, unknown)
 	}
 }
 
