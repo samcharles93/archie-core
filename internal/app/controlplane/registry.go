@@ -14,9 +14,14 @@ import (
 )
 
 type Definition struct {
-	Kind      string
-	Title     string
-	Schema    string
+	Kind  string
+	Title string
+	// Document is a zero value of the resource's document type. The descriptor's
+	// JSON Schema is derived from it (see schemaJSON) rather than written out
+	// here, so the schema cannot drift from the document it describes. Nil means
+	// the definition names no document, which is why bareObjectSchema still
+	// exists as a fallback.
+	Document  any
 	ApplyMode string
 	Seed      func(config.Config) any
 	Validate  func([]byte) error
@@ -27,7 +32,7 @@ type Definition struct {
 }
 
 func (d Definition) Descriptor() *pb.ResourceDescriptor {
-	descriptor := &pb.ResourceDescriptor{Kind: d.Kind, Title: d.Title, SchemaJson: d.Schema, Commands: []string{"replace"}, ApplyMode: d.ApplyMode}
+	descriptor := &pb.ResourceDescriptor{Kind: d.Kind, Title: d.Title, SchemaJson: schemaJSON(d.Document), Commands: []string{"replace"}, ApplyMode: d.ApplyMode}
 	if d.Defaults != nil {
 		if defaults, err := json.Marshal(d.Defaults()); err == nil {
 			descriptor.DefaultsJson = string(defaults)

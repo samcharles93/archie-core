@@ -44,7 +44,7 @@ func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings w
 
 func workflowDefinition() Definition {
 	return Definition{
-		Kind: WorkflowExecutionSettingsKind, Title: "Workflow execution settings", ApplyMode: "live", Schema: objectSchema,
+		Kind: WorkflowExecutionSettingsKind, Title: "Workflow execution settings", ApplyMode: "live", Document: executionSettingsDocument{},
 		Seed: func(cfg config.Config) any {
 			return executionSettingsDocument{cfg.Budgets.MaxSteps, int64(time.Duration(cfg.Budgets.WallClock) / time.Second), cfg.Budgets.GateMaxFailures}
 		},

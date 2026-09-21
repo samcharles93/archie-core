@@ -42,16 +42,16 @@ type pluginSettings struct {
 
 func operationalDefinitions() []Definition {
 	return []Definition{
-		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "restart-required", Schema: arraySchema, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
-		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
-		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
+		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "restart-required", Document: []config.Repo{}, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
+		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Document: channelSettings{}, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
+		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "restart-required", Document: schedulingPolicy{}, Seed: func(cfg config.Config) any {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
-		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedTools, Validate: validateTools},
-		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
+		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
+		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
-		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any { return cfg.Containers }, Validate: validateContainers},
+		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Document: config.ContainerConfig{}, Seed: func(cfg config.Config) any { return cfg.Containers }, Validate: validateContainers},
 	}
 }
 

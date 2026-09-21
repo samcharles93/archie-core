@@ -13,7 +13,7 @@ func personaDefinition() Definition {
 	return Definition{
 		Kind:      PersonasKind,
 		Title:     "Personas",
-		Schema:    objectSchema,
+		Document:  agent.PersonaCollection{},
 		ApplyMode: "live",
 		Seed:      func(config.Config) any { return agent.ShippedPersonas() },
 		Validate: func(input []byte) error {

@@ -5,11 +5,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
-const (
-	objectSchema = `{"type":"object"}`
-	arraySchema  = `{"type":"array"}`
-)
-
+// Schemas are not declared here: each Definition names its document type, and
+// Definition.Descriptor derives the JSON Schema from it (internal/app/controlplane/schema.go).
 func builtinDefinitions(steps workflow.StepRegistry) []Definition {
 	definitions := []Definition{workflowDefinition(), workflowDefinitionsDefinition(steps), personaDefinition(), scheduleDefinition()}
 	definitions = append(definitions, modelDefinitions()...)

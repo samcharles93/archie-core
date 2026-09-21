@@ -31,7 +31,7 @@ func workflowDefinitionsDefinition(steps workflow.StepRegistry) Definition {
 	return Definition{
 		Kind:      WorkflowDefinitionsKind,
 		Title:     "Workflow definitions",
-		Schema:    objectSchema,
+		Document:  workflow.WorkflowDefinitionCollection{},
 		ApplyMode: "live",
 		Seed: func(config.Config) any {
 			return workflow.ShippedDefinitions()

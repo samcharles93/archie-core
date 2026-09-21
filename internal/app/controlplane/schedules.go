@@ -17,7 +17,7 @@ func scheduleDefinition() Definition {
 	return Definition{
 		Kind:      SchedulesKind,
 		Title:     "Schedules",
-		Schema:    arraySchema,
+		Document:  []cronstore.JobSpec{},
 		ApplyMode: "live",
 		Seed:      func(config.Config) any { return []cronstore.JobSpec{} },
 		Validate: func(input []byte) error {
