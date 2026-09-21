@@ -65,7 +65,9 @@ func databaseOwnedResources() map[string]any {
 }
 
 // fileConfig is what the loader produces from config.toml alone: the layer a
-// SIGHUP reload re-resolves, holding none of the database's values.
+// SIGHUP reload re-resolves, holding none of the database's values. It is a
+// config the daemon would run, so it passes configuration.Validate -- the live
+// apply path runs that same check over the snapshot it is about to publish.
 func fileConfig() config.Config {
 	return config.Config{
 		BotUser:      "widget",
@@ -79,6 +81,7 @@ func fileConfig() config.Config {
 		PluginDir:    "/file/plugins",
 		Containers:   config.ContainerConfig{Image: "archie:from-file", PullPolicy: "missing"},
 		Budgets:      config.Budgets{MaxSteps: 1, WallClock: config.Duration(time.Minute)},
+		Dispatch:     config.Dispatch{Trigger: "assignee"},
 	}
 }
 
@@ -102,9 +105,11 @@ func TestReloadConfigKeepsDatabaseOwnedSettings(t *testing.T) {
 	if err := b.loadRuntimeConfig(t.Context()); err != nil {
 		t.Fatalf("loadRuntimeConfig: %v", err)
 	}
-	b.applyWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{
+	if err := b.applyWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{
 		MaxModelToolSteps: 99, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 5,
-	}, 4)
+	}, 4); err != nil {
+		t.Fatalf("applyWorkflowExecutionSettings: %v", err)
+	}
 
 	if err := b.reloadConfig(t.Context(), &configuration.Document{Config: fileConfig()}); err != nil {
 		t.Fatalf("reloadConfig: %v", err)
