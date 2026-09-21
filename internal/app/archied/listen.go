@@ -12,8 +12,8 @@ import (
 // default alone, with no config key. The port a service binds and the port its
 // clients dial were therefore two separate facts -- the flag default (or a
 // hand-passed -listen) and [services.<name>].target -- with nothing keeping
-// them in step. On a host that already owned the default (cockpit owns 9090)
-// retargeting meant hand-writing an overlay and passing a matching flag, and
+// them in step. On a host whose default port was already taken, retargeting
+// meant hand-writing an overlay and passing a matching flag, and
 // the failure looked like a code fault: the listener died with "address already
 // in use" while every client reported a gRPC handshake error against whatever
 // else held the port.

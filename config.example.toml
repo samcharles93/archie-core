@@ -348,8 +348,8 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # listen = "127.0.0.1:9090"         # The address archie-state-store BINDS. Read only by that
 #                                     # process; every client ignores it. Defaults to the target
 #                                     # above, so a default deployment's client and server cannot
-#                                     # drift onto different ports. Move it when the host already
-#                                     # owns 9090 (cockpit binds it by default).
+#                                     # drift onto different ports. Move it when a port is already
+#                                     # taken on the host.
 # target_token = "..."               # bearer token for a NON-loopback target. A loopback target
 #                                       # (127.0.0.1/::1/localhost) needs no token. A non-loopback
 #                                       # target without a token fails closed (docs/prds/state-store-contract.md

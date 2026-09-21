@@ -14,7 +14,7 @@ listen = "127.0.0.1:8484"
 # `task dev` runs archie-state-store via dev:state-store, which passes no
 # -listen, so the listen below is the port the store binds. It must agree with
 # the target: these two lines are the only place that pair is stated. Move them
-# when the host already owns 9090 (cockpit binds it by default) -- before the
+# when a port is already taken on the host -- before the
 # listen key existed the collision could only be worked around by hand-writing
 # a matching target and passing -listen, and it read as a code fault.
 # (docs/prds/state-store-contract.md §12 step 7).

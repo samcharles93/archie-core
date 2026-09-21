@@ -34,8 +34,8 @@ func TestLoadGatewayServiceTarget(t *testing.T) {
 }
 
 // TestLoadServiceListens: both gRPC services this repository runs bind an
-// address the configuration names. They used to be flag-only, so a host that
-// already owned the default port (cockpit owns 9090) could only be retargeted
+// address the configuration names. They used to be flag-only, so a host whose
+// default port was already taken could only be retargeted
 // by passing -listen and hand-writing an overlay whose target matched -- two
 // files to keep in step, and nothing to keep them there.
 func TestLoadServiceListens(t *testing.T) {

@@ -274,7 +274,7 @@ tasks:
         * air              rebuilds and restarts archied on Go changes
         * archie-gateway   serves ChatContract on 127.0.0.1:8585 (archied
                            and archie-ui dial it; neither embeds a gateway)
-        * archie-state-store  owns archie.db on 127.0.0.1:9090, loopback,
+        * archie-state-store  owns archie.db on 127.0.0.1:9091, loopback,
                            no token (deployments/dev.toml); archied,
                            archie-gateway and archie-ui dial it -- none owns
                            the DB in-process
@@ -288,8 +288,8 @@ tasks:
                            on :8484
 
       The gRPC ports come from [services.state].listen and [services.gateway].listen in
-      deployments/dev.toml, each paired with the target that dials it. Move them there
-      when the host already owns one: cockpit binds 9090 by default.
+      deployments/dev.toml, each paired with the target that dials it. Move a pair there
+      together when a port is already taken on the host.
 
       Open http://localhost:5173 -- not :8484. The Vite server is the one with
       hot reload; :8484 serves the last built dist/ and will look stale.
@@ -318,7 +318,7 @@ tasks:
     # requires (openStateStoreAdapter fails closed on an empty target).
     # Without it `task dev` leaves the gateway dialling whatever the
     # developer's installed config names, or unable to start at all, while
-    # archied, archie-ui and the state store all dial 127.0.0.1:9090.
+    # archied, archie-ui and the state store all dial 127.0.0.1:9091.
     cmds:
       - go run ./cmd/archie-gateway -config-overlay deployments/dev.toml
 

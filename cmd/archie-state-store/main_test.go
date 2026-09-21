@@ -322,8 +322,8 @@ func capture(source, body string) store.CapturedEvent {
 // It also takes its listen address from [services.state].listen rather than
 // -listen, so the startup path every deployment uses is covered by the process
 // that exercises the most: before that key existed the address came from a flag
-// default with no config key, so a host that already owned the port (cockpit
-// owns 9090 by default) could only be retargeted by passing -listen and
+// default with no config key, so a host whose port was already taken could
+// only be retargeted by passing -listen and
 // hand-writing an overlay whose target matched -- and the failure read as a
 // code fault, "address already in use" in the store and a gRPC handshake error
 // in every client.
