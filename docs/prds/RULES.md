@@ -26,4 +26,7 @@ These rules apply to every file in `docs/prds/`.
   findings; do not copy their prose.
 - Before requesting approval, review every sentence for complexity, repetition,
   and unsupported scope.
-- Mark a draft as unapproved until the maintainer explicitly approves it.
+- Every PRD carries one of three statuses. `Draft` until the maintainer
+  explicitly approves it, `Approved` once they have and while the work is being
+  built, `Finalised` when the work is complete. A finalised PRD does not change;
+  supersede it with a new one instead.

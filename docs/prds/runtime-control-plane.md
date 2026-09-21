@@ -1,6 +1,6 @@
 # Runtime control plane
 
-**Status:** Draft — not approved  
+**Status:** Approved  
 **Date:** 2026-09-20  
 **Tracking:** `archie-core-j28m`, `archie-core-1786637498420-327-bacadaae`
 
