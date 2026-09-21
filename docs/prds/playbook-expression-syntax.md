@@ -3,7 +3,10 @@
 **Status:** Approved
 **Date:** 2026-09-03
 **Parent:** `docs/prds/eda-playbook-engine.md`, epic `archie-core-t2db`
-**Beads issue:** `archie-core-t2db.14`
+**Beads issue:** `archie-core-t2db.14` (expression environment).
+Unbuilt decisions: `archie-core-t2db.25` (J1 action ids),
+`archie-core-t2db.26` (J2 args as CEL),
+`archie-core-t2db.27` (Result schemas declared to CEL).
 
 **Decision:** CEL via `cel.dev/cel-go` (v0.32.0), pinned. One expression
 mechanism covers both an action's `when` condition and its `args` values.
