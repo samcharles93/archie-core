@@ -1,5 +1,33 @@
 # archie-agent changelog
 
+## [1.31.0] - 2026-09-22
+
+The sandboxed runtime links the same shared packages as archied, so this
+release carries the control-plane and workflow changes alongside it:
+
+- Runtime administration over the State Store's gRPC server, resource history,
+  and control-plane apply status on the store contract.
+- The shared step vocabulary, owned by a family manager registered at each
+  composition root, and `gate.diff-rules` in place of `.archie/gate.go`
+  (fails closed on a change it never read).
+- The workflow pin crosses the wire.
+
+Runtime-specific changes:
+
+- `refactor(plugin)`: the unused `Registry` type is deleted.
+- `yaegiutil` refuses incomplete Yaegi interface wrappers at load rather than
+  running them.
+- The runtime config overlay is deleted.
+- The state store dial installs client keepalive, and the server policy accepts
+  the dialer's pings.
+- The MCP client supports per-server `parallel_tool_calls`.
+- A late max-uptime callback no longer resurrects teardown state.
+- A webhook route path no longer becomes a sender identity.
+
+Note: the `archie-agent` image is rebuilt by this tag through CI
+(`.github/workflows/deploy.yml`); a gateway-only release would not have rebuilt
+it. `docker compose pull agent` is required to pick it up.
+
 ## [1.30.0] - 2026-09-20
 
 - The sandboxed runtime picks up line-anchored review comments: a finding is
