@@ -412,7 +412,7 @@ func (g *Gateway) resumeHandler(client messaging.ChatContract) bot.HandlerFunc {
 		if !ok {
 			return
 		}
-		reply, err := client.Route(ctx, messaging.Inbound{Message: messaging.Message{
+		reply, err := client.Route(ctx, messaging.Inbound{Platform: "telegram", Message: messaging.Message{
 			ConversationID: conversationID(msg),
 			Sender:         msg.From.Username,
 			Role:           messaging.RoleUser,
@@ -434,7 +434,7 @@ func (g *Gateway) routeCmdHandler(client messaging.ChatContract, cmd string) bot
 		if !ok {
 			return
 		}
-		reply, err := client.Route(ctx, messaging.Inbound{Message: messaging.Message{
+		reply, err := client.Route(ctx, messaging.Inbound{Platform: "telegram", Message: messaging.Message{
 			ConversationID: conversationID(msg),
 			Sender:         msg.From.Username,
 			Role:           messaging.RoleUser,
@@ -565,7 +565,7 @@ func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models
 // /stop meant to cancel it, which would sit unread until the turn it was
 // aimed at had already finished.
 func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, client messaging.ChatContract) {
-	gm := messaging.Inbound{Message: messaging.Message{
+	gm := messaging.Inbound{Platform: "telegram", Message: messaging.Message{
 		// Telegram's message ID makes persistence idempotent: the store
 		// derives a canonical ID from it, so a redelivered update is a
 		// no-op rather than appending a duplicate or overwriting the

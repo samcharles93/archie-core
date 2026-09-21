@@ -20,11 +20,11 @@ func newMemoryTestEngine(t *testing.T) *infraMemory.BuiltinEngine {
 	return infraMemory.NewBuiltinEngine(t.TempDir(), 0)
 }
 
-func telegramIdentity(msg messaging.Message) (domainmemory.IdentityID, bool) {
-	if msg.SenderID == "" {
+func telegramIdentity(in Inbound) (domainmemory.IdentityID, bool) {
+	if in.Message.SenderID == "" {
 		return "", false
 	}
-	return domainmemory.IdentityID(msg.SenderID), true
+	return domainmemory.IdentityID(in.Message.SenderID), true
 }
 
 func chatMsg(sourceID, channelID, senderID, text string) Inbound {
@@ -38,7 +38,7 @@ func chatMsg(sourceID, channelID, senderID, text string) Inbound {
 	}}
 }
 
-func newMemoryTestRunner(t *testing.T, engine MemoryStore, userIdentity func(messaging.Message) (domainmemory.IdentityID, bool), botUser string) (*TurnRunner, *turnTestPreparedModel) {
+func newMemoryTestRunner(t *testing.T, engine MemoryStore, userIdentity func(Inbound) (domainmemory.IdentityID, bool), botUser string) (*TurnRunner, *turnTestPreparedModel) {
 	t.Helper()
 	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")

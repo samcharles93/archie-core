@@ -117,13 +117,16 @@ func TestWireValuesPreserveHistoryAndMedia(t *testing.T) {
 		t.Fatalf("event round trip: %+v", got)
 	}
 	// Transport-only inbound context rides alongside the record and must
-	// survive the hop: Page reaches the system prompt, and BudgetKey is what
-	// the Gateway charges the message against when the channel has no
-	// per-person SenderID to charge (a webhook route).
+	// survive the hop: Page reaches the system prompt, BudgetKey is what the
+	// Gateway charges the message against when the channel has no per-person
+	// SenderID to charge (a webhook route), and Platform is how the Gateway
+	// learns which channel it is serving -- one Router serves all of them
+	// (archie-core-c1qx).
 	in := gateway.Inbound{
 		Message:   messaging.Message{ConversationID: messaging.ConversationID{ChannelID: "/hook"}, Role: messaging.RoleUser, Text: "hi"},
 		Page:      "/tasks",
 		BudgetKey: "/hook",
+		Platform:  "webhook",
 	}
 	if got := inboundValue(inboundProto(in)); !reflect.DeepEqual(got, in) {
 		t.Fatalf("inbound round trip = %+v, want %+v", got, in)

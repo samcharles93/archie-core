@@ -258,6 +258,9 @@ func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (mess
 			Text:           req.Text,
 		},
 		Page: req.Page,
+		// The dashboard names the channel it carries; see the platform field's
+		// note in internal/domain/messaging/inbound.go.
+		Platform: "web",
 	}, true
 }
 

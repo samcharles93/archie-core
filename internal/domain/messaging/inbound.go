@@ -35,6 +35,17 @@ type Inbound struct {
 	// rate limited, which is correct for a source with no stable key of
 	// its own (the dashboard).
 	BudgetKey string
+	// Platform is the channel that carried this message ("telegram",
+	// "email", "webhook", "web"), named by the frontend that owns that
+	// channel. It is how the Gateway learns which channel it is serving:
+	// one Router serves all of them, so its own name is "web" even for a
+	// Telegram turn, which made SessionSource.Platform -- the first
+	// component of the session natural key -- a constant, and left the
+	// per-user identity policy unreachable with a real channel name
+	// (archie-core-c1qx). Transport-only and never persisted: the session
+	// record keeps the platform. Empty means the sender did not name its
+	// channel, and the Gateway falls back to its own name.
+	Platform string
 }
 
 // SpawnRequest is a chat-originated task creation request. Repo and

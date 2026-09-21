@@ -110,12 +110,17 @@ type TurnRunnerConfig struct {
 	// same as a subject with no writable scope: no tools registered).
 	MemoryWriter MemoryWriteStore
 	// UserIdentity resolves the initiating user's identity for one inbound
-	// message, per channel. False (or a nil UserIdentity) means the channel
-	// carries no per-person identity -- the dashboard's one bearer token, or a
-	// webhook's route path, which must never be treated as a person -- and
-	// the turn's memory Subject gets no UserID, so its read is agent and
-	// global scope only (docs/prds/memory-engine-unification.md §3, §4).
-	UserIdentity func(msg messaging.Message) (memory.IdentityID, bool)
+	// message, per platform. It reads the platform off the inbound rather than
+	// closing over one, because a single Router serves every channel: a resolver
+	// bound to a channel name received "web" for a Telegram turn, which left
+	// Subject.UserID always empty in production (archie-core-c1qx).
+	//
+	// False (or a nil UserIdentity) means the platform carries no per-person
+	// identity -- the dashboard's one bearer token, or a webhook route path,
+	// which must never be treated as a person -- and the turn's memory Subject
+	// gets no UserID, so its read is agent and global scope only
+	// (docs/prds/memory-engine-unification.md §3, §4).
+	UserIdentity func(in Inbound) (memory.IdentityID, bool)
 }
 
 // TurnRunner owns one chat turn from session resolution through model
@@ -304,10 +309,10 @@ type preparedTurn struct {
 // runs the session-level compression trigger, since that needs the same
 // model-derived budget the view is built against.
 func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbound, history []messaging.Message) (preparedTurn, error) {
-	subject := r.resolveSubject(in.Message)
+	subject := r.resolveSubject(in)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
-		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, in.Message)...,
+		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Router.sessionPlatform(in), in.Message)...,
 	)
 	extraTools = append(extraTools, ReviewTools(r.PRReviewer, r.TaskIdentity)...)
 	// The dashboard tools (page_index, dashboard_navigate) belong to the web

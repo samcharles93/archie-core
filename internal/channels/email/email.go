@@ -201,13 +201,18 @@ func (g *Gateway) processMessage(ctx context.Context, from, to, raw string) {
 	// following Content-Type or headers.
 	text := extractBody(raw)
 
-	msg := messaging.Inbound{Message: messaging.Message{
-		ConversationID: messaging.ConversationID{ChannelID: to},
-		Sender:         from,
-		SenderID:       from,
-		Role:           messaging.RoleUser,
-		Text:           text,
-	}}
+	msg := messaging.Inbound{
+		Message: messaging.Message{
+			ConversationID: messaging.ConversationID{ChannelID: to},
+			Sender:         from,
+			SenderID:       from,
+			Role:           messaging.RoleUser,
+			Text:           text,
+		},
+		// The frontend names the channel it carries, which is how the Gateway
+		// learns it is serving email rather than whatever it calls itself.
+		Platform: "email",
+	}
 	reply, err := client.Route(ctx, msg)
 	if err != nil {
 		g.log.Error("email route", "err", err, "from", from)

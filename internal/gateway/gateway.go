@@ -282,7 +282,7 @@ func (r *Router) route(ctx context.Context, in Inbound) (string, error) {
 	text := strings.TrimSpace(in.Message.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
 
-	if reply, handled, err := r.dispatchLocal(ctx, in.Message, text, cmd); handled {
+	if reply, handled, err := r.dispatchLocal(ctx, in.Message, r.sessionPlatform(in), text, cmd); handled {
 		return reply, err
 	}
 
@@ -301,7 +301,7 @@ func (r *Router) route(ctx context.Context, in Inbound) (string, error) {
 
 // dispatchLocal handles recognized local commands. Returns (reply,
 // true) when the command was recognized and handled.
-func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, text, cmd string) (string, bool, error) {
+func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, platform, text, cmd string) (string, bool, error) {
 	rest := restAfter(text, cmd, r.gatewayName)
 
 	switch cmd {
@@ -336,13 +336,13 @@ func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, text,
 		reply, err := r.handleProfile()
 		return reply, true, err
 	}
-	return r.dispatchLocalMisc(ctx, msg, cmd, rest)
+	return r.dispatchLocalMisc(ctx, msg, platform, cmd, rest)
 }
 
 // dispatchLocalMisc handles the remaining recognized local commands not
 // covered by dispatchLocal's first switch. Split out to keep cyclomatic
 // complexity down.
-func (r *Router) dispatchLocalMisc(ctx context.Context, msg messaging.Message, cmd, rest string) (string, bool, error) {
+func (r *Router) dispatchLocalMisc(ctx context.Context, msg messaging.Message, platform, cmd, rest string) (string, bool, error) {
 	switch cmd {
 	case "/sessions":
 		reply, err := r.handleSessions(ctx, msg)
@@ -365,7 +365,7 @@ func (r *Router) dispatchLocalMisc(ctx context.Context, msg messaging.Message, c
 	case "/restart":
 		return r.handleRestartAdapter(ctx), true, nil
 	}
-	return r.dispatchSessionCommand(ctx, msg, cmd, rest)
+	return r.dispatchSessionCommand(ctx, msg, platform, cmd, rest)
 }
 
 // handleVersion reports the configured build version.
@@ -403,13 +403,13 @@ func (r *Router) handleRestartAdapter(ctx context.Context) string {
 // (/new, /topic, /retry, /undo, /title, /branch, /compress and their
 // aliases). Split out from dispatchLocal to keep cyclomatic complexity
 // down.
-func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Message, cmd, rest string) (string, bool, error) {
+func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Message, platform, cmd, rest string) (string, bool, error) {
 	switch cmd {
 	case "/new", "/reset":
-		reply, err := r.handleNew(ctx, msg, rest)
+		reply, err := r.handleNew(ctx, msg, platform, rest)
 		return reply, true, err
 	case "/topic":
-		reply, err := r.handleTopic(ctx, msg, rest)
+		reply, err := r.handleTopic(ctx, msg, platform, rest)
 		return reply, true, err
 	case "/retry":
 		reply, err := r.handleRetry(ctx, msg)
@@ -421,7 +421,7 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Messa
 		reply, err := r.handleTitle(ctx, msg, rest)
 		return reply, true, err
 	case "/branch", "/fork":
-		reply, err := r.handleBranch(ctx, msg, rest)
+		reply, err := r.handleBranch(ctx, msg, platform, rest)
 		return reply, true, err
 	case "/compress", "/compact":
 		reply, err := r.handleCompress(ctx, msg, rest)

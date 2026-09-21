@@ -264,6 +264,19 @@ func sessionTrackerKey(channelID, threadID string) string {
 	return channelID + ":" + threadID
 }
 
+// sessionPlatform is the platform a session for this inbound belongs to: the
+// channel that carried the message when the frontend named itself, else the
+// Gateway's own name. Naming it is what makes SessionSource.Platform truthful --
+// one Router serves every channel, so its own name is "web" even for a Telegram
+// turn, which made the platform a constant and left the per-user identity policy
+// unreachable with a real channel name (archie-core-c1qx).
+func (r *Router) sessionPlatform(in Inbound) string {
+	if in.Platform != "" {
+		return in.Platform
+	}
+	return r.gatewayName
+}
+
 // ResolveSessionKey resolves or creates a session for a message and
 // returns the session ID. This is the entry point the LLM responder
 // in main.go should call instead of its inline sessionKey helper.
@@ -272,7 +285,7 @@ func (r *Router) ResolveSessionKey(ctx context.Context, in Inbound) (string, err
 	if r.sessionTracker == nil {
 		return sessionKeyFromFields(conv.ChannelID, conv.ThreadID), nil
 	}
-	return r.sessionTracker.resolve(ctx, r.gatewayName, r.Identity, conv.ChannelID, conv.ThreadID)
+	return r.sessionTracker.resolve(ctx, r.sessionPlatform(in), r.Identity, conv.ChannelID, conv.ThreadID)
 }
 
 // ── Router session command handlers ────────────────────────────────────────
@@ -284,7 +297,7 @@ func (r *Router) handleStart() (string, error) {
 
 // handleNew creates a fresh session for the current channel+thread,
 // optionally setting a title.
-func (r *Router) handleNew(ctx context.Context, msg messaging.Message, rest string) (string, error) {
+func (r *Router) handleNew(ctx context.Context, msg messaging.Message, platform, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
@@ -296,7 +309,7 @@ func (r *Router) handleNew(ctx context.Context, msg messaging.Message, rest stri
 	sc := SessionContext{
 		SessionID: id,
 		Source: SessionSource{
-			Platform:  r.gatewayName,
+			Platform:  platform,
 			BotUser:   r.Identity,
 			ChannelID: msg.ConversationID.ChannelID,
 			ThreadID:  msg.ConversationID.ThreadID,
@@ -319,7 +332,7 @@ func (r *Router) handleNew(ctx context.Context, msg messaging.Message, rest stri
 // handleTopic manages topic/session switching for threaded conversations.
 // "off" disables topic routing (reverts to flat), "help" shows info,
 // and a session-id switches to that session.
-func (r *Router) handleTopic(ctx context.Context, msg messaging.Message, rest string) (string, error) {
+func (r *Router) handleTopic(ctx context.Context, msg messaging.Message, platform, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
@@ -331,9 +344,9 @@ func (r *Router) handleTopic(ctx context.Context, msg messaging.Message, rest st
 	case "help":
 		return topicHelpText(), nil
 	case "":
-		return r.topicListSessions(ctx, msg)
+		return r.topicListSessions(ctx, msg, platform)
 	default:
-		return r.topicSwitchSession(ctx, msg, rest)
+		return r.topicSwitchSession(ctx, msg, platform, rest)
 	}
 }
 
@@ -344,9 +357,9 @@ func topicHelpText() string {
 		"  <session-id> — switch to a session by the ID shown in /topic"
 }
 
-func (r *Router) topicListSessions(ctx context.Context, msg messaging.Message) (string, error) {
+func (r *Router) topicListSessions(ctx context.Context, msg messaging.Message, platform string) (string, error) {
 	active := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
-	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, r.gatewayName, msg.ConversationID.ChannelID)
+	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, platform, msg.ConversationID.ChannelID)
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
@@ -367,8 +380,8 @@ func (r *Router) topicListSessions(ctx context.Context, msg messaging.Message) (
 	return b.String(), nil
 }
 
-func (r *Router) topicSwitchSession(ctx context.Context, msg messaging.Message, rest string) (string, error) {
-	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, r.gatewayName, msg.ConversationID.ChannelID)
+func (r *Router) topicSwitchSession(ctx context.Context, msg messaging.Message, platform, rest string) (string, error) {
+	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, platform, msg.ConversationID.ChannelID)
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
@@ -507,7 +520,7 @@ func (r *Router) handleTitle(ctx context.Context, msg messaging.Message, rest st
 
 // handleBranch creates a new child session that inherits the current
 // session's history. The new session becomes the active session.
-func (r *Router) handleBranch(ctx context.Context, msg messaging.Message, rest string) (string, error) {
+func (r *Router) handleBranch(ctx context.Context, msg messaging.Message, platform, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
@@ -545,7 +558,7 @@ func (r *Router) handleBranch(ctx context.Context, msg messaging.Message, rest s
 	sc := SessionContext{
 		SessionID: id,
 		Source: SessionSource{
-			Platform:  r.gatewayName,
+			Platform:  platform,
 			BotUser:   r.Identity,
 			ChannelID: channelID,
 			ThreadID:  threadID,

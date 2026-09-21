@@ -196,7 +196,7 @@ func newChatTurnRunner(
 		Repos:        chatRepoEnv(cfg, s.DefaultChatIdentity),
 		MemoryEngine: s.MemoryEngine,
 		MemoryWriter: s.MemoryWriter,
-		UserIdentity: userIdentityResolver(channel),
+		UserIdentity: userIdentityResolver(),
 		Log:          s.Log,
 	})
 	if err := runner.Recover(ctx); err != nil && s.Log != nil {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // memoryRecordsPerScope bounds how many records of each scope the read path
@@ -113,16 +112,19 @@ func renderMemoryRecords(records []domainmemory.Record, log *slog.Logger) string
 
 // resolveSubject builds a turn's memory Subject from the runner's agent
 // identity (BotUser, the closest thing to an Agent id the tree records today
-// -- see sessioncurator.Adapter) and the channel's UserIdentity resolver. A
+// -- see sessioncurator.Adapter) and the session's UserIdentity resolver. A
 // nil resolver, or one that returns false, yields UserID "" -- Subject.Scopes
 // then names only agent and global, never a wider fallback
 // (docs/prds/memory-engine-unification.md §3, "fail closed").
-func (r *TurnRunner) resolveSubject(msg messaging.Message) domainmemory.Subject {
+//
+// It takes the whole inbound rather than its message because the resolver needs
+// the platform the message arrived on (archie-core-c1qx).
+func (r *TurnRunner) resolveSubject(in Inbound) domainmemory.Subject {
 	subject := domainmemory.Subject{AgentID: domainmemory.AgentID(r.BotUser)}
 	if r.UserIdentity == nil {
 		return subject
 	}
-	if id, ok := r.UserIdentity(msg); ok {
+	if id, ok := r.UserIdentity(in); ok {
 		subject.UserID = id
 	}
 	return subject

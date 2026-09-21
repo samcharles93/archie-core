@@ -186,6 +186,7 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			// limiting, so it travels in the transport-only BudgetKey
 			// rather than borrowing the identity field.
 			BudgetKey: route.Path,
+			Platform:  "webhook",
 		}
 		reply, err := client.Route(r.Context(), msg)
 		if err != nil {

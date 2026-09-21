@@ -55,12 +55,13 @@ func storedValue(v *pb.Message) messaging.Message {
 }
 
 // inboundProto renders a channel message and its transport context in wire
-// shape. Page and BudgetKey ride along; the record's role does not, for the
-// reason storedProto gives.
+// shape. Page, BudgetKey and Platform ride along; the record's role does not, for
+// the reason storedProto gives.
 func inboundProto(v messaging.Inbound) *pb.Message {
 	m := storedProto(v.Message)
 	m.Page = v.Page
 	m.BudgetKey = v.BudgetKey
+	m.Platform = v.Platform
 	return m
 }
 
@@ -74,7 +75,7 @@ func inboundValue(v *pb.Message) messaging.Inbound {
 	}
 	msg := storedValue(v)
 	msg.Role = messaging.RoleUser
-	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey}
+	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey, Platform: v.Platform}
 }
 
 func toolProto(v messaging.ToolCallEvent) *pb.ToolCall {

@@ -154,7 +154,14 @@ type Message struct {
 	// -- a webhook's configured route path. Transport-only: a channel frontend
 	// sets it on inbound and it is never persisted, exactly like page. Empty
 	// means the message is not rate limited.
-	BudgetKey     string `protobuf:"bytes,9,opt,name=budget_key,json=budgetKey,proto3" json:"budget_key,omitempty"`
+	BudgetKey string `protobuf:"bytes,9,opt,name=budget_key,json=budgetKey,proto3" json:"budget_key,omitempty"`
+	// platform is the channel that carried this message ("telegram", "email",
+	// "webhook", "web"), as the frontend that owns that channel knows it. It is
+	// how the Gateway learns which channel it is serving: one Router serves every
+	// channel, so its own name is "web" even for a Telegram turn, which made
+	// Source.Platform -- the first component of the session natural key -- a
+	// constant. Transport-only, never persisted: the session record keeps it.
+	Platform      string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +255,13 @@ func (x *Message) GetAt() *timestamppb.Timestamp {
 func (x *Message) GetBudgetKey() string {
 	if x != nil {
 		return x.BudgetKey
+	}
+	return ""
+}
+
+func (x *Message) GetPlatform() string {
+	if x != nil {
+		return x.Platform
 	}
 	return ""
 }
@@ -2772,7 +2786,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12@\n" +
 	"\x0elast_active_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\x88\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xa4\x02\n" +
 	"\aMessage\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1b\n" +
@@ -2785,7 +2799,9 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x04page\x18\a \x01(\tR\x04page\x12*\n" +
 	"\x02at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x1d\n" +
 	"\n" +
-	"budget_key\x18\t \x01(\tR\tbudgetKey\"|\n" +
+	"budget_key\x18\t \x01(\tR\tbudgetKey\x12\x1a\n" +
+	"\bplatform\x18\n" +
+	" \x01(\tR\bplatform\"|\n" +
 	"\bToolCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1e\n" +

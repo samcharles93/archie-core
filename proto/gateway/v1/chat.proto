@@ -56,6 +56,13 @@ message Message {
   // sets it on inbound and it is never persisted, exactly like page. Empty
   // means the message is not rate limited.
   string budget_key = 9;
+  // platform is the channel that carried this message ("telegram", "email",
+  // "webhook", "web"), as the frontend that owns that channel knows it. It is
+  // how the Gateway learns which channel it is serving: one Router serves every
+  // channel, so its own name is "web" even for a Telegram turn, which made
+  // Source.Platform -- the first component of the session natural key -- a
+  // constant. Transport-only, never persisted: the session record keeps it.
+  string platform = 10;
 }
 message ToolCall {
   string id = 1;
