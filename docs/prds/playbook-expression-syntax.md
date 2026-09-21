@@ -104,16 +104,17 @@ time:
 | Name | Type | Source |
 |---|---|---|
 | `event` | `map(string, dyn)` | The triggering event's decoded payload (webhook body / forge issue / schedule tick). Field access via `event.<field>`, map access via `event["field"]`, presence via `has(event.<field>)`. |
-| `actions` | `map(string, dyn)` | Previous actions' results, keyed by the action's `id` as declared in the playbook (`actions.<id>.result.<field>`), so a later action reads an earlier one's `Result` map regardless of position. The current action and later actions are not present. |
+| `actions` | per-playbook object type | Previous actions' results, one field per declared action `id` (`actions.<id>`), each field typed `{ result: <KindResult> }` so a later action reads an earlier one's `Result` struct (`actions.<id>.result.<field>`) with field-level checking. The current action and later actions are not present. |
 
 Expressions may also read literal-only state (numbers, strings,
 booleans) directly. CEL's `has()` macro covers the missing-key case
 (`has(event.labels)` -> bool), which replaces any bespoke `has`/
 `contains` operator.
 
-`actions.<id>.result` is the `map[string]any` `Module.Invoke` already
-returns (`archie-core-t2db.13`), so no result-shape change is needed for data flow;
-channel/forge kinds' results are declared to the same shape.
+`actions.<id>.result` is the kind's hand-written `Result` struct:
+`ModuleRegistry.DecodeResult` converts `Module.Invoke`'s flat
+`map[string]any` (`archie-core-t2db.13`) back into that struct before a later
+expression reads it, so the checker and the run read the same typed value.
 
 Judgement call J1: `action` id is a required field on every action
 that later actions reference; ids are validated at load (unique,
@@ -133,7 +134,8 @@ same way, at playbook load:
   or type error is a reported load failure (the playbook is dropped and
   the error goes to the caller), not a runtime surprise.
 - **Context conformance**: with the context declared to CEL
-  (`event` as `map(string, dyn)`, `actions` as `map(string, dyn)`),
+  (`event` as `map(string, dyn)`, `actions` as a per-playbook object type
+  with one typed field per declared id),
   unknown top-level identifiers are rejected at compile time.
   Field-level typing inside `dyn` values is deferred to runtime by
   CEL's design (verified: `data.items.lenght` with `data` dyn compiles

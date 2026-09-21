@@ -60,8 +60,11 @@ checker validates and the value the run reads have one definition.
 Relaxing the boundary must not make a bad reference resolvable. The load fails,
 naming the playbook and the offending action, for:
 
-- an `id` missing where a later action references it, duplicated, or not a
-  stable identifier (J1, already enforced);
+- an `id` missing where a later action references it, duplicated, or outside
+  its shape's grammar: a workflow action id keeps the shared
+  stable-identifier grammar (J1, already enforced), while a module action id
+  must be a lowercase CEL field name writable as `actions.<id>` (so a CEL
+  keyword such as `in`, `true`, `false`, or `null` is rejected at load);
 - an `actions.<id>` read of an id no earlier action declares;
 - an `actions` read that is not statically resolvable to an id (a dynamic
   index, `in`, a comprehension — already enforced);

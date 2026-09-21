@@ -104,9 +104,10 @@ type Action struct {
 
 	// env is the per-action CEL environment this action's expressions were
 	// compiled against: the prior actions' declared ids and their kinds'
-	// Result types. It is also the eval receiver for When/Args. It is unset
-	// only for a hand-built Action (tests, pre-load composition); loaded
-	// actions always carry it.
+	// Result types. It is compile-only: expr.Env.Eval reads only the
+	// compiled Program (the cost limit is baked in at Compile) and never
+	// reads the Env receiver. It is unset only for a hand-built Action
+	// (tests, pre-load composition); loaded actions always carry it.
 	env *expr.Env
 }
 
@@ -135,14 +136,15 @@ type rawAction struct {
 // internal/plugin/host.go:21 and internal/domain/workflow/vocabulary.go:19),
 // so an id has exactly one spelling and cannot smuggle whitespace or case into
 // the vocabulary two processes compare. Module action ids are stricter (see
-// actionIDCELPattern) because they must also be CEL field selections.
+// validateModuleActionIDs) because they must also be CEL field selections.
 var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
-// actionIDCELPattern is the id shape for MODULE actions: a lowercase CEL
-// identifier. `actions.<id>` is CEL field selection, and a `.` or `-` in an id
-// has no field-selection spelling, so a dotted/dashed id would load yet could
-// never be referenced.
-var actionIDCELPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+// Module action ids are stricter than workflow ids because they must also be
+// readable as `actions.<id>` in CEL field selection. The authoritative check
+// is expr.IsCELFieldName (which compiles the probe), plus a lowercase policy:
+// the id must be a lowercase CEL field name, so `Build` -- a valid CEL
+// identifier -- is rejected for its case, while a CEL keyword such as `in` is
+// rejected because `actions.in` has no field-selection spelling.
 
 // validateActionIDs enforces the WORKFLOW id shape and uniqueness. An absent
 // id is fine (ids are optional); a declared id must match the
@@ -167,9 +169,9 @@ func validateActionIDs(actions []rawAction) error {
 }
 
 // validateModuleActionIDs enforces the MODULE id shape and uniqueness. A
-// module id must be a CEL identifier (not the looser workflow
-// stable-identifier grammar) and may not repeat; the error names the
-// playbook and the offending id.
+// module id must be a lowercase CEL field name writable as `actions.<id>`
+// (stricter than the workflow stable-identifier grammar) and may not repeat;
+// the error names the playbook, the action index, and the offending id.
 func validateModuleActionIDs(path string, actions []rawAction) error {
 	seen := make(map[string]struct{}, len(actions))
 	for i, a := range actions {
@@ -177,8 +179,8 @@ func validateModuleActionIDs(path string, actions []rawAction) error {
 		if id == "" {
 			continue
 		}
-		if !actionIDCELPattern.MatchString(id) {
-			return fmt.Errorf("playbook %s: action %d id %q is not a valid CEL identifier (want %s)", path, i+1, id, actionIDCELPattern.String())
+		if id != strings.ToLower(id) || !expr.IsCELFieldName(id) {
+			return fmt.Errorf("playbook %s: action %d id %q must be a lowercase CEL field name writable as actions.%s", path, i+1, id, id)
 		}
 		if _, dup := seen[id]; dup {
 			return fmt.Errorf("playbook %s: duplicate action id %q", path, id)
@@ -296,6 +298,9 @@ func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action
 			return nil, fmt.Errorf("playbook %s: action %d position %q is not supported (want %q or %q)", path, i+1, pos, "workflow", "module")
 		}
 		a.Position = pos
+		if err := validateActionShapeField(path, i, pos, a); err != nil {
+			return nil, err
+		}
 		if pos == "workflow" {
 			workflows++
 		} else {
@@ -314,6 +319,25 @@ func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action
 	default:
 		return compileModuleActions(path, raw, schemas)
 	}
+}
+
+// validateActionShapeField rejects a field from the other shape being present
+// on an action: a workflow action must not declare kind (module-only), and a
+// module action must not declare workflow (workflow-only). yaml.Unmarshal
+// accepts both keys, so this is where a silently-ignored foreign key becomes
+// a reported load failure naming the playbook and the action index.
+func validateActionShapeField(path string, i int, pos string, a *rawAction) error {
+	switch pos {
+	case "workflow":
+		if strings.TrimSpace(a.Kind) != "" {
+			return fmt.Errorf("playbook %s: action %d is a workflow action and must not declare kind", path, i+1)
+		}
+	case "module":
+		if strings.TrimSpace(a.Workflow) != "" {
+			return fmt.Errorf("playbook %s: action %d is a module action and must not declare workflow", path, i+1)
+		}
+	}
+	return nil
 }
 
 // compileWorkflowActions builds the single-action workflow playbook shape.
@@ -342,7 +366,7 @@ func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
 		}
 		action.When = prg
 	}
-	args, err := compileArgs(path, "", a.Args, env, nil)
+	args, err := compileArgs(path, "", "", a.Args, env, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -360,14 +384,16 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 	}
 	actions := make([]Action, 0, len(raw))
 	var declared []expr.DeclaredResult
-	for _, a := range raw {
+	for i := range raw {
+		a := &raw[i]
+		label := actionLabel(i, a.ID)
 		kind := strings.TrimSpace(a.Kind)
 		if kind == "" {
-			return nil, fmt.Errorf("playbook %s: module-kind action must name a kind", path)
+			return nil, fmt.Errorf("playbook %s: %s must name a kind", path, label)
 		}
 		argsType, resultType, ok := schemas.KindSchema(kind)
 		if !ok {
-			return nil, fmt.Errorf("playbook %s: unknown module kind %q", path, kind)
+			return nil, fmt.Errorf("playbook %s: %s has unknown module kind %q", path, label, kind)
 		}
 
 		env := expr.NewEnv(declared...)
@@ -378,13 +404,13 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 			env:      env,
 		}
 		if strings.TrimSpace(a.When) != "" {
-			prg, err := compileExpr(path, "when condition", a.When, env)
+			prg, err := compileExpr(path, label+" when condition", a.When, env)
 			if err != nil {
 				return nil, err
 			}
 			action.When = prg
 		}
-		args, err := compileArgs(path, kind, a.Args, env, argsType)
+		args, err := compileArgs(path, label, kind, a.Args, env, argsType)
 		if err != nil {
 			return nil, err
 		}
@@ -398,20 +424,41 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 	return actions, nil
 }
 
+// actionLabel renders the 1-based action location used in module-action load
+// errors, including the declared id when present so an operator can find the
+// offending action by either index or id.
+func actionLabel(i int, id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Sprintf("action %d", i+1)
+	}
+	return fmt.Sprintf("action %d (id %q)", i+1, id)
+}
+
+// argsLabel prefixes an args-key location with the action label when one is
+// supplied; workflow actions pass an empty label and keep the bare
+// `args["key"]` spelling.
+func argsLabel(label, key string) string {
+	if label == "" {
+		return fmt.Sprintf("args[%q]", key)
+	}
+	return fmt.Sprintf("%s args[%q]", label, key)
+}
+
 // compileArgs compiles every args value as a CEL expression at load, keyed by
 // arg name. J2 has no literal/expression split: the YAML scalar text IS the
 // CEL source, so a string literal is quoted inside YAML and a number or
 // context read is written as CEL. When argsSchema is non-nil (a module kind's
 // Args struct) every key must name one of its fields; workflow actions pass
 // nil and keep free-form args. Each program goes through the same
-// compile/reference validation as `when`, with the field label naming the
-// offending args key.
-func compileArgs(path, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
+// compile/reference validation as `when`, with label naming the offending
+// action and the args key naming the offending field.
+func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	if argsSchema != nil {
-		if err := validateArgsKeys(path, kind, argsSchema, raw); err != nil {
+		if err := validateArgsKeys(path, label, kind, argsSchema, raw); err != nil {
 			return nil, err
 		}
 	}
@@ -422,7 +469,7 @@ func compileArgs(path, kind string, raw map[string]string, env *expr.Env, argsSc
 	sort.Strings(keys)
 	args := make(map[string]*expr.Program, len(raw))
 	for _, key := range keys {
-		prg, err := compileExpr(path, fmt.Sprintf("args[%q]", key), raw[key], env)
+		prg, err := compileExpr(path, argsLabel(label, key), raw[key], env)
 		if err != nil {
 			return nil, err
 		}
@@ -437,7 +484,7 @@ func compileArgs(path, kind string, raw map[string]string, env *expr.Env, argsSc
 // YAML spelling (Message -> message), and the YAML key is compared verbatim:
 // the decoder also matches literal lower-case keys, so `Message` is rejected
 // here rather than loading and then failing at dispatch.
-func validateArgsKeys(path, kind string, argsSchema reflect.Type, raw map[string]string) error {
+func validateArgsKeys(path, label, kind string, argsSchema reflect.Type, raw map[string]string) error {
 	t := argsSchema
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -451,9 +498,13 @@ func validateArgsKeys(path, kind string, argsSchema reflect.Type, raw map[string
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	loc := kind + " kind"
+	if label != "" {
+		loc = label + " " + loc
+	}
 	for _, key := range keys {
 		if _, ok := fields[key]; !ok {
-			return fmt.Errorf("playbook %s: %s kind args[%q] is not a declared Args field", path, kind, key)
+			return fmt.Errorf("playbook %s: %s args[%q] is not a declared Args field", path, loc, key)
 		}
 	}
 	return nil

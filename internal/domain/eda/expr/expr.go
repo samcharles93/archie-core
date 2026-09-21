@@ -44,6 +44,28 @@ type DeclaredResult struct {
 	Type reflect.Type
 }
 
+// probeResult is the placeholder Result type used by IsCELFieldName's probe
+// environment. It is a struct only so it satisfies the native type registry;
+// its fields are never read.
+type probeResult struct{}
+
+// IsCELFieldName reports whether id can be written as `actions.<id>` in a CEL
+// expression. It is the authoritative check the playbook loader uses for a
+// module action id, replacing a regex approximation of CEL's token rules: it
+// compiles a probe expression against a one-field environment declaring the
+// id, so the CEL parser and checker decide. CEL keywords (`in`, `true`,
+// `false`, `null`) and any other spelling with no field-selection form return
+// false; a valid CEL identifier such as `Build` returns true (the loader adds
+// its own lowercase policy on top).
+func IsCELFieldName(id string) bool {
+	if id == "" {
+		return false
+	}
+	env := NewEnv(DeclaredResult{ID: id, Type: reflect.TypeFor[probeResult]()})
+	_, err := env.Compile("actions." + id)
+	return err == nil
+}
+
 // Env is the CEL environment for playbook expressions: the declared context
 // roots and the default cost limit applied to every compiled program.
 type Env struct {

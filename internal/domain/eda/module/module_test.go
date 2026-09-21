@@ -64,8 +64,15 @@ func TestRegisterUnknownKindIsError(t *testing.T) {
 
 func TestKindSchema(t *testing.T) {
 	r := New()
-	if _, _, ok := r.KindSchema("log"); !ok {
+	argsType, resultType, ok := r.KindSchema("log")
+	if !ok {
 		t.Fatal("KindSchema(log) = not ok, want the built-in log contract")
+	}
+	if want := reflect.TypeFor[log.Args](); argsType != want {
+		t.Errorf("KindSchema(log) args type = %v, want %v", argsType, want)
+	}
+	if want := reflect.TypeFor[log.Result](); resultType != want {
+		t.Errorf("KindSchema(log) result type = %v, want %v", resultType, want)
 	}
 	if _, _, ok := r.KindSchema("notify"); ok {
 		t.Fatal("KindSchema(notify) = ok, want false for an unregistered kind")
@@ -164,8 +171,14 @@ func Run(a log.Args) log.Result {
 
 func TestDecodeResultUnknownFieldIsError(t *testing.T) {
 	r := New()
-	if _, err := r.DecodeResult("log", map[string]any{"written": true, "bogus": "x"}); err == nil {
+	_, err := r.DecodeResult("log", map[string]any{"written": true, "bogus": "x"})
+	if err == nil {
 		t.Fatal("DecodeResult(unknown field) = nil, want error")
+	}
+	for _, want := range []string{"bogus", "unknown result field"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("DecodeResult error = %q, want it to contain %q", err.Error(), want)
+		}
 	}
 }
 

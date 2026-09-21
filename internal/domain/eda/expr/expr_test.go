@@ -83,6 +83,24 @@ func TestCompileDynamicActionAccessRejected(t *testing.T) {
 	}
 }
 
+// TestIsCELFieldName proves the authoritative module-id gate the playbook
+// loader uses: a normal id is accepted, and a CEL keyword or any spelling with
+// no `actions.<id>` field-selection form is rejected. `Build` is asserted
+// true here to show the check reports CEL referenceability, not the loader's
+// separate lowercase policy.
+func TestIsCELFieldName(t *testing.T) {
+	for _, id := range []string{"build", "step_2", "x9", "Build"} {
+		if !IsCELFieldName(id) {
+			t.Errorf("IsCELFieldName(%q) = false, want true", id)
+		}
+	}
+	for _, id := range []string{"in", "true", "false", "null", "build.step", "build-step", ""} {
+		if IsCELFieldName(id) {
+			t.Errorf("IsCELFieldName(%q) = true, want false", id)
+		}
+	}
+}
+
 // TestEvalDeclaredResultRead: a declared id's result read evaluates against a
 // map whose id entry wraps the Go Result struct in `{result: ...}`.
 func TestEvalDeclaredResultRead(t *testing.T) {

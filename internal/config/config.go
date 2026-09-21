@@ -463,7 +463,8 @@ type Config struct {
 	// conditions, dispatched by the event coordinator). This is DISTINCT
 	// from PlaybookDirs, which holds FLAT binding files (kind/label ->
 	// workflow name) consumed by the routing loaders. A playbook here is a
-	// document (one trigger, one action in this slice); a binding file there
+	// document (one trigger plus ordered actions: either exactly one
+	// workflow action or one or more module actions); a binding file there
 	// is a map of keys. When empty, no EDA playbook documents are loaded.
 	EDAPlaybookDir string `toml:"eda_playbook_dir" yaml:"eda_playbook_dir"`
 	// MaxRetries caps how many times a parked task is retried before

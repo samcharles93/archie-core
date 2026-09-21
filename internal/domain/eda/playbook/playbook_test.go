@@ -699,7 +699,7 @@ func TestCompileArgsReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "event.missing ==",
 	}
 	for range 64 {
-		_, err := compileArgs("pb.yaml", "", raw, env, nil)
+		_, err := compileArgs("pb.yaml", "", "", raw, env, nil)
 		if err == nil {
 			t.Fatal("compileArgs = nil, want error")
 		}
@@ -725,7 +725,7 @@ func TestValidateArgsKeysReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "x",
 	}
 	for range 64 {
-		err := validateArgsKeys("pb.yaml", "log", argsType, raw)
+		err := validateArgsKeys("pb.yaml", "", "log", argsType, raw)
 		if err == nil {
 			t.Fatal("validateArgsKeys = nil, want error")
 		}
@@ -874,6 +874,210 @@ actions:
 	}
 	if pb.Actions[1].Args["message"] == nil {
 		t.Fatal("second action args[message] = nil, want a compiled program")
+	}
+}
+
+// TestLoadActionPlaybookArgsValueReadsPriorResult: the approved doc's own
+// example reads a prior action's result inside a later action's args VALUE
+// (not only inside `when`). That spelling must compile and load through the
+// real loader.
+func TestLoadActionPlaybookArgsValueReadsPriorResult(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build started"'
+  - id: done
+    position: module
+    kind: log
+    args:
+      message: '"done: " + string(actions.build.result.written)'
+`)
+	store, err := Load(dir, testSchemas(t))
+	if err != nil {
+		t.Fatalf("Load(args value reading a prior result): %v", err)
+	}
+	if got := len(store.Playbooks); got != 1 {
+		t.Fatalf("loaded %d playbooks, want 1", got)
+	}
+	if store.Playbooks[0].Actions[1].Args["message"] == nil {
+		t.Fatal("second action args[message] = nil, want the compiled prior-result read")
+	}
+}
+
+// TestLoadRejectsShapeForeignFields: a shape-foreign field is a reject-at-load
+// error naming the playbook and the action index, not a silently dropped key.
+func TestLoadRejectsShapeForeignFields(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		want []string
+	}{
+		{
+			name: "module action carrying workflow",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - position: module
+    kind: log
+    workflow: tdd
+    args:
+      message: '"hello"'
+`,
+			want: []string{"pb.yaml", "action 1", "workflow"},
+		},
+		{
+			name: "workflow action carrying kind",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+    kind: log
+`,
+			want: []string{"pb.yaml", "action 1", "kind"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", tc.doc)
+			_, err := Load(dir, testSchemas(t))
+			if err == nil {
+				t.Fatal("Load = nil, want load failure")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Load error = %q, want it to contain %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestLoadModuleActionErrorsNameActionLocation: module-action load failures
+// name the 1-based index and the declared id (when present) of the offending
+// action, not just the field label, so an operator can locate the action.
+func TestLoadModuleActionErrorsNameActionLocation(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		want []string
+	}{
+		{
+			name: "when compile error",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build"'
+  - id: done
+    position: module
+    kind: log
+    args:
+      message: '"done"'
+    when: event.label ==
+`,
+			want: []string{"pb.yaml", "action 2", "done", "when condition"},
+		},
+		{
+			name: "args value compile error",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build"'
+  - id: done
+    position: module
+    kind: log
+    args:
+      message: 'foo.bar == 1'
+`,
+			want: []string{"pb.yaml", "action 2", "done", `args["message"]`},
+		},
+		{
+			name: "unknown kind",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build"'
+  - id: done
+    position: module
+    kind: notify
+`,
+			want: []string{"pb.yaml", "action 2", "done", "notify"},
+		},
+		{
+			name: "missing kind",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build"'
+  - id: done
+    position: module
+`,
+			want: []string{"pb.yaml", "action 2", "done"},
+		},
+		{
+			name: "unknown arg key",
+			doc: `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build"'
+  - id: done
+    position: module
+    kind: log
+    args:
+      message: '"done"'
+      bogus: '"x"'
+`,
+			want: []string{"pb.yaml", "action 2", "done", "bogus"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", tc.doc)
+			_, err := Load(dir, testSchemas(t))
+			if err == nil {
+				t.Fatal("Load = nil, want load failure")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Load error = %q, want it to contain %q", err.Error(), want)
+				}
+			}
+		})
 	}
 }
 
@@ -1063,20 +1267,22 @@ actions:
 	}
 }
 
-// TestLoadActionPlaybookRejectsNonCELID: a module action id must be a CEL
-// identifier, so a dotted/dashed id (legal for a workflow id) loads nowhere.
+// TestLoadActionPlaybookRejectsNonCELID: a module action id must be a
+// lowercase CEL field name writable as `actions.<id>`, so a dotted/dashed id
+// (legal for a workflow id), an uppercase id, or a CEL keyword all fail the
+// load naming the id.
 func TestLoadActionPlaybookRejectsNonCELID(t *testing.T) {
-	for _, id := range []string{"build.step", "build-step", "Build"} {
+	for _, id := range []string{"build.step", "build-step", "Build", "in", "true", "false", "null"} {
 		t.Run(id, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - id: "+id+"\n    position: module\n    kind: log\n    args:\n      message: '\"hello\"'\n")
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - id: '"+id+"'\n    position: module\n    kind: log\n    args:\n      message: '\"hello\"'\n")
 			_, err := Load(dir, testSchemas(t))
 			if err == nil {
 				t.Fatalf("Load(id %q) = nil, want load failure", id)
 			}
-			for _, want := range []string{"pb.yaml", id} {
+			for _, want := range []string{"pb.yaml", id, "lowercase CEL field name"} {
 				if !strings.Contains(err.Error(), want) {
-					t.Errorf("Load error = %q, want it to name %q", err.Error(), want)
+					t.Errorf("Load error = %q, want it to contain %q", err.Error(), want)
 				}
 			}
 		})
