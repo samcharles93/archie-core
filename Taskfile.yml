@@ -101,6 +101,36 @@ tasks:
     cmds:
       - go -C tools run -mod=readonly ./prdlint --repo-root ..
 
+  news:
+    desc: Regenerate the news page and per-version release notes from the changelogs
+    summary: |
+      Writes docs/news/releases.json and docs/news/. The JSON is the
+      canonical, host-neutral fact set every renderer reads; the markdown is
+      the MkDocs adapter. Both come from CHANGELOG.archied.md and
+      CHANGELOG.archie.md, so cutting a release adds no writing here.
+
+      The files are committed, so this dirties the tree deliberately: review
+      the diff and commit it with the changelog that produced it. Never
+      hand-edit a generated release page.
+
+      tools/release.sh --tag runs this before the release commit, and it skips
+      any file whose bytes already match, so a re-run leaves the tree clean.
+    cmds:
+      - go -C tools run -mod=readonly ./newsgen --repo-root ..
+
+  news:check:
+    desc: Verify the committed release notes match the changelogs
+    summary: |
+      Derives the release notes in memory and fails when the committed files
+      differ, without modifying the working tree. Runs in `task check`, so a
+      changelog edit cannot land without its regeneration.
+
+      A file inside docs/news/<component>/ that the generator does not produce
+      is a finding too: that directory is generated, and a hand-written page
+      belongs at the docs/news root instead.
+    cmds:
+      - go -C tools run -mod=readonly ./newsgen check --repo-root ..
+
   vet:
     desc: Run go vet
     cmds:
@@ -420,6 +450,10 @@ tasks:
       - task: proto:check
       - task: docs:check
       - task: docs:prds
+      # Release notes are generated from the changelogs the release process
+      # already freezes. Left out of the gate, a changelog edit would land
+      # while the published notes silently lag behind it.
+      - task: news:check
       - task: vet
       - task: lint
       - task: build

@@ -1,6 +1,6 @@
 site_name: Archie
 site_description: Event Driven Agentic Automation
-site_url: https://docs.offloaded.dev/
+site_url: https://offloaded.dev/
 repo_url: https://github.com/samcharles93/archie-core
 edit_uri: edit/main/docs/
 copyright: Vectis Labs
@@ -22,6 +22,14 @@ exclude_docs: |
   !prds/service-decomposition.md
   !prds/config-schema.md
   github-token.md
+
+# The generated release-notes pages are linked from docs/news/index.md and stay
+# published, but they are kept out of the derived navigation: a version list
+# that grows with every release would push the architecture tree off the screen.
+# This is not exclude_docs -- the pages are wanted, just not as nav entries.
+not_in_nav: |
+  news/archied/*
+  news/archie/*
 
 theme:
   name: material

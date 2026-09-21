@@ -181,6 +181,12 @@ fi
 [ "$RUNTIME_VERSION" = "skip" ] || grep -q "^## \\[$RUNTIME_VERSION\\]" CHANGELOG.archie.md ||
 	die "CHANGELOG.archie.md has no [$RUNTIME_VERSION] section; run --prepare first"
 
+# The published release notes are derived from the changelogs, so regenerate
+# them after the maintainer's edit and ship them in the same commit as the
+# sections they describe. newsgen skips a file whose bytes already match, so a
+# re-run leaves the tree clean.
+go -C tools run -mod=readonly ./newsgen --repo-root ..
+
 # Plain `[ cond ] && cmd` would abort the script under set -e whenever cond
 # is false, i.e. whenever a component is skipped.
 msg="chore(release):"
@@ -191,7 +197,7 @@ if [ "$RUNTIME_VERSION" != "skip" ]; then
 	msg="$msg archie v$RUNTIME_VERSION"
 fi
 
-git add CHANGELOG.archied.md CHANGELOG.archie.md
+git add CHANGELOG.archied.md CHANGELOG.archie.md docs/news
 git commit -m "$msg"
 
 if [ "$GATEWAY_VERSION" != "skip" ]; then
