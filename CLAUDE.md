@@ -161,6 +161,20 @@ structures found in legacy packages.
 
 ## Per-Package Invariants & Traps
 
+- **Config fields (cross-cutting): a field that parses is not a field that works.**
+  Adding a knob to a struct the extensible surface reuses makes it *parse*
+  everywhere without taking effect anywhere. `Forge` is the live example:
+  `IdentityConfig` embeds it (`internal/config/config.go:573`), so
+  `[identities.forge].intake`, `.webhook_secret` and `.webhook_addr` are
+  accepted TOML, while every read is the root block
+  (`validate.go:257-268`, `defaults.go:278-279`, `bootstrap.go:1330-1344`) - so
+  they are silently ignored and not even validated. Three defects landed this
+  way in one session: a map field the file overlay dropped, a field missing from
+  the control-plane projection, and per-identity `forge.intake`. Before adding
+  or reusing a config field, name its consumer; with none, reject the
+  configuration rather than accept it. `docs/architecture/configuration.md` is
+  the authority on the config model and its reloadability criterion.
+
 - **`internal/channels/telegram/`:**
 - The long-polling worker must call `dropPendingUpdates(ctx, b)` before
   `b.Start(ctx)` and on `/restart`.
