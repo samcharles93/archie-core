@@ -134,3 +134,58 @@ func TestNewManagerIsRepeatableWithinOneProcess(t *testing.T) {
 		t.Fatalf("two managers registered different providers: %v and %v", first.Providers(), second.Providers())
 	}
 }
+
+// TestRepoHookStepsCompileThroughTheManager pins the migration target a
+// repository's rules arrive on: the step type the deleted .archie/gate.go hook
+// is replaced by is in the bundled vocabulary, its factory is reached through
+// the manager rather than through the domain type directly, and its settings
+// are validated where a stored definition is validated -- so a definition the
+// validating side admits is one the executing side can compile.
+func TestRepoHookStepsCompileThroughTheManager(t *testing.T) {
+	t.Parallel()
+
+	manager, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	registry := manager.Registry()
+
+	stepType := workflow.DiffRulesStepType()
+	if !slices.Contains(manager.StepTypes(), stepType.Name) {
+		t.Fatalf("the bundled vocabulary %v does not carry the repository-rules step type %q", manager.StepTypes(), stepType.Name)
+	}
+	if _, registered := registry[stepType.Name]; !registered {
+		t.Fatalf("the manager resolves no factory for %q, so no stored definition could compile it", stepType.Name)
+	}
+	domainStage, err := stepType.Factory(yaml.Node{})
+	if err == nil {
+		t.Fatalf("the domain factory accepted a step with no settings and built %q", domainStage.Name)
+	}
+
+	definition := "id: repo-rules\nsteps:\n" +
+		"  - type: " + stepType.Name + "\n" +
+		"    settings:\n" +
+		"      rules:\n" +
+		"        - id: no-new-panic\n" +
+		"          level: error\n" +
+		"          pattern: 'panic\\('\n" +
+		"          message: new panic() call\n"
+	compiled, err := workflow.ParseAndCompile(definition, registry)
+	if err != nil {
+		t.Fatalf("ParseAndCompile(%q) through the bundled vocabulary: %v", stepType.Name, err)
+	}
+	if len(compiled.Stages) != 1 || compiled.Stages[0].Name != stepType.Name {
+		t.Fatalf("compiled workflow = %+v, want the single %q step", compiled, stepType.Name)
+	}
+	if compiled.Stages[0].Run == nil {
+		t.Fatalf("the %q step compiled to a stage with no Run", stepType.Name)
+	}
+
+	// The refusal is the point, not the error type: a stored rule the step
+	// cannot apply must be refused while the definition is validated, or it
+	// would load and silently check nothing.
+	broken := strings.Replace(definition, "level: error", "level: fatal", 1)
+	if _, err := workflow.ParseAndCompile(broken, registry); err == nil || !strings.Contains(err.Error(), "fatal") {
+		t.Fatalf("ParseAndCompile(%q) error = %v, want the unusable rule refused by name", broken, err)
+	}
+}
