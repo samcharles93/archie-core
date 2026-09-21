@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -111,9 +112,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 		return fmt.Errorf("import control-plane resources: %w", err)
 	}
 	b.reportUnseededResources(skipped)
-	if err := migrateLegacySchedules(ctx, control, b.cfg.DBPath, versions[controlplane.SchedulesKind]); err != nil {
-		return fmt.Errorf("migrate schedules: %w", err)
-	}
+	migrateLegacySchedules(ctx, control, b.cfg.DBPath, versions[controlplane.SchedulesKind], b.log)
 
 	token := options.Token
 	if token == "" {
@@ -189,37 +188,79 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 	return server, nil
 }
 
-func migrateLegacySchedules(ctx context.Context, control *controlplane.Server, dbPath string, version int64) error {
+// migrateLegacySchedules carries a legacy cronstore file -- the old daemon's
+// <state dir>/cron/jobs.json -- into the schedules resource, once, on a fresh
+// seed. It moves only the jobs the schedules resource can hold: workflow
+// jobs, the one delivery the router maps. Chat and unrecognised kinds were
+// already dead deliveries in the old engine (the delivery router maps
+// KindWorkflow alone), so they are reported and left in the legacy file
+// rather than being allowed to refuse the replace the whole store depends on.
+//
+// Nothing here is fatal. The migration is a legacy-data courtesy: an
+// unreadable or refused sidecar is logged and left in place for the next
+// start, the way ImportConfig skips a seed the resource validator refuses --
+// a value this process cannot use must not stop the one process every other
+// process dials (docs/prds/runtime-control-plane.md, "Bootstrap, migration,
+// and recovery"). A successful replace is marked by renaming the file to
+// jobs.json.migrated, so the whole legacy list -- the skipped jobs included
+// -- stays on disk for the operator; until the rename lands, the replaying
+// request ID keeps the replace idempotent across restarts.
+func migrateLegacySchedules(ctx context.Context, control *controlplane.Server, dbPath string, version int64, log *slog.Logger) {
 	if version != 1 {
-		return nil
+		return
 	}
 	path := filepath.Join(filepath.Dir(dbPath), "cron", "jobs.json")
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return
 		}
-		return err
+		log.Warn("legacy cron store not readable; schedules migration skipped and retried on the next start", "path", path, "err", err)
+		return
 	}
+	jobs, err := readLegacyJobs(ctx, path)
+	if err != nil {
+		log.Error("legacy cron store unreadable; schedules migration skipped and retried on the next start", "path", path, "err", err)
+		return
+	}
+	migratable := make([]cronstore.JobSpec, 0, len(jobs))
+	for _, job := range jobs {
+		if job.Kind == cronstore.KindWorkflow {
+			migratable = append(migratable, job)
+			continue
+		}
+		log.Warn("legacy cron job is not a workflow job; the schedules resource does not carry it and it stays in the legacy file", "id", job.ID, "kind", job.Kind)
+	}
+	if len(migratable) == 0 {
+		log.Info("legacy cron store holds no workflow jobs; nothing to migrate", "path", path, "jobs", len(jobs))
+		return
+	}
+	value, err := json.Marshal(migratable)
+	if err != nil {
+		log.Error("encode legacy cron jobs; schedules migration skipped and retried on the next start", "path", path, "err", err)
+		return
+	}
+	if _, err := control.Command(ctx, &controlpb.CommandRequest{Kind: controlplane.SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: 1, Actor: "system:migration", Source: "legacy-cronstore", RequestId: "import:legacy-schedules"}); err != nil {
+		log.Error("legacy cron jobs do not satisfy the schedules resource; migration skipped and retried on the next start", "path", path, "err", err)
+		return
+	}
+	if err := os.Rename(path, path+".migrated"); err != nil {
+		log.Error("mark the migrated legacy cron file; migration retried on the next start", "path", path, "err", err)
+	}
+}
+
+// readLegacyJobs reads the legacy cronstore file and closes its handle,
+// reporting whichever failure came first.
+func readLegacyJobs(ctx context.Context, path string) ([]cronstore.JobSpec, error) {
 	legacy, err := cronstore.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	jobs, listErr := legacy.List(ctx)
 	closeErr := legacy.Close()
 	if listErr != nil {
-		return listErr
+		return nil, listErr
 	}
-	if closeErr != nil {
-		return closeErr
-	}
-	value, err := json.Marshal(jobs)
-	if err != nil {
-		return err
-	}
-	if _, err := control.Command(ctx, &controlpb.CommandRequest{Kind: controlplane.SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: 1, Actor: "system:migration", Source: "legacy-cronstore", RequestId: "import:legacy-schedules"}); err != nil {
-		return err
-	}
-	return os.Rename(path, path+".migrated")
+	return jobs, closeErr
 }
 
 // openStateStore opens the single task-store SQLite file exactly once for
