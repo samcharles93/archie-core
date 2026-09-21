@@ -80,77 +80,108 @@ func TestEvalHasMacroPresence(t *testing.T) {
 	}
 }
 
-// TestReferencedActionIDs: a compiled program exposes the action ids its
-// expression reads through actions.<id>, sorted and de-duplicated, so the
-// playbook loader can reject references to undeclared prior actions.
-func TestReferencedActionIDs(t *testing.T) {
+// TestActionReferences classifies every read of the `actions` context root:
+// a static access (actions.<id> or actions["<id>"]) resolves to its id, and
+// any other spelling that mentions actions reports unresolvable.
+func TestActionReferences(t *testing.T) {
 	env := NewEnv()
 	tests := []struct {
-		name string
-		src  string
-		want []string
+		name       string
+		src        string
+		wantIDs    []string
+		resolvable bool
 	}{
 		{
-			name: "single action reference",
-			src:  `actions.notify.result.delivered == true`,
-			want: []string{"notify"},
+			name:       "field selection resolves",
+			src:        `actions.a.result.x == true`,
+			wantIDs:    []string{"a"},
+			resolvable: true,
 		},
 		{
-			name: "no action reference",
-			src:  `event.priority == 3`,
-			want: nil,
+			name:       "literal map index resolves",
+			src:        `actions["a"].result.x == true`,
+			wantIDs:    []string{"a"},
+			resolvable: true,
 		},
 		{
-			name: "multiple references deduped and sorted",
-			src:  `actions.b.result == true || actions.a.result == true || actions.b.result2 == true`,
-			want: []string{"a", "b"},
+			name:       "two static accesses of one id consume two idents",
+			src:        `actions.a.x == actions.a.y`,
+			wantIDs:    []string{"a"},
+			resolvable: true,
 		},
 		{
-			name: "has macro over action",
-			src:  `has(actions.notify.result.delivered)`,
-			want: []string{"notify"},
+			name:       "multiple references deduped and sorted",
+			src:        `actions.b.result == true || actions.a.result == true || actions.b.result2 == true`,
+			wantIDs:    []string{"a", "b"},
+			resolvable: true,
 		},
 		{
-			name: "map index literal reference",
-			src:  `actions["notify"].result.delivered == true`,
-			want: []string{"notify"},
+			name:       "no actions reference",
+			src:        `event.priority == 3`,
+			wantIDs:    nil,
+			resolvable: true,
+		},
+		{
+			name:       "has macro over static access",
+			src:        `has(actions.notify.result.delivered)`,
+			wantIDs:    []string{"notify"},
+			resolvable: true,
+		},
+		{
+			name:       "event field index key is unresolvable",
+			src:        `actions[event.name].result.x == true`,
+			wantIDs:    nil,
+			resolvable: false,
+		},
+		{
+			name:       "computed string index key is unresolvable",
+			src:        `actions["a" + "b"].result.x == true`,
+			wantIDs:    nil,
+			resolvable: false,
+		},
+		{
+			name:       "in operator on actions is unresolvable",
+			src:        `"notify" in actions`,
+			wantIDs:    nil,
+			resolvable: false,
+		},
+		{
+			name:       "size of actions is unresolvable",
+			src:        `size(actions) > 0`,
+			wantIDs:    nil,
+			resolvable: false,
+		},
+		{
+			name:       "macro receiver actions is unresolvable",
+			src:        `actions.all(k, k == "a")`,
+			wantIDs:    nil,
+			resolvable: false,
+		},
+		{
+			name:       "bare actions is unresolvable",
+			src:        `actions`,
+			wantIDs:    nil,
+			resolvable: false,
+		},
+		{
+			name:       "equality against map literal is unresolvable",
+			src:        `actions == {}`,
+			wantIDs:    nil,
+			resolvable: false,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			prg, err := env.Compile(tc.src)
 			if err != nil {
-				t.Fatalf("Compile: %v", err)
+				t.Fatalf("Compile(%q): %v", tc.src, err)
 			}
-			got := prg.ReferencedActionIDs()
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("ReferencedActionIDs() = %v, want %v", got, tc.want)
+			ids, resolvable := prg.ActionReferences()
+			if resolvable != tc.resolvable {
+				t.Fatalf("ActionReferences(%q) resolvable = %v, want %v", tc.src, resolvable, tc.resolvable)
 			}
-		})
-	}
-}
-
-// TestCompileRejectsNonLiteralActionsIndex: an `actions[...]` access whose
-// key is not a string literal cannot be resolved statically, so it is a
-// Compile-time error rather than a runtime lookup the loader would silently
-// skip (J1's unknown-id rule extended to keys that are not literal).
-func TestCompileRejectsNonLiteralActionsIndex(t *testing.T) {
-	env := NewEnv()
-	tests := []struct {
-		name string
-		src  string
-	}{
-		{name: "event field key", src: `actions[event.name].result.x == true`},
-		{name: "computed string key", src: `actions["a" + "b"].result.x == true`},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := env.Compile(tc.src)
-			if err == nil {
-				t.Fatalf("Compile(%q) = nil error, want rejection of non-literal actions index", tc.src)
-			}
-			if !strings.Contains(err.Error(), "actions") {
-				t.Errorf("Compile error = %q, want it to name the actions index", err.Error())
+			if !slices.Equal(ids, tc.wantIDs) {
+				t.Fatalf("ActionReferences(%q) ids = %v, want %v", tc.src, ids, tc.wantIDs)
 			}
 		})
 	}

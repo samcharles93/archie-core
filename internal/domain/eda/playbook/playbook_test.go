@@ -481,70 +481,71 @@ func TestValidateActionIDs(t *testing.T) {
 	}
 }
 
-// TestLoadWhenReferencesUnknownActionIDFails: a when reading actions.<id>
-// (or actions["<id>"]) with no prior action declaring that id is a load
-// failure naming the playbook path and the id -- never a runtime miss.
-func TestLoadWhenReferencesUnknownActionIDFails(t *testing.T) {
-	for _, when := range []string{
-		`actions.notify.result.delivered == true`,
-		`actions["notify"].result.delivered == true`,
-	} {
-		t.Run(when, func(t *testing.T) {
+// TestLoadWhenActionsReferenceFails: a when that reads the `actions` context
+// root in a form that cannot be pinned to a prior action id at load fails the
+// whole load, naming the playbook path (and the id when one statically
+// resolves) -- never a runtime miss.
+func TestLoadWhenActionsReferenceFails(t *testing.T) {
+	tests := []struct {
+		name   string
+		when   string
+		wantID string
+	}{
+		{name: "undeclared field selection", when: `actions.a.result.x == true`, wantID: "a"},
+		{name: "undeclared literal map index", when: `actions["a"].result.x == true`, wantID: "a"},
+		{name: "non-literal index key", when: `actions[key].result.x == true`},
+		{name: "in operator on actions", when: `"notify" in actions`},
+		{name: "size of actions", when: `size(actions) > 0`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+when+"\n")
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+tc.when+"\n")
 			_, err := Load(dir)
 			if err == nil {
-				t.Fatal("Load(when referencing undeclared action id) = nil, want load failure")
+				t.Fatal("Load = nil, want load failure")
 			}
 			if !strings.Contains(err.Error(), "pb.yaml") {
 				t.Errorf("Load error = %q, want the playbook path named", err.Error())
 			}
-			if !strings.Contains(err.Error(), "notify") {
-				t.Errorf("Load error = %q, want the unknown id named", err.Error())
+			if tc.wantID != "" && !strings.Contains(err.Error(), tc.wantID) {
+				t.Errorf("Load error = %q, want the unknown id %q named", err.Error(), tc.wantID)
 			}
 		})
 	}
 }
 
-// TestLoadWhenNonLiteralActionsIndexFails: an `actions[...]` access whose key
-// is not a string literal is rejected at load -- the id cannot be resolved
-// statically, so it must not pass the load check and become a runtime miss.
-func TestLoadWhenNonLiteralActionsIndexFails(t *testing.T) {
-	for _, when := range []string{
-		`actions[key].result.x == true`,
-		`actions[event.name].result.x == true`,
-	} {
-		t.Run(when, func(t *testing.T) {
-			dir := t.TempDir()
-			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+when+"\n")
-			_, err := Load(dir)
-			if err == nil {
-				t.Fatal("Load(when with non-literal actions index) = nil, want load failure")
-			}
-			if !strings.Contains(err.Error(), "pb.yaml") {
-				t.Errorf("Load error = %q, want the playbook path named", err.Error())
-			}
-		})
-	}
-}
-
-// TestUnknownActionReferenceGeneralRule: the reference check compares against
-// the declared ids of earlier actions, so it already behaves correctly when
-// the one-action boundary later relaxes (the Load path can only exercise the
-// empty-prior set today).
+// TestUnknownActionReferenceGeneralRule: the reference check compares the
+// statically-resolved ids against the declared ids of earlier actions, so it
+// already behaves correctly when the one-action boundary later relaxes (the
+// Load path can only exercise the empty-prior set today).
 func TestUnknownActionReferenceGeneralRule(t *testing.T) {
-	prg, err := expr.NewEnv().Compile(`actions.notify.result.delivered == true`)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
+	env := expr.NewEnv()
+	compile := func(src string) []string {
+		t.Helper()
+		prg, err := env.Compile(src)
+		if err != nil {
+			t.Fatalf("Compile(%q): %v", src, err)
+		}
+		ids, resolvable := prg.ActionReferences()
+		if !resolvable {
+			t.Fatalf("ActionReferences(%q) = resolvable false, want true", src)
+		}
+		return ids
 	}
 
-	// notify declared on the prior action: known.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "notify"}}, 1, prg); unknown {
+	// a declared on the prior action: known.
+	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, compile(`actions.a.result.delivered == true`)); unknown {
 		t.Fatalf("unknownActionReference(declared prior) = (%q, true), want known", id)
 	}
-	// A different prior id leaves notify unknown.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "build"}}, 1, prg); !unknown || id != "notify" {
-		t.Fatalf("unknownActionReference(undeclared) = (%q, %v), want (notify, true)", id, unknown)
+	// Two static reads of a in one expression consume two actions idents and
+	// still resolve to the one declared id: known.
+	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, compile(`actions.a.x == actions.a.y`)); unknown {
+		t.Fatalf("unknownActionReference(two static reads of declared id) = (%q, true), want known", id)
+	}
+	// A different prior id leaves b unknown.
+	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, compile(`actions.b.result.delivered == true`)); !unknown || id != "b" {
+		t.Fatalf("unknownActionReference(undeclared) = (%q, %v), want (b, true)", id, unknown)
 	}
 }
 

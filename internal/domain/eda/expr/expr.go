@@ -16,7 +16,6 @@
 package expr
 
 import (
-	"fmt"
 	"sort"
 
 	"cel.dev/cel-go/cel"
@@ -67,14 +66,15 @@ func NewEnv() *Env {
 
 // Compile parses and type-checks a playbook expression string against the
 // declared context. A syntax error, an unknown root (anything other than
-// event/actions), a type error, or a non-literal `actions` index
-// (`actions[event.name]`, `actions["a" + "b"]`) is a returned error -- never
-// a panic. The returned Program is safe to evaluate concurrently (CEL
-// programs are stateless once compiled).
+// event/actions), or a type error is a returned error -- never a panic. The
+// returned Program is safe to evaluate concurrently (CEL programs are
+// stateless once compiled).
 //
-// This is the reject-at-load entry point: the playbook loader and the lint
-// tool call this at load time, so a bad expression drops the playbook with a
-// reported error rather than failing at dispatch.
+// Compile does not decide whether every `actions` read can be pinned to a
+// prior action id at load; that classification is Program.ActionReferences'
+// job, and the playbook loader rejects a program whose ActionReferences
+// reports unresolvable. The split keeps author-time diagnostics and runtime
+// evaluation on the same compiled artifact.
 func (e *Env) Compile(src string) (*Program, error) {
 	ast, issues := e.celEnv.Compile(src)
 	if issues != nil && issues.Err() != nil {
@@ -84,42 +84,44 @@ func (e *Env) Compile(src string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	ids, err := referencedActionIDs(ast)
-	if err != nil {
-		return nil, err
-	}
-	return &Program{prg: prg, actionIDs: ids}, nil
+	ids, resolvable := actionReferences(ast)
+	return &Program{prg: prg, actionIDs: ids, resolvable: resolvable}, nil
 }
 
-// referencedActionIDs walks the compiled AST and returns the sorted, de-
-// duplicated set of action ids an expression reads from `actions`. Both
-// field-selection (`actions.notify`) and literal map-index
-// (`actions["notify"]`) forms are collected; `actions` is declared
-// map(string,dyn), so CEL type-checking cannot reject an unknown id, and the
-// playbook loader compares this set against the ids of prior actions to
-// reject unknown references at load (J1 in
-// docs/prds/playbook-expression-syntax.md).
+// actionReferences walks the compiled AST once and classifies every read of
+// the `actions` context root as either a statically-resolvable action id or
+// not. The invariant is exhaustive by construction: each read of `actions`
+// consumes exactly one `actions` identifier node, so counting identifier
+// nodes and counting the reads that match one of the two static access
+// shapes (a field selection on the `actions` ident, or a map index whose key
+// is a string literal) yields
 //
-// A non-literal index key (`actions[key]`, `actions[event.name]`,
-// `actions["a" + "b"]`) is rejected here with an error: its id cannot be
-// resolved statically, so it cannot be checked against declared prior-action
-// ids and must not pass the load check as a runtime miss.
-func referencedActionIDs(ast *cel.Ast) ([]string, error) {
+//	resolvable = (identCount == staticCount)
+//
+// Any other spelling that mentions `actions` contributes an identifier node
+// without a matching static access, so it reports unresolvable rather than
+// slipping through as a runtime miss. The returned ids are the sorted,
+// de-duplicated ids of the static accesses, for the playbook loader's
+// unknown-id check.
+func actionReferences(ast *cel.Ast) ([]string, bool) {
 	if ast == nil || ast.NativeRep() == nil {
-		return nil, nil
+		return nil, true
 	}
+	var identCount, staticCount int
 	seen := map[string]struct{}{}
-	var walkErr error
 	visitor := celast.NewExprVisitor(func(e celast.Expr) {
-		if walkErr != nil {
-			return
-		}
 		switch e.Kind() {
+		case celast.IdentKind:
+			if e.AsIdent() == "actions" {
+				identCount++
+			}
 		case celast.SelectKind:
 			sel := e.AsSelect()
-			if isActionsIdent(sel.Operand()) {
-				seen[sel.FieldName()] = struct{}{}
+			if !isActionsIdent(sel.Operand()) {
+				return
 			}
+			staticCount++
+			seen[sel.FieldName()] = struct{}{}
 		case celast.CallKind:
 			call := e.AsCall()
 			if call.FunctionName() != "_[_]" || len(call.Args()) != 2 {
@@ -130,27 +132,23 @@ func referencedActionIDs(ast *cel.Ast) ([]string, error) {
 			}
 			key := call.Args()[1]
 			if key.Kind() != celast.LiteralKind {
-				walkErr = fmt.Errorf("non-literal actions index key (want a string literal)")
 				return
 			}
 			id, ok := key.AsLiteral().Value().(string)
 			if !ok {
-				walkErr = fmt.Errorf("non-literal actions index key (want a string literal)")
 				return
 			}
+			staticCount++
 			seen[id] = struct{}{}
 		}
 	})
 	celast.PreOrderVisit(ast.NativeRep().Expr(), visitor)
-	if walkErr != nil {
-		return nil, walkErr
-	}
 	ids := make([]string, 0, len(seen))
 	for id := range seen {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return ids, nil
+	return ids, identCount == staticCount
 }
 
 // isActionsIdent reports whether e is the `actions` context-root identifier.
@@ -160,20 +158,23 @@ func isActionsIdent(e celast.Expr) bool {
 
 // Program is a compiled, cost-limited playbook expression.
 type Program struct {
-	prg       cel.Program
-	actionIDs []string
+	prg        cel.Program
+	actionIDs  []string
+	resolvable bool
 }
 
-// ReferencedActionIDs returns the sorted, de-duplicated action ids the
-// expression reads from `actions` (either `actions.<id>` or
-// `actions["<id>"]`). It is empty when the expression reads no prior-action
-// result. A non-literal index (`actions[event.name]`) never reaches this
-// method: it is rejected at Compile.
-func (p *Program) ReferencedActionIDs() []string {
+// ActionReferences reports the action ids the expression reads from the
+// `actions` context root (sorted, de-duplicated) and whether every `actions`
+// read could be statically resolved to one of those ids. ids is empty when
+// the expression reads no prior-action result; resolvable is false when the
+// expression reads `actions` in any form that cannot be pinned to a prior
+// action id at load. The playbook loader rejects a non-resolvable program
+// rather than evaluating it as a runtime miss.
+func (p *Program) ActionReferences() (ids []string, resolvable bool) {
 	if p == nil {
-		return nil
+		return nil, true
 	}
-	return p.actionIDs
+	return p.actionIDs, p.resolvable
 }
 
 // Eval evaluates the program against a dispatch-time context. A missing

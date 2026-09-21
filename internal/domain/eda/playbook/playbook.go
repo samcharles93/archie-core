@@ -130,19 +130,19 @@ func validateActionIDs(actions []rawAction) error {
 	return nil
 }
 
-// unknownActionReference returns the first action id a compiled `when` reads
-// through actions.<id> that is not declared on any action before index idx.
+// unknownActionReference returns the first statically-resolved action id a
+// compiled `when` reads that is not declared on any action before index idx.
 // The comparison is against earlier actions' declared ids (the general rule
 // from J1), so it stays correct when the one-action boundary later relaxes;
 // today idx is always 0, so any actions.<id> reference is unknown.
-func unknownActionReference(raw []rawAction, idx int, prg *expr.Program) (string, bool) {
+func unknownActionReference(raw []rawAction, idx int, ids []string) (string, bool) {
 	declared := make(map[string]struct{}, idx)
 	for _, prior := range raw[:idx] {
 		if prior.ID != "" {
 			declared[prior.ID] = struct{}{}
 		}
 	}
-	for _, id := range prg.ReferencedActionIDs() {
+	for _, id := range ids {
 		if _, ok := declared[id]; !ok {
 			return id, true
 		}
@@ -259,7 +259,14 @@ func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
 		if err != nil {
 			return nil, fmt.Errorf("playbook %s: when condition: %w", path, err)
 		}
-		if id, unknown := unknownActionReference(raw.Actions, 0, prg); unknown {
+		ids, resolvable := prg.ActionReferences()
+		if !resolvable {
+			return nil, fmt.Errorf(
+				"playbook %s: when condition contains an `actions` reference that cannot be statically resolved to an action id (the `actions` context root must be read as a prior action id)",
+				path,
+			)
+		}
+		if id, unknown := unknownActionReference(raw.Actions, 0, ids); unknown {
 			return nil, fmt.Errorf("playbook %s: when condition references unknown action id %q", path, id)
 		}
 		action.When = prg
