@@ -12,7 +12,7 @@ func TestScheduleDefinitionComputesFirstRunAndRejectsDuplicateIDs(t *testing.T) 
 	t.Parallel()
 
 	definition := scheduleDefinition()
-	jobs := []cronstore.JobSpec{{ID: "daily", Kind: cronstore.KindWorkflow, Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: time.Hour}}}
+	jobs := []cronstore.JobSpec{{ID: "daily", Kind: cronstore.KindWorkflow, Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)}}}
 	input, err := json.Marshal(jobs)
 	if err != nil {
 		t.Fatal(err)

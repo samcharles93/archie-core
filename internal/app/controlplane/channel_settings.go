@@ -125,6 +125,10 @@ func decodeRenamingLegacyKeys(data []byte, legacy map[string]string, v any) erro
 // those documents keep working without being re-saved.
 type channelDuration time.Duration
 
+// Std is the standard-library duration, for arithmetic and for the marker
+// schema.go uses to recognise a string-form duration (see durationLike).
+func (d channelDuration) Std() time.Duration { return time.Duration(d) }
+
 func (d channelDuration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }

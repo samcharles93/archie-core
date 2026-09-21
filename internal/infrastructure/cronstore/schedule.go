@@ -1,9 +1,51 @@
 package cronstore
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
+
+// Duration is a schedule interval as the document writes it: the human string
+// time.ParseDuration reads, never a nanosecond count. It reads the count too,
+// because every schedule stored before this shape existed carries one -- both in
+// the control plane's schedules resource and in this package's own jobs table,
+// which persists the spec as JSON.
+//
+// The type is deliberately local, as config.Duration is for the file document
+// and channelDuration is in internal/app/controlplane: each document owns its own
+// wire form, and what is actually worth unifying later is the legacy-count
+// tolerance rather than the tag shape.
+type Duration time.Duration
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		value, err := time.ParseDuration(text)
+		if err != nil {
+			return fmt.Errorf("%w: interval must be a Go duration string such as %q: %w", ErrInvalidSpec, "30m", err)
+		}
+		*d = Duration(value)
+		return nil
+	}
+	var nanos int64
+	if err := json.Unmarshal(data, &nanos); err != nil {
+		return fmt.Errorf("%w: interval must be a Go duration string such as %q or a nanosecond count: %w", ErrInvalidSpec, "30m", err)
+	}
+	*d = Duration(nanos)
+	return nil
+}
+
+// Std is the standard-library duration, for arithmetic and comparison.
+func (d Duration) Std() time.Duration { return time.Duration(d) }
+
+// String renders the interval the way the document writes it, so an error
+// message or a log line reads "30m0s" rather than 1800000000000.
+func (d Duration) String() string { return time.Duration(d).String() }
 
 // Schedule decides when a job is due. The Kind field selects which of
 // Interval, Cron, At the store uses to compute nextRun. Empty Kind
@@ -15,8 +57,10 @@ type Schedule struct {
 	Kind string `json:"kind,omitempty"`
 
 	// Interval is the period for ScheduleInterval. Required when Kind
-	// is ScheduleInterval; ignored otherwise.
-	Interval time.Duration `json:"interval,omitempty"`
+	// is ScheduleInterval; ignored otherwise. It is a Duration rather
+	// than a time.Duration so the document carries "30m0s" and not the
+	// nanosecond count that asked an operator to type 1800000000000.
+	Interval Duration `json:"interval,omitempty"`
 
 	// Cron is the 5-field cron expression for ScheduleCron. Required
 	// when Kind is ScheduleCron; ignored otherwise.
@@ -98,9 +142,9 @@ func (s Schedule) firstRun(now time.Time) (time.Time, error) {
 	switch s.resolve().Kind {
 	case ScheduleInterval:
 		if !s.Start.IsZero() {
-			return s.Start.Add(s.Interval), nil
+			return s.Start.Add(s.Interval.Std()), nil
 		}
-		return now.Add(s.Interval), nil
+		return now.Add(s.Interval.Std()), nil
 	case ScheduleOnce:
 		if s.At == nil {
 			return time.Time{}, fmt.Errorf("%w: once schedule has no at time", ErrScheduleUnsupported)
@@ -127,7 +171,7 @@ func (s Schedule) Resolved() Schedule { return s.resolve() }
 func (s Schedule) nextRun(lastRun time.Time) (time.Time, error) {
 	switch s.resolve().Kind {
 	case ScheduleInterval:
-		return lastRun.Add(s.Interval), nil
+		return lastRun.Add(s.Interval.Std()), nil
 	case ScheduleOnce:
 		return time.Time{}, fmt.Errorf("%w: once schedule has no next run", ErrScheduleUnsupported)
 	case ScheduleCron:

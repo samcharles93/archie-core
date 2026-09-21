@@ -23,7 +23,7 @@ func routerFixture(t *testing.T, kind string) (*Router, *countingRunner, *counti
 		ID:       "routed",
 		Detail:   "routed job",
 		Kind:     kind,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: time.Hour},
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
 	})
 	chat, workflow := &countingRunner{}, &countingRunner{}
 	sink := &recordingSink{}
@@ -120,7 +120,7 @@ func TestRouterNilSinkDoesNotPanicOnUnknownKind(t *testing.T) {
 	createJob(t, s, cronstore.JobSpec{
 		ID:       "routed",
 		Kind:     "teleport",
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: time.Hour},
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
 	})
 	chat, workflow := &countingRunner{}, &countingRunner{}
 	r, err := NewRouter(s, map[string]scheduling.Runner{
@@ -258,7 +258,7 @@ func TestDailyStatusSummaryEndToEnd(t *testing.T) {
 		ID:       "daily-status",
 		Detail:   "daily status summary",
 		Kind:     cronstore.KindChat,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: 24 * time.Hour},
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(24 * time.Hour)},
 		Target:   cronstore.Target{ChatID: chatID},
 		Payload:  cronstore.Payload{Text: dailyStatusSummary},
 		// Due now: create it with a next_run in the past, the state a

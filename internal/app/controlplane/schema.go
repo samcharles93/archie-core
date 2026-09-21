@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"time"
-
-	"github.com/samcharles93/archie-core/internal/config"
 )
 
 // bareObjectSchema is what a descriptor advertises when its definition names no
@@ -16,11 +14,28 @@ import (
 // (archie-core-2xs6).
 const bareObjectSchema = `{"type":"object"}`
 
-var (
-	configDurationType  = reflect.TypeFor[config.Duration]()
-	channelDurationType = reflect.TypeFor[channelDuration]()
-	timeType            = reflect.TypeFor[time.Time]()
-)
+var timeType = reflect.TypeFor[time.Time]()
+
+// stdDuration is the marker this tree's string-form duration types satisfy:
+// config.Duration, channelDuration and cronstore.Duration each expose the
+// standard duration for arithmetic.
+var stdDuration = reflect.TypeOf((*interface{ Std() time.Duration })(nil)).Elem()
+
+// durationLike reports whether t is a duration type that writes itself as the
+// string time.ParseDuration reads, rather than as its nanosecond count.
+//
+// It asks the type rather than listing the ones that exist, because a list goes
+// stale the moment a fourth duration type appears and the failure is silent in
+// the worst direction: the field derives as an integer and a client renders a
+// number box for a duration. That is exactly what the enumerated version of this
+// function did to cronstore.Duration when the schedules interval became one.
+func durationLike(t reflect.Type) bool {
+	if !t.Implements(stdDuration) {
+		return false
+	}
+	encoded, err := json.Marshal(reflect.Zero(t).Interface())
+	return err == nil && len(encoded) > 0 && encoded[0] == '"'
+}
 
 // schemaJSON renders the JSON Schema a resource descriptor advertises, derived
 // from the document type the definition owns rather than written out beside it.
@@ -60,14 +75,14 @@ func schemaOf(t reflect.Type) map[string]any {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	switch t {
-	case configDurationType, channelDurationType:
-		// Both marshal as the string time.ParseDuration reads, so the schema
-		// says so and a client can offer a duration affordance instead of a
-		// number box. This is the rule that reaches every duration field in the
-		// catalogue, not just the one that prompted it.
+	switch {
+	case durationLike(t):
+		// The type writes the string time.ParseDuration reads, so the schema says
+		// so and a client can offer a duration affordance instead of a number
+		// box. This rule reaches every duration field in the catalogue, not just
+		// the one that prompted it.
 		return map[string]any{"type": "string", "format": "duration"}
-	case timeType:
+	case t == timeType:
 		return map[string]any{"type": "string", "format": "date-time"}
 	}
 	switch t.Kind() {

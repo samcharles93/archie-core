@@ -279,7 +279,7 @@ func chatSpec(id, chatID, text string) cronstore.JobSpec {
 		ID:       id,
 		Detail:   "test job " + id,
 		Kind:     cronstore.KindChat,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: time.Hour},
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
 		Target:   cronstore.Target{ChatID: chatID},
 		Payload:  cronstore.Payload{Text: text},
 	}
@@ -291,7 +291,7 @@ func workflowSpec(id, detail, body string) cronstore.JobSpec {
 		ID:       id,
 		Detail:   detail,
 		Kind:     cronstore.KindWorkflow,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: time.Hour},
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
 		Payload:  cronstore.Payload{Text: body},
 	}
 }

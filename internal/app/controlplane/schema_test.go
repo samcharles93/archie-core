@@ -136,6 +136,48 @@ func TestEveryResourceDescriptorDerivesProperties(t *testing.T) {
 	}
 }
 
+// TestSchedulesDescriptorFormatsTheInterval is the same payoff one document over:
+// the schedules interval is a Duration now, so the derivation turns it into a
+// formatted string with no schema authored for it (archie-core-4w0c).
+func TestSchedulesDescriptorFormatsTheInterval(t *testing.T) {
+	server := testServer(t, nil)
+	catalog, err := server.Catalog(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("Catalog: %v", err)
+	}
+	var schema struct {
+		Items struct {
+			Properties struct {
+				Schedule struct {
+					Properties struct {
+						Interval struct {
+							Type   string `json:"type"`
+							Format string `json:"format"`
+						} `json:"interval"`
+					} `json:"properties"`
+				} `json:"schedule"`
+			} `json:"properties"`
+		} `json:"items"`
+	}
+	found := false
+	for _, descriptor := range catalog.Resources {
+		if descriptor.Kind != SchedulesKind {
+			continue
+		}
+		found = true
+		if err := json.Unmarshal([]byte(descriptor.SchemaJson), &schema); err != nil {
+			t.Fatalf("unmarshal schedules schema: %v", err)
+		}
+	}
+	if !found {
+		t.Fatal("schedules is not in the catalog")
+	}
+	interval := schema.Items.Properties.Schedule.Properties.Interval
+	if interval.Type != "string" || interval.Format != "duration" {
+		t.Errorf("schedule.interval = %+v, want a duration-formatted string: the document carries 30m0s, not nanoseconds", interval)
+	}
+}
+
 // TestChannelSettingsDescriptorFormatsTheRateLimitWindow is the concrete payoff:
 // the field that asked an operator for a nanosecond count now carries a format a
 // client can render an affordance for, and it arrives by derivation rather than

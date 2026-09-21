@@ -83,7 +83,7 @@ func legacyJob(id, kind string, interval time.Duration) cronstore.JobSpec {
 	stamped := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
 	return cronstore.JobSpec{
 		ID: id, Kind: kind, Detail: "legacy " + id,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: interval},
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(interval)},
 		NextRun:  stamped, Created: stamped, Updated: stamped,
 	}
 }

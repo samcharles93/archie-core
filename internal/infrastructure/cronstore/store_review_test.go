@@ -259,7 +259,7 @@ func TestCreateAndGetRoundTripWithUnicodeAndQuotes(t *testing.T) {
 		Detail: "Hello\n\"世界\"\\back",
 		Schedule: Schedule{
 			Kind:     ScheduleInterval,
-			Interval: 30 * time.Minute,
+			Interval: Duration(30 * time.Minute),
 		},
 		Payload: Payload{Text: "<script>alert(1)</script> & 中文"},
 	}

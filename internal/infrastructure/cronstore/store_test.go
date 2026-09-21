@@ -50,7 +50,7 @@ func fixedIntervalSpec(id string, every time.Duration) JobSpec {
 		Detail: "test job " + id,
 		Schedule: Schedule{
 			Kind:     ScheduleInterval,
-			Interval: every,
+			Interval: Duration(every),
 		},
 		Payload: Payload{Text: "hello " + id},
 	}
@@ -138,7 +138,7 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 		Detail: "morning status",
 		Schedule: Schedule{
 			Kind:     ScheduleInterval,
-			Interval: 30 * time.Minute,
+			Interval: Duration(30 * time.Minute),
 		},
 		Payload: Payload{Text: "status please"},
 	}
@@ -228,7 +228,7 @@ func TestUpdatePreservesFieldsNotInPatch(t *testing.T) {
 		Detail: "original detail",
 		Schedule: Schedule{
 			Kind:     ScheduleInterval,
-			Interval: 10 * time.Minute,
+			Interval: Duration(10 * time.Minute),
 		},
 		Payload: Payload{Text: "original payload"},
 	})
@@ -247,7 +247,7 @@ func TestUpdatePreservesFieldsNotInPatch(t *testing.T) {
 	if got.Pool != string(scheduling.PoolParallel) {
 		t.Errorf("Pool = %q, want %q (merge must preserve)", got.Pool, scheduling.PoolParallel)
 	}
-	if got.Schedule.Interval != 10*time.Minute {
+	if got.Schedule.Interval.Std() != 10*time.Minute {
 		t.Errorf("Schedule.Interval = %v, want %v (merge must preserve)", got.Schedule.Interval, 10*time.Minute)
 	}
 	if got.Payload.Text != "original payload" {
@@ -280,12 +280,12 @@ func TestUpdateRecomputesNextRunWhenScheduleChanges(t *testing.T) {
 
 	// Change the interval; NextRun must move.
 	if err := s.Update(context.Background(), "rs", Patch{
-		Schedule: &Schedule{Kind: ScheduleInterval, Interval: 2 * time.Minute},
+		Schedule: &Schedule{Kind: ScheduleInterval, Interval: Duration(2 * time.Minute)},
 	}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	got, _, _ := s.Get(context.Background(), "rs")
-	if got.Schedule.Interval != 2*time.Minute {
+	if got.Schedule.Interval.Std() != 2*time.Minute {
 		t.Errorf("Schedule.Interval = %v, want %v", got.Schedule.Interval, 2*time.Minute)
 	}
 	if !got.NextRun.Before(first.NextRun) {
