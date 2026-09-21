@@ -31,7 +31,7 @@ planner/builder.
    forge-neutral `PullRequest{Number, Title, Body, HeadRef, BaseRef, HeadSHA,
    BaseSHA, State}`. Declared as a narrow `PullRequestReader` interface,
    implemented by GitHub and Gitea; the noop forge does not implement it, so
-   the daemon type-asserts and refuses review with "forge does not support PR
+   the composition root type-asserts and refuses review with "forge does not support PR
    review". Adding to the fat `Forge` interface would churn every test fake for
    a capability the noop forge cannot honestly provide.
 
@@ -74,7 +74,7 @@ planner/builder.
 - `internal/gateway/review_tools.go` — `ChatPRReviewer`, result shape, `review_pr`.
 - `internal/gateway/turn.go`, `gateway.go` — tool wiring into the turn.
 - `internal/app/archied/pr_review.go` — the `ChatPRReviewer` adapter.
-- `internal/app/archied/{bootstrap.go,main.go,telegram_setup.go}` — composition.
+- `internal/app/archied/{bootstrap.go,gateway.go,main.go}` — composition.
 
 ## Not in scope
 
