@@ -3,6 +3,7 @@ package playbook
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -25,10 +26,8 @@ type playbookRecord struct {
 
 func (f *fakePlaybookLedger) RecordPlaybookDispatch(ctx context.Context, playbookID, playbookVersion, eventID, actionID string) error {
 	key := playbookRecord{playbookID, playbookVersion, eventID, actionID}
-	for _, r := range f.records {
-		if r == key {
-			return storecontract.ErrAlreadyDispatched
-		}
+	if slices.Contains(f.records, key) {
+		return storecontract.ErrAlreadyDispatched
 	}
 	f.records = append(f.records, key)
 	return nil
