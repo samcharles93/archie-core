@@ -35,11 +35,14 @@ func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
 // file's keys that nothing consumes. target is whatever the overlay addresses:
 // the whole config for a main file, one sub-struct for a feature file.
 //
-// Both overlay forms go through it -- the single overlay file, and every file an
-// overlay directory contributes -- so neither form can lose the fields of a
-// map-valued entry it only partly addresses. Decoding an overlay into target
-// directly replaces such an entry wholesale, which is how an overlay naming only
-// services.state.target cleared the target_token the base file set.
+// Both processed overlay forms go through it -- the single overlay file, and an
+// overlay directory's main and feature files -- so neither can lose the fields of
+// a map-valued entry it only partly addresses. A conf.d/*.yaml extra in an
+// overlay directory does not: decodeExtra stores a whole file under
+// cfg.Extra[name] and nothing reads that map, so there is no entry to fold into.
+// Decoding an overlay into target directly replaces such an entry wholesale,
+// which is how an overlay naming only services.state.target cleared the
+// target_token the base file set.
 func applyOverlayFile(path string, target any) ([]string, error) {
 	mapping, err := decodeFileMapping(path)
 	if err != nil {

@@ -353,34 +353,45 @@ func validateSingleIdentity(cfg *config.Config) error {
 // (docs/architecture/configuration.md's IdentityConfig note).
 func validateRepositoryContents(cfg *config.Config) error {
 	if len(cfg.Identities) == 0 {
-		return validateRepos(cfg.Repos)
+		return ValidateRepositories(cfg.Repos)
 	}
 	for i, id := range cfg.Identities {
-		if err := validateRepos(id.Repos); err != nil {
+		if err := ValidateRepositories(id.Repos); err != nil {
 			return fmt.Errorf("identities[%d]: %w", i, err)
 		}
 	}
 	return nil
 }
 
-func validateRepos(repos []config.Repo) error {
+// ValidateRepositories judges a repository list: owner and name present, no
+// duplicate entries, and a test glob the gate can compile. It is exported
+// because the repository-policies resource validator (internal/app/controlplane)
+// judges the same list -- that resource is seeded from these and replaces them
+// wholesale, so the two layers must not disagree about which lists are valid, in
+// either direction: a list one layer accepts and the other refuses is a config
+// that boots file-side and stores nowhere, or a stored value the daemon then
+// refuses to start with.
+func ValidateRepositories(repos []config.Repo) error {
+	seen := make(map[string]struct{}, len(repos))
 	for i, r := range repos {
 		if r.Owner == "" || r.Name == "" {
 			return fmt.Errorf("%w: repos[%d] needs owner and name", ErrInvalidInput, i)
 		}
-		if err := ValidateTestGlob(r.ResolvedTestGlob()); err != nil {
+		if _, exists := seen[r.FullName()]; exists {
+			return fmt.Errorf("%w: repos[%d] duplicates %q", ErrInvalidInput, i, r.FullName())
+		}
+		seen[r.FullName()] = struct{}{}
+		if err := validateTestGlob(r.ResolvedTestGlob()); err != nil {
 			return fmt.Errorf("%w: repos[%d] %w", ErrInvalidInput, i, err)
 		}
 	}
 	return nil
 }
 
-// ValidateTestGlob reports whether glob is a pattern the test-protection gate can
-// compile. It is exported because the repository-policies resource validator
-// (internal/app/controlplane) judges the same field: that resource is seeded from
-// the file's repositories and replaces them wholesale, and a pattern the gate
-// cannot compile is a value that must not be storable either.
-func ValidateTestGlob(glob string) error {
+// validateTestGlob reports whether glob is a pattern the test-protection gate can
+// compile. It has one caller on each side through ValidateRepositories, so the
+// rule has one definition rather than a copy per layer.
+func validateTestGlob(glob string) error {
 	if glob == "" {
 		return nil
 	}

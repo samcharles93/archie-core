@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
@@ -66,21 +68,29 @@ func TestLoadConfigAcceptsStaleDatabaseOwnedValues(t *testing.T) {
 	}
 }
 
+// staleBootGrace is how long one boot in
+// TestStateStoreBootsWithStaleDatabaseOwnedValues may run before the test cancels
+// it: short, because the assertion does not depend on it -- a refusal arrives as
+// an error either before the cancel (first select) or after it (second select,
+// where a non-Canceled error fails the test).
+//
+// staleShutdownGrace bounds the shutdown, and is deliberately not the 5s the
+// single-boot regression test uses: this table runs five boots back to back on a
+// host that may be busy, and the select returns the moment the process does, so
+// the bound costs nothing when shutdown is quick and only decides how long a
+// failure takes to report.
+const (
+	staleBootGrace     = 250 * time.Millisecond
+	staleShutdownGrace = 30 * time.Second
+)
+
 // TestStateStoreBootsWithStaleDatabaseOwnedValues is the process-level half of
 // the item, and the layer that actually decides it: archie-state-store seeds
 // every control-plane resource from the same file config on a fresh database
 // (state_store.go, control.ImportConfig), and that seed is what runs the
 // resource's own validator. A seed that does not validate is skipped and
-// reported, not fatal -- the value stays file-owned, archied refuses to run with
-// it, and the operator's fix in config.toml is what clears it.
-// staleBootGrace is how long one boot in
-// TestStateStoreBootsWithStaleDatabaseOwnedValues may run before the test
-// cancels it. It can be short because the assertion does not depend on it: a
-// refusal arrives as an error either before the cancel (first select) or after
-// it (second select, where a non-Canceled error fails the test). The wait only
-// gives the serving path a chance to prove it did not return immediately.
-const staleBootGrace = 250 * time.Millisecond
-
+// reported, not fatal -- the kind stays absent, the file's value is the one in
+// effect, and the operator's fix in config.toml is what clears it.
 func TestStateStoreBootsWithStaleDatabaseOwnedValues(t *testing.T) {
 	for _, tt := range staleDatabaseOwnedSettings {
 		t.Run(tt.name, func(t *testing.T) {
@@ -116,10 +126,105 @@ func TestStateStoreBootsWithStaleDatabaseOwnedValues(t *testing.T) {
 				if err != nil && !errors.Is(err, context.Canceled) {
 					t.Fatalf("RunStateStore returned %v, want nil or context.Canceled", err)
 				}
-			case <-time.After(shutdownGrace):
+			case <-time.After(staleShutdownGrace):
 				t.Fatal("RunStateStore did not return within the shutdown grace after cancellation")
 			}
 		})
+	}
+}
+
+// TestRuntimeConfigKeepsTheFileValueWhenAKindHasNoStoredResource is the other
+// end of a seed the control plane refused: the kind stays ABSENT rather than
+// being stored (ImportConfig skips it), and boot must then fall back to the
+// file document's value. Treating an absent kind as fatal is how a config the
+// file layer blesses left the daemon unbootable with a database-named error,
+// and left editing config.toml unable to fix it.
+func TestRuntimeConfigKeepsTheFileValueWhenAKindHasNoStoredResource(t *testing.T) {
+	tests := []struct {
+		name  string
+		kind  string
+		check func(t *testing.T, cfg config.Config)
+	}{
+		{
+			name: "repository policies",
+			kind: controlplane.RepositoryPoliciesKind,
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				if len(cfg.Repos) != 1 || cfg.Repos[0].Name != "from-file" {
+					t.Errorf("Repos = %+v, want the file's from-file", cfg.Repos)
+				}
+			},
+		},
+		{
+			name: "scheduling policy",
+			kind: controlplane.SchedulingPolicyKind,
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				if cfg.PollInterval != config.Duration(time.Minute) {
+					t.Errorf("PollInterval = %v, want the file's 1m", cfg.PollInterval)
+				}
+			},
+		},
+		{
+			name: "container runtime policies",
+			kind: controlplane.ContainerRuntimePoliciesKind,
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				if cfg.Containers.Image != "archie:from-file" {
+					t.Errorf("Containers.Image = %q, want the file's archie:from-file", cfg.Containers.Image)
+				}
+			},
+		},
+		{
+			name: "providers",
+			kind: controlplane.ProviderSettingsKind,
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				if got := cfg.Providers["file"].Class; got != "openai" {
+					t.Errorf("Providers[file].Class = %q, want the file's openai", got)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resources := databaseOwnedResources()
+			delete(resources, tt.kind)
+			b := newReloadBoot(t, &controlPlaneStub{values: resources})
+
+			if err := b.loadRuntimeConfig(t.Context()); err != nil {
+				t.Fatalf("loadRuntimeConfig: %v (a kind with no stored value must leave the file's value in effect)", err)
+			}
+			tt.check(t, b.cfgHolder.Get())
+		})
+	}
+}
+
+// TestDuplicateRepositoriesFailOnTheFilesOwnMessage is the end of the path the
+// fix-closure review found. A duplicate [[repos]] entry is refused by the
+// repository-policies validator, so the kind is never seeded and stays absent --
+// and boot must then fail on the FILE's copy of the value, naming the duplicate,
+// with the file as the fix. It used to fail on "control-plane resource not
+// found": a database-named error that editing config.toml could not clear.
+func TestDuplicateRepositoriesFailOnTheFilesOwnMessage(t *testing.T) {
+	resources := databaseOwnedResources()
+	delete(resources, controlplane.RepositoryPoliciesKind)
+	b := newReloadBoot(t, &controlPlaneStub{values: resources})
+	b.cfg.Repos = []config.Repo{{Owner: "acme", Name: "app"}, {Owner: "acme", Name: "app"}}
+
+	err := b.loadRuntimeConfig(t.Context())
+	if err == nil {
+		t.Fatal("loadRuntimeConfig accepted a duplicate repository list")
+	}
+	if !errors.Is(err, configuration.ErrInvalidInput) {
+		t.Errorf("loadRuntimeConfig = %v, want it to wrap configuration.ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "duplicates") {
+		t.Errorf("loadRuntimeConfig = %v, want the duplicate named the way configuration.Validate names it", err)
+	}
+	if strings.Contains(err.Error(), "not found") {
+		t.Errorf("loadRuntimeConfig = %v, want no absent-resource error: the file's value is the one in effect", err)
 	}
 }
 

@@ -41,33 +41,27 @@ func operationalDefinitions() []Definition {
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedTools, Validate: validateTools},
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
-		}, Validate: func(input []byte) error { return validateAs(input, func(pluginSettings) error { return nil }) }},
+		}, Validate: validatePluginSettings},
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any { return cfg.Containers }, Validate: validateContainers},
 	}
 }
 
+// validatePluginSettings accepts every value: the four directories are free-form
+// operator paths with no cross-field rule and no rule the configuration package
+// applies either (configuration.Validate has no say over them), so there is
+// nothing yet for this validator to enforce. It stays a real function rather than
+// an inline no-op so the place to add a rule is obvious when one exists -- e.g.
+// "a path that is absolute" or "a skills dir under the plugin dir".
+func validatePluginSettings(input []byte) error {
+	return validateAs(input, func(pluginSettings) error { return nil })
+}
+
 func validateRepositories(input []byte) error {
-	return validateAs(input, func(repos []config.Repo) error {
-		seen := make(map[string]struct{}, len(repos))
-		for _, repo := range repos {
-			if strings.TrimSpace(repo.Owner) == "" || strings.TrimSpace(repo.Name) == "" {
-				return fmt.Errorf("repository owner and name are required")
-			}
-			if _, exists := seen[repo.FullName()]; exists {
-				return fmt.Errorf("duplicate repository %q", repo.FullName())
-			}
-			seen[repo.FullName()] = struct{}{}
-			// The repository-policies resource replaces the file's list, so the
-			// rules that judge the file's list have to hold here too. They come
-			// from the configuration package rather than being restated: a
-			// resource that accepts what configuration.Validate rejects becomes a
-			// stored value the operator cannot clear by editing config.toml.
-			if err := configuration.ValidateTestGlob(repo.ResolvedTestGlob()); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	// The rules live in the configuration package and are shared with the file
+	// document's own validation (configuration.ValidateRepositories): which
+	// repository lists are valid cannot differ between the file that seeds this
+	// resource and the resource that replaces it.
+	return validateAs(input, configuration.ValidateRepositories)
 }
 
 func validateScheduling(input []byte) error {
@@ -75,13 +69,14 @@ func validateScheduling(input []byte) error {
 		if policy.MaxRetries < 0 {
 			return fmt.Errorf("max_retries must not be negative")
 		}
-		if policy.PollInterval != "0s" {
-			interval, err := time.ParseDuration(policy.PollInterval)
-			if err != nil || interval < 0 {
-				return fmt.Errorf("poll_interval must be a non-negative duration")
-			}
+		// A positive interval, not a non-negative one: the file layer's rule is
+		// the same, and there is no defaulting behind a stored value -- a stored
+		// "0s" reaches cfg.PollInterval as zero and stops archied starting.
+		interval, err := time.ParseDuration(policy.PollInterval)
+		if err != nil || interval <= 0 {
+			return fmt.Errorf("poll_interval must be a positive duration")
 		}
-		// Same reason as the repository glob above: RuntimeConfig replaces
+		// Same reason as the repository rules above: RuntimeConfig replaces
 		// cfg.Dispatch from this resource, and the daemon refuses to start with a
 		// trigger it does not know.
 		if !configuration.DispatchTriggerValid(policy.Dispatch.Trigger) {

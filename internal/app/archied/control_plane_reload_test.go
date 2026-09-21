@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -18,7 +20,9 @@ import (
 
 // controlPlaneStub answers Query from a fixed resource map. queryErr, when
 // set, fails every Query so a test can drive the unreachable-State-Store
-// path.
+// path. A kind the map does not carry is answered the way the server answers
+// one with no stored value -- codes.NotFound (controlplane.mapError) -- so a
+// test can drive the absent-resource state a skipped seed leaves behind.
 type controlPlaneStub struct {
 	values   map[string]any
 	queryErr error
@@ -32,8 +36,12 @@ func (c *controlPlaneStub) Query(_ context.Context, request *pb.QueryRequest, _ 
 	if c.queryErr != nil {
 		return nil, c.queryErr
 	}
-	value, err := json.Marshal(c.values[request.Kind])
-	return &pb.QueryResponse{Resource: &pb.Resource{Kind: request.Kind, Version: 3, ValueJson: value}}, err
+	value, ok := c.values[request.Kind]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "resource not found")
+	}
+	encoded, err := json.Marshal(value)
+	return &pb.QueryResponse{Resource: &pb.Resource{Kind: request.Kind, Version: 3, ValueJson: encoded}}, err
 }
 
 func (*controlPlaneStub) History(context.Context, *pb.HistoryRequest, ...grpc.CallOption) (*pb.HistoryResponse, error) {
@@ -67,11 +75,15 @@ func databaseOwnedResources() map[string]any {
 // fileConfig is what the loader produces from config.toml alone: the layer a
 // SIGHUP reload re-resolves, holding none of the database's values. It is a
 // config the daemon would run, so it passes configuration.Validate -- the live
-// apply path runs that same check over the snapshot it is about to publish.
+// apply path runs that same check over the snapshot it is about to publish --
+// and every field validation reads is filled in the way the loader's defaults
+// fill it, so a kind with no stored value can fall back to this document (see
+// TestRuntimeConfigKeepsTheFileValueWhenAKindHasNoStoredResource).
 func fileConfig() config.Config {
 	return config.Config{
 		BotUser:      "widget",
 		Forge:        config.Forge{Type: "github"},
+		Dispatch:     config.Dispatch{Trigger: "assignee"},
 		Providers:    map[string]config.Provider{"file": {Class: "openai"}},
 		Models:       map[string]string{"builder": "file/model"},
 		Repos:        []config.Repo{{Owner: "acme", Name: "from-file"}},
@@ -81,7 +93,6 @@ func fileConfig() config.Config {
 		PluginDir:    "/file/plugins",
 		Containers:   config.ContainerConfig{Image: "archie:from-file", PullPolicy: "missing"},
 		Budgets:      config.Budgets{MaxSteps: 1, WallClock: config.Duration(time.Minute)},
-		Dispatch:     config.Dispatch{Trigger: "assignee"},
 	}
 }
 

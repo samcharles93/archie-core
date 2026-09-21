@@ -72,8 +72,10 @@ type SeedSkip struct {
 // from the file config, and reports the version of every kind it left alone.
 //
 // A seed the resource's own validator refuses is SKIPPED and returned in skipped,
-// not fatal. The setting it would have carried stays file-owned, so the value in
-// effect is still the file's, and the fix is still the file's.
+// not fatal. Nothing is written for that kind, so it stays ABSENT and the file
+// document's value stays the one in effect (Client.RuntimeConfig leaves an absent
+// kind alone), with the fix still in the file. The seed is retried on the next
+// start of this process, so correcting config.toml re-seeds it.
 // docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
 // after migration, settings in TOML are ignored and cannot block State Store
 // startup -- and this import runs on the State Store's startup path. Fail closed

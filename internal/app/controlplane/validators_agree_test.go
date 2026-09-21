@@ -49,6 +49,17 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// A zero interval is what applyDefaults replaces before validation
+			// runs, so the file layer only ever sees it as a value to reject. The
+			// resource has no defaulting behind it: a stored "0s" would become
+			// cfg.PollInterval = 0 and stop archied starting.
+			name:    "zero poll interval",
+			kind:    SchedulingPolicyKind,
+			value:   map[string]any{"poll_interval": "0s", "max_retries": 0, "dispatch": map[string]any{"trigger": "assignee"}},
+			mutate:  func(cfg *config.Config) { cfg.PollInterval = 0 },
+			wantErr: true,
+		},
+		{
 			name:    "valid repository policies",
 			kind:    RepositoryPoliciesKind,
 			value:   []config.Repo{{Owner: "acme", Name: "app", TestGlob: "**/*_test.go"}},
@@ -60,6 +71,18 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 			kind:    RepositoryPoliciesKind,
 			value:   []config.Repo{{Owner: "acme", Name: "app", TestGlob: "["}},
 			mutate:  func(cfg *config.Config) { cfg.Repos = []config.Repo{{Owner: "acme", Name: "app", TestGlob: "["}} },
+			wantErr: true,
+		},
+		{
+			// Both layers have to call a duplicate list invalid. When only the
+			// resource did, a config the file layer blessed left the daemon
+			// unbootable on a database-named error.
+			name:  "duplicate repository",
+			kind:  RepositoryPoliciesKind,
+			value: []config.Repo{{Owner: "acme", Name: "app"}, {Owner: "acme", Name: "app"}},
+			mutate: func(cfg *config.Config) {
+				cfg.Repos = []config.Repo{{Owner: "acme", Name: "app"}, {Owner: "acme", Name: "app"}}
+			},
 			wantErr: true,
 		},
 		{
