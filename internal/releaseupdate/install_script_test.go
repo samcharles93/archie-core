@@ -369,7 +369,7 @@ case "$*" in
     source_dir="${@: -1}"
     mkdir -p "$source_dir"
     /usr/bin/cp -R "$ARCHIE_TEST_SOURCE_DIR/scripts" "$source_dir/scripts"
-    for c in archied archie-gateway archie-state-store archie-ui archie-playbooks archie-agent; do
+    for c in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks archie-agent; do
       mkdir -p "$source_dir/cmd/$c"
     done
     : > "$source_dir/docker-compose.yml"
@@ -641,16 +641,16 @@ func TestUpdateInstallBuildsEveryReleaseBinary(t *testing.T) {
 		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
 	})
 
-	for _, cmd := range []string{"archied", "archie-gateway", "archie-state-store", "archie-ui", "archie-playbooks"} {
+	for _, cmd := range []string{"archied", "archie-gateway", "archie-state-store", "archie-ui", "archie-messaging", "archie-playbooks"} {
 		assertCallContains(t, calls, "go build", "internal/app/archied.gatewayVersion=1.23.0", "./cmd/"+cmd)
 		assertCallContains(t, calls, "install -m755", "/"+cmd)
 	}
 	assertCallAbsent(t, calls, "./cmd/archie-agent")
 	// The watchdog cannot restart what it is not told about.
 	assertCallContains(t, calls, "systemd-run",
-		"--setenv=ARCHIE_UPDATE_UNITS=archie-state-store archie-gateway archied archie-ui")
+		"--setenv=ARCHIE_UPDATE_UNITS=archie-state-store archie-gateway archied archie-ui archie-messaging")
 	assertCallContains(t, calls, "systemd-run",
-		"--setenv=ARCHIE_UPDATE_BINARIES=archie-state-store archie-gateway archied archie-ui archie-playbooks")
+		"--setenv=ARCHIE_UPDATE_BINARIES=archie-state-store archie-gateway archied archie-ui archie-messaging archie-playbooks")
 }
 
 // Installing binaries for processes the host has no unit for produces exactly

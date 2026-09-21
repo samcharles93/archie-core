@@ -81,14 +81,20 @@ TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 
 # The archied release is a set of processes, not one binary. Listed in start
-# order: the State Store owns archie.db and every other process dials it, and
-# the Gateway serves the chat contract archied and the UI dial, so each comes
-# up before its consumers. archie-playbooks is a CLI, so it is installed but
-# never restarted. deployments/systemd-user-service.md is the reference
-# deployment; installing archied alone leaves the rest on the previous
-# release, which is why a 1.23.0 update failed its health check
+# order: the State Store owns archie.db and every other process dials it, the
+# Gateway serves the chat contract archied, the UI and the Messaging Service
+# dial, and each comes up before its consumers. archie-playbooks is a CLI, so
+# it is installed but never restarted. deployments/systemd-user-service.md is
+# the reference deployment; installing archied alone leaves the rest on the
+# previous release, which is why a 1.23.0 update failed its health check
 # (archie-core-hbqk).
-GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui"
+#
+# archie-messaging is a service, not a CLI: it owns the Telegram, email and
+# webhook channels since the v1.30.0 extraction, so a host that updates without
+# it keeps running with dead channels and no error anywhere
+# (archie-core-1c01). TestUpdateInstallCoversEveryHostRunCommand fails if this
+# list and GATEWAY_BINARIES stop covering the commands the release zip ships.
+GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui archie-messaging"
 GATEWAY_BINARIES="$GATEWAY_SERVICES archie-playbooks"
 
 PREV_GW="${ARCHIE_UPDATE_DAEMON_PREVIOUS:-}"

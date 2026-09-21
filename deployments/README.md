@@ -35,6 +35,7 @@ Edit API keys in `~/.config/archie/env` or directly in `config.toml`, then launc
 ```bash
 archie-gateway -config ~/.config/archie/config.toml -listen 127.0.0.1:8585 &
 archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090 &
+archie-messaging -config ~/.config/archie/config.toml &
 archie-ui -config ~/.config/archie/config.toml &
 archied -config ~/.config/archie/config.toml
 # or via systemd:

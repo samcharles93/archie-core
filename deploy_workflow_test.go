@@ -1,6 +1,9 @@
 package configtemplate
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -79,4 +82,175 @@ func TestPullRequestsRunTheDefinitiveGateWithoutPublishAccess(t *testing.T) {
 			t.Errorf("quality workflow has publishing capability %q", forbidden)
 		}
 	}
+}
+
+// unpackagedCommands are commands that deliberately never ship as a host binary.
+// Naming each one with its reason keeps an omission a decision rather than an
+// oversight -- which is exactly how archied's channels were lost.
+var unpackagedCommands = map[string]string{
+	"archie-agent": "runs only inside the Docker image build-and-push publishes, never as a host binary",
+}
+
+// cliOnlyCommands ship in the zip but must never be restarted by the updater:
+// they are not services.
+var cliOnlyCommands = map[string]bool{"archie-playbooks": true}
+
+// TestHostCommandListsCannotDrift is why archie-core-1c01 went unnoticed for two
+// days. The v1.30.0 extraction moved Telegram, email and webhook out of archied
+// into a new cmd/archie-messaging that nothing packaged: the release zip omitted
+// it, and scripts/archie-update-install omitted it from both of its lists, so a
+// host install ran on with a dead Telegram bot and no error logged anywhere. The
+// daemon looked healthy throughout.
+//
+// The host component set was enumerated independently in three places (the zip's
+// build loop, the zip's copy list, and the installer's two lists), so two
+// coordinated edits would have drifted again. Every list is pinned to cmd/ here
+// instead: adding a command fails this test until it is packaged, and extracting
+// one fails it until the previous command is removed.
+func TestHostCommandListsCannotDrift(t *testing.T) {
+	workflow := readDeploymentFile(t, ".github/workflows/deploy.yml")
+	installer := readDeploymentFile(t, filepath.Join("scripts", "archie-update-install"))
+
+	want := hostRunCommands(t)
+	wantBinaries := want
+	wantServices := withoutCLIOnly(want)
+
+	built := wordsAfter(t, workflow, "for cmd in ", "; do", nil)
+	// The marker consumes the prefix of the first word only, so restore it for
+	// whichever word the marker ended inside.
+	var shipped []string
+	for _, word := range wordsAfter(t, workflow, "cp dist/", ` "$name/"`, nil) {
+		if !strings.HasPrefix(word, "dist/") {
+			word = "dist/" + word
+		}
+		shipped = append(shipped, strings.TrimPrefix(word, "dist/"))
+	}
+	services := wordsAfter(t, installer, `GATEWAY_SERVICES="`, `"`, nil)
+	binaries := wordsAfter(t, installer, `GATEWAY_BINARIES="`, `"`, map[string][]string{"$GATEWAY_SERVICES": services})
+
+	for _, list := range []struct {
+		name string
+		got  []string
+		want []string
+	}{
+		{"deploy.yml dist-zip build loop", built, wantBinaries},
+		{"deploy.yml dist-zip copy list", shipped, wantBinaries},
+		{"archie-update-install GATEWAY_BINARIES", binaries, wantBinaries},
+		{"archie-update-install GATEWAY_SERVICES", services, wantServices},
+	} {
+		if diff := setDifference(list.want, list.got); diff != "" {
+			t.Errorf("%s does not match the host-run commands in cmd/: %s", list.name, diff)
+		}
+	}
+
+	// The installer now REFUSES an update when a service unit is missing and
+	// tells the operator to create it from this runbook, so a service the
+	// runbook never shows is a dead end rather than a documentation gap.
+	runbook := readDeploymentFile(t, filepath.Join("deployments", "systemd-user-service.md"))
+	var undocumented []string
+	for _, service := range wantServices {
+		if !strings.Contains(runbook, "/bin/"+service+" ") {
+			undocumented = append(undocumented, service)
+		}
+	}
+	if len(undocumented) > 0 {
+		t.Errorf("deployments/systemd-user-service.md documents no unit for: %s", strings.Join(undocumented, " "))
+	}
+}
+
+// hostRunCommands is every command under cmd/, minus the deliberately
+// unpackaged ones. Deriving it is the point: a list written out here would drift
+// from cmd/ exactly as the packaged lists did.
+func hostRunCommands(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir("cmd")
+	if err != nil {
+		t.Fatalf("read cmd/: %v", err)
+	}
+	var commands []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, skip := unpackagedCommands[entry.Name()]; skip {
+			continue
+		}
+		commands = append(commands, entry.Name())
+	}
+	if len(commands) == 0 {
+		t.Fatal("cmd/ holds no commands: this guard would assert nothing")
+	}
+	sort.Strings(commands)
+	return commands
+}
+
+func withoutCLIOnly(commands []string) []string {
+	out := make([]string, 0, len(commands))
+	for _, command := range commands {
+		if cliOnlyCommands[command] {
+			continue
+		}
+		out = append(out, command)
+	}
+	return out
+}
+
+// wordsAfter returns the whitespace-separated words between two markers on the
+// same line. expand maps a word to the words it stands for, which is how the
+// installer's "$GATEWAY_SERVICES" reference is followed to what it names.
+func wordsAfter(t *testing.T, source, marker, terminator string, expand map[string][]string) []string {
+	t.Helper()
+	start := strings.Index(source, marker)
+	if start < 0 {
+		t.Fatalf("no %q in the file under test", marker)
+	}
+	rest := source[start+len(marker):]
+	end := strings.Index(rest, terminator)
+	if end < 0 {
+		t.Fatalf("no %q after %q", terminator, marker)
+	}
+	var words []string
+	for word := range strings.FieldsSeq(rest[:end]) {
+		if replacement, ok := expand[word]; ok {
+			words = append(words, replacement...)
+			continue
+		}
+		words = append(words, word)
+	}
+	return words
+}
+
+// setDifference names what is missing from and extra in got, so a failure says
+// which side moved rather than that two lists differ.
+func setDifference(want, got []string) string {
+	present := make(map[string]bool, len(got))
+	for _, item := range got {
+		present[item] = true
+	}
+	var missing []string
+	for _, item := range want {
+		if !present[item] {
+			missing = append(missing, item)
+		}
+	}
+	expected := make(map[string]bool, len(want))
+	for _, item := range want {
+		expected[item] = true
+	}
+	var extra []string
+	for _, item := range got {
+		if !expected[item] {
+			extra = append(extra, item)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	var problems []string
+	if len(missing) > 0 {
+		problems = append(problems, "missing "+strings.Join(missing, " "))
+	}
+	if len(extra) > 0 {
+		problems = append(problems, "unexpected "+strings.Join(extra, " "))
+	}
+	return strings.Join(problems, "; ")
 }

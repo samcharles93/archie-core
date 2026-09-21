@@ -71,6 +71,38 @@ WantedBy=default.target
 
 ---
 
+### Messaging Service Unit (`~/.config/systemd/user/archie-messaging.service`)
+
+The Telegram, email and webhook channels are served by `archie-messaging`, not
+by `archied`, since the v1.30.0 extraction. `archied` starts no gateway for them
+and logs nothing when one is absent, so a host that updates across v1.30.0
+without this unit runs on with dead channels and a daemon that looks perfectly
+healthy -- that was `archie-core-1c01`, found after two days of a silently dead
+Telegram bot. `scripts/archie-update-install` refuses an update when a service
+unit is missing and names what is missing, so create this one before updating.
+
+It dials the Gateway for the chat contract and the State Store for the stored
+channel settings, and reads the same `config.toml`. Like `archie-ui` it resolves
+`GATEWAY_TOKEN` and `STATE_STORE_TOKEN` from its process environment, hence the
+`EnvironmentFile`:
+
+```ini
+[Unit]
+Description=Archie Messaging Service
+After=network.target archie-gateway.service archie-state-store.service
+Wants=archie-gateway.service archie-state-store.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/archie-messaging -config %h/.config/archie/config.toml
+EnvironmentFile=-%h/.config/archie/env
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+```
+
 ## 2. UI Service Unit (`~/.config/systemd/user/archie-ui.service`)
 
 The dashboard is served by the standalone UI Service, not by `archied`
@@ -158,7 +190,7 @@ systemctl --user daemon-reload
 
 Enable and start the service immediately:
 ```bash
-systemctl --user enable --now archie-gateway archie-ui archied
+systemctl --user enable --now archie-state-store archie-gateway archie-messaging archie-ui archied
 ```
 
 Check service status:

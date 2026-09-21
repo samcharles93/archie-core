@@ -74,7 +74,8 @@ Tagging both components at one commit produces, from a single `deploy` run:
   and the host pulls the new image.
 - **A GitHub Release with a distribution zip** — `dist-zip` builds every
   process the reference deployment runs (`archied`, `archie-gateway`,
-  `archie-state-store`, `archie-ui`, `archie-playbooks`) for linux/amd64, packs
+  `archie-state-store`, `archie-ui`, `archie-messaging`, `archie-playbooks`) for
+  linux/amd64, packs
   them with `deployments/INSTRUCTIONS.md` and the changelogs, and attaches the
   zip to the Release for the **archied** tag. The Release body is that
   version's `CHANGELOG.archied.md` section. Both jobs are keyed to the archied

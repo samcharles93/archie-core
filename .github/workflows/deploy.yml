@@ -199,8 +199,9 @@ jobs:
           cache-from: type=gha,scope=archie-agent
           cache-to: type=gha,mode=max,scope=archie-agent
 
-  # Packages the host-run binaries (archied, archie-gateway,
-  # archie-state-store, archie-playbooks) as a linux/amd64 zip for a
+  # Packages every host-run binary (archied, archie-gateway,
+  # archie-state-store, archie-ui, archie-messaging, archie-playbooks) as a
+  # linux/amd64 zip for a
   # non-Docker install. Independent of build-and-push: it never touches the
   # archied/archie-agent image jobs, and a gateway-only release (no
   # archie/v* tag) still produces this zip -- it's keyed to the archied tag
@@ -246,9 +247,16 @@ jobs:
           # every one of them carries the archied version it was cut from:
           # they are one release, and an operator matching binaries by eye
           # needs each to say so.
+          #
+          # That claim is load-bearing and this list is the whole of it: the
+          # v1.30.0 messaging extraction moved Telegram/email/webhook out of
+          # archied and nothing added archie-messaging here, so a host install
+          # ran on with a dead Telegram bot and no error anywhere
+          # (archie-core-1c01). TestDistZipShipsEveryHostCommand fails if this
+          # list and the copy list below stop matching the commands in cmd/.
           ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
           mkdir -p dist
-          for cmd in archied archie-gateway archie-state-store archie-ui archie-playbooks; do
+          for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks; do
             go build -ldflags "$ldflags" -o "dist/$cmd" "./cmd/$cmd"
           done
 
@@ -258,7 +266,7 @@ jobs:
           set -e
           name="archie-core-archied-v${{ steps.version.outputs.version }}-linux-amd64"
           mkdir -p "$name"
-          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-ui dist/archie-playbooks "$name/"
+          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-ui dist/archie-messaging dist/archie-playbooks "$name/"
           cp deployments/INSTRUCTIONS.md CHANGELOG.md CHANGELOG.archied.md CHANGELOG.archie.md "$name/"
           # README.md doesn't exist yet in this repo; include it once it does
           # rather than fail the release on its absence.
