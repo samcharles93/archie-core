@@ -40,6 +40,17 @@ var (
 // control plane's executionSettingsDocument spells it.
 const restartStoredDocument = `{"max_model_tool_steps": 25, "max_runtime_seconds": 3600, "max_consecutive_gate_failures": 4}`
 
+// documentedStaleWindow is the window the operator-facing contract documents:
+// every process re-stamps its records every 30 seconds, and "a record is stale
+// once it is older than 90 seconds" (docs/prds/control-plane-apply-status.md,
+// "What is reported"). It is a fixture literal on purpose. Reading
+// applystatus.StaleAfter here would derive the aged row from the constant the
+// reader is supposed to honour, so the fixture would move with any mutation of
+// that constant and the reading below would agree with the reader by
+// construction -- a test that passes for a window measured in hours is a test
+// that never went stale at all.
+const documentedStaleWindow = 90 * time.Second
+
 // settingsDocument mirrors the stored document, so an assertion can read a
 // revision's value back as the limits it means rather than as bytes.
 type settingsDocument struct {
@@ -140,23 +151,27 @@ func TestControlPlaneSettingsChangeSurvivesProcessRestart(t *testing.T) {
 	}
 
 	// 5. The apply-status row for the restarted process reports the version it
-	// applied, and the settings page reads that row as current...
+	// applied, and the settings page reads that row as current: it was reported
+	// at now, which is the fresh half of the age pair the aged read below
+	// completes.
 	if row := reportedRow(t, admin, kind); row.AppliedVersion != 2 || row.Error != "" {
 		t.Fatalf("apply status after the restart = %+v, want version 2 and no error", row)
 	}
 	if state := applyStatusState(t, dashboard, kind); state != applyStateCurrentWire {
-		t.Fatalf("the settings page reads the freshly re-stamped row as %q, want %q", state, applyStateCurrentWire)
+		t.Fatalf("the settings page reads the row reported at now as %q, want %q", state, applyStateCurrentWire)
 	}
 
-	// ...and reads a row older than the staleness window as not reporting
-	// rather than as current. The row is re-stamped every 30 seconds by the
-	// process that wrote it, so a row that stopped being re-stamped is a
+	// ...and reads a row older than the documented staleness window as not
+	// reporting rather than as current. The row is re-stamped every 30 seconds
+	// by the process that wrote it, so a row that stopped being re-stamped is a
 	// process that stopped -- the reader must not present its last report as
-	// live. Ageing it through the same administrative surface is what the
-	// clock would have done to it.
+	// live. Ageing it through the same administrative surface is what the clock
+	// would have done to it, and the age is the documented 90 seconds rather
+	// than whatever the reader's own constant happens to be, so a window that
+	// stopped expiring really does fail the reading.
 	if err := admin.PutApplyStatus(t.Context(), storecontract.ApplyStatus{
 		Process: applystatus.Daemon, Kind: kind, AppliedVersion: 2,
-		ReportedAt: time.Now().UTC().Add(-applystatus.StaleAfter - time.Second),
+		ReportedAt: time.Now().UTC().Add(-documentedStaleWindow - time.Second),
 	}); err != nil {
 		t.Fatalf("age the apply status row: %v", err)
 	}
