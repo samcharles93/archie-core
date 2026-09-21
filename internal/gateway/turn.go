@@ -300,9 +300,10 @@ type preparedTurn struct {
 }
 
 // prepareTurn builds the tools, system prompt, and compressed history view
-// for one turn's generation call.
+// for one turn's generation call. Before the request is assembled it also
+// runs the session-level compression trigger, since that needs the same
+// model-derived budget the view is built against.
 func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbound, history []messaging.Message) (preparedTurn, error) {
-	compressed := compressTurnHistory(history)
 	subject := r.resolveSubject(in.Message)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
@@ -358,7 +359,14 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 		r.Log.Warn("chat model has no context metadata; using compatibility compression budget",
 			"model", modelName)
 	}
-	view := CompressHistory(compressed, compression)
+	// The trigger runs before the request is assembled, so a session that has
+	// crossed its budget is summarised and this turn generates from the
+	// compressed history rather than overflowing it.
+	history, err = r.compressSessionAtBudget(ctx, sessionID, modelDetails, compression, history)
+	if err != nil {
+		return preparedTurn{}, err
+	}
+	view := CompressHistory(compressTurnHistory(history), compression)
 	if r.Log != nil {
 		r.Log.Info("chat turn",
 			"session", sessionID,
@@ -373,6 +381,55 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 		[]CompressedMessage{{Role: "system", Content: systemPrompt}}, view.Messages...,
 	)
 	return preparedTurn{prepared: prepared, modelName: modelName, modelDetails: modelDetails, view: view}, nil
+}
+
+// compressSessionAtBudget compresses the session's stored history when it has
+// crossed the model-derived budget, through the same replacement path the
+// /compress command uses. It returns the history this turn should build its
+// request from: re-read from the store after a compression was written, and
+// the caller's slice untouched otherwise.
+//
+// It refuses to guess a budget. Without a resolved context window there is
+// nothing to compare the session against, and the compatibility window the
+// compressor falls back to would either summarise a conversation that fits
+// its model or leave a longer one to overflow -- so an unresolved model
+// leaves the session alone.
+func (r *TurnRunner) compressSessionAtBudget(
+	ctx context.Context,
+	sessionID string,
+	details ModelDetails,
+	cfg CompressionConfig,
+	history []messaging.Message,
+) ([]messaging.Message, error) {
+	if details.ContextWindow <= 0 {
+		return history, nil
+	}
+	compressed, err := r.Router.compressSessionIfOverBudget(ctx, sessionID, cfg)
+	if err != nil {
+		return history, fmt.Errorf("compress chat session: %w", err)
+	}
+	if !compressed {
+		return history, nil
+	}
+	if r.Log != nil {
+		r.Log.Info("compressed the chat session at its context budget",
+			"session", sessionID,
+			"channel", r.Channel,
+			"messages_before", len(history),
+			"context_window", details.ContextWindow,
+			"prompt_budget", cfg.MaxPromptTokens)
+	}
+	// The store is the authority on what this session now holds, including
+	// any message that arrived while the summary was computed.
+	count, err := r.Sessions.MessageCount(ctx, sessionID)
+	if err != nil {
+		return history, fmt.Errorf("count compressed chat history: %w", err)
+	}
+	reloaded, err := r.Sessions.RecentMessages(ctx, sessionID, count)
+	if err != nil {
+		return history, fmt.Errorf("reload compressed chat history: %w", err)
+	}
+	return reloaded, nil
 }
 
 func (r *TurnRunner) Run(ctx context.Context, in Inbound, stream TurnStream) (string, error) {

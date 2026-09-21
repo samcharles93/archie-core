@@ -763,23 +763,48 @@ func (r *Router) messagesToCompressed(msgs []messaging.Message) []CompressedMess
 	return compressed
 }
 
+// applyCompress rewrites a session's stored history with the compressed view
+// of cfg and reports what changed. It is the operator-facing wrapper around
+// compressSessionHistory, which the automatic turn-path trigger also calls.
 func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg CompressionConfig) (string, error) {
+	view, loaded, err := r.compressSessionHistory(ctx, sessionID, cfg)
+	if err != nil {
+		return "", err
+	}
+	if !view.WasCompressed {
+		return fmt.Sprintf("Compression not needed (%d messages, ~%d tokens).", loaded, view.TokensBefore), nil
+	}
+
+	return fmt.Sprintf(
+		"Compressed: %d messages → %d (~%d → ~%d tokens).",
+		loaded, len(view.Messages), view.TokensBefore, view.TokensAfter,
+	), nil
+}
+
+// compressSessionHistory loads a session's whole stored history, compresses it
+// with cfg and, when that removes anything, persists the replacement. It is
+// the one compression implementation: the /compress command and the automatic
+// trigger on the inbound turn path both call it, so what an operator asks for
+// and what a session does unattended cannot diverge.
+//
+// loaded is the number of stored messages read, which is what the caller's
+// reply describes when nothing was compressed.
+func (r *Router) compressSessionHistory(ctx context.Context, sessionID string, cfg CompressionConfig) (view CompressedView, loaded int, err error) {
 	// Read the whole history: the replacement below becomes the session's
 	// entire history, so summarising only a recent window would silently
 	// discard everything older than it.
 	count, err := r.sessionTracker.sessions.MessageCount(ctx, sessionID)
 	if err != nil {
-		return "", fmt.Errorf("count messages: %w", err)
+		return CompressedView{}, 0, fmt.Errorf("count messages: %w", err)
 	}
 	msgs, err := r.sessionTracker.sessions.RecentMessages(ctx, sessionID, count)
 	if err != nil {
-		return "", fmt.Errorf("load messages: %w", err)
+		return CompressedView{}, 0, fmt.Errorf("load messages: %w", err)
 	}
 
-	compressed := r.messagesToCompressed(msgs)
-	view := CompressHistory(compressed, cfg)
+	view = CompressHistory(r.messagesToCompressed(msgs), cfg)
 	if !view.WasCompressed {
-		return fmt.Sprintf("Compression not needed (%d messages, ~%d tokens).", len(msgs), view.TokensBefore), nil
+		return view, count, nil
 	}
 
 	compressedMsgs := compressedHistory(msgs, view, r.Identity)
@@ -800,11 +825,23 @@ func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg Compre
 	// session -- the previous delete-then-save order lost the entire history
 	// if anything went wrong in between.
 	if err := r.sessionTracker.sessions.ReplaceMessages(ctx, sessionID, compressedMsgs, superseded); err != nil {
-		return "", fmt.Errorf("replace with compressed messages: %w", err)
+		return CompressedView{}, count, fmt.Errorf("replace with compressed messages: %w", err)
 	}
 
-	return fmt.Sprintf(
-		"Compressed: %d messages → %d (~%d → ~%d tokens).",
-		len(msgs), len(view.Messages), view.TokensBefore, view.TokensAfter,
-	), nil
+	return view, count, nil
+}
+
+// compressSessionIfOverBudget compresses a session's stored history when it
+// sits past the budget in cfg, and reports whether it wrote a replacement.
+// It is the automatic trigger's entry point into the one compression path; a
+// session inside its budget is left untouched.
+func (r *Router) compressSessionIfOverBudget(ctx context.Context, sessionID string, cfg CompressionConfig) (bool, error) {
+	if r.sessionTracker == nil {
+		return false, nil
+	}
+	view, _, err := r.compressSessionHistory(ctx, sessionID, cfg)
+	if err != nil {
+		return false, err
+	}
+	return view.WasCompressed, nil
 }
