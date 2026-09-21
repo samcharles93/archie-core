@@ -52,8 +52,7 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	// ── Operator health surface ──────────────────────────────────────
 	// Built before the gateways because every turn runner and router built
 	// later carries both: the recorder is written by sendChatTurn, the source
-	// is read by /status. See newStatusHealth for why the source reads boot's
-	// fields lazily.
+	// is read by /status.
 	b.providerOutcomes = newProviderOutcomeRecorder()
 	b.statusHealth = newStatusHealth(b)
 

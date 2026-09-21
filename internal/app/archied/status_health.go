@@ -1,21 +1,18 @@
 // status_health.go is the composition-root bridge behind /status' health
-// section: it reads whichever subsystems THIS process owns and hands /status a
-// narrow report, so the gateway package never takes a daemon, pool or manager
-// handle.
+// section: it reads the facts THIS process owns and hands /status a narrow
+// report, so the gateway package never takes a daemon, pool or manager handle.
 //
-// The split matters because archie's operator surface spans two processes.
-// The daemon owns the forge poll loop, the container pool and the channel
-// manager; the standalone Gateway owns none of those. Each process therefore
-// reports what it actually has and leaves the rest absent -- /status shows a
-// shorter list in the Gateway, not a list of zeroes.
+// The report carries a broker line and a chat-model line. Those are the facts
+// the process that serves /status holds: setupGatewayChat is the sole
+// production constructor of a Router and it runs in the Gateway, which owns
+// neither a container pool, a poll loop nor a channel manager. A producer
+// wired for one of the three would build a section no surface ever reads.
 package archied
 
 import (
-	"cmp"
 	"sync"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -83,18 +80,12 @@ func (r *providerOutcomeRecorder) LastChatModelOutcome() (gateway.ChatModelOutco
 // subsystems. Every source is optional; a nil source means this process holds
 // no truthful input for that fact and the section is left out of the report.
 //
-// The sources are functions rather than captured values because they change
-// over the life of the process: the container pool's occupancy, the channel
-// states, and the poll timestamp all move, and the two NATS connections can
-// drop. Capturing them at construction would freeze /status on the daemon's
-// boot-time state -- occupancy would read 0/4 forever, and every channel would
-// read as configured-but-not-started.
+// The broker source is a function rather than a captured value because the
+// connection is process state: the daemon's shared eventbus client in one
+// composition, the Gateway's own task-actions connection in the other.
 type statusHealth struct {
-	broker     func() (connected, ok bool)
-	containers func() (active, capacity int, ok bool)
-	channels   func() (channels []gateway.ChannelHealth, ok bool)
-	chatModel  *providerOutcomeRecorder
-	lastPoll   func() (at time.Time, ok bool)
+	broker    func() (connected, ok bool)
+	chatModel *providerOutcomeRecorder
 }
 
 func (s statusHealth) Health() gateway.HealthReport {
@@ -104,58 +95,26 @@ func (s statusHealth) Health() gateway.HealthReport {
 			report.Broker = &gateway.BrokerHealth{Connected: connected}
 		}
 	}
-	if s.containers != nil {
-		if active, capacity, ok := s.containers(); ok {
-			report.Containers = &gateway.ContainerHealth{Active: active, Cap: capacity}
-		}
-	}
-	if s.channels != nil {
-		if channels, ok := s.channels(); ok {
-			report.Channels = channels
-		}
-	}
 	if s.chatModel != nil {
 		outcome, attempted := s.chatModel.LastChatModelOutcome()
 		report.ChatModel = &gateway.ChatModelHealth{Attempted: attempted, Outcome: outcome}
 	}
-	if s.lastPoll != nil {
-		if at, ok := s.lastPoll(); ok {
-			report.LastPoll = &at
-		}
-	}
 	return report
 }
 
-// newStatusHealth builds the health source for this process. Sources whose
-// subsystem is absent here (a deployment with no container pool, the Gateway
-// process with no daemon) stay nil, and /status omits them.
+// newStatusHealth builds the health source this process serves. It carries the
+// two facts a Router in this process can render: the process's own broker
+// connection, and the last chat-model call it made. A source whose subsystem
+// is absent here stays nil, and /status omits that line.
 //
-// The closures read boot's fields at call time on purpose. Gateways are wired
-// before the daemon is built, so boot.d is nil when this runs -- capturing it
-// here would leave the poll section permanently absent in the one process that
-// actually polls, with nothing at runtime to show the wire was dead.
+// The pool, the poll loop and the channel managers stay out even in the
+// composition that holds them. setupGatewayChat is the only production
+// constructor of a Router; it runs in the Gateway, which holds none of the
+// three, so a producer reading them would build a section no /status reply can
+// carry.
 func newStatusHealth(b *boot) gateway.HealthSource {
-	s := statusHealth{
+	return statusHealth{
 		chatModel: b.providerOutcomes,
-		containers: func() (int, int, bool) {
-			if b.containerPool == nil {
-				return 0, 0, false
-			}
-			return b.containerPool.Active(), b.containerPool.Cap(), true
-		},
-		// No channel source: the chat front-ends run in the extracted
-		// Messaging Service, so this process cannot observe a lifecycle it
-		// does not drive. Reporting anything here would be a guess, and
-		// "truthful or absent" says omit the section instead. Restoring it
-		// needs the Messaging Service to publish its channel lifecycle
-		// (archie-core-8cda.6.8).
-		channels: nil,
-		lastPoll: func() (time.Time, bool) {
-			if b.d == nil {
-				return time.Time{}, false
-			}
-			return b.d.LastPollAt(), true
-		},
 		broker: func() (bool, bool) {
 			switch {
 			case b.natsClient != nil:
@@ -167,36 +126,4 @@ func newStatusHealth(b *boot) gateway.HealthSource {
 			}
 		},
 	}
-	return s
-}
-
-// channelHealth projects the channel manager's snapshot into /status' view, so
-// the gateway package does not depend on the channels package. It mirrors
-// readiness.go's channelStates projection for the same reason.
-//
-// An unset display name falls back to the channel id: a line reading
-// " running" would leave an operator unable to tell which channel is broken,
-// which is the one thing this line exists to say.
-//
-// Detail is carried through whenever it is set, exactly as the dashboard reads
-// it. It is one field serving two purposes -- a descriptor's standing
-// configuration caveat ("token set, but the allowlist is empty") and a runtime
-// failure reason -- and the manager keeps the last non-empty one, so a channel
-// that failed and later recovered still shows the old reason. Filtering by
-// state here would drop the caveat that matters most on a *running* channel
-// (the empty allowlist one), so the split belongs at the producer, not here.
-func channelHealth(m *status.Manager) []gateway.ChannelHealth {
-	if m == nil {
-		return nil
-	}
-	snapshot := m.Snapshot()
-	out := make([]gateway.ChannelHealth, 0, len(snapshot))
-	for _, s := range snapshot {
-		out = append(out, gateway.ChannelHealth{
-			Name:   cmp.Or(s.Name, s.ID),
-			State:  string(s.State),
-			Detail: s.Detail,
-		})
-	}
-	return out
 }

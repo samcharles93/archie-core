@@ -3,9 +3,10 @@
 **Status:** Finalised
 **Beads issue:** `archie-core-wp9s`
 
-A reported field must have a truthful source. Broker connectivity, container
-pool, last poll, provider reachability and channel state are reported; a field
-with no truthful source is left out rather than faked.
+A reported field must have a truthful source. `/status` reports broker
+connectivity and the last chat-model call; the container pool, last poll and
+channel state have no source in the process that answers the command, so they
+are left out rather than faked.
 
 ## Background
 
@@ -40,7 +41,9 @@ something to resolve by implication here.
 
 Each bullet below was checked against real code before being called cheap
 or not; nothing here is guessed. Both open questions were settled (see "The two
-decisions") and all five fields shipped.
+decisions"). The health section reports the broker connection and the last
+chat-model call; the three facts the answering process cannot see are covered
+under "Truthful or absent".
 
 ### Verified as cheap against the tree
 
@@ -93,10 +96,13 @@ decisions") and all five fields shipped.
 - **Queue depth.** Covered by Phase 1.
 - **Rendering.** `gateway.formatHealth` renders one line per reported fact
   (`Broker:`, `Containers:`, `Channels:`, `Chat model:`, `Last poll:`) between
-  the queue line and the runtime block. The sources it reads are functions, not
-  captured values: occupancy and channel state change over the process's life,
-  and the daemon is built after the gateways, so a source captured at
-  construction would freeze `/status` on boot-time state.
+  the queue line and the runtime block. A `/status` reply carries `Broker:` and
+  `Chat model:`: the Gateway is the only process that serves a Router, and it
+  holds neither a container pool, a poll loop nor a channel manager. The other
+  three lines render when a report carries them. The broker source is a
+  function rather than a captured value because the connection differs by
+  composition: the daemon's shared eventbus client in one process, the
+  Gateway's own task-actions connection in the other.
 
 ### Truthful or absent -- what is deliberately not reported
 
@@ -114,7 +120,9 @@ decisions") and all five fields shipped.
   answering the command. **Decided: they stay per-process.** Pooling
   them would mean a new daemon↔gateway health RPC for one status line, and a
   per-process line is true where an aggregate would be a claim about a process
-  the answering one cannot see.
+  the answering one cannot see. The composition root therefore builds the
+  health source from the broker connection and the chat-model recorder alone: a
+  producer for a daemon-owned fact would build a section no reply can carry.
 - **A channel's failure reason can outlive the failure.** `status.Manager` keeps
   the last non-empty `Detail` across state changes, and that one field carries
   both a descriptor's standing caveat and a runtime failure reason, so a channel

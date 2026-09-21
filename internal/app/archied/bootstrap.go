@@ -161,8 +161,9 @@ type boot struct {
 	// this process makes, read back by /status (newStatusHealth). Built before
 	// the chat runtime, which carries it into each turn runner.
 	providerOutcomes *providerOutcomeRecorder
-	// statusHealth is the /status health source for this process, built from
-	// the subsystems that exist here.
+	// statusHealth is the /status health source this process serves. It
+	// carries the broker connection and the chat-model outcomes; see
+	// newStatusHealth for the facts it deliberately leaves out.
 	statusHealth gateway.HealthSource
 	// rateLimiter is the shared per-(channel, sender) inbound budget every
 	// chat Router is given. Nil when [chat.rate_limit] is not configured,

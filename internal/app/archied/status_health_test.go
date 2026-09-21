@@ -13,11 +13,12 @@ import (
 	"testing"
 	"time"
 
+	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/channels/status"
+	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
@@ -210,20 +211,58 @@ func TestStatusHealthOmitsSourcesThisProcessDoesNotOwn(t *testing.T) {
 	}
 }
 
+// TestStatusHealthReportsOnlyBrokerAndChatModel pins what every /status
+// surface actually serves. The only production router.Health is the Gateway's,
+// and the facts the Gateway holds are the ones this boot is given here. A
+// producer wired to the pool or the poll loop would build a section nothing in
+// this process can serve -- the operator would read a full health list in a
+// process that has no container pool, and would read it as measured.
+func TestStatusHealthReportsOnlyBrokerAndChatModel(t *testing.T) {
+	srv := startEmbeddedNATS(t)
+	conn, err := natsio.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(conn.Close)
+
+	recorder := newProviderOutcomeRecorder()
+	recorder.record("openai/gpt-5.6", nil)
+
+	// The pool and the daemon are present here on purpose: the daemon
+	// composition holds both, so a producer reading them would claim a
+	// container and poll line from a process whose router cannot serve it.
+	b := &boot{
+		taskActionsConn:  conn,
+		providerOutcomes: recorder,
+		containerPool:    &container.Pool{},
+		d:                &daemon.Daemon{},
+	}
+
+	report := newStatusHealth(b).Health()
+
+	if report.Broker == nil || !report.Broker.Connected {
+		t.Errorf("Broker = %+v, want this process's own connected broker connection", report.Broker)
+	}
+	if report.ChatModel == nil || !report.ChatModel.Attempted {
+		t.Errorf("ChatModel = %+v, want the recorded call", report.ChatModel)
+	}
+	if report.Containers != nil {
+		t.Errorf("Containers = %+v, want nil: no /status surface is served from this boot's pool", report.Containers)
+	}
+	if report.Channels != nil {
+		t.Errorf("Channels = %+v, want nil: no /status surface is served from this boot's channels", report.Channels)
+	}
+	if report.LastPoll != nil {
+		t.Errorf("LastPoll = %v, want nil: no /status surface is served from this boot's poll loop", report.LastPoll)
+	}
+}
+
 // TestStatusHealthReportsEveryWiredSource pins that each wired source reaches
 // the report, and that a source reporting "nothing has happened yet" stays
 // distinguishable from an absent source.
 func TestStatusHealthReportsEveryWiredSource(t *testing.T) {
-	polled := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	recorder := newProviderOutcomeRecorder()
 	recorder.record("openai/gpt-5.6", errors.New("401 Unauthorized"))
-
-	channels := status.NewManager([]status.Descriptor{
-		{ID: "telegram", Name: "Telegram", Configured: true},
-		{ID: "email", Configured: true},
-	})
-	channels.MarkRunning("telegram")
-	channels.MarkFailed("email", "dial tcp: connection refused")
 
 	tests := []struct {
 		name  string
@@ -236,33 +275,6 @@ func TestStatusHealthReportsEveryWiredSource(t *testing.T) {
 			check: func(t *testing.T, r gateway.HealthReport) {
 				if r.Broker == nil || !r.Broker.Connected {
 					t.Errorf("Broker = %+v, want connected", r.Broker)
-				}
-			},
-		},
-		{
-			name: "container pool",
-			src:  statusHealth{containers: func() (int, int, bool) { return 2, 4, true }},
-			check: func(t *testing.T, r gateway.HealthReport) {
-				if r.Containers == nil || r.Containers.Active != 2 || r.Containers.Cap != 4 {
-					t.Errorf("Containers = %+v, want 2/4", r.Containers)
-				}
-			},
-		},
-		{
-			name: "channel manager",
-			src:  statusHealth{channels: func() ([]gateway.ChannelHealth, bool) { return channelHealth(channels), true }},
-			check: func(t *testing.T, r gateway.HealthReport) {
-				want := []gateway.ChannelHealth{
-					{Name: "Telegram", State: "running"},
-					{Name: "email", State: "failed", Detail: "dial tcp: connection refused"},
-				}
-				if len(r.Channels) != len(want) {
-					t.Fatalf("Channels = %+v, want %+v", r.Channels, want)
-				}
-				for i := range want {
-					if r.Channels[i] != want[i] {
-						t.Errorf("Channels[%d] = %+v, want %+v", i, r.Channels[i], want[i])
-					}
 				}
 			},
 		},
@@ -290,116 +302,11 @@ func TestStatusHealthReportsEveryWiredSource(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "poll loop that has run",
-			src:  statusHealth{lastPoll: func() (time.Time, bool) { return polled, true }},
-			check: func(t *testing.T, r gateway.HealthReport) {
-				if r.LastPoll == nil || !r.LastPoll.Equal(polled) {
-					t.Errorf("LastPoll = %v, want %v", r.LastPoll, polled)
-				}
-			},
-		},
-		{
-			name: "poll loop that has not run a pass yet",
-			src:  statusHealth{lastPoll: func() (time.Time, bool) { return time.Time{}, true }},
-			check: func(t *testing.T, r gateway.HealthReport) {
-				if r.LastPoll == nil {
-					t.Fatal("LastPoll = nil, want a present \"not yet\" value")
-				}
-				if !r.LastPoll.IsZero() {
-					t.Errorf("LastPoll = %v, want the zero time", r.LastPoll)
-				}
-			},
-		},
-		{
-			name: "poll loop that is not this process's to report",
-			src:  statusHealth{lastPoll: func() (time.Time, bool) { return polled, false }},
-			check: func(t *testing.T, r gateway.HealthReport) {
-				if r.LastPoll != nil {
-					t.Errorf("LastPoll = %v, want nil", r.LastPoll)
-				}
-			},
-		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.check(t, tc.src.Health())
-		})
-	}
-}
-
-// TestStatusHealthReadsDeferredSourcesAtCallTime pins the composition-order
-// trap this source sits behind: the daemon is built AFTER the gateways
-// (main.go runs setupGateways before buildDaemon), so the health source is
-// constructed while boot.d is still nil. A source that captured boot.d at
-// construction would report the poll section as permanently absent -- /status
-// would look wired and never say anything about polling.
-func TestStatusHealthReadsDeferredSourcesAtCallTime(t *testing.T) {
-	b := &boot{}
-	src := newStatusHealth(b)
-
-	if got := src.Health().LastPoll; got != nil {
-		t.Fatalf("LastPoll = %v with no daemon yet, want nil", got)
-	}
-
-	b.d = &daemon.Daemon{}
-
-	got := src.Health().LastPoll
-	if got == nil {
-		t.Fatal("LastPoll = nil after the daemon was built, want the source to read boot.d at call time")
-	}
-	if !got.IsZero() {
-		t.Errorf("LastPoll = %v, want the zero time: no poll pass has run yet", got)
-	}
-}
-
-// TestChannelHealthProjectsManagerSnapshot pins the mapping from the channel
-// manager's own state to what /status renders -- including the two edges an
-// operator would otherwise have to guess at: a channel with no display name
-// shows its id, and an unconfigured channel is reported as such rather than
-// omitted.
-func TestChannelHealthProjectsManagerSnapshot(t *testing.T) {
-	manager := status.NewManager([]status.Descriptor{
-		{ID: "telegram", Name: "Telegram", Configured: true},
-		{ID: "email", Configured: true},
-		{ID: "webhook"},
-	})
-	manager.MarkStarting("telegram")
-	manager.MarkRunning("telegram")
-	manager.MarkFailed("email", "listen tcp: address already in use")
-
-	tests := []struct {
-		name    string
-		manager *status.Manager
-		want    []gateway.ChannelHealth
-	}{
-		{
-			name:    "no channel manager",
-			manager: nil,
-			want:    nil,
-		},
-		{
-			name:    "manager snapshot",
-			manager: manager,
-			want: []gateway.ChannelHealth{
-				{Name: "Telegram", State: "running"},
-				{Name: "email", State: "failed", Detail: "listen tcp: address already in use"},
-				{Name: "webhook", State: "stopped"},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := channelHealth(tc.manager)
-			if len(got) != len(tc.want) {
-				t.Fatalf("channelHealth() = %+v, want %+v", got, tc.want)
-			}
-			for i := range tc.want {
-				if got[i] != tc.want[i] {
-					t.Errorf("channelHealth()[%d] = %+v, want %+v", i, got[i], tc.want[i])
-				}
-			}
 		})
 	}
 }
