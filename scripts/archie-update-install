@@ -183,10 +183,18 @@ fi
 # that cannot take one must not start: once binaries are replaced, a failure
 # leaves the previous release unable to read the store it just migrated. This
 # runs ahead of the adapter refresh below so a refusal changes nothing at all.
+#
+# The snapshot is taken by the recovery subcommand of the release being
+# installed, from its own checkout, rather than by hand-rolled sqlite3 shell:
+# the operator running `archie-state-store backup` by hand and the installer
+# are then the same implementation, and the two cannot drift. The installed
+# binary is the previous release, which may predate the subcommand, so it
+# cannot be the one asked -- and a release whose recovery path will not build is a
+# release that cannot back up, which is exactly what this pre-flight refuses.
 if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_DB_PATH" ]; then
   echo "==> backing up task database for schema-safe rollback"
   mkdir -p "$(dirname "$TASK_DB_BACKUP")"
-  if ! sqlite3 "$TASK_DB_PATH" ".backup '$TASK_DB_BACKUP'"; then
+  if ! go run ./cmd/archie-state-store backup -db "$TASK_DB_PATH" -out "$TASK_DB_BACKUP"; then
     echo "refusing to install $GW: could not back up the task database at $TASK_DB_PATH, so a failed update could not be rolled back" >&2
     exit 1
   fi

@@ -315,7 +315,7 @@ type runArgs struct {
 }
 
 func parseArgs() (runArgs, bool) {
-	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
+	defaultCfg := DefaultConfigPath()
 	var args runArgs
 	flag.StringVar(&args.cfgPath, "config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
 	flag.StringVar(&args.overlayPath, "config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
@@ -917,6 +917,15 @@ func configHome() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config")
 }
+
+// DefaultConfigPath is the configuration the daemon reads when -config is not
+// given, and the one every command that asks a question about the daemon has to
+// read to be answering about the same deployment: it is the daemon's rule, not
+// a second one. It is exported for exactly that reason -- an offline command
+// resolving the default any other way answers about a different config file
+// (os.UserConfigDir, notably, rejects a relative XDG_CONFIG_HOME outright and
+// leaves the caller with no path at all).
+func DefaultConfigPath() string { return filepath.Join(configHome(), "archie", "config.toml") }
 
 // updateReportPath is where the update watchdog leaves the phase-2 outcome
 // of an update for this identity to relay on its next launch. The identity is

@@ -3,12 +3,23 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/store"
 )
+
+// resourceReader is the one read the layering performs: a resource kind's value
+// and the version it came from. The gRPC client and the in-process server both
+// provide it, so "what the database covers in the running config" has exactly
+// one implementation. The offline validate runs the same code as boot, which is
+// the only way its verdict can be boot's verdict.
+type resourceReader interface {
+	query(ctx context.Context, kind string, decode func([]byte) error) (int64, error)
+}
 
 // RuntimeConfig applies restart-scoped database resources over bootstrap
 // configuration. Values intentionally absent from a control-plane projection,
@@ -19,9 +30,70 @@ import (
 // layers them in can report which version it is running
 // (docs/prds/control-plane-apply-status.md).
 func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
+	return runtimeConfigFrom(ctx, c, base)
+}
+
+// RuntimeChatConfig layers the stored channel settings over the file document's
+// chat section.
+func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) (config.ChatConfig, int64, error) {
+	return runtimeChatConfigFrom(ctx, c, base)
+}
+
+// StoredRuntimeConfig is RuntimeConfig's layering over the store this server
+// owns, for a caller holding the database file rather than a connection to it.
+// Boot layers the stored settings onto the file config and then runs
+// configuration.Validate, so an offline check of that database has to make the
+// same first move with the same implementation; called with the config the
+// daemon would load, the result is the document boot decides on.
+//
+// A kind the store does not hold is read as the seed the State Store would
+// write for it from base (see storeReader.query), because that store seeds
+// every kind before it serves.
+func (s *Server) StoredRuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
+	seeds, err := s.seededValues(base)
+	if err != nil {
+		return config.Config{}, nil, err
+	}
+	return runtimeConfigFrom(ctx, storeReader{resources: s.store, seeds: seeds}, base)
+}
+
+// storeReader reads the server's own store. It mirrors what the gRPC read
+// answers -- a kind that is stored is the value and version it holds -- with
+// one difference: a kind the store does not hold yet is the value the State
+// Store seeds for it, since the daemon dials a store that has already run
+// ImportConfig over the same config.
+type storeReader struct {
+	resources ResourceStore
+	seeds     map[string][]byte
+}
+
+func (r storeReader) query(ctx context.Context, kind string, decode func([]byte) error) (int64, error) {
+	resource, err := r.resources.Resource(ctx, kind)
+	if errors.Is(err, store.ErrResourceNotFound) {
+		seed, ok := r.seeds[kind]
+		if !ok {
+			return 0, fmt.Errorf("read %s: %w", kind, store.ErrResourceNotFound)
+		}
+		if err := decode(seed); err != nil {
+			return 0, fmt.Errorf("decode %s seed: %w", kind, err)
+		}
+		// No version: nothing has been stored for this kind, so nothing has
+		// been applied either.
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read %s: %w", kind, err)
+	}
+	if err := decode(resource.Value); err != nil {
+		return 0, fmt.Errorf("decode %s: %w", kind, err)
+	}
+	return resource.Version, nil
+}
+
+func runtimeConfigFrom(ctx context.Context, reader resourceReader, base config.Config) (config.Config, map[string]int64, error) {
 	out := base.Clone()
 	versions := map[string]int64{}
-	if err := c.queryInto(ctx, versions, ProviderSettingsKind, func(value []byte) error {
+	if err := layerResource(ctx, reader, versions, ProviderSettingsKind, func(value []byte) error {
 		var providers map[string]providerDocument
 		if err := json.Unmarshal(value, &providers); err != nil {
 			return err
@@ -34,18 +106,18 @@ func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := c.queryJSONInto(ctx, versions, ModelRoleAssignmentsKind, &out.Models); err != nil {
+	if err := layerResourceJSON(ctx, reader, versions, ModelRoleAssignmentsKind, &out.Models); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := c.queryJSONInto(ctx, versions, RepositoryPoliciesKind, &out.Repos); err != nil {
+	if err := layerResourceJSON(ctx, reader, versions, RepositoryPoliciesKind, &out.Repos); err != nil {
 		return config.Config{}, nil, err
 	}
-	chat, chatVersion, err := c.RuntimeChatConfig(ctx, out.Chat)
+	chat, chatVersion, err := runtimeChatConfigFrom(ctx, reader, out.Chat)
 	if err != nil {
 		return config.Config{}, nil, err
 	}
 	out.Chat, versions[ChannelSettingsKind] = chat, chatVersion
-	if err := c.queryInto(ctx, versions, SchedulingPolicyKind, func(value []byte) error {
+	if err := layerResource(ctx, reader, versions, SchedulingPolicyKind, func(value []byte) error {
 		var policy schedulingPolicy
 		if err := json.Unmarshal(value, &policy); err != nil {
 			return err
@@ -59,11 +131,11 @@ func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	return c.runtimeToolConfig(ctx, versions, out)
+	return runtimeToolConfigFrom(ctx, reader, versions, out)
 }
 
-func (c *Client) runtimeToolConfig(ctx context.Context, versions map[string]int64, out config.Config) (config.Config, map[string]int64, error) {
-	if err := c.queryInto(ctx, versions, ToolSettingsKind, func(value []byte) error {
+func runtimeToolConfigFrom(ctx context.Context, reader resourceReader, versions map[string]int64, out config.Config) (config.Config, map[string]int64, error) {
+	if err := layerResource(ctx, reader, versions, ToolSettingsKind, func(value []byte) error {
 		var settings toolSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -81,7 +153,7 @@ func (c *Client) runtimeToolConfig(ctx context.Context, versions map[string]int6
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := c.queryInto(ctx, versions, PluginSettingsKind, func(value []byte) error {
+	if err := layerResource(ctx, reader, versions, PluginSettingsKind, func(value []byte) error {
 		var settings pluginSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -91,15 +163,15 @@ func (c *Client) runtimeToolConfig(ctx context.Context, versions map[string]int6
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := c.queryJSONInto(ctx, versions, ContainerRuntimePoliciesKind, &out.Containers); err != nil {
+	if err := layerResourceJSON(ctx, reader, versions, ContainerRuntimePoliciesKind, &out.Containers); err != nil {
 		return config.Config{}, nil, err
 	}
 	return out, versions, nil
 }
 
-func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) (config.ChatConfig, int64, error) {
+func runtimeChatConfigFrom(ctx context.Context, reader resourceReader, base config.ChatConfig) (config.ChatConfig, int64, error) {
 	out := base
-	version, err := c.query(ctx, ChannelSettingsKind, func(value []byte) error {
+	version, err := reader.query(ctx, ChannelSettingsKind, func(value []byte) error {
 		var settings channelSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -117,10 +189,10 @@ func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) 
 	return out, version, err
 }
 
-// queryInto decodes a resource and records the version it came from, so
-// RuntimeConfig ends up holding the version of every kind it layered in.
-func (c *Client) queryInto(ctx context.Context, versions map[string]int64, kind string, decode func([]byte) error) error {
-	version, err := c.query(ctx, kind, decode)
+// layerResource decodes a resource and records the version it came from, so the
+// layering ends up holding the version of every kind it applied.
+func layerResource(ctx context.Context, reader resourceReader, versions map[string]int64, kind string, decode func([]byte) error) error {
+	version, err := reader.query(ctx, kind, decode)
 	if err != nil {
 		return err
 	}
@@ -128,8 +200,8 @@ func (c *Client) queryInto(ctx context.Context, versions map[string]int64, kind 
 	return nil
 }
 
-func (c *Client) queryJSONInto(ctx context.Context, versions map[string]int64, kind string, target any) error {
-	return c.queryInto(ctx, versions, kind, func(value []byte) error { return json.Unmarshal(value, target) })
+func layerResourceJSON(ctx context.Context, reader resourceReader, versions map[string]int64, kind string, target any) error {
+	return layerResource(ctx, reader, versions, kind, func(value []byte) error { return json.Unmarshal(value, target) })
 }
 
 // query returns the version of the resource it decoded, so callers that layer

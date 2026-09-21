@@ -382,6 +382,13 @@ esac
 `)
 	writeFakeCommand(t, fakeDir, "go", `
 printf '%s\n' "go $*" >> "$ARCHIE_TEST_CALLS"
+# The pre-flight task-database backup runs through the release's own
+# archie-state-store subcommand, so a release whose recovery path cannot run
+# must refuse the update.
+if [ "$1" = "run" ]; then
+  [ "${ARCHIE_TEST_GO_FAILS_RUN:-}" = "1" ] && exit 1
+  exit 0
+fi
 out=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then out="$2"; break; fi
@@ -745,6 +752,10 @@ func TestUpdateWatchdogCyclesEveryUnitInDependencyOrder(t *testing.T) {
 // value up produces an empty backup, and a rollback then restores that empty
 // file over the database and deletes its -wal/-shm. A rollback that destroys
 // the task store is worse than no rollback.
+//
+// The snapshot is taken by the release's own recovery subcommand rather than
+// by hand-rolled shell, so the installer and an operator run the same code and
+// the two cannot drift apart.
 func TestUpdateInstallBacksUpTheSiblingTaskDatabase(t *testing.T) {
 	work := t.TempDir()
 	configured := filepath.Join(work, "archie.db")
@@ -764,7 +775,8 @@ func TestUpdateInstallBacksUpTheSiblingTaskDatabase(t *testing.T) {
 		"ARCHIE_TASK_DB_BACKUP":         backup,
 	}, "db_path = \""+configured+"\"\n\n[containers]\nimage = 'registry.example/archie-agent:stable'\n", false)
 
-	assertCallContains(t, calls, "sqlite3", realStore, ".backup")
+	assertCallContains(t, calls, "go run ./cmd/archie-state-store backup", "-db "+realStore, "-out "+backup)
+	assertCallAbsent(t, calls, "sqlite3")
 	assertCallContains(t, calls, "systemd-run", "--setenv=ARCHIE_TASK_DB_PATH="+realStore)
 	// The zero-byte placeholder is not the store, and must never be the thing
 	// handed to the watchdog as ARCHIE_TASK_DB_PATH.
@@ -793,9 +805,9 @@ func TestUpdateInstallIgnoresDbPathFromOtherSections(t *testing.T) {
 		"ARCHIE_TASK_DB_BACKUP":         backup,
 	}, "db_path = \""+configured+"\"\n\n[indexing]\ndb_path = \""+indexStore+"\"\n\n[containers]\nimage = 'registry.example/archie-agent:stable'\n", false)
 
-	assertCallContains(t, calls, "sqlite3", realStore)
+	assertCallContains(t, calls, "go run ./cmd/archie-state-store backup", "-db "+realStore)
 	for _, call := range calls {
-		if strings.Contains(call, "sqlite3") && strings.Contains(call, indexStore) {
+		if strings.Contains(call, "go run ./cmd/archie-state-store backup") && strings.Contains(call, indexStore) {
 			t.Errorf("backed up the indexing database %s: %q", indexStore, call)
 		}
 	}
@@ -815,7 +827,7 @@ func TestUpdateInstallRefusesWhenTaskDatabaseCannotBeBackedUp(t *testing.T) {
 		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
 		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
 		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
-		"ARCHIE_TEST_SQLITE3_FAILS":     "1",
+		"ARCHIE_TEST_GO_FAILS_RUN":      "1",
 	}, "db_path = \""+configured+"\"\n\n[containers]\nimage = 'registry.example/archie-agent:stable'\n", true)
 
 	if !strings.Contains(output, "task database") {
