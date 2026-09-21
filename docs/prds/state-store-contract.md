@@ -122,6 +122,7 @@ consumer-capability lines so no consumer acquires a surface it does not need
 | `BindingStore` (store) | — | 6 | `*Store` | `*staterpc.Client` |
 | `BindingDispatcher` (store) | — | 3 | `*Store` | `*staterpc.Client` |
 | `BindingTaskCreator` (store) | — | 1 | `*Store` | `*staterpc.Client` |
+| `PlaybookDispatcher` (store) | — | 2 | `*Store` | `*staterpc.Client` |
 
 **Key property of the remote client:** `*staterpc.Client` is a *single* adapter that wraps one
 `StateStoreClient` and is asserted against **whichever narrow Go interfaces its caller needs**
@@ -156,6 +157,7 @@ access through daemon-side narrow adapter interfaces.
 | `BindingStore` (6) | DAEMON (dashboard editor + dispatch loop) | not yet |
 | `BindingDispatcher` (3) | DAEMON (dispatch loop) | not yet |
 | `BindingTaskCreator` (1) | DAEMON (dispatch loop) | not yet |
+| `PlaybookDispatcher` (2) | DAEMON (EDA playbook dispatch loop) | **YES** (side-effecting-action idempotency ledger over gRPC) |
 
 **Consequence for migration order:** the **agent's `workflow.Store` is already cross-process
 already** (via the NATS `storerpc` surrogate), so it is the first contract to move to gRPC. The
@@ -291,6 +293,19 @@ and the two answers are load-bearing for the dashboard: only the second is a dep
 condition, and the panel that collapsed them told operators task logging was switched off when
 it was not. The Go facade is `storecontract.TaskLogStore` (2 methods), carried by
 `*staterpc.Client` alongside the rest.
+
+The playbook pair was added by `archie-core-t2db.17`'s implementation (see
+`docs/prds/eda-playbook-engine.md`, execution-time gap 2). It is administrative
+for the same reason as the config-snapshot and apply-status pairs, and
+deny-by-default in `authorizesTaskScopedCall` covers it without a new rule. The
+row is the structural `(playbook_id, playbook_version, event_id, action_id)`
+tuple, written **before** the action's side effect fires (the reverse of
+`binding_dispatches`), so a duplicate returns `store.ErrAlreadyDispatched` and
+the coordinator skips the invoke rather than repeating a non-revocable side
+effect. `DeletePlaybookDispatches` is the reclamation primitive for a playbook
+removed from the configured directory. The Go facade is
+`storecontract.PlaybookDispatcher` (2 methods), carried by `*staterpc.Client`
+alongside the rest.
 
 ### Domain types and `values.go` mapping
 
@@ -591,6 +606,7 @@ an explicit operator decision.
   var _ store.BindingStore   = (*staterpc.Client)(nil)
   var _ store.BindingDispatcher  = (*staterpc.Client)(nil)
   var _ store.BindingTaskCreator = (*staterpc.Client)(nil)
+  var _ store.PlaybookDispatcher = (*staterpc.Client)(nil)
   // local side (in store), already present:
   var _ workflow.Store = (*Store)(nil)
   ```

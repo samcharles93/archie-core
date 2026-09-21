@@ -54,9 +54,11 @@ CREATE TABLE IF NOT EXISTS binding_dispatches (
 // separate read.
 
 // ErrAlreadyDispatched is returned by RecordDispatch when the (binding_id,
-// capture_id) pair already exists in binding_dispatches. The dedup ledger is
-// the at-most-once guarantee per capture; the caller is expected to surface
-// this to the dispatch loop rather than retry.
+// capture_id) pair already exists in binding_dispatches, and by
+// RecordPlaybookDispatch when the (playbook_id, playbook_version, event_id,
+// action_id) tuple already exists in playbook_dispatches. Each dedup ledger
+// is an at-most-once guarantee; the caller is expected to surface this to the
+// dispatch loop rather than retry.
 
 // bindingTimeLayout follows captureTimeLayout's reasoning: fixed-width
 // RFC3339 so string and chronological order agree.

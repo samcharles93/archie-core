@@ -31,7 +31,7 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
 	)
-	RegisterServer(server, Deps{Tasks: local, Captures: local, Bindings: local, BindingDispatcher: local, Grants: grants, ConfigSnapshots: local, ApplyStatus: local})
+	RegisterServer(server, Deps{Tasks: local, Captures: local, Bindings: local, BindingDispatcher: local, PlaybookDispatcher: local, Grants: grants, ConfigSnapshots: local, ApplyStatus: local})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
@@ -292,6 +292,45 @@ func TestOnlyAdminReportsApplyStatus(t *testing.T) {
 	got, err := admin.ListApplyStatus(ctx)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("admin ListApplyStatus = (%d records, %v), want the reported one", len(got), err)
+	}
+}
+
+// TestOnlyAdminOwnsThePlaybookLedger: the playbook dispatch ledger records
+// which side-effecting playbook action already fired, so a container's
+// task-scoped credential must not be able to write a "not dispatched" row
+// that would re-run a non-revocable side effect, nor to delete the ledger
+// and erase the skip.
+func TestOnlyAdminOwnsThePlaybookLedger(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	_, dial := grantsServer(t, adminToken)
+	admin := dial(t, adminToken)
+	ctx := t.Context()
+
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerToken, err := admin.RegisterTaskGrant(ctx, task.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("RegisterTaskGrant: %v", err)
+	}
+	worker := dial(t, workerToken)
+
+	if err := admin.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
+		t.Fatalf("admin RecordPlaybookDispatch: %v", err)
+	}
+	// A distinct event_id is deliberate: the ledger's own duplicate answer is
+	// ErrAlreadyDispatched, so re-recording the admin's tuple would be non-nil
+	// even for an authorized caller. A distinct tuple succeeds only if the
+	// caller is authorized, which is exactly what must be refused here.
+	if err := worker.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/8", "notify"); err == nil {
+		t.Fatal("a task grant must not authorize recording the playbook dispatch ledger")
+	}
+	if err := worker.DeletePlaybookDispatches(ctx, "pb.yaml"); err == nil {
+		t.Fatal("a task grant must not authorize deleting the playbook dispatch ledger")
+	}
+	if err := admin.DeletePlaybookDispatches(ctx, "pb.yaml"); err != nil {
+		t.Fatalf("admin DeletePlaybookDispatches: %v", err)
 	}
 }
 

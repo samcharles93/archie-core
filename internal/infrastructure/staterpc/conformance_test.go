@@ -350,11 +350,19 @@ func TestStateStoreConformance(t *testing.T) {
 			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
 				t.Fatalf("RecordPlaybookDispatch: %v", err)
 			}
-			// A distinct event_id is a distinct row: the client -> proto ->
-			// server mapping must carry event_id rather than collapse it into
-			// the first tuple's key.
+			// Three of the four PRIMARY KEY components are carried through the hop
+			// with a distinguishing value here: a client/server mapping that drops
+			// or transposes event_id, playbook_version, or action_id collapses
+			// these distinct rows onto the first tuple and fails one of the three
+			// below.
 			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/8", "notify"); err != nil {
 				t.Fatalf("RecordPlaybookDispatch (distinct event_id) = %v, want success", err)
+			}
+			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v2", "archie:acme/widget/7", "notify"); err != nil {
+				t.Fatalf("RecordPlaybookDispatch (distinct playbook_version) = %v, want success", err)
+			}
+			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "build"); err != nil {
+				t.Fatalf("RecordPlaybookDispatch (distinct action_id) = %v, want success", err)
 			}
 			err = pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify")
 			if !errors.Is(err, store.ErrAlreadyDispatched) {

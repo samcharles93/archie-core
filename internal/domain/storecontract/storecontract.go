@@ -300,8 +300,12 @@ var (
 	// ErrBindingTransition is returned when a binding state transition is
 	// rejected by the draft -> pending_approval -> armed machine.
 	ErrBindingTransition = errors.New("store: binding state transition rejected")
-	// ErrAlreadyDispatched is returned when a capture already has a
-	// dispatch ledger row (at-most-once dispatch).
+	// ErrAlreadyDispatched is returned when a dedup ledger already holds the
+	// dispatch key: binding_dispatches for the (binding_id, capture_id) pair,
+	// or playbook_dispatches for the (playbook_id, playbook_version,
+	// event_id, action_id) tuple. Both ledgers are at-most-once guarantees;
+	// the sentinel is shared so a caller treats "already recorded" the same
+	// way across the two surfaces.
 	ErrAlreadyDispatched = errors.New("store: binding already dispatched for capture")
 	// ErrMappingNotFound is returned when a mapping ID does not exist.
 	ErrMappingNotFound = errors.New("store: mapping not found")

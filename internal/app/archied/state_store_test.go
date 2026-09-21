@@ -129,12 +129,13 @@ func TestStateStoreDepsServeTaskLogs(t *testing.T) {
 	}
 }
 
-// TestStateStoreDepsServePlaybookDispatcher proves the standalone State Store
-// process fronts the playbook dispatch ledger: the two playbook RPCs answer
-// codes.Unavailable for every call unless stateStoreDeps lifts the opened
-// *store.Store's PlaybookDispatcher surface onto Deps. This is the only
-// production server for that surface, so without this wiring the idempotency
-// ledger is unreachable.
+// TestStateStoreDepsServePlaybookDispatcher verifies stateStoreDeps lifts the
+// opened *store.Store's PlaybookDispatcher surface onto Deps, so the
+// standalone State Store has a server for the two playbook RPCs. It does not
+// dial those RPCs here -- it inspects the assembled Deps only. The nil check
+// is the load-bearing part: a boot without a store must leave
+// PlaybookDispatcher nil (the server then answers codes.Unavailable) rather
+// than fabricating a dispatcher.
 func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
 	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.sqlite"))
 	if err != nil {

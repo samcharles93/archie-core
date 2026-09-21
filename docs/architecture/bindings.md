@@ -168,11 +168,12 @@ treats as "another cycle raced us," not an error. This guarantee holds
 **across daemon restarts**, not just within one process's lifetime, because
 the ledger is a durable table, not in-memory state.
 
-This ledger is also the direct precedent for the still-open EDA playbook
-engine idempotency question (`archie-core-t2db.17`, `docs/prds/eda-playbook-
-engine.md`'s execution-time gap 2) -- the same `(owner, event)`-keyed
-`INSERT OR IGNORE` shape almost certainly generalizes to playbook-run
-idempotency rather than needing a new mechanism invented from scratch.
+This ledger is also the direct precedent for the EDA playbook engine's
+execution-time idempotency, now landed (`archie-core-t2db.17` closed): the
+`playbook_dispatches` table in `internal/store/playbook_dispatches.go` copies
+`binding_dispatches`'s `INSERT OR IGNORE` conventions with a
+`(playbook_id, playbook_version, event_id, action_id)` key
+(`docs/prds/eda-playbook-engine.md` gap 2).
 
 ## What this document does not cover
 
