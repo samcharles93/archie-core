@@ -129,6 +129,35 @@ func TestStateStoreDepsServeTaskLogs(t *testing.T) {
 	}
 }
 
+// TestStateStoreDepsServePlaybookDispatcher proves the standalone State Store
+// process fronts the playbook dispatch ledger: the two playbook RPCs answer
+// codes.Unavailable for every call unless stateStoreDeps lifts the opened
+// *store.Store's PlaybookDispatcher surface onto Deps. This is the only
+// production server for that surface, so without this wiring the idempotency
+// ledger is unreachable.
+func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.sqlite"))
+	if err != nil {
+		t.Fatalf("open temp store: %v", err)
+	}
+	defer st.Close()
+
+	b := newBootstrap()
+	b.st = st
+	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
+	if deps.PlaybookDispatcher == nil {
+		t.Fatal("stateStoreDeps leaves PlaybookDispatcher nil; the standalone State Store is the only production server for the playbook dispatch ledger")
+	}
+	if deps.PlaybookDispatcher != storecontract.PlaybookDispatcher(st) {
+		t.Fatalf("PlaybookDispatcher = %T, want the opened *store.Store", deps.PlaybookDispatcher)
+	}
+	// A boot without a store must not fabricate one: nil keeps the RPCs honest
+	// as unavailable rather than depending on a nil receiver.
+	if plain := (&boot{}).stateStoreDeps(&staterpc.TaskGrants{}); plain.PlaybookDispatcher != nil {
+		t.Errorf("PlaybookDispatcher = %T with no store on the boot, want nil so the RPCs report unavailability", plain.PlaybookDispatcher)
+	}
+}
+
 // TestStateStoreDataSurvivesRestart is the .4.7 restart/recovery check: a
 // task written by one archie-state-store process must still be there for a
 // fresh process opening the same archie.db path, proving b.openStateStore

@@ -253,12 +253,13 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 | Mapping | `InsertMapping`, `GetMapping`, `ListMappings`, `UpdateMapping`, `DeleteMapping` |
 | Binding | `InsertBinding`, `GetBinding`, `ListBindings`, `UpdateBinding`, `DeleteBinding`, `ApproveBinding` |
 | Dispatch | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures` |
+| Playbook | `RecordPlaybookDispatch`, `DeletePlaybookDispatches` |
 | BindingTaskCreator | `EnqueueBindingTask` |
 | Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
 | Apply status | `PutApplyStatus`, `ListApplyStatus` |
 | Task log | `ReadTaskLog`, `StreamTaskLogContent` |
 
-That is **47 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **49 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The config-snapshot pair was added by `archie-core-ymut` (see
@@ -664,7 +665,7 @@ an explicit operator decision.
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`
   is superseded by `workflow.Store`.
-- **One `StateStore` gRPC service** (47 contract RPCs, grouped by contract) + narrow Go consumer facades
+- **One `StateStore` gRPC service** (49 contract RPCs, grouped by contract) + narrow Go consumer facades
   (≤8) on `staterpc.Client` — mirrors the single-`ChatService` precedent.
 - **Domain type relocation** (`Task`/`Status`/`Source` → `internal/domain/workflow`) is a
   Phase 2 prerequisite, pulled forward from migration-decisions §4 (minimal bound,

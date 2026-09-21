@@ -179,9 +179,11 @@ type BindingTaskCreator interface {
 // BEFORE the action's side effect fires -- the deliberate reverse of
 // BindingDispatcher.RecordDispatch -- so a duplicate returns
 // ErrAlreadyDispatched and the caller skips the invoke rather than repeating
-// a non-revocable side effect. DeletePlaybookDispatches frees one playbook's
-// rows when the playbook is removed. There is deliberately no *sql.Tx: any
-// transaction stays server-side inside internal/store.
+// a non-revocable side effect. DeletePlaybookDispatches deletes one
+// playbook's ledger rows and is the reclamation primitive for when a playbook
+// is removed from the configured directory -- a removal path that does not
+// exist yet and is tracked by archie-core-t2db.30. There is deliberately no
+// *sql.Tx: any transaction stays server-side inside internal/store.
 type PlaybookDispatcher interface {
 	RecordPlaybookDispatch(ctx context.Context, playbookID, playbookVersion, eventID, actionID string) error
 	DeletePlaybookDispatches(ctx context.Context, playbookID string) error

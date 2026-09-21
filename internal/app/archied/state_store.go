@@ -350,6 +350,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if bd, ok := b.st.(storecontract.BindingDispatcher); ok {
 		deps.BindingDispatcher = bd
 	}
+	if pd, ok := b.st.(storecontract.PlaybookDispatcher); ok {
+		deps.PlaybookDispatcher = pd
+	}
 	if btc, ok := b.st.(storecontract.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
 	}

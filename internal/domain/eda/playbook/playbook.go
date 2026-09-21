@@ -349,6 +349,11 @@ type Decision struct {
 	// declares none. It is the `actions.<id>` key later actions (and the
 	// dispatch ledger) read this action under.
 	ActionID string
+	// ActionPosition is the 1-based index of the dispatched action in the
+	// playbook's actions list. It is the idempotency-key fallback when
+	// ActionID is empty (docs/prds/eda-playbook-engine.md, "Idempotency at
+	// execution time").
+	ActionPosition int
 }
 
 // Dispatch returns the workflow name the first matching playbook selects for
@@ -390,7 +395,7 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 				continue
 			}
 		}
-		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow, ActionID: a.ID}, true
+		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow, ActionID: a.ID, ActionPosition: 1}, true
 	}
 	return Decision{}, false
 }

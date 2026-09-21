@@ -37,14 +37,6 @@ func (f *fakePlaybookLedger) DeletePlaybookDispatches(ctx context.Context, playb
 	return nil
 }
 
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(&testDiscardWriter{}, nil))
-}
-
-type testDiscardWriter struct{}
-
-func (testDiscardWriter) Write(p []byte) (int, error) { return len(p), nil }
-
 func TestInvokeOnceSkipsRedeliveredAction(t *testing.T) {
 	ledger := &fakePlaybookLedger{}
 	decision := Decision{PlaybookID: "pb.yaml", Version: "v1", Workflow: "notify", ActionID: "notify"}
@@ -52,10 +44,11 @@ func TestInvokeOnceSkipsRedeliveredAction(t *testing.T) {
 	calls := 0
 	action := func(ctx context.Context) error { calls++; return nil }
 
-	if err := InvokeOnce(t.Context(), ledger, discardLogger(), decision, input, action); err != nil {
+	log := slog.New(slog.DiscardHandler)
+	if err := InvokeOnce(t.Context(), ledger, log, decision, input, action); err != nil {
 		t.Fatalf("first InvokeOnce: %v", err)
 	}
-	if err := InvokeOnce(t.Context(), ledger, discardLogger(), decision, input, action); err != nil {
+	if err := InvokeOnce(t.Context(), ledger, log, decision, input, action); err != nil {
 		t.Fatalf("second InvokeOnce: %v", err)
 	}
 	if calls != 1 {
@@ -63,20 +56,47 @@ func TestInvokeOnceSkipsRedeliveredAction(t *testing.T) {
 	}
 }
 
-func TestInvokeOnceFallsBackToActionPosition(t *testing.T) {
+func TestInvokeOnceNilLoggerOnRedelivery(t *testing.T) {
 	ledger := &fakePlaybookLedger{}
-	decision := Decision{PlaybookID: "pb.yaml", Version: "v1", Workflow: "notify"}
+	decision := Decision{PlaybookID: "pb.yaml", Version: "v1", Workflow: "notify", ActionID: "notify"}
 	input := DispatchInput{TaskID: "archie:acme/widget/7"}
 
-	if err := InvokeOnce(t.Context(), ledger, discardLogger(), decision, input, func(ctx context.Context) error { return nil }); err != nil {
+	if err := InvokeOnce(t.Context(), ledger, nil, decision, input, func(ctx context.Context) error { return nil }); err != nil {
+		t.Fatalf("first InvokeOnce: %v", err)
+	}
+	if err := InvokeOnce(t.Context(), ledger, nil, decision, input, func(ctx context.Context) error { return nil }); err != nil {
+		t.Fatalf("redelivered InvokeOnce with nil logger: %v", err)
+	}
+}
+
+func TestInvokeOnceFallsBackToActionPosition(t *testing.T) {
+	ledger := &fakePlaybookLedger{}
+	decision := Decision{PlaybookID: "pb.yaml", Version: "v1", Workflow: "notify", ActionPosition: 2}
+	input := DispatchInput{TaskID: "archie:acme/widget/7"}
+
+	if err := InvokeOnce(t.Context(), ledger, slog.New(slog.DiscardHandler), decision, input, func(ctx context.Context) error { return nil }); err != nil {
 		t.Fatalf("InvokeOnce: %v", err)
 	}
 	if len(ledger.records) != 1 {
 		t.Fatalf("ledger records = %d, want 1", len(ledger.records))
 	}
 	got := ledger.records[0]
-	want := playbookRecord{playbookID: "pb.yaml", playbookVersion: "v1", eventID: "archie:acme/widget/7", actionID: "1"}
+	want := playbookRecord{playbookID: "pb.yaml", playbookVersion: "v1", eventID: "archie:acme/widget/7", actionID: "2"}
 	if got != want {
 		t.Fatalf("ledger record = %+v, want %+v (an action without an id keys on its 1-based position)", got, want)
+	}
+}
+
+func TestInvokeOnceRejectsEmptyKeyComponent(t *testing.T) {
+	ledger := &fakePlaybookLedger{}
+	decision := Decision{PlaybookID: "pb.yaml", Version: "v1", Workflow: "notify", ActionID: "notify"}
+	input := DispatchInput{TaskID: ""}
+
+	err := InvokeOnce(t.Context(), ledger, slog.New(slog.DiscardHandler), decision, input, func(ctx context.Context) error { return nil })
+	if err == nil {
+		t.Fatal("InvokeOnce with empty event_id should error before recording")
+	}
+	if len(ledger.records) != 0 {
+		t.Fatalf("ledger records = %d, want 0 (validation must precede the ledger write)", len(ledger.records))
 	}
 }

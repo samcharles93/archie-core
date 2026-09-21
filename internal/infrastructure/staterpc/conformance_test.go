@@ -350,6 +350,12 @@ func TestStateStoreConformance(t *testing.T) {
 			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
 				t.Fatalf("RecordPlaybookDispatch: %v", err)
 			}
+			// A distinct event_id is a distinct row: the client -> proto ->
+			// server mapping must carry event_id rather than collapse it into
+			// the first tuple's key.
+			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/8", "notify"); err != nil {
+				t.Fatalf("RecordPlaybookDispatch (distinct event_id) = %v, want success", err)
+			}
 			err = pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify")
 			if !errors.Is(err, store.ErrAlreadyDispatched) {
 				t.Fatalf("RecordPlaybookDispatch dup = %v, want ErrAlreadyDispatched", err)

@@ -17,6 +17,32 @@ func TestRecordPlaybookDispatchIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRecordPlaybookDispatchKeyIsAllFourComponents(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	if err := s.RecordPlaybookDispatch(ctx, "pb", "v1", "e1", "notify"); err != nil {
+		t.Fatalf("record (pb, v1, e1, notify): %v", err)
+	}
+	// Every component of the PRIMARY KEY distinguishes a row: a mutant key
+	// missing any one of the four would collapse distinct dispatches here.
+	if err := s.RecordPlaybookDispatch(ctx, "pb", "v1", "e1", "build"); err != nil {
+		t.Fatalf("record (pb, v1, e1, build) = %v, want success (action_id is a key component)", err)
+	}
+	if err := s.RecordPlaybookDispatch(ctx, "pb", "v1", "e2", "notify"); err != nil {
+		t.Fatalf("record (pb, v1, e2, notify) = %v, want success (event_id is a key component)", err)
+	}
+	if err := s.RecordPlaybookDispatch(ctx, "pb", "v2", "e1", "notify"); err != nil {
+		t.Fatalf("record (pb, v2, e1, notify) = %v, want success (playbook_version is a key component)", err)
+	}
+	if err := s.RecordPlaybookDispatch(ctx, "pb2", "v1", "e1", "notify"); err != nil {
+		t.Fatalf("record (pb2, v1, e1, notify) = %v, want success (playbook_id is a key component)", err)
+	}
+	if err := s.RecordPlaybookDispatch(ctx, "pb", "v1", "e1", "notify"); !errors.Is(err, ErrAlreadyDispatched) {
+		t.Fatalf("re-record (pb, v1, e1, notify) = %v, want ErrAlreadyDispatched", err)
+	}
+}
+
 func TestDeletePlaybookDispatchesRemovesOnlyThatPlaybook(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
