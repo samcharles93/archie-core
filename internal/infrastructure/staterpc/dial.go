@@ -89,6 +89,53 @@ func clientKeepaliveParams() keepalive.ClientParameters {
 	}
 }
 
+// serverKeepaliveMinTime is the server half of the same agreement: the
+// shortest gap between two pings a State Store server accepts before it counts
+// a strike. It is half the client's ping interval rather than a copy of it;
+// ServerKeepaliveOption carries the arithmetic.
+const serverKeepaliveMinTime = 5 * time.Second
+
+// ServerKeepaliveOption returns the server half of the keepalive agreement
+// Dial's clients enter, for the composition that serves the State Store
+// contract to install on its grpc.Server (internal/app/archied's
+// stateStoreServerOpts installs it on every listener).
+//
+// The two sides have to agree on one number. A ping arriving less than
+// EnforcementPolicy.MinTime after the previous ping is a strike, and the server
+// answers the third strike with GOAWAY too_many_pings (maxPingStrikes is 2; a
+// write on that transport is what resets the counter). grpc's default policy
+// MinTime is 5 minutes while the client above pings every 10 seconds, so a
+// connection that carries no write for ~40s -- which is what a watch is while
+// the watched resource's version is unchanged -- is torn down where before the
+// client keepalive existed it stayed up. A process that writes on the same
+// transport every 30s (the apply-status re-stamp, applystatus.RestampInterval)
+// resets the counter often enough to hide this; an idle connection is what it
+// kills, and a keepalive that disconnects is worse than no keepalive.
+//
+// MinTime is 5s, half the client's ping interval. The client's interval is the
+// larger of its Time and grpc's KeepaliveMinPingTime clamp -- 10s, so no caller
+// can ask for faster pings -- and its keepalive loop arms its timer Time ahead
+// and re-arms it only later, on read activity, so consecutive pings are never
+// closer than ~10s apart. A 5s floor thus separates every ping from a strike by
+// a factor of two, worth more than Go's timer granularity and any scheduling
+// delay, which can only push pings further apart. A MinTime of 10s would sit
+// exactly on the boundary the clamp already enforces, where a ping a
+// microsecond early is a strike; 5 minutes is the defect itself.
+//
+// The floor is not a blanket exemption: a ping arriving less than 5s after the
+// previous one, and any ping on a connection with no stream, still strikes.
+// PermitWithoutStream stays false, matching the client, which never pings a
+// connection with no streams: every client this server has is a staterpc.Dial
+// -- the daemon's control-plane client, the archie-ui dashboard, archie-
+// messaging and the archie-agent container -- so permitting streamless pings
+// would only relax a setting none of them exercises.
+func ServerKeepaliveOption() grpc.ServerOption {
+	return grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+		MinTime:             serverKeepaliveMinTime,
+		PermitWithoutStream: false,
+	})
+}
+
 // TargetIsLoopback reports whether addr's host is a loopback address. Both
 // literal loopback IPs (127.0.0.1, ::1) and the "localhost" hostname count;
 // everything else (including the wildcard 0.0.0.0 and DNS names) is treated

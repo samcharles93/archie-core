@@ -25,8 +25,8 @@ func TestStateStoreServerOptsLoopbackIsInsecure(t *testing.T) {
 	if !loopback {
 		t.Fatal("loopback listener should report loopback")
 	}
-	if len(opts) != 0 {
-		t.Fatalf("loopback listener should have no server opts, got %d", len(opts))
+	if len(opts) != 1 {
+		t.Fatalf("loopback listener should install only the keepalive enforcement policy (no token interceptors), got %d server opts", len(opts))
 	}
 }
 
@@ -41,8 +41,8 @@ func TestStateStoreServerOptsNonLoopbackRequiresToken(t *testing.T) {
 	if loopback {
 		t.Fatal("non-loopback listener should not report loopback")
 	}
-	if len(opts) != 2 {
-		t.Fatalf("non-loopback listener should install two server options (the unary and stream task-grant interceptors), got %d", len(opts))
+	if len(opts) != 3 {
+		t.Fatalf("non-loopback listener should install three server options (the keepalive enforcement policy and the unary and stream task-grant interceptors), got %d", len(opts))
 	}
 }
 

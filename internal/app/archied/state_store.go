@@ -414,13 +414,20 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 // enforce TLS/mTLS (an operator decision), so it narrows the non-loopback
 // path to token auth -- the same confinement philosophy as the gateway's
 // loopback-only --listen rule.
+//
+// The keepalive enforcement policy is not part of that boundary and is
+// installed on both listeners: a loopback State Store serves the same dialers
+// as a remote one (staterpc.Dial installs the client keepalive on every target,
+// loopback included), and grpc's default policy would answer their idle
+// watches with GOAWAY too_many_pings. See staterpc.ServerKeepaliveOption.
 func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (opts []grpc.ServerOption, loopback bool, err error) {
 	loopback, err = staterpc.TargetIsLoopback(listen)
 	if err != nil {
 		return nil, false, err
 	}
+	keepalive := staterpc.ServerKeepaliveOption()
 	if loopback {
-		return nil, true, nil
+		return []grpc.ServerOption{keepalive}, true, nil
 	}
 	if token == "" {
 		return nil, false, fmt.Errorf(
@@ -433,6 +440,7 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 	// grant (Update/Transition/InsertEvent on its own task ID only), rather
 	// than the single all-or-nothing token check this replaced.
 	return []grpc.ServerOption{
+		keepalive,
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(token)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token)),
 	}, false, nil
