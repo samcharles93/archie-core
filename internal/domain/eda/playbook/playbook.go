@@ -255,24 +255,37 @@ func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
 		Workflow: strings.TrimSpace(a.Workflow),
 	}
 	if strings.TrimSpace(a.When) != "" {
-		prg, err := env.Compile(strings.TrimSpace(a.When))
+		prg, err := compileWhen(path, a.When, env, raw.Actions)
 		if err != nil {
-			return nil, fmt.Errorf("playbook %s: when condition: %w", path, err)
-		}
-		ids, resolvable := prg.ActionReferences()
-		if !resolvable {
-			return nil, fmt.Errorf(
-				"playbook %s: when condition contains an `actions` reference that cannot be statically resolved to an action id (the `actions` context root must be read as a prior action id)",
-				path,
-			)
-		}
-		if id, unknown := unknownActionReference(raw.Actions, 0, ids); unknown {
-			return nil, fmt.Errorf("playbook %s: when condition references unknown action id %q", path, id)
+			return nil, err
 		}
 		action.When = prg
 	}
 	pb.Actions = []Action{action}
 	return pb, nil
+}
+
+// compileWhen compiles a raw `when` expression and validates its action
+// references against the actions declared before it. It returns the compiled
+// program so loadOne can attach it to the action, or the same error loadOne
+// previously produced for a compile failure, an unresolvable `actions`
+// context root, or a reference to an unknown action id.
+func compileWhen(path, when string, env *expr.Env, prior []rawAction) (*expr.Program, error) {
+	prg, err := env.Compile(strings.TrimSpace(when))
+	if err != nil {
+		return nil, fmt.Errorf("playbook %s: when condition: %w", path, err)
+	}
+	ids, resolvable := prg.ActionReferences()
+	if !resolvable {
+		return nil, fmt.Errorf(
+			"playbook %s: when condition contains an `actions` reference that cannot be statically resolved to an action id (the `actions` context root must be read as a prior action id)",
+			path,
+		)
+	}
+	if id, unknown := unknownActionReference(prior, 0, ids); unknown {
+		return nil, fmt.Errorf("playbook %s: when condition references unknown action id %q", path, id)
+	}
+	return prg, nil
 }
 
 // DispatchInput is what the coordinator evaluates a playbook against at
