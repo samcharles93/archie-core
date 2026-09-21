@@ -7,7 +7,7 @@
 implementation of either position. Both are side-effecting, and `t2db.17`
 resolved the keying scheme in design only.
 
-## Forge: ready to implement once the ledger lands
+## Forge
 
 `internal/forge.Forge` is already exactly the shape a native-Go action
 position needs -- a real, typed, general-purpose interface, not something
@@ -31,8 +31,7 @@ should be: a small set of named operations (e.g. `close-issue`, `create-pr`,
 `link-branch`), each with a typed `Args`/`Result` struct mirroring the
 matching method's parameters/return.
 
-**Correction (2026-09-03, caught in review before this landed as settled
-design):** the dispatch target must be `internal/domain/workflow.Forger`
+The dispatch target is `internal/domain/workflow.Forger`
 (`CloseIssue`/`CreatePR`/`LinkBranch` -- already exists, already exactly
 these three operations), **not** `internal/forge.Forge` directly.
 `organisation.md`'s target structure places `forge/` under
@@ -59,10 +58,9 @@ proven on the simpler operations, don't design it blind now.
 existing instance into the coordinator's constructor), not a new
 extensibility mechanism.
 
-## Channel: resolved 2026-09-22
+## Channel
 
-Superseded: the 2026-09-03 section here presented two options and asked for a
-decision. The decision is below; the options are not repeated.
+Supersedes the 2026-09-03 open question on this position.
 
 ### Constraints this satisfies
 
