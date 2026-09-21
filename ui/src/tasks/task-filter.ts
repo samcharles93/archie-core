@@ -6,6 +6,14 @@
 // is no way to test that capture without being able to replace the catalog.
 // A caller that passes the catalog from inside a `computed` re-derives when
 // `/api/task-meta` lands.
+//
+// Only type imports, and only from "@/": `node --test` runs this file with
+// --experimental-strip-types and resolves no tsconfig paths, so `import type`
+// is erased before node ever sees the specifier. A value import from
+// "@/lib/..." would kill the suite with ERR_MODULE_NOT_FOUND that names
+// nothing in this package, so a value that has to cross this boundary is
+// either an argument (the catalog, below) or a relative specifier with its
+// .ts extension.
 import type { StatusMeta } from "@/lib/task-meta";
 
 // The vocabulary is the server catalog, not a hand-synced copy: the set of
@@ -24,6 +32,20 @@ export function taskStatuses(catalog: StatusMeta[]): Set<string> {
  */
 export function initialTaskFilter(requested: string | null | undefined, catalog: StatusMeta[]): string {
   return requested && taskStatuses(catalog).has(requested) ? requested : "";
+}
+
+/**
+ * boardStatus is the task board's status filter: what the control shows and
+ * what the table filters by, for one query value and the catalog read at the
+ * moment of the call. It exists as a named derivation so the page's only
+ * remaining decision is where each argument comes from -- and the catalog has
+ * to be read inside the `computed`, because a caller that evaluates
+ * `statusList()` while the page sets up passes the freeze-dried defaults for
+ * the life of the page, which is how a shared link to a served-only status
+ * filtered nothing until a reload.
+ */
+export function boardStatus(query: string, catalog: StatusMeta[]): string {
+  return initialTaskFilter(query, catalog);
 }
 
 /** taskMatchesStatus reports whether a task survives the status filter. */

@@ -22,7 +22,7 @@ import { api } from "@/lib/api";
 import { statusList } from "@/lib/task-meta";
 import { useLiveResource } from "@/stores/live-updates";
 import TaskFilters from "./TaskFilters.vue";
-import { initialTaskFilter, taskMatchesStatus } from "./task-filter";
+import { boardStatus, initialTaskFilter, taskMatchesStatus } from "./task-filter";
 import type { Task } from "./TaskRow.vue";
 import TaskTable from "./TaskTable.vue";
 import TasksState from "./TasksState.vue";
@@ -52,10 +52,11 @@ const requestedTaskId = computed(() => {
 
 // The filter follows the URL as well as writing to it: a dashboard link or a
 // back-button step has to move the control, not just load the page behind it.
-// It is derived from the query rather than captured from it, because the
-// served catalog lands after this page sets up -- a drop to the freeze-dried
-// defaults here would drop a shared link to a status the server serves.
-const status = computed(() => initialTaskFilter(statusQuery.value, statusList()));
+// It is derived rather than captured, and the catalog is read inside the
+// computed: the served catalog lands after this page sets up, so a drop to the
+// freeze-dried defaults here would drop a shared link to a status the server
+// serves.
+const status = computed(() => boardStatus(statusQuery.value, statusList()));
 
 const visible = computed(() =>
   (tasks.value ?? []).filter((task) => {

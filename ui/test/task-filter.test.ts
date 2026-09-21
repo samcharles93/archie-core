@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { computed, ref } from "vue";
 
-import { initialTaskFilter, taskMatchesStatus, taskStatuses } from "../src/tasks/task-filter.ts";
+import { boardStatus, initialTaskFilter, taskMatchesStatus, taskStatuses } from "../src/tasks/task-filter.ts";
 
 const QUEUED = { id: "queued", label: "Queued", kind: "idle" };
 const WAITING = { id: "waiting_human", label: "Waiting for you", kind: "warn", needs_you: true };
@@ -49,11 +49,12 @@ test("needs_you groups exactly the statuses the catalog marks for a human", () =
 // query string. A status the server serves but the defaults do not know was
 // therefore dropped, and the whole board rendered in place of the shared view.
 // Deriving the filter from the catalog instead makes the late catalog a
-// re-derivation, and the served id becomes the filter without a reload.
+// re-derivation, and the served id becomes the filter without a reload. This
+// runs the board's own derivation -- the page adds only the two arguments.
 test("a filter is re-derived when the served catalog lands", () => {
   const catalog = ref([QUEUED]);
   const query = ref("triaging");
-  const status = computed(() => initialTaskFilter(query.value, catalog.value));
+  const status = computed(() => boardStatus(query.value, catalog.value));
 
   assert.equal(status.value, "", "an id no catalog has held yet is dropped");
   catalog.value = [...catalog.value, TRIAGING];
@@ -64,9 +65,16 @@ test("a filter is re-derived when the served catalog lands", () => {
   assert.equal(status.value, "", "clearing the query clears the filter");
 });
 
-test("the task board derives its filter from the query instead of freezing it at setup", async () => {
+// The page owns only the wiring: which query, and which catalog, the derivation
+// is handed. This is therefore asserted as the whole argument list rather than
+// the expression's prefix -- a prefix anchor accepted any trailing argument, so
+// `const catalog = statusList()` captured at setup and passed to the same call
+// kept the old guard green while reintroducing the defect. The check is
+// source-level because node --test ships no SFC loader: a .vue file is readable
+// here and never executable, which is why the derivation itself is a function
+// in task-filter.ts with its own behavioural coverage above.
+test("the task board reads the served catalog when the filter re-derives", async () => {
   const page = await readFile(new URL("../src/tasks/TasksPage.vue", import.meta.url), "utf8");
-  assert.match(page, /const status = computed\(\(\) => initialTaskFilter\(statusQuery\.value/);
-  assert.doesNotMatch(page, /watch\(statusQuery/);
-  assert.doesNotMatch(page, /status\.value = /);
+  const wiring = /const status = computed\(\(\) => boardStatus\((.+?)\)\);/.exec(page.replace(/\s+/g, " "));
+  assert.equal(wiring?.[1], "statusQuery.value, statusList()", "the filter must be derived, not captured");
 });
