@@ -17,10 +17,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
-// contract is the union of every store surface staterpc fronts, so the same
-// test battery drives both the local *store.Store and the remote *Client
-// through one interface value, per docs/prds/state-store-contract.md §11's
-// conformance requirement.
+// contract is the union of every store surface staterpc fronts (minus the
+// playbook-dispatch ledger, split out below to keep the interface under the
+// repo's 8-method cap), so the same test battery drives both the local
+// *store.Store and the remote *Client through one interface value, per
+// docs/prds/state-store-contract.md §11's conformance requirement.
 type contract interface {
 	store.TaskStore
 	store.CaptureStore
@@ -28,9 +29,15 @@ type contract interface {
 	store.BindingStore
 	store.BindingDispatcher
 	store.BindingTaskCreator
-	store.PlaybookDispatcher
 	store.ConfigSnapshotStore
 	store.ApplyStatusStore
+}
+
+// playbookContract is the playbook-dispatch idempotency-ledger surface, split
+// out from contract so each aggregate stays under the repo's interfacebloat
+// cap without weakening what the conformance battery proves.
+type playbookContract interface {
+	store.PlaybookDispatcher
 }
 
 // taskLogContract is the task-log read group, driven separately because it is
@@ -81,8 +88,11 @@ func TestStateStoreConformance(t *testing.T) {
 			ctx := t.Context()
 			local := store.OpenTest(t)
 			var c contract = local
+			var pc playbookContract = local
 			if mode == "grpc" {
-				c = remoteContract(t, local)
+				remote := remoteTaskStore(t, local, nil)
+				c = remote
+				pc = remote
 			}
 
 			// workflow.Store view: EnqueueChatTask, Transition, Update, InsertEvent.
@@ -337,17 +347,17 @@ func TestStateStoreConformance(t *testing.T) {
 			// Playbook dispatch ledger: ErrAlreadyDispatched survives the hop
 			// via errors.Is, and DeletePlaybookDispatches actually clears the
 			// row (the same key records again after delete).
-			if err := c.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
+			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
 				t.Fatalf("RecordPlaybookDispatch: %v", err)
 			}
-			err = c.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify")
+			err = pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify")
 			if !errors.Is(err, store.ErrAlreadyDispatched) {
 				t.Fatalf("RecordPlaybookDispatch dup = %v, want ErrAlreadyDispatched", err)
 			}
-			if err := c.DeletePlaybookDispatches(ctx, "pb.yaml"); err != nil {
+			if err := pc.DeletePlaybookDispatches(ctx, "pb.yaml"); err != nil {
 				t.Fatalf("DeletePlaybookDispatches: %v", err)
 			}
-			if err := c.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
+			if err := pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
 				t.Fatalf("RecordPlaybookDispatch after delete = %v, want success (delete must clear the row)", err)
 			}
 		})
