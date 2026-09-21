@@ -30,7 +30,7 @@ func TestAdapterRecentSessionsFiltersByActivity(t *testing.T) {
 		t.Fatalf("Save(recent) = %v", err)
 	}
 
-	a := NewAdapter(store)
+	a := NewAdapter(store, "archie-bot")
 	got, err := a.RecentSessions(ctx, time.Unix(1000, 0))
 	if err != nil {
 		t.Fatalf("RecentSessions() = %v, want nil", err)
@@ -64,7 +64,7 @@ func TestAdapterMessagesReadsRoleFromRecords(t *testing.T) {
 		t.Fatalf("SaveMessage(bare) = %v", err)
 	}
 
-	a := NewAdapter(store)
+	a := NewAdapter(store, "archie-bot")
 	got, err := a.Messages(ctx, "s1", 10)
 	if err != nil {
 		t.Fatalf("Messages() = %v, want nil", err)
@@ -83,9 +83,11 @@ func TestAdapterMessagesReadsRoleFromRecords(t *testing.T) {
 	}
 }
 
-// TestAdapterRecentSessionsCarriesAgentID pins that a session's agent reaches
-// the curator contract, so an agent-user scope can be addressed without
-// recovering the agent from the session id.
+// TestAdapterRecentSessionsCarriesAgentID pins that the agent a session's
+// memory is addressed to comes from the composition, not from the record's
+// own BotUser: BotUser is the router's session-resolution key
+// (gateway/session_commands.go), which is empty in a single-identity
+// deployment -- an addressing component, never a match key.
 func TestAdapterRecentSessionsCarriesAgentID(t *testing.T) {
 	t.Parallel()
 	store := newTestStore(t)
@@ -93,19 +95,19 @@ func TestAdapterRecentSessionsCarriesAgentID(t *testing.T) {
 
 	sess := gateway.SessionContext{
 		SessionID:    "s1",
-		Source:       messaging.SessionSource{Platform: "telegram", BotUser: "winter", ChannelID: "chat-1"},
+		Source:       messaging.SessionSource{Platform: "telegram", BotUser: "primary", ChannelID: "chat-1"},
 		LastActiveAt: time.Unix(2000, 0),
 	}
 	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("Save() = %v", err)
 	}
 
-	got, err := NewAdapter(store).RecentSessions(ctx, time.Unix(1000, 0))
+	got, err := NewAdapter(store, "archie-bot").RecentSessions(ctx, time.Unix(1000, 0))
 	if err != nil {
 		t.Fatalf("RecentSessions() = %v, want nil", err)
 	}
-	if len(got) != 1 || got[0].AgentID != "winter" {
-		t.Fatalf("RecentSessions() = %+v, want one session with AgentID winter", got)
+	if len(got) != 1 || got[0].AgentID != "archie-bot" {
+		t.Fatalf("RecentSessions() = %+v, want one session whose AgentID is the composition's %q", got, "archie-bot")
 	}
 }
 
@@ -129,7 +131,7 @@ func TestAdapterMessagesCarriesSenderID(t *testing.T) {
 		}
 	}
 
-	got, err := NewAdapter(store).Messages(ctx, "s1", 10)
+	got, err := NewAdapter(store, "archie-bot").Messages(ctx, "s1", 10)
 	if err != nil {
 		t.Fatalf("Messages() = %v, want nil", err)
 	}

@@ -1011,8 +1011,12 @@ func (b *boot) setupCurators(ctx context.Context) {
 		// doesn't declare Manifest.Skills, per curator not per instance.
 		Skills: skillcurator.NewStore(skillsRoot),
 		// Conversations backs the session-memory curator; b.chatSessionStore
-		// is opened by openChatSessions before setupCurators.
-		Conversations: sessioncurator.NewAdapter(b.chatSessionStore),
+		// is opened by openChatSessions before setupCurators. The agent every
+		// curator write is addressed to is the deployment's bot user: the same
+		// value the turn runner reads agent-scope memory with
+		// (TurnRunnerConfig.BotUser), so a fact written here is a fact a later
+		// turn reaches.
+		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
 		LLM:           curatorLLMRunner{rt: b.llm, outcomes: b.providerOutcomes},
 		// b.chatModels.ActiveModel() is the same source sendChatTurn uses
 		// for a real chat turn (telegram_setup.go) -- not

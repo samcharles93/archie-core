@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
+	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 )
 
 // --- fakes -------------------------------------------------------------
@@ -134,6 +136,47 @@ func (f fakeEngineSource) Get(name string) (domainmemory.MemoryEngine, bool) {
 		return nil, false
 	}
 	return f.engine, true
+}
+
+// engineSource adapts one memory engine under the name the curator is built
+// with, so a case can bind the real builtin engine where the fake's refusal
+// behaviour would hide what the engine actually validates.
+type engineSource struct{ engine domainmemory.MemoryEngine }
+
+func (s engineSource) Get(name string) (domainmemory.MemoryEngine, bool) {
+	if name != "builtin" {
+		return nil, false
+	}
+	return s.engine, true
+}
+
+func newTestCuratorWithEngine(t *testing.T, conv curator.ConversationSource, llm curator.LLMRunner, engine domainmemory.MemoryEngine) *Curator {
+	t.Helper()
+	c := New(time.Hour, "builtin")
+	c.Bind(curator.Registrar{
+		Conversations: conv,
+		LLM:           llm,
+		MemoryEngines: engineSource{engine: engine},
+		Clock:         testClock{now: time.Unix(1000, 0)},
+	})
+	return c
+}
+
+// engineScopeDirs names the per-scope directories a real engine has written
+// to. It persists one directory per scope it has ever written, so an empty
+// root is an engine holding no records at all -- the only root-wide view the
+// engine's scope-addressed read surface can't give a test.
+func engineScopeDirs(t *testing.T, root string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("ReadDir(%s) = %v", root, err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
 }
 
 type testClock struct{ now time.Time }
@@ -499,6 +542,125 @@ func TestPassReviewsMultipleSessionsIndependently(t *testing.T) {
 		if got := scopes[session]; got != want {
 			t.Errorf("scope of the write sourced from %s = %v, want %v", session, got, want)
 		}
+	}
+}
+
+// TestPassSkipsASessionWithNoAgentID drives the real builtin engine, whose
+// Create validates the scope it is handed. A session with no agent id is the
+// address the tree has for an agent-user record without an agent: it has no
+// scope, so it must be skipped and its reason recorded, never turned into a
+// Pass error that takes every other session's actions down with it.
+func TestPassSkipsASessionWithNoAgentID(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	engine := infraMemory.NewBuiltinEngine(root, 0)
+	conv := &fakeConversations{
+		sessions: map[string]time.Time{"s1": time.Unix(1000, 0)},
+		agents:   map[string]string{"s1": ""},
+		messages: map[string][]curator.ConversationMessage{
+			"s1": {{Role: "user", SenderID: "u-42", Content: "I prefer tabs"}},
+		},
+	}
+	c := newTestCuratorWithEngine(t, conv, &fakeLLM{responses: []string{`["prefers tabs over spaces"]`}}, engine)
+
+	res, err := c.Pass(context.Background(), curator.PassInput{})
+	if err != nil {
+		t.Fatalf("Pass() = %v, want nil: a session with no agent id is skipped, not a pass failure", err)
+	}
+	if len(res.Actions) != 1 {
+		t.Fatalf("Actions = %#v, want exactly one skip", res.Actions)
+	}
+	got := res.Actions[0]
+	if got.Type != ActionSkipped {
+		t.Errorf("Actions[0].Type = %q, want %q", got.Type, ActionSkipped)
+	}
+	if got.Detail != "s1" {
+		t.Errorf("Actions[0].Detail = %q, want the session id %q", got.Detail, "s1")
+	}
+	if want := "no agent id: agent-user memory needs an agent and a user"; got.Reason != want {
+		t.Errorf("Actions[0].Reason = %q, want %q", got.Reason, want)
+	}
+	if dirs := engineScopeDirs(t, root); len(dirs) != 0 {
+		t.Errorf("engine scope directories = %v, want none: the pass wrote for a session it could not address", dirs)
+	}
+}
+
+// TestPassWritesThroughTheRealEngineForAnAddressableSession is the companion
+// to the skip above: it holds the same real engine, the same extractable
+// message, and an agent id, so the skip cannot pass for a reason unrelated to
+// the agent id -- such as an engine that refuses every write.
+func TestPassWritesThroughTheRealEngineForAnAddressableSession(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	engine := infraMemory.NewBuiltinEngine(root, 0)
+	conv := &fakeConversations{
+		sessions: map[string]time.Time{"s1": time.Unix(1000, 0)},
+		agents:   map[string]string{"s1": "archie-bot"},
+		messages: map[string][]curator.ConversationMessage{
+			"s1": {{Role: "user", SenderID: "u-42", Content: "I prefer tabs"}},
+		},
+	}
+	c := newTestCuratorWithEngine(t, conv, &fakeLLM{responses: []string{`["prefers tabs over spaces"]`}}, engine)
+
+	res, err := c.Pass(context.Background(), curator.PassInput{})
+	if err != nil {
+		t.Fatalf("Pass() = %v, want nil", err)
+	}
+	if len(res.Actions) != 1 || res.Actions[0].Type != ActionExtracted {
+		t.Fatalf("Actions = %#v, want one %s", res.Actions, ActionExtracted)
+	}
+	scope := domainmemory.Scope{Kind: domainmemory.ScopeAgentUser, Agent: "archie-bot", User: "u-42"}
+	records, err := engine.List(context.Background(), scope)
+	if err != nil {
+		t.Fatalf("List(%v) = %v, want nil", scope, err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("List(%v) = %#v, want the one extracted record", scope, records)
+	}
+	if records[0].Content != "prefers tabs over spaces" {
+		t.Errorf("Content = %q, want the extracted fact verbatim", records[0].Content)
+	}
+}
+
+// TestPassContinuesPastAnUnattributableSession pins that a session the pass
+// cannot address costs the pass that session and nothing else. Both sessions
+// here are unattributable, so an abort on the first would drop the second's
+// action as well.
+func TestPassContinuesPastAnUnattributableSession(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	engine := infraMemory.NewBuiltinEngine(root, 0)
+	conv := &fakeConversations{
+		sessions: map[string]time.Time{"s1": time.Unix(1000, 0), "s2": time.Unix(1000, 0)},
+		agents:   map[string]string{"s1": "", "s2": ""},
+		messages: map[string][]curator.ConversationMessage{
+			"s1": {{Role: "user", SenderID: "u-1", Content: "fact for s1"}},
+			"s2": {{Role: "user", SenderID: "u-2", Content: "fact for s2"}},
+		},
+	}
+	c := newTestCuratorWithEngine(t, conv, &fakeLLM{responses: []string{`["a fact worth keeping"]`}}, engine)
+
+	res, err := c.Pass(context.Background(), curator.PassInput{})
+	if err != nil {
+		t.Fatalf("Pass() = %v, want nil: one unattributable session must not abort the pass", err)
+	}
+	if len(res.Actions) != 2 {
+		t.Fatalf("Actions = %#v, want one action per session", res.Actions)
+	}
+	seen := make(map[string]string, len(res.Actions))
+	for _, a := range res.Actions {
+		if a.Type != ActionSkipped {
+			t.Errorf("Actions = %#v, want every action to be %s", res.Actions, ActionSkipped)
+		}
+		seen[a.Detail] = a.Type
+	}
+	for _, session := range []string{"s1", "s2"} {
+		if _, ok := seen[session]; !ok {
+			t.Errorf("no action recorded for %s: a session the pass could not address took the whole pass down with it", session)
+		}
+	}
+	if dirs := engineScopeDirs(t, root); len(dirs) != 0 {
+		t.Errorf("engine scope directories = %v, want none", dirs)
 	}
 }
 

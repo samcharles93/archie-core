@@ -18,12 +18,13 @@ const Name = "session-memory"
 // written.
 const ActionExtracted = "memory.extracted"
 
-// ActionSkipped records a session the pass could not attribute to exactly
-// one participant, so nothing was written for it. The reason names how many
-// distinct senders were found (zero for a dashboard or webhook session,
-// more than one for a group chat), and how many user messages carried no
-// sender at all -- unknown provenance rules a session out on its own, beside
-// any number of identified senders.
+// ActionSkipped records a session the pass could not address, so nothing was
+// written for it. The reason names what was missing: an agent id (the
+// deployment's bot user, empty when the composition resolved none), how many
+// distinct senders were found (zero for a dashboard or webhook session, more
+// than one for a group chat), and how many user messages carried no sender at
+// all -- unknown provenance rules a session out on its own, beside any number
+// of identified senders.
 const ActionSkipped = "memory.skipped"
 
 // DefaultInterval is the check-in cadence used when nothing more
@@ -137,9 +138,9 @@ func effectiveSince(since, now time.Time) time.Time {
 // writes them through engine as agent-user memory for the session's single
 // participant. Returns nil (no Action) when nothing was extracted --
 // matching the skill curator's "a pass with nothing to report is not an
-// error" -- or when the session carries no messages at all. A session that
-// cannot be attributed to one participant is skipped with an Action saying
-// so.
+// error" -- or when the session carries no messages at all. A session the
+// pass cannot address -- no agent, or no single participant -- is skipped
+// with an Action saying why.
 func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngine, sess curator.SessionSummary) (*curator.Action, error) {
 	msgs, err := c.host.Conversations.Messages(ctx, sess.ID, messageTailSize)
 	if err != nil {
@@ -149,10 +150,26 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 		return nil, nil
 	}
 
-	// Resolve the participant before spending a model call: an
-	// unattributable session has nowhere addressable to write, so there is
-	// nothing a model response could add. ScopeAgentUser is addressed by
-	// both ids, and a guess would file one person's facts under another's.
+	// Resolve the address before spending a model call: an unaddressable
+	// session has nowhere to write, so there is nothing a model response
+	// could add. ScopeAgentUser is addressed by both ids, and a guess would
+	// file one person's facts under another's.
+	//
+	// An empty agent id is the composition having resolved no bot user for
+	// this deployment -- the session's own record cannot supply one (see
+	// Adapter). The engine would refuse the scope, which is the right
+	// refusal for a write with no address: what is wrong is writing it at
+	// all, so the skip belongs here, at the point the scope is produced, and
+	// not as a Pass error that abandons every other session's work.
+	if sess.AgentID == "" {
+		return &curator.Action{
+			At:     c.host.Clock.Now(),
+			Type:   ActionSkipped,
+			Detail: sess.ID,
+			Reason: "no agent id: agent-user memory needs an agent and a user",
+		}, nil
+	}
+
 	participant, reason := sessionParticipant(msgs)
 	if participant == "" {
 		return &curator.Action{
