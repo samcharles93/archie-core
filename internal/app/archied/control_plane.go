@@ -90,7 +90,9 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	b.applyWorkflowExecutionSettings(ctx, settings, version)
+	if err := b.applyWorkflowExecutionSettings(ctx, settings, version); err != nil {
+		return fmt.Errorf("apply workflow execution settings: %w", err)
+	}
 	updates, err := b.controlPlane.WatchWorkflowExecutionSettings(ctx, version)
 	if err != nil {
 		return err
@@ -101,22 +103,68 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 				b.log.Error("workflow execution settings watch failed", "err", update.Err)
 				return
 			}
-			b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
+			// A refused update leaves the running component in place and is
+			// already reported through apply status, so the watch keeps
+			// streaming instead of stopping on it.
+			_ = b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
 		}
 	}()
 	return nil
 }
 
-// applyWorkflowExecutionSettings records the settings as well as applying
-// them: they arrive on a watch rather than in the file document, so a reload
-// has nowhere else to read them back from.
-func (b *boot) applyWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings, version int64) {
-	b.executionSettings.Store(&settings)
+// executionSettingsCandidate is a live workflow-execution-settings update that
+// has been built and checked but not yet switched in: the limits themselves,
+// and the configuration snapshot every new task would be built from.
+type executionSettingsCandidate struct {
+	settings workflow.ExecutionSettings
+	cfg      config.Config
+}
+
+// buildExecutionSettingsCandidate stages a live update without touching
+// anything running: it checks the candidate the running limits would be
+// replaced with, so a change this process cannot run is refused before it
+// becomes the live one (docs/prds/runtime-control-plane.md, "API": Archie
+// starts and checks the new one before switching).
+//
+// The check runs here rather than only where the document was written because
+// a live update is promoted long after that: the store's validation describes
+// what may be stored, and this is the process that has to run it.
+func (b *boot) buildExecutionSettingsCandidate(settings workflow.ExecutionSettings) (executionSettingsCandidate, error) {
+	if err := settings.Validate(); err != nil {
+		return executionSettingsCandidate{}, fmt.Errorf("workflow execution settings: %w", err)
+	}
 	cfg := b.cfgHolder.Get().Clone()
 	applyExecutionBudgets(&cfg, settings)
-	b.cfgHolder.Set(cfg)
+	return executionSettingsCandidate{settings: settings, cfg: cfg}, nil
+}
+
+// applyWorkflowExecutionSettings builds a candidate and switches it in.
+//
+// Both halves of the running component move together and only after the check
+// passes: on a refusal the previous settings keep running, the configuration
+// snapshot new tasks are built from is left as it is, and the failure is
+// reported against the version that is still live, so the settings page shows
+// a rejected edit rather than a version this process never ran.
+//
+// The settings are recorded as well as applied: they arrive on a watch rather
+// than in the file document, so a reload has nowhere else to read them back
+// from.
+//
+// The returned error is for a caller that cannot continue on limits that were
+// not applied -- boot, which must not start a process it cannot run. On the
+// watch path the running component stays live and the report is the outcome.
+func (b *boot) applyWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings, version int64) error {
+	candidate, err := b.buildExecutionSettingsCandidate(settings)
+	if err != nil {
+		b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, version, err)
+		b.log.Error("workflow execution settings rejected; the running settings stay", "version", version, "err", err)
+		return err
+	}
+	b.executionSettings.Store(&candidate.settings)
+	b.cfgHolder.Set(candidate.cfg)
 	b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, version, nil)
 	b.log.Info("workflow execution settings applied", "version", version)
+	return nil
 }
 
 func applyExecutionBudgets(cfg *config.Config, settings workflow.ExecutionSettings) {

@@ -102,9 +102,11 @@ func TestReloadConfigKeepsDatabaseOwnedSettings(t *testing.T) {
 	if err := b.loadRuntimeConfig(t.Context()); err != nil {
 		t.Fatalf("loadRuntimeConfig: %v", err)
 	}
-	b.applyWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{
+	if err := b.applyWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{
 		MaxModelToolSteps: 99, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 5,
-	}, 4)
+	}, 4); err != nil {
+		t.Fatalf("applyWorkflowExecutionSettings: %v", err)
+	}
 
 	if err := b.reloadConfig(t.Context(), &configuration.Document{Config: fileConfig()}); err != nil {
 		t.Fatalf("reloadConfig: %v", err)
