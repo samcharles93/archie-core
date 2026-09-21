@@ -16,6 +16,69 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 )
 
+// keepaliveDialerMargin is the headroom the enforcement floor keeps under the
+// dialer's ping interval: the floor is half that interval, so a ping lands a
+// factor of two clear of a strike rather than on the boundary.
+const keepaliveDialerMargin = 2
+
+// TestStateStoreServerOptsHoldTheDialersKeepaliveMargin is the cheap half of
+// the keepalive guard, and the only half that runs when someone changes the
+// policy: it asserts in microseconds what the stream case below proves over the
+// control's tear-down time (measured: 41.0s), so a server half that stops
+// tolerating the dialer's pings fails immediately instead of at the end of a
+// 50s window.
+//
+// A grpc.ServerOption is a closure over unexported grpc state, so neither the
+// option stateStoreServerOpts returns nor the one ServerKeepaliveOption builds
+// can be read back once built. What is asserted is therefore the two facts the
+// chain is made of: the shape of the option list (a loopback listener installs
+// exactly one, the enforcement policy, and nothing else) and the value that
+// option is built from, staterpc.ServerKeepalivePolicy. Both numbers in the
+// agreement are read from staterpc, the package that dials the client and
+// serves the option, so no assertion here restates a value one of the halves
+// owns.
+func TestStateStoreServerOptsHoldTheDialersKeepaliveMargin(t *testing.T) {
+	t.Parallel()
+
+	opts, loopback, err := stateStoreServerOpts("127.0.0.1:9090", "", &staterpc.TaskGrants{})
+	if err != nil {
+		t.Fatalf("stateStoreServerOpts: %v", err)
+	}
+	if !loopback {
+		t.Fatal("127.0.0.1 must be reported as loopback")
+	}
+	// The token interceptors belong to the non-loopback branch, so exactly one
+	// option here is the enforcement policy and nothing else: fewer means the
+	// server serves grpc's default policy (MinTime 5m), which answers the
+	// dialer's pings with GOAWAY too_many_pings and tears a quiet watch down at
+	// ~41s.
+	if len(opts) != 1 {
+		t.Fatalf("the loopback listener installs %d server options, want 1 (the keepalive enforcement policy)", len(opts))
+	}
+
+	floor := staterpc.ServerKeepalivePolicy()
+	dialer := staterpc.ClientKeepaliveParams()
+
+	if floor.MinTime != 5*time.Second {
+		t.Fatalf("the enforcement floor is %s, want 5s: grpc's default 5m is the defect itself, and 10s would sit on the dialer's own KeepaliveMinPingTime clamp, where a ping a microsecond early is a strike", floor.MinTime)
+	}
+	if floor.PermitWithoutStream {
+		t.Fatal("PermitWithoutStream = true: the dialer never pings a connection with no streams, so permitting them only relaxes a setting nothing exercises -- and a streamless ping from any other client would draw strikes against the dialer's traffic")
+	}
+
+	// The relationship, not the literal, is what makes the pair correct: the
+	// dialer's keepalive loop arms its timer one Time ahead and re-arms only
+	// later (on read activity), so consecutive pings are never closer than Time
+	// apart. A floor below that interval is never reached; a floor equal to it
+	// is reached by any ping that arrives early.
+	if floor.MinTime >= dialer.Time {
+		t.Fatalf("the enforcement floor %s is not below the dialer's %s ping interval: every ping would land on the strike boundary", floor.MinTime, dialer.Time)
+	}
+	if floor.MinTime*keepaliveDialerMargin > dialer.Time {
+		t.Fatalf("the enforcement floor %s must be at most %s (a %dx margin under the dialer's %s ping interval): the margin is what a loaded machine's timer delay eats before a ping draws a strike", floor.MinTime, dialer.Time/keepaliveDialerMargin, keepaliveDialerMargin, dialer.Time)
+	}
+}
+
 // keepaliveWindow is how long each case below holds one control-plane watch
 // open. It has to outlast the point where grpc's default enforcement policy
 // tears the link down: the dialer pings every 10s (staterpc's client keepalive
@@ -37,6 +100,13 @@ const keepaliveWindow = 50 * time.Second
 // its own connection in internal/webui/api_control_plane.go, writing nothing
 // between versions). That case is also what keeps the other one honest: a
 // policy that never strikes has nothing to tear down.
+//
+// The pair's cases run concurrently (t.Parallel) and share no state: each has
+// its own bufconn listener, grpc.Server, dialed client and deadline, and each
+// asserts only on its own stream, so neither one's timing depends on the
+// other's scheduling. TestStateStoreServerOptsHoldTheDialersKeepaliveMargin
+// above pins the same agreement in microseconds; this case is the end-to-end
+// proof, which is the part a value assertion cannot give.
 func TestStateStoreServerOptionsTolerateTheDialersKeepalive(t *testing.T) {
 	// The options the standalone State Store serves its local profile with,
 	// taken from the composition rather than hand-built here.

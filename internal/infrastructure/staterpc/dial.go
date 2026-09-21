@@ -56,7 +56,7 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 		// ~15s: a PING the peer does not ACK within 5s tears the transport
 		// down, turning a half-open connection into a stream error the caller
 		// can act on.
-		grpc.WithKeepaliveParams(clientKeepaliveParams()),
+		grpc.WithKeepaliveParams(ClientKeepaliveParams()),
 	}
 	if token != "" {
 		// Both call shapes need the credential: the server's interceptors
@@ -75,14 +75,19 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 	return NewClient(conn), func() { _ = conn.Close() }, nil
 }
 
-// clientKeepaliveParams are the client keepalive settings Dial installs; see
+// ClientKeepaliveParams are the client keepalive settings Dial installs; see
 // Dial's option comment for why each value is what it is. PermitWithoutStream
 // is deliberately left false (the library default): the pings this dial needs
 // are covered by an active stream, and pinging a connection with no streams is
 // what a peer's keepalive enforcement policy records as a ping strike --
 // against the State Store's default policy a streamless ping draws GOAWAY
 // too_many_pings and would churn connections that are healthy today.
-func clientKeepaliveParams() keepalive.ClientParameters {
+//
+// It is the dialer's half of the keepalive agreement with
+// ServerKeepalivePolicy, so it is exported: the side that installs a server
+// option reads the interval this dialer actually pings at from here rather
+// than restating it.
+func ClientKeepaliveParams() keepalive.ClientParameters {
 	return keepalive.ClientParameters{
 		Time:    10 * time.Second,
 		Timeout: 5 * time.Second,
@@ -130,10 +135,20 @@ const serverKeepaliveMinTime = 5 * time.Second
 // messaging and the archie-agent container -- so permitting streamless pings
 // would only relax a setting none of them exercises.
 func ServerKeepaliveOption() grpc.ServerOption {
-	return grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+	return grpc.KeepaliveEnforcementPolicy(ServerKeepalivePolicy())
+}
+
+// ServerKeepalivePolicy returns the policy ServerKeepaliveOption installs as a
+// value. A grpc.ServerOption is a closure over unexported grpc state with no
+// accessor, so the option cannot be read back once built; this value is
+// therefore the handle the agreement is held to -- a caller installing the
+// option can assert the policy it is built from, and ClientKeepaliveParams
+// gives the interval that policy must stay below.
+func ServerKeepalivePolicy() keepalive.EnforcementPolicy {
+	return keepalive.EnforcementPolicy{
 		MinTime:             serverKeepaliveMinTime,
 		PermitWithoutStream: false,
-	})
+	}
 }
 
 // TargetIsLoopback reports whether addr's host is a loopback address. Both
