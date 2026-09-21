@@ -253,6 +253,13 @@ func DispatchTriggerValid(trigger string) bool {
 // the secret and listen address it needs. An unset intake resolves to "poll"
 // without mutating cfg, so Validate (which does not apply defaults) accepts a
 // hand-built config the same way Loader.File accepts its on-disk form.
+//
+// It also refuses the intake settings that no code path reads: the ones on a
+// [[identities]] entry, and a root webhook intake paired with [[identities]].
+// The receiver is single-identity by construction
+// (bootstrap.setupForgeWebhook binds one dispatch predicate and one secret),
+// so those two spellings could only have been accepted-and-ignored -- the root
+// one silently downgrading to polling at startup.
 func validateForgeIntake(cfg *config.Config) error {
 	intake := cfg.Forge.Intake
 	if intake == "" {
@@ -262,6 +269,10 @@ func validateForgeIntake(cfg *config.Config) error {
 		return fmt.Errorf("%w: forge.intake %q (want %s)", ErrInvalidInput, cfg.Forge.Intake, list(forgeIntakes))
 	}
 	if intake == config.ForgeIntakeWebhook || intake == config.ForgeIntakeBoth {
+		if len(cfg.Identities) > 0 {
+			return fmt.Errorf("%w: forge.intake %q is not supported alongside [[identities]]: webhook intake is single-identity only, so every identity would silently keep polling (drop the [[identities]] blocks, or set forge.intake = %q and let each identity poll)",
+				ErrInvalidInput, intake, config.ForgeIntakePoll)
+		}
 		if cfg.Forge.WebhookSecret == (config.SecretRef{}) {
 			return fmt.Errorf("%w: forge.webhook_secret is required when forge.intake is %q", ErrInvalidInput, intake)
 		}
@@ -269,7 +280,57 @@ func validateForgeIntake(cfg *config.Config) error {
 			return fmt.Errorf("%w: forge.webhook_addr is required when forge.intake is %q", ErrInvalidInput, intake)
 		}
 	}
+	return validateIdentityForgeIntake(cfg.Identities)
+}
+
+// identityIntakes is the intake modes a [[identities]] entry may declare.
+// "poll" is the whole list: the receiver reads the root [forge] block only, so
+// a per-identity "webhook" would have no effect (see
+// validateIdentityForgeIntake). Named separately from forgeIntakes so a
+// rejection for a typo does not advertise modes the identity cannot have.
+var identityIntakes = []string{config.ForgeIntakePoll}
+
+// validateIdentityForgeIntake refuses the intake settings on a [[identities]]
+// entry. IdentityConfig.Forge is the same type as the root [forge] block, so
+// identities[N].forge.intake, .webhook_secret and .webhook_addr all DECODE --
+// but every read of them is of the root block (this file and
+// bootstrap.setupForgeWebhook), and per-identity intake never reached even
+// this function. An operator could therefore write a webhook intake that
+// parsed, validated, and did nothing while the identity went on polling.
+// Reject it at the source: intake per identity is a migration
+// (internal/domain/workintake routing), not a setting.
+func validateIdentityForgeIntake(identities []config.IdentityConfig) error {
+	for i, id := range identities {
+		switch id.Forge.Intake {
+		case "", config.ForgeIntakePoll:
+		case config.ForgeIntakeWebhook, config.ForgeIntakeBoth:
+			return fmt.Errorf("%w: %s %q is not supported: per-identity webhook intake is not implemented, so this identity would silently keep polling (want %q)",
+				ErrInvalidInput, identitySettingPath(i, id, "forge.intake"), id.Forge.Intake, config.ForgeIntakePoll)
+		default:
+			return fmt.Errorf("%w: %s %q (want %s)", ErrInvalidInput, identitySettingPath(i, id, "forge.intake"), id.Forge.Intake, list(identityIntakes))
+		}
+		if id.Forge.WebhookSecret != (config.SecretRef{}) {
+			return fmt.Errorf("%w: %s is not supported: per-identity webhook intake is not implemented, so only the top-level forge.webhook_secret is read",
+				ErrInvalidInput, identitySettingPath(i, id, "forge.webhook_secret"))
+		}
+		if id.Forge.WebhookAddr != "" {
+			return fmt.Errorf("%w: %s is not supported: per-identity webhook intake is not implemented, so only the top-level forge.webhook_addr is read",
+				ErrInvalidInput, identitySettingPath(i, id, "forge.webhook_addr"))
+		}
+	}
 	return nil
+}
+
+// identitySettingPath renders the location of a per-identity setting, naming
+// the identity as well as indexing it: an operator reading a rejection for a
+// four-entry [[identities]] block finds the offender by its name instead of
+// counting entries. The name is omitted when it is empty, because this runs
+// before validateIdentities has required it.
+func identitySettingPath(i int, id config.IdentityConfig, field string) string {
+	if id.Name == "" {
+		return fmt.Sprintf("identities[%d].%s", i, field)
+	}
+	return fmt.Sprintf("identities[%d] (%q).%s", i, id.Name, field)
 }
 
 // validateProviders rejects base URLs carrying credentials or query state.

@@ -227,9 +227,13 @@ action from the dashboard or chat, capped by `max_retries`.
 verifies a GitHub webhook's HMAC signature (`internal/webhookguard.VerifyHMAC`),
 decodes an `issues` event, applies the same dispatch predicate the poller
 uses, and calls the same `PublishTask` the poller calls. It is opt-in via
-`Forge.Intake` (`poll` default, `webhook`, `both`) and single-identity only --
-a deployment with `[[identities]]` configured keeps polling per identity
-instead. See `docs/prds/event-sources-and-reactions.md` for why this stayed a
+`Forge.Intake` (`poll` default, `webhook`, `both`) and single-identity only: a
+config naming `webhook`/`both` together with `[[identities]]`, or setting
+intake on an identity, is rejected at validation rather than started with the
+setting ignored -- the receiver binds one secret and one dispatch predicate,
+so it cannot judge a second identity's events by the right rules. A
+multi-identity deployment polls per identity until per-identity intake lands.
+See `docs/prds/event-sources-and-reactions.md` for why this stayed a
 thin decode-and-reuse layer rather than a second intake mechanism.
 
 ## Worktree Manager
@@ -251,7 +255,8 @@ Daemon-level TOML (`~/.config/archie/config.toml`):
 - `[forge]` -- type (github/gitea), host, token secret reference; `intake`
   (`poll` default, `webhook`, or `both`) with `webhook_secret`/`webhook_addr`
   when reacting to forge events instead of, or alongside, polling
-  (single-identity deployments only)
+  (single-identity deployments only; rejected, not ignored, alongside
+  `[[identities]]` or on a `[identities.forge]` entry)
 - `[dispatch]` -- trigger (assignee/label/either), labels, ack reaction
 - `[[repos]]` -- owner, name, base branch, gate commands, protected paths,
   ecosystem

@@ -47,14 +47,24 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 # on the GitHub webhook, and the host:port the receiver listens on. On
 # GitHub, set the webhook's Content type to application/json (the UI
 # default) -- the alternate form-encoded delivery is not supported.
-# Not supported alongside [[identities]] (each identity keeps polling).
+# Webhook intake is single-identity, and that is enforced: with [[identities]]
+# configured this combination is REJECTED at startup rather than silently
+# downgraded to polling. The receiver binds one secret and one dispatch
+# predicate, so it could only judge another identity's events by the wrong
+# rules. Either drop the [[identities]] blocks, or keep intake = "poll" and
+# let each identity poll.
 # webhook_secret = { engine = "env", key = "ARCHIE_WEBHOOK_SECRET" }
 # webhook_addr = "0.0.0.0:8645"
+# intake, webhook_secret and webhook_addr exist only here. Set on a
+# [identities.forge] entry they are REJECTED for the same reason: nothing
+# reads them, so the identity would silently keep polling. Serving webhook
+# intake per identity is a pending migration, not a setting.
 
 # [[identities]] runs more than one bot identity from a single daemon, each
 # with its own forge/dispatch/models/providers/budgets/notify -- see
 # docs/architecture/identity.md for the full design and constraints (e.g.
-# not combinable with [forge].intake = "webhook"/"both"). Minimal shape:
+# intake settings are rejected per identity, and [forge].intake =
+# "webhook"/"both" is rejected alongside [[identities]]). Minimal shape:
 # [[identities]]
 # name = "personal"       # required; namespaces logs/events/NATS subjects
 # bot_user = "your-bot"   # required

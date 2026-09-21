@@ -3,6 +3,7 @@ package configuration
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -314,6 +315,251 @@ func TestValidateForgeIntake(t *testing.T) {
 				t.Fatalf("validateForgeIntake() = %v, want nil", err)
 			}
 		})
+	}
+}
+
+// TestValidateForgeIntakeRejectsIdentityIntake pins that an intake setting on
+// a [[identities]] entry is refused instead of accepted-and-ignored.
+// IdentityConfig.Forge is the same type as the root [forge] block, so
+// identities[N].forge.intake, .webhook_secret and .webhook_addr all decode --
+// but every intake read is of the root block, so before this check they
+// parsed, reached no code path, and were never even validated. A setting an
+// operator can spell that nothing reads is a lie in the config file.
+func TestValidateForgeIntakeRejectsIdentityIntake(t *testing.T) {
+	// identity builds one entry whose forge is otherwise valid, so a
+	// rejection can only come from the field the case sets.
+	identity := func(mutate func(*config.Forge)) config.IdentityConfig {
+		forge := config.Forge{
+			Type:  "github",
+			Token: config.SecretRef{Engine: "env", Key: "ARCHIE_GITHUB_TOKEN"},
+		}
+		if mutate != nil {
+			mutate(&forge)
+		}
+		return config.IdentityConfig{Name: "personal", BotUser: "archie-personal", Forge: forge}
+	}
+
+	tests := []struct {
+		name       string
+		identities []config.IdentityConfig
+		// want lists fragments the error must carry; empty means no error.
+		want []string
+	}{
+		{
+			name:       "unset intake on an identity is valid",
+			identities: []config.IdentityConfig{identity(nil)},
+		},
+		{
+			name: "poll intake on an identity is valid",
+			identities: []config.IdentityConfig{identity(func(f *config.Forge) {
+				f.Intake = config.ForgeIntakePoll
+			})},
+		},
+		{
+			name: "webhook intake on an identity is rejected with the identity, setting, and reason",
+			identities: []config.IdentityConfig{identity(func(f *config.Forge) {
+				f.Intake = config.ForgeIntakeWebhook
+			})},
+			want: []string{`identities[0] ("personal").forge.intake "webhook"`, "per-identity webhook intake is not implemented"},
+		},
+		{
+			name: "both intake on an identity is rejected with the identity, setting, and reason",
+			identities: []config.IdentityConfig{identity(func(f *config.Forge) {
+				f.Intake = config.ForgeIntakeBoth
+			})},
+			want: []string{`identities[0] ("personal").forge.intake "both"`, "per-identity webhook intake is not implemented"},
+		},
+		{
+			name: "an unknown intake on an identity names the accepted value",
+			identities: []config.IdentityConfig{identity(func(f *config.Forge) {
+				f.Intake = "sometimes"
+			})},
+			want: []string{`identities[0] ("personal").forge.intake "sometimes"`, "want poll"},
+		},
+		{
+			name: "webhook_secret on an identity is rejected",
+			identities: []config.IdentityConfig{identity(func(f *config.Forge) {
+				f.WebhookSecret = config.SecretRef{Engine: "env", Key: "ARCHIE_WEBHOOK_SECRET"}
+			})},
+			want: []string{`identities[0] ("personal").forge.webhook_secret`, "per-identity webhook intake is not implemented"},
+		},
+		{
+			name: "webhook_addr on an identity is rejected",
+			identities: []config.IdentityConfig{identity(func(f *config.Forge) {
+				f.WebhookAddr = "0.0.0.0:8645"
+			})},
+			want: []string{`identities[0] ("personal").forge.webhook_addr`, "per-identity webhook intake is not implemented"},
+		},
+		{
+			// The offender is the second entry: the message must locate it, not
+			// report "an identity" for a file whose first identity is fine.
+			name: "the rejected identity is the one named, not the first",
+			identities: []config.IdentityConfig{
+				identity(nil),
+				{
+					Name:    "work",
+					BotUser: "archie-work",
+					Forge: config.Forge{
+						Type:   "gitea",
+						Intake: config.ForgeIntakeWebhook,
+						Token:  config.SecretRef{Engine: "env", Key: "ARCHIE_GITEA_TOKEN"},
+					},
+				},
+			},
+			want: []string{`identities[1] ("work").forge.intake "webhook"`},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalValidConfig()
+			cfg.Identities = tc.identities
+			requireValidateError(t, validateForgeIntake(&cfg), tc.want)
+		})
+	}
+}
+
+// TestValidateForgeIntakeRejectsRootWebhookIntakeWithIdentities pins the other
+// half of the same lie: [forge].intake = "webhook"/"both" alongside
+// [[identities]] used to start the daemon, which logged "forge webhook
+// disabled: multi-identity deployments are not supported yet" and polled
+// instead. Failing closed at validation replaces that silent downgrade.
+func TestValidateForgeIntakeRejectsRootWebhookIntakeWithIdentities(t *testing.T) {
+	identity := config.IdentityConfig{
+		Name:    "personal",
+		BotUser: "archie-personal",
+		Forge: config.Forge{
+			Type:  "github",
+			Token: config.SecretRef{Engine: "env", Key: "ARCHIE_GITHUB_TOKEN"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		intake     string
+		identities []config.IdentityConfig
+		want       []string
+	}{
+		{
+			name:       "webhook intake plus identities is rejected",
+			intake:     config.ForgeIntakeWebhook,
+			identities: []config.IdentityConfig{identity},
+			want:       []string{`forge.intake "webhook"`, "alongside [[identities]]", `forge.intake = "poll"`},
+		},
+		{
+			name:       "both intake plus identities is rejected",
+			intake:     config.ForgeIntakeBoth,
+			identities: []config.IdentityConfig{identity},
+			want:       []string{`forge.intake "both"`, "alongside [[identities]]", `forge.intake = "poll"`},
+		},
+		{
+			name:       "poll intake plus identities stays valid",
+			intake:     config.ForgeIntakePoll,
+			identities: []config.IdentityConfig{identity},
+		},
+		{
+			name:       "webhook intake with no identities stays valid",
+			intake:     config.ForgeIntakeWebhook,
+			identities: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalValidConfig()
+			cfg.Forge.Intake = tc.intake
+			cfg.Forge.WebhookAddr = "0.0.0.0:8645"
+			if tc.intake == config.ForgeIntakeWebhook || tc.intake == config.ForgeIntakeBoth {
+				// Supply the secret and address the receiver would need, so a
+				// rejection can only come from the combination itself and not
+				// from a missing webhook setting.
+				cfg.Forge.WebhookSecret = config.SecretRef{Engine: "env", Key: "ARCHIE_WEBHOOK_SECRET"}
+			}
+			cfg.Identities = tc.identities
+			requireValidateError(t, validateForgeIntake(&cfg), tc.want)
+		})
+	}
+}
+
+// TestLoaderRejectsIdentityIntakeFromFile drives the rejection through the
+// real file path, because the defect was that the key DECODES. Asserting on
+// validateForgeIntake alone would not prove an operator's
+// [identities.forge] intake = "webhook" is refused where they would hit it.
+func TestLoaderRejectsIdentityIntakeFromFile(t *testing.T) {
+	const doc = `
+bot_user = "archie-bot"
+
+[services.gateway]
+target = "127.0.0.1:8585"
+
+[forge]
+type = "none"
+
+[containers]
+image = "ghcr.io/samcharles93/archie-agent:latest"
+
+[[identities]]
+name = "personal"
+bot_user = "archie-personal"
+
+[identities.forge]
+type = "github"
+intake = "webhook"
+token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
+
+[[identities.repos]]
+owner = "my-org"
+name = "my-repo"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := New(nil).File(path)
+	requireValidateError(t, err, []string{`identities[0] ("personal").forge.intake "webhook"`, "not implemented"})
+}
+
+// TestShippedProfilesValidate guards the shipped deployments against a
+// validation rule that would reject a profile the repository supports:
+// multi-forge-github-gitea.toml is the only profile using [[identities]], and
+// single-forge-github.toml the only documented webhook-capable shape, so an
+// intake rule that fails either has broken a supported assembly.
+func TestShippedProfilesValidate(t *testing.T) {
+	for _, name := range []string{"single-forge-github.toml", "multi-forge-github-gitea.toml"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join("..", "..", "..", "deployments", name)
+			doc, err := New(nil).File(path)
+			if err != nil {
+				t.Fatalf("load %s: %v", path, err)
+			}
+			if err := Validate(&doc.Config); err != nil {
+				t.Fatalf("validate %s: %v", path, err)
+			}
+		})
+	}
+}
+
+// requireValidateError asserts err wraps ErrInvalidInput and carries every
+// fragment in want. An error that only said "invalid input" would leave the
+// operator guessing which of the file's settings to fix, so every rejection
+// above is asserted on the words that name the setting.
+func requireValidateError(t *testing.T, err error, want []string) {
+	t.Helper()
+	if len(want) == 0 {
+		if err != nil {
+			t.Fatalf("got error %v, want the configuration accepted", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatal("got nil error, want a rejection")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error %v does not wrap ErrInvalidInput", err)
+	}
+	for _, fragment := range want {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Errorf("error %q does not name %q", err, fragment)
+		}
 	}
 }
 
