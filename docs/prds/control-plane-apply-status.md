@@ -92,7 +92,7 @@ the settings page would show a dead process as current.
 `docs/prds/status-health-surface.md` faced the same choice and stamped the start
 of a poll pass so a wedged poller reads as stale rather than healthy.
 
-Settled 2026-09-21: the re-stamp above. The alternatives considered were
+Settled: the re-stamp above. The alternatives considered were
 carrying the instance identity generated at process start, which detects a
 restart but not a death, and accepting the limitation with the page saying so.
 

@@ -7,7 +7,7 @@
 ## Problem
 
 Findings reach the operator only as a flat list in the PR body
-(`renderPRReviewSection`, h019.6): `` - `file.go:12` (confirmed, error): <defect>
+(`renderPRReviewSection`, h019.6): `` - `file.go` (confirmed, error): <defect>
 — <scenario> ``. That is a report *about* the code, not a review *of* it. A real
 reviewer anchors each finding to the line it is about, so the author sees it in
 context — and, when the fix is mechanical, attaches the replacement so it can be
@@ -51,7 +51,7 @@ those line numbers were **measured on** (`TaskContext.ReviewedHeadSHA`,
 recorded when `StageOpenPR` opens the pull request), and the implementation
 posts only while the head it read still matches it — see §4.
 
-Per-forge reality (verified against the SDKs, 2026-09-11):
+Per-forge reality, verified against the SDKs:
 
 - **GitHub** — direct: `PullRequests.CreateComment` with
   `{Body, Path, Line, Side: "RIGHT", CommitID}`.

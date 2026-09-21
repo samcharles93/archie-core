@@ -14,7 +14,7 @@ not started, because it needs a schema-generation mechanism the parent
 doc deliberately deferred: "This document does not attempt to design the
 full generator today." This is that design.
 
-## Do not invent a new mechanism -- generalize the one already shipped three times
+## Do not invent a new mechanism -- generalize the one used three times
 
 Yaegi-interpreted extension code with a fixed, resolved-by-name exported
 function already exists in this codebase for three surfaces, and all three
@@ -183,7 +183,7 @@ side effect. Concretely:
 4. Do **not** implement `notify` or any side-effecting kind in this slice
    -- that is explicitly gated on the execution-time gaps above.
 
-**Status 2026-09-03: first slice shipped (t2db.13).** The schema-gen ->
+**Resolved** (`archie-core-t2db.13`). The schema-gen ->
 go:generate -> Yaegi load -> registry mechanism is proven end to end with
 `internal/domain/eda/module/log` (hand-written schema + `logextract`
 generated symbols) and `ModuleRegistry` (Register/Invoke, strict arg

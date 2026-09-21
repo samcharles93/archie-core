@@ -322,7 +322,7 @@ persists the domain type).
 captureID int64, taskID int64) error` takes a **`*sql.Tx`** that cannot cross a gRPC boundary.
 
 **Evidence that the `*sql.Tx` is removable:** the dispatch loop calls `RecordDispatch(ctx, nil,
-…)` (`internal/daemon/daemon.go:591`). The implementation falls back to the store's own
+…)` (`internal/daemon/daemon.go`). The implementation falls back to the store's own
 `*sql.DB` when `tx == nil` ("best-effort, not atomic"; the comment and the
 `TestRecordDispatchViaExplicitTx` test are the only consumers of the non-nil `tx` path).
 Production never opens the explicit transaction.
@@ -404,7 +404,7 @@ across a single agent process, which is either NATS-backed or gRPC-backed, never
   **false** across the boundary.
 - **gRPC `gatewayrpc`** currently returns raw `err` from handlers; gRPC-Go converts to
   `codes.Unknown` with only the message. The **only** explicit code in the repo is
-  `codes.Unavailable` for a missing session store (`server.go:31`). No status-code mapping for
+  `codes.Unavailable` for a missing session store (`server.go`). No status-code mapping for
   store errors exists.
 
 ### Decision — structured mapping so `errors.Is` survives
@@ -448,7 +448,7 @@ paths, provider/forge details, secrets, and stack traces are sensitive internals
 
 ## 8. Limits
 
-**Interface bloat (`interfacebloat` cap = 8)** — `.golangci.yml:89` `interfacebloat: max: 8`,
+**Interface bloat (`interfacebloat` cap = 8)** — `.golangci.yml` `interfacebloat: max: 8`,
 which overrides the upstream default of 10. The Go consumer facades must stay ≤8 methods.
 `TaskLifecycle` is exactly 8 (at the cap); `TaskStore` is the 24-method composite that the cap
 is why it is decomposed; proto services bypass the cap (like `ChatContract`).

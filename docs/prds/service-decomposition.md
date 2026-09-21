@@ -1,9 +1,6 @@
 # Service decomposition -- decision
 
 **Status:** Proposed -- not yet approved for implementation
-**Progress:** Phases 1 (Gateway), 2 (State Store) and 3 (UI) shipped; Phase 4
-(Messaging) is ready, Phase 5 (Execution/Runner/Scheduler) and Phase 6
-(Curator, optional) remain chained behind it.
 **Date:** 2026-09-05
 **Beads epic:** archie-core-8cda
 **Prior art:** `docs/inspiration/2026-09-05-awx-service-decomposition-and-ansible-task-model.md`,
@@ -132,7 +129,7 @@ historical record rather than an outstanding gate.
    `ChatContract` should exist before UI Service is extracted, since UI is
    the most entangled consumer today. Not yet sequenced.
 
-   **RESOLVED (2026-09-05).** Gateway Service first, then State Store,
+   **RESOLVED.** Gateway Service first, then State Store,
    then UI, then Messaging, then Execution/Runner/Scheduler, then Curator
    (optional) — preceded by an in-process "contract seams" (modular
    monolith) phase. Confirms the hypothesis and strengthens it: the
@@ -145,7 +142,7 @@ historical record rather than an outstanding gate.
    need a home (a new `proto/` or `contracts/` tree, versioning scheme,
    codegen wiring into `Taskfile.yml`). Not yet designed.
 
-   **RESOLVED (2026-09-05).** buf v2 driving `protoc-gen-go` +
+   **RESOLVED.** buf v2 driving `protoc-gen-go` +
    `protoc-gen-go-grpc` (grpc-go, not connect-go — connect-go's net/http
    client breaks the discovery research's gRPC resolver plumbing for K8s
    DNS and NATS-KV). One committed `proto/<service>/v1/` tree, generated
@@ -164,7 +161,7 @@ historical record rather than an outstanding gate.
    one. Strongly recommend the former for a solo maintainer, but not
    decided here.
 
-   **RESOLVED (2026-09-05).** Multiplexed in-process is the migration
+   **RESOLVED.** Multiplexed in-process is the migration
    default -- this is `docs/architecture/organisation.md`'s standing
    "Process boundaries" rule, not a new lean. Mechanism: one wire-safe Go
    contract interface per service; a local adapter and a generated gRPC
@@ -194,7 +191,7 @@ historical record rather than an outstanding gate.
    State Store service's contract (less isolation, less migration risk).
    Not yet decided.
 
-   **RESOLVED (2026-09-05).** One State Store service owns the existing
+   **RESOLVED.** One State Store service owns the existing
    single SQLite file behind narrow typed contracts (`TaskStore`,
    `CaptureStore`, `MappingStore`, `BindingStore`, `WorkflowStore`) over
    gRPC. *(Ratified 2026-09-06: the workflow contract is now the
@@ -230,7 +227,7 @@ historical record rather than an outstanding gate.
    and a `docker-compose.yml`, not Kubernetes manifests). Scoping not yet
    started.
 
-   **RESOLVED (2026-09-05).** Three charts: an `archie-library` chart
+   **RESOLVED.** Three charts: an `archie-library` chart
    (shared Deployment/Service templates, named ports), an `archie` chart
    for the 7 core services, and an `archie-curator` chart + Curator
    Operator (CRD, controller, RBAC). The Curator reconciler is a

@@ -91,7 +91,7 @@ notification.
 ### Destinations are configured, never named by a playbook
 
 `[notify]` today is one webhook URL, read in one place
-(`internal/domain/workflow/feasibility.go:134`). It becomes a set of named
+(`internal/domain/workflow/feasibility.go`). It becomes a set of named
 destinations. Each binds a name the operator chooses to a channel already
 registered in the Messaging composition (`internal/app/archiemessaging/compose.go`
 registers `telegram`, `email`, `webhook`) plus that channel's own address,
@@ -124,14 +124,14 @@ reject-at-load rule.
 
 `archie-messaging` is its own process (`cmd/archie-messaging`). It dials out
 to the Gateway and the State Store and serves nothing, and it deliberately
-has no NATS connection: `internal/app/archiemessaging/telegram_features.go:65`
+has no NATS connection: `internal/app/archiemessaging/telegram_features.go`
 records that it "must not decode" the daemon's `[nats]` config. So a
 notification cannot be pushed into it today by any route.
 
 Delivery therefore travels the connection that already exists. Every process
 that needs Messaging already dials the Gateway: `archied`
-(`internal/app/archied/chat_service.go:25`), `archie-messaging`
-(`internal/app/archiemessaging/run.go:26`) and `archie-ui`. The Gateway is the
+(`internal/app/archied/chat_service.go`), `archie-messaging`
+(`internal/app/archiemessaging/run.go`) and `archie-ui`. The Gateway is the
 hub. A new server-streaming RPC on `ChatService` lets `archie-messaging`
 subscribe at startup and receive notifications the daemon publishes; Messaging
 then delivers through the named channel instance it already holds in

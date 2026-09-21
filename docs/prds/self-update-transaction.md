@@ -10,7 +10,7 @@ this document — it stays a thin Go interface shelling out to
 adapter scripts (`scripts/archie-update-{check,install,watchdog}`) and
 `install.sh` do behind that contract, and settles the one thing the epic's
 own description got wrong: the dist-zip **is** already attached to GitHub
-Releases (`.github/workflows/deploy.yml:283-316`, `gh release upload`), not
+Releases (`.github/workflows/deploy.yml`, `gh release upload`), not
 Actions-artifact-only. Artifact install is therefore a smaller change than
 the epic assumed — pointing the installer at an existing asset, not standing
 up new CI publishing. Topology migration and the journaled transaction are
@@ -32,7 +32,7 @@ script not using it is a missed-reuse gap, not a missing-CI gap.
 deployment profile (`deployments/*.toml`) declares `[services.state]` and
 `[services.gateway]` sections needing their own units — a fresh install
 already reproduces the broken single-unit shape `deployment_contract_test.go`
-(lines 70-105) doesn't even catch, because that test only checks profile
+doesn't even catch, because that test only checks profile
 syntax, not installed topology. No code anywhere enumerates which systemd
 units exist on a host or compares that against what a release requires — the
 daemon fails at `bootstrap.go`'s `[services.state].target` check with no
@@ -55,13 +55,13 @@ opt-in path selected by an explicit `--from-source` flag or
 every-host update is strictly slower and has a larger failure surface than
 downloading a signed asset that CI already produced.
 
-**Call site.** `scripts/archie-update-install` — replace the body currently
-at lines 139-160 with a download-and-verify step; move the existing
+**Call site.** `scripts/archie-update-install` — replace the clone+compile
+body with a download-and-verify step; move the existing
 clone+compile body behind the opt-in flag rather than deleting it.
-`internal/releaseupdate/command.go:44-48` (`CommandInstaller`) is unchanged —
+`internal/releaseupdate/command.go` (`CommandInstaller`) is unchanged —
 it already just shells out.
 
-**Reuse check.** `deploy.yml:265-316` already builds and publishes the
+**Reuse check.** `deploy.yml` already builds and publishes the
 archive and uploads it as both an Actions artifact and a release asset; no
 new CI work is needed, only pointing the installer at what exists.
 
@@ -118,7 +118,7 @@ needs a real systemd host; manual smoke test only.
 ### Journaled transaction (`#804` item 3)
 
 **Decision.** Replace `archie-update-install`'s copy-and-trap body with: (1)
-pre-flight (existing check at line 170, kept), (2) write an intent journal
+pre-flight (the existing check, kept), (2) write an intent journal
 to a path outside every directory the install touches — e.g.
 `${XDG_STATE_HOME:-~/.local/state}/archie/update.journal` — recording the
 candidate version, the topology plan (if any), and each binary's
@@ -163,7 +163,7 @@ start/stop as part of rollback needs a real host; manual smoke command.
 **Decision.** Add `channel = "stable" | "next" | "<exact-version-pin>"`
 to whatever config section already governs update behavior (next to
 `ARCHIE_UPDATE_CHANNEL`'s existing chat-channel field in
-`internal/releaseupdate/command.go:62` — name this new field distinctly,
+`internal/releaseupdate/command.go` — name this new field distinctly,
 e.g. `ReleaseChannel`, to avoid colliding with the existing chat-notification
 channel of the same word). `Catalog.Check` filters candidate releases by
 this field before returning the newest match. Runtime image pinning: every
@@ -191,12 +191,12 @@ is a shell-script unit test against a fixture profile.
 | concern | file | change |
 |---|---|---|
 | Update contract (Catalog/Installer interfaces) | `internal/releaseupdate/service.go` | none — already handles this |
-| Command adapters | `internal/releaseupdate/command.go:22,44-48,62` | new `ReleaseChannel` field distinct from existing chat-channel field |
+| Command adapters | `internal/releaseupdate/command.go` | new `ReleaseChannel` field distinct from existing chat-channel field |
 | Install script body | `scripts/archie-update-install:139-160,170,195-199` | replace clone+compile default with download+verify; add journal, lock, stage-then-rename, digest check |
-| CI release publishing | `.github/workflows/deploy.yml:265-316` | none — already handles this |
+| CI release publishing | `.github/workflows/deploy.yml` | none — already handles this |
 | Deployment profiles | `deployments/*.toml` | none — already digest-pinned |
 | First-install unit creation | `install.sh:414-445` | change — consume shared topology declaration |
-| Topology assertions | `deployment_contract_test.go:70-105` | new assertion: profile topology matches install.sh output |
+| Topology assertions | `deployment_contract_test.go` | new assertion: profile topology matches install.sh output |
 | Topology observation | `internal/app/archied/bootstrap.go` (new sibling code) | new |
 | Resume-on-boot rollback | `internal/app/archied` startup | new |
 | Health check reuse for candidate verification | `internal/domain/health` | reuse — confirm exact symbol before implementing |

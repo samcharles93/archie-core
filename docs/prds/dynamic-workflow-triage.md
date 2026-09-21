@@ -6,7 +6,7 @@ heaviest workflow.
 
 ## Problem
 
-`Route()` (`internal/domain/workflow/workflow.go:254`) has exactly two real
+`Route()` (`internal/domain/workflow/workflow.go`) has exactly two real
 signals today: an explicit `t.Workflow`, and label matches via
 `workflowForLabels` (`routing.go`, `bug`→tdd, `feature`→feasibility,
 bootstrap→bootstrap). Anything else — which is every chat-spawned task,
@@ -16,11 +16,11 @@ commit-push → review → open-pr` pipeline, regardless of what the task
 actually asks for.
 
 `task_spawn`'s own tool schema overpromises: *"workflow: … Omit to let the
-daemon route it"* (`internal/gateway/task_tools.go:240`) implies real
+daemon route it"* (`internal/gateway/task_tools.go`) implies real
 routing exists. It doesn't — "route" currently means "check labels, then
 give up and run the heaviest workflow anyway."
 
-Confirmed in production (task 6, 2026-09-02): a chat-spawned task whose
+Confirmed in production: a chat-spawned task whose
 entire content was "this is just a test, close it when you receive it" ran
 the full `implement` pipeline end to end — 669,421 tokens, ~7 minutes —
 when nothing about the request needed a worktree-driven build at all. The
@@ -66,7 +66,7 @@ and decide, via a captured `decide` tool call:
 ```
 
 `needs_code_change: false` → close path: reuse `closeNoChangesIssue`
-(`steps.go:67`) directly — issue closed if forge-backed, task marked
+(`steps.go`) directly — issue closed if forge-backed, task marked
 `StatusMerged`/`"completed -- no changes required"` otherwise. No baseline,
 no plan, no build, no commit, no PR. This is the actual fix for the
 production incident: a no-op request now costs one classification call
@@ -77,7 +77,7 @@ chosen workflow (`implement`/`tdd`/`feasibility`, defaulting to
 `implement` if the field is missing or unrecognized) and an Outcome that
 requeues the task under it, the same requeue mechanism
 `chatTaskControllerAdapter.ApproveChatTask` already uses
-(`main.go:529`, `requeue(ctx, taskID, fromStatus, workflow)`). The task then
+(`main.go`, `requeue(ctx, taskID, fromStatus, workflow)`). The task then
 re-enters `Route()` on its next claim with `t.Workflow` now set, and takes
 the normal path for that workflow from there — triage never runs its
 classification twice for the same task.

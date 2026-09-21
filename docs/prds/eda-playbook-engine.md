@@ -163,7 +163,7 @@ a case that should just be visible and fixed by a human. Instead:
   flags duplicate or conflicting trigger definitions *within* a single
   maintained tree before merge.
 
-  **Status 2026-09-03: lint mode shipped (t2db.12).** A standalone
+  **Resolved** (`archie-core-t2db.12`). A standalone
   gopls-shaped binary (`cmd/archie-playbooks`, lint subcommand) validates
   playbook directories against the exact loaders the daemon uses
   (`LoadPlaybookDirs`/`LoadKindWorkflowsYAML`/`LoadLabelWorkflowsYAML`),
@@ -210,7 +210,7 @@ rule's spirit of narrow capability families -- so the answer is not
 "bundle or don't," it's "don't duplicate the logic, and pick the thinnest
 consumer for each caller's actual constraint."
 
-## Execution-time gaps (identified 2026-09-03; both resolved 2026-09-05)
+## Execution-time gaps (both resolved)
 
 Everything above covers *loading* a playbook. Nothing above covers what
 happens while one *runs*. Two gaps, both load-bearing enough to resolve
@@ -218,7 +218,7 @@ before implementation, not defer:
 
 ### 1. Mid-playbook action failure
 
-**Status 2026-09-05: resolved by archie-core-t2db.18.** The default below
+**Resolved** (`archie-core-t2db.18`). The default below
 is a committed decision, not a candidate list; changing it later would
 require its own decision. Gap 2 below is resolved by `archie-core-t2db.17`.
 
@@ -227,7 +227,7 @@ action 2 of 4 fails at runtime (an image-gen API times out, a forge call
 403s), the doc previously said nothing about what happens next. This
 codebase already answers a structurally identical question for its
 existing workflow engine, precisely enough to reuse rather than
-re-derive: `workflow.Run` (`internal/domain/workflow/workflow.go:294`)
+re-derive: `workflow.Run` (`internal/domain/workflow/workflow.go`)
 draws a three-way distinction on a stage failure, and a playbook run
 draws the same one on an action failure.
 
@@ -245,7 +245,7 @@ are the complete decision; reasoning and evidence follow each.
    as a background log line only (this document's Dedup section, lines
    155-159, the t2db.9-12 drop-and-report rule). `Run` is the mechanical
    precedent for the stop itself: a stage error sets the park reason and
-   returns without running further stages (`workflow.go:324-326`). This
+   returns without running further stages (`workflow.go`). This
    is stop-on-first-failure, matching the document's existing bias
    against clever automatic recovery, and it is now a stated decision
    rather than a nobody-chose default.
@@ -253,7 +253,7 @@ are the complete decision; reasoning and evidence follow each.
    != nil`) is explicitly **not** a failure. `Run` already treats this
    case specially -- "Daemon shutdown is not a workflow failure. Leave
    the task running ...; parking here would publish a false failure and
-   require manual intervention" (`workflow.go:317-323`) -- and the same
+   require manual intervention" (`workflow.go`) -- and the same
    reasoning applies to a playbook run: an in-flight dispatch interrupted
    by restart must not be recorded as a broken playbook. What "leave it
    alone for restart" means for a playbook run (there is no `store.Task`
@@ -264,7 +264,7 @@ are the complete decision; reasoning and evidence follow each.
    error, but nothing was assigned to happen) is itself an error
    condition, matching `Run`'s own "a workflow must end with an explicit
    outcome; not doing so is a definition bug, which still must not vanish
-   silently" (`workflow.go:336`). A playbook with actions that all ran
+   silently" (`workflow.go`). A playbook with actions that all ran
    but never reached a coherent terminal state is a definition bug in the
    playbook, reported as such.
 
@@ -278,10 +278,10 @@ undo.
 **Producer-only interaction, stated explicitly -- why this decision does
 not violate the rule.** `event-sources-and-reactions.md`'s producer-only
 rule is "no veto, no mutation of in-flight work"
-(`event-sources-and-reactions.md:61-63`), and it explicitly routes any
+(`event-sources-and-reactions.md`), and it explicitly routes any
 reaction that "can veto or mutate an *in-flight* task (block a PR from
 opening, alter a running stage)" away from this epic to the
-adversarial-self-review one (`event-sources-and-reactions.md:78-81`).
+adversarial-self-review one (`event-sources-and-reactions.md`).
 This decision touches neither half of that boundary:
 
 - **The rule constrains what an event source may do to *someone else's*
@@ -294,12 +294,12 @@ This decision touches neither half of that boundary:
 - **Everything after the stop is still producer-only.** The failed run is
   reported to its caller per the collision precedent, the same way `Run`
   records the failure on its own unit -- park reason set and the task
-  transitioned to `StatusParked` (`workflow.go:324-326`, `park` at
-  `workflow.go:351-357`) -- never on someone else's in-flight work. A
+  transitioned to `StatusParked` (`workflow.go`, `park` at
+  `workflow.go`) -- never on someone else's in-flight work. A
   future compensating action (e.g. "if the notify action failed, also
   log an incident") would be **producing new work** -- new events, new
   dispatches -- which is exactly the already-permitted shape
-  (`event-sources-and-reactions.md:73-76`). No playbook syntax for "on
+  (`event-sources-and-reactions.md`). No playbook syntax for "on
   failure, also run X" is designed here; this resolution only confirms
   that if that syntax is added later, it stays inside the producer-only
   boundary rather than requiring a new exception.
@@ -321,7 +321,7 @@ action-invocation code path and show they use different outcomes.
 
 ### 2. Idempotency at execution time
 
-**Status 2026-09-05: resolved** (per bead `archie-core-t2db.17`, a
+**Resolved** (`archie-core-t2db.17`, a
 design-investigation ticket: resolve, do not implement). The decision
 below is the answer; the keying scheme itself is separate follow-up work
 and is intentionally not built here. It **extends**
@@ -341,13 +341,13 @@ One correction to the problem statement, checked against the code rather
 than assumed, because it changes what the answer must be:
 **`PublishUnique`'s dedup is not a consumer-redelivery guard at all.**
 `PublishUnique` only sets the JetStream `Nats-Msg-Id` header on the
-outgoing message (`internal/infrastructure/eventbus/nats/publisher.go:18-23`;
-key constant `message.go:11-13`); JetStream suppresses *republished*
+outgoing message (`internal/infrastructure/eventbus/nats/publisher.go`;
+key constant `message.go`); JetStream suppresses *republished*
 messages carrying a repeated key inside `Config.DedupWindow`
-(`client.go:67`, `Duplicates: cfg.DedupWindow`), default 2 minutes
-(`config.go:15`, `DefaultDedupWindow = 2 * time.Minute`). A consumer
+(`client.go`, `Duplicates: cfg.DedupWindow`), default 2 minutes
+(`config.go`, `DefaultDedupWindow = 2 * time.Minute`). A consumer
 redelivery is the same *stored* message re-delivered on Nak or
-acknowledge-timeout (`internal/eventbus/eventbus.go:64-65`: "a handler
+acknowledge-timeout (`internal/eventbus/eventbus.go`: "a handler
 returning an error causes redelivery") -- not a republish; its
 `Nats-Msg-Id` is never re-firewalled, and even if it were, two minutes is
 not an at-most-once guarantee for a side effect that must never repeat.
@@ -377,7 +377,7 @@ would already be wrong.
 **Storage/lookup: a new durable ledger table `playbook_dispatches` in
 `internal/store`, copying `binding_dispatches`'s conventions exactly**
 (durable table, `INSERT OR IGNORE`, sentinel error, rows freed with
-their parent, survives daemon restarts -- `internal/store/bindings.go:31-37`,
+their parent, survives daemon restarts -- `internal/store/bindings.go`,
 `355-382`):
 
 ```sql
@@ -392,21 +392,21 @@ CREATE TABLE playbook_dispatches (
 ```
 
 Written with the same `INSERT OR IGNORE` + sentinel-error convention
-(`ErrAlreadyDispatched`, `bindings.go:59-63`), so a duplicate is a no-op
+(`ErrAlreadyDispatched`, `bindings.go`), so a duplicate is a no-op
 write rather than a constraint error, and the caller matches it with
 `errors.Is` the way the binding dispatch loop already does
-(`internal/daemon/daemon.go:591-597` -- "another cycle already won this
+(`internal/daemon/daemon.go` -- "another cycle already won this
 race," not an error to surface). The record is consumed by the playbook
 coordinator at dispatch time through a domain-side interface implemented
 by `internal/store` -- the same shape as `BindingDispatcher`
-(`internal/store/interface.go:123-139`) -- and the table lands in the
-store's schema application (`internal/store/store.go:137-139`). No change
+(`internal/store/interface.go`) -- and the table lands in the
+store's schema application (`internal/store/store.go`). No change
 to `internal/eventbus`; no per-message dedup state on the client.
 
 **Lifetime: no time-based expiry.** Rows live as long as their playbook
 exists; when a playbook is removed from the configured directories, the
 coordinator deletes its rows -- mirroring binding-dispatches-rows-deleted-
-with-binding (`bindings.go:204-214`, same transaction as the delete). The
+with-binding (`bindings.go`, same transaction as the delete). The
 at-most-once guarantee must not silently decay, which is exactly the
 property that disqualifies `DedupWindow` above; table growth is bounded
 by distinct (playbook, event, action) pairs over the playbook's lifetime
@@ -417,7 +417,7 @@ A detected duplicate is not re-invoked, is not reported to the caller as
 an error, and is logged at debug level rather than as a warning -- this
 is the expected, correct behavior of at-least-once delivery, not an
 anomaly (same treatment as `ErrAlreadyDispatched` at
-`daemon.go:592-597`).
+`daemon.go`).
 The run continues with the next action (or ends, for a single-action
 playbook whose one action is recorded), which is what makes a redelivery
 a resume rather than a dead restart.
@@ -428,32 +428,27 @@ computed by the coordinator -- not a CEL expression.** The key is the
 
 - `playbook_id` is `Playbook.ID` -- the playbook file's path relative to
   its configured directory root, slash-normalized, unique within the load
-  composition by construction (`internal/domain/eda/playbook/playbook.go:39-45`,
-  `149-155`). Note this prerequisite already landed in code: the earlier
-  draft's "not yet decided in code" paragraphs are stale --
-  `edd689e` (`feat(eda): thread Playbook ID/Version and DispatchInput task
-  identity (gap-2 prereqs)`) shipped `Playbook.ID`/`Version` and
-  `DispatchInput.TaskID`.
+  composition by construction (`internal/domain/eda/playbook`).
 - `playbook_version` is `Playbook.Version` -- a SHA-256 of the loaded
-  file, recomputed on every load (`playbook.go:46-49`, `154-155`),
+  file, recomputed on every load (`playbook.go`, `154-155`),
   mirroring `Binding.Version`'s provenance-pinning purpose: the dispatch
   is pinned to the exact definition that was active when it fired. A
   changed playbook definition is a different key and may fire again for
   the same event -- deliberate, not a bug.
-- `event_id` is `DispatchInput.TaskID` (`playbook.go:214-222`), which
+- `event_id` is `DispatchInput.TaskID` (`playbook.go`), which
   carries the `TaskEnvelope.IdempotencyKey()` value
   (`"archie:" + owner/repo/number`,
-  `internal/domain/workintake/envelope.go:105-107`). It is chosen over
+  `internal/domain/workintake/envelope.go`). It is chosen over
   `store.Task.ID` because the trigger vocabulary is issue-level
   workintake label/kind, dispatched at discovery time (pollNATS, forge
-  webhook receiver), where no task row exists yet (`playbook.go:214-222`
-  comment; `playbook_test.go:338-345`: "the value available at the
+  webhook receiver), where no task row exists yet (`playbook.go`
+  comment; `playbook_test.go`: "the value available at the
   discovery/dispatch point... NOT a store.Task.ID int64"). Keying on the
   issue identity rather than the delivery source is the load-bearing
   property the existing contract already established for `TaskEnvelope`
   (`event-sources-and-reactions.md` question 4: a webhook-sourced
   envelope for the same issue produces the *same* idempotency key as a
-  poll-discovered one; `internal/forge/webhook/receiver.go:14-20` --
+  poll-discovered one; `internal/forge/webhook/receiver.go` --
   "Idempotency is not this package's job"); this resolution inherits that
   property rather than re-deciding it. Consequence, stated explicitly:
   same-issue re-discoveries (a re-label that re-triggers the same kind)
@@ -498,10 +493,10 @@ identity, per the per-trigger-type rule. }
 **Record-before-invoke -- one deliberate divergence from
 `binding_dispatches`, justified by the harm profile.** The binding
 dispatch loop enqueues the task first and records the ledger row after
-(`daemon.go:585-599`), accepting that racing cycles may both enqueue
+(`daemon.go`), accepting that racing cycles may both enqueue
 ("the duplicate task remains queued... delete-on-races is its own can of
 worms"); the selection query excludes already-dispatched captures
-(`bindings.go:395-399`), but the race window remains. That ordering is
+(`bindings.go`), but the race window remains. That ordering is
 correct there because the duplicate artifact is an internal task row --
 recoverable, low-harm. The playbook ledger's ordering is reversed on
 purpose: **the row is written and committed before the action's side
@@ -566,7 +561,7 @@ document's sections:
 **Scope: this is the `channel`/`forge`/`module` decision, not a
 `workflow`-position change.** Workflow-kind actions keep their existing
 keying claim unchanged -- the `TaskEnvelope` path that this document
-already inherits for free (`daemon.go:858-869`, `PublishTask` publishes
+already inherits for free (`daemon.go`, `PublishTask` publishes
 with `task.IdempotencyKey()`), with its cross-poll/webhook property
 untouched. The ledger gate applies to the side-effecting positions
 (channel, forge, module), which is why the closing statement below
@@ -591,7 +586,7 @@ are unblocked on the execution-time questions.
    checking, e.g. anything backing gate conditions), or a bespoke minimal
    grammar? Not decided here.
 
-   **Status 2026-09-03: resolved.** CEL (cel.dev/cel-go) is the single
+   **Resolved.** CEL (cel.dev/cel-go) is the single
    mechanism for both halves. The resolution below replaces this entry
    and is not an open question. Judgment calls are flagged inline.
 
@@ -856,7 +851,7 @@ are unblocked on the execution-time questions.
      imports; owned by the playbook engine family. One new dependency:
      `cel.dev/cel-go` (pinned), `go.mod` otherwise unchanged.
    - Consumption: the playbook event coordinator (open question 4's
-     loader, not yet built) evaluates `when` before dispatch and
+     loader) evaluates `when` before dispatch and
      evaluates `args` values before `Module.Invoke`; the lint tool
      (t2db.12) shares the same compile/validate path for author-time
      diagnostics.
@@ -871,7 +866,7 @@ are unblocked on the execution-time questions.
    directory or a list (mirroring `SkillsDir`'s shape) -- follow existing
    config precedent, not invented fresh.
 
-   **Status 2026-09-03: partially resolved.** The label-vocabulary slice
+   **Partially resolved.** The label-vocabulary slice
    landed with a single-file shape (`workflow_labels_file`, mirroring
    `workflow_routing_file` and `SkillsDir`'s single-path precedent) rather
    than a directory, because it is the smallest useful case. A directory
@@ -879,7 +874,7 @@ are unblocked on the execution-time questions.
    single-file shape does not preclude it -- a future `workflow_dir` would
    compose `workflow_labels_file`'s role into a loader.
 
-   **Status 2026-09-03: resolved by t2db.11 (corrected).** The directory
+   **Resolved** (`archie-core-t2db.11`). The directory
    shape landed as `playbook_dirs` (a LIST of directories of
    `*.yaml`/`*.yml` binding files), loaded at startup as an additional
    input to the two single-file fields, which remain supported unchanged.
@@ -923,42 +918,38 @@ are unblocked on the execution-time questions.
    end to end on the smallest useful case, before adding Channel/Forge
    action kinds or the linter/LSP.
 
-   **Status 2026-09-03: resolved across t2db.13-15.** The Module position
+   **Resolved** (`archie-core-t2db.13`, `.14`, `.15`). The Module position
    (registry + log kind, t2db.13), the CEL expression environment
    (t2db.14), and the playbook document + event coordinator with
    single-action workflow-kind dispatch (t2db.15) are shipped.
 
-   **Status 2026-09-21: wired into production intake (t2db.23).** The
-   coordinator decides a real task's workflow. The wiring point is the
-   daemon's definition pin (`Daemon.resolveWorkflowID`, consumed by
-   `pinWorkflowFromCollection` in `internal/daemon/daemon.go`), not
-   `pollNATS`/`publishTask` as the earlier note assumed: routing moved out
-   of the agent process when workflow definitions became database rows
-   pinned before dispatch, so the pin is now the one place a task's
-   workflow is chosen. Precedence there is explicit `Task.Workflow` (the
-   waiting_human -> approved requeue) → matching playbook →
+   **Resolved** (`archie-core-t2db.23`): the coordinator selects a real
+   task's workflow. The wiring point is the daemon's definition pin
+   (`Daemon.resolveWorkflowID`, consumed by `pinWorkflowFromCollection` in
+   `internal/daemon`), not `pollNATS`/`publishTask` as the earlier note
+   assumed. Routing belongs to the pin because a workflow definition is a
+   database row pinned before dispatch, which makes the pin the one place a
+   task's workflow is chosen. Precedence there is explicit `Task.Workflow`
+   (the waiting_human -> approved requeue) → matching playbook →
    `workflow.ResolveWorkflowID`'s label binding → kind binding → triage →
-   implement. A playbook naming an undefined workflow is a reported
-   failure that parks the task rather than a silent fall-through to the
-   binding's choice.
+   implement. A playbook naming an undefined workflow is a reported failure
+   that parks the task rather than a silent fall-through to the binding's
+   choice.
 
    `Store.Dispatch` returns the selected workflow *name* and the matching
-   playbook's id/version, not a compiled `workflow.Workflow`: the
+   playbook's id and version, not a compiled `workflow.Workflow`: the
    production caller decides against the active definition collection, and
-   the returned id/version are the first two components of the gap-2
-   idempotency key. The playbook package no longer imports
-   `internal/domain/workflow`.
+   the id and version are the first two components of the gap-2 idempotency
+   key. The playbook package does not import `internal/domain/workflow`.
 
-   The `event` surface a `when` condition reads at this point is what the
-   intake actually knows about the originating issue: `kind`, `labels`,
-   `owner`, `repo`, `number`, `title`, `body`, `source`
-   (`playbookInput` in `internal/daemon/daemon.go`).
+   A `when` condition at this point reads what the intake knows about the
+   originating issue: `kind`, `labels`, `owner`, `repo`, `number`, `title`,
+   `body`, `source`, built by `playbookInput` in `internal/daemon`.
 
-   The trigger shape reuses the existing workintake kind/label vocabulary;
-   multi-action and non-workflow-position playbooks remain rejected at
-   load (hard boundary). Module/Channel/Forge action positions therefore
-   still have no production dispatch path: the resolved gap-2 scheme's
-   `playbook_dispatches` ledger is design-only and must land before a
+   The trigger shape reuses the existing workintake kind/label vocabulary.
+   Multi-action and non-workflow-position playbooks are rejected at load
+   (hard boundary), so Module/Channel/Forge positions have no production
+   dispatch path: the gap-2 `playbook_dispatches` ledger must land before a
    side-effecting position can fire.
 5. **Monetization boundary.** Sam has flagged this may be commercialized,
    and explicitly wants it discerned from other OSS event-driven-automation

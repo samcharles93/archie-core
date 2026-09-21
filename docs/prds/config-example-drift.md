@@ -29,7 +29,7 @@ useful. Three verified reasons, in order of weight:
    rejects "a reflection-based schema over `config.Config`" because the struct is
    "scheduled for dissolution". A generator deriving the example from its struct
    tags would build on a foundation this repo has already decided to remove.
-3. **`docs/architecture/generated-documentation.md:225` prohibits it.** "Adding
+3. **`docs/architecture/generated-documentation.md` prohibits it.** "Adding
    another hardcoded type list to `docsgen` is prohibited" — so any generator
    must consume a domain-owned registry, which does not exist for configuration
    yet. Creating one is the config-domain migration's job, not this change's.
@@ -42,7 +42,7 @@ machinery to remove duplication that largely is not there.
 ## The gap that is real
 
 **Unknown config keys are silently ignored.** Verified at
-`internal/infrastructure/configuration/decode.go:27`:
+`internal/infrastructure/configuration/decode.go`:
 
 ```go
 if _, err := toml.DecodeFile(path, target); err != nil {
@@ -55,7 +55,7 @@ is also detectable **without any hand-maintained list**, because `BurntSushi/tom
 reports exactly which keys the target did not consume.
 
 Note the second, separate gap already admitted in writing:
-`generated-documentation.md:331` — "`task check` does not run `docs:check`, so
+`generated-documentation.md` — "`task check` does not run `docs:check`, so
 generated drift is currently ungated."
 
 ## What to build
@@ -68,7 +68,7 @@ keys, and expose it so tests can assert emptiness.
 startup policy is "a missing credential disables a capability; only an invalid
 config stops the daemon". A stray key is far more likely to be an operator typo
 in a file they are otherwise happy with than a reason to refuse to boot, and
-`[web]` is already documented as landing in a *different* binary
+`[web]` is documented as landing in a *different* binary
 (`internal/app/archieui`), so a key unknown to one process is legitimately known
 to another. Failing closed here would break working deployments on upgrade.
 
@@ -102,13 +102,13 @@ deferred, not rejected.
 
 ## A withdrawn premise, recorded so it is not reused
 
-An earlier measurement in this session claimed 17 keys were "set by a profile
-but documented by no example", and used it to argue for generation. It was an
+An earlier measurement claimed 17 keys were "set by a profile but documented
+by no example", and used it to argue for generation. It was an
 artifact: the extractor stripped comment markers and tracked a single table
 variable, so commented blocks were mis-attributed. Re-checking refuted it —
 `providers.<name>.api_key_env` is a real, documented backwards-compatible field
-(`internal/config/config.go:180`, `config.example.toml:101`) and `[[identities]]`
-is documented at `config.example.toml:53`. The decision above does not rest on
+(`internal/config/config.go`, `config.example.toml`) and `[[identities]]`
+is documented at `config.example.toml`. The decision above does not rest on
 that measurement.
 
 ## Acceptance criteria

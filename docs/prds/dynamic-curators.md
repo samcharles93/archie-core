@@ -18,15 +18,15 @@ Every claim in this document is mapped to what exists in the tree today.
 | Two reference curators run through the registry | **Implemented** | `internal/infrastructure/skillcurator`, `internal/infrastructure/sessioncurator` |
 | Curator definitions as persisted, API-editable data | **Aspirational -- zero code** | No table, no entity, no RPC, no config block |
 | Generic definition-driven engine that executes a declared tool set + free-form instructions | **Aspirational -- zero code** | Only the two code-registered curators exist |
-| `Registrar.Tools` (`ToolBuilder`) resolved and bound at registration | **Partial** | Interface declared (`registrar.go:86`); **no implementation anywhere**; `bootstrap.go` builds the `Registrar` with no `Tools` field |
-| A curator can declare tools at all | **Partial** | `Manifest.Tools` exists, but `registry.go:123` fails registration with `"curator manifest: declares tools but the registrar has no ToolBuilder"` |
-| Curator passes that actually reach a model with tools | **Cosmetic only** | `curator.ChatRequest` carries `Tools`/`MaxSteps`; `curatorLLMRunner` (`internal/app/archied/main.go:551`) drops both and returns `ChatResult{Text}` only |
+| `Registrar.Tools` (`ToolBuilder`) resolved and bound at registration | **Partial** | Interface declared (`registrar.go`); **no implementation anywhere**; `bootstrap.go` builds the `Registrar` with no `Tools` field |
+| A curator can declare tools at all | **Partial** | `Manifest.Tools` exists, but `registry.go` fails registration with `"curator manifest: declares tools but the registrar has no ToolBuilder"` |
+| Curator passes that actually reach a model with tools | **Cosmetic only** | `curator.ChatRequest` carries `Tools`/`MaxSteps`; `curatorLLMRunner` (`internal/app/archied/main.go`) drops both and returns `ChatResult{Text}` only |
 | Dynamic registration / removal (no restart) | **Aspirational -- zero code** | `Registry` has `Register`, no `Unregister`; `Runtime` has `Start`/`Nudge`/`Stop`, no `Add`/`Remove`; `Start()` snapshots membership |
-| Curator definition CRUD over REST | **Partial** | `GET /api/curators` read-only (`internal/webui/server.go:226`); no write routes |
+| Curator definition CRUD over REST | **Partial** | `GET /api/curators` read-only (`internal/webui/server.go`); no write routes |
 | Curator definition config | **Aspirational -- zero code** | No `[curator]` block in `internal/config/config.go` |
 | Store/API as definition authority | **Aspirational -- zero code** | No curator persistence of any kind |
 | No live-path defaults for interval/cooldown/tools/model/memory engine | **Partial** | `skillcurator.DefaultInterval` / `sessioncurator.DefaultInterval` are Go consts read at registration; `curator.NewRuntime(..., RuntimeConfig{})` uses code defaults for pass timeout and concurrency |
-| Idle curators are observable in logs | **Partial** | `runtime.go:202-211` logs nothing when `Check` reports not-due; the session-memory curator's hourly pass is the only curator activity ever logged |
+| Idle curators are observable in logs | **Partial** | `runtime.go` logs nothing when `Check` reports not-due; the session-memory curator's hourly pass is the only curator activity ever logged |
 | Sampler family | **Implemented** | `internal/domain/sampling`, shipped; no curator consumes a `Sampler` yet |
 | Forge/issue reach from chat | **Implemented** (via `shell`) | No dedicated issue tool exists, but the chat agent's `shell` is unconfined (`chat.unrestricted_filesystem = true`), so `gh issue edit|comment|create|close` works today. Dedicated tools (#161) are convenience, not a blocker |
 
@@ -36,7 +36,7 @@ Every claim in this document is mapped to what exists in the tree today.
 ## Problem
 
 A curator exists today only if a Go package implements `curator.CuratorEngine`
-and `bootstrap.go:1022/1025` names it in a `Register` call. Nothing about a
+and `bootstrap.go/1025` names it in a `Register` call. Nothing about a
 curator is definable as data. Worse, no curator can declare a tool set at all:
 the `ToolBuilder` interface has no implementation in the repo, so the registry
 refuses (correctly, fail-closed) any curator that declares tools -- and the
@@ -99,7 +99,7 @@ record actions.
    implementation fails the pass rather than silently running with fewer tools.
    This is the enforcement point, and it is why the `ToolBuilder` binding is
    load-bearing rather than a convenience: without an implementation, no curator
-   can declare tools at all (today's `registry.go:123` guard).
+   can declare tools at all (today's `registry.go` guard).
 2. **Tool-carrying model call.** `curator.ChatRequest` already carries
    `Tools []tools.ToolEntry` and `MaxSteps`; `curatorLLMRunner` must pass them
    into `core.GenerateOptions` (which has `Tools`, `ToolChoice`, `MaxSteps`, and

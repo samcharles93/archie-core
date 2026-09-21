@@ -3,27 +3,27 @@
 Epic: `archie-core-1786637493439-140-2cee2e9b` / GitHub `#161` ("[EPIC] Tools:
 central registry, MCP client, guardrails").
 
-Most of this epic already shipped. The central registry
+This document is scoped to five sub-features of that epic: MCP
+server-initiated sampling, the per-server parallel-tool-calls flag, sandboxed
+MCP tool servers, a Firecracker sandbox backend, and sequential dispatch with
+per-result previews.
+
+Out of scope, and not to be touched: the central registry
 (`internal/tools/registry.go`), all three MCP transports (stdio/HTTP/SSE,
 `internal/tools/mcp/transport*.go`), reconnect-with-backoff
-(`transport.go:43-71,530-580`), guardrail loop detection
+(`transport.go`), guardrail loop detection
 (`internal/tools/guardrail.go`), idempotent/mutating classification
-(`internal/tools/classification.go`), concurrent tool dispatch (closed
-`#183`), and progressive disclosure wiring
-(`internal/app/archied/main.go:72-99`, confirmed production-wired, not just
-tested) are settled and correct. Do not touch them. This document covers only
-the five sub-features still open under the epic: MCP server-initiated
-sampling, the per-server parallel-tool-calls flag, sandboxed MCP tool
-servers, a Firecracker sandbox backend, and sequential dispatch with
-per-result previews.
+(`internal/tools/classification.go`), concurrent tool dispatch (`#183`), and
+progressive disclosure wiring (`internal/app/archied`). These are settled and
+production-wired.
 
 ## Problem
 
 `bd search "MCP client"` shows five closed transport beads and one open:
-server-initiated sampling (`#151`). `internal/tools/mcp/client.go:34-37`
+server-initiated sampling (`#151`). `internal/tools/mcp/client.go`
 holds a single `callMu *sync.Mutex` that serializes every `tools/call`
 regardless of server — `ParallelToolCalls` does not exist on the `MCPServer`
-config struct (`internal/config/config.go:168-186`), confirming `#177` is a
+config struct (`internal/config/config.go`), confirming `#177` is a
 real gap, not a stale bead. `#178` (wire MCP tool servers for the chat agent,
 sandboxed) and `#179` (Firecracker substrate) have no corresponding code —
 MCP servers today run as whatever the config's `Command`/`Args` launches,
@@ -57,7 +57,7 @@ server-initiated sample gets the daemon's configured model, not a second
 provider client.
 
 **Reuse check.** The chat model invocation path already exists
-(`chatGenerateOptions`, `main.go:72-99`); this reuses it rather than adding a
+(`chatGenerateOptions`, `main.go`); this reuses it rather than adding a
 parallel model-calling path for MCP sampling.
 
 **Failure mapping.**
@@ -75,8 +75,8 @@ needed; belongs in `task check`.
 ## Per-server parallel-tool-calls flag (`#177`)
 
 **Decision.** `ParallelToolCalls bool` (default `false`) goes on `MCPServer`
-in `internal/config/config.go:168-186`, next to `Transport`/`Command`. The
-mutex in `client.go:34-37` becomes per-server: when `ParallelToolCalls` is
+in `internal/config/config.go`, next to `Transport`/`Command`. The
+mutex in `client.go` becomes per-server: when `ParallelToolCalls` is
 false (default, and the only behavior today), keep the single `callMu`
 serializing that server's calls exactly as now; when true, drop the mutex for
 that server's `Client` instance entirely and let the caller's own
@@ -85,7 +85,7 @@ handle it. This is additive — no server's behavior changes unless an operator
 opts in.
 
 **Call site.** `internal/config/config.go` (struct field),
-`internal/tools/mcp/client.go:34-37` (make the mutex conditional on the
+`internal/tools/mcp/client.go` (make the mutex conditional on the
 field), and wherever `MCPServer` configs are turned into `Client` instances
 at daemon startup (the constructor that reads `internal/config`'s MCP block).
 `config.example.toml`'s commented MCP block gets the new field documented
@@ -131,7 +131,7 @@ there rather than duplicating the pool).
 | condition | contract error |
 |---|---|
 | pool exhausted (no container slot) | MCP client returns connection-refused equivalent; server marked unavailable in the registry until retried |
-| container fails health/start | same as `#151`'s handler-error path — surfaced through the client's existing reconnect/backoff (`transport.go:530-580`), not a new retry loop |
+| container fails health/start | same as `#151`'s handler-error path — surfaced through the client's existing reconnect/backoff (`transport.go`), not a new retry loop |
 
 **Testing.** `Sandboxed=false` path is the existing, already-tested
 unsandboxed flow — no change. `Sandboxed=true` needs a real
@@ -165,8 +165,8 @@ preview callbacks fire in order before the next call starts. `task check`.
 | concern | file | change |
 |---|---|---|
 | MCP client transports (stdio/HTTP/SSE) | `internal/tools/mcp/transport*.go` | none — already handles this |
-| MCP client call serialization | `internal/tools/mcp/client.go:34-37` | change (`#177`) |
-| MCP server config | `internal/config/config.go:168-186` | new fields: `ParallelToolCalls`, `Sandboxed` |
+| MCP client call serialization | `internal/tools/mcp/client.go` | change (`#177`) |
+| MCP server config | `internal/config/config.go` | new fields: `ParallelToolCalls`, `Sandboxed` |
 | Sampling dispatch | `internal/tools/mcp/client.go` | new (`#151`) |
 | Sampling handler wiring | `internal/app/archied/main.go` | new (`#151`), reuses `chatGenerateOptions` |
 | Sandboxed MCP launch | MCP client constructor + `internal/container/pool.go` | new (`#178`/`#179`) |

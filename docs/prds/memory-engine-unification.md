@@ -18,11 +18,11 @@ writes them, and the chat turn reads neither.
 
 | Family | Written by | Root | Format |
 |---|---|---|---|
-| `internal/memory` (`Manager`, `builtin.Provider`) | the chat agent's `memory_edit` tool via `memorytoolprovider` (`bootstrap.go:1198`) | `<workDir>/memory` | `MEMORY.md` / `USER.md` |
-| `internal/domain/memory` + `internal/infrastructure/memory` | the session curator (`sessioncurator.go:163`) | `<workDir>/memory-engine` | identity-keyed blocks |
+| `internal/memory` (`Manager`, `builtin.Provider`) | the chat agent's `memory_edit` tool via `memorytoolprovider` (`bootstrap.go`) | `<workDir>/memory` | `MEMORY.md` / `USER.md` |
+| `internal/domain/memory` + `internal/infrastructure/memory` | the session curator (`sessioncurator.go`) | `<workDir>/memory-engine` | identity-keyed blocks |
 
 They share no code, no format and no scope vocabulary. Neither reaches a prompt:
-`Manager.SystemPromptBlock` (`internal/memory/manager.go:429`) has no production
+`Manager.SystemPromptBlock` (`internal/memory/manager.go`) has no production
 caller anywhere, so the agent can write memory through a tool and never read it
 back.
 
@@ -33,16 +33,16 @@ Three further defects fall out of the same split:
    *does* have `handleAdd`/`handleReplace`/`handleRemove`, so the family being
    deleted is operationally richer than its replacement.
 2. **There is no scope model.** The contract carries one opaque `Identity
-   string`, and the curator fills it with a **session id** (`sessioncurator.go:164`)
-   — which is none of the four scopes `docs/architecture/agent-system.md:69-78`
+   string`, and the curator fills it with a **session id** (`sessioncurator.go`)
+   — which is none of the four scopes `docs/architecture/agent-system.md`
    requires, and stops meaning anything when the session ends.
 3. **The chat turn has no user identity on half the channels.** `SenderID` is
    populated by Telegram and email (a person) and by webhook (a **route path**,
-   `webhook.go:179`), and not at all by the dashboard, whose gateway wire message
+   `webhook.go`), and not at all by the dashboard, whose gateway wire message
    carries no sender field. It is also never persisted: `sender_id` appears
    nowhere in `session_store_sqlite.go`.
 
-`agent-system.md:100` says the write-scope selection and cross-scope sharing
+`agent-system.md` says the write-scope selection and cross-scope sharing
 rules "require a focused memory design decision". This is that decision.
 
 ## Decision
@@ -93,7 +93,7 @@ exactly the scopes of the resolved `Subject`; the engine never unions beyond wha
 it is handed and applies no policy of its own. An engine that enforced policy
 would need to know about channels, sessions and bindings, and every backend would
 reimplement it. "Agent-wide is private to its owning Agent by default"
-(`agent-system.md:80-81`) falls out mechanically, because `ScopeAgent{a}` and
+(`agent-system.md`) falls out mechanically, because `ScopeAgent{a}` and
 `ScopeAgent{b}` are different storage keys.
 
 `ScopeGlobal` is never model-writable. Writing it is an operator action; nothing
@@ -114,10 +114,10 @@ type Store interface {
 ```
 
 `Get` and `Forget` take a scope. The current `Forget` scans every identity's
-store to find a marker (`builtin_engine.go:189-210`) purely because the contract
+store to find a marker (`builtin_engine.go`) purely because the contract
 gave it nothing better.
 
-`Record` carries what `agent-system.md:97-99` requires be retained: `Scope`,
+`Record` carries what `agent-system.md` requires be retained: `Scope`,
 `Kind`, `Content`, `Revision`, `Author`, `OriginUser`, `Source`, `CreatedAt`,
 `UpdatedAt`. `Metadata` is dropped — nothing sets it and the parser never
 restores it, so it is currently a field that silently does not round-trip.
@@ -150,19 +150,19 @@ UserIdentity func(msg messaging.Message) (IdentityID, bool)
 
 This must be injectable rather than a blanket `channel + ":" + SenderID`
 concatenation, because a **webhook's `SenderID` is a route path**
-(`webhook.go:179`), not a person; treating it as one would give a URL an
+(`webhook.go`), not a person; treating it as one would give a URL an
 identity. Telegram and email supply their sender id; the dashboard and webhook
 resolve nothing.
 
 **Fail closed.** When `UserID` is empty the turn proceeds with global and agent
 scopes only, and a write targeting `user` or `agent-user` fails with a clear
-error. `agent-system.md:92-94` forbids showing one user's memory to another, so
+error. `agent-system.md` forbids showing one user's memory to another, so
 "we do not know who this is" must mean "show none of it", never "fall back to a
 wider scope".
 
 ### 4. The chat read path
 
-Synchronous and total. It runs inside `prepareTurn` (`turn.go:287`) before the
+Synchronous and total. It runs inside `prepareTurn` (`turn.go`) before the
 prompt is built, never returns an error to the caller, and degrades to an empty
 block on any engine failure or provider panic. A fire-and-forget hook would race
 the prompt build in the same turn, which is why this is not a lifecycle hook.
@@ -172,7 +172,7 @@ search, which remains open in `migration-decisions.md#5`. A ranked read on the
 hot path with no ranking implementation would be a lie.
 
 `SystemPromptConfig` gains a `Memory` field, rendered into
-`templates/archie.md.tpl` between `<tools>` (line 41) and `<env>` (line 50):
+`templates/archie.md.tpl` between the `<tools>` and `<env>` blocks:
 
 ```
 <memory purpose="durable_context" trust="data">
@@ -188,8 +188,8 @@ Both a per-scope record limit and a byte cap on the rendered block are named
 constants. The cap is about size, not latency; a local read needs no timeout.
 
 **Prerequisite:** `setupGateways` runs before `setupMemoryAll`
-(`main.go:414` vs `:428`), and `startGatewayRuntime` before `setupMemory`
-(`gateway.go:110` vs `:115`), so the engine is nil at every turn-runner
+(`main.go` vs `:428`), and `startGatewayRuntime` before `setupMemory`
+(`gateway.go` vs `:115`), so the engine is nil at every turn-runner
 construction site. The ordering is the root-cause fix and nothing in either
 memory step reads what those later steps produce.
 
@@ -208,7 +208,7 @@ must write into a scope derived from the turn's resolved subject:
 **The model chooses the scope kind; it never chooses the ids.** Agent and user
 ids come from the turn's resolution and there is no schema field to put anything
 else in — even a model that emits another user's id has nowhere to write it. That
-is the root-cause form of `agent-system.md:87-90`, matching this system's other
+is the root-cause form of `agent-system.md`, matching this system's other
 non-waivable boundaries (the model never runs git; gates cannot be waived by the
 agent). `global` is not offered at all.
 
@@ -240,7 +240,7 @@ curator's bad note becomes id-addressable and therefore correctable by the agent
 
 ### 7. The content scanner moves to the engine
 
-`internal/memory/scanner.go` and its installation at `bootstrap.go:1045` are what
+`internal/memory/scanner.go` and its installation at `bootstrap.go` are what
 make `configuration.md`'s "Memory safety scanner" row describe a control that
 actually runs. Deleting the package would silently remove prompt-injection
 scanning on memory writes. The scanner moves into the engine and is applied in
@@ -260,7 +260,7 @@ engine already parses that format.
 Also deleted: `internal/tools/provider/memory`'s manager wrapping (rewired to the
 engine), `config.Memory.{Provider,ProviderConfig}` and the
 `validateMemory` rejection that exists only to complain about `Provider`
-(`validate.go:143-154`), and `webui.MemoryStatus`/`MemoryProviderHandle` — never
+(`validate.go`), and `webui.MemoryStatus`/`MemoryProviderHandle` — never
 implemented in production, so `/api/memory` reports empty forever unless it is
 repointed at the engine registry.
 

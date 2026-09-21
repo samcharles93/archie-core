@@ -14,17 +14,17 @@ A service is already one Go type, `config.ServiceConnection`. What is duplicated
 
 | Layer | Location | What is hard-coded |
 |---|---|---|
-| Declaration | `internal/config/services.go:4-14` | `Gateway` and `State` as struct fields |
-| Defaulting | `internal/infrastructure/configuration/defaults.go:74-82` | three `if cfg.Services.X.Y == ""` branches |
-| Consumption | `internal/app/archied/{bootstrap.go,state_store.go,gateway.go}`, `internal/app/archieui/config.go:80-81` | `cfg.Services.State` / `cfg.Services.Gateway` field access |
+| Declaration | `internal/config/services.go` | `Gateway` and `State` as struct fields |
+| Defaulting | `internal/infrastructure/configuration/defaults.go` | three `if cfg.Services.X.Y == ""` branches |
+| Consumption | `internal/app/archied/{bootstrap.go,state_store.go,gateway.go}`, `internal/app/archieui/config.go` | `cfg.Services.State` / `cfg.Services.Gateway` field access |
 
 Adding a service means editing all three. The drift this permits is already visible:
-`stateStoreResolvedToken` (`state_store_client.go:17-23`) and `gatewayResolvedToken`
-(`chat_service.go:20-26`) are byte-identical apart from the env var name, and
+`stateStoreResolvedToken` (`state_store_client.go`) and `gatewayResolvedToken`
+(`chat_service.go`) are byte-identical apart from the env var name, and
 `gateway.Target` is defaulted while `state.Target` is a startup error, with nothing
 stating that asymmetry in one place.
 
-`resolveServiceListen(service, flagValue, configured)` (`listen.go:24-34`) is already
+`resolveServiceListen(service, flagValue, configured)` (`listen.go`) is already
 name-parameterised. It is the shape the rest should follow.
 
 ## Decision
@@ -98,8 +98,8 @@ states in prose or in a branch:
   extensibility, because the answer comes from registration data rather than a fixed list.
   (An earlier draft of this document claimed the typo was silently ignored either way. It
   was not; the behaviour was measured.)
-- Existing tests reference `cfg.Services.State` directly (`state_store_client_test.go:82`,
-  `setup_test.go:278`, and others). They move to `Get`, mechanically.
+- Existing tests reference `cfg.Services.State` directly (`state_store_client_test.go`,
+  `setup_test.go`, and others). They move to `Get`, mechanically.
 - No wire contract, no RPC, and no persisted format is touched. The 42-RPC State Store
   contract is unaffected.
 

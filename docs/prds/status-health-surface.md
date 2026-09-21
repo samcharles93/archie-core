@@ -1,10 +1,11 @@
-# /status health surface -- what's shipped, what's proposed
+# /status health surface
 
-**Status:** Phase 1 shipped 2026-09-03 (archie-core-wp9s). Phase 2 shipped
-2026-09-19: broker connectivity, container pool, last poll, provider
-reachability and channel state are implemented on the decisions recorded below,
-with the fields that had no truthful source left out rather than faked (see
-"Phase 2 -- shipped").
+**Status:** Finalised
+**Beads issue:** `archie-core-wp9s`
+
+A reported field must have a truthful source. Broker connectivity, container
+pool, last poll, provider reachability and channel state are reported; a field
+with no truthful source is left out rather than faked.
 
 ## Background
 
@@ -15,7 +16,7 @@ reachability, channel state, container pool, queue depth, last poll,
 version" -- with neither duplicating the other or static config available
 elsewhere (`/model` already lists active provider/model).
 
-## Phase 1 -- shipped
+## Phase 1
 
 - `/tasks`: new command, `gateway.ChatTaskSummary` extended with
   `Stage`/`Attempt`/`ParkReason`/`UpdatedAt` (all already persisted on
@@ -45,19 +46,19 @@ decisions") and all five fields shipped.
 
 - **Broker connectivity.** `internal/infrastructure/eventbus/nats.Client`
   already exposes `CoreConn() (*nats.Conn, error)`
-  (`client.go:134`). The underlying `nats.Conn` (nats.go) has its own
+  (`client.go`). The underlying `nats.Conn` (nats.go) has its own
   `Status()`/`IsConnected()`. A `Client.Connected() bool` wrapper is a few
   lines.
 - **Container pool.** `container.Pool` already tracks `active int` under
-  its own mutex (`pool.go:90`) but has no public accessor. A
+  its own mutex (`pool.go`) but has no public accessor. A
   `Pool.Active() int` getter is a few lines.
 - **Last poll.** Nothing tracks this today. The daemon's poll loop
   (`internal/daemon`) needs one `lastPollAt time.Time` field (atomic or
   mutex-guarded, matching the pool's own pattern) set at the top of each
   poll tick, with a getter.
-- **Queue depth.** Already shipped in Phase 1.
+- **Queue depth.** Covered by Phase 1.
 
-### The two decisions (settled 2026-09-19, decided by position)
+### The two decisions
 
 - **Provider reachability is last-known outcome, never a live probe.** A chat
   command must not perform a blocking network call in its handler, and a probe
@@ -74,7 +75,7 @@ decisions") and all five fields shipped.
   probe already use -- rather than re-deriving channel health from each adapter.
   No method was added to the `Channel`/`Gateway` contract.
 
-### Phase 2 -- shipped
+### Phase 2
 
 - **Broker connectivity.** `internal/infrastructure/eventbus/nats.Client` gained
   `Connected() bool`, which reads the connection the process already holds. The
@@ -89,7 +90,7 @@ decisions") and all five fields shipped.
   `pollForIdentity` for `runIdentities`) stamp it. A pass that hangs leaves the
   stamp stale, which is the signal -- stamping completion instead would leave a
   wedged poller looking healthy.
-- **Queue depth.** Already shipped in Phase 1.
+- **Queue depth.** Covered by Phase 1.
 - **Rendering.** `gateway.formatHealth` renders one line per reported fact
   (`Broker:`, `Containers:`, `Channels:`, `Chat model:`, `Last poll:`) between
   the queue line and the runtime block. The sources it reads are functions, not
@@ -110,7 +111,7 @@ decisions") and all five fields shipped.
   here. For the same reason the chat-model line is per process: the daemon
   records the turns it runs (Telegram, email, webhook), the Gateway records the
   web chat's, and the two do not pool outcomes. Each line is true of the process
-  answering the command. **Decided 2026-09-19: they stay per-process.** Pooling
+  answering the command. **Decided: they stay per-process.** Pooling
   them would mean a new daemon↔gateway health RPC for one status line, and a
   per-process line is true where an aggregate would be a claim about a process
   the answering one cannot see.
@@ -128,7 +129,7 @@ decisions") and all five fields shipped.
   the only line in `/status` that this ticket's own rule says should not be
   there -- but the maintainer reads `/status` daily to see the active model at a
   glance, and one command answering both "is archie well" and "what is it
-  running on" is worth that duplication. **Decided 2026-09-19: keep it.** It is
+  running on" is worth that duplication. **Decided: keep it.** It is
   a settled product decision, not an oversight; do not remove it as a
   mechanical follow-up.
 - **`/agents` copy.** The menu still advertises "List tasks currently being
@@ -136,7 +137,7 @@ decisions") and all five fields shipped.
   published description does not match what its command does. Deleting,
   rewiring or redefining `/agents` is that bead's call and is not folded in here.
 
-## Packages this touches (Phase 2, as shipped)
+## Packages this touches (Phase 2)
 
 - `internal/infrastructure/eventbus/nats`: `Client.Connected()`.
 - `internal/container`: `Pool.Active()`, `Pool.Cap()`.

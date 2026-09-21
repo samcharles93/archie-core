@@ -131,7 +131,7 @@ text into fixtures, two that asserted on a source file's contents). All six were
 deleted on 2026-09-15. The dashboard suite's "api.jsx holds exactly one fetch
 call" check was deleted for the same reason: it broke on a reformat and on a
 comment that mentioned `fetch`, and it was patched with a comment-stripper instead
-of being removed. Every `api.*` method is now covered behaviourally instead, by
+of being removed. Every `api.*` method is covered behaviourally instead, by
 asserting the headers and body each one sends.
 
 ## Open decision

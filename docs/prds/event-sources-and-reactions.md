@@ -36,9 +36,9 @@ causes redelivery." Do not design new delivery semantics; use this contract.
 
 **Do not reuse the existing `nats.Client` as-is.** `Config.StreamName` and
 `Config.Subjects` are already composition-supplied ("the bus must not know
-which subjects belong to which domain," `config.go:35-38`), but the
+which subjects belong to which domain," `config.go`), but the
 retention policy is not parameterized: `New` hardcodes
-`Retention: jetstream.WorkQueuePolicy` (`client.go:65`), the competing-consumer
+`Retention: jetstream.WorkQueuePolicy` (`client.go`), the competing-consumer
 policy correct for `ARCHIE_TASKS` task distribution -- one message, claimed by
 exactly one consumer -- and wrong for reactions. Two independent reactions
 both wanting to see the same event under `WorkQueuePolicy` hit exactly the

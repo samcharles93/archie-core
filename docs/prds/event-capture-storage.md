@@ -23,7 +23,7 @@ stream is introduced for capture.
 **NATS availability does not make capture a broker concern.** NATS is now
 unconditional for autonomous workflow handoff, including embedded mode, but
 capture is also used by deployments with no repository workflow configured.
-SQLite is already guaranteed present because it backs daemon state, and keeps
+SQLite is guaranteed present because it backs daemon state, and keeps
 capture inspection independent of broker retention and consumer lifecycle.
 The original version of this decision cited optional NATS as an additional
 reason; that premise was superseded by `archie-core-q15y`, while the storage

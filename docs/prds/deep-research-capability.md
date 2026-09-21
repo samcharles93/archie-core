@@ -17,18 +17,18 @@ Every claim in this document is mapped to what exists in the tree today.
 | `web_fetch` tool (URL → readable text) | **Implemented** | `internal/tools/webfetch/{tool.go,webfetch.go}`; registered in `internal/app/archied/bootstrap.go` `registerStandaloneTools`, disabled-by-config returns `nil` |
 | **Web search** (query → result list) | **Aspirational — zero code** | No search provider, no search tool, no config block anywhere in the tree or in `ai-sdk` v0.1.32 |
 | `agent.Subagent` — nested agent in a fresh context window | **Implemented** (dependency) | `github.com/samcharles93/ai-sdk@v0.1.32/agent/subagent.go`. Synchronous, non-streaming, own model/system/toolset, `MaxSteps` defaults to 10, nesting depth capped at 5, returns final text only |
-| Subagent used in production | **Implemented, one consumer** | `internal/app/agentworker/review.go:112` — the adversarial reviewer. That is the only non-test use of `Subagent` in the repo |
+| Subagent used in production | **Implemented, one consumer** | `internal/app/agentworker/review.go` — the adversarial reviewer. That is the only non-test use of `Subagent` in the repo |
 | A **delegate/subagent tool** on the chat surface | **Aspirational — zero code** | No `subagent`/`delegate` tool name is registered anywhere |
 | **Fan-out orchestration** (N missions, one collator) | **Aspirational — zero code** | `agentloop`'s package doc states it runs *one* mission: "orchestration across missions lives with the caller". No caller does this yet |
 | Parallel-safe tool execution | **Aspirational — zero code** | The unreachable `internal/tools/dispatch.go` dispatch/gating engine (`ExecutionClass`, `DispatchSequential`/`DispatchConcurrent`/`ClassifyEntry`) was deleted as dead code (tools-core-1); live concurrency is ai-sdk's `GenerateOptions.MaxParallelToolCalls`, which archie-core never sets |
-| Per-result caps + spill-to-disk | **Implemented** | `internal/agentexec/toolset.go` `ToolLimits{MaxResultChars,SpillDir}`, applied in `toolExecute` via `tools.CapPayload` (`limit.go:44`); no **aggregate** turn cap by design (`toolset.go:62`). `config.ToolPolicy.SpillDir`; default cap 50k chars, spill dir deliberately not defaulted |
-| Tool guardrails (repeat-failure / no-progress) | **Implemented, not on the call path** | `internal/tools/guardrail.go` engine exists. Its only non-test caller is `dispatchOne` — which is itself unreachable — so **the chat path never consults it**, and the agent path only records per *stage* (`domain/workflow/agent.go:199`) |
-| Structured capture tools (model reports into a typed store, not prose) | **Implemented** | `internal/app/agentworker/review.go:247` `record_finding` / `record_checked` — `core.NewTypedTool` appending to a caller-owned slice. This is the pattern a research source ledger should reuse |
-| Curator engine (interval, declared tool set, lifecycle) | **Implemented, tools broken** | `internal/domain/curator`; a curator declaring tools is **refused** at registration (`registry.go:123`, no `ToolBuilder` implementation) and `curatorLLMRunner` (`internal/app/archied/main.go:551`) drops `ChatRequest.Tools`. Budgets are time+concurrency only (`runtime.go:14,64`) — **no token budget** |
-| Cron / scheduling + delivery router | **Implemented, wired into no binary** | `internal/domain/scheduling`, `internal/infrastructure/cronstore` (schema v2, `Kind` discriminator), `internal/infrastructure/crondelivery` — all present and green, but `go list -deps` for every `cmd/` contains none of them, and `cron`-expression firing arithmetic is unimplemented (`schedule.go:110`, "slice 2"). `ARCHITECTURE.md:397` still asserts "**No daemon-internal cron.**" |
-| Workflow engines (multi-stage, resumable) | **Implemented, worktree-bound** | `internal/domain/workflow` — every non-triage workflow opens with `StagePrepareWorktree()` and mounts `tc.Dir` into a container; the task persists after every stage (`workflow.go:295`). `triage.go:33` documents there is "no cheaper directory-less classification primitive" |
-| Long-running chat-initiated work with progress | **Partial** | Chat turns run **once, synchronously**, inline in the channel's turn runner (`internal/gateway/turn.go:357`). Chat can spawn a *workflow task* (`task_spawn`) which is asynchronous — but that path is worktree/PR-shaped |
-| **Operator-push delivery of an async result** | **Aspirational — zero code** | Nothing pushes a finished result to a chat. No channel subscribes to the event bus (Telegram only *publishes* `KindTurnCompleted`); `crondelivery.Courier` is the intended seam but has **no implementation and no caller**; `send_file` works only inside the live turn. The one out-of-band notification in the tree is feasibility's n8n webhook (`feasibility.go:133`) |
+| Per-result caps + spill-to-disk | **Implemented** | `internal/agentexec/toolset.go` `ToolLimits{MaxResultChars,SpillDir}`, applied in `toolExecute` via `tools.CapPayload` (`limit.go`); no **aggregate** turn cap by design (`toolset.go`). `config.ToolPolicy.SpillDir`; default cap 50k chars, spill dir deliberately not defaulted |
+| Tool guardrails (repeat-failure / no-progress) | **Implemented, not on the call path** | `internal/tools/guardrail.go` engine exists. Its only non-test caller is `dispatchOne` — which is itself unreachable — so **the chat path never consults it**, and the agent path only records per *stage* (`domain/workflow/agent.go`) |
+| Structured capture tools (model reports into a typed store, not prose) | **Implemented** | `internal/app/agentworker/review.go` `record_finding` / `record_checked` — `core.NewTypedTool` appending to a caller-owned slice. This is the pattern a research source ledger should reuse |
+| Curator engine (interval, declared tool set, lifecycle) | **Implemented, tools broken** | `internal/domain/curator`; a curator declaring tools is **refused** at registration (`registry.go`, no `ToolBuilder` implementation) and `curatorLLMRunner` (`internal/app/archied/main.go`) drops `ChatRequest.Tools`. Budgets are time+concurrency only (`runtime.go`) — **no token budget** |
+| Cron / scheduling + delivery router | **Implemented, wired into no binary** | `internal/domain/scheduling`, `internal/infrastructure/cronstore` (schema v2, `Kind` discriminator), `internal/infrastructure/crondelivery` — all present and green, but `go list -deps` for every `cmd/` contains none of them, and `cron`-expression firing arithmetic is unimplemented (`schedule.go`, "slice 2"). `ARCHITECTURE.md` still asserts "**No daemon-internal cron.**" |
+| Workflow engines (multi-stage, resumable) | **Implemented, worktree-bound** | `internal/domain/workflow` — every non-triage workflow opens with `StagePrepareWorktree()` and mounts `tc.Dir` into a container; the task persists after every stage (`workflow.go`). `triage.go` documents there is "no cheaper directory-less classification primitive" |
+| Long-running chat-initiated work with progress | **Partial** | Chat turns run **once, synchronously**, inline in the channel's turn runner (`internal/gateway/turn.go`). Chat can spawn a *workflow task* (`task_spawn`) which is asynchronous — but that path is worktree/PR-shaped |
+| **Operator-push delivery of an async result** | **Aspirational — zero code** | Nothing pushes a finished result to a chat. No channel subscribes to the event bus (Telegram only *publishes* `KindTurnCompleted`); `crondelivery.Courier` is the intended seam but has **no implementation and no caller**; `send_file` works only inside the live turn. The one out-of-band notification in the tree is feasibility's n8n webhook (`feasibility.go`) |
 | Citation storage / source ledger | **Aspirational — zero code** | No source, citation, or provenance store exists for research output |
 
 > **Target state, not current state.** Everything marked aspirational below is
@@ -199,7 +199,7 @@ Reusing it would mean every ad-hoc research run leaves a permanent job row.
 | Report renderer | `internal/domain/research` | Markdown + numbered citation list rendered **from the store** |
 | Chat trigger | slice 2: `internal/tools/research`; slice 3: gateway tool + courier in `internal/app/archied` | — |
 | Durable run + delivery (slice 3) | `internal/domain/research` + `internal/infrastructure/research` + `internal/app/archied` wiring | Follows the strict plugin-engine rule in `ARCHITECTURE.md` ("Plugin engine
-rule (strict)", line 293): typed contract, owning registry with start/health/stop, narrow typed registrar |
+rule (strict)"): typed contract, owning registry with start/health/stop, narrow typed registrar |
 
 ### Why not the curator
 
@@ -209,7 +209,7 @@ Two facts rule it out as the host for *this*:
 
 - **Its tool path does not work.** A curator declaring tools is refused
   registration because `ToolBuilder` has no implementation, and even if it were
-  bound, `curatorLLMRunner` drops `ChatRequest.Tools` (`main.go:551`). Fixing
+  bound, `curatorLLMRunner` drops `ChatRequest.Tools` (`main.go`). Fixing
   that is `archie-core-trnd.1`, an independent piece of work.
 - **Its contract is maintenance, not requests.** The isolation invariant
   (`docs/architecture/agent-system.md`, "Curator isolation invariant") defines
@@ -224,7 +224,7 @@ weekly" — but it is a consumer of this capability, not its foundation.
 ### D1. Citations come from a store, never from prose
 
 Each subagent gets a `record_source` typed tool (the `record_finding` pattern,
-`review.go:247`) whose handler canonicalises the URL, deduplicates against the
+`review.go`) whose handler canonicalises the URL, deduplicates against the
 store, marks which sub-question recorded it, and appends. The collator may
 *select and order* sources; it may not author them. Rendering the reference
 list is then a pure function of the store.
@@ -254,7 +254,7 @@ benefit does not.
 Fan-out width and per-child `MaxSteps` are enforced by the orchestrator, not
 requested in a prompt, against a whole-run wall clock and token ceiling.
 `agentloop.Budget` already carries `MaxSteps`, `MaxTokens`, `WallClock`, and
-`TokenBudgetIs(maxTokens)` exists as a stop condition (`agentloop.go:373`) —
+`TokenBudgetIs(maxTokens)` exists as a stop condition (`agentloop.go`) —
 the shape exists, the fan-out owner does not.
 
 **Fan out retrieval aggressively and generation sparingly.** Web search is 73%
@@ -281,7 +281,7 @@ effective capacity without a bigger context window.
 
 `web_search` is registered only when a provider resolves, following two
 existing conventions: return `nil` for a disabled capability
-(`webfetch/tool.go:18` — "an advertised tool that never works costs a round
+(`webfetch/tool.go` — "an advertised tool that never works costs a round
 trip") and resolve the credential *before* registering
 (`registerMinimaxTool`, `bootstrap.go`). At least two implementations are
 wanted — a self-hosted meta-search endpoint (no per-query cost, no data egress)
@@ -359,7 +359,7 @@ evidence-supported trade.
 - **Collator degradation.** If the collator call fails or truncates, the report
   must still be rendered from the source store and the child conclusions —
   degraded, not empty. This mirrors the reviewer's rule that findings captured
-  before a failed run are still real (`review.go:129`).
+  before a failed run are still real (`review.go`).
 
 ## Slices
 

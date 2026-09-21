@@ -210,14 +210,14 @@ yet satisfy this boundary. This document is the ratified target; the
 implementation child must prove each migration gate before claiming Phase 3
 complete.
 
-### Phase 3 complete (2026-09-11)
+### Phase 3 gates
 
-Phase 3 is closed. Every gate below is proven by test, not by inspection:
+Every gate below is proven by test, not by inspection:
 
 | Gate | Evidence |
 | --- | --- |
 | Deletion | `cmd/archie-ui/architecture_test.go` re-runs `go list -deps` on every `task check` and fails on any banned package, checked in both directions against its two exceptions |
-| Composition | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a concrete `*store.Store` or a Gateway that is not the gRPC client. The holder clause it also carried is now enforced by the type: `webui.Server` has no `config.Holder` field (`archie-core-ml30`) |
+| Composition | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a concrete `*store.Store` or a Gateway that is not the gRPC client. The holder clause it also carried is enforced by the type: `webui.Server` has no `config.Holder` field (`archie-core-ml30`) |
 | End-to-end | `cmd/archie-ui/main_test.go` builds the binary and drives it over HTTP against a live Gateway and State Store |
 | No dual authority | The dashboard HTTP listener is `internal/app/archieui/run.go` only; the daemon's two `http.Server`s are its own health endpoint and the forge webhook receiver |
 

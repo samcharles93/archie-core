@@ -4,7 +4,7 @@
 **Date:** 2026-08-22, section 1 replaced 2026-08-25
 **Beads issue:** `archie-core-h019.1`, blocks `h019.2/.3/.4/.5`
 
-> **Section 1 was superseded on 2026-08-24 and re-decided on 2026-08-25.**
+> **Section 1 is superseded by the decision below.**
 > The original execution mechanism assumed daemon-owned in-process execution
 > and a daemon-side second `Pool.Acquire`; `archie-core-q15y` removed both
 > call sites, leaving one open question: how a fresh reviewer receives an
@@ -21,8 +21,8 @@ most of this.
 ## 1. Where it runs: `agent.Subagent`, inside the task worker
 
 The implement workflow's stage list
-(`internal/domain/workflow/implement.go:110-185`) already has the right slot:
-after `StageDiffCap()` (line 178), before `StageOpenPR()` (line 179) -- gates
+(`internal/domain/workflow/implement.go`) already has the right slot:
+after `StageDiffCap()`, before `StageOpenPR()` -- gates
 have passed, the diff is final, and nothing has told the forge about this
 change yet.
 
@@ -37,7 +37,7 @@ host executor, no second `Pool.Acquire`, and no nested container lifecycle.
 **Two isolations are needed, and Subagent only provides one of them.**
 
 *Conversation isolation is structural, and free.* `Subagent.Run`
-(`agent/subagent.go:76-96`) calls `GenerateText` with `Prompt` set and
+(`agent/subagent.go`) calls `GenerateText` with `Prompt` set and
 `Messages` never populated. The implementer's history has no code path into
 the nested run; only the prompt string crosses, and only text comes back.
 This is the literal form of "environmental enforcement over prompt rules":
@@ -95,7 +95,7 @@ no code path that hands it any.
 
 ## 3. Findings contract: `workflow.ReviewFinding`, workflow domain owns it
 
-Not a reuse of `internal/gate.Finding` (`gate.go:22-31`), despite the similar
+Not a reuse of `internal/gate.Finding` (`gate.go`), despite the similar
 shape. That type belongs to the Yaegi gate contract (`.archie/gate.go`,
 repo-owner-authored checks); coupling the review stage's blocking contract to
 gate's evolution would violate "a domain declares the interface it needs, it
@@ -132,9 +132,9 @@ being asked to format its answer as JSON and trusted to comply.
 
 The epic's acceptance criteria say a surviving finding "parks the task as
 `waiting_human`," which names two different states in the actual machine
-(`internal/taskstate/taskstate.go:44-59`). This decides between them:
+(`internal/taskstate/taskstate.go`). This decides between them:
 **`store.StatusParked`**, following `StageDiffCap`'s existing precedent
-(`steps.go:91-94`) exactly -- a stage-computed policy stop with a `Detail`
+(`steps.go`) exactly -- a stage-computed policy stop with a `Detail`
 explaining why, before PR open. `Parked`'s available actions, retry and
 abandon, are the right shape here: fix the flagged code and retry, or
 abandon/override if a finding is a false positive. `WaitingHuman`'s
@@ -149,7 +149,7 @@ returns `nil`, so `StageOpenPR` runs next. Attaching warn-level findings to
 the task record for PR-body/dashboard display is `h019.6`'s job, not decided
 here.
 
-**A review that fails to run is fail-closed** (decided 2026-08-25). The
+**A review that fails to run is fail-closed.** The
 blocking rule is `Verdict == confirmed && Level == error`, so only a confirmed
 finding blocks -- but that governs findings, not the reviewer's own failure. A
 sub-agent that errors, is truncated, or produces no conclusion yields
@@ -170,14 +170,14 @@ indistinguishable from a clean review, and fail-closed unimplementable.
 
 **Model:** a new `"reviewer"` key in the existing `Config.Models` map (already
 a generic `map[string]string`, no schema change) with the same single-level
-fallback precedent `agent.go:68-73` already uses for planner->builder:
+fallback precedent `agent.go` already uses for planner->builder:
 `Models["reviewer"]`, falling back to `Models["builder"]` if unset. Operators
 who want a genuinely independent second opinion configure a distinct model;
 nothing forces one, because CLAUDE.md's project scope is "smallest change
 that works," not a mandated model-diversity policy.
 
 **Effort/budget:** reuse the per-stage budget override `AgentStage` already
-supports (`agent.go:35`), not a new config surface -- a repo wanting a
+supports (`agent.go`), not a new config surface -- a repo wanting a
 cheaper or more thorough reviewer sets `MaxSteps` the same way
 the plan stage already can. Map that budget onto `Subagent.MaxSteps` and
 `Subagent.MaxTokens` deliberately: **`MaxTokens` is a per-call ceiling, not a

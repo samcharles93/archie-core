@@ -30,14 +30,14 @@ does not show up as a broken page.
 - [ ] **Mutation headers.** Every POST/PATCH/DELETE must send **both**
       `X-Archie-CSRF: 1` and `Content-Type: application/json`. The server
       returns 403 without the first and 415 without the second
-      (`internal/webui/api_tasks.go:376`, `authorizeTaskMutation`). GET sends
+      (`internal/webui/api_tasks.go`, `authorizeTaskMutation`). GET sends
       neither. This is the single most likely thing to silently break every
       write after the port.
 - [x] **History routing.** `createWebHistory`, `base: "/"`. Legacy `#/path`
       links are rewritten by `src/legacy-hash-redirect.ts`. The chat navigate
       chip should emit `/tasks`; the Go side already stores bare paths.
 - [ ] **Capability gating.** `GET /api/capabilities`
-      (`internal/webui/api_capabilities.go:20`) returns a `sections` map of ten
+      (`internal/webui/api_capabilities.go`) returns a `sections` map of ten
       booleans: chat, logs, skills, curators, channels, captures, mappings,
       bindings, and workflows/settings which are always true. A route whose
       section is false must be hidden, not rendered empty. **Fail open**: on a
@@ -50,9 +50,9 @@ does not show up as a broken page.
       with no error.
 - [ ] **SSE lifecycle.** Three streams, all `id: <n>\ndata: <json>\n\n` except
       chat which omits the id:
-      `/events` (task lifecycle, `sse.go:37`, supports `?since=` and
-      `Last-Event-ID` resume), `/api/logs/stream` (`api_logs.go:80`, same
-      resume protocol), `/api/chat/stream` (`api_chat.go:399`, frames typed
+      `/events` (task lifecycle, `sse.go`, supports `?since=` and
+      `Last-Event-ID` resume), `/api/logs/stream` (`api_logs.go`, same
+      resume protocol), `/api/chat/stream` (`api_chat.go`, frames typed
       delta/tool/media/navigate). Each must be closed on unmount or the app
       leaks a connection per navigation. Preact used an `archie:teardown`
       event; Vue should use `onUnmounted`.
@@ -210,9 +210,9 @@ port rather than porting the flat bar first.
       throughout; it is the check that a route cannot be added here and
       forgotten there.
 
-## Phase 5 — Behaviour shipped today that a naive port loses
+## Phase 5 — Behaviour a naive port loses
 
-All of this landed in the last few hours and exists only in the deleted tree.
+This behaviour exists only in the deleted tree.
 The implementation source for nearly all of it is
 `git show e18fb8b2^:ui/src/css/layout.css` plus `main.jsx` and `chat/chat.jsx`.
 

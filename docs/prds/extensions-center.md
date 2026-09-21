@@ -8,7 +8,7 @@ inventories with their own APIs (`api_skills.go`, `api_workflows.go`,
 config-driven MCP servers) and their own family-owned controller pattern
 (`curator.Registry`, `health.Registry`, `image.Registry`,
 `workflow.Registry` all already prove this shape). `plugin.Plugin`
-(`internal/plugin/plugin.go:24-27`) is already metadata-only, per
+(`internal/plugin/plugin.go`) is already metadata-only, per
 `docs/architecture/plugins-and-extensions.md`. None of that is rebuilt here.
 What's missing, confirmed by grep, is: any config schema for enabling or
 disabling a capability, any "pending restart" state tracking, and any single
@@ -20,7 +20,7 @@ families, no generic dispatch) are unchanged.
 
 Out of scope: any remote or arbitrary-URL plugin installation path (the
 epic's own acceptance criteria forbid this, and `plugin.LoadDir`
-(`plugin.go:51-91`) already only reads `~/.config/archie/plugins/*.go` — this
+(`plugin.go`) already only reads `~/.config/archie/plugins/*.go` — this
 document does not add a fetch-by-URL variant to it).
 
 ## Problem
@@ -29,9 +29,9 @@ document does not add a fetch-by-URL variant to it).
 `enabled` field (confirmed by the investigation grep). `api_config.go`'s
 `UpdateConfig`/`handleConfigUpdate` seam persists changes but has no state
 distinguishing "saved, takes effect now" from "saved, needs restart" — the
-only existing reload path (`ReloadChannel`, `server.go:85`) is
+only existing reload path (`ReloadChannel`, `server.go`) is
 channel-specific and explicitly does not cover plugins or MCP servers.
-`server.go:28-147` already wires five separate optional inventories
+`server.go` already wires five separate optional inventories
 (Workflows, Skills, Curators, Channels, Captures/Mappings/Bindings) as
 independent fields with no unifying type — an operator today has no single
 place to see "what's available, what's enabled, what's actually running,
@@ -82,7 +82,7 @@ existing domain-owned contracts rather than duplicating their state.
 
 **Call site.** New package `internal/domain/extensions/inventory.go`.
 Composed in `internal/app/archied` (wherever `server.go`'s other optional
-fields — Workflows, Skills, Curators — are already wired) since it needs
+fields — Workflows, Skills, Curators — are wired) since it needs
 references to every family's registry, which only application-layer
 composition has.
 
@@ -140,7 +140,7 @@ pages remain where they inspect a family's own detail.
 
 | concern | file | change |
 |---|---|---|
-| Plugin metadata type | `internal/plugin/plugin.go:24-27` | none — already handles this |
+| Plugin metadata type | `internal/plugin/plugin.go` | none — already handles this |
 | Family controllers (curator/health/image/workflow registries) | `internal/domain/curator/registry.go`, `internal/domain/health/health.go`, etc. | none — pattern already proven, reused not rewritten |
 | Unified inventory | `internal/domain/extensions/inventory.go` | new |
 | Composition wiring | `internal/app/archied/server.go` (near existing optional fields) | new |

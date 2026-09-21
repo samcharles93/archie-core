@@ -148,7 +148,7 @@ file reads).
   chat turn sees.
 - **No new curator-specific webui or chat surface.** Activity is visible
   through the existing curator observability surface
-  (`archie-core-1786637489932`, already shipped) -- `/api/curators` and
+  (`archie-core-1786637489932`) -- `/api/curators` and
   the dashboard Curators page already show any registered curator's
   recent actions.
 

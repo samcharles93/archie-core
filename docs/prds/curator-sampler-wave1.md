@@ -2,10 +2,9 @@
 
 **Status:** Approved for implementation
 **Date:** 2026-09-05
-**Beads issue:** none yet at time of writing (bead `archie-core-1786637500776-416-600a66e5`
-/ GitHub #437 covers the embedding-backed follow-on strategy only; this PRD
-covers the prerequisite interface + cheap strategies, tracked by the new
-issue this change files, see `new-issues.jsonl`)
+**Beads issue:** bead `archie-core-1786637500776-416-600a66e5` / GitHub #437
+covers the embedding-backed follow-on strategy only. This PRD covers the
+prerequisite interface and the cheap strategies.
 **Parent epic:** `archie-core-1786637500725` (curator engine)
 **Depends on:** nothing shipped (this is itself a prerequisite)
 **Blocks:** the embedding-backed surprisal strategy (GitHub #437), which
