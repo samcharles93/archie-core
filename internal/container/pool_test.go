@@ -560,6 +560,82 @@ func TestReleaseAfterTheReaperFiredDoesNotTearDownTwice(t *testing.T) {
 	}
 }
 
+// A max-uptime callback that has already begun cannot be unwound by
+// Timer.Stop, so it can reach its claim after Release has disarmed the timer
+// and deleted the teardown entry. Release has torn the container down by then:
+// the late callback must find nothing to claim, rather than recreating an
+// unclosed entry behind Release's back and running stop/remove a second time
+// against a container that is already gone.
+//
+// The interleaving is driven by running the reaper's callback body after
+// Release returned. That is the closest reachable form: nothing in the public
+// API lets a caller park the callback between the timer firing and its claim --
+// the window is the callback goroutine's scheduling -- so a test that merely
+// started a timer and a Release would be a coin flip. This covers the
+// claim/forget ordering and the Docker calls that follow it; it does not cover
+// the timer machinery itself.
+func TestReaperCallbackAfterReleaseDoesNotResurrectTeardown(t *testing.T) {
+	const containerID = "9a8b7c6d5e4f32109a8b7c6d5e4f32109a8b7c6d5e4f32109a8b7c6d5e4f3210"
+
+	var stopCalls, removeCalls atomic.Int32
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			stopCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			removeCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: time.Hour},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	pool.Release(context.Background(), c)
+
+	stopAfterRelease, removeAfterRelease := stopCalls.Load(), removeCalls.Load()
+	if stopAfterRelease != 1 || removeAfterRelease != 1 {
+		t.Fatalf("Release stopped the container %d times and removed it %d times, want 1/1: a late callback proves nothing unless the release already did the teardown", stopAfterRelease, removeAfterRelease)
+	}
+
+	pool.reapMaxUptime(context.Background(), c.ID)
+
+	if got := stopCalls.Load(); got != stopAfterRelease {
+		t.Errorf("stop called %d times after Release, want %d: the late reaper tore down an already-released container", got, stopAfterRelease)
+	}
+	if got := removeCalls.Load(); got != removeAfterRelease {
+		t.Errorf("remove called %d times after Release, want %d: the late reaper tore down an already-released container", got, removeAfterRelease)
+	}
+
+	pool.mu.Lock()
+	remaining := len(pool.teardowns)
+	pool.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("pool holds %d teardown entr(ies) after Release, want 0: the late reaper recreated the entry", remaining)
+	}
+}
+
 // TestPoolActiveReportsInFlightContainers pins the worker-pool read surface
 // /status reports as its container line: how many containers this pool
 // currently holds, and the concurrency cap it enforces.

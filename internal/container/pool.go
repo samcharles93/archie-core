@@ -257,38 +257,81 @@ type containerTeardown struct {
 // lifetime cap elapses. The timer never touches p.active: Release (or Close)
 // remains the only owner of the active slot.
 //
-// The reaper never calls forgetTeardown itself: Release is always coming for
-// this container (the pool guarantees every acquired container is eventually
-// released) and is the sole owner of deleting the map entry. Two callers
-// deleting it independently is what let a freshly-recreated, unclosed entry
-// slip between the reaper's delete and Release's claim check.
+// The entry and its timer are recorded in one critical section, so the
+// callback cannot run ahead of the bookkeeping it needs: time.AfterFunc hands
+// control to the callback as soon as the duration elapses, and the callback's
+// first act is claimReaper, which takes p.mu. Holding p.mu across both the
+// entry creation and the timer's creation is what makes that claim observe a
+// container that is armed rather than one that is mid-arm -- a timer recorded
+// after a callback had already fired (and a Release already forgotten the
+// entry) left an unclosed entry behind, with a one-shot timer that would never
+// fire again.
+//
+// The lock covers only bookkeeping: the callback runs on its own goroutine and
+// nothing here waits on it, and every Docker call it makes happens after it
+// has released p.mu.
 func (p *Pool) armMaxUptime(ctx context.Context, id string) {
-	timer := time.AfterFunc(p.cfg.MaxUptime, func() {
-		if !p.claimTeardown(id) {
-			return
-		}
-		zero := 0
-		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		if _, err := p.cli.ContainerStop(stopCtx, id, client.ContainerStopOptions{Timeout: &zero}); err != nil {
-			p.log.Warn("max uptime stop failed", "id", id[:12], "err", err)
-		}
-		if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), id, client.ContainerRemoveOptions{Force: true}); err != nil {
-			p.log.Warn("max uptime remove failed", "id", id[:12], "err", err)
-		}
-	})
-
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.teardownLocked(id).timer = timer
+
+	t := p.teardownLocked(id)
+	t.timer = time.AfterFunc(p.cfg.MaxUptime, func() {
+		p.reapMaxUptime(ctx, id)
+	})
 }
 
-// claimTeardown reports whether the caller owns this container's Docker
-// teardown. The first caller wins; every later one is told to stay out.
-func (p *Pool) claimTeardown(id string) bool {
+// reapMaxUptime is the max-uptime callback body: it claims the container's
+// Docker teardown and, if it won, stops and removes the container.
+func (p *Pool) reapMaxUptime(ctx context.Context, id string) {
+	if !p.claimReaper(id) {
+		return
+	}
+	zero := 0
+	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if _, err := p.cli.ContainerStop(stopCtx, id, client.ContainerStopOptions{Timeout: &zero}); err != nil {
+		p.log.Warn("max uptime stop failed", "id", id[:12], "err", err)
+	}
+	if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), id, client.ContainerRemoveOptions{Force: true}); err != nil {
+		p.log.Warn("max uptime remove failed", "id", id[:12], "err", err)
+	}
+}
+
+// claimReaper reports whether the max-uptime callback owns this container's
+// Docker teardown. The first claim wins; every later one is told to stay out.
+//
+// A missing entry is a loss, never a fresh claim: only armMaxUptime creates
+// entries, so no entry means MaxUptime was never armed or Release has already
+// forgotten the container -- in both cases the reaper has nothing to tear
+// down. Creating one here is exactly how a callback that was still running
+// when Release forgot the entry could resurrect it.
+func (p *Pool) claimReaper(id string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	t := p.teardownLocked(id)
+	t := p.teardowns[id]
+	if t == nil || t.closed {
+		return false
+	}
+	t.closed = true
+	return true
+}
+
+// claimRelease reports whether Release owns this container's Docker teardown.
+//
+// Unlike the reaper, Release is the path that always exists: MaxUptime == 0
+// arms no reaper at all, so the absence of an entry must still be a win here.
+// The pool guarantees every acquired container is released exactly once, so by
+// the time Release runs an entry can be missing only because a reaper was
+// never armed -- an absent entry is never a live reaper in flight, since
+// nothing but Release's forgetTeardown deletes one, and that runs after this
+// claim.
+func (p *Pool) claimRelease(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	t := p.teardowns[id]
+	if t == nil {
+		return true
+	}
 	if t.closed {
 		return false
 	}
@@ -297,9 +340,11 @@ func (p *Pool) claimTeardown(id string) bool {
 }
 
 // forgetTeardown disarms the reaper and drops the container's bookkeeping, so
-// the map does not grow for the life of the pool. Only Release calls this
-// (see armMaxUptime); it is the container's final teardown step, so nothing
-// else can race a fresh entry back into existence afterward.
+// the map does not grow for the life of the pool. Only Release calls this, as
+// the last step of a teardown it claimed, and deleting the entry is final: the
+// reaper's claimReaper looks the entry up and never creates one, so a callback
+// that was already running when the entry went away finds nothing to claim
+// instead of racing a fresh entry back into existence.
 func (p *Pool) forgetTeardown(id string) {
 	p.mu.Lock()
 	t := p.teardowns[id]
@@ -311,7 +356,9 @@ func (p *Pool) forgetTeardown(id string) {
 }
 
 // teardownLocked returns the container's teardown state, creating it on first
-// use. Callers must hold p.mu.
+// use. armMaxUptime is its only caller: entries are created by the producer of
+// the reaper, under the same lock that lets the callback claim them, and never
+// by a path that might be racing Release. Callers must hold p.mu.
 func (p *Pool) teardownLocked(id string) *containerTeardown {
 	if p.teardowns == nil {
 		p.teardowns = make(map[string]*containerTeardown)
@@ -363,7 +410,7 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 	// period above; claiming before the sleep would quietly extend the cap by
 	// GracePeriod. Losing the claim means the reaper already removed this
 	// container, so there is nothing left to stop.
-	if p.claimTeardown(c.ID) {
+	if p.claimRelease(c.ID) {
 		// Detach from ctx before stopping. Release runs on the way out of a
 		// task, and the most important reason a task is on its way out is
 		// that it was cancelled -- at which point ctx is already dead, the
