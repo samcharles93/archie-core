@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -196,6 +197,16 @@ type Daemon struct {
 	// bindings the daemon loaded; nil means built-in defaults.
 	KindWorkflows  workflow.KindWorkflows
 	LabelWorkflows workflow.LabelWorkflows
+	// Playbooks is the loaded EDA playbook set (trigger + one workflow-kind
+	// action, internal/domain/eda/playbook). It is consulted before the
+	// kind/label bindings when a task's workflow definition is pinned: a
+	// playbook is an operator's explicit rule for one trigger, where the
+	// bindings are a table of defaults. Nil means no playbooks are loaded and
+	// routing is exactly the binding behaviour.
+	Playbooks interface {
+		Dispatch(playbook.DispatchInput) (playbook.Decision, bool)
+	}
+
 	// WorkflowDefinitions supplies the active database definitions. A task is
 	// pinned once before dispatch; retries reuse the task's stored YAML.
 	WorkflowDefinitions interface {
@@ -1482,12 +1493,64 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 	return d.pinWorkflowFromCollection(ctx, task, collection, version)
 }
 
+// resolveWorkflowID picks the definition id to pin. A playbook whose trigger
+// matches the task decides, ahead of the kind/label bindings; anything else
+// falls through to workflow.ResolveWorkflowID unchanged.
+//
+// A task that already names a workflow is skipped entirely: that assignment is
+// the waiting_human -> approved requeue handoff, a decision already made about
+// this specific task, and a trigger that still matches its labels must not
+// overturn it.
+func (d *Daemon) resolveWorkflowID(task *workflow.Task, available map[string]struct{}) (string, error) {
+	if d.Playbooks == nil || task.Workflow != "" {
+		return workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
+	}
+	decision, matched := d.Playbooks.Dispatch(playbookInput(task))
+	if !matched {
+		return workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
+	}
+	if _, defined := available[decision.Workflow]; !defined {
+		// Reported, not silently downgraded to the binding's choice: the
+		// operator bound this trigger to a named workflow, and running a
+		// different one under their rule is worse than parking the task.
+		return "", fmt.Errorf("playbook %q binds this trigger to workflow %q, which is not defined", decision.PlaybookID, decision.Workflow)
+	}
+	d.Log.Info("playbook selected workflow",
+		"task", task.ID, "playbook", decision.PlaybookID,
+		"playbook_version", decision.Version, "workflow", decision.Workflow)
+	return decision.Workflow, nil
+}
+
+// playbookInput builds the coordinator's dispatch input from a task row. The
+// event surface is what the intake point actually knows about the originating
+// issue -- the fields a `when` condition can read; it is deliberately not
+// padded with values the daemon would have to invent.
+func playbookInput(task *workflow.Task) playbook.DispatchInput {
+	labels := workintake.SplitLabels(task.Labels)
+	kind := string(workintake.KindForLabels(labels))
+	return playbook.DispatchInput{
+		Labels: labels,
+		Kind:   kind,
+		TaskID: workintake.TaskEnvelope{Owner: task.Owner, Repo: task.Repo, Number: task.IssueNumber}.IdempotencyKey(),
+		Event: map[string]any{
+			"kind":   kind,
+			"labels": labels,
+			"owner":  task.Owner,
+			"repo":   task.Repo,
+			"number": task.IssueNumber,
+			"title":  task.Title,
+			"body":   task.Body,
+			"source": task.Source,
+		},
+	}
+}
+
 func (d *Daemon) pinWorkflowFromCollection(ctx context.Context, task *workflow.Task, collection workflow.WorkflowDefinitionCollection, version int64) error {
 	available := make(map[string]struct{}, len(collection.Definitions))
 	for _, definition := range collection.Definitions {
 		available[definition.ID] = struct{}{}
 	}
-	id, err := workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
+	id, err := d.resolveWorkflowID(task, available)
 	if err != nil {
 		return err
 	}

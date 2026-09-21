@@ -1,12 +1,12 @@
 package playbook
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
-
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -19,14 +19,6 @@ func writeFile(t *testing.T, dir, name, content string) string {
 		t.Fatalf("write %s: %v", path, err)
 	}
 	return path
-}
-
-func registryWith(workflows ...string) workflow.Registry {
-	reg := workflow.Registry{}
-	for _, name := range workflows {
-		reg[name] = workflow.Workflow{Name: name, Stages: []workflow.Stage{}}
-	}
-	return reg
 }
 
 // TestLoadSingleWorkflowActionRoundTrip: a playbook with trigger + one
@@ -55,17 +47,19 @@ actions:
 	}
 
 	// Match + dispatch: kind bug, priority 3 -> tdd.
-	reg := registryWith("implement", "tdd", "feasibility")
-	dispatched := store.Dispatch(reg, DispatchInput{
+	decision, ok := store.Dispatch(DispatchInput{
 		Labels: []string{"bug"},
 		Kind:   "bug",
 		Event:  map[string]any{"priority": 3},
 	})
-	if dispatched == nil {
-		t.Fatal("Dispatch = nil, want the tdd workflow")
+	if !ok {
+		t.Fatal("Dispatch matched nothing, want the tdd workflow")
 	}
-	if dispatched.Name != "tdd" {
-		t.Errorf("Dispatched workflow = %q, want tdd", dispatched.Name)
+	if decision.Workflow != "tdd" {
+		t.Errorf("Dispatched workflow = %q, want tdd", decision.Workflow)
+	}
+	if decision.PlaybookID != "pb.yaml" || decision.Version != pb.Version {
+		t.Errorf("decision provenance = (%q, %q), want (pb.yaml, %q)", decision.PlaybookID, decision.Version, pb.Version)
 	}
 }
 
@@ -85,13 +79,13 @@ actions:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	dispatched := store.Dispatch(registryWith("tdd"), DispatchInput{
+	decision, ok := store.Dispatch(DispatchInput{
 		Labels: []string{"bug"},
 		Kind:   "bug",
 		Event:  map[string]any{"priority": 3},
 	})
-	if dispatched != nil {
-		t.Fatalf("Dispatch = %v, want nil (condition false -> skip)", dispatched)
+	if ok {
+		t.Fatalf("Dispatch = %v, want no match (condition false -> skip)", decision)
 	}
 }
 
@@ -186,13 +180,13 @@ actions:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	dispatched := store.Dispatch(registryWith("tdd"), DispatchInput{
+	decision, ok := store.Dispatch(DispatchInput{
 		Labels: []string{"bug"},
 		Kind:   "bug",
 		Event:  map[string]any{},
 	})
-	if dispatched != nil {
-		t.Fatalf("Dispatch = %v, want nil (trigger kind mismatch)", dispatched)
+	if ok {
+		t.Fatalf("Dispatch = %v, want no match (trigger kind mismatch)", decision)
 	}
 }
 
@@ -211,13 +205,13 @@ actions:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	dispatched := store.Dispatch(registryWith("tdd"), DispatchInput{
+	decision, ok := store.Dispatch(DispatchInput{
 		Labels: []string{"bug"},
 		Kind:   "bug",
 		Event:  map[string]any{},
 	})
-	if dispatched == nil || dispatched.Name != "tdd" {
-		t.Fatalf("Dispatch = %v, want tdd (no when = always match)", dispatched)
+	if !ok || decision.Workflow != "tdd" {
+		t.Fatalf("Dispatch = %v, want tdd (no when = always match)", decision)
 	}
 }
 
@@ -353,16 +347,14 @@ actions:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	reg := registryWith("tdd")
 	input := DispatchInput{
 		Labels: []string{"bug"},
 		Kind:   "bug",
 		TaskID: "archie:samcharles93/archie-core/42",
 		Event:  map[string]any{"priority": 3},
 	}
-	dispatched := store.Dispatch(reg, input)
-	if dispatched == nil {
-		t.Fatal("Dispatch = nil, want the tdd workflow")
+	if _, ok := store.Dispatch(input); !ok {
+		t.Fatal("Dispatch matched nothing, want the tdd workflow")
 	}
 	// The input still carries the identity after dispatch; the caller uses it
 	// to key the ledger.
@@ -380,28 +372,60 @@ func TestShippedExamplePlaybookLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(shipped example): %v", err)
 	}
-	if len(store.Playbooks) != 1 {
-		t.Fatalf("loaded %d playbooks, want 1", len(store.Playbooks))
+	byID := map[string]*Playbook{}
+	for _, pb := range store.Playbooks {
+		byID[pb.ID] = pb
 	}
-	pb := store.Playbooks[0]
+	pb, ok := byID["bug-tdd.yaml"]
+	if !ok {
+		t.Fatalf("loaded %v, want the bug-tdd example", slices.Sorted(maps.Keys(byID)))
+	}
 	if pb.Actions[0].Workflow != "tdd" {
 		t.Errorf("example workflow = %q, want tdd", pb.Actions[0].Workflow)
 	}
-	// The example's when (event.priority == 3) dispatches for priority 3.
-	got := store.Dispatch(registryWith("tdd"), DispatchInput{
-		Labels: []string{"bug"},
+	// The label-trigger example is the instance-defined path: a label the kind
+	// vocabulary does not recognise, bound to a workflow with no code change.
+	labelled, ok := byID["label-trigger.yaml"]
+	if !ok {
+		t.Fatalf("loaded %v, want the label-trigger example", slices.Sorted(maps.Keys(byID)))
+	}
+	if labelled.Trigger.Kind != "" || len(labelled.Trigger.Labels) == 0 {
+		t.Errorf("label-trigger example = %+v, want a labels-only trigger", labelled.Trigger)
+	}
+	if got, _ := store.Dispatch(DispatchInput{
+		Labels: labelled.Trigger.Labels,
+		Kind:   "default",
+		Event:  map[string]any{"labels": labelled.Trigger.Labels},
+	}); got.Workflow != labelled.Actions[0].Workflow {
+		t.Errorf("Dispatch(label-trigger) = %q, want %q", got.Workflow, labelled.Actions[0].Workflow)
+	}
+	// The example's when reads event.labels, one of the fields the daemon's
+	// intake really supplies -- so this exercises the shipped condition
+	// against the production event surface, not a test-only field.
+	got, ok := store.Dispatch(DispatchInput{
+		Labels: []string{"bug", "regression"},
 		Kind:   "bug",
-		Event:  map[string]any{"priority": 3},
+		Event:  map[string]any{"kind": "bug", "labels": []string{"bug", "regression"}},
 	})
-	if got == nil || got.Name != "tdd" {
+	if !ok || got.Workflow != "tdd" {
 		t.Fatalf("Dispatch(example) = %v, want tdd", got)
 	}
-	// And skips for a non-matching priority.
-	if got := store.Dispatch(registryWith("tdd"), DispatchInput{
+	// And skips when the label the condition names is absent.
+	if got, ok := store.Dispatch(DispatchInput{
 		Labels: []string{"bug"},
 		Kind:   "bug",
-		Event:  map[string]any{"priority": 5},
-	}); got != nil {
-		t.Fatalf("Dispatch(priority 5) = %v, want nil (when false)", got)
+		Event:  map[string]any{"kind": "bug", "labels": []string{"bug"}},
+	}); ok {
+		t.Fatalf("Dispatch(unlabelled) = %v, want no match (when false)", got)
+	}
+}
+
+// TestDispatchNilStoreMatchesNothing: a nil store is the state a composition
+// root is in before the playbook load runs, and callers hold it through an
+// interface where a typed nil is not a nil interface.
+func TestDispatchNilStoreMatchesNothing(t *testing.T) {
+	var store *Store
+	if decision, ok := store.Dispatch(DispatchInput{Labels: []string{"bug"}, Kind: "bug"}); ok {
+		t.Fatalf("Dispatch = %v, want no match from a nil store", decision)
 	}
 }

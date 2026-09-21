@@ -1,0 +1,19 @@
+# Example EDA playbook triggering on an instance-defined label.
+#
+# The kind axis (bug/feature/bootstrap/default) is archie's own closed
+# classification. This file is the other axis: a label set of your own
+# choosing, matched as a subset of the issue's labels. Every label listed here
+# must be present on the issue for the playbook to fire.
+#
+# A matching playbook decides the task's workflow ahead of the
+# workflow_routing_file, workflow_labels_file and playbook_dirs bindings. The
+# workflow it names must be a defined workflow; naming one that is not parks
+# the task with a reported error rather than quietly running a different one.
+
+trigger:
+  labels:
+    - ops::security-review
+
+actions:
+  - position: workflow
+    workflow: feasibility

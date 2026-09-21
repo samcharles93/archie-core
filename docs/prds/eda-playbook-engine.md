@@ -926,14 +926,40 @@ are unblocked on the execution-time questions.
    **Status 2026-09-03: resolved across t2db.13-15.** The Module position
    (registry + log kind, t2db.13), the CEL expression environment
    (t2db.14), and the playbook document + event coordinator with
-   single-action workflow-kind dispatch (t2db.15) are shipped. The
-   coordinator is NOT yet wired into production task intake
-   (daemon.go/pollNATS/publishTask) -- that is a follow-up ticket;
-   production wiring would make a real forge-triggered task flow through
-   this coordinator instead of only workflow.Route(). The trigger shape
-   reuses the existing workintake kind/label vocabulary; multi-action and
-   non-workflow-position playbooks remain rejected at load (hard
-   boundary, blocked on gap 2, idempotency).
+   single-action workflow-kind dispatch (t2db.15) are shipped.
+
+   **Status 2026-09-21: wired into production intake (t2db.23).** The
+   coordinator decides a real task's workflow. The wiring point is the
+   daemon's definition pin (`Daemon.resolveWorkflowID`, consumed by
+   `pinWorkflowFromCollection` in `internal/daemon/daemon.go`), not
+   `pollNATS`/`publishTask` as the earlier note assumed: routing moved out
+   of the agent process when workflow definitions became database rows
+   pinned before dispatch, so the pin is now the one place a task's
+   workflow is chosen. Precedence there is explicit `Task.Workflow` (the
+   waiting_human -> approved requeue) → matching playbook →
+   `workflow.ResolveWorkflowID`'s label binding → kind binding → triage →
+   implement. A playbook naming an undefined workflow is a reported
+   failure that parks the task rather than a silent fall-through to the
+   binding's choice.
+
+   `Store.Dispatch` returns the selected workflow *name* and the matching
+   playbook's id/version, not a compiled `workflow.Workflow`: the
+   production caller decides against the active definition collection, and
+   the returned id/version are the first two components of the gap-2
+   idempotency key. The playbook package no longer imports
+   `internal/domain/workflow`.
+
+   The `event` surface a `when` condition reads at this point is what the
+   intake actually knows about the originating issue: `kind`, `labels`,
+   `owner`, `repo`, `number`, `title`, `body`, `source`
+   (`playbookInput` in `internal/daemon/daemon.go`).
+
+   The trigger shape reuses the existing workintake kind/label vocabulary;
+   multi-action and non-workflow-position playbooks remain rejected at
+   load (hard boundary). Module/Channel/Forge action positions therefore
+   still have no production dispatch path: the resolved gap-2 scheme's
+   `playbook_dispatches` ledger is design-only and must land before a
+   side-effecting position can fire.
 5. **Monetization boundary.** Sam has flagged this may be commercialized,
    and explicitly wants it discerned from other OSS event-driven-automation
    tooling. No design decision needed yet, but worth a note if/when

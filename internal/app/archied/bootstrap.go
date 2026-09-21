@@ -1274,6 +1274,7 @@ func (b *boot) buildDaemon() {
 		KindWorkflows:       b.kindWorkflows,
 		LabelWorkflows:      b.labelWorkflows,
 		WorkflowDefinitions: b.workflowDefinitions,
+		Playbooks:           b.playbooks,
 	}
 	if identities, ok := b.stateStore.(identity.Repository); ok {
 		b.d.IdentityRepository = identities

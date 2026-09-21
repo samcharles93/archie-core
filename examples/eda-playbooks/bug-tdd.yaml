@@ -10,10 +10,35 @@
 # Multi-action playbooks and Module/Channel/Forge action positions stay
 # blocked on the unresolved execution-time gaps and are rejected at load.
 #
-# Trigger matching reuses the existing workintake label/kind vocabulary
-# (bug/feature/bootstrap, or a label set). The `when` condition is a CEL
-# expression over `event` (the triggering event's fields) -- see
-# docs/prds/eda-playbook-engine.md, resolved open question 1.
+# A trigger matches on either axis, and both are checked when both are given:
+#
+#   kind:   the closed workintake routing vocabulary -- bug, feature,
+#           bootstrap, default. It is closed because a kind also addresses the
+#           task's NATS subject; anything else is rejected at load. Set it
+#           when you want the rule to follow archie's own classification.
+#   labels: any labels you like, including ones no kind recognises
+#           ("ops::security-review"). All of them must be present on the
+#           issue. This is the axis an instance defines for itself: it binds
+#           your own taxonomy to a workflow with no code change. See
+#           label-trigger.yaml. The `when` condition is a CEL
+# expression over `event` -- see docs/prds/eda-playbook-engine.md, resolved
+# open question 1.
+#
+# A matching playbook decides the task's workflow ahead of the kind/label
+# binding files, and a workflow it names that is not defined parks the task
+# rather than falling back. For a forge-discovered task, `event` carries:
+#
+#   kind    routing kind the labels produced (bug/feature/bootstrap/default)
+#   labels  the issue's labels, as a list
+#   owner   repo owner
+#   repo    repo name
+#   number  issue number
+#   title   issue title
+#   body    issue body
+#   source  "forge" or "chat"
+#
+# Reading a field that is not in that set is an evaluation error, which the
+# coordinator treats as the condition being false (the playbook is skipped).
 
 trigger:
   kind: bug
@@ -21,4 +46,4 @@ trigger:
 actions:
   - position: workflow
     workflow: tdd
-    when: event.priority == 3
+    when: '"regression" in event.labels'

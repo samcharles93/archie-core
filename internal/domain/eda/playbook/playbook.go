@@ -7,10 +7,10 @@
 // (mid-run failure semantics, idempotency for non-workflow actions) and are
 // rejected at load -- the hard boundary, not to be relaxed without sign-off.
 //
-// This is an ADDITIONAL loading path alongside the flat kind/label binding
-// files (t2db.9/.10/.11). workflow.Route() and the existing binding loaders
-// are untouched; migrating Route() onto this mechanism is a separate, later
-// decision.
+// This is an ADDITIONAL routing source alongside the flat kind/label binding
+// files (t2db.9/.10/.11): the daemon consults a matching playbook before
+// those bindings when it pins a task's workflow definition (t2db.23). The
+// binding loaders themselves are untouched.
 package playbook
 
 import (
@@ -24,7 +24,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/expr"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 )
 
@@ -69,7 +68,7 @@ type Trigger struct {
 // slice, position MUST be "workflow".
 type Action struct {
 	Position string
-	// Workflow is the named workflow.Registry entry to dispatch to
+	// Workflow is the name of the workflow definition to dispatch to
 	// (position: workflow only).
 	Workflow string
 	// When is a compiled CEL condition; nil means unconditional.
@@ -252,14 +251,38 @@ func (pb *Playbook) Match(input DispatchInput) bool {
 	return true
 }
 
-// Dispatch returns the workflow to run for the input, or nil if no playbook
-// matches (trigger mismatch or a when condition evaluating false). It reuses
-// the named-workflow lookup that workflow.Route() uses -- it does not
-// duplicate dispatch logic.
+// Decision is what the coordinator selected for one event: the workflow a
+// matching playbook's action names, plus the provenance of the definition
+// that chose it. Version pins the decision to the exact file content active
+// when it fired, and both fields are the first two components of the
+// per-action idempotency key the resolved gap-2 scheme derives
+// (docs/prds/eda-playbook-engine.md, "Idempotency at execution time").
+type Decision struct {
+	PlaybookID string
+	Version    string
+	Workflow   string
+}
+
+// Dispatch returns the workflow name the first matching playbook selects for
+// the input, and whether any playbook matched. No match means trigger
+// mismatch or a when condition evaluating false, and the caller keeps its own
+// routing.
+//
+// The name is returned rather than a compiled workflow because the production
+// caller (the daemon's definition pin) decides against the active definition
+// collection, not against a compiled registry; whether the named workflow
+// exists is that caller's check, in the same place it makes it for every
+// other routing source.
 //
 // A when evaluation error follows the resolved doc's J3: the condition
 // evaluates to false and dispatch is skipped (the caller logs).
-func (s *Store) Dispatch(reg workflow.Registry, input DispatchInput) *workflow.Workflow {
+func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
+	// Nil-receiver-safe: a composition root that builds its daemon before the
+	// playbook load hands over a nil store, and "no playbooks" is the honest
+	// answer there rather than a panic.
+	if s == nil {
+		return Decision{}, false
+	}
 	for _, pb := range s.Playbooks {
 		if !pb.Match(input) {
 			continue
@@ -279,16 +302,7 @@ func (s *Store) Dispatch(reg workflow.Registry, input DispatchInput) *workflow.W
 				continue
 			}
 		}
-		// Reuse the same named-workflow lookup Route() uses: this is the
-		// workflow.Registry map access, not a second dispatch path.
-		if wf, ok := reg[a.Workflow]; ok {
-			// Return a copy to keep the registry immutable from callers.
-			wfCopy := wf
-			return &wfCopy
-		}
-		// Requested workflow unavailable: reported as nil (the caller's
-		// Route()-equivalent handles the missing-workflow failure shape).
-		return nil
+		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow}, true
 	}
-	return nil
+	return Decision{}, false
 }
