@@ -115,7 +115,7 @@ func TestRoutedChannelMessageCompressesTheSession(t *testing.T) {
 	store := newTriggerStore(t)
 	router, sessionID := routerOn(t, store, "chat-1")
 	models := &compressTriggerModelManager{
-		fakeModelManager: fakeModelManager{models: []string{"local/small"}, activeModel: "local/small"},
+		models: []string{"local/small"}, activeModel: "local/small",
 		details: map[string]ModelDetails{
 			"local/small": {Ref: "local/small", ContextWindow: 8192, MaxOutputTokens: 1024},
 		},
@@ -169,7 +169,7 @@ func TestTurnCompressesSessionAtTheModelBudget(t *testing.T) {
 	// A small local window: the 60 bulk messages (15k tokens) are far past
 	// the history budget an 8k window leaves after prompt and output reserve.
 	models := &compressTriggerModelManager{
-		fakeModelManager: fakeModelManager{models: []string{"local/small"}, activeModel: "local/small"},
+		models: []string{"local/small"}, activeModel: "local/small",
 		details: map[string]ModelDetails{
 			"local/small": {Ref: "local/small", ContextWindow: 8192, MaxOutputTokens: 1024},
 		},
@@ -246,7 +246,7 @@ func TestTurnLeavesAnUnderBudgetSessionAlone(t *testing.T) {
 	store := newTriggerStore(t)
 	router, sessionID := routerOn(t, store, "chat-1")
 	models := &compressTriggerModelManager{
-		fakeModelManager: fakeModelManager{models: []string{"local/large"}, activeModel: "local/large"},
+		models: []string{"local/large"}, activeModel: "local/large",
 		details: map[string]ModelDetails{
 			"local/large": {Ref: "local/large", ContextWindow: 200000, MaxOutputTokens: 4096},
 		},
@@ -290,15 +290,15 @@ func TestTurnSkipsCompressionWhenTheModelBudgetIsUnknown(t *testing.T) {
 		{
 			name: "the details carry no context window",
 			models: &compressTriggerModelManager{
-				fakeModelManager: fakeModelManager{models: []string{"test/model"}, activeModel: "test/model"},
-				details:          map[string]ModelDetails{"test/model": {Ref: "test/model"}},
+				models: []string{"test/model"}, activeModel: "test/model",
+				details: map[string]ModelDetails{"test/model": {Ref: "test/model"}},
 			},
 		},
 		{
 			name: "there are no details for the active model",
 			models: &compressTriggerModelManager{
-				fakeModelManager: fakeModelManager{models: []string{"test/model"}, activeModel: "test/model"},
-				details:          map[string]ModelDetails{},
+				models: []string{"test/model"}, activeModel: "test/model",
+				details: map[string]ModelDetails{},
 			},
 		},
 	}
