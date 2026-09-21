@@ -77,6 +77,14 @@ independent operation.
 Possible future extraction does not justify premature network protocols or
 duplicated service scaffolding.
 
+A new command is not a reason for a new binary. `cmd/` entries are process
+boundaries: a binary earns its place when its surface fails independently of the
+fleet, or when one process may need to run in more than one location, such as a
+high-availability pair or across a NAT boundary. Operational commands over a
+surface an existing binary already owns are subcommands of that binary. Offline
+database maintenance belongs to `archie-state-store`, which owns the file and
+its path layout, not to a new recovery binary.
+
 ## Optional and operational material
 
 - `extras/<extension>` contains a maintained optional extension with real
