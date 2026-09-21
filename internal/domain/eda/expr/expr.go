@@ -8,9 +8,10 @@
 // every program. `actions` is not a global map: its shape depends on the ids
 // one playbook declares and the kind each id runs, so NewEnv takes the
 // declared ids and their Go Result struct types and builds a per-playbook
-// object type (multi-action-playbooks.md, D3). The same compile path serves
-// the playbook loader (reject-at-load) and the lint tool, so author-time
-// diagnostics and runtime evaluation cannot disagree.
+// object type (multi-action-playbooks.md, D3). The playbook loader compiles
+// every `when` and `args` value here, so load-time rejection and runtime
+// evaluation cannot disagree; the standalone lint command covers the flat
+// kind/label binding files, not rich EDA playbook documents.
 //
 // CEL is non-Turing-complete, side-effect-free, and panic-free by design (no
 // recover() wrapper is needed; verified in the t2db.14 acceptance tests

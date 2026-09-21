@@ -66,11 +66,15 @@ naming the playbook and the offending action, for:
   must be a lowercase CEL field name writable as `actions.<id>` (so a CEL
   keyword such as `in`, `true`, `false`, or `null` is rejected at load);
 - an `actions.<id>` read of an id no earlier action declares;
-- an `actions` read that is not statically resolvable to an id (a dynamic
-  index, `in`, a comprehension — already enforced);
+- an `actions` read that is not statically resolvable to an id (any map index,
+  literal or dynamic, `in`, a comprehension): the typed `actions` root is an
+  object type, so only field selection `actions.<id>` resolves and the
+  `actions["id"]` spelling is not accepted;
 - a `result` field the referenced kind's `Result` does not define;
 - a reference to an earlier action that produces no result;
 - an unknown `position`, an unknown `kind`, or a `module` action with no `kind`;
+- a field belonging to the other shape (`kind` on a `workflow` action, or
+  `workflow` on a `module` action);
 - an arg KEY the kind's `Args` schema does not define. Arg VALUE type-checking
   is tracked as `archie-core-t2db` debt, not shipped here.
 
@@ -83,9 +87,8 @@ type-checking is tracked as `archie-core-t2db` debt.
 
 Result typing depends on the ids a playbook declares and the kind each id runs,
 so the CEL environment is built from one playbook's action list rather than once
-per `Store`. `expr.NewEnv()` declares `actions` as `map(string, dyn)` and takes no
-parameters, so its signature changes to accept the declared ids and their result
-types.
+per `Store`, and `expr.NewEnv` takes that list: each declared id becomes a field
+of the `actions` object typed by its kind's `Result`.
 
 ## Running an action playbook is out of scope
 

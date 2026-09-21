@@ -29,16 +29,17 @@ linear evaluation when macros are bounded, cost-limited).
 
 ```yaml
 actions:
-  - position: module
+  - id: build
+    position: module
     kind: log
     args:
       message: '"build finished"'                 # literal
     when: 'event.label == "bugfix"'               # gate on event field
   - position: module
-    kind: notify
+    kind: log
     args:
-      message: '"priority " + string(event.priority)'
-    when: 'actions.notify.result.delivered == true'
+      message: '"done: " + string(actions.build.result.written)'
+    when: 'actions.build.result.written == true'
 ```
 
 ## Trust boundary of the expression
