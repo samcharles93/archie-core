@@ -17,13 +17,20 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
-type Client struct{ rpc pb.ControlPlaneServiceClient }
-
-func NewClient(conn grpc.ClientConnInterface) *Client {
-	return &Client{rpc: pb.NewControlPlaneServiceClient(conn)}
+type Client struct {
+	rpc pb.ControlPlaneServiceClient
+	// steps is the step vocabulary this client validates and decodes workflow
+	// definitions against, resolved once by stepRegistry.
+	steps workflow.StepRegistry
 }
 
-func NewRPCClient(client pb.ControlPlaneServiceClient) *Client { return &Client{rpc: client} }
+func NewClient(conn grpc.ClientConnInterface, steps *workflow.Manager) *Client {
+	return &Client{rpc: pb.NewControlPlaneServiceClient(conn), steps: stepRegistry(steps)}
+}
+
+func NewRPCClient(client pb.ControlPlaneServiceClient, steps *workflow.Manager) *Client {
+	return &Client{rpc: client, steps: stepRegistry(steps)}
+}
 
 func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) {
 	response, err := c.rpc.Catalog(ctx, &pb.CatalogRequest{})
@@ -38,7 +45,7 @@ func (c *Client) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefi
 	if err != nil {
 		return workflow.WorkflowDefinitionCollection{}, 0, clientError(err)
 	}
-	definitions, err := workflow.DecodeDefinitionCollection(response.Resource.ValueJson, workflow.BuiltinStepRegistry())
+	definitions, err := workflow.DecodeDefinitionCollection(response.Resource.ValueJson, c.steps)
 	return definitions, response.Resource.Version, err
 }
 
@@ -46,7 +53,7 @@ func (c *Client) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefi
 // workflow.ShippedDefinitions() restores all shipped definitions while keeping
 // the previous override in resource history.
 func (c *Client) ReplaceWorkflowDefinitions(ctx context.Context, definitions workflow.WorkflowDefinitionCollection, expectedVersion int64, actor, source, requestID string) (int64, error) {
-	value, err := encodeWorkflowDefinitions(definitions)
+	value, err := encodeWorkflowDefinitions(definitions, c.steps)
 	if err != nil {
 		return 0, err
 	}

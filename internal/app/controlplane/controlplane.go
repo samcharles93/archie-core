@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -41,8 +42,12 @@ type Server struct {
 	ordered     []Definition
 }
 
-func NewServer(resources ResourceStore) *Server {
-	definitions := builtinDefinitions()
+// NewServer builds the control plane server the State Store serves. steps is
+// the workflow step vocabulary the composition root registered; this is the
+// validating side of the vocabulary archie-agent executes against.
+func NewServer(resources ResourceStore, steps *workflow.Manager) *Server {
+	registry := stepRegistry(steps)
+	definitions := builtinDefinitions(registry)
 	byKind := make(map[string]Definition, len(definitions))
 	for _, definition := range definitions {
 		byKind[definition.Kind] = definition

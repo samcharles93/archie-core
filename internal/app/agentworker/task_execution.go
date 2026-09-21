@@ -176,6 +176,11 @@ type taskDependencies struct {
 	store  workflow.Store
 	trees  remoteTrees
 	events agentexec.EventPublisher
+	// steps is the workflow step vocabulary pinned definitions are compiled
+	// against, registered at the composition root and injected: this is the
+	// executing half of the contract whose validating half is the control
+	// plane's (archie-core-fwmp).
+	steps *workflow.Manager
 }
 
 type runnerFactory func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner
@@ -212,7 +217,7 @@ func routeTask(req taskrun.Request, registry workflow.Registry) workflow.Workflo
 // runs it, and reports its terminal outcome.
 // Store remains archied's authority; Response.Task is a logging snapshot.
 func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependencies, newRunner runnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
-	wf, err := resolvePinnedWorkflow(&req)
+	wf, err := CompilePinnedWorkflow(&req, dependencies.steps)
 	if err != nil {
 		return nil, err
 	}
@@ -311,18 +316,31 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}, nil
 }
 
-func resolvePinnedWorkflow(req *taskrun.Request) (workflow.Workflow, error) {
+// CompilePinnedWorkflow resolves and compiles the immutable definition the task
+// request carries, against this process's step vocabulary. Production execution
+// and the workflow step-vocabulary contract test
+// (internal/app/controlplane/step_vocabulary_agreement_test.go) both enter
+// through it.
+//
+// A request that carries no definition is routed and pinned from the shipped
+// definitions, which writes the resolved workflow name, YAML, and digest back
+// onto req and req.Task: the run's TaskContext carries that task record, so the
+// pin has to land on the request the caller handed in.
+func CompilePinnedWorkflow(req *taskrun.Request, steps *workflow.Manager) (workflow.Workflow, error) {
+	// One resolution for the whole function: both compiles below read the
+	// vocabulary the composition root registered, never the builtin registry.
+	vocabulary := steps.Registry()
 	if req.WorkflowDefinition == "" {
 		shipped := workflow.ShippedDefinitions()
-		registry := make(workflow.Registry, len(shipped.Definitions))
+		routing := make(workflow.Registry, len(shipped.Definitions))
 		for _, definition := range shipped.Definitions {
-			compiled, compileErr := workflow.ParseAndCompile(definition.YAML, workflow.BuiltinStepRegistry())
+			compiled, compileErr := workflow.ParseAndCompile(definition.YAML, vocabulary)
 			if compileErr != nil {
 				return workflow.Workflow{}, fmt.Errorf("compile shipped workflow definition: %w", compileErr)
 			}
-			registry[definition.ID] = compiled
+			routing[definition.ID] = compiled
 		}
-		selected := routeTask(*req, registry)
+		selected := routeTask(*req, routing)
 		req.Task.Workflow = selected.Name
 		entry, ok := shipped.DefinitionByID(selected.Name)
 		if !ok {
@@ -332,7 +350,7 @@ func resolvePinnedWorkflow(req *taskrun.Request) (workflow.Workflow, error) {
 		req.Task.WorkflowDefinitionYAML = entry.YAML
 		req.Task.WorkflowDefinitionDigest = workflow.DigestDefinition(entry.YAML)
 	}
-	wf, err := workflow.ParseAndCompile(req.WorkflowDefinition, workflow.BuiltinStepRegistry())
+	wf, err := workflow.ParseAndCompile(req.WorkflowDefinition, vocabulary)
 	if err != nil {
 		return workflow.Workflow{}, fmt.Errorf("compile pinned workflow definition: %w", err)
 	}

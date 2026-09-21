@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentboot"
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentgit"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 )
@@ -57,9 +58,17 @@ type workerDependencies struct {
 	markSafe func(context.Context, string, *slog.Logger) bool
 	bootID   func(string) (int64, error)
 	wait     func(context.Context, *slog.Logger)
+	// steps is the workflow step vocabulary this process compiles pinned
+	// definitions against, registered by the composition root before the first
+	// task is served (infrastructure/workflowsteps is the provider set).
+	steps *workflow.Manager
 }
 
-func productionWorkerDependencies() workerDependencies {
+func productionWorkerDependencies() (workerDependencies, error) {
+	steps, err := workflowsteps.NewManager()
+	if err != nil {
+		return workerDependencies{}, err
+	}
 	return workerDependencies{
 		connect: func(ctx context.Context, config agentnats.Config, log *slog.Logger) (workerTransport, error) {
 			return agentnats.Connect(ctx, config, log)
@@ -70,13 +79,18 @@ func productionWorkerDependencies() workerDependencies {
 			<-ctx.Done()
 			log.Info("archie-agent shutting down")
 		},
-	}
+		steps: steps,
+	}, nil
 }
 
 // Run starts the worker, serves full-task requests, and returns after ctx
 // cancellation or a startup failure.
 func Run(ctx context.Context, settings Settings, log *slog.Logger) error {
-	return run(ctx, settings, log, productionWorkerDependencies())
+	dependencies, err := productionWorkerDependencies()
+	if err != nil {
+		return &StartupError{Operation: "register workflow step vocabulary", Err: err}
+	}
+	return run(ctx, settings, log, dependencies)
 }
 
 func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies workerDependencies) error {
@@ -112,7 +126,7 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 	log.Info("system log publisher attached", "task", taskID)
 
 	subscription, err := transport.SubscribeTasks(ctx, taskID, func(ctx context.Context, request taskrun.Request) (*taskrun.Response, error) {
-		return executeTaskRequest(ctx, request, transport, workDir, log)
+		return executeTaskRequest(ctx, request, transport, workDir, log, dependencies.steps)
 	}, log)
 	if err != nil {
 		log.Error("taskrun subscribe failed", "err", err)
@@ -136,13 +150,14 @@ type taskServiceTransport interface {
 	EventPublisher() agentexec.EventPublisher
 }
 
-func executeTaskRequest(ctx context.Context, request taskrun.Request, transport taskServiceTransport, workDir string, log *slog.Logger) (*taskrun.Response, error) {
+func executeTaskRequest(ctx context.Context, request taskrun.Request, transport taskServiceTransport, workDir string, log *slog.Logger, steps *workflow.Manager) (*taskrun.Response, error) {
 	log.Info("running task", "task", request.Task.ID, "repo", request.Repo.FullName(), "issue", request.Task.IssueNumber)
 	dependencies := taskDependencies{
 		forge:  transport.Forger(request.Task.Identity, rpcTimeout),
 		store:  transport.Store(rpcTimeout),
 		trees:  transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
 		events: transport.EventPublisher(),
+		steps:  steps,
 	}
 	response, err := runTask(ctx, request, dependencies, newTaskRunner, workDir, log)
 	if err != nil {

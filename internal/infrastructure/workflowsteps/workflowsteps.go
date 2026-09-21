@@ -1,0 +1,61 @@
+// Package workflowsteps is the compiled-in workflow step-type provider set:
+// the one place a step type is bundled into every Archie binary.
+//
+// Both composition roots import it — internal/app/archied (which serves the
+// State Store's validating side) and internal/app/agentworker (the executing
+// side) — so the two sides register the same vocabulary by construction rather
+// than by convention. Neither root keeps a package-level registry of its own.
+package workflowsteps
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+)
+
+// shippedStages is the provider that contributes every stage of the shipped
+// workflows (bootstrap, implement, tdd, feasibility, triage, remediate) as a
+// workflow step type. It is what makes the shipped vocabulary arrive by
+// registration rather than by the manager implying it, so the vocabulary a
+// process resolves is always the vocabulary a provider set claimed.
+type shippedStages struct{}
+
+func (shippedStages) Name() string { return "shipped" }
+
+func (shippedStages) StepTypes() []workflow.StepType {
+	registry := workflow.BuiltinStepRegistry()
+	stepTypes := make([]workflow.StepType, 0, len(registry))
+	for _, name := range slices.Sorted(maps.Keys(registry)) {
+		stepTypes = append(stepTypes, workflow.StepType{Name: name, Factory: registry[name]})
+	}
+	return stepTypes
+}
+
+// Providers returns the provider set every Archie process registers at its
+// composition root, before the first resolution. A step type added here becomes
+// reachable from the validating side and the executing side at once.
+//
+// The set is a compiled-in constant rather than a directory scan: a step type
+// is a Go factory, and the Yaegi-interpreted plugins internal/plugin loads
+// satisfy plugin.Plugin's metadata contract but cannot hand the host a working
+// workflow.StepFactory. archie-agent links its own binary in any case.
+func Providers() []workflow.StepTypeProvider {
+	return []workflow.StepTypeProvider{shippedStages{}}
+}
+
+// NewManager builds this process's workflow step-type manager by registering
+// the provider set. Every call constructs an independent manager: there is no
+// package-level registry and nothing registers at init(), so building the
+// vocabulary twice in one process — as `-count=2` does — cannot collide with
+// the first build.
+func NewManager() (*workflow.Manager, error) {
+	manager := workflow.NewManager()
+	for _, provider := range Providers() {
+		if err := manager.Register(provider); err != nil {
+			return nil, fmt.Errorf("register workflow step type provider %q: %w", provider.Name(), err)
+		}
+	}
+	return manager, nil
+}

@@ -1,14 +1,17 @@
 package controlplane
 
-import pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+import (
+	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+)
 
 const (
 	objectSchema = `{"type":"object"}`
 	arraySchema  = `{"type":"array"}`
 )
 
-func builtinDefinitions() []Definition {
-	definitions := []Definition{workflowDefinition(), workflowDefinitionsDefinition(), personaDefinition(), scheduleDefinition()}
+func builtinDefinitions(steps workflow.StepRegistry) []Definition {
+	definitions := []Definition{workflowDefinition(), workflowDefinitionsDefinition(steps), personaDefinition(), scheduleDefinition()}
 	definitions = append(definitions, modelDefinitions()...)
 	definitions = append(definitions, operationalDefinitions()...)
 	return definitions

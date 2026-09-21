@@ -31,12 +31,25 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
+
+// testSteps builds the production workflow step vocabulary for tests that are
+// not about the vocabulary itself (the composition-level agreement test in
+// internal/app/controlplane is).
+func testSteps(t *testing.T) *workflow.Manager {
+	t.Helper()
+	steps, err := workflowsteps.NewManager()
+	if err != nil {
+		t.Fatalf("build workflow step vocabulary: %v", err)
+	}
+	return steps
+}
 
 // ── regression: archie-core#520  --  worktree ownership must be
 // reconciled before push, since the agent commits as root inside the
@@ -399,7 +412,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		Cfg:  config.Config{BotUser: "archie-bot", BotEmail: "archie-bot@example.com"}.ForTask(),
 	}
 	fakeRunner := runnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner { return panicRunner{t} })
-	response, err := runTask(ctx, req, taskDependencies{forge: fg, store: st, trees: remote}, fakeRunner, hostDir, slog.New(slog.DiscardHandler))
+	response, err := runTask(ctx, req, taskDependencies{forge: fg, store: st, trees: remote, steps: testSteps(t)}, fakeRunner, hostDir, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("runTask: %v", err)
 	}
@@ -531,7 +544,7 @@ func TestRunTaskRestoresWorktreeOwnershipOnEveryExit(t *testing.T) {
 	_, err := runTask(t.Context(), taskrun.Request{
 		Task: &workflow.Task{ID: 77, Branch: "feat/77-probe", Workflow: "implement"},
 		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
-	}, taskDependencies{}, runnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner {
+	}, taskDependencies{steps: testSteps(t)}, runnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner {
 		return nil
 	}), workDir, slog.New(slog.DiscardHandler))
 	if err == nil {
@@ -632,7 +645,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 		Cfg:           config.Config{}.ForTask(),
 		WorktreeGrant: grant,
 	}
-	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler))
+	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler), testSteps(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,7 +763,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		Cfg:           config.Config{}.ForTask(),
 		WorktreeGrant: grant,
 	}
-	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler))
+	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler), testSteps(t))
 	if err != nil {
 		t.Fatal(err)
 	}

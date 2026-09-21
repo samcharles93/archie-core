@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -100,7 +101,16 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if !ok {
 		return fmt.Errorf("state store does not support control-plane resources")
 	}
-	control := controlplane.NewServer(resources)
+	// The validating side's step vocabulary, registered here at the
+	// composition root before the first definition is read or replaced. The
+	// same provider set (internal/infrastructure/workflowsteps) is what
+	// archie-agent registers before it compiles one, so a definition this
+	// server admits is compilable there.
+	steps, err := workflowsteps.NewManager()
+	if err != nil {
+		return fmt.Errorf("register workflow step vocabulary: %w", err)
+	}
+	control := controlplane.NewServer(resources, steps)
 	versions, err := control.ImportConfig(ctx, b.cfg)
 	if err != nil {
 		return fmt.Errorf("import control-plane resources: %w", err)

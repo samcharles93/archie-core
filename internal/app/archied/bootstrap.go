@@ -54,6 +54,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -357,7 +358,16 @@ func (b *boot) openStateStoreAdapter() error {
 		return err
 	}
 	b.stateStore = client
-	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane())
+	// The daemon reads and replaces workflow definitions through the
+	// control-plane client, so it resolves the same step vocabulary the State
+	// Store server validates against: registered here, at the composition
+	// root, before the first read.
+	steps, err := workflowsteps.NewManager()
+	if err != nil {
+		b.log.Error("register workflow step vocabulary", "err", err)
+		return err
+	}
+	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane(), steps)
 	b.applyStatus = applystatus.New(b.processName, client, b.log)
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)

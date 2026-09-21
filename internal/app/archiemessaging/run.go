@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -30,6 +31,13 @@ func Run(ctx context.Context, o Options) error {
 	defer closeGateway()
 
 	health := newReadinessRegistry(cfg.Options, chat)
+	// The messaging process reads control-plane resources through the client, so
+	// it registers the workflow step vocabulary at its composition root, before
+	// the first resolution, like every other process that resolves one.
+	steps, err := workflowsteps.NewManager()
+	if err != nil {
+		return fmt.Errorf("register workflow step vocabulary: %w", err)
+	}
 	var settings *messaging.SettingsCommand
 	var closeStateStore func()
 	if cfg.Options.StateStore.Target != "" {
@@ -39,7 +47,7 @@ func Run(ctx context.Context, o Options) error {
 		}
 		closeStateStore = closeClient
 		defer closeStateStore()
-		chatSettings, channelVersion, settingsErr := controlplane.NewRPCClient(stateStore.ControlPlane()).RuntimeChatConfig(ctx, config.ChatConfig{
+		chatSettings, channelVersion, settingsErr := controlplane.NewRPCClient(stateStore.ControlPlane(), steps).RuntimeChatConfig(ctx, config.ChatConfig{
 			Telegram: cfg.Telegram, Email: cfg.Email, Webhook: cfg.Webhook, WebhookAddr: cfg.WebhookAddr, ShowToolCalls: cfg.ShowToolCalls,
 		})
 		if settingsErr != nil {
