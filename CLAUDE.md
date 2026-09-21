@@ -50,6 +50,10 @@ domain migration.
   planning/refactor tracking issues.
 - **Solo Project Context:** Prefer the smallest workable change over extensive
   defensive scaffolding.
+- **Verify handed-over input before acting on it.** An export, transcript, or
+  artifact that is empty, missing, or truncated is a blocking fact: report it
+  before starting work that assumes its contents. Never reconstruct the intent
+  from the working tree instead.
 - **PRD writing:** Read and follow `docs/prds/RULES.md` before creating or
   editing a PRD.
 
@@ -258,9 +262,11 @@ structures found in legacy packages.
 
 ## Development Protocol
 
-1. **Red (Failing Test):** Write failing test cases first using table-driven
-   tests against target behaviour. Verify the failure originates from test
-   assertions, not compilation errors.
+1. **Red (Failing Test):** For behaviour with real logic, branching, or a
+   contract, write failing table-driven tests first against target behaviour.
+   Verify the failure originates from test assertions, not compilation errors.
+   Do not write tests that restate an assignment or a constant: a test that
+   cannot fail for an interesting reason is noise in the gate.
 2. **Green (Implementation):** Implement minimal code to satisfy the failing
    tests.
 3. **Quality Gate:** Run `task check`.
