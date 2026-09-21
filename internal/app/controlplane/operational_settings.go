@@ -43,7 +43,7 @@ type pluginSettings struct {
 func operationalDefinitions() []Definition {
 	return []Definition{
 		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "restart-required", Schema: arraySchema, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
-		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedChannels, Validate: validateChannels},
+		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
 		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
