@@ -27,16 +27,36 @@ func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
 	if len(overrides) == 0 {
 		return nil
 	}
-	// yaml gives a struct field the field-level treatment promised above, but a
-	// map VALUE is decoded into a fresh zero value: an entry the overlay only
-	// partially addresses would lose every field it does not name, so an
-	// operator changing services.state.target alone would silently drop
-	// target_token. Fold the fields the overlay omits forward out of the entry
-	// cfg already holds, leaving the decode a complete entry to read. Doing it
-	// here, once, is what makes the promise hold for every map of structs
-	// (services, image.hosted, image.local, providers) instead of at each
-	// field's reader.
-	folded, err := foldOverrides(reflect.ValueOf(cfg), overrides)
+	return applyOverlayMapping(cfg, overrides)
+}
+
+// applyOverlayFile layers the overlay file at path over cfg, with the same
+// field-level precedence ApplyOverlayValues gives a map overlay. The file
+// overlay path needs it for the reason recorded on foldOverrides: decoding an
+// overlay into cfg replaces a map-valued entry wholesale, so a file naming
+// only services.state.target cleared the target_token the base file set. Both
+// overlay paths go through the fold, so neither can drift from the other.
+func applyOverlayFile(path string, cfg *config.Config) error {
+	doc, err := decodeFileMapping(path)
+	if err != nil {
+		return err
+	}
+	return applyOverlayMapping(cfg, doc)
+}
+
+// applyOverlayMapping is the decode both overlay paths share: the fields each
+// map-valued entry the overlay does not name are folded forward out of the
+// entry cfg already holds, and the completed mapping is then decoded over cfg.
+//
+// yaml gives a struct field the field-level treatment ApplyOverlayValues
+// promises, but a map VALUE is decoded into a fresh zero value: an entry the
+// overlay only partially addresses would lose every field it does not name, so
+// an operator changing services.state.target alone would silently drop
+// target_token. Folding here, once, is what makes the promise hold for every
+// map of structs (services, image.hosted, image.local, providers) instead of
+// at each field's reader.
+func applyOverlayMapping(cfg *config.Config, doc map[string]any) error {
+	folded, err := foldOverrides(reflect.ValueOf(cfg), doc)
 	if err != nil {
 		return err
 	}

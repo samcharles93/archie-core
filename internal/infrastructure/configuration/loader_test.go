@@ -571,6 +571,130 @@ func TestOverlay(t *testing.T) {
 	}
 }
 
+// TestResolveFileOverlayPreservesOmittedMapEntryFields characterizes the
+// -config-overlay path at the depth the runtime overlay is already guarded at
+// (TestApplyOverlayValuesPreservesOmittedNestedFields).
+//
+// It goes through Loader.Resolve, the production entry point, because the
+// hazard is a property of how the overlay file is applied, not of any one
+// decode helper: Loader.overlayFile decodes the overlay into the very config
+// the base file produced, and a map-valued entry is replaced wholesale, so
+// every field of that entry the overlay does not name is cleared.
+//
+// That is archie-core-e2e2 on a user-visible path. deployments/dev.toml is the
+// documented -config-overlay argument and sets [services.state] target/listen,
+// while the installed config.toml is where [services.state].target_token lives:
+// the overlay silently drops the token.
+func TestResolveFileOverlayPreservesOmittedMapEntryFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		base        string
+		overlayName string
+		overlay     string
+		check       func(t *testing.T, cfg config.Config)
+	}{
+		{
+			// The deployment shape quoted above, with the value that is read
+			// only when a client dials a non-loopback State Store.
+			name:    "services.state entry keeps the token it does not name",
+			base:    "[services.state]\ntarget = \"127.0.0.1:9090\"\ntarget_token = \"secret\"\n",
+			overlay: "[services.state]\ntarget = \"10.0.0.5:9090\"\n",
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				got := cfg.Services[config.ServiceNameState]
+				if got.Target != "10.0.0.5:9090" {
+					t.Errorf("services.state.target = %q, want the overlay's 10.0.0.5:9090", got.Target)
+				}
+				if got.TargetToken != "secret" {
+					t.Errorf("services.state.target_token = %q, want the base's secret: a file overlay must not clear a field it does not name", got.TargetToken)
+				}
+			},
+		},
+		{
+			// An enabled hosted provider must keep its class and key env: the
+			// overlay naming only base_url would otherwise clear them and fail
+			// validation after the load.
+			name: "image.hosted entry keeps the fields it does not name",
+			base: "[image.hosted.minimax]\nenabled = true\nclass = \"minimax\"\n" +
+				"api_key_env = \"MINIMAX_API_KEY\"\n",
+			overlay: "[image.hosted.minimax]\nbase_url = \"https://api.example\"\n",
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				got := cfg.Image.Hosted["minimax"]
+				want := config.ImageHostedProvider{
+					Enabled:   true,
+					Class:     "minimax",
+					APIKeyEnv: "MINIMAX_API_KEY",
+					BaseURL:   "https://api.example",
+				}
+				if got != want {
+					t.Errorf("image.hosted.minimax = %+v, want %+v", got, want)
+				}
+			},
+		},
+		{
+			name: "providers entry keeps the fields it does not name",
+			base: "[providers.anthropic]\nclass = \"anthropic\"\n" +
+				"api_key_env = \"ANTHROPIC_API_KEY\"\n",
+			overlay: "[providers.anthropic]\nbase_url = \"https://proxy.example\"\n",
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				got := cfg.Providers["anthropic"]
+				want := config.Provider{
+					Class:     "anthropic",
+					APIKeyEnv: "ANTHROPIC_API_KEY",
+					BaseURL:   "https://proxy.example",
+				}
+				if got != want {
+					t.Errorf("providers.anthropic = %+v, want %+v", got, want)
+				}
+			},
+		},
+		{
+			// The overlay file may be YAML (-config-overlay accepts either
+			// format), and it is folded by the same code.
+			name:        "yaml overlay keeps the token it does not name",
+			base:        "[services.state]\ntarget = \"127.0.0.1:9090\"\ntarget_token = \"secret\"\n",
+			overlayName: "dev.yaml",
+			overlay:     "services:\n  state:\n    target: 10.0.0.5:9090\n",
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				got := cfg.Services[config.ServiceNameState]
+				if got.Target != "10.0.0.5:9090" {
+					t.Errorf("services.state.target = %q, want the overlay's 10.0.0.5:9090", got.Target)
+				}
+				if got.TargetToken != "secret" {
+					t.Errorf("services.state.target_token = %q, want the base's secret", got.TargetToken)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			basePath := filepath.Join(dir, "config.toml")
+			overlayName := tt.overlayName
+			if overlayName == "" {
+				overlayName = "dev.toml"
+			}
+			overlayPath := filepath.Join(dir, overlayName)
+			if err := os.WriteFile(basePath, []byte(minimalValidConfigTOML+tt.base), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(overlayPath, []byte(tt.overlay), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			doc, err := New(nil).Resolve(basePath, overlayPath)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			tt.check(t, doc.Config)
+		})
+	}
+}
+
 func TestLoadBytesDoesNotExist(t *testing.T) {
 	_, err := loadBytes(nil)
 	if err == nil {

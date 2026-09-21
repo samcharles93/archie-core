@@ -27,6 +27,32 @@ func decodeConfigFileKeys(path string, target any) ([]string, error) {
 	}
 }
 
+// decodeFileMapping parses a configuration file into the nested mapping it
+// carries, with no typed target. An overlay needs this shape: a typed decode
+// cannot distinguish a key the file omits from a key it sets to the zero
+// value, and that distinction is what carrying the fields of a partially
+// addressed map entry forward is built on (see applyFileOverlay).
+func decodeFileMapping(path string) (map[string]any, error) {
+	var doc map[string]any
+	switch filepath.Ext(path) {
+	case ".yaml", ".yml":
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("%w: reading %s: %w", ErrUnreadable, path, err)
+		}
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return nil, fmt.Errorf("%w: parsing %s: %w", ErrUnreadable, path, err)
+		}
+	case ".toml":
+		if _, err := toml.DecodeFile(path, &doc); err != nil {
+			return nil, fmt.Errorf("%w: parsing %s: %w", ErrUnreadable, path, err)
+		}
+	default:
+		return nil, fmt.Errorf("%w: config file %s must end in .toml, .yaml, or .yml", ErrUnreadable, path)
+	}
+	return doc, nil
+}
+
 // decodeTOMLKeys decodes a TOML file into target, additionally
 // returning the top-level dotted key paths present in the file that
 // target did not consume (toml.MetaData.Undecoded()). A single decode

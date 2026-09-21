@@ -173,7 +173,13 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	doc.Provenance.record(Origin{Path: basePath, Role: RoleMain, Layer: LayerBase})
 
 	if overlayPath != "" {
-		cfgKeys, err = decodeConfigFileKeys(overlayPath, &doc.Config)
+		// The overlay is folded over the base config rather than decoded into
+		// it: a decode replaces a map-valued entry wholesale, clearing the
+		// fields of that entry the overlay does not name (applyFileOverlay).
+		if err := applyOverlayFile(overlayPath, &doc.Config); err != nil {
+			return nil, err
+		}
+		cfgKeys, err = overlayFileKeys(overlayPath)
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +192,15 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	}
 
 	return l.finalize(doc)
+}
+
+// overlayFileKeys reports the top-level keys of an overlay file that the
+// config decode does not consume. The file itself reaches the config through
+// applyOverlayFile, which needs its raw mapping; this typed decode exists only
+// for the key report, which only TOML's decoder can produce.
+func overlayFileKeys(path string) ([]string, error) {
+	var scratch config.Config
+	return decodeConfigFileKeys(path, &scratch)
 }
 
 // unknownKeys returns the keys present in both a and b: one config file

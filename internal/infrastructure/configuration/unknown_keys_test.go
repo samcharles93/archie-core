@@ -89,6 +89,33 @@ func TestUnknownSchedulingKeyIsStillReported(t *testing.T) {
 	}
 }
 
+// TestOverlayUnknownKeysAreStillReported pins that the overlay path kept its
+// drift detection when the overlay file started being applied through the
+// config fold (applyOverlayFile) instead of being decoded into the document's
+// config: the key report comes from a separate decode, so losing it would be
+// silent.
+func TestOverlayUnknownKeysAreStillReported(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "config.toml")
+	overlayPath := filepath.Join(dir, "dev.toml")
+	if err := os.WriteFile(basePath, []byte(minimalValidConfigTOML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// typo: concurrancy. Unknown to both decode targets, so it is a real
+	// unknown key rather than Hazard 1's cross-target case.
+	if err := os.WriteFile(overlayPath, []byte("[containers]\nmax_concurrancy = 4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := New(nil).Resolve(basePath, overlayPath)
+	if err != nil {
+		t.Fatalf("Resolve: %v (an unknown key must not fail the load)", err)
+	}
+	if !slices.Contains(doc.UnknownKeys, "containers.max_concurrancy") {
+		t.Errorf("UnknownKeys = %v, want it to contain %q", doc.UnknownKeys, "containers.max_concurrancy")
+	}
+}
+
 // TestExampleConfigHasNoUnknownKeys is the contract test the design
 // promised: the checked-in template must never itself trip the detector.
 func TestExampleConfigHasNoUnknownKeys(t *testing.T) {
