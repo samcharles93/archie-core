@@ -2,6 +2,7 @@
 
 **Status:** Draft
 **Date:** 2026-09-03
+**Beads epic:** `archie-core-t2db`
 
 ## Problem
 
@@ -14,7 +15,7 @@ event source means a feature branch, a code change in a hardcoded
 path, and new Go tests -- for every addition. That is the barrier this
 document exists to remove.
 
-The goal (Sam, 2026-09-02): triggers, the actions they run, and the
+The goal: triggers, the actions they run, and the
 conditions that connect them should be **drop-in and load**, not **drop-in
 and touch application code**. Yaegi-evaluated Go is the unit of imperative
 "do a thing" logic; YAML playbooks are pure orchestration data -- no logic,
@@ -30,7 +31,7 @@ long as it's implemented behind one of the typed engine families below.
 
 ## Relationship to existing decisions
 
-- `docs/prds/event-sources-and-reactions.md` (2026-08-22, decided) ruled
+- `docs/prds/event-sources-and-reactions.md` ruled
   that reactions in the two epics it covers are **producer-only** (no veto,
   no mutation of in-flight work) and explicitly rejected a single generic
   `Source` interface as "the untyped-hook shape the plugin engine rule
@@ -55,14 +56,13 @@ long as it's implemented behind one of the typed engine families below.
   built-in. The playbook loader described here supersedes label routing
   specifically; it does not replace `skillbuild`'s workflow-composition role,
   it becomes an additional input the daemon composes at startup.
-- Webhook event intake is separately in flight (Sam, in progress). This
+- Webhook event intake is a separate design. This
   document defines the router each webhook-sourced event should be able to
   reach; it does not redesign webhook receipt itself.
 
 ## Shape: four logic positions, each a typed engine family
 
-Every entrypoint kind (mechanism, action, loop, schedule, route, trigger --
-Sam's list) is itself a schema emitter: defining a new kind produces the
+Every entrypoint kind (mechanism, action, loop, schedule, route, trigger) is itself a schema emitter: defining a new kind produces the
 generated contract downstream tooling consumes. The kinds slot into a fixed
 hierarchy of logic positions:
 
@@ -107,8 +107,8 @@ runtime `any`-typed dispatch path.
 
 ## `go:generate`-driven schemas, from day one
 
-Sam's correction: schemas are not a future nicety bolted onto an ad hoc
-YAML shape -- they are the struct+interface contracts for each logic
+Schemas are not a future nicety bolted onto an ad hoc
+YAML shape. They are the struct+interface contracts for each logic
 position, and they drive code generation from the start.
 
 - Each logic position (Workflow/Module/Channel/Forge) has a schema source
@@ -123,10 +123,8 @@ position, and they drive code generation from the start.
 - Schema versioning is explicit per position, independent of a playbook's
   own workflow version (see collision handling below).
 
-This document does not attempt to design the full generator. It
-records the constraint (schema-first, `go:generate`-driven, per logic
-position) so the first implementation slice builds toward it instead of
-away from it.
+The generator itself is not designed here. The constraint is
+schema-first, `go:generate`-driven, per logic position.
 
 ## Playbook YAML: pure orchestration data
 
@@ -203,12 +201,9 @@ the linter/LSP be bundled into archied or a separate tool" a non-question:
   package. It is a thin wrapper per `organisation.md`'s `cmd/` rule, not a
   second implementation.
 
-One shared implementation, two thin consumer shapes (in-process and
-out-of-process). Folding CLI/LSP protocol handling into `archied` itself
-would grow the daemon into unrelated concerns, against the plugin-engine
-rule's spirit of narrow capability families -- so the answer is not
-"bundle or don't," it's "don't duplicate the logic, and pick the thinnest
-consumer for each caller's actual constraint."
+Folding CLI/LSP protocol handling into `archied` itself would grow the
+daemon into unrelated concerns, against the plugin-engine rule's spirit of
+narrow capability families.
 
 ## Execution-time gaps (both resolved)
 
@@ -235,15 +230,15 @@ draws the same one on an action failure.
 default is **stop-on-first-failure**: a real action error halts the
 playbook run immediately and is reported, with no continue-to-next-action
 and no automatic retry or compensating follow-up. The three points below
-are the complete decision; reasoning and evidence follow each.
+are the complete decision.
 
 1. **A real action error** (the action's own logic failed -- an API
    error, a validation failure inside the action) stops the run
    immediately. No later actions execute. The failure is reported the
    same way a load collision is reported -- dropped, logged plainly
    (which action and why), and returned to the caller, never swallowed
-   as a background log line only (this document's Dedup section, lines
-   155-159, the t2db.9-12 drop-and-report rule). `Run` is the mechanical
+   as a background log line only (the Dedup section's drop-and-report
+   rule). `Run` is the mechanical
    precedent for the stop itself: a stage error sets the park reason and
    returns without running further stages (`workflow.go`). This
    is stop-on-first-failure, matching the document's existing bias
@@ -275,38 +270,14 @@ semantic. An operator who needs a corrective action after a failure
 writes a *new* playbook/action for that, they do not get automatic
 undo.
 
-**Producer-only interaction, stated explicitly -- why this decision does
-not violate the rule.** `event-sources-and-reactions.md`'s producer-only
-rule is "no veto, no mutation of in-flight work"
-(`event-sources-and-reactions.md`), and it explicitly routes any
-reaction that "can veto or mutate an *in-flight* task (block a PR from
-opening, alter a running stage)" away from this epic to the
-adversarial-self-review one (`event-sources-and-reactions.md`).
-This decision touches neither half of that boundary:
-
-- **The rule constrains what an event source may do to *someone else's*
-  in-flight work.** Stop-on-first-failure is the playbook run deciding
-  its *own* terminal state from its own action's error. It vetoes
-  nothing: no task, stage, or PR that was already in flight is blocked
-  or altered, and the run only declines to start actions that had not
-  started yet. A run deciding its own continuation is not veto or
-  mutation of another producer's work; it is simply how the run ends.
-- **Everything after the stop is still producer-only.** The failed run is
-  reported to its caller per the collision precedent, the same way `Run`
-  records the failure on its own unit -- park reason set and the task
-  transitioned to `StatusParked` (`workflow.go`, `park` at
-  `workflow.go`) -- never on someone else's in-flight work. A
-  future compensating action (e.g. "if the notify action failed, also
-  log an incident") would be **producing new work** -- new events, new
-  dispatches -- which is exactly the already-permitted shape
-  (`event-sources-and-reactions.md`). No playbook syntax for "on
-  failure, also run X" is designed here; this resolution only confirms
-  that if that syntax is added later, it stays inside the producer-only
-  boundary rather than requiring a new exception.
-
-The boundary therefore holds on both sides: the failure default never
-hands an event source veto or mutation power over a playbook run, and
-anything a run does after stopping is itself still just producing work.
+**This stays inside the producer-only rule.** Stop-on-first-failure is the
+run deciding its own terminal state from its own action's error. Nothing
+already in flight is blocked or altered; the run only declines to start
+actions that had not started yet, and it records the failure on its own
+unit the way `Run` sets a park reason and transitions the task to
+`StatusParked`. A future compensating action ("if the notify action
+failed, also log an incident") would be producing new work, which the rule
+already permits. No syntax for it is designed here.
 
 **J3 relationship, stated explicitly:** J3 (a CEL `when` condition
 erroring at eval time → treated as false → skip that action → run
@@ -376,8 +347,7 @@ would already be wrong.
 **Storage/lookup: a new durable ledger table `playbook_dispatches` in
 `internal/store`, copying `binding_dispatches`'s conventions exactly**
 (durable table, `INSERT OR IGNORE`, sentinel error, rows freed with
-their parent, survives daemon restarts -- `internal/store/bindings.go`,
-`355-382`):
+their parent, survives daemon restarts -- `internal/store/bindings.go`):
 
 ```sql
 CREATE TABLE playbook_dispatches (
@@ -429,7 +399,7 @@ computed by the coordinator -- not a CEL expression.** The key is the
   its configured directory root, slash-normalized, unique within the load
   composition by construction (`internal/domain/eda/playbook`).
 - `playbook_version` is `Playbook.Version` -- a SHA-256 of the loaded
-  file, recomputed on every load (`playbook.go`, `154-155`),
+  file, recomputed on every load (`internal/domain/eda/playbook`),
   mirroring `Binding.Version`'s provenance-pinning purpose: the dispatch
   is pinned to the exact definition that was active when it fired. A
   changed playbook definition is a different key and may fire again for
@@ -483,11 +453,10 @@ fragment the ledger. The key is therefore structural by construction:
 every component above is an immutable identity of the run's inputs, so
 two deliveries of the same event derive the same key with no evaluation.
 The exercise's actual outcome is the derivation rule above; CEL remains
-a *condition* surface (`when`), never a key surface. { Call: if a future
-action kind genuinely needs finer granularity than (action, event) --
-e.g. "per comment, not per issue" -- that is the documented exception
-path, and it arrives with its own trigger type and its own event
-identity, per the per-trigger-type rule. }
+a *condition* surface (`when`), never a key surface. An action kind that
+genuinely needs finer granularity than (action, event), such as "per
+comment, not per issue", arrives with its own trigger type and its own
+event identity, per the per-trigger-type rule.
 
 **Record-before-invoke -- one deliberate divergence from
 `binding_dispatches`, justified by the harm profile.** The binding
@@ -524,8 +493,7 @@ recovered, an operator edits the playbook -- new version, new key --
 rather than fighting ledger state.
 
 **Relationship to `event-sources-and-reactions.md` -- extension, not
-contradiction, argued explicitly.** Three points, keyed to that
-document's sections:
+contradiction.** Keyed to that document's sections:
 
 1. Its decision 2 commits reactions to at-least-once delivery via
    `PublishUnique`'s "without duplicate enqueue" guarantee -- which, with
@@ -540,11 +508,8 @@ document's sections:
    a consumer-side ledger; this resolution pins down the boundary the
    sentence left implicit (publish-path dedup vs. consumer-path dedup)
    rather than changing either.
-2. Its decision 3 (producer-only, no veto/mutation of in-flight work)
-   is untouched: the ledger is the running reaction's own bookkeeping
-   about its own actions -- it suppresses re-firing an action the
-   coordinator already ran for the same event; it blocks, mutates, or
-   reorders nothing else, and no other producer's work is touched.
+2. Its decision 3 is untouched: the ledger is the run's own bookkeeping
+   about its own actions, suppressing a re-fire and nothing else.
 3. Its decision 4 (no generic `Source` interface; `TaskEnvelope` is the
    typed contract, keyed on issue identity, not delivery source): the
    event half of the playbook key IS that same identity
@@ -570,314 +535,29 @@ playbooks were not. A coordinator MAY implement one position-uniform
 gate as a simplification; what this resolution requires is only that
 the side-effecting positions are gated.
 
-Both execution-time gaps are now resolved (gap 1 by
-`archie-core-t2db.18` above, gap 2 by `archie-core-t2db.17` above). For
-the record, the first slice (Module + loader + workflow-kind dispatch)
-never needed gap 2: workflow-kind actions had idempotency for free via
-`TaskEnvelope`, and the ledger is only required once side-effecting
-positions dispatch. Channel/Forge actions and multi-action playbooks
-are unblocked on the execution-time questions.
-
-## Open questions (for sign-off before implementation)
+## Resolved questions
 
 1. **Data-flow/condition syntax.** Does this project want a small existing
    Go expression evaluator (there may be one already in the codebase worth
    checking, e.g. anything backing gate conditions), or a bespoke minimal
-   grammar? Not decided here.
+   grammar?
 
-   **Resolved.** CEL (cel.dev/cel-go) is the single
-   mechanism for both halves. The resolution below replaces this entry
-   and is not an open question. Judgment calls are flagged inline.
-
-   ## Data-flow and condition syntax -- decision (resolves open question 1)
-
-   **Status:** Draft, awaiting sign-off (not yet in `docs/architecture/`)
-   **Date:** 2026-09-03
-   **Decision:** CEL via `cel.dev/cel-go` (v0.32.0), pinned; one
-   expression mechanism covers both an action's `when` condition and its
-   `args` values.
-
-   ### The requirement, stated directly
-
-   A playbook action is gated and parametrised by runtime data: (a) a
-   condition deciding whether the action runs; (b) a later action's `args`
-   values referencing an earlier action's `Result` and the triggering
-   event's fields. Both are **CEL expressions**, evaluated against one
-   evaluation context. There is no separate interpolation syntax: CEL
-   reads nested maps and fields natively, so `args` values that need data
-   are written as CEL, and only plain literal args remain plain YAML
-   scalars.
-
-   Both halves are read-only: expressions may read context values and
-   compute a result from them, never mutate, never call host functions,
-   never perform I/O. CEL enforces this structurally (no side effects,
-   linear evaluation when macros are bounded, cost-limited).
-
-   ```yaml
-   actions:
-     - position: module
-       kind: log
-       args:
-         message: '"build finished"'                 # literal
-       when: 'event.label == "bugfix"'               # gate on event field
-     - position: module
-       kind: notify
-       args:
-         message: '"priority " + string(event.priority)'
-       when: 'actions.notify.result.delivered == true'
-   ```
-
-   ### Trust boundary of the expression
-
-   A playbook YAML is **operator-installed, in-process, daemon-privileged**
-   -- the same tier as `ModuleDir`/`PluginDir`/`SecretEngineDir`
-   (module-position.md's trust-boundary section): loaded from a configured
-   directory at startup, never from a webhook body or task worktree. The
-   schema-by-example flow uses live events to *design against*; the saved
-   playbook is operator-authored file content in an operator-configured
-   location.
-
-   Two consequences:
-
-   1. The expression string is **trusted**. Operator-authored config, not
-      attacker input; no sandboxing against a hostile expression string is
-      required. If a future playbook source is less trusted (auto-generated
-      bindings from unauthenticated captures), that is the playbook-file
-      trust tier moving -- the loader's acceptance check is the right
-      place, not the evaluator.
-   2. The **data the expression reads is NOT trusted** (decoded webhook
-      body, prior results through the same pipeline). Robustness against
-      hostile data is required: no panic on wrong-typed/missing fields,
-      no unbounded cost on deep/cyclic maps, bounded evaluation time. CEL
-      provides this structurally (cost limits, linear non-Turing-complete
-      evaluation, error values instead of panics -- verified in the
-      vetting record below).
-
-   ### The gate precedent is deliberately NOT copied
-
-   `internal/gate/gateeval` evaluates arbitrary interpreted Go
-   (`.archie/gate.go`) as the repo's conditional-logic precedent. That is
-   the wrong precedent for playbook conditions because this document's
-   premise is: **YAML is pure orchestration data; Yaegi is where
-   imperative logic lives** (Problem section; module-position.md's
-   "no generic hook" section). Yaegi snippets in YAML would move
-   imperative logic into the data layer -- the inversion this design
-   exists to prevent -- and make playbooks un-lintable.
-
-   The line: conditions are **declarative predicates over runtime data,
-   not programs**. CEL is non-Turing-complete and side-effect-free, so it
-   cannot become a program; a condition that needs real logic gets a
-   Module kind (Yaegi), referenced by the action, not a stronger
-   expression body.
-
-   ### Plugin-engine-rule interaction: confirmed non-issue (stated once)
-
-   The plugin engine rule forbids a generic `Module` interface with an
-   `any` payload; it exists to keep static implementation contracts
-   typed. Evaluating CEL against runtime `map[string]any` is **not the
-   same problem**: the rule concerns *implementation contracts* (static
-   operations a capability family exposes), not *runtime data values*
-   (legitimately dynamic -- an event payload's shape is unknown until it
-   arrives). The Module contract stays fully typed (generated
-   `Args`/`Result` schemas); CEL is a read-only data reader under the
-   playbook engine family, not a new capability contract. Stated once.
-
-   ### Minimum viable evaluation context (what expressions see)
-
-   One flat context, namespaced from the playbook run, built at dispatch
-   time:
-
-   | Name | Type | Source |
-   |---|---|---|
-   | `event` | `map(string, dyn)` | The triggering event's decoded payload (webhook body / forge issue / schedule tick). Field access via `event.<field>`, map access via `event["field"]`, presence via `has(event.<field>)`. |
-   | `actions` | `map(string, dyn)` | Previous actions' results, keyed by the action's `id` as declared in the playbook (`actions.<id>.result.<field>`), so a later action reads an earlier one's `Result` map regardless of position. The current action and later actions are not present. |
-
-   Expressions may also read literal-only state (numbers, strings,
-   booleans) directly. CEL's `has()` macro covers the missing-key case
-   (`has(event.labels)` -> bool), which replaces any bespoke `has`/
-   `contains` operator.
-
-   `actions.<id>.result` is the `map[string]any` `Module.Invoke` already
-   returns (t2db.13), so no result-shape change is needed for data flow;
-   channel/forge kinds' results are declared to the same shape.
-
-   Judgement call J1: `action` id is a required field on every action
-   that later actions reference; ids are validated at load (unique,
-   stable-identifier-shaped), and a `when`/`args` expression referencing
-   an unknown `actions.<id>` is a **load failure**, not a runtime miss --
-   the same reject-at-load rule as collisions (see below).
-
-   ### Load-time validation (consistent with the collision rule)
-
-   The collision-handling rule is: schema defines the accepted message;
-   anything outside it is rejected at load, logged plainly, reported to
-   the caller -- never deferred to runtime. Expressions are validated the
-   same way, at playbook load:
-
-   - **Syntax**: every `when` and every CEL-typed `args` value is parsed
-     and checked by CEL's checker when the playbook is loaded. A syntax
-     or type error is a reported load failure (the playbook is dropped and
-     the error goes to the caller), not a runtime surprise.
-   - **Context conformance**: with the context declared to CEL
-     (`event` as `map(string, dyn)`, `actions` as `map(string, dyn)`),
-     unknown top-level identifiers are rejected at compile time.
-     Field-level typing inside `dyn` values is deferred to runtime by
-     CEL's design (verified: `data.items.lenght` with `data` dyn compiles
-     clean and errors at eval) -- so the loader declares as much type as
-     the schema provides (the action kinds' generated `Result` structs
-     become CEL type declarations at load, giving field-level rejection
-     for result reads), and `event` stays `dyn` because its shape is
-     unknown by design (schema-by-example).
-   - **Names**: unknown `actions.<id>` references and unknown roots are
-     compile-time/lint-visible errors (J1).
-
-   This means the lint tool (t2db.12) and the daemon share one checker
-   -- same single-source argument as the playbook loaders.
-
-   ### Candidate comparison (surveyed 2026-09-03, pkg.go.dev + GitHub;
-   govaluate and gval checked against actual maintenance state, not
-   training memory)
-
-   | Candidate | Maintenance | Safety surface | Cost (measured) | Verdict |
-   |---|---|---|---|---|
-   | **CEL (cel.dev/cel-go)** | Actively maintained (google/cel, monthly releases) | Non-Turing-complete, linear eval, `CostLimit`/`CostTracking`/`ParserRecursionLimit`, no side effects, error values not panics | **+13.0MB** (2.34MB -> 15.25MB) | **Chosen** |
-   | `expr-lang/expr` v1.17.8 | Actively maintained | Side-effect-free, `DisableAllBuiltins`, depth limits (CVE fixed w/ tests) | +3.9MB (2.34MB -> 6.28MB) | Not chosen: two safety CVEs this cycle; smaller ecosystem; no protobuf/type-model fit with future schema-gen |
-   | `gval` v1.2.3 | Maintained, slower | No builtin-restriction surface; extras (ternary/`??`) not wanted | +3.0MB (2 transitive deps) | Not chosen |
-   | `govaluate` | **ARCHIVED** (author archived 2024) | n/a | n/a | Not chosen: dead |
-   | `starlark-go` | Maintained (Bazel) | Turing-complete with step limits | large (full language) | Not chosen: whole-language surface |
-
-   ### Vetting record (vetting-dependencies skill, 2026-09-03)
-
-   Source reviewed at HEAD, not docs:
-
-   - **Repo hygiene**: clean. No binaries/media in tree (the only
-     non-source artifacts are expected generated protobuf files); 16-line
-     `.gitignore`.
-   - **Hard-boundary correctness**: the place correctness is hard for an
-     expression evaluator is bounding evaluation and surviving hostile
-     input. Dedicated regression tests exist and pass at HEAD:
-     `TestCostLimit`, `TestCostTracking*`, `TestParserRecursionLimit`,
-     and a large conformance suite. Verified by execution: evaluation
-     against a 2000-deep nested map under `CostLimit` completes in ~10
-     microseconds and returns an error value for a missing key -- no
-     panic, no unbounded walk.
-   - **Dependency footprint**: antlr (parser), protobuf + genproto (CEL's
-     type model), `cel.dev/expr` (CEL spec types), yaml.v3. All
-     mainstream, canonical, vendored widely by Google-adjacent projects.
-     No runtime-impure third-party code; the REPL-only deps (readline,
-     tview, tcell) are not in the library import graph.
-   - **Security record**: no advisories on record for `cel.dev/cel-go`
-     (GitHub Advisory Database, queried 2026-09-03).
-   - **Module path**: migrated to `cel.dev/cel-go` (v0.32.0 is current);
-     the old `github.com/google/cel-go` path is the pre-migration identity.
-     Pin `cel.dev/cel-go`.
-   - **Binary size cost**: +13.0MB is the largest of the candidates
-     (measured: baseline 2.34MB -> 15.25MB with CEL). Accepted because:
-     the daemon already embeds a large Yaegi runtime; CEL's type model is
-     the load-bearing win (compile-time rejection of result-path typos,
-     matching the reject-at-load rule); and the alternative bespoke
-     grammar would re-implement CEL's checker to get the same guarantee.
-     Flagged for sign-off: if 13MB is unacceptable for a specific
-     deployment target, the fallback is a bespoke grammar with a
-     re-implemented subset of this checker -- a strictly worse trade.
-
-   ### Why bespoke was not sufficient
-
-   A bespoke grammar for the shipped cases (path read + comparison + bool
-   composition) is small, but the load-time-validation requirement makes
-   the comparison: the reject-at-load rule requires *field-level* static
-   checking of result paths against generated `Result` schemas, which is
-   CEL's type-checker's job. Re-implementing that on a hand-rolled
-   grammar means re-implementing a type system -- more code than the
-   grammar itself, with worse diagnostics, no conformance suite, and no
-   community surface for future expression needs (even declarative ones).
-   The bespoke option only wins on binary size, and the size cost of CEL
-   is measured and bounded.
-
-   ### Judgment calls (flagged for sign-off)
-
-   - **J1 -- `id` required on referenced actions, unknown id = load
-     failure.** Matches the reject-at-load rule. { Call: an alternative
-     is positional `actions[0]` access, which breaks on reorder; named is
-     the operator-friendlier shape. }
-   - **J2 -- every `args` value is evaluated as a CEL expression.** No
-     split between "literal args" and "expression args": a plain string
-     value is a CEL string literal, a number is a CEL number literal, and
-     any value that reads context data is written in CEL. One mechanism,
-     no interpolation marker, no second syntax to learn. { Call: CEL
-     string literals must be quoted inside YAML (e.g. `message:
-     '"build finished"'`), which is slightly noisy for mostly-literal
-     args; accepted for uniformity -- the linter catches quoting mistakes
-     at load. }
-   - **J3 -- condition failure semantics.** A condition that errors at
-     runtime (missing/wrong-typed field) evaluates to **false**: the
-     action is skipped, logged, run continues. This is the simplest
-     candidate consistent with gap 1's bias against clever recovery;
-     gap 1 (resolved by archie-core-t2db.18) commits
-     stop-on-first-failure, so per-action control is not coming and J3
-     stands. { Call: CEL separates
-     false from error; we treat evaluation error as false + log. }
-   - **J4 -- `event` stays `dyn` (schema-by-example).** Load-time we
-     cannot know event field types; declaring them typed would reject
-     valid plays. Result reads get field-level checking via generated
-     schema declarations. { Call: when schema-by-example ships, tighten
-     event field declarations from captured samples. }
-   - **J5 -- cost limit default.** A `CostLimit` at load time (e.g.
-     100,000) is applied to every expression; the linter and daemon use
-     the same value so they agree. { Call: exact number is a constant to
-     tune at first use. }
-
-   ### Interaction with the execution-time gaps
-
-   This resolution does not resolve the execution-time gaps (both are
-   resolved separately: gap 1 by `archie-core-t2db.18`, gap 2 by the
-   gap-2 decision below). Conditions make gap 1
-   concrete (condition-failure vs. action-failure semantics, J3) and
-   CEL's read-only result access makes gap 2's keying derivation
-   readable (an idempotency key expression can read event fields) -- both
-   flagged as the gaps' first real exercise. Gap 2's exercise is
-   subsequently solved by the gap-2 decision above (2026-09-05): the
-   answer is a fixed structural derivation, and idempotency keys are
-   deliberately NOT CEL expressions (see the "No CEL in the key"
-   passage).
-
-   ### Implementation placement (for the follow-up slice)
-
-   - New `internal/domain/eda/expr` package: builds the CEL environment
-     (context declarations, generated `Result` schema types as CEL type
-     declarations, cost limit), compiles/validates playbook expressions
-     at load, evaluates them at dispatch. Domain layer; no infrastructure
-     imports; owned by the playbook engine family. One new dependency:
-     `cel.dev/cel-go` (pinned), `go.mod` otherwise unchanged.
-   - Consumption: the playbook event coordinator (open question 4's
-     loader) evaluates `when` before dispatch and
-     evaluates `args` values before `Module.Invoke`; the lint tool
-     (t2db.12) shares the same compile/validate path for author-time
-     diagnostics.
-   - Schema integration: action kinds' generated `Result`/`Args` structs
-     (t2db.13's `logextract` pattern) are declared to CEL at load so
-     `actions.<id>.result.<field>` type-checks; `args` expressions
-     type-check against the target kind's `Args` schema before the
-     playbook is accepted.
+   **Resolved** (`archie-core-t2db.14`). CEL (`cel.dev/cel-go`, pinned) is
+   the one mechanism for both an action's `when` condition and its `args`
+   values. The trust boundary, evaluation context, load-time validation and
+   the five judgment calls are in
+   `docs/prds/playbook-expression-syntax.md`.
 
 2. **Playbook directory config field.** Where this lives in
    `internal/config` / `configuration.Document`, and whether it's one
    directory or a list (mirroring `SkillsDir`'s shape) -- follow existing
    config precedent, not invented fresh.
 
-   **Partially resolved.** The label-vocabulary slice
-   landed with a single-file shape (`workflow_labels_file`, mirroring
-   `workflow_routing_file` and `SkillsDir`'s single-path precedent) rather
-   than a directory, because it is the smallest useful case. A directory
-   (multiple playbooks, per-repo scoping) remains open and larger; the
-   single-file shape does not preclude it -- a future `workflow_dir` would
-   compose `workflow_labels_file`'s role into a loader.
-
    **Resolved** (`archie-core-t2db.11`). The directory
    shape landed as `playbook_dirs` (a LIST of directories of
    `*.yaml`/`*.yml` binding files), loaded at startup as an additional
    input to the two single-file fields, which remain supported unchanged.
-   Sam's correction 2026-09-03: a single `playbook_dir` would contradict
+   A single `playbook_dir` would contradict
    supporting multiple independently-maintained playbook sources, which
    the Dedup section already assumes ('independently-sourced playbook
    directories collide'), so the field is a list. Cross-source collision
@@ -890,13 +570,13 @@ are unblocked on the execution-time questions.
    later decision; org/tenant keying is out of scope (no auth/identity
    model).
 
-   Decisions recorded from the label-vocabulary slice (commit pending):
+   Decisions recorded from the label-vocabulary slice:
    - Arbitrary labels bind to registered workflow names via
      `LabelWorkflows` + `LoadLabelWorkflowsYAML`/`SetLabelWorkflows`
      (`internal/domain/workflow/routing.go`).
    - The closed `Kind`/NATS-subject set is untouched; the label map only
      extends binding authority for labels the kind layer does not own.
-   - Collision rule (per Sam, 2026-09-03): a label already owned by the
+   - Collision rule: a label already owned by the
      kind set (bug/feature/bootstrap), an empty label, an empty workflow
      name, or a duplicate binding is a reported load failure -- dropped
      and logged, the error returned to the caller. Nothing is silently
@@ -907,10 +587,12 @@ are unblocked on the execution-time questions.
      binding → kind binding → triage → implement → default.
 3. **Trust boundary for Module Yaegi code.** The plugin engine rule's
    invariant 6 draws a line between operator-trusted in-process code and
-   repository-supplied code that must run in a container. A user-authored
-   Module is closer to "operator-installed plugin" than "repository code
-   from a task," but this should be stated explicitly before Modules ship,
-   not assumed.
+   repository-supplied code that must run in a container.
+
+   **Resolved** in `docs/prds/module-position.md`, "Trust boundary": a
+   Module is operator-installed, in-process and daemon-privileged, the same
+   tier as `PluginDir` and `SecretEngineDir`, never repository-supplied
+   task code.
 4. **First implementation slice.** Recommend: Module position + the
    playbook loader + trigger-to-workflow dispatch only (subsuming the existing
    label routing) first, proving the schema-gen -> Yaegi -> playbook path
@@ -950,13 +632,14 @@ are unblocked on the execution-time questions.
    (hard boundary), so Module/Channel/Forge positions have no production
    dispatch path: the gap-2 `playbook_dispatches` ledger must land before a
    side-effecting position can fire.
-5. **Monetization boundary.** Sam has flagged this may be commercialized,
-   and explicitly wants it discerned from other OSS event-driven-automation
-   tooling. No design decision needed yet, but worth a note if/when
-   licensing or feature-gating questions arise for playbook authoring or
-   the LSP.
+## Standing constraint
 
-## Packages this touches (first slice, per open question 4)
+This may be commercialized, and is to be discernible from other open-source
+event-driven-automation tooling. No design decision follows from that yet;
+it bears on licensing or feature-gating questions about playbook authoring
+and the LSP when they arise.
+
+## Packages this touches (first slice)
 
 - New: a schema-generation package/convention (`go:generate` source +
   emitted contracts) for the Module position.

@@ -560,9 +560,8 @@ an explicit operator decision.
   `127.0.0.1:8585` because `archie-gateway` is already a separate process whose client and
   server share one default.
 - `[services.state]` is present and **uncommented** in `config.example.toml`, with `target`
-  marked REQUIRED, because the value is now load-bearing for every client. (This bullet
-  previously instructed adding the section with a commented-out `target`; that advice is
-  withdrawn, since a commented target cannot boot.)
+  marked REQUIRED, because the value is load-bearing for every client. A commented-out
+  `target` cannot boot, so the section ships uncommented.
 - Composition root: `internal/app/archied/bootstrap.go` (the daemon) and
   `internal/app/archieui/config.go` (the UI process) both read `cfg.Services.Get("state")` and
   dial the remote State Store. `openProductionTaskStore` is **not** called from the daemon: it

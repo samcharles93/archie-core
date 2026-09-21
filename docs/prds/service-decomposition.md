@@ -84,9 +84,9 @@ either shape.
 `docs/inspiration/module-reference-awx-decomposition-vs-archie.md`
 established that Archie's existing domain split already does what AWX's
 service-decomposition post argues for -- boundaries exist. What didn't
-exist was deployability: `internal/webui` was not a passive frontend. That is
-now resolved; the re-baselined coupling inventory is below, and the ratified
-boundary is [`ui-service-boundary.md`](ui-service-boundary.md).
+exist was deployability: `internal/webui` was not a passive frontend. The
+re-baselined coupling inventory is below, and the ratified boundary is
+[`ui-service-boundary.md`](ui-service-boundary.md).
 
 - Telegram task actions now call Gateway's `ChatContract` directly through
   `chatTaskActorAdapter`; the old Telegram-to-webui HTTP detour is historical.

@@ -51,8 +51,8 @@ under a fan-out-capable policy, alongside the existing task-distribution
 stream -- not instead of it.
 
 This is where `7d5u.2`'s embedded-vs-external axis attaches: whichever NATS
-instance backs `ARCHIE_TASKS` also backs the reaction stream. Confirmed with
-Sam 2026-08-22: NATS was never meant to be optional as a technology -- only
+instance backs `ARCHIE_TASKS` also backs the reaction stream. NATS is not
+optional as a technology -- the choice is only
 whether it runs as an external server or embedded in-process
 (`github.com/nats-io/nats-server/v2` is already a direct, test-proven
 dependency, just never wired into production startup). `7d5u.2` wires that;

@@ -213,10 +213,10 @@ the *spend* surface, which the round cap bounds.
 
 1. **The reaction stream.** `ARCHIE_REACTIONS`, under the fan-out
    `jetstream.LimitsPolicy` the parent decision requires
-   (`event-sources-and-reactions.md` §2). `Config.Retention` is already
+   (`event-sources-and-reactions.md` §2). `Config.Retention` is
    parameterised for exactly this (`archie-core-7d5u.2`), but no reaction
-   stream exists, and `ARCHIE_TASKS` carries `archie.task.>` only. Until this
-   lands, every publish to `archie.reaction.*` fails against no matching
+   stream exists and `ARCHIE_TASKS` carries `archie.task.>` only, so every
+   publish to `archie.reaction.*` fails against no matching
    stream. This step is first because nothing after it can be exercised
    without it.
 2. `PullRequestReviewReader` + GitHub/Gitea implementations + `ReplyToReview`.

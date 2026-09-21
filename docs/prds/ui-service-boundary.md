@@ -208,8 +208,7 @@ Current code proves the following migration inputs:
 
 The current code therefore satisfies the upstream prerequisites but does not
 yet satisfy this boundary. This document is the ratified target; the
-implementation child must prove each migration gate before claiming Phase 3
-complete.
+implementation child must prove each migration gate before claiming Phase 3.
 
 ### Phase 3 gates
 
