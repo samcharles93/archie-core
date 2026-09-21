@@ -38,11 +38,20 @@ import (
 //	          pattern: 'panic\('
 //	          message: new panic() call  --  use error returns instead
 //
-// The step diffs the worktree against the repository's base branch, matches
-// each rule against the ADDED lines of that diff, and reports every match with
-// its file and new-file line number. An error-level finding parks the run with
-// the findings in the task's park reason; a warn-level finding is logged and
-// nothing else. A rule that matches nothing is silent.
+// The step diffs the change the branch has COMMITTED against the repository's
+// base branch, matches each rule against the ADDED lines of that diff, and
+// reports every match with its file and new-file line number. An error-level
+// finding parks the run with the findings in the task's park reason; a
+// warn-level finding is logged and nothing else. A rule that matches nothing is
+// silent, and the number of added lines read is logged on every run, so
+// "checked nothing" is distinguishable from "found nothing".
+//
+// Where the step sits is part of its contract, not a matter of taste: the rules
+// read commits, never the worktree's own edits (Trees.Diff reports the merge
+// base against HEAD), so the step must follow the step that commits the change.
+// A run that would read no committed change while the worktree still holds
+// uncommitted work fails on the spot and says which step it must follow,
+// instead of reporting no findings for a change it never read.
 //
 // What it deliberately does not do is inspect a changed file's whole contents:
 // a rule reads what the change adds, so a rule cannot be satisfied or broken by
@@ -127,8 +136,19 @@ func runDiffRules(ctx context.Context, tc *TaskContext, rules []compiledDiffRule
 		return fmt.Errorf("%s: diff against %s: %w", DiffRulesStepName, base, err)
 	}
 
+	added := addedDiffLines(diff)
+	// The count is the run's own evidence of what the rules read: without it, a
+	// step that read nothing and a step whose rules matched nothing leave the
+	// same trace.
+	tc.Log.Info("diff rules read the committed change", "base", base, "added_lines", len(added), "rules", len(rules))
+	if diff == "" {
+		if err := refuseAChangeThatIsNotCommitted(ctx, tc); err != nil {
+			return err
+		}
+	}
+
 	var blocking []diffFinding
-	for _, finding := range matchDiffRules(rules, addedDiffLines(diff)) {
+	for _, finding := range matchDiffRules(rules, added) {
 		logRuleFinding(tc, finding)
 		if finding.Level == DiffRuleLevelError {
 			blocking = append(blocking, finding)
@@ -142,6 +162,43 @@ func runDiffRules(ctx context.Context, tc *TaskContext, rules []compiledDiffRule
 		tc.Outcome = Outcome{Status: StatusParked, Detail: renderDiffRuleFindings(blocking)}
 	}
 	return nil
+}
+
+// uncommittedChangeReporter is the optional capability through which a Trees
+// implementation reports whether a worktree holds work no commit has captured
+// yet: staged, unstaged or untracked. It is separate from the Trees contract for
+// the same reason changeStatsReader is (steps.go): it is a capability one
+// consumer needs, not a question every Trees implementation must answer. Both
+// production implementations do answer it -- *worktree.Manager reads git, and
+// hybridTrees forwards to its local manager, which is the path every production
+// run takes.
+type uncommittedChangeReporter interface {
+	HasUncommittedChanges(ctx context.Context, dir string) (bool, error)
+}
+
+// refuseAChangeThatIsNotCommitted fails the step when it read no committed
+// change at all while the worktree still holds work. It is the guard the empty
+// diff alone cannot provide: an empty diff is either "nothing has changed" or
+// "the change is not committed yet", and only the worktree can say which.
+//
+// A clean worktree with nothing committed is a genuine no-op and is allowed. A
+// Trees implementation that cannot answer at all is refused rather than assumed
+// clean, because for a gate silence about the change is a failure, not a pass.
+func refuseAChangeThatIsNotCommitted(ctx context.Context, tc *TaskContext) error {
+	const follow = "this step must follow the step that commits the change"
+
+	reporter, ok := tc.Trees.(uncommittedChangeReporter)
+	if !ok {
+		return fmt.Errorf("%s: no committed change to check and this worktree implementation cannot report uncommitted work: %s", DiffRulesStepName, follow)
+	}
+	uncommitted, err := reporter.HasUncommittedChanges(ctx, tc.Dir)
+	if err != nil {
+		return fmt.Errorf("%s: read uncommitted work: %w", DiffRulesStepName, err)
+	}
+	if !uncommitted {
+		return nil
+	}
+	return fmt.Errorf("%s: no committed change to check but the worktree holds uncommitted work: %s", DiffRulesStepName, follow)
 }
 
 // logRuleFinding records one finding under the severity of its effect -- a

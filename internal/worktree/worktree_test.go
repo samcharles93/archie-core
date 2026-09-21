@@ -1459,3 +1459,93 @@ func TestChangedFileStatsRecordsTheDiffedBaseNotTheAdvancedTip(t *testing.T) {
 		}
 	}
 }
+
+// TestHasUncommittedChangesReportsWorkNoCommitHasCaptured pins the signal a step
+// that reads the COMMITTED change uses to tell "nothing has changed" from "the
+// change is not committed yet": the two are indistinguishable in the diff
+// alone, and a gate that cannot tell them apart passes a change it never read.
+//
+// The ignored-file case is the one that keeps the signal usable: a worktree
+// full of build output is clean for the purpose of "is there work to commit",
+// and reporting it dirty would refuse a correctly placed gate.
+func TestHasUncommittedChangesReportsWorkNoCommitHasCaptured(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 7, "feat: mine", "", "feature")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+
+	assertDirty := func(want bool, what string) {
+		t.Helper()
+		dirty, err := m.HasUncommittedChanges(ctx, dir)
+		if err != nil {
+			t.Fatalf("HasUncommittedChanges() error = %v (%s)", err, what)
+		}
+		if dirty != want {
+			t.Errorf("HasUncommittedChanges() = %v %s, want %v", dirty, what, want)
+		}
+	}
+	commit := func(message string) {
+		t.Helper()
+		if _, err := m.CommitAll(ctx, dir, message); err != nil {
+			t.Fatalf("CommitAll(%q) error = %v", message, err)
+		}
+	}
+
+	assertDirty(false, "on a freshly prepared worktree")
+
+	// An untracked file is the state a build stage leaves behind: work no commit
+	// has captured yet.
+	if err := os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("fix\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertDirty(true, "with an untracked file")
+	commit("feat: fix")
+	assertDirty(false, "after the untracked file was committed")
+
+	// An edit to a tracked file is the same signal.
+	if err := os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("fix changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertDirty(true, "with a modified tracked file")
+
+	// Staging it without committing it does not clear the signal.
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("fix.txt"); err != nil {
+		t.Fatalf("stage fix.txt: %v", err)
+	}
+	assertDirty(true, "with a staged but uncommitted change")
+	commit("feat: fix changed")
+	assertDirty(false, "after the staged change was committed")
+
+	// Build output, ignored by the repository, is not work waiting to be
+	// committed. The .gitignore itself must be committed first, or it is the
+	// untracked file under test.
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("build/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commit("chore: ignore build output")
+	if err := os.MkdirAll(filepath.Join(dir, "build"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build", "out.bin"), []byte("output\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertDirty(false, "with ignored build output in the worktree")
+
+	// A directory that is not a repository cannot answer, and must say so rather
+	// than report a clean worktree.
+	if _, err := m.HasUncommittedChanges(ctx, t.TempDir()); err == nil {
+		t.Error("HasUncommittedChanges() error = nil outside a repository, want the open failure")
+	}
+}
