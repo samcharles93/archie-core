@@ -55,3 +55,28 @@ func (b *boot) openDaemonWorkflowDefinitions() error {
 	b.workflowDefinitions = definitions
 	return nil
 }
+
+// openDaemonStateSurfaces opens the daemon's State Store surfaces in one step:
+// the adapter shared with every other root (openStateStoreAdapter) and, on top
+// of it, the daemon-only workflow-definitions client
+// (openDaemonWorkflowDefinitions).
+//
+// It exists because the daemon root is a flat composition sequence with no
+// complexity budget left to spend on a second adjacent guard, and the order the
+// two calls owe each other is a property of the pair, not of that sequence: the
+// definitions client wraps the control-plane transport the adapter dials, so it
+// cannot be built first, and buildDaemon captures the client, so it cannot be
+// built later. step_vocabulary_test.go pins exactly that order here.
+//
+// The gateway root calls openStateStoreAdapter directly and stops there; the
+// daemon-only half stays out of that function for the reason above it.
+func (b *boot) openDaemonStateSurfaces() error {
+	if err := b.openStateStoreAdapter(); err != nil {
+		return err
+	}
+	if err := b.openDaemonWorkflowDefinitions(); err != nil {
+		b.log.Error("workflow definitions client", "err", err)
+		return err
+	}
+	return nil
+}

@@ -138,18 +138,36 @@ func TestOnlyTheDaemonRootRegistersAStepVocabulary(t *testing.T) {
 		t.Error("the gateway root file mentions stepVocabulary; the gateway resolves no workflow step type")
 	}
 
+	// The daemon root opens both halves -- the shared adapter and the
+	// daemon-only definitions client -- through one call, so the sequence costs
+	// Run a single branch. The guarantee is the one this pin always held,
+	// relocated to where the sequence now lives: adapter first, then the client
+	// built on its transport, both before buildDaemon captures the client.
 	run := parsedBody(t, "main.go", "Run")
-	adapter := methodCallPosition(run, "openStateStoreAdapter")
-	wiring := methodCallPosition(run, "openDaemonWorkflowDefinitions")
+	surfaces := methodCallPosition(run, "openDaemonStateSurfaces")
 	build := methodCallPosition(run, "buildDaemon")
+	if surfaces == token.NoPos {
+		t.Fatal("Run never opens the daemon's State Store surfaces; every task pin would fall back to the shipped definitions")
+	}
+	if build == token.NoPos || surfaces > build {
+		t.Errorf("Run opens the daemon's State Store surfaces at %v, after buildDaemon at %v: the daemon would capture no definitions surface", surfaces, build)
+	}
+	// Neither half may also be opened from Run directly: a second call site
+	// would be a copy of the sequence outside the order asserted below.
+	for _, direct := range []string{"openStateStoreAdapter", "openDaemonWorkflowDefinitions"} {
+		if pos := methodCallPosition(run, direct); pos != token.NoPos {
+			t.Errorf("Run calls %s directly at %v; the daemon's State Store surfaces open through openDaemonStateSurfaces alone", direct, pos)
+		}
+	}
+
+	sequence := parsedBody(t, "step_vocabulary.go", "openDaemonStateSurfaces")
+	adapter := methodCallPosition(sequence, "openStateStoreAdapter")
+	wiring := methodCallPosition(sequence, "openDaemonWorkflowDefinitions")
 	if wiring == token.NoPos {
-		t.Fatal("Run never builds the daemon's workflow-definitions client; every task pin would fall back to the shipped definitions")
+		t.Fatal("openDaemonStateSurfaces never builds the daemon's workflow-definitions client; every task pin would fall back to the shipped definitions")
 	}
 	if adapter == token.NoPos || wiring < adapter {
-		t.Errorf("Run builds the workflow-definitions client at %v, at or before openStateStoreAdapter at %v: it would wrap the transport the adapter has not opened yet", wiring, adapter)
-	}
-	if build == token.NoPos || wiring > build {
-		t.Errorf("Run builds the workflow-definitions client at %v, after buildDaemon at %v: the daemon would capture no definitions surface", wiring, build)
+		t.Errorf("openDaemonStateSurfaces builds the workflow-definitions client at %v, at or before openStateStoreAdapter at %v: it would wrap the transport the adapter has not opened yet", wiring, adapter)
 	}
 }
 
