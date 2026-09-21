@@ -130,6 +130,32 @@ func TestReferencedActionIDs(t *testing.T) {
 	}
 }
 
+// TestCompileRejectsNonLiteralActionsIndex: an `actions[...]` access whose
+// key is not a string literal cannot be resolved statically, so it is a
+// Compile-time error rather than a runtime lookup the loader would silently
+// skip (J1's unknown-id rule extended to keys that are not literal).
+func TestCompileRejectsNonLiteralActionsIndex(t *testing.T) {
+	env := NewEnv()
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "event field key", src: `actions[event.name].result.x == true`},
+		{name: "computed string key", src: `actions["a" + "b"].result.x == true`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := env.Compile(tc.src)
+			if err == nil {
+				t.Fatalf("Compile(%q) = nil error, want rejection of non-literal actions index", tc.src)
+			}
+			if !strings.Contains(err.Error(), "actions") {
+				t.Errorf("Compile error = %q, want it to name the actions index", err.Error())
+			}
+		})
+	}
+}
+
 // TestEvalActionsContext: prior-action results read via actions.<id>.result.
 func TestEvalActionsContext(t *testing.T) {
 	env := NewEnv()

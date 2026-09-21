@@ -506,6 +506,28 @@ func TestLoadWhenReferencesUnknownActionIDFails(t *testing.T) {
 	}
 }
 
+// TestLoadWhenNonLiteralActionsIndexFails: an `actions[...]` access whose key
+// is not a string literal is rejected at load -- the id cannot be resolved
+// statically, so it must not pass the load check and become a runtime miss.
+func TestLoadWhenNonLiteralActionsIndexFails(t *testing.T) {
+	for _, when := range []string{
+		`actions[key].result.x == true`,
+		`actions[event.name].result.x == true`,
+	} {
+		t.Run(when, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+when+"\n")
+			_, err := Load(dir)
+			if err == nil {
+				t.Fatal("Load(when with non-literal actions index) = nil, want load failure")
+			}
+			if !strings.Contains(err.Error(), "pb.yaml") {
+				t.Errorf("Load error = %q, want the playbook path named", err.Error())
+			}
+		})
+	}
+}
+
 // TestUnknownActionReferenceGeneralRule: the reference check compares against
 // the declared ids of earlier actions, so it already behaves correctly when
 // the one-action boundary later relaxes (the Load path can only exercise the

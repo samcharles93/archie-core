@@ -16,6 +16,7 @@
 package expr
 
 import (
+	"fmt"
 	"sort"
 
 	"cel.dev/cel-go/cel"
@@ -66,9 +67,10 @@ func NewEnv() *Env {
 
 // Compile parses and type-checks a playbook expression string against the
 // declared context. A syntax error, an unknown root (anything other than
-// event/actions), or a type error is a returned error -- never a panic.
-// The returned Program is safe to evaluate concurrently (CEL programs are
-// stateless once compiled).
+// event/actions), a type error, or a non-literal `actions` index
+// (`actions[event.name]`, `actions["a" + "b"]`) is a returned error -- never
+// a panic. The returned Program is safe to evaluate concurrently (CEL
+// programs are stateless once compiled).
 //
 // This is the reject-at-load entry point: the playbook loader and the lint
 // tool call this at load time, so a bad expression drops the playbook with a
@@ -82,7 +84,11 @@ func (e *Env) Compile(src string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Program{prg: prg, actionIDs: referencedActionIDs(ast)}, nil
+	ids, err := referencedActionIDs(ast)
+	if err != nil {
+		return nil, err
+	}
+	return &Program{prg: prg, actionIDs: ids}, nil
 }
 
 // referencedActionIDs walks the compiled AST and returns the sorted, de-
@@ -92,14 +98,22 @@ func (e *Env) Compile(src string) (*Program, error) {
 // map(string,dyn), so CEL type-checking cannot reject an unknown id, and the
 // playbook loader compares this set against the ids of prior actions to
 // reject unknown references at load (J1 in
-// docs/prds/playbook-expression-syntax.md). A non-literal index key
-// (`actions[key]`) is a runtime lookup whose id cannot be known at load.
-func referencedActionIDs(ast *cel.Ast) []string {
+// docs/prds/playbook-expression-syntax.md).
+//
+// A non-literal index key (`actions[key]`, `actions[event.name]`,
+// `actions["a" + "b"]`) is rejected here with an error: its id cannot be
+// resolved statically, so it cannot be checked against declared prior-action
+// ids and must not pass the load check as a runtime miss.
+func referencedActionIDs(ast *cel.Ast) ([]string, error) {
 	if ast == nil || ast.NativeRep() == nil {
-		return nil
+		return nil, nil
 	}
 	seen := map[string]struct{}{}
+	var walkErr error
 	visitor := celast.NewExprVisitor(func(e celast.Expr) {
+		if walkErr != nil {
+			return
+		}
 		switch e.Kind() {
 		case celast.SelectKind:
 			sel := e.AsSelect()
@@ -111,21 +125,32 @@ func referencedActionIDs(ast *cel.Ast) []string {
 			if call.FunctionName() != "_[_]" || len(call.Args()) != 2 {
 				return
 			}
-			if !isActionsIdent(call.Args()[0]) || call.Args()[1].Kind() != celast.LiteralKind {
+			if !isActionsIdent(call.Args()[0]) {
 				return
 			}
-			if id, ok := call.Args()[1].AsLiteral().Value().(string); ok {
-				seen[id] = struct{}{}
+			key := call.Args()[1]
+			if key.Kind() != celast.LiteralKind {
+				walkErr = fmt.Errorf("non-literal actions index key (want a string literal)")
+				return
 			}
+			id, ok := key.AsLiteral().Value().(string)
+			if !ok {
+				walkErr = fmt.Errorf("non-literal actions index key (want a string literal)")
+				return
+			}
+			seen[id] = struct{}{}
 		}
 	})
 	celast.PreOrderVisit(ast.NativeRep().Expr(), visitor)
+	if walkErr != nil {
+		return nil, walkErr
+	}
 	ids := make([]string, 0, len(seen))
 	for id := range seen {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return ids
+	return ids, nil
 }
 
 // isActionsIdent reports whether e is the `actions` context-root identifier.
@@ -142,7 +167,8 @@ type Program struct {
 // ReferencedActionIDs returns the sorted, de-duplicated action ids the
 // expression reads from `actions` (either `actions.<id>` or
 // `actions["<id>"]`). It is empty when the expression reads no prior-action
-// result.
+// result. A non-literal index (`actions[event.name]`) never reaches this
+// method: it is rejected at Compile.
 func (p *Program) ReferencedActionIDs() []string {
 	if p == nil {
 		return nil
