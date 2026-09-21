@@ -49,6 +49,7 @@ var (
 	_ storecontract.BindingStore        = (*Client)(nil)
 	_ storecontract.BindingDispatcher   = (*Client)(nil)
 	_ storecontract.BindingTaskCreator  = (*Client)(nil)
+	_ storecontract.PlaybookDispatcher  = (*Client)(nil)
 	_ storecontract.ConfigSnapshotStore = (*Client)(nil)
 	_ storecontract.ApplyStatusStore    = (*Client)(nil)
 	_ identity.Repository               = (*Client)(nil)
@@ -430,6 +431,18 @@ func (c *Client) ArmedBindingsForSource(ctx context.Context, source string) ([]b
 
 func (c *Client) RecordDispatch(ctx context.Context, bindingID, bindingVersion, captureID, taskID int64) error {
 	_, err := c.client.RecordDispatch(ctx, &pb.RecordDispatchRequest{BindingId: bindingID, BindingVersion: bindingVersion, CaptureId: captureID, TaskId: taskID})
+	return unmapError(err)
+}
+
+// Playbook dispatch
+
+func (c *Client) RecordPlaybookDispatch(ctx context.Context, playbookID, playbookVersion, eventID, actionID string) error {
+	_, err := c.client.RecordPlaybookDispatch(ctx, &pb.RecordPlaybookDispatchRequest{PlaybookId: playbookID, PlaybookVersion: playbookVersion, EventId: eventID, ActionId: actionID})
+	return unmapError(err)
+}
+
+func (c *Client) DeletePlaybookDispatches(ctx context.Context, playbookID string) error {
+	_, err := c.client.DeletePlaybookDispatches(ctx, &pb.DeletePlaybookDispatchesRequest{PlaybookId: playbookID})
 	return unmapError(err)
 }
 

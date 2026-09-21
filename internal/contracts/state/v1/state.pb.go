@@ -6606,6 +6606,190 @@ func (*RecordDispatchResponse) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{122}
 }
 
+type RecordPlaybookDispatchRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	PlaybookId      string                 `protobuf:"bytes,1,opt,name=playbook_id,json=playbookId,proto3" json:"playbook_id,omitempty"`
+	PlaybookVersion string                 `protobuf:"bytes,2,opt,name=playbook_version,json=playbookVersion,proto3" json:"playbook_version,omitempty"`
+	EventId         string                 `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	ActionId        string                 `protobuf:"bytes,4,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RecordPlaybookDispatchRequest) Reset() {
+	*x = RecordPlaybookDispatchRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[123]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordPlaybookDispatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordPlaybookDispatchRequest) ProtoMessage() {}
+
+func (x *RecordPlaybookDispatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[123]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordPlaybookDispatchRequest.ProtoReflect.Descriptor instead.
+func (*RecordPlaybookDispatchRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{123}
+}
+
+func (x *RecordPlaybookDispatchRequest) GetPlaybookId() string {
+	if x != nil {
+		return x.PlaybookId
+	}
+	return ""
+}
+
+func (x *RecordPlaybookDispatchRequest) GetPlaybookVersion() string {
+	if x != nil {
+		return x.PlaybookVersion
+	}
+	return ""
+}
+
+func (x *RecordPlaybookDispatchRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *RecordPlaybookDispatchRequest) GetActionId() string {
+	if x != nil {
+		return x.ActionId
+	}
+	return ""
+}
+
+type RecordPlaybookDispatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordPlaybookDispatchResponse) Reset() {
+	*x = RecordPlaybookDispatchResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[124]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordPlaybookDispatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordPlaybookDispatchResponse) ProtoMessage() {}
+
+func (x *RecordPlaybookDispatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[124]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordPlaybookDispatchResponse.ProtoReflect.Descriptor instead.
+func (*RecordPlaybookDispatchResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{124}
+}
+
+type DeletePlaybookDispatchesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlaybookId    string                 `protobuf:"bytes,1,opt,name=playbook_id,json=playbookId,proto3" json:"playbook_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeletePlaybookDispatchesRequest) Reset() {
+	*x = DeletePlaybookDispatchesRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[125]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletePlaybookDispatchesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletePlaybookDispatchesRequest) ProtoMessage() {}
+
+func (x *DeletePlaybookDispatchesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[125]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletePlaybookDispatchesRequest.ProtoReflect.Descriptor instead.
+func (*DeletePlaybookDispatchesRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{125}
+}
+
+func (x *DeletePlaybookDispatchesRequest) GetPlaybookId() string {
+	if x != nil {
+		return x.PlaybookId
+	}
+	return ""
+}
+
+type DeletePlaybookDispatchesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeletePlaybookDispatchesResponse) Reset() {
+	*x = DeletePlaybookDispatchesResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletePlaybookDispatchesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletePlaybookDispatchesResponse) ProtoMessage() {}
+
+func (x *DeletePlaybookDispatchesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletePlaybookDispatchesResponse.ProtoReflect.Descriptor instead.
+func (*DeletePlaybookDispatchesResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{126}
+}
+
 type ListUndispatchedCapturesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sources       []string               `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
@@ -6616,7 +6800,7 @@ type ListUndispatchedCapturesRequest struct {
 
 func (x *ListUndispatchedCapturesRequest) Reset() {
 	*x = ListUndispatchedCapturesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[123]
+	mi := &file_state_v1_state_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6628,7 +6812,7 @@ func (x *ListUndispatchedCapturesRequest) String() string {
 func (*ListUndispatchedCapturesRequest) ProtoMessage() {}
 
 func (x *ListUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[123]
+	mi := &file_state_v1_state_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6641,7 +6825,7 @@ func (x *ListUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUndispatchedCapturesRequest.ProtoReflect.Descriptor instead.
 func (*ListUndispatchedCapturesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{123}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *ListUndispatchedCapturesRequest) GetSources() []string {
@@ -6667,7 +6851,7 @@ type ListUndispatchedCapturesResponse struct {
 
 func (x *ListUndispatchedCapturesResponse) Reset() {
 	*x = ListUndispatchedCapturesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[124]
+	mi := &file_state_v1_state_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6679,7 +6863,7 @@ func (x *ListUndispatchedCapturesResponse) String() string {
 func (*ListUndispatchedCapturesResponse) ProtoMessage() {}
 
 func (x *ListUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[124]
+	mi := &file_state_v1_state_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6692,7 +6876,7 @@ func (x *ListUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUndispatchedCapturesResponse.ProtoReflect.Descriptor instead.
 func (*ListUndispatchedCapturesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{124}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ListUndispatchedCapturesResponse) GetCaptures() []*CapturedEvent {
@@ -6712,7 +6896,7 @@ type StreamUndispatchedCapturesRequest struct {
 
 func (x *StreamUndispatchedCapturesRequest) Reset() {
 	*x = StreamUndispatchedCapturesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[125]
+	mi := &file_state_v1_state_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6724,7 +6908,7 @@ func (x *StreamUndispatchedCapturesRequest) String() string {
 func (*StreamUndispatchedCapturesRequest) ProtoMessage() {}
 
 func (x *StreamUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[125]
+	mi := &file_state_v1_state_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6737,7 +6921,7 @@ func (x *StreamUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use StreamUndispatchedCapturesRequest.ProtoReflect.Descriptor instead.
 func (*StreamUndispatchedCapturesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{125}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *StreamUndispatchedCapturesRequest) GetSources() []string {
@@ -6764,7 +6948,7 @@ type StreamUndispatchedCapturesResponse struct {
 
 func (x *StreamUndispatchedCapturesResponse) Reset() {
 	*x = StreamUndispatchedCapturesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[126]
+	mi := &file_state_v1_state_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6776,7 +6960,7 @@ func (x *StreamUndispatchedCapturesResponse) String() string {
 func (*StreamUndispatchedCapturesResponse) ProtoMessage() {}
 
 func (x *StreamUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[126]
+	mi := &file_state_v1_state_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6789,7 +6973,7 @@ func (x *StreamUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use StreamUndispatchedCapturesResponse.ProtoReflect.Descriptor instead.
 func (*StreamUndispatchedCapturesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{126}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *StreamUndispatchedCapturesResponse) GetCapture() *CapturedEvent {
@@ -6815,7 +6999,7 @@ type EnqueueBindingTaskRequest struct {
 
 func (x *EnqueueBindingTaskRequest) Reset() {
 	*x = EnqueueBindingTaskRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[127]
+	mi := &file_state_v1_state_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6827,7 +7011,7 @@ func (x *EnqueueBindingTaskRequest) String() string {
 func (*EnqueueBindingTaskRequest) ProtoMessage() {}
 
 func (x *EnqueueBindingTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[127]
+	mi := &file_state_v1_state_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6840,7 +7024,7 @@ func (x *EnqueueBindingTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueBindingTaskRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueBindingTaskRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{127}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *EnqueueBindingTaskRequest) GetOwner() string {
@@ -6908,7 +7092,7 @@ type EnqueueBindingTaskResponse struct {
 
 func (x *EnqueueBindingTaskResponse) Reset() {
 	*x = EnqueueBindingTaskResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[128]
+	mi := &file_state_v1_state_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6920,7 +7104,7 @@ func (x *EnqueueBindingTaskResponse) String() string {
 func (*EnqueueBindingTaskResponse) ProtoMessage() {}
 
 func (x *EnqueueBindingTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[128]
+	mi := &file_state_v1_state_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6933,7 +7117,7 @@ func (x *EnqueueBindingTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueBindingTaskResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueBindingTaskResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{128}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *EnqueueBindingTaskResponse) GetTask() *Task {
@@ -7370,7 +7554,18 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"capture_id\x18\x03 \x01(\x03R\tcaptureId\x12\x17\n" +
 	"\atask_id\x18\x04 \x01(\x03R\x06taskId\"\x18\n" +
-	"\x16RecordDispatchResponse\"Q\n" +
+	"\x16RecordDispatchResponse\"\xa3\x01\n" +
+	"\x1dRecordPlaybookDispatchRequest\x12\x1f\n" +
+	"\vplaybook_id\x18\x01 \x01(\tR\n" +
+	"playbookId\x12)\n" +
+	"\x10playbook_version\x18\x02 \x01(\tR\x0fplaybookVersion\x12\x19\n" +
+	"\bevent_id\x18\x03 \x01(\tR\aeventId\x12\x1b\n" +
+	"\taction_id\x18\x04 \x01(\tR\bactionId\" \n" +
+	"\x1eRecordPlaybookDispatchResponse\"B\n" +
+	"\x1fDeletePlaybookDispatchesRequest\x12\x1f\n" +
+	"\vplaybook_id\x18\x01 \x01(\tR\n" +
+	"playbookId\"\"\n" +
+	" DeletePlaybookDispatchesResponse\"Q\n" +
 	"\x1fListUndispatchedCapturesRequest\x12\x18\n" +
 	"\asources\x18\x01 \x03(\tR\asources\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x03R\x05limit\"W\n" +
@@ -7392,7 +7587,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"binding_id\x18\a \x01(\x03R\tbindingId\x12'\n" +
 	"\x0fbinding_version\x18\b \x01(\x03R\x0ebindingVersion\"@\n" +
 	"\x1aEnqueueBindingTaskResponse\x12\"\n" +
-	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task2\xf7$\n" +
+	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task2\xd7&\n" +
 	"\x11StateStoreService\x12\\\n" +
 	"\x11RegisterTaskGrant\x12\".state.v1.RegisterTaskGrantRequest\x1a#.state.v1.RegisterTaskGrantResponse\x12V\n" +
 	"\x0fRevokeTaskGrant\x12 .state.v1.RevokeTaskGrantRequest\x1a!.state.v1.RevokeTaskGrantResponse\x12S\n" +
@@ -7452,7 +7647,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\rDeleteBinding\x12\x1e.state.v1.DeleteBindingRequest\x1a\x1f.state.v1.DeleteBindingResponse\x12S\n" +
 	"\x0eApproveBinding\x12\x1f.state.v1.ApproveBindingRequest\x1a .state.v1.ApproveBindingResponse\x12k\n" +
 	"\x16ArmedBindingsForSource\x12'.state.v1.ArmedBindingsForSourceRequest\x1a(.state.v1.ArmedBindingsForSourceResponse\x12S\n" +
-	"\x0eRecordDispatch\x12\x1f.state.v1.RecordDispatchRequest\x1a .state.v1.RecordDispatchResponse\x12v\n" +
+	"\x0eRecordDispatch\x12\x1f.state.v1.RecordDispatchRequest\x1a .state.v1.RecordDispatchResponse\x12k\n" +
+	"\x16RecordPlaybookDispatch\x12'.state.v1.RecordPlaybookDispatchRequest\x1a(.state.v1.RecordPlaybookDispatchResponse\x12q\n" +
+	"\x18DeletePlaybookDispatches\x12).state.v1.DeletePlaybookDispatchesRequest\x1a*.state.v1.DeletePlaybookDispatchesResponse\x12v\n" +
 	"\x18ListUndispatchedCaptures\x12).state.v1.ListUndispatchedCapturesRequest\x1a*.state.v1.ListUndispatchedCapturesResponse\"\x03\x88\x02\x01\x12y\n" +
 	"\x1aStreamUndispatchedCaptures\x12+.state.v1.StreamUndispatchedCapturesRequest\x1a,.state.v1.StreamUndispatchedCapturesResponse0\x01\x12_\n" +
 	"\x12EnqueueBindingTask\x12#.state.v1.EnqueueBindingTaskRequest\x1a$.state.v1.EnqueueBindingTaskResponseB\xa4\x01\n" +
@@ -7471,7 +7668,7 @@ func file_state_v1_state_proto_rawDescGZIP() []byte {
 	return file_state_v1_state_proto_rawDescData
 }
 
-var file_state_v1_state_proto_msgTypes = make([]protoimpl.MessageInfo, 130)
+var file_state_v1_state_proto_msgTypes = make([]protoimpl.MessageInfo, 134)
 var file_state_v1_state_proto_goTypes = []any{
 	(*RegisterTaskGrantRequest)(nil),           // 0: state.v1.RegisterTaskGrantRequest
 	(*RegisterTaskGrantResponse)(nil),          // 1: state.v1.RegisterTaskGrantResponse
@@ -7596,18 +7793,22 @@ var file_state_v1_state_proto_goTypes = []any{
 	(*ArmedBindingsForSourceResponse)(nil),     // 120: state.v1.ArmedBindingsForSourceResponse
 	(*RecordDispatchRequest)(nil),              // 121: state.v1.RecordDispatchRequest
 	(*RecordDispatchResponse)(nil),             // 122: state.v1.RecordDispatchResponse
-	(*ListUndispatchedCapturesRequest)(nil),    // 123: state.v1.ListUndispatchedCapturesRequest
-	(*ListUndispatchedCapturesResponse)(nil),   // 124: state.v1.ListUndispatchedCapturesResponse
-	(*StreamUndispatchedCapturesRequest)(nil),  // 125: state.v1.StreamUndispatchedCapturesRequest
-	(*StreamUndispatchedCapturesResponse)(nil), // 126: state.v1.StreamUndispatchedCapturesResponse
-	(*EnqueueBindingTaskRequest)(nil),          // 127: state.v1.EnqueueBindingTaskRequest
-	(*EnqueueBindingTaskResponse)(nil),         // 128: state.v1.EnqueueBindingTaskResponse
-	nil,                                        // 129: state.v1.StatusCountsResponse.CountsEntry
-	(*timestamppb.Timestamp)(nil),              // 130: google.protobuf.Timestamp
+	(*RecordPlaybookDispatchRequest)(nil),      // 123: state.v1.RecordPlaybookDispatchRequest
+	(*RecordPlaybookDispatchResponse)(nil),     // 124: state.v1.RecordPlaybookDispatchResponse
+	(*DeletePlaybookDispatchesRequest)(nil),    // 125: state.v1.DeletePlaybookDispatchesRequest
+	(*DeletePlaybookDispatchesResponse)(nil),   // 126: state.v1.DeletePlaybookDispatchesResponse
+	(*ListUndispatchedCapturesRequest)(nil),    // 127: state.v1.ListUndispatchedCapturesRequest
+	(*ListUndispatchedCapturesResponse)(nil),   // 128: state.v1.ListUndispatchedCapturesResponse
+	(*StreamUndispatchedCapturesRequest)(nil),  // 129: state.v1.StreamUndispatchedCapturesRequest
+	(*StreamUndispatchedCapturesResponse)(nil), // 130: state.v1.StreamUndispatchedCapturesResponse
+	(*EnqueueBindingTaskRequest)(nil),          // 131: state.v1.EnqueueBindingTaskRequest
+	(*EnqueueBindingTaskResponse)(nil),         // 132: state.v1.EnqueueBindingTaskResponse
+	nil,                                        // 133: state.v1.StatusCountsResponse.CountsEntry
+	(*timestamppb.Timestamp)(nil),              // 134: google.protobuf.Timestamp
 }
 var file_state_v1_state_proto_depIdxs = []int32{
-	130, // 0: state.v1.Identity.created_at:type_name -> google.protobuf.Timestamp
-	130, // 1: state.v1.Identity.updated_at:type_name -> google.protobuf.Timestamp
+	134, // 0: state.v1.Identity.created_at:type_name -> google.protobuf.Timestamp
+	134, // 1: state.v1.Identity.updated_at:type_name -> google.protobuf.Timestamp
 	4,   // 2: state.v1.ListIdentitiesResponse.identities:type_name -> state.v1.Identity
 	4,   // 3: state.v1.GetIdentityResponse.identity:type_name -> state.v1.Identity
 	5,   // 4: state.v1.CreateIdentityRequest.audit:type_name -> state.v1.IdentityAudit
@@ -7620,16 +7821,16 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	4,   // 11: state.v1.SuspendIdentityResponse.identity:type_name -> state.v1.Identity
 	4,   // 12: state.v1.ReactivateIdentityResponse.identity:type_name -> state.v1.Identity
 	4,   // 13: state.v1.RetireIdentityResponse.identity:type_name -> state.v1.Identity
-	130, // 14: state.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	130, // 15: state.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	130, // 16: state.v1.Event.at:type_name -> google.protobuf.Timestamp
-	130, // 17: state.v1.CapturedEvent.received_at:type_name -> google.protobuf.Timestamp
+	134, // 14: state.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	134, // 15: state.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	134, // 16: state.v1.Event.at:type_name -> google.protobuf.Timestamp
+	134, // 17: state.v1.CapturedEvent.received_at:type_name -> google.protobuf.Timestamp
 	23,  // 18: state.v1.Mapping.fields:type_name -> state.v1.MappingField
-	130, // 19: state.v1.Mapping.created_at:type_name -> google.protobuf.Timestamp
-	130, // 20: state.v1.Mapping.updated_at:type_name -> google.protobuf.Timestamp
+	134, // 19: state.v1.Mapping.created_at:type_name -> google.protobuf.Timestamp
+	134, // 20: state.v1.Mapping.updated_at:type_name -> google.protobuf.Timestamp
 	25,  // 21: state.v1.Binding.matcher:type_name -> state.v1.BindingMatcher
-	130, // 22: state.v1.Binding.created_at:type_name -> google.protobuf.Timestamp
-	130, // 23: state.v1.Binding.updated_at:type_name -> google.protobuf.Timestamp
+	134, // 22: state.v1.Binding.created_at:type_name -> google.protobuf.Timestamp
+	134, // 23: state.v1.Binding.updated_at:type_name -> google.protobuf.Timestamp
 	20,  // 24: state.v1.EnqueueChatTaskResponse.task:type_name -> state.v1.Task
 	20,  // 25: state.v1.ClaimNextResponse.task:type_name -> state.v1.Task
 	20,  // 26: state.v1.ClaimByIssueResponse.task:type_name -> state.v1.Task
@@ -7640,22 +7841,22 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	20,  // 31: state.v1.TaskByIDResponse.task:type_name -> state.v1.Task
 	20,  // 32: state.v1.OpenPRsResponse.tasks:type_name -> state.v1.Task
 	20,  // 33: state.v1.TasksResponse.tasks:type_name -> state.v1.Task
-	129, // 34: state.v1.StatusCountsResponse.counts:type_name -> state.v1.StatusCountsResponse.CountsEntry
+	133, // 34: state.v1.StatusCountsResponse.counts:type_name -> state.v1.StatusCountsResponse.CountsEntry
 	21,  // 35: state.v1.InsertEventRequest.event:type_name -> state.v1.Event
 	21,  // 36: state.v1.EventsSinceResponse.events:type_name -> state.v1.Event
 	21,  // 37: state.v1.TaskEventsResponse.events:type_name -> state.v1.Event
 	27,  // 38: state.v1.WorkflowStatsResponse.stats:type_name -> state.v1.WorkflowStat
 	28,  // 39: state.v1.StageStatsResponse.stats:type_name -> state.v1.StageStat
 	29,  // 40: state.v1.TokensByDayResponse.tokens:type_name -> state.v1.DayTokens
-	130, // 41: state.v1.ConfigSnapshot.published_at:type_name -> google.protobuf.Timestamp
+	134, // 41: state.v1.ConfigSnapshot.published_at:type_name -> google.protobuf.Timestamp
 	76,  // 42: state.v1.PutConfigSnapshotRequest.snapshot:type_name -> state.v1.ConfigSnapshot
 	76,  // 43: state.v1.GetConfigSnapshotResponse.snapshot:type_name -> state.v1.ConfigSnapshot
-	130, // 44: state.v1.ApplyStatus.reported_at:type_name -> google.protobuf.Timestamp
+	134, // 44: state.v1.ApplyStatus.reported_at:type_name -> google.protobuf.Timestamp
 	81,  // 45: state.v1.PutApplyStatusRequest.status:type_name -> state.v1.ApplyStatus
 	81,  // 46: state.v1.ListApplyStatusResponse.statuses:type_name -> state.v1.ApplyStatus
-	130, // 47: state.v1.TaskLogEntry.time:type_name -> google.protobuf.Timestamp
-	130, // 48: state.v1.ReadTaskLogRequest.since:type_name -> google.protobuf.Timestamp
-	130, // 49: state.v1.ReadTaskLogRequest.until:type_name -> google.protobuf.Timestamp
+	134, // 47: state.v1.TaskLogEntry.time:type_name -> google.protobuf.Timestamp
+	134, // 48: state.v1.ReadTaskLogRequest.since:type_name -> google.protobuf.Timestamp
+	134, // 49: state.v1.ReadTaskLogRequest.until:type_name -> google.protobuf.Timestamp
 	86,  // 50: state.v1.ReadTaskLogResponse.entries:type_name -> state.v1.TaskLogEntry
 	22,  // 51: state.v1.InsertCaptureRequest.capture:type_name -> state.v1.CapturedEvent
 	22,  // 52: state.v1.ListCapturesResponse.captures:type_name -> state.v1.CapturedEvent
@@ -7726,68 +7927,72 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	117, // 117: state.v1.StateStoreService.ApproveBinding:input_type -> state.v1.ApproveBindingRequest
 	119, // 118: state.v1.StateStoreService.ArmedBindingsForSource:input_type -> state.v1.ArmedBindingsForSourceRequest
 	121, // 119: state.v1.StateStoreService.RecordDispatch:input_type -> state.v1.RecordDispatchRequest
-	123, // 120: state.v1.StateStoreService.ListUndispatchedCaptures:input_type -> state.v1.ListUndispatchedCapturesRequest
-	125, // 121: state.v1.StateStoreService.StreamUndispatchedCaptures:input_type -> state.v1.StreamUndispatchedCapturesRequest
-	127, // 122: state.v1.StateStoreService.EnqueueBindingTask:input_type -> state.v1.EnqueueBindingTaskRequest
-	1,   // 123: state.v1.StateStoreService.RegisterTaskGrant:output_type -> state.v1.RegisterTaskGrantResponse
-	3,   // 124: state.v1.StateStoreService.RevokeTaskGrant:output_type -> state.v1.RevokeTaskGrantResponse
-	7,   // 125: state.v1.StateStoreService.ListIdentities:output_type -> state.v1.ListIdentitiesResponse
-	9,   // 126: state.v1.StateStoreService.GetIdentity:output_type -> state.v1.GetIdentityResponse
-	15,  // 127: state.v1.StateStoreService.CreateIdentity:output_type -> state.v1.CreateIdentityResponse
-	16,  // 128: state.v1.StateStoreService.RenameIdentity:output_type -> state.v1.RenameIdentityResponse
-	17,  // 129: state.v1.StateStoreService.SuspendIdentity:output_type -> state.v1.SuspendIdentityResponse
-	18,  // 130: state.v1.StateStoreService.ReactivateIdentity:output_type -> state.v1.ReactivateIdentityResponse
-	19,  // 131: state.v1.StateStoreService.RetireIdentity:output_type -> state.v1.RetireIdentityResponse
-	31,  // 132: state.v1.StateStoreService.EnqueueIssue:output_type -> state.v1.EnqueueIssueResponse
-	33,  // 133: state.v1.StateStoreService.EnqueueChatTask:output_type -> state.v1.EnqueueChatTaskResponse
-	35,  // 134: state.v1.StateStoreService.ClaimNext:output_type -> state.v1.ClaimNextResponse
-	37,  // 135: state.v1.StateStoreService.ClaimByIssue:output_type -> state.v1.ClaimByIssueResponse
-	39,  // 136: state.v1.StateStoreService.Transition:output_type -> state.v1.TransitionResponse
-	41,  // 137: state.v1.StateStoreService.Update:output_type -> state.v1.UpdateResponse
-	43,  // 138: state.v1.StateStoreService.Requeue:output_type -> state.v1.RequeueResponse
-	45,  // 139: state.v1.StateStoreService.RecoverStale:output_type -> state.v1.RecoverStaleResponse
-	47,  // 140: state.v1.StateStoreService.ArchiveTask:output_type -> state.v1.ArchiveTaskResponse
-	49,  // 141: state.v1.StateStoreService.RetryTask:output_type -> state.v1.RetryTaskResponse
-	51,  // 142: state.v1.StateStoreService.TaskByIssue:output_type -> state.v1.TaskByIssueResponse
-	53,  // 143: state.v1.StateStoreService.OpenTaskByPR:output_type -> state.v1.OpenTaskByPRResponse
-	55,  // 144: state.v1.StateStoreService.TaskByID:output_type -> state.v1.TaskByIDResponse
-	57,  // 145: state.v1.StateStoreService.OpenPRs:output_type -> state.v1.OpenPRsResponse
-	59,  // 146: state.v1.StateStoreService.ClearTerminalTasks:output_type -> state.v1.ClearTerminalTasksResponse
-	61,  // 147: state.v1.StateStoreService.Tasks:output_type -> state.v1.TasksResponse
-	63,  // 148: state.v1.StateStoreService.StatusCounts:output_type -> state.v1.StatusCountsResponse
-	65,  // 149: state.v1.StateStoreService.InsertEvent:output_type -> state.v1.InsertEventResponse
-	67,  // 150: state.v1.StateStoreService.EventsSince:output_type -> state.v1.EventsSinceResponse
-	69,  // 151: state.v1.StateStoreService.TaskEvents:output_type -> state.v1.TaskEventsResponse
-	71,  // 152: state.v1.StateStoreService.WorkflowStats:output_type -> state.v1.WorkflowStatsResponse
-	73,  // 153: state.v1.StateStoreService.StageStats:output_type -> state.v1.StageStatsResponse
-	75,  // 154: state.v1.StateStoreService.TokensByDay:output_type -> state.v1.TokensByDayResponse
-	78,  // 155: state.v1.StateStoreService.PutConfigSnapshot:output_type -> state.v1.PutConfigSnapshotResponse
-	80,  // 156: state.v1.StateStoreService.GetConfigSnapshot:output_type -> state.v1.GetConfigSnapshotResponse
-	83,  // 157: state.v1.StateStoreService.PutApplyStatus:output_type -> state.v1.PutApplyStatusResponse
-	85,  // 158: state.v1.StateStoreService.ListApplyStatus:output_type -> state.v1.ListApplyStatusResponse
-	88,  // 159: state.v1.StateStoreService.ReadTaskLog:output_type -> state.v1.ReadTaskLogResponse
-	90,  // 160: state.v1.StateStoreService.StreamTaskLogContent:output_type -> state.v1.StreamTaskLogContentResponse
-	92,  // 161: state.v1.StateStoreService.InsertCapture:output_type -> state.v1.InsertCaptureResponse
-	94,  // 162: state.v1.StateStoreService.ListCaptures:output_type -> state.v1.ListCapturesResponse
-	96,  // 163: state.v1.StateStoreService.StreamCaptures:output_type -> state.v1.StreamCapturesResponse
-	98,  // 164: state.v1.StateStoreService.InsertMapping:output_type -> state.v1.InsertMappingResponse
-	100, // 165: state.v1.StateStoreService.GetMapping:output_type -> state.v1.GetMappingResponse
-	102, // 166: state.v1.StateStoreService.ListMappings:output_type -> state.v1.ListMappingsResponse
-	104, // 167: state.v1.StateStoreService.UpdateMapping:output_type -> state.v1.UpdateMappingResponse
-	106, // 168: state.v1.StateStoreService.DeleteMapping:output_type -> state.v1.DeleteMappingResponse
-	108, // 169: state.v1.StateStoreService.InsertBinding:output_type -> state.v1.InsertBindingResponse
-	110, // 170: state.v1.StateStoreService.GetBinding:output_type -> state.v1.GetBindingResponse
-	112, // 171: state.v1.StateStoreService.ListBindings:output_type -> state.v1.ListBindingsResponse
-	114, // 172: state.v1.StateStoreService.UpdateBinding:output_type -> state.v1.UpdateBindingResponse
-	116, // 173: state.v1.StateStoreService.DeleteBinding:output_type -> state.v1.DeleteBindingResponse
-	118, // 174: state.v1.StateStoreService.ApproveBinding:output_type -> state.v1.ApproveBindingResponse
-	120, // 175: state.v1.StateStoreService.ArmedBindingsForSource:output_type -> state.v1.ArmedBindingsForSourceResponse
-	122, // 176: state.v1.StateStoreService.RecordDispatch:output_type -> state.v1.RecordDispatchResponse
-	124, // 177: state.v1.StateStoreService.ListUndispatchedCaptures:output_type -> state.v1.ListUndispatchedCapturesResponse
-	126, // 178: state.v1.StateStoreService.StreamUndispatchedCaptures:output_type -> state.v1.StreamUndispatchedCapturesResponse
-	128, // 179: state.v1.StateStoreService.EnqueueBindingTask:output_type -> state.v1.EnqueueBindingTaskResponse
-	123, // [123:180] is the sub-list for method output_type
-	66,  // [66:123] is the sub-list for method input_type
+	123, // 120: state.v1.StateStoreService.RecordPlaybookDispatch:input_type -> state.v1.RecordPlaybookDispatchRequest
+	125, // 121: state.v1.StateStoreService.DeletePlaybookDispatches:input_type -> state.v1.DeletePlaybookDispatchesRequest
+	127, // 122: state.v1.StateStoreService.ListUndispatchedCaptures:input_type -> state.v1.ListUndispatchedCapturesRequest
+	129, // 123: state.v1.StateStoreService.StreamUndispatchedCaptures:input_type -> state.v1.StreamUndispatchedCapturesRequest
+	131, // 124: state.v1.StateStoreService.EnqueueBindingTask:input_type -> state.v1.EnqueueBindingTaskRequest
+	1,   // 125: state.v1.StateStoreService.RegisterTaskGrant:output_type -> state.v1.RegisterTaskGrantResponse
+	3,   // 126: state.v1.StateStoreService.RevokeTaskGrant:output_type -> state.v1.RevokeTaskGrantResponse
+	7,   // 127: state.v1.StateStoreService.ListIdentities:output_type -> state.v1.ListIdentitiesResponse
+	9,   // 128: state.v1.StateStoreService.GetIdentity:output_type -> state.v1.GetIdentityResponse
+	15,  // 129: state.v1.StateStoreService.CreateIdentity:output_type -> state.v1.CreateIdentityResponse
+	16,  // 130: state.v1.StateStoreService.RenameIdentity:output_type -> state.v1.RenameIdentityResponse
+	17,  // 131: state.v1.StateStoreService.SuspendIdentity:output_type -> state.v1.SuspendIdentityResponse
+	18,  // 132: state.v1.StateStoreService.ReactivateIdentity:output_type -> state.v1.ReactivateIdentityResponse
+	19,  // 133: state.v1.StateStoreService.RetireIdentity:output_type -> state.v1.RetireIdentityResponse
+	31,  // 134: state.v1.StateStoreService.EnqueueIssue:output_type -> state.v1.EnqueueIssueResponse
+	33,  // 135: state.v1.StateStoreService.EnqueueChatTask:output_type -> state.v1.EnqueueChatTaskResponse
+	35,  // 136: state.v1.StateStoreService.ClaimNext:output_type -> state.v1.ClaimNextResponse
+	37,  // 137: state.v1.StateStoreService.ClaimByIssue:output_type -> state.v1.ClaimByIssueResponse
+	39,  // 138: state.v1.StateStoreService.Transition:output_type -> state.v1.TransitionResponse
+	41,  // 139: state.v1.StateStoreService.Update:output_type -> state.v1.UpdateResponse
+	43,  // 140: state.v1.StateStoreService.Requeue:output_type -> state.v1.RequeueResponse
+	45,  // 141: state.v1.StateStoreService.RecoverStale:output_type -> state.v1.RecoverStaleResponse
+	47,  // 142: state.v1.StateStoreService.ArchiveTask:output_type -> state.v1.ArchiveTaskResponse
+	49,  // 143: state.v1.StateStoreService.RetryTask:output_type -> state.v1.RetryTaskResponse
+	51,  // 144: state.v1.StateStoreService.TaskByIssue:output_type -> state.v1.TaskByIssueResponse
+	53,  // 145: state.v1.StateStoreService.OpenTaskByPR:output_type -> state.v1.OpenTaskByPRResponse
+	55,  // 146: state.v1.StateStoreService.TaskByID:output_type -> state.v1.TaskByIDResponse
+	57,  // 147: state.v1.StateStoreService.OpenPRs:output_type -> state.v1.OpenPRsResponse
+	59,  // 148: state.v1.StateStoreService.ClearTerminalTasks:output_type -> state.v1.ClearTerminalTasksResponse
+	61,  // 149: state.v1.StateStoreService.Tasks:output_type -> state.v1.TasksResponse
+	63,  // 150: state.v1.StateStoreService.StatusCounts:output_type -> state.v1.StatusCountsResponse
+	65,  // 151: state.v1.StateStoreService.InsertEvent:output_type -> state.v1.InsertEventResponse
+	67,  // 152: state.v1.StateStoreService.EventsSince:output_type -> state.v1.EventsSinceResponse
+	69,  // 153: state.v1.StateStoreService.TaskEvents:output_type -> state.v1.TaskEventsResponse
+	71,  // 154: state.v1.StateStoreService.WorkflowStats:output_type -> state.v1.WorkflowStatsResponse
+	73,  // 155: state.v1.StateStoreService.StageStats:output_type -> state.v1.StageStatsResponse
+	75,  // 156: state.v1.StateStoreService.TokensByDay:output_type -> state.v1.TokensByDayResponse
+	78,  // 157: state.v1.StateStoreService.PutConfigSnapshot:output_type -> state.v1.PutConfigSnapshotResponse
+	80,  // 158: state.v1.StateStoreService.GetConfigSnapshot:output_type -> state.v1.GetConfigSnapshotResponse
+	83,  // 159: state.v1.StateStoreService.PutApplyStatus:output_type -> state.v1.PutApplyStatusResponse
+	85,  // 160: state.v1.StateStoreService.ListApplyStatus:output_type -> state.v1.ListApplyStatusResponse
+	88,  // 161: state.v1.StateStoreService.ReadTaskLog:output_type -> state.v1.ReadTaskLogResponse
+	90,  // 162: state.v1.StateStoreService.StreamTaskLogContent:output_type -> state.v1.StreamTaskLogContentResponse
+	92,  // 163: state.v1.StateStoreService.InsertCapture:output_type -> state.v1.InsertCaptureResponse
+	94,  // 164: state.v1.StateStoreService.ListCaptures:output_type -> state.v1.ListCapturesResponse
+	96,  // 165: state.v1.StateStoreService.StreamCaptures:output_type -> state.v1.StreamCapturesResponse
+	98,  // 166: state.v1.StateStoreService.InsertMapping:output_type -> state.v1.InsertMappingResponse
+	100, // 167: state.v1.StateStoreService.GetMapping:output_type -> state.v1.GetMappingResponse
+	102, // 168: state.v1.StateStoreService.ListMappings:output_type -> state.v1.ListMappingsResponse
+	104, // 169: state.v1.StateStoreService.UpdateMapping:output_type -> state.v1.UpdateMappingResponse
+	106, // 170: state.v1.StateStoreService.DeleteMapping:output_type -> state.v1.DeleteMappingResponse
+	108, // 171: state.v1.StateStoreService.InsertBinding:output_type -> state.v1.InsertBindingResponse
+	110, // 172: state.v1.StateStoreService.GetBinding:output_type -> state.v1.GetBindingResponse
+	112, // 173: state.v1.StateStoreService.ListBindings:output_type -> state.v1.ListBindingsResponse
+	114, // 174: state.v1.StateStoreService.UpdateBinding:output_type -> state.v1.UpdateBindingResponse
+	116, // 175: state.v1.StateStoreService.DeleteBinding:output_type -> state.v1.DeleteBindingResponse
+	118, // 176: state.v1.StateStoreService.ApproveBinding:output_type -> state.v1.ApproveBindingResponse
+	120, // 177: state.v1.StateStoreService.ArmedBindingsForSource:output_type -> state.v1.ArmedBindingsForSourceResponse
+	122, // 178: state.v1.StateStoreService.RecordDispatch:output_type -> state.v1.RecordDispatchResponse
+	124, // 179: state.v1.StateStoreService.RecordPlaybookDispatch:output_type -> state.v1.RecordPlaybookDispatchResponse
+	126, // 180: state.v1.StateStoreService.DeletePlaybookDispatches:output_type -> state.v1.DeletePlaybookDispatchesResponse
+	128, // 181: state.v1.StateStoreService.ListUndispatchedCaptures:output_type -> state.v1.ListUndispatchedCapturesResponse
+	130, // 182: state.v1.StateStoreService.StreamUndispatchedCaptures:output_type -> state.v1.StreamUndispatchedCapturesResponse
+	132, // 183: state.v1.StateStoreService.EnqueueBindingTask:output_type -> state.v1.EnqueueBindingTaskResponse
+	125, // [125:184] is the sub-list for method output_type
+	66,  // [66:125] is the sub-list for method input_type
 	66,  // [66:66] is the sub-list for extension type_name
 	66,  // [66:66] is the sub-list for extension extendee
 	0,   // [0:66] is the sub-list for field type_name
@@ -7804,7 +8009,7 @@ func file_state_v1_state_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_state_v1_state_proto_rawDesc), len(file_state_v1_state_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   130,
+			NumMessages:   134,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -36,6 +36,7 @@ var (
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
 	errBindingDispatchUnavailable    = status.Error(codes.Unavailable, "binding dispatcher unavailable")
 	errBindingTaskCreatorUnavailable = status.Error(codes.Unavailable, "binding task creator unavailable")
+	errPlaybookDispatcherUnavailable = status.Error(codes.Unavailable, "playbook dispatcher unavailable")
 	// errTaskLogsUnavailable is the "this process cannot read task logs at
 	// all" answer, and it is deliberately distinct from a found=false read
 	// result: only the first is a deployment matter. A dashboard that receives
@@ -69,6 +70,10 @@ type Deps struct {
 	Bindings           storecontract.BindingStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator
+	// PlaybookDispatcher is the side-effecting-action idempotency ledger
+	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
+	// two playbook dispatch RPCs with codes.Unavailable.
+	PlaybookDispatcher storecontract.PlaybookDispatcher
 	// TaskLogs reads one task attempt's persisted log out of the state
 	// directory this process owns. Optional, and nil is the honest default for
 	// a store service that shares no state directory with the daemon:
@@ -595,6 +600,28 @@ func (s *server) RecordDispatch(ctx context.Context, r *pb.RecordDispatchRequest
 		return nil, s.logErr("RecordDispatch", err)
 	}
 	return &pb.RecordDispatchResponse{}, nil
+}
+
+// Playbook dispatch
+
+func (s *server) RecordPlaybookDispatch(ctx context.Context, r *pb.RecordPlaybookDispatchRequest) (*pb.RecordPlaybookDispatchResponse, error) {
+	if s.deps.PlaybookDispatcher == nil {
+		return nil, errPlaybookDispatcherUnavailable
+	}
+	if err := s.deps.PlaybookDispatcher.RecordPlaybookDispatch(ctx, r.PlaybookId, r.PlaybookVersion, r.EventId, r.ActionId); err != nil {
+		return nil, s.logErr("RecordPlaybookDispatch", err)
+	}
+	return &pb.RecordPlaybookDispatchResponse{}, nil
+}
+
+func (s *server) DeletePlaybookDispatches(ctx context.Context, r *pb.DeletePlaybookDispatchesRequest) (*pb.DeletePlaybookDispatchesResponse, error) {
+	if s.deps.PlaybookDispatcher == nil {
+		return nil, errPlaybookDispatcherUnavailable
+	}
+	if err := s.deps.PlaybookDispatcher.DeletePlaybookDispatches(ctx, r.PlaybookId); err != nil {
+		return nil, s.logErr("DeletePlaybookDispatches", err)
+	}
+	return &pb.DeletePlaybookDispatchesResponse{}, nil
 }
 
 func (s *server) ListUndispatchedCaptures(ctx context.Context, r *pb.ListUndispatchedCapturesRequest) (*pb.ListUndispatchedCapturesResponse, error) {

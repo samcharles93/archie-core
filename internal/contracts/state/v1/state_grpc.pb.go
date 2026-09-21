@@ -73,6 +73,8 @@ const (
 	StateStoreService_ApproveBinding_FullMethodName             = "/state.v1.StateStoreService/ApproveBinding"
 	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
+	StateStoreService_RecordPlaybookDispatch_FullMethodName     = "/state.v1.StateStoreService/RecordPlaybookDispatch"
+	StateStoreService_DeletePlaybookDispatches_FullMethodName   = "/state.v1.StateStoreService/DeletePlaybookDispatches"
 	StateStoreService_ListUndispatchedCaptures_FullMethodName   = "/state.v1.StateStoreService/ListUndispatchedCaptures"
 	StateStoreService_StreamUndispatchedCaptures_FullMethodName = "/state.v1.StateStoreService/StreamUndispatchedCaptures"
 	StateStoreService_EnqueueBindingTask_FullMethodName         = "/state.v1.StateStoreService/EnqueueBindingTask"
@@ -180,6 +182,12 @@ type StateStoreServiceClient interface {
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(ctx context.Context, in *RecordDispatchRequest, opts ...grpc.CallOption) (*RecordDispatchResponse, error)
+	// Playbook dispatch ledger (eda-playbook-engine.md gap 2): one durable
+	// at-most-once record per (playbook, version, event, action) for the
+	// side-effecting positions. Administrative, like RecordDispatch: a
+	// task-scoped grant cannot reach either (see TaskGrants).
+	RecordPlaybookDispatch(ctx context.Context, in *RecordPlaybookDispatchRequest, opts ...grpc.CallOption) (*RecordPlaybookDispatchResponse, error)
+	DeletePlaybookDispatches(ctx context.Context, in *DeletePlaybookDispatchesRequest, opts ...grpc.CallOption) (*DeletePlaybookDispatchesResponse, error)
 	// Deprecated: Do not use.
 	// ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
 	// ListCaptures above.
@@ -756,6 +764,26 @@ func (c *stateStoreServiceClient) RecordDispatch(ctx context.Context, in *Record
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) RecordPlaybookDispatch(ctx context.Context, in *RecordPlaybookDispatchRequest, opts ...grpc.CallOption) (*RecordPlaybookDispatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordPlaybookDispatchResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecordPlaybookDispatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) DeletePlaybookDispatches(ctx context.Context, in *DeletePlaybookDispatchesRequest, opts ...grpc.CallOption) (*DeletePlaybookDispatchesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletePlaybookDispatchesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_DeletePlaybookDispatches_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Deprecated: Do not use.
 func (c *stateStoreServiceClient) ListUndispatchedCaptures(ctx context.Context, in *ListUndispatchedCapturesRequest, opts ...grpc.CallOption) (*ListUndispatchedCapturesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -898,6 +926,12 @@ type StateStoreServiceServer interface {
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error)
+	// Playbook dispatch ledger (eda-playbook-engine.md gap 2): one durable
+	// at-most-once record per (playbook, version, event, action) for the
+	// side-effecting positions. Administrative, like RecordDispatch: a
+	// task-scoped grant cannot reach either (see TaskGrants).
+	RecordPlaybookDispatch(context.Context, *RecordPlaybookDispatchRequest) (*RecordPlaybookDispatchResponse, error)
+	DeletePlaybookDispatches(context.Context, *DeletePlaybookDispatchesRequest) (*DeletePlaybookDispatchesResponse, error)
 	// Deprecated: Do not use.
 	// ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
 	// ListCaptures above.
@@ -1076,6 +1110,12 @@ func (UnimplementedStateStoreServiceServer) ArmedBindingsForSource(context.Conte
 }
 func (UnimplementedStateStoreServiceServer) RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RecordDispatch not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RecordPlaybookDispatch(context.Context, *RecordPlaybookDispatchRequest) (*RecordPlaybookDispatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordPlaybookDispatch not implemented")
+}
+func (UnimplementedStateStoreServiceServer) DeletePlaybookDispatches(context.Context, *DeletePlaybookDispatchesRequest) (*DeletePlaybookDispatchesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeletePlaybookDispatches not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ListUndispatchedCaptures(context.Context, *ListUndispatchedCapturesRequest) (*ListUndispatchedCapturesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListUndispatchedCaptures not implemented")
@@ -2065,6 +2105,42 @@ func _StateStoreService_RecordDispatch_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_RecordPlaybookDispatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordPlaybookDispatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecordPlaybookDispatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecordPlaybookDispatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecordPlaybookDispatch(ctx, req.(*RecordPlaybookDispatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_DeletePlaybookDispatches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePlaybookDispatchesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).DeletePlaybookDispatches(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_DeletePlaybookDispatches_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).DeletePlaybookDispatches(ctx, req.(*DeletePlaybookDispatchesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_ListUndispatchedCaptures_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListUndispatchedCapturesRequest)
 	if err := dec(in); err != nil {
@@ -2326,6 +2402,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecordDispatch",
 			Handler:    _StateStoreService_RecordDispatch_Handler,
+		},
+		{
+			MethodName: "RecordPlaybookDispatch",
+			Handler:    _StateStoreService_RecordPlaybookDispatch_Handler,
+		},
+		{
+			MethodName: "DeletePlaybookDispatches",
+			Handler:    _StateStoreService_DeletePlaybookDispatches_Handler,
 		},
 		{
 			MethodName: "ListUndispatchedCaptures",

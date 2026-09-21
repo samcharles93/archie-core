@@ -113,6 +113,12 @@ service StateStoreService {
   // Dispatch
   rpc ArmedBindingsForSource(ArmedBindingsForSourceRequest) returns (ArmedBindingsForSourceResponse);
   rpc RecordDispatch(RecordDispatchRequest) returns (RecordDispatchResponse);
+  // Playbook dispatch ledger (eda-playbook-engine.md gap 2): one durable
+  // at-most-once record per (playbook, version, event, action) for the
+  // side-effecting positions. Administrative, like RecordDispatch: a
+  // task-scoped grant cannot reach either (see TaskGrants).
+  rpc RecordPlaybookDispatch(RecordPlaybookDispatchRequest) returns (RecordPlaybookDispatchResponse);
+  rpc DeletePlaybookDispatches(DeletePlaybookDispatchesRequest) returns (DeletePlaybookDispatchesResponse);
   // ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
   // ListCaptures above.
   rpc ListUndispatchedCaptures(ListUndispatchedCapturesRequest) returns (ListUndispatchedCapturesResponse) {
@@ -606,6 +612,17 @@ message RecordDispatchRequest {
   int64 task_id = 4;
 }
 message RecordDispatchResponse {}
+
+message RecordPlaybookDispatchRequest {
+  string playbook_id = 1;
+  string playbook_version = 2;
+  string event_id = 3;
+  string action_id = 4;
+}
+message RecordPlaybookDispatchResponse {}
+
+message DeletePlaybookDispatchesRequest { string playbook_id = 1; }
+message DeletePlaybookDispatchesResponse {}
 
 message ListUndispatchedCapturesRequest {
   repeated string sources = 1;

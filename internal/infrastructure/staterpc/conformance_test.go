@@ -28,6 +28,7 @@ type contract interface {
 	store.BindingStore
 	store.BindingDispatcher
 	store.BindingTaskCreator
+	store.PlaybookDispatcher
 	store.ConfigSnapshotStore
 	store.ApplyStatusStore
 }
@@ -55,7 +56,7 @@ func remoteTaskStore(t *testing.T, local *store.Store, logs store.TaskLogStore) 
 	server := grpc.NewServer()
 	RegisterServer(server, Deps{
 		Tasks: local, Captures: local, Mappings: local, Bindings: local,
-		BindingDispatcher: local, BindingTaskCreator: local, ConfigSnapshots: local, ApplyStatus: local,
+		BindingDispatcher: local, BindingTaskCreator: local, PlaybookDispatcher: local, ConfigSnapshots: local, ApplyStatus: local,
 		TaskLogs: logs,
 	})
 	go func() { _ = server.Serve(listener) }()
@@ -331,6 +332,23 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 			if _, err := c.ListUndispatchedCaptures(ctx, []string{"sentry"}, 10); err != nil {
 				t.Fatalf("ListUndispatchedCaptures: %v", err)
+			}
+
+			// Playbook dispatch ledger: ErrAlreadyDispatched survives the hop
+			// via errors.Is, and DeletePlaybookDispatches actually clears the
+			// row (the same key records again after delete).
+			if err := c.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
+				t.Fatalf("RecordPlaybookDispatch: %v", err)
+			}
+			err = c.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify")
+			if !errors.Is(err, store.ErrAlreadyDispatched) {
+				t.Fatalf("RecordPlaybookDispatch dup = %v, want ErrAlreadyDispatched", err)
+			}
+			if err := c.DeletePlaybookDispatches(ctx, "pb.yaml"); err != nil {
+				t.Fatalf("DeletePlaybookDispatches: %v", err)
+			}
+			if err := c.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify"); err != nil {
+				t.Fatalf("RecordPlaybookDispatch after delete = %v, want success (delete must clear the row)", err)
 			}
 		})
 	}

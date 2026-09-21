@@ -33,6 +33,7 @@ type (
 	BindingStore        = storecontract.BindingStore
 	BindingDispatcher   = storecontract.BindingDispatcher
 	BindingTaskCreator  = storecontract.BindingTaskCreator
+	PlaybookDispatcher  = storecontract.PlaybookDispatcher
 	CapturedEvent       = storecontract.CapturedEvent
 	ConfigSnapshot      = storecontract.ConfigSnapshot
 	ApplyStatus         = storecontract.ApplyStatus
@@ -70,3 +71,6 @@ var _ BindingDispatcher = (*Store)(nil)
 
 // Compile-time check: *Store satisfies BindingTaskCreator.
 var _ BindingTaskCreator = (*Store)(nil)
+
+// Compile-time check: *Store satisfies PlaybookDispatcher.
+var _ PlaybookDispatcher = (*Store)(nil)

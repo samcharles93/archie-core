@@ -173,6 +173,20 @@ type BindingTaskCreator interface {
 	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*task.Task, error)
 }
 
+// PlaybookDispatcher is the idempotency-ledger surface for side-effecting
+// playbook actions (docs/prds/eda-playbook-engine.md gap 2).
+// RecordPlaybookDispatch writes the (playbook, version, event, action) row
+// BEFORE the action's side effect fires -- the deliberate reverse of
+// BindingDispatcher.RecordDispatch -- so a duplicate returns
+// ErrAlreadyDispatched and the caller skips the invoke rather than repeating
+// a non-revocable side effect. DeletePlaybookDispatches frees one playbook's
+// rows when the playbook is removed. There is deliberately no *sql.Tx: any
+// transaction stays server-side inside internal/store.
+type PlaybookDispatcher interface {
+	RecordPlaybookDispatch(ctx context.Context, playbookID, playbookVersion, eventID, actionID string) error
+	DeletePlaybookDispatches(ctx context.Context, playbookID string) error
+}
+
 // TaskLogStore reads one task attempt's persisted log. Deliberately separate
 // from TaskQueries: the log is not a row, it is a file the logging package
 // owns the format of, and a process that can read the task board should not
