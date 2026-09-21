@@ -1,12 +1,138 @@
 package expr
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"cel.dev/cel-go/cel"
+
+	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
 )
+
+// declaredResultEnv builds the per-playbook environment used by the typed
+// `actions` tests: one declared prior action id "build" whose result type is
+// the log kind's Go Result struct (fields Written, Level -> written, level).
+func declaredResultEnv(t *testing.T) *Env {
+	t.Helper()
+	return NewEnv(DeclaredResult{ID: "build", Type: reflect.TypeFor[log.Result]()})
+}
+
+// TestCompileDeclaredResultRead: a read of a declared id's result field
+// compiles against the per-playbook object type.
+func TestCompileDeclaredResultRead(t *testing.T) {
+	env := declaredResultEnv(t)
+	prg, err := env.Compile(`actions.build.result.written == true`)
+	if err != nil {
+		t.Fatalf("Compile(declared result read): %v", err)
+	}
+	ids, resolvable := prg.ActionReferences()
+	if !resolvable || !slices.Equal(ids, []string{"build"}) {
+		t.Fatalf("ActionReferences = (%v, %v), want (build, true)", ids, resolvable)
+	}
+}
+
+// TestCompileMisspelledResultFieldRejected: a field the declared Result does
+// not define is a compile-time error naming the field, never a runtime miss.
+func TestCompileMisspelledResultFieldRejected(t *testing.T) {
+	env := declaredResultEnv(t)
+	misspelled := "wri" + "ten" // deliberately misspelled Result field under test
+	_, err := env.Compile(`actions.build.result.` + misspelled + ` == true`)
+	if err == nil {
+		t.Fatal("Compile(misspelled field) = nil, want error")
+	}
+	for _, want := range []string{"undefined field", misspelled} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Compile(misspelled field) error = %q, want it to contain %q", err.Error(), want)
+		}
+	}
+}
+
+// TestCompileUndeclaredActionIDRejected: a read of an id not declared for the
+// playbook is a compile-time error naming the id.
+func TestCompileUndeclaredActionIDRejected(t *testing.T) {
+	env := declaredResultEnv(t)
+	_, err := env.Compile(`actions.unknownid.result.written == true`)
+	if err == nil {
+		t.Fatal("Compile(unknown id) = nil, want error")
+	}
+	for _, want := range []string{"undefined field", "unknownid"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Compile(unknown id) error = %q, want it to contain %q", err.Error(), want)
+		}
+	}
+}
+
+// TestCompileDynamicActionAccessRejected: a dynamic index, an `in` test, or a
+// size read of `actions` all fail to compile against the object type (there is
+// no map to index or iterate). Only the failure is asserted; the message is
+// cel-go's and not part of this package's contract.
+func TestCompileDynamicActionAccessRejected(t *testing.T) {
+	env := declaredResultEnv(t)
+	for _, src := range []string{
+		`actions["build"]`,
+		`"build" in actions`,
+		`size(actions) > 0`,
+	} {
+		t.Run(src, func(t *testing.T) {
+			if _, err := env.Compile(src); err == nil {
+				t.Errorf("Compile(%q) = nil, want error", src)
+			}
+		})
+	}
+}
+
+// TestEvalDeclaredResultRead: a declared id's result read evaluates against a
+// map whose id entry wraps the Go Result struct in `{result: ...}`.
+func TestEvalDeclaredResultRead(t *testing.T) {
+	env := declaredResultEnv(t)
+	prg, err := env.Compile(`actions.build.result.written`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	got, err := env.Eval(prg, Context{
+		Actions: map[string]map[string]any{
+			"build": {"result": log.Result{Written: true, Level: "info"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	if b, ok := got.(bool); !ok || !b {
+		t.Fatalf("Eval = %#v, want true", got)
+	}
+
+	level, err := env.Eval(mustCompile(t, env, `actions.build.result.level`), Context{
+		Actions: map[string]map[string]any{
+			"build": {"result": log.Result{Written: true, Level: "info"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Eval(level): %v", err)
+	}
+	if s, ok := level.(string); !ok || s != "info" {
+		t.Fatalf("Eval(level) = %#v, want %q", level, "info")
+	}
+}
+
+// TestEmptyDeclaredSetIsValid: an environment with no declared results has an
+// `actions` object with no fields; any `actions.<id>` read fails at compile.
+func TestEmptyDeclaredSetIsValid(t *testing.T) {
+	env := NewEnv()
+	if _, err := env.Compile(`event.label == "x"`); err != nil {
+		t.Fatalf("Compile(event read) on empty env: %v", err)
+	}
+	_, err := env.Compile(`actions.build.result.written == true`)
+	if err == nil {
+		t.Fatal("Compile(actions read) on empty env = nil, want error")
+	}
+	for _, want := range []string{"undefined field", "build"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Compile(actions read) on empty env error = %q, want it to contain %q", err.Error(), want)
+		}
+	}
+}
 
 // TestCompileEvalValidBooleanAgainstEvent is the happy path: a boolean
 // condition reading an event field compiles and evaluates correctly.
@@ -80,94 +206,47 @@ func TestEvalHasMacroPresence(t *testing.T) {
 	}
 }
 
-// TestActionReferences classifies every read of the `actions` context root:
-// a static access (actions.<id> or actions["<id>"]) resolves to its id, and
-// any other spelling that mentions actions reports unresolvable.
+// TestActionReferences classifies every read of the `actions` context root
+// that still compiles under the per-playbook object type: a static field
+// selection resolves to its id, and a bare `actions` value (which compiles)
+// is reported unresolvable so the playbook loader still rejects it.
 func TestActionReferences(t *testing.T) {
-	env := NewEnv()
+	env := declaredResultEnv(t)
 	tests := []struct {
-		name       string
-		src        string
-		wantIDs    []string
-		resolvable bool
+		name           string
+		src            string
+		wantIDs        []string
+		wantResolvable bool
 	}{
 		{
-			name:       "field selection resolves",
-			src:        `actions.a.result.x == true`,
-			wantIDs:    []string{"a"},
-			resolvable: true,
+			name:           "field selection resolves",
+			src:            `actions.build.result.written == true`,
+			wantIDs:        []string{"build"},
+			wantResolvable: true,
 		},
 		{
-			name:       "literal map index resolves",
-			src:        `actions["a"].result.x == true`,
-			wantIDs:    []string{"a"},
-			resolvable: true,
+			name:           "two static accesses of one id consume two idents",
+			src:            `actions.build.result.written == true && actions.build.result.level == "info"`,
+			wantIDs:        []string{"build"},
+			wantResolvable: true,
 		},
 		{
-			name:       "two static accesses of one id consume two idents",
-			src:        `actions.a.x == actions.a.y`,
-			wantIDs:    []string{"a"},
-			resolvable: true,
+			name:           "no actions reference",
+			src:            `event.priority == 3`,
+			wantIDs:        nil,
+			wantResolvable: true,
 		},
 		{
-			name:       "multiple references deduped and sorted",
-			src:        `actions.b.result == true || actions.a.result == true || actions.b.result2 == true`,
-			wantIDs:    []string{"a", "b"},
-			resolvable: true,
+			name:           "has macro over static access",
+			src:            `has(actions.build.result.written)`,
+			wantIDs:        []string{"build"},
+			wantResolvable: true,
 		},
 		{
-			name:       "no actions reference",
-			src:        `event.priority == 3`,
-			wantIDs:    nil,
-			resolvable: true,
-		},
-		{
-			name:       "has macro over static access",
-			src:        `has(actions.notify.result.delivered)`,
-			wantIDs:    []string{"notify"},
-			resolvable: true,
-		},
-		{
-			name:       "event field index key is unresolvable",
-			src:        `actions[event.name].result.x == true`,
-			wantIDs:    nil,
-			resolvable: false,
-		},
-		{
-			name:       "computed string index key is unresolvable",
-			src:        `actions["a" + "b"].result.x == true`,
-			wantIDs:    nil,
-			resolvable: false,
-		},
-		{
-			name:       "in operator on actions is unresolvable",
-			src:        `"notify" in actions`,
-			wantIDs:    nil,
-			resolvable: false,
-		},
-		{
-			name:       "size of actions is unresolvable",
-			src:        `size(actions) > 0`,
-			wantIDs:    nil,
-			resolvable: false,
-		},
-		{
-			name:       "macro receiver actions is unresolvable",
-			src:        `actions.all(k, k == "a")`,
-			wantIDs:    nil,
-			resolvable: false,
-		},
-		{
-			name:       "bare actions is unresolvable",
-			src:        `actions`,
-			wantIDs:    nil,
-			resolvable: false,
-		},
-		{
-			name:       "equality against map literal is unresolvable",
-			src:        `actions == {}`,
-			wantIDs:    nil,
-			resolvable: false,
+			name:           "bare actions is unresolvable",
+			src:            `actions`,
+			wantIDs:        nil,
+			wantResolvable: false,
 		},
 	}
 	for _, tc := range tests {
@@ -177,33 +256,13 @@ func TestActionReferences(t *testing.T) {
 				t.Fatalf("Compile(%q): %v", tc.src, err)
 			}
 			ids, resolvable := prg.ActionReferences()
-			if resolvable != tc.resolvable {
-				t.Fatalf("ActionReferences(%q) resolvable = %v, want %v", tc.src, resolvable, tc.resolvable)
+			if resolvable != tc.wantResolvable {
+				t.Fatalf("ActionReferences(%q) resolvable = %v, want %v", tc.src, resolvable, tc.wantResolvable)
 			}
 			if !slices.Equal(ids, tc.wantIDs) {
 				t.Fatalf("ActionReferences(%q) ids = %v, want %v", tc.src, ids, tc.wantIDs)
 			}
 		})
-	}
-}
-
-// TestEvalActionsContext: prior-action results read via actions.<id>.result.
-func TestEvalActionsContext(t *testing.T) {
-	env := NewEnv()
-	prg, err := env.Compile(`actions.a.result.written == true`)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	got, err := env.Eval(prg, Context{
-		Actions: map[string]map[string]any{
-			"a": {"result": map[string]any{"written": true}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Eval: %v", err)
-	}
-	if b, ok := got.(bool); !ok || !b {
-		t.Fatalf("Eval = %#v, want true", got)
 	}
 }
 
@@ -291,4 +350,14 @@ func TestEvalPanicFreeHostileData(t *testing.T) {
 	if b, ok := got.(bool); !ok || b {
 		t.Fatalf("Eval(hostile deep) = %#v, want false", got)
 	}
+}
+
+// mustCompile compiles src against env and fails the test on error.
+func mustCompile(t *testing.T, env *Env, src string) *Program {
+	t.Helper()
+	prg, err := env.Compile(src)
+	if err != nil {
+		t.Fatalf("Compile(%q): %v", src, err)
+	}
+	return prg
 }

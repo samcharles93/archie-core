@@ -490,8 +490,10 @@ func TestValidateActionIDs(t *testing.T) {
 
 // TestLoadWhenActionsReferenceFails: a when that reads the `actions` context
 // root in a form that cannot be pinned to a prior action id at load fails the
-// whole load, naming the playbook path (and the id when one statically
-// resolves) -- never a runtime miss.
+// whole load, naming the playbook path -- never a runtime miss. Under the
+// per-playbook object type these forms are rejected at compile time: the
+// field-selection spelling names the undefined id, while a dynamic index, an
+// `in` test, or a size read fails with cel-go's overload error (no id name).
 func TestLoadWhenActionsReferenceFails(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -499,7 +501,7 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 		wantID string
 	}{
 		{name: "undeclared field selection", when: `actions.a.result.x == true`, wantID: "a"},
-		{name: "undeclared literal map index", when: `actions["a"].result.x == true`, wantID: "a"},
+		{name: "dynamic index on actions", when: `actions["a"].result.x == true`},
 		{name: "non-literal index key", when: `actions[key].result.x == true`},
 		{name: "in operator on actions", when: `"notify" in actions`},
 		{name: "size of actions", when: `size(actions) > 0`},
@@ -525,33 +527,22 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 // TestUnknownActionReferenceGeneralRule: the reference check compares the
 // statically-resolved ids against the declared ids of earlier actions, so it
 // already behaves correctly when the one-action boundary later relaxes (the
-// Load path can only exercise the empty-prior set today).
+// Load path can only exercise the empty-prior set today). The ids are passed
+// directly: under the per-playbook object type an undeclared `actions.<id>`
+// read is rejected at compile time, so there is no longer an env that compiles
+// one to classify.
 func TestUnknownActionReferenceGeneralRule(t *testing.T) {
-	env := expr.NewEnv()
-	compile := func(src string) []string {
-		t.Helper()
-		prg, err := env.Compile(src)
-		if err != nil {
-			t.Fatalf("Compile(%q): %v", src, err)
-		}
-		ids, resolvable := prg.ActionReferences()
-		if !resolvable {
-			t.Fatalf("ActionReferences(%q) = resolvable false, want true", src)
-		}
-		return ids
-	}
-
 	// a declared on the prior action: known.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, compile(`actions.a.result.delivered == true`)); unknown {
+	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, []string{"a"}); unknown {
 		t.Fatalf("unknownActionReference(declared prior) = (%q, true), want known", id)
 	}
-	// Two static reads of a in one expression consume two actions idents and
-	// still resolve to the one declared id: known.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, compile(`actions.a.x == actions.a.y`)); unknown {
-		t.Fatalf("unknownActionReference(two static reads of declared id) = (%q, true), want known", id)
+	// Two static reads of a in one expression resolve to the one declared id
+	// (ActionReferences de-duplicates), so the de-duplicated id is known.
+	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, []string{"a", "a"}); unknown {
+		t.Fatalf("unknownActionReference(deduplicated declared id) = (%q, true), want known", id)
 	}
 	// A different prior id leaves b unknown.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, compile(`actions.b.result.delivered == true`)); !unknown || id != "b" {
+	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, []string{"b"}); !unknown || id != "b" {
 		t.Fatalf("unknownActionReference(undeclared) = (%q, %v), want (b, true)", id, unknown)
 	}
 }
