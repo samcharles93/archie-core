@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -16,7 +17,7 @@ import (
 // as it stands reverts each of these layers to its file value until the
 // process restarts (archie-core-ju85).
 func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Config, error) {
-	cfg, err := b.controlPlane.RuntimeConfig(ctx, base)
+	cfg, versions, err := b.controlPlane.RuntimeConfig(ctx, base)
 	if err != nil {
 		return config.Config{}, err
 	}
@@ -24,9 +25,21 @@ func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Co
 		applyExecutionBudgets(&cfg, *settings)
 	}
 	if err := configuration.Validate(&cfg); err != nil {
-		return config.Config{}, fmt.Errorf("validate database settings: %w", err)
+		wrapped := fmt.Errorf("validate database settings: %w", err)
+		b.reportApplied(ctx, versions, wrapped)
+		return config.Config{}, wrapped
 	}
+	b.reportApplied(ctx, versions, nil)
 	return cfg, nil
+}
+
+// reportApplied publishes the version of each kind this process just layered
+// in. On a validation failure every kind is reported with the error, because
+// the layering is all-or-nothing: none of the versions read took effect.
+func (b *boot) reportApplied(ctx context.Context, versions map[string]int64, applyErr error) {
+	for kind, version := range versions {
+		b.applyStatus.Report(ctx, kind, version, applyErr)
+	}
 }
 
 func (b *boot) loadRuntimeConfig(ctx context.Context) error {
@@ -77,7 +90,7 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	b.applyWorkflowExecutionSettings(settings, version)
+	b.applyWorkflowExecutionSettings(ctx, settings, version)
 	updates, err := b.controlPlane.WatchWorkflowExecutionSettings(ctx, version)
 	if err != nil {
 		return err
@@ -88,7 +101,7 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 				b.log.Error("workflow execution settings watch failed", "err", update.Err)
 				return
 			}
-			b.applyWorkflowExecutionSettings(update.Settings, update.Version)
+			b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
 		}
 	}()
 	return nil
@@ -97,11 +110,12 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 // applyWorkflowExecutionSettings records the settings as well as applying
 // them: they arrive on a watch rather than in the file document, so a reload
 // has nowhere else to read them back from.
-func (b *boot) applyWorkflowExecutionSettings(settings workflow.ExecutionSettings, version int64) {
+func (b *boot) applyWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings, version int64) {
 	b.executionSettings.Store(&settings)
 	cfg := b.cfgHolder.Get().Clone()
 	applyExecutionBudgets(&cfg, settings)
 	b.cfgHolder.Set(cfg)
+	b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, version, nil)
 	b.log.Info("workflow execution settings applied", "version", version)
 }
 

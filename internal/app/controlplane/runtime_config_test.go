@@ -55,9 +55,19 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 		ContainerRuntimePoliciesKind: config.ContainerConfig{LegacyEnabled: true, Image: "archie:next", PullPolicy: "missing"},
 	}})
 
-	got, err := client.RuntimeConfig(t.Context(), base)
+	got, versions, err := client.RuntimeConfig(t.Context(), base)
 	if err != nil {
 		t.Fatalf("RuntimeConfig: %v", err)
+	}
+	// Every kind it read is reported as applied, so the version a process
+	// publishes is the one it actually layered in (archie-core-pskb).
+	for _, kind := range []string{
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, ChannelSettingsKind,
+		SchedulingPolicyKind, ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind,
+	} {
+		if versions[kind] != 2 {
+			t.Errorf("versions[%s] = %d, want the 2 the store answered with", kind, versions[kind])
+		}
 	}
 	if got.Models["builder"] != "main/model" || got.Repos[0].FullName() != "acme/widget" || got.MaxRetries != 7 || got.PluginDir != "/plugins" || got.Containers.Image != "archie:next" {
 		t.Fatalf("database settings not applied: %+v", got)

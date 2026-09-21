@@ -7,6 +7,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -38,12 +39,15 @@ func Run(ctx context.Context, o Options) error {
 		}
 		closeStateStore = closeClient
 		defer closeStateStore()
-		chatSettings, settingsErr := controlplane.NewRPCClient(stateStore.ControlPlane()).RuntimeChatConfig(ctx, config.ChatConfig{
+		chatSettings, channelVersion, settingsErr := controlplane.NewRPCClient(stateStore.ControlPlane()).RuntimeChatConfig(ctx, config.ChatConfig{
 			Telegram: cfg.Telegram, Email: cfg.Email, Webhook: cfg.Webhook, WebhookAddr: cfg.WebhookAddr, ShowToolCalls: cfg.ShowToolCalls,
 		})
 		if settingsErr != nil {
 			return fmt.Errorf("load channel settings: %w", settingsErr)
 		}
+		reporter := applystatus.New(applystatus.Messaging, stateStore, log)
+		reporter.Report(ctx, controlplane.ChannelSettingsKind, channelVersion, nil)
+		go reporter.Run(ctx)
 		secrets := secret.NewRegistry()
 		cfg.Telegram, cfg.Email, cfg.Webhook, cfg.WebhookAddr, cfg.ShowToolCalls = chatSettings.Telegram, chatSettings.Email, chatSettings.Webhook, chatSettings.WebhookAddr, chatSettings.ShowToolCalls
 		cfg.TelegramToken, settingsErr = resolveTelegramToken(chatSettings.Telegram, secrets)

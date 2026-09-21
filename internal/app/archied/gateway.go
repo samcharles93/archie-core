@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -55,6 +56,7 @@ func gatewayListenAndToken(b *boot, options GatewayOptions) (listen, token strin
 // step 8), which is out of state-store scope.
 func RunGateway(ctx context.Context, options GatewayOptions) error {
 	b := newBootstrap()
+	b.processName = applystatus.Gateway
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
 		return err
@@ -132,6 +134,7 @@ func (b *boot) openGatewayState(ctx context.Context) error {
 	if err := b.loadRuntimeConfig(ctx); err != nil {
 		return fmt.Errorf("load runtime settings: %w", err)
 	}
+	go b.applyStatus.Run(ctx)
 	return nil
 }
 

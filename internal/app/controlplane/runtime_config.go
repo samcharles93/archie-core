@@ -14,9 +14,14 @@ import (
 // configuration. Values intentionally absent from a control-plane projection,
 // such as secret-bearing MCP headers and channel update commands, remain
 // bootstrap-owned.
-func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.Config, error) {
+//
+// It also returns the version of each kind it read, so the process that
+// layers them in can report which version it is running
+// (docs/prds/control-plane-apply-status.md).
+func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
 	out := base.Clone()
-	if err := c.query(ctx, ProviderSettingsKind, func(value []byte) error {
+	versions := map[string]int64{}
+	if err := c.queryInto(ctx, versions, ProviderSettingsKind, func(value []byte) error {
 		var providers map[string]providerDocument
 		if err := json.Unmarshal(value, &providers); err != nil {
 			return err
@@ -27,20 +32,20 @@ func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.
 		}
 		return nil
 	}); err != nil {
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
-	if err := c.queryJSON(ctx, ModelRoleAssignmentsKind, &out.Models); err != nil {
-		return config.Config{}, err
+	if err := c.queryJSONInto(ctx, versions, ModelRoleAssignmentsKind, &out.Models); err != nil {
+		return config.Config{}, nil, err
 	}
-	if err := c.queryJSON(ctx, RepositoryPoliciesKind, &out.Repos); err != nil {
-		return config.Config{}, err
+	if err := c.queryJSONInto(ctx, versions, RepositoryPoliciesKind, &out.Repos); err != nil {
+		return config.Config{}, nil, err
 	}
-	chat, err := c.RuntimeChatConfig(ctx, out.Chat)
+	chat, chatVersion, err := c.RuntimeChatConfig(ctx, out.Chat)
 	if err != nil {
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
-	out.Chat = chat
-	if err := c.query(ctx, SchedulingPolicyKind, func(value []byte) error {
+	out.Chat, versions[ChannelSettingsKind] = chat, chatVersion
+	if err := c.queryInto(ctx, versions, SchedulingPolicyKind, func(value []byte) error {
 		var policy schedulingPolicy
 		if err := json.Unmarshal(value, &policy); err != nil {
 			return err
@@ -52,13 +57,13 @@ func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.
 		out.PollInterval, out.MaxRetries, out.Dispatch = config.Duration(interval), policy.MaxRetries, policy.Dispatch
 		return nil
 	}); err != nil {
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
-	return c.runtimeToolConfig(ctx, out)
+	return c.runtimeToolConfig(ctx, versions, out)
 }
 
-func (c *Client) runtimeToolConfig(ctx context.Context, out config.Config) (config.Config, error) {
-	if err := c.query(ctx, ToolSettingsKind, func(value []byte) error {
+func (c *Client) runtimeToolConfig(ctx context.Context, versions map[string]int64, out config.Config) (config.Config, map[string]int64, error) {
+	if err := c.queryInto(ctx, versions, ToolSettingsKind, func(value []byte) error {
 		var settings toolSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -74,9 +79,9 @@ func (c *Client) runtimeToolConfig(ctx context.Context, out config.Config) (conf
 		out.Tools = config.ToolsConfig{MCPServers: servers, Policy: settings.Policy, WebFetch: settings.WebFetch, Minimax: config.MinimaxConfig{Enabled: settings.Minimax.Enabled, APIKey: settings.Minimax.APIKey, BaseURL: settings.Minimax.BaseURL}}
 		return nil
 	}); err != nil {
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
-	if err := c.query(ctx, PluginSettingsKind, func(value []byte) error {
+	if err := c.queryInto(ctx, versions, PluginSettingsKind, func(value []byte) error {
 		var settings pluginSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -84,17 +89,17 @@ func (c *Client) runtimeToolConfig(ctx context.Context, out config.Config) (conf
 		out.PluginDir, out.ModuleDir, out.SecretEngineDir, out.SkillsDir = settings.PluginDir, settings.ModuleDir, settings.SecretEngineDir, settings.SkillsDir
 		return nil
 	}); err != nil {
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
-	if err := c.queryJSON(ctx, ContainerRuntimePoliciesKind, &out.Containers); err != nil {
-		return config.Config{}, err
+	if err := c.queryJSONInto(ctx, versions, ContainerRuntimePoliciesKind, &out.Containers); err != nil {
+		return config.Config{}, nil, err
 	}
-	return out, nil
+	return out, versions, nil
 }
 
-func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) (config.ChatConfig, error) {
+func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) (config.ChatConfig, int64, error) {
 	out := base
-	err := c.query(ctx, ChannelSettingsKind, func(value []byte) error {
+	version, err := c.query(ctx, ChannelSettingsKind, func(value []byte) error {
 		var settings channelSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -109,23 +114,36 @@ func (c *Client) RuntimeChatConfig(ctx context.Context, base config.ChatConfig) 
 		}
 		return nil
 	})
-	return out, err
+	return out, version, err
 }
 
-func (c *Client) queryJSON(ctx context.Context, kind string, target any) error {
-	return c.query(ctx, kind, func(value []byte) error { return json.Unmarshal(value, target) })
+// queryInto decodes a resource and records the version it came from, so
+// RuntimeConfig ends up holding the version of every kind it layered in.
+func (c *Client) queryInto(ctx context.Context, versions map[string]int64, kind string, decode func([]byte) error) error {
+	version, err := c.query(ctx, kind, decode)
+	if err != nil {
+		return err
+	}
+	versions[kind] = version
+	return nil
 }
 
-func (c *Client) query(ctx context.Context, kind string, decode func([]byte) error) error {
+func (c *Client) queryJSONInto(ctx context.Context, versions map[string]int64, kind string, target any) error {
+	return c.queryInto(ctx, versions, kind, func(value []byte) error { return json.Unmarshal(value, target) })
+}
+
+// query returns the version of the resource it decoded, so callers that layer
+// a resource in can report the version they applied.
+func (c *Client) query(ctx context.Context, kind string, decode func([]byte) error) (int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: kind})
 	if err != nil {
-		return clientError(err)
+		return 0, clientError(err)
 	}
 	if response.Resource == nil {
-		return fmt.Errorf("%s resource missing", kind)
+		return 0, fmt.Errorf("%s resource missing", kind)
 	}
 	if err := decode(response.Resource.ValueJson); err != nil {
-		return fmt.Errorf("decode %s: %w", kind, err)
+		return 0, fmt.Errorf("decode %s: %w", kind, err)
 	}
-	return nil
+	return response.Resource.Version, nil
 }

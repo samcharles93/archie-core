@@ -28,6 +28,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
@@ -119,7 +120,15 @@ type boot struct {
 	// plane published. They arrive on a watch rather than in the file
 	// document, so reloadConfig re-applies them from here.
 	executionSettings atomic.Pointer[workflow.ExecutionSettings]
-	chatSessionStore  gateway.SessionStore
+	// applyStatus reports which control-plane resource version this process
+	// is running. Nil until the State Store adapter is open, and nil-safe,
+	// so apply points call it without a guard.
+	applyStatus *applystatus.Reporter
+	// processName is which binary this composition is running as, and is the
+	// name apply-status records carry. Set by each entry point, because one
+	// boot builds both archied and archie-gateway.
+	processName      string
+	chatSessionStore gateway.SessionStore
 
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
@@ -349,6 +358,7 @@ func (b *boot) openStateStoreAdapter() error {
 	}
 	b.stateStore = client
 	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane())
+	b.applyStatus = applystatus.New(b.processName, client, b.log)
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)

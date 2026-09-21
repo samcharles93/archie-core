@@ -29,6 +29,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -345,6 +346,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	defer stop()
 
 	b := newBootstrap()
+	b.processName = applystatus.Daemon
 	// Arm the shutdown watchdog before any cleanup is registered so its
 	// disarm runs last in the LIFO cleanup chain: it force-exits the process
 	// as a backstop if graceful shutdown hangs past the drain-plus-grace
@@ -385,6 +387,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		b.log.Error("workflow execution settings unavailable", "err", err)
 		return 1
 	}
+	go b.applyStatus.Run(ctx)
 	if exit, err := b.handleRequeue(ctx, args.requeue, args.once); err != nil {
 		return 1
 	} else if exit {
