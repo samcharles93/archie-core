@@ -12,23 +12,40 @@ import (
 // retrying: a watch reconnects for as long as the process lives.
 //
 // A control plane that is down is retried slowly enough that it is not a
-// request loop, and that holds for every shape the outage takes because the
-// window an attempt is judged against is derived from the delay it would
-// otherwise be charged (attemptHealthy): a store that errors at once and a
-// store that stalls until its read times out are both charged, so both climb
-// the ladder instead of sitting at the minimum.
+// request loop, and the charge reaches the shapes of outage an attempt that
+// ENDS can take: a store that errors at once is charged, and so is one that
+// stalls for less than the window the attempt is judged against, because that
+// window is derived from the delay the attempt would otherwise be charged and
+// widens with the ladder instead of sitting at its floor (attemptHealthy). The
+// reach stops at the window: a stall still going when the window closes is read
+// as a store that answered, so an outage whose every attempt takes at least
+// that long leaves the ladder at the minimum -- deliberately, and pinned by
+// TestKeepWatchTreatsAStallPastTheWindowAsAStoreThatAnswered.
+//
+// This loop charges only attempts that end, and imposes no timeout of its own:
+// nextUpdate waits on the stream and on the loop's own context, never on a
+// clock, so a peer that accepts the stream and then never answers it ends
+// nothing here and this code has nothing to charge. What ends that stream is
+// the transport's client keepalive,
+// internal/infrastructure/staterpc/dial.go (Time 10s, Timeout 5s): the
+// unacknowledged PING tears the connection down, the watch stream errors, the
+// attempt ends, and here it is charged like any other attempt that ended. A
+// hung peer is that keepalive's business, not this loop's. The watch rides
+// that connection because the daemon takes its control-plane client off the
+// *staterpc.Client the dial returned, on the same connection the keepalive was
+// installed on (internal/app/archied/bootstrap.go, openStateStoreAdapter,
+// which reads client.ControlPlane()).
 const (
 	controlPlaneWatchRetryMin = 250 * time.Millisecond
 	controlPlaneWatchRetryMax = 30 * time.Second
 )
 
-// controlPlaneWatchHealthyMultiple is how many times the delay an attempt would
-// otherwise be charged an attempt that delivered nothing must outlive to be
-// read as a store that answered and had nothing to say. It is strictly more
-// than one, so that window is always wider than the charge itself: a window
-// equal to the delay would read a store that fails as slowly as that delay as
-// healthy on every attempt, which is the fixed-rate loop this rule exists to
-// charge.
+// controlPlaneWatchHealthyMultiple multiplies the delay an attempt would
+// otherwise be charged into the window that attempt must stay open to be read
+// as a store that answered and had nothing to say. It is strictly more than
+// one, so that window is always wider than the charge itself: a window equal to
+// the delay would read a store that fails as slowly as that delay as healthy on
+// every attempt, which is the fixed-rate loop this rule exists to charge.
 const controlPlaneWatchHealthyMultiple = 2
 
 // keepWatch delivers every update from first and, when that stream ends,
@@ -67,14 +84,26 @@ const controlPlaneWatchHealthyMultiple = 2
 // loop.
 //
 // The rule is one sentence: an attempt is healthy iff it delivered an update
-// this watch had not handled, or it outlived a window that is a strict multiple
-// of the delay it would otherwise be charged. The window is derived from that
-// charge rather than fixed at the minimum, which is what makes the rule reach
-// every shape of outage: a store that has stopped answering does not error at
-// once, it stalls until its read times out, and an attempt that took longer to
-// fail than a window fixed at the minimum would be read as a healthy store on
-// every attempt, leaving the delay one minimum per timeout for as long as the
-// store is gone.
+// this watch had not handled, or it was still open when the window closed
+// (attemptHealthy, controlPlaneWatchHealthyWindow -- the delay the attempt would
+// otherwise be charged, multiplied by a factor strictly greater than one, so
+// the window is always wider than that charge). The window is derived from that
+// charge rather than fixed at the minimum, which is what carries the rule past
+// the shape an immediate error does not cover: a store that has stopped
+// answering does not error at once, it stalls, and an attempt that stalls for
+// less than the window is charged and the delay climbs a rung.
+//
+// The window is not a read timeout, and this loop imposes none of its own (see
+// controlPlaneWatchRetry for what ends an attempt against a peer that never
+// answers), so the reach of the rule stops at the window itself: a stall still
+// going when the window closes is read as a store that answered, and the delay
+// stays at the minimum for as long as every attempt takes that long. That
+// is deliberate rather than a gap to close with another rule. The stalled
+// attempt lasts the window, so the reopens it leaves behind are bounded by the
+// attempt and not by the delay -- about 0.8 a second at the minimum rung,
+// against the four a second this rule exists to charge -- and a shape that slow
+// is not the request loop it exists for. It is pinned by
+// TestKeepWatchTreatsAStallPastTheWindowAsAStoreThatAnswered.
 //
 // open, versionOf and deliver are the kind's halves. open re-establishes the
 // stream -- the caller opens the first one itself, so that a control plane
@@ -84,9 +113,12 @@ const controlPlaneWatchHealthyMultiple = 2
 // document reaches the settings page.
 //
 // wait is the delay between a stream ending and the reopen that follows it, and
-// production passes waitFor. It is injected so that the delay the loop actually
-// waited is observable: the retry_in log line states the delay the loop charged
-// and would agree with a loop that waited some other multiple of it.
+// production passes waitFor. It is injected so that the delay the loop hands it
+// is observable as a value: the retry_in log line states the delay the loop
+// charged, and a loop that charged one delay and waited another would leave that
+// attribute agreeing with itself. What the injected wait cannot show is a
+// multiple taken inside waitFor itself, which is a timer for exactly the d it is
+// given (TestKeepWatchWaitsTheDelayItCharged reads the argument, not the wait).
 func keepWatch[T any](
 	ctx context.Context,
 	log *slog.Logger,
@@ -138,21 +170,27 @@ func keepWatch[T any](
 
 // attemptHealthy is what one attempt that ended makes of the reconnect delay.
 // An attempt is healthy iff it delivered an update this watch had not handled
-// -- the store answered, whatever the stream did afterwards -- or it outlived
-// controlPlaneWatchHealthyWindow, which is a store that had nothing to say and
-// was still there. An attempt that did neither delivered nothing and died
-// inside the window it would have been charged: the stream was accepted and the
-// store was not answering, which is a failed attempt and the only thing the
-// delay grows on.
+// -- the store answered, whatever the stream did afterwards -- or it was still
+// open when controlPlaneWatchHealthyWindow closed, at that boundary and not
+// only past it, which is a store that had nothing to say and was still there.
+// An attempt that did neither delivered nothing and died inside the window it
+// would have been charged: the stream was accepted and the store was not
+// answering, which is a failed attempt and the only thing the delay grows on.
 func attemptHealthy(progressed bool, openFor, backoff time.Duration) bool {
 	return progressed || openFor >= controlPlaneWatchHealthyWindow(backoff)
 }
 
 // controlPlaneWatchHealthyWindow is how long an attempt that delivered nothing
-// must stay open to count as a store that answered and had nothing to say: a
-// strict multiple of the delay the attempt would otherwise be charged. The
-// window moves with the ladder, so the charge reaches a store that fails slowly
-// at every rung of it, which a window fixed at the minimum does not.
+// must stay open to count as a store that answered and had nothing to say: the
+// delay the attempt would otherwise be charged, multiplied by
+// controlPlaneWatchHealthyMultiple. The window moves with the ladder, so the
+// charge reaches a store that fails slowly at every rung of it, which a window
+// fixed at the minimum does not. The multiple is strictly more than one, so the
+// window is always wider than that charge -- a store that fails as slowly as
+// the charge it would be paid is still charged, which is the shape of
+// TestWatchRetryGrowsWhileTheStateStoreIsDown that says so -- and an attempt is
+// healthy at the window as well as past it (TestAttemptHealthyAtTheWindowBoundary
+// pins that edge).
 func controlPlaneWatchHealthyWindow(backoff time.Duration) time.Duration {
 	return controlPlaneWatchHealthyMultiple * retryDelay(backoff, false)
 }

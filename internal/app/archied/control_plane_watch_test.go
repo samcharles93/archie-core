@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io"
 	"log/slog"
 	"slices"
@@ -574,11 +575,17 @@ func TestKeepWatchGuardrails(t *testing.T) {
 // TestKeepWatchChargesAnAttemptThatEndedWithNothing pins the reconnect delay
 // against the three ways one attempt can end, which is the whole of the
 // decision: an attempt that delivered an update of the store's is healthy even
-// though the stream ended the instant after it, an attempt that outlived the
-// window it would have been charged is healthy even though the store had
-// nothing to say, and an attempt that did neither failed -- the stream was
-// accepted and then died without the store having answered -- so the reconnect
-// behind it is charged.
+// though the stream ended the instant after it, an attempt that was still open
+// when the window it would have been charged closed is healthy even though the
+// store had nothing to say, and an attempt that did neither failed -- the
+// stream was accepted and then died without the store having answered -- so the
+// reconnect behind it is charged.
+//
+// The window case stands open past the window rather than for exactly it: the
+// sleep in it starts before the loop's attempt does, so an attempt measured
+// against the window it was started with is an attempt that can be judged a
+// hair early. The edge itself -- the window closing exactly on the attempt's
+// end -- is pinned without a clock by TestAttemptHealthyAtTheWindowBoundary.
 //
 // Every case reopens successfully, so a loop that reset the delay on the mere
 // acceptance of a stream would report the minimum for the failed attempt too:
@@ -609,7 +616,7 @@ func TestKeepWatchChargesAnAttemptThatEndedWithNothing(t *testing.T) {
 				stream := make(chan int64)
 				go func() {
 					defer close(stream)
-					time.Sleep(controlPlaneWatchHealthyWindow(controlPlaneWatchRetryMin))
+					time.Sleep(controlPlaneWatchHealthyWindow(controlPlaneWatchRetryMin) + controlPlaneWatchRetryMin/10)
 				}()
 				return stream
 			},
@@ -629,6 +636,88 @@ func TestKeepWatchChargesAnAttemptThatEndedWithNothing(t *testing.T) {
 				t.Errorf("the reconnect waited %v, want %v: %s", got, tt.want, tt.name)
 			}
 			cancel()
+		})
+	}
+}
+
+// TestKeepWatchTreatsAStallPastTheWindowAsAStoreThatAnswered pins the outer
+// boundary of attemptHealthy where it is decided, and documents what the rule
+// stops reaching: the derived window charges a stall shorter than itself and
+// stops there. A stall still going when the window closes ends an attempt that
+// was open for the whole window, so the rule reads it as a store that answered
+// and had nothing to say, and the ladder is left at the minimum -- [250ms
+// 250ms], not [250ms 500ms].
+//
+// That is deliberate, and it is not a gap to close with a further rule. The
+// stalled attempt itself lasts the window, so the reopens it leaves behind are
+// under one a second at the minimum rung, against the four a second this rule
+// exists to charge, and a shape that slow is not the request loop. What the
+// boundary does mean is that an outage is charged by its failed attempts only
+// while they fail faster than the window; one whose every attempt takes that
+// long is reconnected at the minimum, and its RPC rate is bounded by the
+// attempt rather than by the delay.
+func TestKeepWatchTreatsAStallPastTheWindowAsAStoreThatAnswered(t *testing.T) {
+	t.Parallel()
+	log, retries := newRetryLog()
+	// The minimum rung judges an attempt against a window of four times the
+	// minimum (controlPlaneWatchHealthyWindow(controlPlaneWatchRetryMin)), and
+	// each attempt here stands open for five times the minimum -- a whole
+	// minimum past that window -- carrying nothing: a store that has stopped
+	// answering and never errors. The margin is a whole minimum rather than a
+	// hair, because the sleep starts before the loop's attempt does and a race
+	// with the window is not what this test is for.
+	stall := 5 * controlPlaneWatchRetryMin
+	stalled := func() <-chan int64 {
+		stream := make(chan int64)
+		go func() {
+			defer close(stream)
+			time.Sleep(stall)
+		}()
+		return stream
+	}
+	open := func(context.Context, int64) (<-chan int64, error) { return stalled(), nil }
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go keepWatch(ctx, log, "test", 0, stalled(), open, waitFor, func(version int64) int64 { return version }, func(int64) {})
+
+	want := []time.Duration{controlPlaneWatchRetryMin, controlPlaneWatchRetryMin}
+	if got := awaitRetries(t, retries, len(want)); !slices.Equal(got[:len(want)], want) {
+		t.Errorf("reconnects waited %v, want %v: an attempt that stayed open for the whole %v window is read as a store that answered, so the ladder is left at the minimum and the reopen rate is bounded by the attempt itself rather than by the delay",
+			got[:len(want)], want, controlPlaneWatchHealthyWindow(controlPlaneWatchRetryMin))
+	}
+	cancel()
+}
+
+// TestAttemptHealthyAtTheWindowBoundary pins the edge where the sentence and
+// the operator meet, which nothing else in the package does: the comparison is
+// inclusive, so an attempt still open when the window closes -- at it, and not
+// only past it -- is a store that answered, and an attempt a nanosecond inside
+// it is charged. The window is a strictly wider multiple of the delay the
+// attempt would otherwise be charged at every rung of the ladder, the cap
+// included, so a store that fails as slowly as the charge it would be paid is
+// still charged: an inclusive boundary does not read that store as healthy.
+func TestAttemptHealthyAtTheWindowBoundary(t *testing.T) {
+	t.Parallel()
+	for _, backoff := range []time.Duration{controlPlaneWatchRetryMin, 3 * time.Second, controlPlaneWatchRetryMax} {
+		t.Run(backoff.String(), func(t *testing.T) {
+			t.Parallel()
+			charge := retryDelay(backoff, false)
+			window := controlPlaneWatchHealthyWindow(backoff)
+			if window <= charge {
+				t.Fatalf("the window at a %v charge is %v, want strictly wider than the charge: a window equal to it reads a store that fails as slowly as the charge as healthy on every attempt, which is the fixed-rate loop the window exists to charge", charge, window)
+			}
+			for _, tt := range []struct {
+				name    string
+				openFor time.Duration
+				want    bool
+			}{
+				{"an attempt still open when the window closes is healthy", window, true},
+				{"an attempt that died a nanosecond inside the window is charged", window - time.Nanosecond, false},
+			} {
+				if got := attemptHealthy(false, tt.openFor, backoff); got != tt.want {
+					t.Errorf("attemptHealthy(progressed=false, openFor=%v, backoff=%v) = %t, want %t: %s", tt.openFor, backoff, got, tt.want, tt.name)
+				}
+			}
 		})
 	}
 }
@@ -1011,49 +1100,83 @@ func (s *busyStream) Recv() (*pb.WatchResponse, error) {
 	return &pb.WatchResponse{Resource: s.resource}, nil
 }
 
+// keepWatchWaitArgument is the position of keepWatch's wait parameter
+// (ctx, log, kind, after, first, open, wait, versionOf, deliver): the injection
+// point that makes the ladder observable, and so an argument whose value a call
+// site could get wrong with no behavioural test behind it.
+const keepWatchWaitArgument = 6
+
 // TestBothWatchStreamsRunThroughTheReconnectLoop pins the wiring the
 // behavioural tests drive one step below: both launch sites must hand their
 // stream to the one reconnect loop, or a kind keeps the single-shot goroutine
-// that ends for the life of the process. Asserted on the source because
+// that ends for the life of the process. What the loop is handed is pinned too,
+// because a call site that reached keepWatch with a wait of its own would be a
+// second schedule nothing else drives: the persona launch site's wait has no
+// behavioural test of its own -- the outage test reads the delays one level
+// down, and only for the settings launch site. Asserted on the source because
 // setupChatRuntime needs a fully built boot (stores, runtime, memory engines)
 // to run -- the technique composition_order_test.go and
 // TestSetupGatewayChatCarriesStatusHealth already use for wiring nothing at
 // runtime observes.
 func TestBothWatchStreamsRunThroughTheReconnectLoop(t *testing.T) {
 	fileset := token.NewFileSet()
-	for _, tt := range []struct{ file, holder, call string }{
-		{file: "control_plane.go", holder: "startWorkflowExecutionSettings", call: "keepWatch"},
+	for _, tt := range []struct {
+		file, holder, call string
+		// wait is the name the call must hand keepWatch in its wait position,
+		// empty for a call that is not keepWatch itself.
+		wait string
+	}{
+		{file: "control_plane.go", holder: "startWorkflowExecutionSettings", call: "keepWatch", wait: "waitFor"},
 		{file: "gateway_runtime.go", holder: "setupChatRuntime", call: "watchPersonas"},
-		{file: "gateway_runtime.go", holder: "watchPersonas", call: "keepWatch"},
+		{file: "gateway_runtime.go", holder: "watchPersonas", call: "keepWatch", wait: "waitFor"},
 	} {
 		parsed, err := parser.ParseFile(fileset, tt.file, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", tt.file, err)
 		}
-		if !callsName(methodBody(t, parsed, tt.holder), tt.call) {
+		call := callTo(methodBody(t, parsed, tt.holder), tt.call)
+		if call == nil {
 			t.Errorf("%s never calls %s: that watch stream would not be re-established", tt.holder, tt.call)
+			continue
+		}
+		if tt.wait == "" {
+			continue
+		}
+		if len(call.Args) <= keepWatchWaitArgument {
+			t.Errorf("%s calls %s with %d arguments, want at least %d: the wait cannot be read, so nothing here pins which wait the loop is handed", tt.holder, tt.call, len(call.Args), keepWatchWaitArgument+1)
+			continue
+		}
+		if got := types.ExprString(call.Args[keepWatchWaitArgument]); got != tt.wait {
+			t.Errorf("%s hands %s %s as its wait, want %s: the loop's backoff has to be the wait that reports a cancelled context and is the injection point the ladder is read through, not a schedule of the call site's own", tt.holder, tt.call, got, tt.wait)
 		}
 	}
 }
 
-// callsName reports whether body calls name, as a plain function or as a
-// method of anything.
-func callsName(body *ast.BlockStmt, name string) bool {
-	called := false
+// callTo returns body's first call to name, as a plain function or as a method
+// of anything, or nil when body does not call it.
+func callTo(body *ast.BlockStmt, name string) *ast.CallExpr {
+	var found *ast.CallExpr
 	ast.Inspect(body, func(node ast.Node) bool {
+		if found != nil {
+			return false
+		}
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
 		switch fun := call.Fun.(type) {
 		case *ast.Ident:
-			called = called || fun.Name == name
+			if fun.Name == name {
+				found = call
+			}
 		case *ast.SelectorExpr:
-			called = called || fun.Sel.Name == name
+			if fun.Sel.Name == name {
+				found = call
+			}
 		}
 		return true
 	})
-	return called
+	return found
 }
 
 // retryLog is a slog.Handler that records the retry delay of each reconnect,
