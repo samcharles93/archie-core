@@ -65,7 +65,7 @@ scan_literal github_container_publish github-workflows 'docker build|docker push
 # every row below -- which reads as "no composition root" rather than "wrong
 # file". The wiring lives in internal/app/archied.
 scan_literal production_config_resolve composition-root 'configuration\.New\(' internal/app/archied
-scan_literal production_config_overlay composition-root 'ApplyOverlayValues\(|loadConfig\(' internal/app/archied
+scan_literal production_config_load composition-root 'loadConfig\(|loadRuntimeConfig\(' internal/app/archied
 scan_literal production_sqlite_store composition-root 'openProductionTaskStore\(|openStateStore\(' internal/app/archied
 scan_literal production_daemon composition-root '&daemon\.Daemon\{' internal/app/archied
 scan_literal production_rpc_servers composition-root 'registerTaskRPCServers\(' internal/app/archied

@@ -1,6 +1,6 @@
 # Safe Change and Recovery
 
-**Status:** Requirements approved; mechanics are under design. The runtime config overlay subset is implemented (2026-08): see the degrade/recovery section below. The full runtime-supervision protocol (bounded observation, versioned audit trail) remains under design.
+**Status:** Requirements approved; mechanics are under design. Database-backed settings are implemented through the control plane (2026-09): see the degrade/recovery section below, which records a gap rather than a solution. The full runtime-supervision protocol (bounded observation, versioned audit trail) remains under design.
 **Date:** 2026-07-28  
 **Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
@@ -100,40 +100,41 @@ capabilities continue operating.
 Remediation MUST be bounded, observable, and policy-driven. Recovery MUST NOT
 silently oscillate between versions or retry forever.
 
-## Runtime config overlay: degrade paths and recovery (2026-08)
+## Database settings: degrade paths and recovery (2026-09)
 
-The dashboard edits runtime-tunable settings into a dedicated overlay store
-(`cfg.DBPath + "-config.sqlite"`), layered over the file config at boot and on
-reload. The file remains the authoritative, editor-reachable source; the overlay
-is a runtime-tunable overlay on top of it. A broken overlay must never brick
-the daemon, for the same reason a bad file edit must not: the operator needs a
-path back that does not depend on the daemon's health.
+The control plane owns runtime-tunable settings and stores them in `archie.db`.
+This replaced a dashboard overlay store that degraded to file config on any
+failure and had three documented ways back. The replacement has none, and the
+posture is the opposite: **the daemon fails closed.**
 
-### Degrade paths (all verified by the reload design)
+### Degrade paths
 
 | Failure | Boot behaviour | Where the operator sees it |
 | --- | --- | --- |
-| Overlay store cannot be opened (permissions, corrupt file) | Boots on file config alone; logs at error level | `/api/config` → `reload.overlay_unavailable` → dashboard banner |
-| Overlay snapshot unreadable (a row holds invalid JSON) | Boots on file config alone | Same |
-| Overlay values fail validation | Boots on file config alone; the overlay is rejected wholesale, never partially applied | Same |
-| SIGHUP reload with a bad file or bad overlay | Running config is kept; the reload records `last_error` / `last_error_at` | `/api/config` → `reload.last_error` → dashboard banner |
+| State Store unreachable | `boot.loadRuntimeConfig` returns the dial error and `archied` exits non-zero | stderr: `runtime settings unavailable` |
+| A stored resource fails validation | Same: `validate database settings` wraps the error and the daemon exits | Same |
+| SIGHUP reload with a bad file | Running config is kept; the reload records `last_error` / `last_error_at` | `/api/config` → `reload.last_error` → dashboard banner |
 
-The overlay degrade paths never partially apply: `Loader.ApplyOverlay` decodes
-into a deep copy (`config.Clone`) and validates before anything is published,
-so a rejected overlay leaves the boot config exactly as the file produced it.
+Failing closed is deliberate for settings the database owns: falling back to the
+file values would restore the second source of truth the control plane exists to
+remove. The cost is that a bad stored value stops the daemon starting, and the
+value can only be corrected through the daemon's own API.
 
-### Recovery
+### Recovery: not yet built
 
-1. **`--no-config-overlay`** (or `ARCHIE_SKIP_CONFIG_OVERLAY=1`) boots the
-daemon on file config alone, ignoring the overlay entirely. This is the escape
-hatch that works when the daemon will not start.
-2. **Remove the overlay file** (`rm <dbpath>-config.sqlite`) — the overlay is
-recreated empty on next boot, so the daemon returns to pure file config.
-3. **Dashboard reset** (`POST /api/config/reset`) removes a single override
-whose file edit is shadowed, without stopping the daemon.
+There is no escape hatch. Nothing skips the control plane at boot, and the only
+writer for a resource is `ControlPlaneService.Command` on a running State Store.
+An operator whose stored settings will not validate has no supported path back
+short of editing `archie.db` by hand.
 
-These are the documented recovery paths; they are deliberate, bounded, and do
-not require hand-editing SQL in a shared database.
+`archie-core-6zw0` is the missing piece: offline commands that back up, restore,
+validate and roll back the database without `archied` or the Web UI. Until it
+lands, treat a settings change that requires a restart as a change that can
+prevent one, and take a copy of `archie.db` first.
+
+Resource history is the in-band remedy and does exist: every write records its
+prior value, so an edit made through the dashboard or a channel can be restored
+by replaying an earlier revision while the State Store is up.
 
 ## Gateway restart: two constraints learned the hard way
 

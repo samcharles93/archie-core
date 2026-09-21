@@ -517,6 +517,22 @@ kept deliberately for it; `ConfigView.Editable` follows whichever process holds
 Implementation belongs to `archie-core-8cda.5.4`, the cutover that removes the
 daemon's own dashboard. Nothing here is built yet.
 
+**Superseded 2026-09-21 by the runtime control plane.** The open question this
+descope left -- which process serves the policy and what transport carries the
+write -- was answered by `docs/prds/runtime-control-plane.md`: neither a daemon
+admin service nor a revival of the daemon-local policy. `ControlPlaneService` on
+the State Store's existing gRPC server owns every database-backed setting, and
+each feature validates its own resource, so there is no daemon-local policy left
+to contract. `archie-core-j28m` is closed.
+
+Consequently the three write seams described above no longer exist.
+`PATCH /api/config`, `POST /api/config/reset` and
+`PATCH /api/config/repos/{owner}/{name}`, the `UpdateConfig`/`ResetConfig`/
+`UpdateRepoField` fields on `webui.Server`, and `ConfigView.Editable` were
+deleted in `31622ec5` along with the runtime overlay store they wrote to.
+`GET /api/config` remains a read of the published projection, as this decision
+always intended.
+
 ### 7. Shared mechanics
 
 The following cross-domain mechanics require exact contracts before dependent

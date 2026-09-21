@@ -42,7 +42,6 @@ export interface ConfigOrigin {
 }
 
 export interface ReloadStatus {
-  overlay_unavailable?: string;
   last_error?: string;
 }
 
