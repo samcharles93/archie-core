@@ -38,6 +38,24 @@ func (shippedStages) StepTypes() []workflow.StepType {
 	return stepTypes
 }
 
+// repoHooks is the provider that contributes the step types replacing the
+// repository-authored hooks that were deleted with the interpreted workflow
+// engine  --  .archie/gate.go, whose rules now arrive as settings on
+// workflow.DiffRulesStepName instead of as Go read out of the worktree being
+// worked on.
+//
+// It is a provider of its own rather than part of shippedStages, which is
+// scoped to the stages of the shipped workflows: a repository's migration target
+// is not part of any shipped workflow, and a root that bundles one set should be
+// able to tell which set a step type came from.
+type repoHooks struct{}
+
+func (repoHooks) Name() string { return "repo-hooks" }
+
+func (repoHooks) StepTypes() []workflow.StepType {
+	return []workflow.StepType{workflow.DiffRulesStepType()}
+}
+
 // Providers returns the provider set the roots that resolve a workflow step
 // type register at their composition root, before the first resolution: it is
 // what NewManager registers, and what the roots' guards read to hold a
@@ -53,7 +71,7 @@ func (shippedStages) StepTypes() []workflow.StepType {
 // provider_secrets.go). Until one exists for step types, adding a step type
 // means adding a provider here.
 func Providers() []workflow.StepTypeProvider {
-	return []workflow.StepTypeProvider{shippedStages{}}
+	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}}
 }
 
 // NewManager builds this process's workflow step-type manager by registering
