@@ -10,6 +10,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -34,6 +35,10 @@ type channelInstance struct {
 // Service manages the lifecycle of the extracted Messaging Service and its
 // channel adapters.
 type Service struct {
+	// status owns channel lifecycle facts, one entry per composed channel. It is
+	// the single writer channels report through (see lifecycleFor), and the
+	// producer a dashboard surface reads.
+	status   *status.Manager
 	cfg      ResolvedConfig
 	log      *slog.Logger
 	chat     messaging.ChatContract
@@ -89,6 +94,7 @@ func compose(ctx context.Context, d deps) (*Service, error) {
 		}
 	}
 
+	srv.status = status.NewManager(channelDescriptors(srv.channels))
 	return srv, nil
 }
 
@@ -160,9 +166,17 @@ func (s *Service) Start(ctx context.Context) error {
 		c := ch
 		wg.Go(func() {
 			s.log.Info("starting channel", "name", c.name)
-			if err := c.channel.Start(ctx, s.chat, channels.Lifecycle{}); err != nil && ctx.Err() == nil {
+			if err := c.channel.Start(ctx, s.chat, s.lifecycleFor(c.name)); err != nil && ctx.Err() == nil {
+				// The channel could not run: say so on the operator's surface, not
+				// only in the log, which is the difference between a dashboard that
+				// shows a dead channel and one that shows nothing at all.
+				s.status.MarkFailed(c.name, err.Error())
 				s.log.Error("channel stopped with error", "name", c.name, "err", err)
+				return
 			}
+			// A channel that returns without an error has stopped, either because
+			// the service was asked to or because its own loop ended.
+			s.status.MarkStopped(c.name, "")
 		})
 	}
 

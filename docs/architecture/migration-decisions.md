@@ -322,6 +322,44 @@ Service then imports only `internal/infrastructure/controlplanerpc`,
 `gatewayrpc` and `staterpc`, so `go list -deps ./cmd/archie-messaging` loses all
 four banned packages and the gate can land green.
 
+**Channel state to the dashboard: one administrative surface, following the
+config-snapshot precedent (2026-09-22, `archie-core-8cda.6.8`).** The Messaging
+Service now records its channels' lifecycle -- `internal/channels/status.Manager`,
+one entry per composed channel, written by each channel's own report through
+`channels.Lifecycle` -- and nothing reads that across a process boundary.
+`/api/channels` answers with nothing because `webui.Server.Channels` has no
+production source, and POST `/api/channels/{id}/reload` answers 501 for the same
+reason. The carrier is the State Store, and the shape is the one
+`archie-core-ymut` already established for config snapshots
+(`docs/prds/state-store-contract.md`, "the one surface whose writer is the daemon
+and whose reader is the UI process"): a pair of administrative RPCs, deny-by-default
+under `authorizesTaskScopedCall`, so a task-scoped grant reaches neither.
+
+What that decides, so the implementation need not invent it:
+
+- A channel's state is **runtime** state, not a settings document. It does not
+  belong in the `ControlPlaneService` resource kinds, which are validated,
+  versioned documents seeded from config; a channel that is failed is not a
+  document anybody edits.
+- The reader is the UI process, which already dials the State Store and pumps its
+  cursor, so the surface needs no new transport in either direction.
+- Adding the pair changes the contract's RPC count, so
+  `docs/prds/state-store-contract.md`'s grouped table gains a group in the same
+  change that adds the RPCs -- the table is the contract's own index, and a
+  surface it does not list is a surface nobody finds.
+
+**Left open here, deliberately.** Reload runs the other way -- the UI asks the
+service to reload a channel -- and the config-snapshot precedent only describes a
+writer-to-reader direction. Two candidates: a second surface carrying a request
+the service observes and clears, or a field on the same surface the service
+watches. Deciding it now would be choosing a lifetime for a request queue by
+analogy with a status report; they are not the same object.
+
+`archie-core-8cda.6.9`'s component self-report is the **same shape**: a process
+reporting something about itself for the UI to read. Whether it shares this
+surface or gets its own is a decision for `6.9`, and the one outcome to avoid is
+two homes for "what a component reports about itself".
+
 ### 3. Identity data migration
 
 The migration must define:
