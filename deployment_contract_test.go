@@ -108,6 +108,38 @@ func TestFormattingUsesOneConfiguredWriter(t *testing.T) {
 	}
 }
 
+func TestBuildTaskSourcesTrackEmbeddedAssets(t *testing.T) {
+	taskfile := readDeploymentFile(t, "Taskfile.yml")
+	start := strings.Index(taskfile, "\n  build:\n")
+	end := strings.Index(taskfile, "\n  test:\n")
+	if start < 0 || end < start {
+		t.Fatal("Taskfile has no bounded build task")
+	}
+	build := taskfile[start:end]
+	sourcesAt := strings.Index(build, "sources:")
+	generatesAt := strings.Index(build, "generates:")
+	if sourcesAt < 0 || generatesAt < sourcesAt {
+		t.Fatal("build task has no bounded sources block")
+	}
+	sources := build[sourcesAt:generatesAt]
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		reason string
+	}{
+		{
+			name:   "embedded dashboard",
+			path:   "ui/dist/**",
+			reason: "ui/embed.go embeds it with //go:embed all:dist, so a dashboard changing with no .go file changing must still rebuild the binaries",
+		},
+	} {
+		if !strings.Contains(sources, tc.path) {
+			t.Errorf("build sources do not track %s: %s", tc.name, tc.reason)
+		}
+	}
+}
+
 func TestFormattersExcludeInterpretedSecretEngines(t *testing.T) {
 	config := readDeploymentFile(t, ".golangci.yml")
 	if !strings.Contains(config, `^examples/secret-engines/(age|sops|vault)\.go$`) {

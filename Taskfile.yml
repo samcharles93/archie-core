@@ -375,6 +375,9 @@ tasks:
       - "**/*.go"
       - go.mod
       - go.sum
+      # ui/dist is committed and embedded by ui/embed.go (//go:embed all:dist),
+      # so it is a build input even though no .go file names it.
+      - "ui/dist/**"
     generates:
       - "{{.BIN_DIR}}/archied"
       - "{{.BIN_DIR}}/archie-gateway"
