@@ -39,6 +39,26 @@ func TestPutResourceDuplicateRequestIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestPutResourceRequestIDIsScopedToTheKind: the request ID makes one write
+// idempotent for the kind it wrote: the dedup key is (kind, request ID), so a
+// request ID reused across two kinds writes the second instead of silently
+// replaying the first kind's resource (archie-core-fcvd).
+func TestPutResourceRequestIDIsScopedToTheKind(t *testing.T) {
+	s := OpenTest(t)
+	defer s.Close()
+	ctx := t.Context()
+	if _, err := s.PutResource(ctx, ResourceWrite{Kind: "settings", Value: []byte(`{"v":1}`), Actor: "a", Source: "test", RequestID: "shared", ExpectedVersion: 0, At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.PutResource(ctx, ResourceWrite{Kind: "other", Value: []byte(`{"v":9}`), Actor: "a", Source: "test", RequestID: "shared", ExpectedVersion: 0, At: time.Now()})
+	if err != nil {
+		t.Fatalf("PutResource with a request ID another kind already used: %v", err)
+	}
+	if second.Kind != "other" || second.Version != 1 {
+		t.Fatalf("second write = (%s, v%d), want the %q write itself, not a replay of the first kind's resource", second.Kind, second.Version, "other")
+	}
+}
+
 func TestResourceHistoryReturnsEveryRevisionNewestFirst(t *testing.T) {
 	s := OpenTest(t)
 	defer s.Close()

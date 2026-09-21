@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -190,13 +192,91 @@ func TestOpenMigratesLegacyEventsAttemptColumn(t *testing.T) {
 	}
 }
 
+// TestOpenMigratesResourceHistoryToPerKindRequestIDs covers the v4 step: the
+// history table's global request_id UNIQUE becomes per-kind uniqueness. A
+// global constraint is strictly stricter than the per-kind one, so no legacy
+// row can fail the rebuild -- but the legacy table must not leave a request
+// ID another kind already used refusing the write (archie-core-fcvd).
+func TestOpenMigratesResourceHistoryToPerKindRequestIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.ExecContext(t.Context(), `
+		CREATE TABLE resources (
+		 kind TEXT PRIMARY KEY, value BLOB NOT NULL, version INTEGER NOT NULL, updated_at TEXT NOT NULL
+		);
+		CREATE TABLE resource_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, value BLOB NOT NULL,
+			version INTEGER NOT NULL, actor TEXT NOT NULL, source TEXT NOT NULL,
+			request_id TEXT NOT NULL UNIQUE, expected_version INTEGER NOT NULL,
+			current_version INTEGER NOT NULL, at TEXT NOT NULL
+		);
+		INSERT INTO resources (kind,value,version,updated_at)
+		VALUES ('settings','{"v":1}',1,'2026-01-01T00:00:00Z');
+		INSERT INTO resource_history (kind,value,version,actor,source,request_id,expected_version,current_version,at)
+		VALUES ('settings','{"v":1}',1,'a','test','shared',0,0,'2026-01-01T00:00:00Z');
+		PRAGMA user_version = 3`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// The row written before the migration survives.
+	resource, err := s.Resource(t.Context(), "settings")
+	if err != nil {
+		t.Fatalf("Resource after migration: %v", err)
+	}
+	if string(resource.Value) != `{"v":1}` {
+		t.Fatalf("legacy history row = %s, want the preserved value", resource.Value)
+	}
+
+	// The column constraint is gone -- no auto-index (an index sqlite_master
+	// carries with a NULL sql) is left on the table -- and per-kind
+	// uniqueness is its replacement.
+	var autoIndexes int
+	if err := s.db.QueryRowContext(t.Context(), `SELECT count(*) FROM sqlite_master WHERE type='index' AND tbl_name='resource_history' AND sql IS NULL`).Scan(&autoIndexes); err != nil {
+		t.Fatal(err)
+	}
+	if autoIndexes != 0 {
+		t.Fatalf("resource_history still carries %d column-constraint index(es), want none", autoIndexes)
+	}
+	var perKind int
+	if err := s.db.QueryRowContext(t.Context(), `SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_resource_history_kind_request'`).Scan(&perKind); err != nil {
+		t.Fatal(err)
+	}
+	if perKind != 1 {
+		t.Fatalf("idx_resource_history_kind_request exists %d times, want 1", perKind)
+	}
+
+	// The dedup key itself: a request ID another kind already used writes the
+	// new kind instead of failing the global constraint or replaying the old
+	// resource.
+	second, err := s.PutResource(t.Context(), ResourceWrite{Kind: "other", Value: []byte(`{"v":9}`), Actor: "a", Source: "test", RequestID: "shared", ExpectedVersion: 0, At: time.Now()})
+	if err != nil {
+		t.Fatalf("PutResource with a request ID another kind already used: %v", err)
+	}
+	if second.Kind != "other" || second.Version != 1 {
+		t.Fatalf("second write = (%s, v%d), want the %q write itself", second.Kind, second.Version, "other")
+	}
+}
+
 func TestOpenRejectsNewerSchemaVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tasks.db")
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(t.Context(), `PRAGMA user_version = 4`); err != nil {
+	if _, err := db.ExecContext(t.Context(), fmt.Sprintf(`PRAGMA user_version = %d`, taskSchemaVersion+1)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {

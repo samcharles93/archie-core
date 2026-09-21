@@ -24,7 +24,10 @@ type Store struct {
 	bindingsCipher BindingCipher
 }
 
-const taskSchemaVersion = 3
+// taskSchemaVersion is the newest schema this binary opens. ValidateFile
+// refuses a database whose version is newer, so a binary and the file it
+// opens move together.
+const taskSchemaVersion = 4
 
 // OpenOption configures the store at open time.
 type OpenOption func(*openOptions)
@@ -139,7 +142,48 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	if err := migrateResourceHistoryToPerKindRequestIDs(ctx, tx); err != nil {
+		return err
+	}
 	return finishTaskMigration(ctx, tx, columns)
+}
+
+// migrateResourceHistoryToPerKindRequestIDs is the v4 step: the history
+// table's global request_id UNIQUE becomes per-kind uniqueness, the key the
+// resource write path actually dedups on (resourceByRequest). SQLite cannot
+// drop a column constraint, so the table is rebuilt in place; a global
+// constraint is strictly stricter than the per-kind one, so no existing row
+// can fail the new shape. Detection is the auto-index the old column
+// constraint created -- sqlite_master carries it with a NULL sql -- which the
+// rebuilt table leaves no copy of, so the step is a no-op on a database that
+// already has the v4 shape (including one resourcesSchema created fresh).
+func migrateResourceHistoryToPerKindRequestIDs(ctx context.Context, tx *sql.Tx) error {
+	var autoIndexes int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='index' AND tbl_name='resource_history' AND sql IS NULL`).Scan(&autoIndexes); err != nil {
+		return err
+	}
+	if autoIndexes == 0 {
+		return nil
+	}
+	for _, statement := range []string{
+		`CREATE TABLE resource_history_per_kind_request (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, value BLOB NOT NULL,
+			version INTEGER NOT NULL, actor TEXT NOT NULL, source TEXT NOT NULL,
+			request_id TEXT NOT NULL, expected_version INTEGER NOT NULL,
+			current_version INTEGER NOT NULL, at TEXT NOT NULL
+		)`,
+		`INSERT INTO resource_history_per_kind_request (id,kind,value,version,actor,source,request_id,expected_version,current_version,at)
+			SELECT id,kind,value,version,actor,source,request_id,expected_version,current_version,at FROM resource_history`,
+		`DROP TABLE resource_history`,
+		`ALTER TABLE resource_history_per_kind_request RENAME TO resource_history`,
+		`CREATE INDEX IF NOT EXISTS idx_resource_history_kind_version ON resource_history(kind, version)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_history_kind_request ON resource_history(kind, request_id)`,
+	} {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild resource_history for per-kind request IDs: %w", err)
+		}
+	}
+	return nil
 }
 
 func finishTaskMigration(ctx context.Context, tx *sql.Tx, columns map[string]bool) error {
@@ -148,7 +192,7 @@ func finishTaskMigration(ctx context.Context, tx *sql.Tx, columns map[string]boo
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, taskSchemaVersion)); err != nil {
 		return err
 	}
 	return tx.Commit()
