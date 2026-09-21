@@ -146,7 +146,7 @@ func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Documen
 	next.Config = doc.Config.Clone()
 	next.Provenance.Origins = append([]Origin(nil), doc.Provenance.Origins...)
 	if len(overrides) == 0 {
-		return l.finalize(&next)
+		return l.finalize(&next, Validate)
 	}
 	if err := ApplyOverlayValues(&next.Config, overrides); err != nil {
 		return nil, err
@@ -155,7 +155,7 @@ func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Documen
 		return nil, err
 	}
 	next.Provenance.record(Origin{Path: "config_overlay (runtime)", Role: RoleMain, Layer: LayerOverlay})
-	return l.finalize(&next)
+	return l.finalize(&next, Validate)
 }
 
 func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
@@ -191,7 +191,7 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 		doc.Provenance.record(Origin{Path: overlayPath, Role: RoleMain, Layer: LayerOverlay})
 	}
 
-	return l.finalize(doc)
+	return l.finalize(doc, validateBootstrap)
 }
 
 // overlayFileKeys reports the top-level keys of an overlay file that the
@@ -290,7 +290,7 @@ func (l *Loader) Dir(baseDir, overlayDir string) (*Document, error) {
 		}
 	}
 
-	return l.finalize(doc)
+	return l.finalize(doc, validateBootstrap)
 }
 
 // loadDir discovers and decodes one directory into doc. The base layer must
@@ -351,12 +351,19 @@ func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool) error {
 }
 
 // finalize applies defaults, then validates. The order matters: validation
-// judges the effective configuration, including values the operator never
+// judges the defaulted configuration, including values the operator never
 // wrote.
-func (l *Loader) finalize(doc *Document) (*Document, error) {
+//
+// validate is a parameter because the two kinds of caller produce different
+// documents. Every file source ([Loader.File], [Loader.Overlay], [Loader.Dir])
+// produces a BOOTSTRAP document and passes validateBootstrap: the settings the
+// control plane owns are layered over it later, so a stale value in one of them
+// must not fail the load. [Loader.ApplyOverlay] layers overrides onto a
+// document that is already effective, so it passes [Validate].
+func (l *Loader) finalize(doc *Document, validate func(*config.Config) error) (*Document, error) {
 	doc.UnknownKeys = sortedUnique(append(doc.UnknownKeys, unregisteredServiceKeys(doc.Config.Services)...))
 	l.applyDefaults(&doc.Config)
-	if err := Validate(&doc.Config); err != nil {
+	if err := validate(&doc.Config); err != nil {
 		return nil, err
 	}
 	l.log.Debug("configuration loaded", "sources", doc.Provenance.String())

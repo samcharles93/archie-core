@@ -37,9 +37,23 @@ var (
 	memoryEngines    = []string{memoryEngineBuiltin}
 )
 
-// Validate runs the same checks Loader applies before accepting a config,
-// against a config.Config value already built in memory -- e.g. by archied
-// setup, before it has written anything to disk.
+// Validate judges a configuration a process will run with -- every check that
+// can reject one -- against a config.Config value already built in memory, e.g.
+// by archied setup before it has written anything to disk. It is a superset of
+// what [Loader] applies to a file (validateBootstrap): a check over a setting
+// the control plane owns belongs here and not there, so that a stale TOML value
+// cannot fail a process's startup.
+//
+// It judges an EFFECTIVE document: the bootstrap file with every setting the
+// control plane owns layered over it. That layering happens at exactly one
+// place, boot.runtimeConfig (internal/app/archied/control_plane.go), which runs
+// this afterwards; the daemon and the Gateway both go through it, and the
+// readiness config probe re-runs it against the running value. A database value
+// that will not validate therefore stops the process rather than starting it
+// degraded.
+//
+// A plain file document is judged by validateBootstrap instead: see the split
+// there for why the loader must not apply this to it.
 //
 // Like validate, it does not apply defaults. Several checks (dispatch.trigger,
 // forge.type) only pass once a default has been filled
@@ -58,29 +72,32 @@ func Validate(cfg *config.Config) error {
 // validate reports the first problem that would stop the daemon running.
 // It does not modify cfg -- run applyDefaults first.
 func validate(cfg *config.Config) error {
-	if err := validateDispatch(cfg); err != nil {
+	if err := validateBootstrap(cfg); err != nil {
 		return err
 	}
+	return validateDatabaseOwned(cfg)
+}
+
+// validateBootstrap reports the first problem in the settings a bootstrap
+// document still owns: the file config a process reads before it can reach the
+// State Store. [Loader] applies this to every file source.
+//
+// It deliberately omits the settings the control plane stores, because a stale
+// TOML value in one of them must not be able to fail a process's startup
+// (docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
+// after migration, settings in TOML are ignored and cannot block State Store
+// startup). archie-state-store resolves its file config and opens the store
+// without ever layering a database resource over it (state_store.go), so a
+// check left here is a check that can still block it. Those checks live in
+// validateDatabaseOwned and run on the effective document instead.
+func validateBootstrap(cfg *config.Config) error {
 	if err := validateForgeIntake(cfg); err != nil {
 		return err
 	}
-	if err := validateProviders(cfg.Providers); err != nil {
-		return err
-	}
-	if len(cfg.Identities) > 0 {
-		if err := validateIdentities(cfg.Identities); err != nil {
-			return err
-		}
-	} else if err := validateSingleIdentity(cfg); err != nil {
-		return err
-	}
-	if err := validatePollInterval(cfg); err != nil {
+	if err := validateIdentityStructure(cfg); err != nil {
 		return err
 	}
 	if err := validateNATS(cfg); err != nil {
-		return err
-	}
-	if err := validateContainers(cfg); err != nil {
 		return err
 	}
 	if err := validateMemory(cfg); err != nil {
@@ -90,6 +107,30 @@ func validate(cfg *config.Config) error {
 		return err
 	}
 	return validateCapture(cfg)
+}
+
+// validateDatabaseOwned reports the first problem in a setting the control
+// plane owns. Each check below judges a field that a control-plane resource is
+// seeded from and replaces wholesale: providers (provider-settings),
+// poll_interval and dispatch (scheduling-policy), containers
+// (container-runtime-policies), and the repository lists
+// (repository-policies). It runs on the effective document, after that
+// replacement, which is the only point at which the value being judged is the
+// value a process will use.
+func validateDatabaseOwned(cfg *config.Config) error {
+	if err := validateDispatch(cfg); err != nil {
+		return err
+	}
+	if err := validateProviders(cfg.Providers); err != nil {
+		return err
+	}
+	if err := validatePollInterval(cfg); err != nil {
+		return err
+	}
+	if err := validateContainers(cfg); err != nil {
+		return err
+	}
+	return validateRepositoryContents(cfg)
 }
 
 // validateImage rejects an enabled hosted provider with no class or no
@@ -237,6 +278,18 @@ func validateProviders(providers map[string]config.Provider) error {
 	return nil
 }
 
+// validateIdentityStructure judges the shape of the identity definitions: the
+// fields a process needs to know which identities exist and which credentials
+// each one commits and calls with. The repository lists inside them are judged
+// by validateRepositoryContents, because repositories are a control-plane
+// resource that replaces the file's list after the merge.
+func validateIdentityStructure(cfg *config.Config) error {
+	if len(cfg.Identities) == 0 {
+		return validateSingleIdentity(cfg)
+	}
+	return validateIdentities(cfg.Identities)
+}
+
 func validateIdentities(identities []config.IdentityConfig) error {
 	for i, id := range identities {
 		if id.Name == "" {
@@ -253,9 +306,6 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		}
 		if !ForgeDisabled(id.Forge.Type) && id.Forge.Token == (config.SecretRef{}) {
 			return fmt.Errorf("%w: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", ErrInvalidInput, i)
-		}
-		if err := validateRepos(id.Repos); err != nil {
-			return fmt.Errorf("identities[%d]: %w", i, err)
 		}
 	}
 	return nil
@@ -278,7 +328,23 @@ func validateSingleIdentity(cfg *config.Config) error {
 	if !oneOf(cfg.Forge.Type, forgeTypes) {
 		return fmt.Errorf("%w: forge.type %q (want %s)", ErrInvalidInput, cfg.Forge.Type, list(forgeTypes))
 	}
-	return validateRepos(cfg.Repos)
+	return nil
+}
+
+// validateRepositoryContents judges the repositories themselves, whichever list
+// they appear in. Repository policies are a control-plane resource seeded from
+// these, so the contents are verified on the effective document -- the one the
+// database's list has already replaced the file's copy in.
+func validateRepositoryContents(cfg *config.Config) error {
+	if len(cfg.Identities) == 0 {
+		return validateRepos(cfg.Repos)
+	}
+	for i, id := range cfg.Identities {
+		if err := validateRepos(id.Repos); err != nil {
+			return fmt.Errorf("identities[%d]: %w", i, err)
+		}
+	}
+	return nil
 }
 
 func validateRepos(repos []config.Repo) error {

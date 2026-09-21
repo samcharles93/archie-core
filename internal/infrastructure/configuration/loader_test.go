@@ -236,31 +236,80 @@ func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsInvalidConfigEnumsAndGlobs pins which layer rejects each kind
+// of invalid value. Every file source produces a BOOTSTRAP document, and the
+// settings the control plane owns are layered over it later; a stale TOML value
+// in one of those must not fail the load (docs/prds/runtime-control-plane.md,
+// "Bootstrap, migration, and recovery"). So a check over a database-owned
+// setting is asserted on the effective document instead -- the same document
+// boot.runtimeConfig validates after the merge. Each case asserts both halves
+// it applies to, so a check that quietly disappeared fails the case rather than
+// passing it.
 func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 	tests := []struct {
-		name  string
-		extra string
+		name        string
+		body        string
+		wantLoadErr bool
 	}{
-		{name: "dispatch trigger", extra: "\n[dispatch]\ntrigger = \"labels\"\n"},
-		{name: "provider userinfo", extra: "\n[providers.openai]\nclass = \"openai\"\nbase_url = \"https://token@example.com/v1\"\n"},
-		{name: "provider query secret", extra: "\n[providers.openai]\nclass = \"openai\"\nbase_url = \"https://example.com/v1?api_key=secret\"\n"},
-		{name: "test glob", extra: "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\ntest_glob = \"[\"\n"},
+		{
+			name: "dispatch trigger",
+			body: fileConfigPrefix + "[dispatch]\ntrigger = \"labels\"\n",
+		},
+		{
+			name: "provider userinfo",
+			body: fileConfigPrefix + "[providers.openai]\nclass = \"openai\"\nbase_url = \"https://token@example.com/v1\"\n",
+		},
+		{
+			name: "provider query secret",
+			body: fileConfigPrefix + "[providers.openai]\nclass = \"openai\"\nbase_url = \"https://example.com/v1?api_key=secret\"\n",
+		},
+		{
+			name: "test glob",
+			body: fileConfigPrefix + "[[repos]]\nowner = \"acme\"\nname = \"app\"\ntest_glob = \"[\"\n",
+		},
+		{
+			// File-owned settings: no control-plane resource carries them, so
+			// the load path is the layer that has to reject them.
+			name:        "forge intake",
+			body:        fileConfigPrefix + "[forge]\nintake = \"not-a-real-intake\"\n",
+			wantLoadErr: true,
+		},
+		{
+			name:        "memory engine",
+			body:        fileConfigPrefix + "[memory]\nengine = \"not-a-real-engine\"\n",
+			wantLoadErr: true,
+		},
+		{
+			name:        "negative capture retention",
+			body:        fileConfigPrefix + "[capture]\nretention = \"-1h\"\n",
+			wantLoadErr: true,
+		},
+		{
+			name:        "image default naming no provider",
+			body:        fileConfigPrefix + "[image]\ndefault = \"not-a-real-provider\"\n",
+			wantLoadErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"widget\"\n"
-			if tt.name != "test glob" {
-				contents += "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-			}
-			contents += tt.extra
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
 
-			if _, err := loadFile(path); err == nil {
-				t.Fatal("loadFile() succeeded, want validation error")
+			doc, err := New(nil).File(path)
+			if tt.wantLoadErr {
+				if err == nil {
+					t.Fatal("File() = nil error, want the bootstrap document rejected")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("File: %v (a database-owned value must not fail the load)", err)
+			}
+			if err := Validate(&doc.Config); err == nil {
+				t.Fatal("Validate(effective document) = nil, want the value rejected there")
 			}
 		})
 	}
@@ -487,6 +536,12 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsNegativeContainerVolumeTTL: containers are a control-plane
+// resource (container-runtime-policies), so a negative volume_ttl is judged on
+// the effective document rather than on the file the load path reads -- a stale
+// TOML value in a database-owned setting must not fail a process's startup. The
+// second half of the assertion is what keeps dropping the check from passing
+// this test.
 func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
@@ -497,8 +552,12 @@ func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := loadFile(path); err == nil {
-		t.Fatal("loadFile() accepted a negative containers.volume_ttl")
+	doc, err := New(nil).File(path)
+	if err != nil {
+		t.Fatalf("File: %v (a database-owned value must not fail the load)", err)
+	}
+	if err := Validate(&doc.Config); err == nil {
+		t.Fatal("Validate(effective document) accepted a negative containers.volume_ttl")
 	}
 }
 
@@ -694,6 +753,70 @@ func TestResolveFileOverlayPreservesOmittedMapEntryFields(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadAcceptsStaleDatabaseOwnedValues is the bootstrap half of the layer
+// split (archie-core-i3qm). docs/prds/runtime-control-plane.md,
+// "Bootstrap, migration, and recovery": after migration, settings in TOML are
+// ignored and cannot block State Store startup. archie-state-store never layers
+// a database resource over its file document -- state_store.go:78 resolves the
+// file and goes straight to opening the store -- so a stale value in a setting
+// the control plane owns must not fail the load.
+//
+// Each case is a setting with a control-plane resource behind it, seeded from
+// that field by controlplane.Server.ImportConfig: providers
+// (provider-settings), poll_interval and dispatch (scheduling-policy),
+// containers (container-runtime-policies), repositories
+// (repository-policies). The second half of the assertion is what keeps this
+// from being a weaker gate: the effective document, judged after the control
+// plane has layered its own value in, must still reject the value.
+func TestLoadAcceptsStaleDatabaseOwnedValues(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "providers base_url carries userinfo",
+			body: fileConfigPrefix + "[providers.openai]\nclass = \"openai\"\nbase_url = \"https://token@example.com/v1\"\n",
+		},
+		{
+			name: "negative poll_interval",
+			body: fileConfigPrefix + "poll_interval = \"-5s\"\n",
+		},
+		{
+			name: "unrecognised dispatch.trigger",
+			body: fileConfigPrefix + "[dispatch]\ntrigger = \"labels\"\n",
+		},
+		{
+			name: "negative containers.volume_ttl",
+			body: fileConfigPrefix + "[containers]\nvolume_ttl = \"-1m\"\n",
+		},
+		{
+			name: "malformed repos test_glob",
+			body: fileConfigPrefix + "[[repos]]\nowner = \"acme\"\nname = \"app\"\ntest_glob = \"[\"\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			doc, err := New(nil).File(path)
+			if err != nil {
+				t.Fatalf("File: %v (a stale database-owned value must not fail the load)", err)
+			}
+			if err := Validate(&doc.Config); err == nil {
+				t.Fatal("Validate(effective document) = nil, want the control plane's own layer to reject it")
+			}
+		})
+	}
+}
+
+// fileConfigPrefix is the smallest document the load path accepts on its own,
+// so each case above adds one stale setting and nothing else.
+const fileConfigPrefix = "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n"
 
 func TestLoadBytesDoesNotExist(t *testing.T) {
 	_, err := loadBytes(nil)
