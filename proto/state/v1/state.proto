@@ -206,6 +206,13 @@ message Task {
   // review_payload is the JSON-encoded review unit the remediate workflow's
   // current run must address (docs/prds/pr-review-remediation.md decision 4).
   string review_payload = 27;
+  // The workflow pin: the exact definition version this run started with.
+  // It has to cross the wire for the daemon's digest guard to hold, because
+  // a retry reads the task back over this contract before deciding whether
+  // to reuse the pinned YAML (docs/prds/runtime-control-plane.md:95).
+  int64 workflow_definition_version = 28;
+  string workflow_definition_digest = 29;
+  string workflow_definition_yaml = 30;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object

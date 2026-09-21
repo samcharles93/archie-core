@@ -1087,8 +1087,15 @@ type Task struct {
 	// review_payload is the JSON-encoded review unit the remediate workflow's
 	// current run must address (docs/prds/pr-review-remediation.md decision 4).
 	ReviewPayload string `protobuf:"bytes,27,opt,name=review_payload,json=reviewPayload,proto3" json:"review_payload,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The workflow pin: the exact definition version this run started with.
+	// It has to cross the wire for the daemon's digest guard to hold, because
+	// a retry reads the task back over this contract before deciding whether
+	// to reuse the pinned YAML (docs/prds/runtime-control-plane.md:95).
+	WorkflowDefinitionVersion int64  `protobuf:"varint,28,opt,name=workflow_definition_version,json=workflowDefinitionVersion,proto3" json:"workflow_definition_version,omitempty"`
+	WorkflowDefinitionDigest  string `protobuf:"bytes,29,opt,name=workflow_definition_digest,json=workflowDefinitionDigest,proto3" json:"workflow_definition_digest,omitempty"`
+	WorkflowDefinitionYaml    string `protobuf:"bytes,30,opt,name=workflow_definition_yaml,json=workflowDefinitionYaml,proto3" json:"workflow_definition_yaml,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1306,6 +1313,27 @@ func (x *Task) GetUpdatedAt() *timestamppb.Timestamp {
 func (x *Task) GetReviewPayload() string {
 	if x != nil {
 		return x.ReviewPayload
+	}
+	return ""
+}
+
+func (x *Task) GetWorkflowDefinitionVersion() int64 {
+	if x != nil {
+		return x.WorkflowDefinitionVersion
+	}
+	return 0
+}
+
+func (x *Task) GetWorkflowDefinitionDigest() string {
+	if x != nil {
+		return x.WorkflowDefinitionDigest
+	}
+	return ""
+}
+
+func (x *Task) GetWorkflowDefinitionYaml() string {
+	if x != nil {
+		return x.WorkflowDefinitionYaml
 	}
 	return ""
 }
@@ -6983,7 +7011,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x1aReactivateIdentityResponse\x12.\n" +
 	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"H\n" +
 	"\x16RetireIdentityResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xae\x06\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xe6\a\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -7020,7 +7048,10 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"created_at\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
-	"\x0ereview_payload\x18\x1b \x01(\tR\rreviewPayload\"\x9b\x02\n" +
+	"\x0ereview_payload\x18\x1b \x01(\tR\rreviewPayload\x12>\n" +
+	"\x1bworkflow_definition_version\x18\x1c \x01(\x03R\x19workflowDefinitionVersion\x12<\n" +
+	"\x1aworkflow_definition_digest\x18\x1d \x01(\tR\x18workflowDefinitionDigest\x128\n" +
+	"\x18workflow_definition_yaml\x18\x1e \x01(\tR\x16workflowDefinitionYaml\"\x9b\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +

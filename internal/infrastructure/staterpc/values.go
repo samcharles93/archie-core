@@ -67,7 +67,10 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		WatchCommentId: t.WatchCommentID, Source: t.Source, Identity: t.Identity,
 		BindingId: t.BindingID, BindingVersion: int64(t.BindingVersion),
 		CreatedAt: timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
-		ReviewPayload: t.ReviewPayload,
+		ReviewPayload:             t.ReviewPayload,
+		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
+		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
+		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,
 	}
 }
 
@@ -84,7 +87,10 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		WatchCommentID: t.WatchCommentId, Source: t.Source, Identity: t.Identity,
 		BindingID: t.BindingId, BindingVersion: int(t.BindingVersion),
 		CreatedAt: timeValue(t.CreatedAt), UpdatedAt: timeValue(t.UpdatedAt),
-		ReviewPayload: t.ReviewPayload,
+		ReviewPayload:             t.ReviewPayload,
+		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
+		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
+		WorkflowDefinitionYAML:    t.WorkflowDefinitionYaml,
 	}
 }
 

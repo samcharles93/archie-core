@@ -95,6 +95,13 @@ func TestStateStoreConformance(t *testing.T) {
 			task.Plan = "the plan"
 			task.Status = "running"
 			task.PRNumber = 401
+			// The workflow pin is what a retry re-reads instead of resolving the
+			// active control-plane resource again (docs/prds/runtime-control-plane.md:95).
+			// A wire hop that drops it leaves the daemon's digest guard dead, so
+			// the battery carries it through Update and back out of TaskByID.
+			task.WorkflowDefinitionVersion = 7
+			task.WorkflowDefinitionDigest = "sha256:beef"
+			task.WorkflowDefinitionYAML = "name: implement\nsteps: []\n"
 			if err := c.Update(ctx, task); err != nil {
 				t.Fatalf("Update: %v", err)
 			}
@@ -133,6 +140,11 @@ func TestStateStoreConformance(t *testing.T) {
 			got, err := c.TaskByID(ctx, task.ID)
 			if err != nil || got == nil || got.Plan != "the plan" {
 				t.Fatalf("TaskByID: %+v %v", got, err)
+			}
+			if got.WorkflowDefinitionVersion != 7 || got.WorkflowDefinitionDigest != "sha256:beef" ||
+				got.WorkflowDefinitionYAML != "name: implement\nsteps: []\n" {
+				t.Errorf("workflow pin after round trip = (%d, %q, %q), want (7, \"sha256:beef\", the YAML); a dropped pin makes each retry re-resolve the active definition",
+					got.WorkflowDefinitionVersion, got.WorkflowDefinitionDigest, got.WorkflowDefinitionYAML)
 			}
 			byIssue, err := c.TaskByIssue(ctx, task.Owner, task.Repo, task.IssueNumber)
 			if err != nil || byIssue == nil || byIssue.ID != task.ID {
