@@ -106,6 +106,46 @@ func TestRestampRewritesEveryKnownKind(t *testing.T) {
 	}
 }
 
+// TestRestampKeepsAReportedFailure answers the second half of
+// archie-core-yrmr's question: the reporter rewrites every record it holds at
+// every RestampInterval, so a re-stamp that replaced a reported failure with a
+// clean record would leave the settings page reading a kind as current while
+// the process applying it had stopped (internal/webui's applyState reads a
+// record carrying an error as failed -- TestApplyStatusReportsAnError). A
+// reported failure survives the re-stamp, error included.
+func TestRestampKeepsAReportedFailure(t *testing.T) {
+	store := &recordingStore{}
+	at := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
+	r := New(Daemon, store, nil)
+	r.now = func() time.Time { return at }
+
+	r.Report(t.Context(), "workflow-execution-settings", 3, nil)
+	// A failure, reported without a version the process ever ran. The reporter
+	// keeps the version it last applied, which is the rule the watch leans on when
+	// it reports a document this process would not run: the watch has the refused
+	// version, and the record has to show the version still live. (An unreachable
+	// store writes no record at all, per docs/prds/control-plane-apply-status.md.)
+	r.Report(t.Context(), "workflow-execution-settings", 0, errors.New("max model/tool steps must not be negative"))
+
+	at = at.Add(RestampInterval)
+	r.restamp(t.Context())
+
+	got := store.snapshot()
+	if len(got) != 3 {
+		t.Fatalf("wrote %d records, want the apply, the failure and the re-stamp", len(got))
+	}
+	restamped := got[2]
+	if restamped.Error == "" {
+		t.Error("the re-stamp dropped the reported failure; the kind would read as current")
+	}
+	if restamped.AppliedVersion != 3 {
+		t.Errorf("re-stamped version = %d, want the version still live (3)", restamped.AppliedVersion)
+	}
+	if !restamped.ReportedAt.Equal(at) {
+		t.Errorf("re-stamped at %v, want %v", restamped.ReportedAt, at)
+	}
+}
+
 func TestStale(t *testing.T) {
 	at := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	for _, tt := range []struct {

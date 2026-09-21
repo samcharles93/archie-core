@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -34,19 +35,9 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 		}
 		b.personas = gateway.NewPersonaRegistry(nil)
 		b.applyPersonas(personas, version)
-		updates, err := b.controlPlane.WatchPersonas(ctx, version)
-		if err != nil {
+		if err := b.watchPersonas(ctx, version); err != nil {
 			return fmt.Errorf("watch personas: %w", err)
 		}
-		go func() {
-			for update := range updates {
-				if update.Err != nil {
-					b.log.Error("persona watch failed", "err", update.Err)
-					return
-				}
-				b.applyPersonas(update.Collection, update.Version)
-			}
-		}()
 	}
 
 	// ── Operator health surface ──────────────────────────────────────
@@ -72,6 +63,33 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 		transition: b.stateStore.Transition,
 	})
 	b.updateService = makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
+	return nil
+}
+
+// watchPersonas keeps the persona stream established for the life of the
+// process. The first stream is opened synchronously, so a control plane that
+// cannot be watched at all fails the boot that asked for it rather than
+// leaving the process running personas it can no longer update; after that the
+// watch reconnects instead of ending (see keepWatch).
+//
+// Persona updates are not reported through apply status -- the personas kind
+// has no apply-status wiring, which is archie-core-aj35, not this watch.
+func (b *boot) watchPersonas(ctx context.Context, version int64) error {
+	updates, err := b.controlPlane.WatchPersonas(ctx, version)
+	if err != nil {
+		return err
+	}
+	go keepWatch(ctx, b.log, controlplane.PersonasKind, version, updates,
+		b.controlPlane.WatchPersonas,
+		waitFor,
+		func(update controlplane.AppliedPersonas) int64 { return update.Version },
+		func(update controlplane.AppliedPersonas) {
+			if update.Err != nil {
+				b.log.Error("persona watch failed", "err", update.Err)
+				return
+			}
+			b.applyPersonas(update.Collection, update.Version)
+		})
 	return nil
 }
 

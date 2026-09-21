@@ -281,8 +281,11 @@ func TestLiveExecutionSettingsUpdateIsRefusedWhenTheSnapshotIsNotRunnable(t *tes
 // process cannot run arrives as a watch error, never as invalid settings: the
 // watch branch must report that refusal against the version still live instead
 // of only logging it, or the settings page shows a live resource as healthy
-// while nothing has been applied. (That the stream is not re-established
-// afterwards is archie-core-yrmr, not this apply path.)
+// while nothing has been applied. (The stream does not stay ended: the watch
+// re-establishes it, which control_plane_watch_test.go covers. This stub
+// answers every re-established stream with the same documents, so this test
+// reads the record the refusal wrote rather than counting how often it was
+// written.)
 func TestLiveExecutionSettingsRefusalIsReportedThroughTheClient(t *testing.T) {
 	tests := []struct {
 		name              string

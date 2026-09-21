@@ -85,6 +85,11 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	return nil
 }
 
+// startWorkflowExecutionSettings loads the stored limits, applies them and
+// keeps the stream that delivers later ones established. The first read and
+// the first stream are synchronous, so a control plane that cannot be reached
+// fails the boot that asked for it; after that the watch does not return, it
+// reconnects (see keepWatch).
 func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	settings, version, err := b.controlPlane.WorkflowExecutionSettings(ctx)
 	if err != nil {
@@ -97,8 +102,11 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		for update := range updates {
+	go keepWatch(ctx, b.log, controlplane.WorkflowExecutionSettingsKind, version, updates,
+		b.controlPlane.WatchWorkflowExecutionSettings,
+		waitFor,
+		func(update controlplane.AppliedSettings) int64 { return update.Version },
+		func(update controlplane.AppliedSettings) {
 			if update.Err != nil {
 				// A refused update arrives here, not through
 				// applyWorkflowExecutionSettings: controlplane.Client decodes every
@@ -108,15 +116,28 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 				// so the settings page shows the refusal instead of a version this
 				// process never ran (docs/prds/control-plane-apply-status.md).
 				//
-				// The stream is not re-established after this point; that gap is
-				// archie-core-yrmr, not this apply path.
-				b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, update.Version, update.Err)
+				// A stream failure arrives the same way and must not be reported:
+				// it carries no version at all, because a Recv error is the store
+				// not answering rather than a document, and versions start at 1
+				// (store.PutResource). The rule is
+				// docs/prds/control-plane-apply-status.md, "What can be reported,
+				// and what cannot": a process reaches its apply point only after
+				// the State Store has answered it, and an unreachable store is
+				// never reported as a failure by the process it affected. The
+				// record would not stick of itself -- Report overwrites it on the
+				// next applied version -- but a store that never changes again
+				// leaves the one stamp standing, and the process must not write it
+				// at all. Reporting it would also overwrite the text of a standing
+				// refusal, which is the one message that says what to fix. The
+				// reconnect is the loop's business, not the record's.
+				if update.Version > 0 {
+					b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, update.Version, update.Err)
+				}
 				b.log.Error("workflow execution settings watch failed", "err", update.Err)
 				return
 			}
 			_ = b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
-		}
-	}()
+		})
 	return nil
 }
 

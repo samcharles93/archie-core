@@ -115,22 +115,12 @@ func (c *Client) WatchWorkflowExecutionSettings(ctx context.Context, afterVersio
 	if err != nil {
 		return nil, clientError(err)
 	}
-	out := make(chan AppliedSettings)
-	go func() {
-		defer close(out)
-		for {
-			response, err := stream.Recv()
-			if err != nil {
-				if !errors.Is(err, io.EOF) && ctx.Err() == nil {
-					out <- AppliedSettings{Err: clientError(err)}
-				}
-				return
-			}
-			settings, err := decodeSettings(response.Resource.ValueJson)
-			out <- AppliedSettings{Settings: settings, Version: response.Resource.Version, Err: err}
-		}
-	}()
-	return out, nil
+	return watchUpdates(ctx, stream,
+		func(resource *pb.Resource) AppliedSettings {
+			settings, err := decodeSettings(resource.ValueJson)
+			return AppliedSettings{Settings: settings, Version: resource.Version, Err: err}
+		},
+		func(err error) AppliedSettings { return AppliedSettings{Err: err} }), nil
 }
 
 type AppliedSettings struct {
@@ -159,22 +149,57 @@ func (c *Client) WatchPersonas(ctx context.Context, afterVersion int64) (<-chan 
 	if err != nil {
 		return nil, clientError(err)
 	}
-	out := make(chan AppliedPersonas)
+	return watchUpdates(ctx, stream,
+		func(resource *pb.Resource) AppliedPersonas {
+			collection, err := decodePersonas(resource.ValueJson)
+			return AppliedPersonas{Collection: collection, Version: resource.Version, Err: err}
+		},
+		func(err error) AppliedPersonas { return AppliedPersonas{Err: err} }), nil
+}
+
+// watchUpdates turns one Watch stream into the channel a watch loop reads: every
+// document the stream carries, decoded, and then a single update carrying the
+// error that ended it -- unless the stream ended cleanly or the context did, in
+// which case the channel just closes.
+func watchUpdates[T any](
+	ctx context.Context,
+	stream grpc.ServerStreamingClient[pb.WatchResponse],
+	update func(resource *pb.Resource) T,
+	failed func(err error) T,
+) <-chan T {
+	out := make(chan T)
 	go func() {
 		defer close(out)
 		for {
 			response, err := stream.Recv()
 			if err != nil {
 				if !errors.Is(err, io.EOF) && ctx.Err() == nil {
-					out <- AppliedPersonas{Err: clientError(err)}
+					sendUpdate(ctx, out, failed(clientError(err)))
 				}
 				return
 			}
-			collection, err := decodePersonas(response.Resource.ValueJson)
-			out <- AppliedPersonas{Collection: collection, Version: response.Resource.Version, Err: err}
+			if !sendUpdate(ctx, out, update(response.Resource)) {
+				return
+			}
 		}
 	}()
-	return out, nil
+	return out
+}
+
+// sendUpdate hands update to the reader of one Watch stream, reporting false
+// when ctx ended first. A reader leaves without draining what is left for it:
+// the watch that reads these streams returns on cancellation, so a bare send
+// parks this producer -- and the stream it holds -- for the rest of the
+// process's life, one goroutine and one channel per kind at every exit. That
+// coupling is load-bearing: the reader's prompt shutdown rests on this side
+// stopping on the same context, and neither half is safe alone.
+func sendUpdate[T any](ctx context.Context, out chan<- T, update T) bool {
+	select {
+	case out <- update:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (c *Client) Schedules(ctx context.Context) ([]cronstore.JobSpec, int64, error) {
