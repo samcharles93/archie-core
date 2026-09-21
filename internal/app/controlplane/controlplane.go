@@ -12,14 +12,19 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
+// The control-plane wire sentinels cross gRPC matched on (code, canonical
+// message), so their definitions live with the contract in
+// internal/infrastructure/controlplanerpc. These are the same values re-exported,
+// so every existing caller keeps one name and errors.Is keeps matching identity.
 var (
-	ErrValidation      = errors.New("control-plane validation")
-	ErrNotFound        = errors.New("control-plane resource not found")
-	ErrVersionConflict = errors.New("control-plane version conflict")
-	ErrUnavailable     = errors.New("control-plane unavailable")
+	ErrValidation      = controlplanerpc.ErrValidation
+	ErrNotFound        = controlplanerpc.ErrNotFound
+	ErrVersionConflict = controlplanerpc.ErrVersionConflict
+	ErrUnavailable     = controlplanerpc.ErrUnavailable
 )
 
 // ResourceStore is the persistence the control plane requires. The composition

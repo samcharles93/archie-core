@@ -8,12 +8,11 @@ import (
 	"io"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
@@ -23,13 +22,25 @@ import (
 // workflow definition -- archie-messaging, which only loads channel settings,
 // and archie-gateway, which reads catalog, runtime settings and personas --
 // needs no provider set and cannot be failed by one.
-type Client struct{ rpc pb.ControlPlaneServiceClient }
+// Client is the control-plane client a process that serves the store uses. It
+// embeds the Messaging Service's client -- the generic resource read path and
+// the channel-settings projection -- and adds the resource-specific reads and
+// watches, which need the workflow and cronstore engines that such a process
+// already links (archie-core-1ng1).
+type Client struct {
+	*controlplanerpc.Client
+	rpc pb.ControlPlaneServiceClient
+}
 
+// NewClient dials the control plane over an existing connection.
 func NewClient(conn grpc.ClientConnInterface) *Client {
 	return &Client{rpc: pb.NewControlPlaneServiceClient(conn)}
 }
 
-func NewRPCClient(client pb.ControlPlaneServiceClient) *Client { return &Client{rpc: client} }
+// NewRPCClient wraps an already-constructed generated client.
+func NewRPCClient(client pb.ControlPlaneServiceClient) *Client {
+	return &Client{Client: controlplanerpc.NewRPCClient(client), rpc: client}
+}
 
 // WorkflowDefinitionsClient reads and replaces the workflow-definitions
 // resource, the one control-plane surface whose stored values name workflow
@@ -53,7 +64,7 @@ func NewWorkflowDefinitionsClient(client pb.ControlPlaneServiceClient, steps *wo
 func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) {
 	response, err := c.rpc.Catalog(ctx, &pb.CatalogRequest{})
 	if err != nil {
-		return nil, clientError(err)
+		return nil, controlplanerpc.ClientError(err)
 	}
 	return response.Resources, nil
 }
@@ -61,7 +72,7 @@ func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) 
 func (c *WorkflowDefinitionsClient) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefinitionCollection, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowDefinitionsKind})
 	if err != nil {
-		return workflow.WorkflowDefinitionCollection{}, 0, clientError(err)
+		return workflow.WorkflowDefinitionCollection{}, 0, controlplanerpc.ClientError(err)
 	}
 	definitions, err := workflow.DecodeDefinitionCollection(response.Resource.ValueJson, c.steps)
 	return definitions, response.Resource.Version, err
@@ -81,7 +92,7 @@ func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Conte
 	}
 	response, err := c.rpc.Command(ctx, &pb.CommandRequest{Kind: WorkflowDefinitionsKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID})
 	if err != nil {
-		return 0, clientError(err)
+		return 0, controlplanerpc.ClientError(err)
 	}
 	return response.Resource.Version, nil
 }
@@ -89,7 +100,7 @@ func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Conte
 func (c *Client) WorkflowExecutionSettings(ctx context.Context) (workflow.ExecutionSettings, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowExecutionSettingsKind})
 	if err != nil {
-		return workflow.ExecutionSettings{}, 0, clientError(err)
+		return workflow.ExecutionSettings{}, 0, controlplanerpc.ClientError(err)
 	}
 	settings, err := decodeSettings(response.Resource.ValueJson)
 	return settings, response.Resource.Version, err
@@ -105,7 +116,7 @@ func (c *Client) ReplaceWorkflowExecutionSettings(ctx context.Context, settings 
 	}
 	response, err := c.rpc.Command(ctx, &pb.CommandRequest{Kind: WorkflowExecutionSettingsKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID})
 	if err != nil {
-		return 0, clientError(err)
+		return 0, controlplanerpc.ClientError(err)
 	}
 	return response.Resource.Version, nil
 }
@@ -113,7 +124,7 @@ func (c *Client) ReplaceWorkflowExecutionSettings(ctx context.Context, settings 
 func (c *Client) WatchWorkflowExecutionSettings(ctx context.Context, afterVersion int64) (<-chan AppliedSettings, error) {
 	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: WorkflowExecutionSettingsKind, AfterVersion: afterVersion})
 	if err != nil {
-		return nil, clientError(err)
+		return nil, controlplanerpc.ClientError(err)
 	}
 	return watchUpdates(ctx, stream,
 		func(resource *pb.Resource) AppliedSettings {
@@ -132,7 +143,7 @@ type AppliedSettings struct {
 func (c *Client) Personas(ctx context.Context) (agent.PersonaCollection, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: PersonasKind})
 	if err != nil {
-		return agent.PersonaCollection{}, 0, clientError(err)
+		return agent.PersonaCollection{}, 0, controlplanerpc.ClientError(err)
 	}
 	collection, err := decodePersonas(response.Resource.ValueJson)
 	return collection, response.Resource.Version, err
@@ -147,7 +158,7 @@ type AppliedPersonas struct {
 func (c *Client) WatchPersonas(ctx context.Context, afterVersion int64) (<-chan AppliedPersonas, error) {
 	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: PersonasKind, AfterVersion: afterVersion})
 	if err != nil {
-		return nil, clientError(err)
+		return nil, controlplanerpc.ClientError(err)
 	}
 	return watchUpdates(ctx, stream,
 		func(resource *pb.Resource) AppliedPersonas {
@@ -174,7 +185,7 @@ func watchUpdates[T any](
 			response, err := stream.Recv()
 			if err != nil {
 				if !errors.Is(err, io.EOF) && ctx.Err() == nil {
-					sendUpdate(ctx, out, failed(clientError(err)))
+					sendUpdate(ctx, out, failed(controlplanerpc.ClientError(err)))
 				}
 				return
 			}
@@ -205,7 +216,7 @@ func sendUpdate[T any](ctx context.Context, out chan<- T, update T) bool {
 func (c *Client) Schedules(ctx context.Context) ([]cronstore.JobSpec, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: SchedulesKind})
 	if err != nil {
-		return nil, 0, clientError(err)
+		return nil, 0, controlplanerpc.ClientError(err)
 	}
 	var jobs []cronstore.JobSpec
 	if err := json.Unmarshal(response.Resource.ValueJson, &jobs); err != nil {
@@ -221,22 +232,7 @@ func (c *Client) ReplaceSchedules(ctx context.Context, jobs []cronstore.JobSpec,
 	}
 	response, err := c.rpc.Command(ctx, &pb.CommandRequest{Kind: SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID})
 	if err != nil {
-		return 0, clientError(err)
+		return 0, controlplanerpc.ClientError(err)
 	}
 	return response.Resource.Version, nil
-}
-
-func clientError(err error) error {
-	switch status.Code(err) {
-	case codes.InvalidArgument:
-		return fmt.Errorf("%w: %w", ErrValidation, err)
-	case codes.NotFound:
-		return fmt.Errorf("%w: %w", ErrNotFound, err)
-	case codes.Aborted:
-		return fmt.Errorf("%w: %w", ErrVersionConflict, err)
-	case codes.Unavailable:
-		return fmt.Errorf("%w: %w", ErrUnavailable, err)
-	default:
-		return err
-	}
 }

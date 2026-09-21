@@ -12,7 +12,6 @@ import (
 
 const (
 	RepositoryPoliciesKind       = "repository-policies"
-	ChannelSettingsKind          = "channel-settings"
 	SchedulingPolicyKind         = "scheduling-policy"
 	ToolSettingsKind             = "tool-settings"
 	PluginSettingsKind           = "plugin-settings"

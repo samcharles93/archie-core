@@ -247,7 +247,7 @@ func layerToolSettings(t *testing.T, stored []byte, base config.Config) config.C
 // kind absent.
 type toolSettingsReader struct{ value []byte }
 
-func (r toolSettingsReader) query(_ context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
+func (r toolSettingsReader) Query(_ context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
 	if kind != ToolSettingsKind {
 		return 0, false, nil
 	}
