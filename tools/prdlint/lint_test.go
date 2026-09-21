@@ -37,6 +37,16 @@ func TestLintRejectsSessionBoundWriting(t *testing.T) {
 			rule: "dated-status",
 		},
 		{
+			name: "date before the verb",
+			doc:  "`event-sources-and-reactions.md` (2026-08-22, decided) ruled that",
+			rule: "dated-status",
+		},
+		{
+			name: "dated survey",
+			doc:  "### Candidate comparison (surveyed 2026-09-03, pkg.go.dev)",
+			rule: "dated-status",
+		},
+		{
 			name: "dated settlement",
 			doc:  "### The two decisions (settled 2026-09-19, decided by position)",
 			rule: "dated-status",
@@ -114,6 +124,7 @@ func TestLintRequiresACanonicalStatus(t *testing.T) {
 		{"free text", "# T\n\n**Status:** Implemented (wiring landed)\n", true},
 		{"status with a changelog", "# T\n\n**Status:** Ratified (rev. 2e). Rev. 2e adds a lookup\n", true},
 		{"missing entirely", "# T\n\nBody.\n", true},
+		{"a nested document's indented status", "# T\n\n**Status:** Draft\n\n1. Item\n\n   **Status:** Draft\n", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got bool
@@ -126,6 +137,21 @@ func TestLintRequiresACanonicalStatus(t *testing.T) {
 				t.Fatalf("status finding = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestLintCatchesACitationSplitAcrossALineBreak: prose wraps, and a
+// line-scoped rule saw "lines" and "155-159" as two innocent lines.
+func TestLintCatchesACitationSplitAcrossALineBreak(t *testing.T) {
+	doc := "never swallowed as a log line (this document's Dedup section, lines\n155-159, the drop-and-report rule)."
+	var got bool
+	for _, f := range Lint("x.md", doc) {
+		if f.Rule == "line-citation" {
+			got = true
+		}
+	}
+	if !got {
+		t.Fatal("no line-citation finding for a citation split across a line break")
 	}
 }
 

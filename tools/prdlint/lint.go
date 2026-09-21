@@ -26,6 +26,10 @@ type rule struct {
 	remedy  string
 }
 
+// datedVerbs are the words that turn a date into a status claim. A date on
+// its own is provenance; a date next to one of these is a progress report.
+const datedVerbs = `(status|resolved|settled|decided|agreed|approved|supersedes|superseded|withdrawn|shipped|landed|complete|completed|done|wired|verified|corrected|confirmed)`
+
 // rules is the closed set. Each pattern targets a shape that decays, never a
 // topic: a PRD may discuss phases, dates and shipped work, and says so without
 // asserting the state of the tree on the day it was written.
@@ -37,7 +41,7 @@ var rules = []rule{
 	},
 	{
 		name:    "dated-status",
-		pattern: regexp.MustCompile(`(?i)\b(status|resolved|settled|decided|agreed|approved|supersedes|superseded|withdrawn|shipped|landed|complete|completed|done|wired|verified|corrected|confirmed)\b[^.\n]{0,30}\b20\d\d-\d\d-\d\d\b`),
+		pattern: regexp.MustCompile(`(?i)\b` + datedVerbs + `\b[^.\n]{0,30}\b20\d\d-\d\d-\d\d\b|\b20\d\d-\d\d-\d\d\b[^.\n]{0,30}\b` + datedVerbs + `\b|\b(surveyed|queried|measured|checked|reviewed|correction|per [A-Z]\w+)\b[^.\n]{0,20}\b20\d\d-\d\d-\d\d\b`),
 		remedy:  "drop the date and the state. A PRD says what the design is; the tracker and git history say when it happened.",
 	},
 	{
@@ -79,8 +83,10 @@ var codeFence = regexp.MustCompile("^\\s*```")
 // 2026-09-22" smuggle a dated status into the one line the rules did not read.
 var exemptHeader = regexp.MustCompile(`^\*\*Date:\*\*\s*20\d\d-\d\d-\d\d\s*$|^\*\*Status:\*\*\s*(Draft|Approved|Finalised)\s*$`)
 
-// statusField matches the document's own status line, whatever it holds.
-var statusField = regexp.MustCompile(`^\*\*Status:\*\*\s*(.*)$`)
+// statusField matches a status line anywhere in the document, indented or
+// not. The indent matters: a whole second PRD nested inside a list item
+// carried its own indented status, and an anchored pattern never saw it.
+var statusField = regexp.MustCompile(`^\s*\*\*Status:\*\*\s*(.*)$`)
 
 // statuses is the closed set from RULES.md. A status outside it is how a
 // progress report gets into the one field the rules cannot read: "Implemented
@@ -102,7 +108,8 @@ func LintDocument(name, content string) []Finding {
 func Lint(name, content string) []Finding {
 	var findings []Finding
 	inFence := false
-	for i, line := range strings.Split(content, "\n") {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
 		if codeFence.MatchString(line) {
 			inFence = !inFence
 			continue
@@ -113,6 +120,13 @@ func Lint(name, content string) []Finding {
 		for _, r := range rules {
 			if r.pattern.MatchString(line) {
 				findings = append(findings, Finding{File: name, Line: i + 1, Rule: r.name, Text: line})
+				continue
+			}
+			// Prose wraps, so a citation can straddle a line break ("...lines"
+			// / "155-159, ..."). Re-test the pair, reporting the line the
+			// match starts on.
+			if i+1 < len(lines) && !inFence && r.pattern.MatchString(line+" "+strings.TrimSpace(lines[i+1])) {
+				findings = append(findings, Finding{File: name, Line: i + 1, Rule: r.name, Text: line + " " + strings.TrimSpace(lines[i+1])})
 			}
 		}
 	}
@@ -122,15 +136,25 @@ func Lint(name, content string) []Finding {
 // lintStatus checks the one status line RULES.md requires, since a missing or
 // free-text status is not a line-level violation any pattern above would see.
 func lintStatus(name, content string) []Finding {
+	var findings []Finding
+	var seen int
 	for i, line := range strings.Split(content, "\n") {
 		m := statusField.FindStringSubmatch(line)
 		if m == nil {
 			continue
 		}
-		if statuses[strings.TrimSpace(m[1])] {
-			return nil
+		seen++
+		switch {
+		case seen > 1:
+			// One document, one status. A second one means a second document
+			// has been pasted inside this one, which is the real defect.
+			findings = append(findings, Finding{File: name, Line: i + 1, Rule: "status", Text: "second **Status:** field; a nested document belongs in its own file"})
+		case !statuses[strings.TrimSpace(m[1])]:
+			findings = append(findings, Finding{File: name, Line: i + 1, Rule: "status", Text: line})
 		}
-		return []Finding{{File: name, Line: i + 1, Rule: "status", Text: line}}
 	}
-	return []Finding{{File: name, Line: 1, Rule: "status", Text: "no **Status:** field"}}
+	if seen == 0 {
+		return []Finding{{File: name, Line: 1, Rule: "status", Text: "no **Status:** field"}}
+	}
+	return findings
 }
