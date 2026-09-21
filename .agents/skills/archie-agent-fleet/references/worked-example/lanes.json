@@ -1,0 +1,47 @@
+{
+  "model": "REPLACE_WITH_STRONG_TIER_ID",
+  "timeoutMs": 5400000,
+  "lanes": [
+    {
+      "key": "live",
+      "dir": "/work/apps/cp-live",
+      "branch": "cp/live",
+      "beads": [
+        "archie-core-nwa0"
+      ],
+      "test": "go test ./internal/app/controlplane/... ./internal/domain/applystatus/... -count=1 && go vet ./internal/app/controlplane/... ./internal/domain/applystatus/...",
+      "brief": "Wave 0 and its claims audit corrected this bead's premise, and the correction is the work. There is not one live apply path, there are two, and the PRD clause (Archie starts and checks a replacement before switching, and if the check fails the old one keeps running) applies to both. (1) workflow-execution-settings is applied on a watch (internal/app/archied/control_plane.go:94) and reports apply status at :118. (2) personas is also watched and applied live in the same process (internal/app/archied/gateway_runtime.go:37 watch, :79-86 apply) and reports NO apply status at all, so personas is the live-watched kind that widens this bead. Correction to the earlier version of this brief: workflow-definitions is not applied by a daemon watch, but do not read that as \"no watch anywhere\" -- the webui streams it at internal/webui/api_control_plane.go:139, which is a generic SSE passthrough for any kind. That is a read path, not a component-replacement path, so it does not widen nwa0. What the audit also established: the hard-coded nil at control_plane.go:118 is inert (no path in applyWorkflowExecutionSettings can fail), so do not build the bead around \"the report path cannot carry a rejection\"; that framing is wrong. Order of work: add the build-and-probe step to the live apply path, retain the previous component when the check fails, and report the failure through the apply-status surface. Decide explicitly whether personas gets the same treatment in this bead or a follow-up bead; if it is a follow-up, file the bead rather than half-wiring it. Do NOT fix the watch-reconnect defect opportunistically: it is filed separately as archie-core-yrmr, and a defect found by a review pass must not be silently repaired inside another lane. Apply status is on the State Store contract, not the control plane: PutApplyStatus/ListApplyStatus are administrative, keyed on (process, kind), replaced in place, re-stamped every 30s, stale at 90s, and a stale record renders as \"Not reporting\", never as current. applystatus.New refuses a process name Processes() does not list, deliberately: an invented name would read as a process that is not running, which the PRD blesses as legitimate, so the failure would be invisible."
+    },
+    {
+      "key": "recovery",
+      "dir": "/work/apps/cp-recovery",
+      "branch": "cp/recovery",
+      "beads": [
+        "archie-core-6zw0"
+      ],
+      "test": "go test ./cmd/... ./internal/infrastructure/staterpc/... -count=1 && go vet ./cmd/...",
+      "brief": "DECIDED: subcommands of cmd/archie-state-store (backup, restore, validate, rollback). Not a new binary. Sam's standing rule, restated 2026-09-21 and now recorded in docs/architecture/organisation.md#process-boundaries: a cmd/ entry is a process boundary, earned only when a surface fails independently of the rest of the fleet or when that process may need to run in more than one location (HA pair, NAT traversal, separate host). Operational commands over a surface an existing binary already owns are subcommands of it. Do not reopen this. Two premise corrections from Wave 0 that change the work. First, the file is <dir>/archie.db-tasks.sqlite (cmd/archie-state-store/main.go:290-292, asserted at main_test.go:435-439), not archie.db, so a command that operates on 'archie.db' by name operates on nothing. Second, part of this already exists in shell: scripts/archie-update-install:189 takes a sqlite3 .backup of the task database and describes it as the watchdog's only route back from a forward schema migration. That makes this bead partly consolidation. The subcommand becomes the one authoritative implementation and the install script calls it, rather than a Go path and a shell path that drift apart. Changing that script is in scope for this lane; the watchdog's refusal semantics (an update that cannot back up must not start) must survive the change unchanged. The command operates on the database file directly with the State Store stopped, refuses to run against a live store, and adds no rollback RPC: a revision carries its value and restoring replays it through the ordinary replace."
+    },
+    {
+      "key": "steps",
+      "dir": "/work/apps/cp-steps",
+      "branch": "cp/steps",
+      "beads": [
+        "archie-core-8szi"
+      ],
+      "test": "go test ./internal/domain/workflow/... ./internal/app/agentworker/... -count=1 && go vet ./internal/domain/workflow/...",
+      "brief": "internal/domain/workflow/steps.go:215 and :227 hard-error on legacy .archie/stages/*.go and .archie/gate.go and tell the operator to migrate to a registered YAML workflow step, but BuiltinStepRegistry() only exposes the six shipped workflows' own stages, so there is nothing to migrate to. Identify what the removed hooks actually did and land the equivalent as registered step types. This lane starts only after archie-core-fwmp has merged, and registers against the extension point fwmp created. Do not re-open the registry design."
+    },
+    {
+      "key": "config",
+      "dir": "/work/apps/cp-config",
+      "branch": "cp/config",
+      "beads": [
+        "archie-core-xrux",
+        "archie-core-i3qm"
+      ],
+      "test": "go test ./internal/infrastructure/configuration/... ./internal/app/archied/... -count=1 && go vet ./internal/infrastructure/configuration/... ./internal/app/archied/...",
+      "brief": "Two beads in order, one package owner. First archie-core-xrux. The verdict is already measured with evidence (Wave 0R claims audit c6) and it is ZEROES: the -config-overlay file path silently drops every field a partial map-valued entry omits, which is exactly the archie-core-e2e2 hazard, and it is user-reachable because deployments/dev.toml is the documented -config-overlay argument and sets [services.state] target/listen, while the base config.toml is where [services.state].target_token lives -- so the overlay drops the token. The red stage is a committed characterization test through the production entry point (Loader.Resolve / -config-overlay) that loads a config with a populated map-valued entry, overlays a file setting one sibling key, and asserts the omitted keys survive; it fails today. Then move apply.go's foldOverrides (apply.go:60) onto the file overlay path (loader.go:161-194, decode at :176) so it passes. Do NOT delete apply.go, apply_test.go or Loader.ApplyOverlay: the hazard they were written for is live on that path. No dotted-path field merge is wanted beyond this guard, because the control plane replaces whole documents. Then archie-core-i3qm, whose anchor and scope the audit corrected. control_plane.go:13 is a blank line (the doc comment is :14-18); the calls moved to :20 (RuntimeConfig) and :27 (configuration.Validate) in 9accf112. More importantly the PRD clause names State Store startup, and state_store.go:75-104 never calls runtimeConfig: it reaches Loader.finalize via bootstrap.go:263 (the loader.Resolve call site, not finalize itself) and loader.go:341-346, where Validate runs. Scope correction: that file-only Validate runs before loadRuntimeConfig for ALL THREE binaries (main.go:358, gateway.go:61, state_store.go:78), so it is not state-store-specific; and a value that is valid alone but invalid only after the DB merge never blocks the state store at all, because it is imported unvalidated at state_store.go:104 and fails later in the daemon's loadRuntimeConfig (control_plane.go:27). Reduce the bootstrap document to the fields the PRD lists (database path, listen addresses, credentials, TLS, encryption-key references) and stop validating the migrated surface at startup, so a stale TOML value in a database-owned field cannot fail boot. boot.runtimeConfig is the one layering call and the SIGHUP callback makes the same call: if you add a database-owned layer, add it there and nowhere else."
+    }
+  ]
+}

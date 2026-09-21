@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Agent Fleet"
+  short_description: "Run bounded agent fleets on archie-core"
+  default_prompt: "Use $archie-agent-fleet to fan work out across lanes on this repository, carrying the fleet invariants, the gate evidence it needs, and the worktree agent-discovery fix."
