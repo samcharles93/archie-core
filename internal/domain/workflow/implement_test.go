@@ -463,6 +463,11 @@ type fakeTrees struct {
 	// change (StageReview, the diff-rules step).
 	diff    string
 	diffErr error
+	// uncommitted and uncommittedErr are what HasUncommittedChanges reports,
+	// the optional capability a step that reads commits uses to tell "no
+	// change" from "not committed yet". The zero value is a clean worktree.
+	uncommitted    bool
+	uncommittedErr error
 
 	resumed      bool
 	resumeDir    string
@@ -490,6 +495,10 @@ func (f *fakeTrees) Push(_ context.Context, _, branch string) error {
 func (f *fakeTrees) Diff(context.Context, string, string) (string, error) { return f.diff, f.diffErr }
 
 func (f *fakeTrees) ChangedFiles(context.Context, string, string) ([]string, error) { return nil, nil }
+
+func (f *fakeTrees) HasUncommittedChanges(context.Context, string) (bool, error) {
+	return f.uncommitted, f.uncommittedErr
+}
 
 func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) {
 	return f.changedLines, nil

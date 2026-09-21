@@ -919,3 +919,25 @@ func TestHybridTreesForwardsChangedFileStatsToItsLocalManager(t *testing.T) {
 		t.Errorf("SHAs = (%q, %q), want both resolved", stats.BaseSHA, stats.HeadSHA)
 	}
 }
+
+// uncommittedChangeReporter mirrors the unexported optional interface package
+// workflow type-asserts on TaskContext.Trees to tell a change that is not
+// committed yet from a branch with no change. It is restated here for the same
+// reason changeStatsReader is: an unexported interface cannot be named from this
+// package, so this assertion is the only way this side can pin that the
+// in-container Trees can answer at all.
+type uncommittedChangeReporter interface {
+	HasUncommittedChanges(ctx context.Context, dir string) (bool, error)
+}
+
+// TestHybridTreesCanReportUncommittedWork is the in-container half of the
+// diff-rules placement guard. Every production workflow.Run executes in
+// archie-agent against a hybridTrees, and a workflow whose only Trees cannot
+// answer would fail the guard for the wrong reason -- or, worse, look capable
+// while forwarding nothing.
+func TestHybridTreesCanReportUncommittedWork(t *testing.T) {
+	var trees any = &hybridTrees{local: &worktree.Manager{}}
+	if _, ok := trees.(uncommittedChangeReporter); !ok {
+		t.Fatal("hybridTrees cannot report uncommitted work, so the in-container diff-rules guard would refuse every run")
+	}
+}

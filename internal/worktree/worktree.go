@@ -646,6 +646,37 @@ func (m *Manager) patchFromMergeBase(ctx context.Context, dir, base string) (*ob
 	return p, bases[0].Hash, nil
 }
 
+// HasUncommittedChanges reports whether the worktree holds work no commit has
+// captured yet: staged, unstaged or untracked. Ignored files do not count, the
+// same rule CommitAll's own status check applies when it decides whether there
+// is anything to commit.
+//
+// It exists because Diff cannot answer this: Diff reports what the branch has
+// committed against the merge base and never reads the worktree, so a stage
+// that must inspect the committed change has no way to tell "nothing has
+// changed" from "the change is not committed yet" without this.
+func (m *Manager) HasUncommittedChanges(ctx context.Context, dir string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		return false, fmt.Errorf("open worktree: %w", err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		return false, fmt.Errorf("open worktree: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	status, err := wt.Status()
+	if err != nil {
+		return false, fmt.Errorf("read status: %w", err)
+	}
+	return !status.IsClean(), nil
+}
+
 // ChangedLines reports lines added+deleted vs the base branch  --  the
 // input to the diff-size cap.
 func (m *Manager) ChangedLines(ctx context.Context, dir, base string) (int, error) {

@@ -261,7 +261,10 @@ func TestDiffRulesStepAppliesRulesToTheCommittedDiff(t *testing.T) {
 			// The removed line is at old-file line 21 and the kept comment is at
 			// new-file line 4: neither is something this change added.
 			omitDetail: []string{"main.go:21", "main.go:4:", "notes.md:1"},
-			wantLog:    []string{"rule_level=error", "file=main.go line=3", "rule=no-new-panic"},
+			// added_lines=4 is the run's evidence that the rules read the change
+			// (two added lines in the first hunk, one in the second, one in the
+			// other file). A step that read nothing must not leave the same trace.
+			wantLog: []string{"rule_level=error", "file=main.go line=3", "rule=no-new-panic", "added_lines=4"},
 		},
 		{
 			name:       "a warn rule is advisory",
@@ -313,6 +316,7 @@ func TestDiffRulesStepAppliesRulesToTheCommittedDiff(t *testing.T) {
 			diff:       "",
 			wantParked: false,
 			omitLog:    []string{"no-new-panic"},
+			wantLog:    []string{"added_lines=0"},
 		},
 	}
 
@@ -522,5 +526,117 @@ func TestDiffRulesStepReadsARealDiff(t *testing.T) {
 	// counted the diff's own offsets would report a different number.
 	if !strings.Contains(tc.Outcome.Detail, "main.go:5: new panic() call") {
 		t.Errorf("park Detail = %q, want it to locate the added line as main.go:5", tc.Outcome.Detail)
+	}
+}
+
+// bareTrees is a workflow.Trees implementation that cannot report uncommitted
+// work: it exposes the interface by delegation, so no optional capability rides
+// along with it.
+type bareTrees struct{ Trees }
+
+// errUncommittedUnavailable is what a Trees implementation reports when it could
+// not read whether the worktree holds uncommitted work.
+var errUncommittedUnavailable = errors.New("status unavailable")
+
+// TestDiffRulesStepRefusesToCheckAChangeThatIsNotCommitted is the placement
+// contract. The step reads what the branch has COMMITTED, and only a worktree
+// with uncommitted work left in it can tell "this change is not committed yet"
+// apart from "there is no change" -- so a step placed before the step that
+// commits must fail loudly rather than report no findings and let the run
+// proceed, which is a gate that never looked.
+func TestDiffRulesStepRefusesToCheckAChangeThatIsNotCommitted(t *testing.T) {
+	t.Parallel()
+
+	const rule = "rules:\n  - id: no-new-panic\n    level: error\n    pattern: 'panic\\('\n    message: new panic() call\n"
+
+	tests := []struct {
+		name           string
+		diff           string
+		uncommitted    bool
+		uncommittedErr error
+		// trees overrides the fake with a variant, e.g. one that hides the
+		// optional capability.
+		trees      func(*fakeTrees) Trees
+		wantErr    []string
+		wantParked bool
+		wantLog    []string
+	}{
+		{
+			name:        "uncommitted work with no committed change is refused",
+			uncommitted: true,
+			wantErr:     []string{"uncommitted", "must follow the step that commits"},
+			wantLog:     []string{"added_lines=0"},
+		},
+		{
+			name:    "a clean worktree with no committed change is a no-op",
+			wantLog: []string{"added_lines=0"},
+		},
+		{
+			name:    "a Trees that cannot report uncommitted work is refused, not passed",
+			trees:   func(f *fakeTrees) Trees { return bareTrees{Trees: f} },
+			wantErr: []string{"cannot report", "must follow the step that commits"},
+		},
+		{
+			name:           "a failed uncommitted read is propagated",
+			uncommittedErr: errUncommittedUnavailable,
+			wantErr:        []string{"uncommitted"},
+		},
+		{
+			name:        "a committed change is checked even when the worktree is dirty",
+			diff:        diffTwoFiles,
+			uncommitted: true,
+			wantParked:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			stage, err := diffRulesStage(t, rule)
+			if err != nil {
+				t.Fatalf("factory: %v", err)
+			}
+			var log bytes.Buffer
+			fake := &fakeTrees{diff: test.diff, uncommitted: test.uncommitted, uncommittedErr: test.uncommittedErr}
+			tc := diffRulesTaskContext("", &log)
+			tc.Trees = fake
+			if test.trees != nil {
+				tc.Trees = test.trees(fake)
+			}
+
+			err = stage.Run(context.Background(), tc)
+			if len(test.wantErr) > 0 {
+				requireRefusalNaming(t, err, test.wantErr, tc.Outcome)
+			} else if err != nil {
+				t.Fatalf("stage.Run() = %v, want nil", err)
+			}
+			if test.wantParked && tc.Outcome.Status != StatusParked {
+				t.Errorf("Outcome = %+v, want a parked outcome for the committed violation", tc.Outcome)
+			}
+			for _, want := range test.wantLog {
+				if !strings.Contains(log.String(), want) {
+					t.Errorf("log = %q, want it to contain %q", log.String(), want)
+				}
+			}
+		})
+	}
+}
+
+// requireRefusalNaming checks the stage refused, that its error names every part
+// the case expects, and that the refusal is not dressed up as a verdict: a step
+// that could not check the change has no finding to park on.
+func requireRefusalNaming(t *testing.T, err error, want []string, outcome Outcome) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("stage.Run() = nil, want the refusal naming %v", want)
+	}
+	for _, fragment := range want {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Errorf("stage.Run() error = %v, want it to name %q", err, fragment)
+		}
+	}
+	if outcome.Status != "" {
+		t.Errorf("Outcome = %+v, want none: a step that cannot check the change is a stage failure, not a verdict", outcome)
 	}
 }

@@ -136,6 +136,15 @@ func (h *hybridTrees) ChangedFileStats(ctx context.Context, dir, base string) (t
 	return h.local.ChangedFileStats(ctx, dir, base)
 }
 
+// HasUncommittedChanges is the capability the diff-rules placement guard reads
+// to tell "nothing has changed" from "not committed yet". It is not part of
+// workflow.Trees for the same reason ChangedFileStats is not, and without this
+// forwarder the in-container path -- every production run -- would answer the
+// guard for the wrong reason.
+func (h *hybridTrees) HasUncommittedChanges(ctx context.Context, dir string) (bool, error) {
+	return h.local.HasUncommittedChanges(ctx, dir)
+}
+
 var _ workflow.Trees = (*hybridTrees)(nil)
 
 // chownTree recursively chowns dir to uid:gid so the daemon -- running as
