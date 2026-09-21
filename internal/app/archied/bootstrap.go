@@ -764,19 +764,25 @@ func (b *boot) loadModules(cfg config.Config, log *slog.Logger) error {
 }
 
 // loadEDAPlaybooks loads the EDA playbook documents (t2db.15): trigger +
-// single workflow-kind action with CEL when conditions and args values.
-// Loaded at startup with the same reject-at-load rule -- any malformed
-// playbook, multi-action playbook, non-workflow position, when compile
-// failure, or args compile failure aborts startup, matching the routing-file
-// load pattern (not degrade-and-skip). A nonexistent dir is an empty store.
-// Split out of loadWorkflows (t2db.16); pure extraction, same log messages as
-// before.
+// workflow-kind actions and module-kind action playbooks with CEL when
+// conditions and args values. Loaded at startup with the same reject-at-load
+// rule -- any malformed playbook, mixed/unsupported action shape, unknown
+// module kind, when compile failure, or args key failure aborts startup,
+// matching the routing-file load pattern (not degrade-and-skip). A nonexistent
+// dir is an empty store. Action playbooks load and type-check but have no run
+// path yet (t2db.31), so each one is logged as a visible warning here rather
+// than routed by the definition pin.
 func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
 	var err error
-	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir)
+	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir, b.modules)
 	if err != nil {
 		log.Error("eda playbook load failed", "dir", cfg.EDAPlaybookDir, "err", err)
 		return err
+	}
+	for _, pb := range b.playbooks.Playbooks {
+		if len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow" {
+			log.Warn("eda action playbook loaded: action playbooks do not execute yet", "playbook", pb.ID)
+		}
 	}
 	log.Info("eda playbooks loaded", "dir", cfg.EDAPlaybookDir, "playbooks", len(b.playbooks.Playbooks))
 	return nil

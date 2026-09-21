@@ -1,16 +1,20 @@
 // Package playbook is the EDA playbook document type and its event
 // coordinator: the rich trigger+actions YAML shape (docs/prds/
 // eda-playbook-engine.md) with CEL `when` conditions and `args` values
-// (open question 1, resolved to CEL). This slice is deliberately single-action,
-// workflow-position only: multi-action playbooks and Module/Channel/Forge
-// action positions remain blocked on the unresolved execution-time gaps
-// (mid-run failure semantics, idempotency for non-workflow actions) and are
-// rejected at load -- the hard boundary, not to be relaxed without sign-off.
+// (open question 1, resolved to CEL). A playbook is one of two shapes
+// (multi-action-playbooks.md, D2):
 //
-// This is an ADDITIONAL routing source alongside the flat kind/label binding
-// files (t2db.9/.10/.11): the daemon consults a matching playbook before
-// those bindings when it pins a task's workflow definition (t2db.23). The
-// binding loaders themselves are untouched.
+//   - a workflow playbook is exactly one `workflow` action, unchanged from
+//     the original boundary, and is routed by the daemon's definition pin;
+//   - an action playbook is one or more `module` actions in order, each with
+//     a registered `kind`, `args`, and an optional `when`/`id`. It loads and
+//     type-checks now but has no run path yet (t2db.31).
+//
+// The two shapes never mix in one playbook. This is an ADDITIONAL routing
+// source alongside the flat kind/label binding files (t2db.9/.10/.11): the
+// daemon consults a matching workflow playbook before those bindings when it
+// pins a task's workflow definition (t2db.23). The binding loaders themselves
+// are untouched.
 package playbook
 
 import (
@@ -18,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -28,10 +33,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 )
 
+// KindSchemas is the narrow kind-to-schema source the loader consults to
+// type-check an action playbook: each module kind's hand-written Args and
+// Result struct types. *module.ModuleRegistry satisfies it, so the playbook
+// package grows no import of the module package.
+type KindSchemas interface {
+	// KindSchema reports the Args and Result reflect types for a known kind;
+	// ok is false when kind is not a registered module kind.
+	KindSchema(kind string) (args, result reflect.Type, ok bool)
+}
+
 // Store is the loaded set of playbooks, validated and compiled at load time.
 type Store struct {
 	Playbooks []*Playbook
-	exprEnv   *expr.Env
 }
 
 // Playbook is one trigger+actions document.
@@ -65,8 +79,9 @@ type Trigger struct {
 	Labels []string
 }
 
-// Action is one step in a playbook. Exactly one action per playbook in this
-// slice, position MUST be "workflow".
+// Action is one step in a playbook. A workflow action names a workflow
+// definition; a module action names a registered module kind and is not
+// routed yet.
 type Action struct {
 	Position string
 	// ID is an optional stable identifier for this action. When present it
@@ -74,6 +89,9 @@ type Action struct {
 	// (actions.<id>); the shape is the shared stable-identifier grammar
 	// (internal/plugin/host.go, internal/domain/workflow/vocabulary.go).
 	ID string
+	// Kind is the module kind name (position: module only); empty for a
+	// workflow action.
+	Kind string
 	// Workflow is the name of the workflow definition to dispatch to
 	// (position: workflow only).
 	Workflow string
@@ -82,6 +100,13 @@ type Action struct {
 	// Args holds the action's compiled CEL args values, keyed by arg name.
 	// Nil or empty means the action takes no args.
 	Args map[string]*expr.Program
+
+	// env is the per-action CEL environment this action's expressions were
+	// compiled against: the prior actions' declared ids and their kinds'
+	// Result types. It is also the eval receiver for When/Args. It is unset
+	// only for a hand-built Action (tests, pre-load composition); loaded
+	// actions always carry it.
+	env *expr.Env
 }
 
 // rawPlaybook is the YAML document shape before compilation.
@@ -113,9 +138,9 @@ var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
 // validateActionIDs enforces the id shape and uniqueness across a playbook's
 // raw actions. An absent id is fine (ids are optional); a declared id must
-// match the stable-identifier grammar and may not repeat. Uniqueness is
-// unreachable through Load while the one-action boundary holds, so this helper
-// is unit-tested directly for the duplicate case.
+// match the stable-identifier grammar and may not repeat. With action
+// playbooks now loadable, duplicate ids are reachable through Load, so this
+// helper is the load-boundary's id gate for both shapes.
 func validateActionIDs(actions []rawAction) error {
 	seen := make(map[string]struct{}, len(actions))
 	for _, a := range actions {
@@ -134,37 +159,18 @@ func validateActionIDs(actions []rawAction) error {
 	return nil
 }
 
-// unknownActionReference returns the first statically-resolved action id a
-// compiled `when` reads that is not declared on any action before index idx.
-// The comparison is against earlier actions' declared ids (the general rule
-// from J1), so it stays correct when the one-action boundary later relaxes;
-// today idx is always 0, so any actions.<id> reference is unknown.
-func unknownActionReference(raw []rawAction, idx int, ids []string) (string, bool) {
-	declared := make(map[string]struct{}, idx)
-	for _, prior := range raw[:idx] {
-		if prior.ID != "" {
-			declared[prior.ID] = struct{}{}
-		}
-	}
-	for _, id := range ids {
-		if _, ok := declared[id]; !ok {
-			return id, true
-		}
-	}
-	return "", false
-}
-
 // Load reads every *.yaml/*.yml playbook in dir, validates each against the
-// hard boundary (exactly one action, position workflow), and compiles each
-// when expression and args value. ANY failure -- malformed YAML, a
-// multi-action playbook, a non-workflow position, a when compile error, an
-// args compile error -- fails the whole load: the reject-at-load philosophy
-// of the parent design doc. A missing directory is an empty store (matching
-// the flat binding loaders' convention).
-func Load(dir string) (*Store, error) {
+// two-shape boundary (exactly one workflow action, or one or more module
+// actions; never mixed), and compiles each when expression and args value
+// against the action's per-playbook environment. ANY failure -- malformed
+// YAML, a mixed/unsupported/empty action shape, an unknown kind, a when
+// compile error, an args key error -- fails the whole load: the reject-at-load
+// philosophy of the parent design doc. A missing directory is an empty store
+// (matching the flat binding loaders' convention).
+func Load(dir string, schemas KindSchemas) (*Store, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return &Store{exprEnv: expr.NewEnv()}, nil
+		return &Store{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
@@ -181,10 +187,10 @@ func Load(dir string) (*Store, error) {
 	}
 	sort.Strings(names)
 
-	store := &Store{exprEnv: expr.NewEnv()}
+	store := &Store{}
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		pb, err := loadOne(dir, path, store.exprEnv)
+		pb, err := loadOne(dir, path, schemas)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +201,7 @@ func Load(dir string) (*Store, error) {
 
 // loadOne loads and validates a single playbook file, deriving its stable ID
 // (path relative to the configured root) and a content-hash Version.
-func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
+func loadOne(dir, path string, schemas KindSchemas) (*Playbook, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read playbook %s: %w", path, err)
@@ -226,72 +232,156 @@ func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
 	if err := pb.Trigger.Kind.Validate(); err != nil {
 		return nil, fmt.Errorf("playbook %s: %w", path, err)
 	}
-
-	// HARD BOUNDARY (t2db.15): exactly one action, position workflow only.
-	if len(raw.Actions) != 1 {
-		return nil, fmt.Errorf(
-			"playbook %s: exactly one action is supported; got %d (multi-action playbooks are blocked on unresolved execution-time gaps)",
-			path, len(raw.Actions),
-		)
-	}
-	a := raw.Actions[0]
-	b := "workflow"
-	if a.Position == "" {
-		// Default position for a single bare workflow name stays workflow for
-		// the smallest-useful case.
-		a.Position = b
-	}
-	if a.Position != b {
-		return nil, fmt.Errorf(
-			"playbook %s: action position %q is not supported; only %q actions ship (Module/Channel/Forge positions are blocked on unresolved execution-time gaps)",
-			path, a.Position, b,
-		)
-	}
-	if strings.TrimSpace(a.Workflow) == "" {
-		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", path)
-	}
 	if err := validateActionIDs(raw.Actions); err != nil {
 		return nil, fmt.Errorf("playbook %s: %w", path, err)
 	}
 
+	actions, err := compileActions(path, raw.Actions, schemas)
+	if err != nil {
+		return nil, err
+	}
+	pb.Actions = actions
+	return pb, nil
+}
+
+// compileActions validates the action shape (D2) and compiles every action's
+// expressions against that action's environment of prior results. Exactly one
+// workflow action is a workflow playbook; one or more module actions is an
+// action playbook; anything else fails the load naming the playbook.
+func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("playbook %s: must declare at least one action", path)
+	}
+
+	var workflows, modules int
+	for i := range raw {
+		a := &raw[i]
+		pos := strings.TrimSpace(a.Position)
+		if pos == "" {
+			// Default position for a single bare workflow name stays workflow
+			// for the smallest-useful case.
+			if len(raw) == 1 && strings.TrimSpace(a.Workflow) != "" {
+				pos = "workflow"
+			} else {
+				return nil, fmt.Errorf("playbook %s: action %d must declare a position (%q or %q)", path, i+1, "workflow", "module")
+			}
+		}
+		if pos != "workflow" && pos != "module" {
+			return nil, fmt.Errorf("playbook %s: action %d position %q is not supported (want %q or %q)", path, i+1, pos, "workflow", "module")
+		}
+		a.Position = pos
+		if pos == "workflow" {
+			workflows++
+		} else {
+			modules++
+		}
+	}
+
+	switch {
+	case workflows > 0 && modules > 0:
+		return nil, fmt.Errorf("playbook %s: cannot mix workflow and module actions in one playbook", path)
+	case workflows > 0:
+		if workflows != 1 {
+			return nil, fmt.Errorf("playbook %s: exactly one workflow action is supported; got %d", path, workflows)
+		}
+		return compileWorkflowActions(path, raw)
+	default:
+		return compileModuleActions(path, raw, schemas)
+	}
+}
+
+// compileWorkflowActions builds the single-action workflow playbook shape.
+// The env has no prior result ids, so a workflow `when` or `args` value that
+// reads `actions.<id>` fails at compile -- the unchanged workflow behaviour.
+func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
+	a := raw[0]
+	if strings.TrimSpace(a.Workflow) == "" {
+		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", path)
+	}
+
+	env := expr.NewEnv()
 	action := Action{
-		Position: a.Position,
+		Position: "workflow",
 		ID:       a.ID,
 		Workflow: strings.TrimSpace(a.Workflow),
+		env:      env,
 	}
 	if strings.TrimSpace(a.When) != "" {
-		prg, err := compileWhen(path, a.When, env, raw.Actions)
+		prg, err := compileExpr(path, "when condition", a.When, env)
 		if err != nil {
 			return nil, err
 		}
 		action.When = prg
 	}
-	args, err := compileArgs(path, a.Args, env, raw.Actions)
+	args, err := compileArgs(path, "", a.Args, env, nil)
 	if err != nil {
 		return nil, err
 	}
 	action.Args = args
-	pb.Actions = []Action{action}
-	return pb, nil
+	return []Action{action}, nil
 }
 
-// compileWhen compiles a raw `when` expression and validates its action
-// references against the actions declared before it. The wording of the
-// returned errors is the loader's existing contract, preserved verbatim by
-// passing the `when condition` field label to compileExpr.
-func compileWhen(path, when string, env *expr.Env, prior []rawAction) (*expr.Program, error) {
-	return compileExpr(path, "when condition", when, env, prior)
+// compileModuleActions builds the one-or-more-module-actions playbook shape.
+// Each action's env declares the prior actions' ids typed by their kinds'
+// Result structs, so a later action can read an earlier result and a forward
+// or field-typo read fails at compile (multi-action-playbooks.md, D3).
+func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]Action, error) {
+	actions := make([]Action, 0, len(raw))
+	var declared []expr.DeclaredResult
+	for _, a := range raw {
+		kind := strings.TrimSpace(a.Kind)
+		if kind == "" {
+			return nil, fmt.Errorf("playbook %s: module-kind action must name a kind", path)
+		}
+		argsType, resultType, ok := schemas.KindSchema(kind)
+		if !ok {
+			return nil, fmt.Errorf("playbook %s: unknown module kind %q", path, kind)
+		}
+
+		env := expr.NewEnv(declared...)
+		action := Action{
+			Position: "module",
+			ID:       a.ID,
+			Kind:     kind,
+			env:      env,
+		}
+		if strings.TrimSpace(a.When) != "" {
+			prg, err := compileExpr(path, "when condition", a.When, env)
+			if err != nil {
+				return nil, err
+			}
+			action.When = prg
+		}
+		args, err := compileArgs(path, kind, a.Args, env, argsType)
+		if err != nil {
+			return nil, err
+		}
+		action.Args = args
+		actions = append(actions, action)
+
+		if a.ID != "" {
+			declared = append(declared, expr.DeclaredResult{ID: a.ID, Type: resultType})
+		}
+	}
+	return actions, nil
 }
 
 // compileArgs compiles every args value as a CEL expression at load, keyed by
 // arg name. J2 has no literal/expression split: the YAML scalar text IS the
 // CEL source, so a string literal is quoted inside YAML and a number or
-// context read is written as CEL. Each program goes through the same
+// context read is written as CEL. When argsSchema is non-nil (a module kind's
+// Args struct) every key must name one of its fields; workflow actions pass
+// nil and keep free-form args. Each program goes through the same
 // compile/reference validation as `when`, with the field label naming the
 // offending args key.
-func compileArgs(path string, raw map[string]string, env *expr.Env, prior []rawAction) (map[string]*expr.Program, error) {
+func compileArgs(path, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
 	if len(raw) == 0 {
 		return nil, nil
+	}
+	if argsSchema != nil {
+		if err := validateArgsKeys(path, kind, argsSchema, raw); err != nil {
+			return nil, err
+		}
 	}
 	keys := make([]string, 0, len(raw))
 	for key := range raw {
@@ -300,7 +390,7 @@ func compileArgs(path string, raw map[string]string, env *expr.Env, prior []rawA
 	sort.Strings(keys)
 	args := make(map[string]*expr.Program, len(raw))
 	for _, key := range keys {
-		prg, err := compileExpr(path, fmt.Sprintf("args[%q]", key), raw[key], env, prior)
+		prg, err := compileExpr(path, fmt.Sprintf("args[%q]", key), raw[key], env)
 		if err != nil {
 			return nil, err
 		}
@@ -309,26 +399,46 @@ func compileArgs(path string, raw map[string]string, env *expr.Env, prior []rawA
 	return args, nil
 }
 
-// compileExpr compiles one playbook expression and applies the two load-time
-// reference checks: every `actions` read must be statically resolvable to a
-// prior action id, and every resolved id must be declared on an earlier
-// action. field is the human-readable expression location used in errors
-// (`when condition` or `args["name"]`), so a failure names the playbook path
-// and the offending expression.
-func compileExpr(path, field, src string, env *expr.Env, prior []rawAction) (*expr.Program, error) {
+// validateArgsKeys rejects an args key the kind's Args struct does not define
+// (multi-action-playbooks.md, D4), so an arg typo is a load failure rather
+// than a dispatch-time shape mismatch. Go field names are lower-cased to the
+// YAML spelling (Message -> message), matching the module's strict decode.
+func validateArgsKeys(path, kind string, argsSchema reflect.Type, raw map[string]string) error {
+	t := argsSchema
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	fields := make(map[string]struct{}, t.NumField())
+	for field := range t.Fields() {
+		fields[strings.ToLower(field.Name)] = struct{}{}
+	}
+	for key := range raw {
+		if _, ok := fields[strings.ToLower(key)]; !ok {
+			return fmt.Errorf("playbook %s: %s kind args[%q] is not a declared Args field", path, kind, key)
+		}
+	}
+	return nil
+}
+
+// compileExpr compiles one playbook expression and applies the remaining
+// load-time reference check: every `actions` read must be statically
+// resolvable to a prior action id. The per-playbook object type rejects an
+// undeclared or forward id and a dynamic `actions` read at compile time; the
+// one spelling it does not reject is a bare `actions` value read, which this
+// check still refuses. field is the human-readable expression location used in
+// errors (`when condition` or `args["name"]`), so a failure names the
+// playbook path and the offending expression.
+func compileExpr(path, field, src string, env *expr.Env) (*expr.Program, error) {
 	prg, err := env.Compile(strings.TrimSpace(src))
 	if err != nil {
 		return nil, fmt.Errorf("playbook %s: %s: %w", path, field, err)
 	}
-	ids, resolvable := prg.ActionReferences()
+	_, resolvable := prg.ActionReferences()
 	if !resolvable {
 		return nil, fmt.Errorf(
 			"playbook %s: %s contains an `actions` reference that cannot be statically resolved to an action id (the `actions` context root must be read as a prior action id)",
 			path, field,
 		)
-	}
-	if id, unknown := unknownActionReference(prior, 0, ids); unknown {
-		return nil, fmt.Errorf("playbook %s: %s references unknown action id %q", path, field, id)
 	}
 	return prg, nil
 }
@@ -401,8 +511,11 @@ type Decision struct {
 	ActionPosition int
 }
 
-// Dispatch returns the workflow name the first matching playbook selects for
-// the input, and whether any playbook matched. No match means trigger
+// Dispatch returns the workflow name the first matching workflow playbook
+// selects for the input, and whether any playbook matched. Action playbooks
+// are loaded and validated but not routed (multi-action-playbooks.md, D1), so
+// this considers workflow playbooks only: an action playbook cannot hijack the
+// definition pin before its run path exists (t2db.31). No match means trigger
 // mismatch or a when condition evaluating false, and the caller keeps its own
 // routing.
 //
@@ -426,9 +539,13 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 		if !pb.Match(input) {
 			continue
 		}
+		if len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow" {
+			// Action playbook: loaded and validated, not routed (D1).
+			continue
+		}
 		a := pb.Actions[0]
 		if a.When != nil {
-			val, err := s.exprEnv.Eval(a.When, ctx)
+			val, err := a.env.Eval(a.When, ctx)
 			if err != nil {
 				// J3: evaluation error -> false (skip), caller logs.
 				continue
@@ -479,7 +596,7 @@ func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) 
 		if a.Args[key] == nil {
 			continue
 		}
-		val, err := s.exprEnv.Eval(a.Args[key], ctx)
+		val, err := a.env.Eval(a.Args[key], ctx)
 		if err != nil {
 			return nil, fmt.Errorf("evaluate args[%q]: %w", key, err)
 		}

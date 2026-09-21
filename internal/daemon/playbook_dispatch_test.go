@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -20,7 +21,7 @@ func playbookStore(t *testing.T, document string) *playbook.Store {
 	if err := os.WriteFile(filepath.Join(dir, "pb.yaml"), []byte(document), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := playbook.Load(dir)
+	loaded, err := playbook.Load(dir, module.New())
 	if err != nil {
 		t.Fatalf("load playbook: %v", err)
 	}

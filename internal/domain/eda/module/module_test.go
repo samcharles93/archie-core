@@ -4,8 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
 )
 
 func writeModule(t *testing.T, dir, content string) string {
@@ -55,6 +58,23 @@ func TestRegisterUnknownKindIsError(t *testing.T) {
 	r := New()
 	if err := r.Register("notify", t.TempDir()); err == nil {
 		t.Fatal("Register(unknown kind) = nil, want error")
+	}
+}
+
+func TestKindSchema(t *testing.T) {
+	r := New()
+	argsType, resultType, ok := r.KindSchema("log")
+	if !ok {
+		t.Fatal("KindSchema(log) = not ok, want the built-in log contract")
+	}
+	if argsType != reflect.TypeFor[log.Args]() {
+		t.Errorf("KindSchema(log) args = %v, want log.Args", argsType)
+	}
+	if resultType != reflect.TypeFor[log.Result]() {
+		t.Errorf("KindSchema(log) result = %v, want log.Result", resultType)
+	}
+	if _, _, ok := r.KindSchema("notify"); ok {
+		t.Fatal("KindSchema(notify) = ok, want false for an unregistered kind")
 	}
 }
 

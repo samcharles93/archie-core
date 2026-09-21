@@ -259,22 +259,24 @@ func (e *Env) Compile(src string) (*Program, error) {
 // the `actions` context root as either a statically-resolvable action id or
 // not. The invariant is exhaustive by construction: each read of `actions`
 // consumes exactly one `actions` identifier node, so counting identifier
-// nodes and counting the reads that match one of the two static access
-// shapes (a field selection on the `actions` ident, or a map index whose key
-// is a string literal) yields
+// nodes and counting the reads that match the static access shape (a field
+// selection on the `actions` ident) yields
 //
 //	resolvable = (identCount == staticCount)
 //
 // Any other spelling that mentions `actions` contributes an identifier node
 // without a matching static access, so it reports unresolvable rather than
 // slipping through as a runtime miss. The returned ids are the sorted,
-// de-duplicated ids of the static accesses, for the playbook loader's
-// unknown-id check.
+// de-duplicated ids of the static accesses.
 //
-// With the per-playbook object type the checker already rejects every
-// non-static `actions` read at compile time, so a program that reaches this
-// walk is resolvable by construction; the walk is retained until the next
-// pass removes it together with the loader's duplicate unknown-id check.
+// With the per-playbook object type the CEL checker rejects every non-static
+// `actions` read at compile time -- a dynamic index, `in`, `size`, or a
+// method/field selection that is not a declared id never reaches this walk.
+// The one spelling the checker does NOT reject is a bare `actions` value
+// read, which compiles as an object value but cannot be pinned to an action
+// id at load. This walk is retained solely to reject that spelling; the ids
+// return is now informational (the unknown-id check moved to the checker's
+// per-playbook object type).
 func actionReferences(ast *cel.Ast) ([]string, bool) {
 	if ast == nil || ast.NativeRep() == nil {
 		return nil, true
@@ -294,24 +296,6 @@ func actionReferences(ast *cel.Ast) ([]string, bool) {
 			}
 			staticCount++
 			seen[sel.FieldName()] = struct{}{}
-		case celast.CallKind:
-			call := e.AsCall()
-			if call.FunctionName() != "_[_]" || len(call.Args()) != 2 {
-				return
-			}
-			if !isActionsIdent(call.Args()[0]) {
-				return
-			}
-			key := call.Args()[1]
-			if key.Kind() != celast.LiteralKind {
-				return
-			}
-			id, ok := key.AsLiteral().Value().(string)
-			if !ok {
-				return
-			}
-			staticCount++
-			seen[id] = struct{}{}
 		}
 	})
 	celast.PreOrderVisit(ast.NativeRep().Expr(), visitor)
@@ -340,8 +324,10 @@ type Program struct {
 // read could be statically resolved to one of those ids. ids is empty when
 // the expression reads no prior-action result; resolvable is false when the
 // expression reads `actions` in any form that cannot be pinned to a prior
-// action id at load. The playbook loader rejects a non-resolvable program
-// rather than evaluating it as a runtime miss.
+// action id at load. Under the per-playbook object type the checker already
+// rejects every dynamic `actions` read, so the only form that still reaches
+// here unresolved is a bare `actions` value read; the playbook loader rejects
+// that rather than evaluating it as a runtime miss.
 func (p *Program) ActionReferences() (ids []string, resolvable bool) {
 	if p == nil {
 		return nil, true

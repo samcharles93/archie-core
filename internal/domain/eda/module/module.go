@@ -36,6 +36,12 @@ type Kind struct {
 	// exportPath is the fixed exported function name the interpreted file
 	// must define (e.g. "main.Run").
 	exportPath string
+	// argsType and resultType are the kind's hand-written Args and Result
+	// struct types. They are the schema the playbook loader declares to CEL
+	// so an arg key or result field typo is a load failure rather than a
+	// dispatch failure (multi-action-playbooks.md, D4).
+	argsType   reflect.Type
+	resultType reflect.Type
 }
 
 // registry maps kind name to its one typed contract. Adding a new kind is a
@@ -44,6 +50,8 @@ var registry = map[string]Kind{
 	"log": {
 		loadSymbols: func() map[string]map[string]reflect.Value { return logextract.Symbols },
 		exportPath:  "main.Run",
+		argsType:    reflect.TypeFor[log.Args](),
+		resultType:  reflect.TypeFor[log.Result](),
 	},
 }
 
@@ -80,6 +88,20 @@ func Kinds() []string {
 // Len returns how many kinds were successfully registered (loaded).
 func (r *ModuleRegistry) Len() int {
 	return len(r.kinds)
+}
+
+// KindSchema reports the hand-written Args and Result struct types for a
+// known kind. A kind is known when it has a registered contract in this
+// package's built-in registry (the log kind is the shipped kind), independent
+// of whether a module instance is currently loaded from a module directory.
+// It is the narrow schema source the playbook loader consumes to type-check
+// an action playbook's args and result references at load.
+func (r *ModuleRegistry) KindSchema(kind string) (reflect.Type, reflect.Type, bool) {
+	k, ok := registry[kind]
+	if !ok {
+		return nil, nil, false
+	}
+	return k.argsType, k.resultType, true
 }
 
 // Register discovers <dir>/<kind>.go, interprets it against the kind's

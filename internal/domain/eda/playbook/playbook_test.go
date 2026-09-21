@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/expr"
+	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -22,6 +23,15 @@ func writeFile(t *testing.T, dir, name, content string) string {
 		t.Fatalf("write %s: %v", path, err)
 	}
 	return path
+}
+
+// testSchemas is the real module kind-schema source the loader consults in
+// tests: *module.ModuleRegistry satisfies playbook.KindSchemas. It consults
+// the built-in kind registry, so no module file needs to be installed for the
+// schema lookup to work.
+func testSchemas(t *testing.T) KindSchemas {
+	t.Helper()
+	return module.New()
 }
 
 // TestLoadSingleWorkflowActionRoundTrip: a playbook with trigger + one
@@ -37,7 +47,7 @@ actions:
     workflow: tdd
     when: event.priority == 3
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -78,7 +88,7 @@ actions:
     workflow: tdd
     when: event.priority == 5
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -105,32 +115,49 @@ actions:
   - position: workflow
     workflow: implement
 `)
-	_, err := Load(dir)
+	_, err := Load(dir, testSchemas(t))
 	if err == nil {
 		t.Fatal("Load(2 actions) = nil, want load failure")
 	}
-	if !strings.Contains(err.Error(), "exactly one action") {
-		t.Errorf("Load error = %q, want the one-action rule named", err.Error())
+	if !strings.Contains(err.Error(), "exactly one workflow action") {
+		t.Errorf("Load error = %q, want the one-workflow-action rule named", err.Error())
 	}
 }
 
-// TestLoadNonWorkflowPositionIsLoadFailure: a playbook with a non-workflow
-// action position is a reported load failure.
-func TestLoadNonWorkflowPositionIsLoadFailure(t *testing.T) {
+// TestLoadModuleActionIsValidActionPlaybook: one module action is now a valid
+// action playbook shape (one or more module actions in order).
+func TestLoadModuleActionIsValidActionPlaybook(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "pb.yaml", `
 trigger:
   kind: bug
 actions:
-  - position: module
+  - id: build
+    position: module
     kind: log
+    args:
+      message: '"build started"'
 `)
-	_, err := Load(dir)
-	if err == nil {
-		t.Fatal("Load(module action) = nil, want load failure")
+	store, err := Load(dir, testSchemas(t))
+	if err != nil {
+		t.Fatalf("Load(module action) = %v, want a valid action playbook", err)
 	}
-	if !strings.Contains(err.Error(), "workflow") {
-		t.Errorf("Load error = %q, want the position restriction named", err.Error())
+	if len(store.Playbooks) != 1 {
+		t.Fatalf("loaded %d playbooks, want 1", len(store.Playbooks))
+	}
+	a := store.Playbooks[0].Actions[0]
+	if a.Position != "module" || a.Kind != "log" {
+		t.Errorf("action = (%q, %q), want (module, log)", a.Position, a.Kind)
+	}
+	if a.ID != "build" {
+		t.Errorf("action id = %q, want build", a.ID)
+	}
+	if len(a.Args) != 1 || a.Args["message"] == nil {
+		t.Errorf("Action.Args = %#v, want the message program compiled", a.Args)
+	}
+	// Action playbooks are loaded and validated but not routed (D1).
+	if decision, ok := store.Dispatch(DispatchInput{Kind: "bug", Event: map[string]any{}}); ok {
+		t.Fatalf("Dispatch(action playbook) = %v, want no match (not routed)", decision)
 	}
 }
 
@@ -147,7 +174,7 @@ actions:
     workflow: tdd
     when: event.label ==
 `)
-	_, err := Load(dir)
+	_, err := Load(dir, testSchemas(t))
 	if err == nil {
 		t.Fatal("Load(bad when) = nil, want compile failure reported")
 	}
@@ -168,7 +195,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	_, err := Load(dir)
+	_, err := Load(dir, testSchemas(t))
 	if err == nil {
 		t.Fatal("Load(no trigger) = nil, want load failure")
 	}
@@ -185,7 +212,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -210,7 +237,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -245,7 +272,7 @@ actions:
   - position: workflow
     workflow: implement
 `)
-	_, err := Load(dir)
+	_, err := Load(dir, testSchemas(t))
 	if err == nil {
 		t.Fatal("Load(dir with one bad playbook) = nil, want whole-load failure")
 	}
@@ -254,7 +281,7 @@ actions:
 // TestLoadMissingDirIsEmptyStore: a nonexistent directory is an empty store
 // (no playbooks), matching the flat binding loaders' convention.
 func TestLoadMissingDirIsEmptyStore(t *testing.T) {
-	store, err := Load(filepath.Join(t.TempDir(), "does-not-exist"))
+	store, err := Load(filepath.Join(t.TempDir(), "does-not-exist"), testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load(missing dir) = %v, want nil", err)
 	}
@@ -276,7 +303,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -301,7 +328,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	storeA, err := Load(dir)
+	storeA, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -310,7 +337,7 @@ actions:
 	}
 
 	// Re-load unchanged content: identical version.
-	storeB, err := Load(dir)
+	storeB, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -327,7 +354,7 @@ actions:
   - position: workflow
     workflow: implement
 `)
-	storeC, err := Load(dir)
+	storeC, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -352,7 +379,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -377,7 +404,7 @@ actions:
 // the proof the shipped shape works, not just test fixtures.
 func TestShippedExamplePlaybookLoads(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "..", "examples", "eda-playbooks")
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load(shipped example): %v", err)
 	}
@@ -441,7 +468,7 @@ actions:
     workflow: tdd
     id: notify
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -465,7 +492,7 @@ func TestLoadMalformedActionIDFails(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    id: "+id+"\n")
-			_, err := Load(dir)
+			_, err := Load(dir, testSchemas(t))
 			if err == nil {
 				t.Fatalf("Load(id %q) = nil, want load failure", id)
 			}
@@ -474,8 +501,7 @@ func TestLoadMalformedActionIDFails(t *testing.T) {
 }
 
 // TestValidateActionIDs: the shape/uniqueness helper is the load-boundary's
-// id gate, unit-tested directly because the one-action boundary makes
-// duplicates unreachable through Load today.
+// id gate for both playbook shapes.
 func TestValidateActionIDs(t *testing.T) {
 	if err := validateActionIDs([]rawAction{{ID: "notify"}, {ID: "notify"}}); err == nil {
 		t.Fatal("validateActionIDs(duplicate) = nil, want error")
@@ -510,7 +536,7 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+tc.when+"\n")
-			_, err := Load(dir)
+			_, err := Load(dir, testSchemas(t))
 			if err == nil {
 				t.Fatal("Load = nil, want load failure")
 			}
@@ -521,29 +547,6 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 				t.Errorf("Load error = %q, want the unknown id %q named", err.Error(), tc.wantID)
 			}
 		})
-	}
-}
-
-// TestUnknownActionReferenceGeneralRule: the reference check compares the
-// statically-resolved ids against the declared ids of earlier actions, so it
-// already behaves correctly when the one-action boundary later relaxes (the
-// Load path can only exercise the empty-prior set today). The ids are passed
-// directly: under the per-playbook object type an undeclared `actions.<id>`
-// read is rejected at compile time, so there is no longer an env that compiles
-// one to classify.
-func TestUnknownActionReferenceGeneralRule(t *testing.T) {
-	// a declared on the prior action: known.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, []string{"a"}); unknown {
-		t.Fatalf("unknownActionReference(declared prior) = (%q, true), want known", id)
-	}
-	// Two static reads of a in one expression resolve to the one declared id
-	// (ActionReferences de-duplicates), so the de-duplicated id is known.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, []string{"a", "a"}); unknown {
-		t.Fatalf("unknownActionReference(deduplicated declared id) = (%q, true), want known", id)
-	}
-	// A different prior id leaves b unknown.
-	if id, unknown := unknownActionReference([]rawAction{{ID: "a"}}, 1, []string{"b"}); !unknown || id != "b" {
-		t.Fatalf("unknownActionReference(undeclared) = (%q, %v), want (b, true)", id, unknown)
 	}
 }
 
@@ -574,7 +577,7 @@ actions:
       priority: '3'
       label: 'event.label'
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -672,7 +675,7 @@ actions:
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, dir, "pb.yaml", tc.doc)
-			_, err := Load(dir)
+			_, err := Load(dir, testSchemas(t))
 			if err == nil {
 				t.Fatal("Load = nil, want load failure")
 			}
@@ -695,7 +698,7 @@ func TestCompileArgsReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "event.missing ==",
 	}
 	for range 64 {
-		_, err := compileArgs("pb.yaml", raw, env, nil)
+		_, err := compileArgs("pb.yaml", "", raw, env, nil)
 		if err == nil {
 			t.Fatal("compileArgs = nil, want error")
 		}
@@ -721,7 +724,7 @@ actions:
     args:
       label: 'event.missing'
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -742,7 +745,7 @@ actions:
   - position: workflow
     workflow: tdd
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -769,7 +772,7 @@ actions:
     args:
       message: '"hello"'
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -805,5 +808,266 @@ func TestEvalArgsNilStoreSafe(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, map[string]any{}) {
 		t.Fatalf("EvalArgs(nil store) = %#v, want empty non-nil map", got)
+	}
+}
+
+// TestLoadActionPlaybookReadsPriorResult: a later module action reads an
+// earlier action's declared result by its kind-typed Result field, so the
+// per-action environment (D3) must declare prior ids. This is the first new
+// test that fails if the loader compiled every action against one env instead
+// of an env built from the prior actions' ids.
+func TestLoadActionPlaybookReadsPriorResult(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"build started"'
+  - id: done
+    position: module
+    kind: log
+    args:
+      message: '"done"'
+    when: actions.build.result.written == true
+`)
+	store, err := Load(dir, testSchemas(t))
+	if err != nil {
+		t.Fatalf("Load(action playbook reading a prior result): %v", err)
+	}
+	pb := store.Playbooks[0]
+	if len(pb.Actions) != 2 {
+		t.Fatalf("loaded %d actions, want 2", len(pb.Actions))
+	}
+	if pb.Actions[1].When == nil {
+		t.Fatal("second action when = nil, want the compiled prior-result read")
+	}
+	if pb.Actions[1].Args["message"] == nil {
+		t.Fatal("second action args[message] = nil, want a compiled program")
+	}
+}
+
+// TestLoadActionPlaybookForwardReferenceFails: an action may not read a later
+// action's id -- the env only declares PRIOR actions' ids, so the forward read
+// is an undefined field at compile.
+func TestLoadActionPlaybookForwardReferenceFails(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: module
+    kind: log
+    args:
+      message: '"first"'
+    when: actions.done.result.written == true
+  - id: done
+    position: module
+    kind: log
+    args:
+      message: '"second"'
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(forward reference) = nil, want load failure")
+	}
+	for _, want := range []string{"pb.yaml", "done"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load error = %q, want it to name %q", err.Error(), want)
+		}
+	}
+}
+
+// TestLoadActionPlaybookRejectsUnknownKind: an action's kind must name a
+// registered module kind.
+func TestLoadActionPlaybookRejectsUnknownKind(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: module
+    kind: notify
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(unknown kind) = nil, want load failure")
+	}
+	for _, want := range []string{"pb.yaml", "notify"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load error = %q, want it to name %q", err.Error(), want)
+		}
+	}
+}
+
+// TestLoadActionPlaybookRejectsMissingKind: a module action must name a kind.
+func TestLoadActionPlaybookRejectsMissingKind(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: module
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(missing kind) = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "pb.yaml") {
+		t.Errorf("Load error = %q, want the playbook path named", err.Error())
+	}
+}
+
+// TestLoadActionPlaybookRejectsUnsupportedPosition: a position other than
+// workflow or module is a load failure naming the playbook.
+func TestLoadActionPlaybookRejectsUnsupportedPosition(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: channel
+    kind: log
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(channel position) = nil, want load failure")
+	}
+	for _, want := range []string{"pb.yaml", "channel"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load error = %q, want it to name %q", err.Error(), want)
+		}
+	}
+}
+
+// TestLoadActionPlaybookRejectsMixedPositions: workflow and module actions
+// never mix in one playbook (D2).
+func TestLoadActionPlaybookRejectsMixedPositions(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+  - position: module
+    kind: log
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(mixed positions) = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "pb.yaml") {
+		t.Errorf("Load error = %q, want the playbook path named", err.Error())
+	}
+}
+
+// TestLoadActionPlaybookRejectsZeroActions: a playbook must declare at least
+// one action.
+func TestLoadActionPlaybookRejectsZeroActions(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions: []
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(zero actions) = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "pb.yaml") {
+		t.Errorf("Load error = %q, want the playbook path named", err.Error())
+	}
+}
+
+// TestLoadActionPlaybookRejectsDuplicateIDs: duplicate ids are reachable once
+// action playbooks are loadable, and the shared id gate rejects them.
+func TestLoadActionPlaybookRejectsDuplicateIDs(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"first"'
+  - id: build
+    position: module
+    kind: log
+    args:
+      message: '"second"'
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(duplicate ids) = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "duplicate action id") {
+		t.Errorf("Load error = %q, want the duplicate-id rule named", err.Error())
+	}
+}
+
+// TestLoadActionPlaybookRejectsUnknownArgKey: an args key the kind's Args
+// struct does not define fails the load (D4).
+func TestLoadActionPlaybookRejectsUnknownArgKey(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: module
+    kind: log
+    args:
+      message: '"hello"'
+      bogus: '"x"'
+`)
+	_, err := Load(dir, testSchemas(t))
+	if err == nil {
+		t.Fatal("Load(unknown arg key) = nil, want load failure")
+	}
+	for _, want := range []string{"pb.yaml", "bogus"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load error = %q, want it to name %q", err.Error(), want)
+		}
+	}
+}
+
+// TestLoadActionPlaybookRejectsActionReferences is the classifier-enumeration
+// proof (E): every `actions` spelling the old classifier rejected must still
+// be rejected for a typed action playbook. All but the bare `actions` value
+// are rejected by CEL's per-playbook object type at compile; the bare value
+// read is the one spelling CEL does not reject, kept behind the retained
+// resolvable check in expr.ActionReferences.
+func TestLoadActionPlaybookRejectsActionReferences(t *testing.T) {
+	tests := []struct {
+		name string
+		when string
+	}{
+		{name: "unknown id", when: `actions.missing.result.written == true`},
+		{name: "literal map index", when: `actions["build"].result.written == true`},
+		{name: "computed index", when: `actions[key].result.written == true`},
+		{name: "dynamic index by event", when: `actions[event.name].result.written == true`},
+		{name: "in operator", when: `"build" in actions`},
+		{name: "size", when: `size(actions) > 0`},
+		{name: "method call", when: `actions.all(x, true)`},
+		{name: "equality with map", when: `actions == {}`},
+		{name: "bare actions", when: `actions`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - id: build\n    position: module\n    kind: log\n    args:\n      message: '\"build started\"'\n  - id: done\n    position: module\n    kind: log\n    args:\n      message: '\"done\"'\n    when: "+tc.when+"\n")
+			_, err := Load(dir, testSchemas(t))
+			if err == nil {
+				t.Fatalf("Load(%s) = nil, want load failure", tc.when)
+			}
+			if !strings.Contains(err.Error(), "pb.yaml") {
+				t.Errorf("Load error = %q, want the playbook path named", err.Error())
+			}
+		})
 	}
 }

@@ -142,7 +142,7 @@ actions:
     workflow: tdd
     id: notify
 `)
-	store, err := Load(dir)
+	store, err := Load(dir, testSchemas(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
