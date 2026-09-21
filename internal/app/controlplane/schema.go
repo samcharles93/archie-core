@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -16,9 +17,9 @@ import (
 const bareObjectSchema = `{"type":"object"}`
 
 var (
-	configDurationType  = reflect.TypeOf(config.Duration(0))
-	channelDurationType = reflect.TypeOf(channelDuration(0))
-	timeType            = reflect.TypeOf(time.Time{})
+	configDurationType  = reflect.TypeFor[config.Duration]()
+	channelDurationType = reflect.TypeFor[channelDuration]()
+	timeType            = reflect.TypeFor[time.Time]()
 )
 
 // schemaJSON renders the JSON Schema a resource descriptor advertises, derived
@@ -90,8 +91,7 @@ func schemaOf(t reflect.Type) map[string]any {
 
 func objectSchemaOf(t reflect.Type) map[string]any {
 	properties := map[string]any{}
-	for i := range t.NumField() {
-		field := t.Field(i)
+	for field := range t.Fields() {
 		if field.Anonymous {
 			// encoding/json promotes an embedded struct's fields into the
 			// enclosing object, so the schema lists them there too. Dropping
@@ -100,9 +100,7 @@ func objectSchemaOf(t reflect.Type) map[string]any {
 			if !ok {
 				continue
 			}
-			for name, property := range embedded {
-				properties[name] = property
-			}
+			maps.Copy(properties, embedded)
 			continue
 		}
 		if field.PkgPath != "" {
