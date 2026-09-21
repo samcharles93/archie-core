@@ -2,6 +2,7 @@ package archied
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -40,11 +41,12 @@ func TestReloadAppliesAndPublishes(t *testing.T) {
 
 	loader := configuration.New(slog.New(slog.DiscardHandler))
 	var published config.Config
-	controller := newReloadController(loader, path, "", func(doc *configuration.Document) {
+	controller := newReloadController(loader, path, "", func(_ context.Context, doc *configuration.Document) error {
 		published = doc.Config
+		return nil
 	})
 
-	if err := controller.Reload(); err != nil {
+	if err := controller.Reload(t.Context()); err != nil {
 		t.Fatalf("first reload: %v", err)
 	}
 	if published.BotUser != "first" {
@@ -52,7 +54,7 @@ func TestReloadAppliesAndPublishes(t *testing.T) {
 	}
 
 	writeConfig(t, path, minimalConfigTOML("second"))
-	if err := controller.Reload(); err != nil {
+	if err := controller.Reload(t.Context()); err != nil {
 		t.Fatalf("second reload: %v", err)
 	}
 	if published.BotUser != "second" {
@@ -74,9 +76,9 @@ func TestReloadValidationFailureDoesNotApply(t *testing.T) {
 
 	loader := configuration.New(slog.New(slog.DiscardHandler))
 	applied := 0
-	controller := newReloadController(loader, path, "", func(*configuration.Document) { applied++ })
+	controller := newReloadController(loader, path, "", func(context.Context, *configuration.Document) error { applied++; return nil })
 
-	if err := controller.Reload(); err != nil {
+	if err := controller.Reload(t.Context()); err != nil {
 		t.Fatalf("first reload: %v", err)
 	}
 	if applied != 1 {
@@ -84,7 +86,7 @@ func TestReloadValidationFailureDoesNotApply(t *testing.T) {
 	}
 
 	writeConfig(t, path, invalidConfigTOML())
-	err := controller.Reload()
+	err := controller.Reload(t.Context())
 	if err == nil {
 		t.Fatal("reload with invalid config: expected an error")
 	}
@@ -97,11 +99,38 @@ func TestReloadValidationFailureDoesNotApply(t *testing.T) {
 
 	// A subsequent valid reload clears the error.
 	writeConfig(t, path, minimalConfigTOML("widget"))
-	if err := controller.Reload(); err != nil {
+	if err := controller.Reload(t.Context()); err != nil {
 		t.Fatalf("recovery reload: %v", err)
 	}
 	if st := controller.Status(); st.LastError != "" || st.LastReloadAt == "" {
 		t.Fatalf("Status after recovery = %+v, want no error and a reload time", st)
+	}
+}
+
+// TestReloadApplyFailureIsRecorded pins the other half of the safety
+// property: a file that loads cleanly can still fail to apply, because the
+// database layer reloadConfig re-applies comes from the control plane. That
+// failure must be recorded and returned, not reported as a successful
+// reload.
+func TestReloadApplyFailureIsRecorded(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	writeConfig(t, path, minimalConfigTOML("widget"))
+
+	loader := configuration.New(slog.New(slog.DiscardHandler))
+	controller := newReloadController(loader, path, "", func(context.Context, *configuration.Document) error {
+		return errors.New("runtime settings unavailable")
+	})
+
+	if err := controller.Reload(t.Context()); err == nil {
+		t.Fatal("reload with a failing apply: expected an error")
+	}
+	st := controller.Status()
+	if st.LastError == "" || st.LastErrorAt == "" {
+		t.Fatalf("Status after a failed apply = %+v, want LastError and LastErrorAt set", st)
+	}
+	if st.LastReloadAt != "" {
+		t.Fatalf("Status after a failed apply recorded a reload time: %+v", st)
 	}
 }
 
@@ -112,8 +141,9 @@ func TestReloadLoopAppliesOnSignalAndStopsOnCancel(t *testing.T) {
 
 	loader := configuration.New(slog.New(slog.DiscardHandler))
 	applied := make(chan struct{}, 1)
-	controller := newReloadController(loader, path, "", func(*configuration.Document) {
+	controller := newReloadController(loader, path, "", func(context.Context, *configuration.Document) error {
 		applied <- struct{}{}
+		return nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

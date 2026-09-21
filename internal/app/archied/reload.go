@@ -14,10 +14,11 @@ import (
 
 // ReloadController re-runs the configuration load on demand and
 // publishes the result through apply. A failed reload never publishes:
-// apply is called only with a Document that passed validation, and the
-// running config is left untouched on error. That "Set is not called on
-// the error path" property is the safety core of the reload feature --
-// a bad file must leave the daemon running on the previous config.
+// apply is called only with a Document that passed validation, and apply
+// itself reports failure rather than publishing a half-built config. That
+// "Set is not called on the error path" property is the safety core of the
+// reload feature -- a bad file, or a database layer that cannot be read,
+// must leave the daemon running on the previous config.
 type ReloadController struct {
 	loader  *configuration.Loader
 	base    string
@@ -26,18 +27,14 @@ type ReloadController struct {
 	// apply receives a freshly loaded, validated Document. It is the
 	// composition root's job to wire this to whatever owns the running
 	// config (the daemon's Holder, the dashboard's provenance). Must be
-	// non-nil; newReloadController requires it.
-	apply func(*configuration.Document)
-
-	// overlayValues, when non-nil, returns the runtime config overlay
-	// (dotted keys -> typed values) to layer over the file config before
-	// publishing. A failed overlay read or validation aborts the reload
-	// exactly like a bad file.
+	// non-nil; newReloadController requires it. An error from apply fails
+	// the reload and leaves the running config alone.
+	apply func(context.Context, *configuration.Document) error
 
 	status atomic.Pointer[config.ReloadStatus]
 }
 
-func newReloadController(loader *configuration.Loader, base, overlay string, apply func(*configuration.Document)) *ReloadController {
+func newReloadController(loader *configuration.Loader, base, overlay string, apply func(context.Context, *configuration.Document) error) *ReloadController {
 	c := &ReloadController{loader: loader, base: base, overlay: overlay, apply: apply}
 	c.status.Store(&config.ReloadStatus{})
 	return c
@@ -45,10 +42,13 @@ func newReloadController(loader *configuration.Loader, base, overlay string, app
 
 // Reload re-runs the configuration load. On validation failure it
 // records the error in Status and returns it; apply is not called and
-// the running configuration is unchanged. On success it calls apply
-// with the fresh Document and records the reload time.
-func (c *ReloadController) Reload() error {
+// the running configuration is unchanged. An error from apply is
+// recorded the same way. On success it records the reload time.
+func (c *ReloadController) Reload(ctx context.Context) error {
 	doc, err := c.loader.Resolve(c.base, c.overlay)
+	if err == nil {
+		err = c.apply(ctx, doc)
+	}
 	if err != nil {
 		c.status.Store(&config.ReloadStatus{
 			LastError:   err.Error(),
@@ -56,7 +56,6 @@ func (c *ReloadController) Reload() error {
 		})
 		return err
 	}
-	c.apply(doc)
 	c.status.Store(&config.ReloadStatus{
 		LastReloadAt: time.Now().UTC().Format(time.RFC3339),
 	})
@@ -80,7 +79,7 @@ func reloadLoop(ctx context.Context, ch <-chan os.Signal, c *ReloadController, l
 		case <-ctx.Done():
 			return
 		case <-ch:
-			if err := c.Reload(); err != nil {
+			if err := c.Reload(ctx); err != nil {
 				log.Error("config reload failed; keeping running config", "err", err)
 			}
 		}

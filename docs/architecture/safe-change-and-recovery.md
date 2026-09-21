@@ -113,7 +113,7 @@ posture is the opposite: **the daemon fails closed.**
 | --- | --- | --- |
 | State Store unreachable | `boot.loadRuntimeConfig` returns the dial error and `archied` exits non-zero | stderr: `runtime settings unavailable` |
 | A stored resource fails validation | Same: `validate database settings` wraps the error and the daemon exits | Same |
-| SIGHUP reload with a bad file | Running config is kept; the reload records `last_error` / `last_error_at` | `/api/config` → `reload.last_error` → dashboard banner |
+| SIGHUP reload with a bad file, or a control plane that cannot be read | Running config is kept; the reload records `last_error` / `last_error_at`. The reload re-applies the database layer, so it never publishes file values over the running database-owned ones | `/api/config` → `reload.last_error` → dashboard banner |
 
 Failing closed is deliberate for settings the database owns: falling back to the
 file values would restore the second source of truth the control plane exists to

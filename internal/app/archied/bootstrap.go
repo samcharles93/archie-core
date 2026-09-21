@@ -115,7 +115,11 @@ type boot struct {
 	stateStoreGrants *staterpc.GrantIssuer
 	stateStoreToken  string
 	controlPlane     *controlplane.Client
-	chatSessionStore gateway.SessionStore
+	// executionSettings is the last workflow execution settings the control
+	// plane published. They arrive on a watch rather than in the file
+	// document, so reloadConfig re-applies them from here.
+	executionSettings atomic.Pointer[workflow.ExecutionSettings]
+	chatSessionStore  gateway.SessionStore
 
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
@@ -1391,23 +1395,7 @@ func (b *boot) publishConfigSnapshot(ctx context.Context) {
 // /api/config.
 func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath string) {
 	log := b.log
-	reloadController := newReloadController(b.loader, cfgPath, overlayPath, func(doc *configuration.Document) {
-		// Boot merges catalog-discovered providers into cfg before the
-		// Holders are seeded; publishing the raw reloaded document would
-		// drop them from the running config even though the file is
-		// unchanged. Re-apply the same merge (idempotent: a catalog that
-		// failed to load merges to identity).
-		applyModelCatalog(&doc.Config, b.catalog)
-		old := b.d.Cfg.Get()
-		b.currentProvenance.Store(&doc.Provenance)
-		b.publishConfig(ctx, doc.Config)
-		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
-			log.Warn("config reloaded; some changes require a restart",
-				"fields", fields, "paths", doc.Provenance.Paths())
-		} else {
-			log.Info("config reloaded", "paths", doc.Provenance.Paths())
-		}
-	})
+	reloadController := newReloadController(b.loader, cfgPath, overlayPath, b.reloadConfig)
 	b.lastReload = func() config.ReloadStatus {
 		st := reloadController.Status()
 		return st

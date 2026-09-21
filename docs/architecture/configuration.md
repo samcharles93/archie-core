@@ -244,7 +244,7 @@ The application currently changes behavioural values through unrelated paths:
 | Active provider selection            | `chatModelManager.SetActiveProvider` changes provider selection.                                                                 | A conversation/session command changing runtime state, with the same distinction from provider-instance configuration.                                                                  |
 | Persona selection                    | `PersonaRegistry.SetActive` mutates an in-memory per-session choice.                                                             | Agent-system session state. Persistence and audit requirements are owned by that domain, not the configuration loader.                                                                  |
 | File and environment overlays        | Applied while loading `internal/config`; defaults are filled by mutation in `finalize`.                                          | Configuration-infrastructure input processing that produces separately typed candidates. Defaults and derivations remain visible in provenance.                                         |
-| SIGHUP config reload (2026-08)        | Re-resolves the file config, validates, then atomically republishes through `config.Holder`. A failed reload keeps the running config and records `last_error`/`last_error_at` in `/api/config`. It does not re-read the control plane, so database-owned settings revert to their file values until restart (`archie-core-ju85`). | Candidate promotion with last-known-good retention: the running snapshot is untouched on failure. Reload must re-apply the database layer. A bounded observation period and actor audit are not yet implemented. |
+| SIGHUP config reload (2026-08)        | Re-resolves the file config, re-applies the database layer over it, validates, then atomically republishes through `config.Holder`. A failed reload, whether the file or the control plane caused it, keeps the running config and records `last_error`/`last_error_at` in `/api/config`. | Candidate promotion with last-known-good retention: the running snapshot is untouched on failure. A bounded observation period and actor audit are not yet implemented. |
 | Control-plane resource command (2026-09) | `ControlPlaneService.Command` validates a whole resource document against its owning feature, then writes it with an audit record (actor, source, request ID, expected version) under optimistic concurrency. Hosted on the State Store's gRPC server; the Web UI and messaging channels are its only clients. See `docs/prds/runtime-control-plane.md`. | Met for validate-stage-promote, actor audit and versioned history. Per-field health observation and validate-before-switch on live apply are not yet implemented. |
 
 Any further mutation seam discovered during migration MUST be added here before
@@ -307,11 +307,13 @@ deliberately. A reload that changes any non-allowlisted field logs
 
 ### SIGHUP reload
 
-SIGHUP re-resolves the file config, validates, and atomically republishes
-through the shared Holder. A failed reload keeps the running config and records
-`last_error`/`last_error_at` in `/api/config` so the stale state is visible
-where the operator is looking. The three poll tickers re-read `PollInterval` per iteration and reset on change,
-so a reloaded interval genuinely takes effect.
+SIGHUP re-resolves the file config, re-applies the database layer over it
+(`boot.runtimeConfig`, the same call boot makes), validates, and atomically
+republishes through the shared Holder. A failed reload keeps the running config
+and records `last_error`/`last_error_at` in `/api/config` so the stale state is
+visible where the operator is looking. The three poll tickers re-read
+`PollInterval` per iteration and reset on change, so a reloaded interval
+genuinely takes effect.
 
 ### Settings writes go through the control plane
 
@@ -327,9 +329,13 @@ Two properties matter to anyone changing this area:
   layers database resources over it at boot (`boot.loadRuntimeConfig`). Values
   the daemon needs before it can reach the State Store — the database path,
   listen addresses, credentials — stay file-only by design.
-- **Reload does not re-read them.** SIGHUP republishes the file document alone,
-  which reverts database-owned settings until restart. Tracked as
-  `archie-core-ju85`; see the ledger above.
+- **Reload re-reads them.** SIGHUP resolves the file document and then runs the
+  same `boot.runtimeConfig` layering boot does, so a reload cannot revert a
+  database-owned setting to its file value. A control plane that cannot answer
+  fails the reload rather than publishing the file's values over the running
+  ones. Workflow execution budgets arrive on a watch rather than in a resource
+  query, so boot records the last published settings and the reload re-applies
+  them from there.
 
 ## Completion criteria
 
