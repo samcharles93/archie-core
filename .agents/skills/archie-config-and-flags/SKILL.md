@@ -9,7 +9,8 @@ Treat configuration as a dataflow, not as a struct inventory. Prove every
 claimed setting has an input, normalization path, composition seam, and runtime
 consumer.
 
-Current evidence date: **2026-09-18**.
+Current evidence date: **2026-09-18** for the matrix below. Entries added later
+carry their own date inline.
 
 Use these status terms exactly:
 
@@ -131,6 +132,27 @@ Do not expose these helper flags as daemon settings.
 | `tools.mcp_servers` | `internal/app/archied` registers daemon-side MCP providers. Empty transport becomes `stdio`; only `stdio` accepted. `url` decoded but unused. | partially-wired |
 | `indexing.index_dir`, `indexing.db_path` | `finalize` derives paths under `work_dir`; no entrypoint constructs `internal/indexing.Manager` (the exported `NewManager` exists but has no production caller). | decoded-but-unwired |
 | `extra` / unknown `conf.d` values | Test/library-only `Loader.Dir` stores untyped data; no core production consumer. | decoded-but-unwired |
+| `[identities.forge].intake`, `.webhook_secret`, `.webhook_addr` | 2026-09-22: these parse because `IdentityConfig` embeds `Forge` (`internal/config/config.go:573`), while every read is the root `[forge]` block (`validate.go`, `defaults.go`, `bootstrap.go`). Wiring them is the intake migration, tracked as `archie-core-1786637497036-275-8838629e`. | partially-wired |
+
+**Three shapes of an unwired field.** All three read as working from the file
+alone, and only the first two are defects - so establish which shape you are
+looking at before reporting one:
+
+1. **not-consumed.** Decoded and normalized, but no production consumer uses the
+   effective value (`memory.provider` and `indexing.*` above; per-identity intake
+   was this shape until 2026-09-22, when the configuration was made to reject it
+   rather than accept it).
+2. **not-projected.** A read exists, but at a layer that does not own the
+   effective copy, so editing the wrong layer does nothing. Direction matters as
+   much as presence: for most `[chat.*]` keys the stored resource outranks the
+   file, so writing a new file value is a no-op once a resource exists. A file
+   key in that position is a **seed**, not the contract.
+3. **deliberately-not-projected.** File-only by design and therefore
+   indistinguishable from a dropped field to an auditor unless the projection
+   says so in a comment. `runtimeChatConfigFrom` reads
+   `Telegram.UpdateCheckCommand`/`UpdateInstallCommand` from `base` rather than
+   from the stored resource, on purpose. Check for that comment before filing a
+   defect.
 
 The default `agent.command = "archie-agent"` is not verified subprocess
 operation. `SubprocessRunner` expects one JSON invocation on stdin and one JSON
