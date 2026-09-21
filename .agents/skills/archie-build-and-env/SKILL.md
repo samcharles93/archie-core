@@ -126,6 +126,18 @@ golangci-lint run ./...
 `task check` is the definitive gate but omits race tests, `task vuln`, and
 `task docker-build`. Its docs step, `docs:check`, verifies committed generated
 data and never renders anything: there is still no documentation build.
+
+Two of its steps check committed artifacts rather than the build, so both fail
+on work that is correct but unstaged, and both read as a broken generator:
+
+- `proto:check` regenerates, then runs `git diff --exit-code -- internal/contracts`
+  and rejects untracked files there. After any `.proto` edit,
+  `git add internal/contracts proto` before the gate. The failure prints the
+  regenerated diff, which looks like generation produced something unexpected.
+- `ui:check` compares `ui/dist` against a fresh build of `ui/src` and fails when
+  they differ. `task check` never rebuilds the bundle: run `task ui` after any
+  `ui/src` change and commit the result with that change.
+
 Run only in an authorized writable worktree. For a read-only ordinary-source
 preview, use `golangci-lint fmt --diff`.
 

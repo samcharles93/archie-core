@@ -50,7 +50,7 @@ rg -n 'FIELD_NAME|external_key|ENV_NAME' \
 | Input path | Current behavior | Status |
 | --- | --- | --- |
 | `archied -config PATH` | Defaults to `$XDG_CONFIG_HOME/archie/config.toml`, or `$HOME/.config/archie/config.toml`; `internal/app/archied/bootstrap.go` builds `configuration.New(log)` and calls `Loader.Resolve`. | production-wired |
-| `archied -config-overlay PATH` | Resolves a file or directory overlay through the same loader (`Loader.Overlay`/`ApplyOverlay`); the dashboard runtime overlay is layered from its own SQLite store. Omitted overlay fields retain base values. | production-wired |
+| `archied -config-overlay PATH` | Resolves a file or directory overlay through the same loader. Omitted overlay fields retain base values. This is the only overlay: the dashboard runtime overlay and its SQLite store were deleted when the control plane took over settings writes. | production-wired |
 | `configuration.Loader.Dir(base, overlay)` | Supports main YAML/TOML plus feature YAML and `conf.d`; no current entrypoint calls it. | test/library-only |
 | `config.Load(path)`, `config.LoadDir(...)` | Removed. The old `internal/config` package-level helpers no longer exist; decoding is `Loader`-based. | not applicable |
 | `config.example.toml` | Load-tested example, not a deployed configuration. | test/library-only |
@@ -60,6 +60,15 @@ rg -n 'FIELD_NAME|external_key|ENV_NAME' \
 Both TOML and YAML decoding are non-strict at the field level. Add explicit
 compatibility and typo tests; never use "the file loaded" as evidence that a
 key took effect.
+
+A registered service client always resolves to a non-empty target, so
+`Services.Get(name).Target != ""` proves nothing. `RegisterService` in
+`internal/config/servicespec.go` supplies the fallback (`127.0.0.1:9090` for
+the State Store, `127.0.0.1:8585` for the Gateway), which means a guard written
+as "only dial when configured" dials always, and a test that sets no target
+reaches for a real process on the developer's machine. Gate on an explicit
+flag or on the dial succeeding, and give a binary its own
+`-<service>-target` flag so tests can point it at a fake.
 
 ## Inventory CLI flags
 
