@@ -61,8 +61,28 @@ func (d Definition) Decode(input []byte) ([]byte, error) {
 	return encoded, nil
 }
 
-func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[string]int64, error) {
+// SeedSkip records a resource ImportConfig could not seed from the file config,
+// and why. It is reported rather than returned as an error: see ImportConfig.
+type SeedSkip struct {
+	Kind string
+	Err  error
+}
+
+// ImportConfig seeds every control-plane resource that has no stored value yet
+// from the file config, and reports the version of every kind it left alone.
+//
+// A seed the resource's own validator refuses is SKIPPED and returned in skipped,
+// not fatal. The setting it would have carried stays file-owned, so the value in
+// effect is still the file's, and the fix is still the file's.
+// docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
+// after migration, settings in TOML are ignored and cannot block State Store
+// startup -- and this import runs on the State Store's startup path. Fail closed
+// belongs to the process that uses the value: boot.runtimeConfig validates the
+// effective document and refuses to start archied with a value it cannot run
+// with, which is what keeps an invalid value from taking effect silently.
+func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[string]int64, []SeedSkip, error) {
 	versions := make(map[string]int64, len(s.ordered))
+	var skipped []SeedSkip
 	for _, definition := range s.ordered {
 		resource, err := s.store.Resource(ctx, definition.Kind)
 		if err == nil {
@@ -70,19 +90,27 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 			continue
 		}
 		if !errors.Is(err, store.ErrResourceNotFound) {
-			return nil, err
+			return nil, nil, err
 		}
 		value, err := definition.seededValue(cfg)
 		if err != nil {
-			return nil, err
+			// Skipped and reported, not fatal: nothing is written, so the kind
+			// stays absent and the file document's value is the one in effect,
+			// while the process that would RUN the value still fails closed on
+			// it (boot.runtimeConfig validates the effective document).
+			// seededValue wraps a seed's encode and validation failures together,
+			// which is why both take this path: the alternative is a second seed
+			// implementation here to tell them apart.
+			skipped = append(skipped, SeedSkip{Kind: definition.Kind, Err: err})
+			continue
 		}
 		resource, err = s.store.PutResource(ctx, store.ResourceWrite{Kind: definition.Kind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + definition.Kind, ExpectedVersion: 0, At: time.Now().UTC()})
 		if err != nil {
-			return nil, fmt.Errorf("seed %s: %w", definition.Kind, err)
+			return nil, nil, fmt.Errorf("seed %s: %w", definition.Kind, err)
 		}
 		versions[definition.Kind] = resource.Version
 	}
-	return versions, nil
+	return versions, skipped, nil
 }
 
 // seededValue is the value the State Store writes for a kind it does not hold

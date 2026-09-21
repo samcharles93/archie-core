@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -74,7 +75,7 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 	resources := store.OpenTest(t)
 	defer resources.Close()
 	server := testServer(t, resources)
-	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
+	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
 	resource, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
@@ -96,7 +97,7 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 	if _, err := resources.PutResource(t.Context(), store.ResourceWrite{Kind: WorkflowDefinitionsKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "override"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
+	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
@@ -114,7 +115,7 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 	resources := store.OpenTest(t)
 	defer resources.Close()
 	server := testServer(t, resources)
-	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
+	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
 	resource, err := resources.Resource(t.Context(), PersonasKind)
@@ -133,7 +134,7 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 	if _, err := resources.PutResource(t.Context(), store.ResourceWrite{Kind: PersonasKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "persona-edit"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
+	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := resources.Resource(t.Context(), PersonasKind)
@@ -178,8 +179,14 @@ func TestRegistryRoutesAndValidatesDefinitions(t *testing.T) {
 	resources := store.OpenTest(t)
 	defer resources.Close()
 	server := testServer(t, resources)
-	if _, err := server.ImportConfig(t.Context(), config.Config{Containers: config.ContainerConfig{PullPolicy: "missing"}}); err != nil {
+	// The image is required, here as in the file document: a seed without one is
+	// skipped rather than stored, and the Command below would then fail on the
+	// missing resource instead of on the pull policy it exists to reject.
+	if _, _, err := server.ImportConfig(t.Context(), config.Config{Containers: config.ContainerConfig{Image: "archie-agent:test", PullPolicy: "missing"}}); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := resources.Resource(t.Context(), ContainerRuntimePoliciesKind); err != nil {
+		t.Fatalf("container runtime policies were not seeded: %v", err)
 	}
 
 	catalog, err := server.Catalog(t.Context(), &pb.CatalogRequest{})
@@ -209,7 +216,7 @@ func TestProviderSeedKeepsReferencesAndNeverResolvedSecrets(t *testing.T) {
 	defer resources.Close()
 	server := testServer(t, resources)
 	cfg := config.Config{Providers: map[string]config.Provider{"openai": {Class: "openai", APIKeyEnv: "OPENAI_API_KEY", APIKey: config.SecretRef{Engine: "env", Key: "OPENAI_API_KEY"}}}}
-	if _, err := server.ImportConfig(context.Background(), cfg); err != nil {
+	if _, _, err := server.ImportConfig(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
 	resource, err := resources.Resource(t.Context(), ProviderSettingsKind)
@@ -235,7 +242,7 @@ func TestHistoryCarriesEveryRevisionWithItsAudit(t *testing.T) {
 	resources := store.OpenTest(t)
 	defer resources.Close()
 	server := testServer(t, resources)
-	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
+	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
 	seeded, err := server.Query(t.Context(), &pb.QueryRequest{Kind: WorkflowExecutionSettingsKind})
@@ -267,5 +274,45 @@ func TestHistoryCarriesEveryRevisionWithItsAudit(t *testing.T) {
 	}
 	if _, err := server.History(t.Context(), &pb.HistoryRequest{Kind: "not-a-resource"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("history for an unknown kind = %v, want NotFound", err)
+	}
+}
+
+// TestImportConfigSkipsASeedItCannotValidate is the reason a bad seed is not
+// fatal. docs/prds/runtime-control-plane.md, "Bootstrap, migration, and
+// recovery": after migration, settings in TOML are ignored and cannot block
+// State Store startup -- and ImportConfig is on that startup path. The value is
+// not stored either, so the setting stays file-owned: the file's value is still
+// the one in effect, and editing config.toml is still the fix. Writing the
+// invalid value instead would hand ownership to the database and leave the
+// operator with a file edit that does nothing.
+func TestImportConfigSkipsASeedItCannotValidate(t *testing.T) {
+	t.Parallel()
+
+	resources := store.OpenTest(t)
+	defer resources.Close()
+	server := testServer(t, resources)
+	// Every other field is filled in the way the loader fills it (Validate
+	// documents that it does not apply defaults), so the malformed glob is the
+	// only seed that can be refused.
+	cfg := validConfigForValidation()
+	cfg.Repos = []config.Repo{{Owner: "acme", Name: "app", TestGlob: "["}}
+
+	versions, skipped, err := server.ImportConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("ImportConfig: %v, want a skipped seed rather than a fatal one", err)
+	}
+	if _, stored := versions[RepositoryPoliciesKind]; stored {
+		t.Error("the resource was seeded, want the invalid seed skipped")
+	}
+	if len(skipped) != 1 || skipped[0].Kind != RepositoryPoliciesKind || skipped[0].Err == nil {
+		t.Fatalf("skipped = %+v, want the repository policies and the reason", skipped)
+	}
+	if _, err := resources.Resource(t.Context(), RepositoryPoliciesKind); !errors.Is(err, store.ErrResourceNotFound) {
+		t.Errorf("repository policies Resource = %v, want ErrResourceNotFound: an invalid seed must not be stored", err)
+	}
+	// Kinds that are fine are still seeded: one skipped kind does not abandon
+	// the rest of the migration.
+	if _, err := resources.Resource(t.Context(), WorkflowDefinitionsKind); err != nil {
+		t.Errorf("workflow definitions: %v, want them seeded alongside the skipped kind", err)
 	}
 }

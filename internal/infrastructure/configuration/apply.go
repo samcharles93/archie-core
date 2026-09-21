@@ -30,23 +30,30 @@ func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
 	return applyOverlayMapping(cfg, overrides)
 }
 
-// applyOverlayFile layers the overlay file at path over cfg, with the same
-// field-level precedence ApplyOverlayValues gives a map overlay. The file
-// overlay path needs it for the reason recorded on foldOverrides: decoding an
-// overlay into cfg replaces a map-valued entry wholesale, so a file naming
-// only services.state.target cleared the target_token the base file set. Both
-// overlay paths go through the fold, so neither can drift from the other.
-func applyOverlayFile(path string, cfg *config.Config) error {
-	doc, err := decodeFileMapping(path)
+// applyOverlayFile layers the overlay file at path over target, with the same
+// field-level precedence ApplyOverlayValues gives a map overlay, and reports the
+// file's keys that nothing consumes. target is whatever the overlay addresses:
+// the whole config for a main file, one sub-struct for a feature file.
+//
+// Both overlay forms go through it -- the single overlay file, and every file an
+// overlay directory contributes -- so neither form can lose the fields of a
+// map-valued entry it only partly addresses. Decoding an overlay into target
+// directly replaces such an entry wholesale, which is how an overlay naming only
+// services.state.target cleared the target_token the base file set.
+func applyOverlayFile(path string, target any) ([]string, error) {
+	mapping, err := decodeFileMapping(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return applyOverlayMapping(cfg, doc)
+	if err := applyOverlayMapping(target, mapping); err != nil {
+		return nil, err
+	}
+	return overlayFileKeys(path, mapping, structTypeOf(target))
 }
 
 // applyOverlayMapping is the decode both overlay paths share: the fields each
 // map-valued entry the overlay does not name are folded forward out of the
-// entry cfg already holds, and the completed mapping is then decoded over cfg.
+// entry target already holds, and the completed mapping is then decoded over it.
 //
 // yaml gives a struct field the field-level treatment ApplyOverlayValues
 // promises, but a map VALUE is decoded into a fresh zero value: an entry the
@@ -55,8 +62,8 @@ func applyOverlayFile(path string, cfg *config.Config) error {
 // target_token. Folding here, once, is what makes the promise hold for every
 // map of structs (services, image.hosted, image.local, providers) instead of
 // at each field's reader.
-func applyOverlayMapping(cfg *config.Config, doc map[string]any) error {
-	folded, err := foldOverrides(reflect.ValueOf(cfg), doc)
+func applyOverlayMapping(target any, doc map[string]any) error {
+	folded, err := foldOverrides(reflect.ValueOf(target), doc)
 	if err != nil {
 		return err
 	}
@@ -64,10 +71,20 @@ func applyOverlayMapping(cfg *config.Config, doc map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("%w: encoding config overlay: %w", ErrUnreadable, err)
 	}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	if err := yaml.Unmarshal(data, target); err != nil {
 		return fmt.Errorf("%w: parsing config overlay: %w", ErrUnreadable, err)
 	}
 	return nil
+}
+
+// structTypeOf returns the struct type target points at, so the fold and the key
+// report can inspect it without an instance.
+func structTypeOf(target any) reflect.Type {
+	t := reflect.TypeOf(target)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
 }
 
 // foldOverrides returns doc with the fields its map entries omit carried
@@ -182,7 +199,16 @@ func mergeMapping(base, override map[string]any) map[string]any {
 // yamlField returns the field of struct v that the decode reads key into. The
 // yaml tag is the one consulted because the decode below is yaml's.
 func yamlField(v reflect.Value, key string) (reflect.Value, bool) {
-	t := v.Type()
+	field, ok := yamlFieldOf(v.Type(), key)
+	if !ok {
+		return reflect.Value{}, false
+	}
+	return v.FieldByIndex(field.Index), true
+}
+
+// yamlFieldOf is yamlField without a value: the overlay key report walks a raw
+// mapping against the target's type before anything is decoded into it.
+func yamlFieldOf(t reflect.Type, key string) (reflect.StructField, bool) {
 	for i := range t.NumField() {
 		field := t.Field(i)
 		if field.PkgPath != "" {
@@ -196,8 +222,8 @@ func yamlField(v reflect.Value, key string) (reflect.Value, bool) {
 			name = strings.ToLower(field.Name)
 		}
 		if name == key {
-			return v.Field(i), true
+			return field, true
 		}
 	}
-	return reflect.Value{}, false
+	return reflect.StructField{}, false
 }

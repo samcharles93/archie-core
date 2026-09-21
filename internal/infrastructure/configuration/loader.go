@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -175,11 +176,8 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	if overlayPath != "" {
 		// The overlay is folded over the base config rather than decoded into
 		// it: a decode replaces a map-valued entry wholesale, clearing the
-		// fields of that entry the overlay does not name (applyFileOverlay).
-		if err := applyOverlayFile(overlayPath, &doc.Config); err != nil {
-			return nil, err
-		}
-		cfgKeys, err = overlayFileKeys(overlayPath)
+		// fields of that entry the overlay does not name (applyOverlayFile).
+		cfgKeys, err = applyOverlayFile(overlayPath, &doc.Config)
 		if err != nil {
 			return nil, err
 		}
@@ -194,13 +192,69 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	return l.finalize(doc, validateBootstrap)
 }
 
-// overlayFileKeys reports the top-level keys of an overlay file that the
-// config decode does not consume. The file itself reaches the config through
-// applyOverlayFile, which needs its raw mapping; this typed decode exists only
-// for the key report, which only TOML's decoder can produce.
-func overlayFileKeys(path string) ([]string, error) {
-	var scratch config.Config
-	return decodeConfigFileKeys(path, &scratch)
+// overlayFileKeys reports the keys of an overlay file that nothing consumes. It
+// has two sources, because the file's own decode and the fold's apply decode do
+// not match keys the same way: TOML accepts a key that differs only in case,
+// while the yaml decode the fold uses does not. A key only the file's decode
+// matches would therefore be consumed by the report below and dropped in
+// silence by the apply, so the apply's own view of the mapping is unioned in.
+//
+// The second decode here is deliberate: it is what carries TOML's Undecoded()
+// view of the file, which the raw mapping cannot report (it consumes every key).
+func overlayFileKeys(path string, mapping map[string]any, target reflect.Type) ([]string, error) {
+	decoded, err := decodeConfigFileKeys(path, reflect.New(target).Interface())
+	if err != nil {
+		return nil, err
+	}
+	return append(decoded, unmatchableKeys(mapping, target)...), nil
+}
+
+// unmatchableKeys returns the dotted paths of the keys in mapping that the fold's
+// yaml decode cannot match to a field of target. It descends the way foldOverrides
+// does -- through structs and through string-keyed maps of structs -- so it sees
+// the same keys the apply does. A slice of tables is not descended: the yaml
+// decode replaces it wholesale, so anything inside it is a value, not a key.
+func unmatchableKeys(mapping map[string]any, target reflect.Type) []string {
+	var out []string
+	for key, value := range mapping {
+		field, ok := yamlFieldOf(target, key)
+		if !ok {
+			out = append(out, key)
+			continue
+		}
+		sub, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch field.Type.Kind() {
+		case reflect.Struct:
+			out = append(out, prefixed(key, unmatchableKeys(sub, field.Type))...)
+		case reflect.Map:
+			entry := field.Type.Elem()
+			for entry.Kind() == reflect.Pointer {
+				entry = entry.Elem()
+			}
+			if entry.Kind() != reflect.Struct || field.Type.Key().Kind() != reflect.String {
+				continue
+			}
+			for entryName, entryValue := range sub {
+				entryMapping, ok := entryValue.(map[string]any)
+				if !ok {
+					continue
+				}
+				out = append(out, prefixed(key+"."+entryName, unmatchableKeys(entryMapping, entry))...)
+			}
+		}
+	}
+	return out
+}
+
+// prefixed qualifies a nested key report with the path that reached it.
+func prefixed(prefix string, keys []string) []string {
+	for i, key := range keys {
+		keys[i] = prefix + "." + key
+	}
+	return keys
 }
 
 // unknownKeys returns the keys present in both a and b: one config file
@@ -303,7 +357,7 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 
 	switch path, isYAMLFile, ok := files.main(); {
 	case ok:
-		if err := l.decodeMain(doc, path, isYAMLFile); err != nil {
+		if err := l.decodeMain(doc, path, isYAMLFile, layer); err != nil {
 			return err
 		}
 		doc.Provenance.record(Origin{Path: path, Role: RoleMain, Layer: layer})
@@ -313,7 +367,7 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 
 	for _, feature := range files.sortedFeatures() {
 		path := files.features[feature]
-		if err := decodeFeature(&doc.Config, feature, path); err != nil {
+		if err := decodeFeature(&doc.Config, feature, path, layer); err != nil {
 			return err
 		}
 		doc.Provenance.record(Origin{Path: path, Role: RoleFeature, Layer: layer, Feature: feature})
@@ -330,8 +384,20 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 	return nil
 }
 
-// decodeMain decodes the daemon-level file in whichever format it uses.
-func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool) error {
+// decodeMain decodes the daemon-level file in whichever format it uses. An
+// overlay layer's file is FOLDED over what the base layer decoded, the same way
+// a single overlay file folds over its base -- otherwise a map-valued entry it
+// only partly addresses would clear the fields it does not name, which is the
+// archie-core-e2e2 failure on the directory form of the same flag.
+func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool, layer Layer) error {
+	if layer == LayerOverlay {
+		cfgKeys, err := applyOverlayFile(path, &doc.Config)
+		if err != nil {
+			return err
+		}
+		doc.UnknownKeys = append(doc.UnknownKeys, cfgKeys...)
+		return decodeSchedulingFile(path, &doc.Scheduling)
+	}
 	if isYAMLFile {
 		if err := decodeYAML(path, &doc.Config); err != nil {
 			return err

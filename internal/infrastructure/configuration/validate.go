@@ -86,10 +86,13 @@ func validate(cfg *config.Config) error {
 // TOML value in one of them must not be able to fail a process's startup
 // (docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
 // after migration, settings in TOML are ignored and cannot block State Store
-// startup). archie-state-store resolves its file config and opens the store
-// without ever layering a database resource over it (state_store.go), so a
-// check left here is a check that can still block it. Those checks live in
-// validateDatabaseOwned and run on the effective document instead.
+// startup). archie-state-store resolves its file config and seeds the
+// control-plane resources from that same document on a fresh database, and a
+// seed it cannot validate is skipped rather than fatal
+// (controlplane.Server.ImportConfig), so a check left here is a check that can
+// still block it. Those checks live in validateDatabaseOwned and run on the
+// effective document instead -- which is where the process that uses the value
+// refuses it, and where the operator's fix is the file again.
 func validateBootstrap(cfg *config.Config) error {
 	if err := validateForgeIntake(cfg); err != nil {
 		return err
@@ -227,13 +230,23 @@ func validatePollInterval(cfg *config.Config) error {
 // labels) was configured while the actual trigger-match label was left
 // blank.
 func validateDispatch(cfg *config.Config) error {
-	if !oneOf(cfg.Dispatch.Trigger, dispatchTriggers) {
+	if !DispatchTriggerValid(cfg.Dispatch.Trigger) {
 		return fmt.Errorf("%w: dispatch.trigger %q (want %s)", ErrInvalidInput, cfg.Dispatch.Trigger, list(dispatchTriggers))
 	}
 	if (cfg.Dispatch.Trigger == dispatchTriggerLabel || cfg.Dispatch.Trigger == dispatchTriggerEither) && cfg.Label == "" {
 		return fmt.Errorf("%w: label is required when dispatch.trigger is %q (an empty label matches every open issue)", ErrInvalidInput, cfg.Dispatch.Trigger)
 	}
 	return nil
+}
+
+// DispatchTriggerValid reports whether trigger names a discovery rule the daemon
+// can poll with. It is exported because the scheduling-policy resource validator
+// (internal/app/controlplane) judges the same field: that resource is seeded
+// from cfg.Dispatch and replaces it wholesale once the database owns it, so a
+// value this package rejects must not be storable, and a value it accepts must
+// not be rejected there. One definition, both layers.
+func DispatchTriggerValid(trigger string) bool {
+	return oneOf(trigger, dispatchTriggers)
 }
 
 // validateForgeIntake checks the forge intake mode and that webhook intake has
@@ -332,9 +345,12 @@ func validateSingleIdentity(cfg *config.Config) error {
 }
 
 // validateRepositoryContents judges the repositories themselves, whichever list
-// they appear in. Repository policies are a control-plane resource seeded from
-// these, so the contents are verified on the effective document -- the one the
-// database's list has already replaced the file's copy in.
+// they appear in. The shared list is the decision the database's copy replaces,
+// so it is verified on the effective document -- after that replacement, which is
+// the only point the value being judged is the one a process will use. The
+// per-identity lists are verified there for a different reason: no resource
+// carries them, and the daemon is the only process that reads them
+// (docs/architecture/configuration.md's IdentityConfig note).
 func validateRepositoryContents(cfg *config.Config) error {
 	if len(cfg.Identities) == 0 {
 		return validateRepos(cfg.Repos)
@@ -352,11 +368,24 @@ func validateRepos(repos []config.Repo) error {
 		if r.Owner == "" || r.Name == "" {
 			return fmt.Errorf("%w: repos[%d] needs owner and name", ErrInvalidInput, i)
 		}
-		if glob := r.ResolvedTestGlob(); glob != "" {
-			if _, err := filepath.Match(glob, ""); err != nil {
-				return fmt.Errorf("%w: repos[%d] test_glob %q: %w", ErrInvalidInput, i, glob, err)
-			}
+		if err := ValidateTestGlob(r.ResolvedTestGlob()); err != nil {
+			return fmt.Errorf("%w: repos[%d] %w", ErrInvalidInput, i, err)
 		}
+	}
+	return nil
+}
+
+// ValidateTestGlob reports whether glob is a pattern the test-protection gate can
+// compile. It is exported because the repository-policies resource validator
+// (internal/app/controlplane) judges the same field: that resource is seeded from
+// the file's repositories and replaces them wholesale, and a pattern the gate
+// cannot compile is a value that must not be storable either.
+func ValidateTestGlob(glob string) error {
+	if glob == "" {
+		return nil
+	}
+	if _, err := filepath.Match(glob, ""); err != nil {
+		return fmt.Errorf("test_glob %q: %w", glob, err)
 	}
 	return nil
 }

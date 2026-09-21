@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
 const (
@@ -56,6 +57,14 @@ func validateRepositories(input []byte) error {
 				return fmt.Errorf("duplicate repository %q", repo.FullName())
 			}
 			seen[repo.FullName()] = struct{}{}
+			// The repository-policies resource replaces the file's list, so the
+			// rules that judge the file's list have to hold here too. They come
+			// from the configuration package rather than being restated: a
+			// resource that accepts what configuration.Validate rejects becomes a
+			// stored value the operator cannot clear by editing config.toml.
+			if err := configuration.ValidateTestGlob(repo.ResolvedTestGlob()); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -72,6 +81,12 @@ func validateScheduling(input []byte) error {
 				return fmt.Errorf("poll_interval must be a non-negative duration")
 			}
 		}
+		// Same reason as the repository glob above: RuntimeConfig replaces
+		// cfg.Dispatch from this resource, and the daemon refuses to start with a
+		// trigger it does not know.
+		if !configuration.DispatchTriggerValid(policy.Dispatch.Trigger) {
+			return fmt.Errorf("dispatch.trigger %q is not a discovery rule the daemon can poll with", policy.Dispatch.Trigger)
+		}
 		return nil
 	})
 }
@@ -83,6 +98,11 @@ func validateContainers(input []byte) error {
 		}
 		if settings.PullPolicy != "" && settings.PullPolicy != "missing" && settings.PullPolicy != "always" {
 			return fmt.Errorf("pull_policy must be missing or always")
+		}
+		// The image is required for autonomous workflow workers; the same rule
+		// holds for the stored policies that replace the file's [containers].
+		if strings.TrimSpace(settings.Image) == "" {
+			return fmt.Errorf("container image is required for autonomous workflow workers")
 		}
 		return nil
 	})

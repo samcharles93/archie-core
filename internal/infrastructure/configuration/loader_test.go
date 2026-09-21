@@ -241,10 +241,10 @@ func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
 // settings the control plane owns are layered over it later; a stale TOML value
 // in one of those must not fail the load (docs/prds/runtime-control-plane.md,
 // "Bootstrap, migration, and recovery"). So a check over a database-owned
-// setting is asserted on the effective document instead -- the same document
-// boot.runtimeConfig validates after the merge. Each case asserts both halves
-// it applies to, so a check that quietly disappeared fails the case rather than
-// passing it.
+// setting is asserted with Validate instead -- what boot.runtimeConfig runs over
+// the document a process will use, and the checks the loader no longer applies.
+// Each case asserts both halves it applies to, so a check that quietly
+// disappeared fails the case rather than passing it.
 func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -309,7 +309,7 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 				t.Fatalf("File: %v (a database-owned value must not fail the load)", err)
 			}
 			if err := Validate(&doc.Config); err == nil {
-				t.Fatal("Validate(effective document) = nil, want the value rejected there")
+				t.Fatal("Validate = nil, want the value rejected there")
 			}
 		})
 	}
@@ -537,11 +537,10 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 }
 
 // TestLoadRejectsNegativeContainerVolumeTTL: containers are a control-plane
-// resource (container-runtime-policies), so a negative volume_ttl is judged on
-// the effective document rather than on the file the load path reads -- a stale
-// TOML value in a database-owned setting must not fail a process's startup. The
-// second half of the assertion is what keeps dropping the check from passing
-// this test.
+// resource (container-runtime-policies), so a negative volume_ttl is judged by
+// Validate rather than by the load path -- a stale TOML value in a database-owned
+// setting must not fail a process's startup. The second half of the assertion is
+// what keeps dropping the check from passing this test.
 func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
@@ -557,7 +556,7 @@ func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 		t.Fatalf("File: %v (a database-owned value must not fail the load)", err)
 	}
 	if err := Validate(&doc.Config); err == nil {
-		t.Fatal("Validate(effective document) accepted a negative containers.volume_ttl")
+		t.Fatal("Validate accepted a negative containers.volume_ttl")
 	}
 }
 
@@ -635,15 +634,16 @@ func TestOverlay(t *testing.T) {
 // (TestApplyOverlayValuesPreservesOmittedNestedFields).
 //
 // It goes through Loader.Resolve, the production entry point, because the
-// hazard is a property of how the overlay file is applied, not of any one
-// decode helper: Loader.overlayFile decodes the overlay into the very config
-// the base file produced, and a map-valued entry is replaced wholesale, so
-// every field of that entry the overlay does not name is cleared.
+// hazard was a property of how the overlay file is applied, not of any one
+// decode helper: Loader.overlayFile decoded the overlay into the very config
+// the base file produced, and a map-valued entry is replaced wholesale, so every
+// field of that entry the overlay does not name was cleared.
 //
 // That is archie-core-e2e2 on a user-visible path. deployments/dev.toml is the
 // documented -config-overlay argument and sets [services.state] target/listen,
 // while the installed config.toml is where [services.state].target_token lives:
-// the overlay silently drops the token.
+// the overlay silently dropped the token. The directory form of the same flag is
+// covered by TestDirOverlayPreservesOmittedMapEntryFields.
 func TestResolveFileOverlayPreservesOmittedMapEntryFields(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -757,18 +757,21 @@ func TestResolveFileOverlayPreservesOmittedMapEntryFields(t *testing.T) {
 // TestLoadAcceptsStaleDatabaseOwnedValues is the bootstrap half of the layer
 // split (archie-core-i3qm). docs/prds/runtime-control-plane.md,
 // "Bootstrap, migration, and recovery": after migration, settings in TOML are
-// ignored and cannot block State Store startup. archie-state-store never layers
-// a database resource over its file document -- state_store.go:78 resolves the
-// file and goes straight to opening the store -- so a stale value in a setting
-// the control plane owns must not fail the load.
+// ignored and cannot block State Store startup. The other half is the boot
+// itself -- archie-state-store seeds these same settings into the control plane
+// on a fresh database, and a seed it cannot validate is skipped rather than fatal
+// (TestStateStoreBootsWithStaleDatabaseOwnedValues boots the process for that).
 //
 // Each case is a setting with a control-plane resource behind it, seeded from
 // that field by controlplane.Server.ImportConfig: providers
 // (provider-settings), poll_interval and dispatch (scheduling-policy),
 // containers (container-runtime-policies), repositories
-// (repository-policies). The second half of the assertion is what keeps this
-// from being a weaker gate: the effective document, judged after the control
-// plane has layered its own value in, must still reject the value.
+// (repository-policies). The second assertion is what keeps this from being a
+// weaker gate: the value is still rejected by Validate, which is what the daemon
+// and the Gateway run over the document a process will actually use. Nothing in
+// this package layers that document, so the check here is the file document on
+// its own -- the test is that the loader judges no database-owned field, not
+// that the value is harmless.
 func TestLoadAcceptsStaleDatabaseOwnedValues(t *testing.T) {
 	tests := []struct {
 		name string
@@ -808,7 +811,7 @@ func TestLoadAcceptsStaleDatabaseOwnedValues(t *testing.T) {
 				t.Fatalf("File: %v (a stale database-owned value must not fail the load)", err)
 			}
 			if err := Validate(&doc.Config); err == nil {
-				t.Fatal("Validate(effective document) = nil, want the control plane's own layer to reject it")
+				t.Fatal("Validate = nil, want the control plane's own layer to reject it")
 			}
 		})
 	}
@@ -817,6 +820,82 @@ func TestLoadAcceptsStaleDatabaseOwnedValues(t *testing.T) {
 // fileConfigPrefix is the smallest document the load path accepts on its own,
 // so each case above adds one stale setting and nothing else.
 const fileConfigPrefix = "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n"
+
+// TestDirOverlayPreservesOmittedMapEntryFields is the directory form of the
+// same guarantee TestResolveFileOverlayPreservesOmittedMapEntryFields pins.
+// -config-overlay accepts a directory as well as a file, Loader.Dir documents
+// "the same field-level precedence as [Loader.Overlay]", and Loader.Resolve
+// routes a directory source to Dir -- so a map-valued entry the overlay only
+// partly addresses must keep the fields it does not name on both forms of the
+// flag, including when the entry arrives through a feature file.
+func TestDirOverlayPreservesOmittedMapEntryFields(t *testing.T) {
+	tests := []struct {
+		name         string
+		baseFiles    map[string]string
+		overlayFiles map[string]string
+		check        func(t *testing.T, cfg config.Config)
+	}{
+		{
+			name: "main config keeps the token it does not name",
+			baseFiles: map[string]string{
+				"config.yaml": "bot_user: widget\nservices:\n  state:\n    target: 127.0.0.1:9090\n    target_token: secret\n",
+			},
+			overlayFiles: map[string]string{
+				"config.yaml": "services:\n  state:\n    target: 10.0.0.5:9090\n",
+			},
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				got := cfg.Services[config.ServiceNameState]
+				if got.Target != "10.0.0.5:9090" {
+					t.Errorf("services.state.target = %q, want the overlay's 10.0.0.5:9090", got.Target)
+				}
+				if got.TargetToken != "secret" {
+					t.Errorf("services.state.target_token = %q, want the base's secret: a directory overlay must not clear a field it does not name", got.TargetToken)
+				}
+			},
+		},
+		{
+			name: "feature file keeps the fields it does not name",
+			baseFiles: map[string]string{
+				"config.yaml":        "bot_user: widget\n",
+				"config.models.yaml": "providers:\n  anthropic:\n    class: anthropic\n    api_key_env: ANTHROPIC_API_KEY\n",
+			},
+			overlayFiles: map[string]string{
+				"config.models.yaml": "providers:\n  anthropic:\n    base_url: https://proxy.example\n",
+			},
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				got := cfg.Providers["anthropic"]
+				want := config.Provider{
+					Class:     "anthropic",
+					APIKeyEnv: "ANTHROPIC_API_KEY",
+					BaseURL:   "https://proxy.example",
+				}
+				if got != want {
+					t.Errorf("providers.anthropic = %+v, want %+v", got, want)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseDir, overlayDir := tmpConfigDir(t), tmpConfigDir(t)
+			for name, content := range tt.baseFiles {
+				writeFile(t, baseDir, name, content)
+			}
+			for name, content := range tt.overlayFiles {
+				writeFile(t, overlayDir, name, content)
+			}
+
+			doc, err := New(nil).Resolve(baseDir, overlayDir)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			tt.check(t, doc.Config)
+		})
+	}
+}
 
 func TestLoadBytesDoesNotExist(t *testing.T) {
 	_, err := loadBytes(nil)

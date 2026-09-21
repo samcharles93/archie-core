@@ -106,9 +106,20 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err != nil {
 		return err
 	}
-	versions, err := control.ImportConfig(ctx, b.cfg)
+	versions, skipped, err := control.ImportConfig(ctx, b.cfg)
 	if err != nil {
 		return fmt.Errorf("import control-plane resources: %w", err)
+	}
+	for _, skip := range skipped {
+		// Reported, not fatal: a stale TOML value in a setting the database owns
+		// must not stop this process from starting
+		// (docs/prds/runtime-control-plane.md, "Bootstrap, migration, and
+		// recovery"), and the resource stays absent, so the file's value is
+		// still the one in effect. Whether it may RUN is decided where it is
+		// used: boot.runtimeConfig validates the effective document and refuses
+		// to start archied or the Gateway with it.
+		b.log.Error("control-plane resource not seeded; the file config's value stays in effect",
+			"kind", skip.Kind, "err", skip.Err)
 	}
 	if err := migrateLegacySchedules(ctx, control, b.cfg.DBPath, versions[controlplane.SchedulesKind]); err != nil {
 		return fmt.Errorf("migrate schedules: %w", err)
