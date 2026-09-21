@@ -106,10 +106,11 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err != nil {
 		return err
 	}
-	versions, err := control.ImportConfig(ctx, b.cfg)
+	versions, skipped, err := control.ImportConfig(ctx, b.cfg)
 	if err != nil {
 		return fmt.Errorf("import control-plane resources: %w", err)
 	}
+	b.reportUnseededResources(skipped)
 	if err := migrateLegacySchedules(ctx, control, b.cfg.DBPath, versions[controlplane.SchedulesKind]); err != nil {
 		return fmt.Errorf("migrate schedules: %w", err)
 	}
@@ -140,6 +141,29 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	deps := b.stateStoreDeps(grants)
 	deps.ControlPlane = control
 	return serveStateStore(ctx, listener, deps, opts)
+}
+
+// reportUnseededResources logs every kind ImportConfig could not seed.
+//
+// Reported, not fatal: a stale TOML value in a setting the database owns must
+// not stop this process from starting (docs/prds/runtime-control-plane.md,
+// "Bootstrap, migration, and recovery"). The kind stays ABSENT rather than
+// half-written, so the file document's value is the one in effect for every
+// reader -- the layering leaves a kind with no stored value alone
+// (controlplane.resourceReader) -- and the operator's fix is still the file.
+// Whether the value may RUN is decided where it is used: boot.runtimeConfig
+// validates the effective document and refuses to start archied or the Gateway
+// with one it cannot run. The seed is retried on this process's next start, so
+// a corrected config.toml takes effect when archie-state-store restarts.
+//
+// It is a method rather than a loop in RunStateStore because the boot sequence
+// is at its complexity budget: the branch belongs to the report's own policy,
+// not to the sequence that triggers it.
+func (b *boot) reportUnseededResources(skipped []controlplane.SeedSkip) {
+	for _, skip := range skipped {
+		b.log.Error("control-plane resource not seeded; the kind stays absent and the file's value is the one in effect",
+			"kind", skip.Kind, "err", skip.Err)
+	}
 }
 
 // openStateStoreControlPlane builds the State Store's control plane server: the

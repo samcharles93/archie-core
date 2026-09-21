@@ -37,9 +37,23 @@ var (
 	memoryEngines    = []string{memoryEngineBuiltin}
 )
 
-// Validate runs the same checks Loader applies before accepting a config,
-// against a config.Config value already built in memory -- e.g. by archied
-// setup, before it has written anything to disk.
+// Validate judges a configuration a process will run with -- every check that
+// can reject one -- against a config.Config value already built in memory, e.g.
+// by archied setup before it has written anything to disk. It is a superset of
+// what [Loader] applies to a file (validateBootstrap): a check over a setting
+// the control plane owns belongs here and not there, so that a stale TOML value
+// cannot fail a process's startup.
+//
+// It judges an EFFECTIVE document: the bootstrap file with every setting the
+// control plane owns layered over it. That layering happens at exactly one
+// place, boot.runtimeConfig (internal/app/archied/control_plane.go), which runs
+// this afterwards; the daemon and the Gateway both go through it, and the
+// readiness config probe re-runs it against the running value. A database value
+// that will not validate therefore stops the process rather than starting it
+// degraded.
+//
+// A plain file document is judged by validateBootstrap instead: see the split
+// there for why the loader must not apply this to it.
 //
 // Like validate, it does not apply defaults. Several checks (dispatch.trigger,
 // forge.type) only pass once a default has been filled
@@ -58,29 +72,35 @@ func Validate(cfg *config.Config) error {
 // validate reports the first problem that would stop the daemon running.
 // It does not modify cfg -- run applyDefaults first.
 func validate(cfg *config.Config) error {
-	if err := validateDispatch(cfg); err != nil {
+	if err := validateBootstrap(cfg); err != nil {
 		return err
 	}
+	return validateDatabaseOwned(cfg)
+}
+
+// validateBootstrap reports the first problem in the settings a bootstrap
+// document still owns: the file config a process reads before it can reach the
+// State Store. [Loader] applies this to every file source.
+//
+// It deliberately omits the settings the control plane stores, because a stale
+// TOML value in one of them must not be able to fail a process's startup
+// (docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
+// after migration, settings in TOML are ignored and cannot block State Store
+// startup). archie-state-store resolves its file config and seeds the
+// control-plane resources from that same document on a fresh database, and a
+// seed it cannot validate is skipped rather than fatal
+// (controlplane.Server.ImportConfig), so a check left here is a check that can
+// still block it. Those checks live in validateDatabaseOwned and run on the
+// effective document instead -- which is where the process that uses the value
+// refuses it, and where the operator's fix is the file again.
+func validateBootstrap(cfg *config.Config) error {
 	if err := validateForgeIntake(cfg); err != nil {
 		return err
 	}
-	if err := validateProviders(cfg.Providers); err != nil {
-		return err
-	}
-	if len(cfg.Identities) > 0 {
-		if err := validateIdentities(cfg.Identities); err != nil {
-			return err
-		}
-	} else if err := validateSingleIdentity(cfg); err != nil {
-		return err
-	}
-	if err := validatePollInterval(cfg); err != nil {
+	if err := validateIdentityStructure(cfg); err != nil {
 		return err
 	}
 	if err := validateNATS(cfg); err != nil {
-		return err
-	}
-	if err := validateContainers(cfg); err != nil {
 		return err
 	}
 	if err := validateMemory(cfg); err != nil {
@@ -90,6 +110,30 @@ func validate(cfg *config.Config) error {
 		return err
 	}
 	return validateCapture(cfg)
+}
+
+// validateDatabaseOwned reports the first problem in a setting the control
+// plane owns. Each check below judges a field that a control-plane resource is
+// seeded from and replaces wholesale: providers (provider-settings),
+// poll_interval and dispatch (scheduling-policy), containers
+// (container-runtime-policies), and the repository lists
+// (repository-policies). It runs on the effective document, after that
+// replacement, which is the only point at which the value being judged is the
+// value a process will use.
+func validateDatabaseOwned(cfg *config.Config) error {
+	if err := validateDispatch(cfg); err != nil {
+		return err
+	}
+	if err := validateProviders(cfg.Providers); err != nil {
+		return err
+	}
+	if err := validatePollInterval(cfg); err != nil {
+		return err
+	}
+	if err := validateContainers(cfg); err != nil {
+		return err
+	}
+	return validateRepositoryContents(cfg)
 }
 
 // validateImage rejects an enabled hosted provider with no class or no
@@ -186,13 +230,23 @@ func validatePollInterval(cfg *config.Config) error {
 // labels) was configured while the actual trigger-match label was left
 // blank.
 func validateDispatch(cfg *config.Config) error {
-	if !oneOf(cfg.Dispatch.Trigger, dispatchTriggers) {
+	if !DispatchTriggerValid(cfg.Dispatch.Trigger) {
 		return fmt.Errorf("%w: dispatch.trigger %q (want %s)", ErrInvalidInput, cfg.Dispatch.Trigger, list(dispatchTriggers))
 	}
 	if (cfg.Dispatch.Trigger == dispatchTriggerLabel || cfg.Dispatch.Trigger == dispatchTriggerEither) && cfg.Label == "" {
 		return fmt.Errorf("%w: label is required when dispatch.trigger is %q (an empty label matches every open issue)", ErrInvalidInput, cfg.Dispatch.Trigger)
 	}
 	return nil
+}
+
+// DispatchTriggerValid reports whether trigger names a discovery rule the daemon
+// can poll with. It is exported because the scheduling-policy resource validator
+// (internal/app/controlplane) judges the same field: that resource is seeded
+// from cfg.Dispatch and replaces it wholesale once the database owns it, so a
+// value this package rejects must not be storable, and a value it accepts must
+// not be rejected there. One definition, both layers.
+func DispatchTriggerValid(trigger string) bool {
+	return oneOf(trigger, dispatchTriggers)
 }
 
 // validateForgeIntake checks the forge intake mode and that webhook intake has
@@ -237,6 +291,18 @@ func validateProviders(providers map[string]config.Provider) error {
 	return nil
 }
 
+// validateIdentityStructure judges the shape of the identity definitions: the
+// fields a process needs to know which identities exist and which credentials
+// each one commits and calls with. The repository lists inside them are judged
+// by validateRepositoryContents, because repositories are a control-plane
+// resource that replaces the file's list after the merge.
+func validateIdentityStructure(cfg *config.Config) error {
+	if len(cfg.Identities) == 0 {
+		return validateSingleIdentity(cfg)
+	}
+	return validateIdentities(cfg.Identities)
+}
+
 func validateIdentities(identities []config.IdentityConfig) error {
 	for i, id := range identities {
 		if id.Name == "" {
@@ -253,9 +319,6 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		}
 		if !ForgeDisabled(id.Forge.Type) && id.Forge.Token == (config.SecretRef{}) {
 			return fmt.Errorf("%w: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", ErrInvalidInput, i)
-		}
-		if err := validateRepos(id.Repos); err != nil {
-			return fmt.Errorf("identities[%d]: %w", i, err)
 		}
 	}
 	return nil
@@ -278,19 +341,62 @@ func validateSingleIdentity(cfg *config.Config) error {
 	if !oneOf(cfg.Forge.Type, forgeTypes) {
 		return fmt.Errorf("%w: forge.type %q (want %s)", ErrInvalidInput, cfg.Forge.Type, list(forgeTypes))
 	}
-	return validateRepos(cfg.Repos)
+	return nil
 }
 
-func validateRepos(repos []config.Repo) error {
+// validateRepositoryContents judges the repositories themselves, whichever list
+// they appear in. The shared list is the decision the database's copy replaces,
+// so it is verified on the effective document -- after that replacement, which is
+// the only point the value being judged is the one a process will use. The
+// per-identity lists are verified there for a different reason: no resource
+// carries them, and the daemon is the only process that reads them
+// (docs/architecture/configuration.md's IdentityConfig note).
+func validateRepositoryContents(cfg *config.Config) error {
+	if len(cfg.Identities) == 0 {
+		return ValidateRepositories(cfg.Repos)
+	}
+	for i, id := range cfg.Identities {
+		if err := ValidateRepositories(id.Repos); err != nil {
+			return fmt.Errorf("identities[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// ValidateRepositories judges a repository list: owner and name present, no
+// duplicate entries, and a test glob the gate can compile. It is exported
+// because the repository-policies resource validator (internal/app/controlplane)
+// judges the same list -- that resource is seeded from these and replaces them
+// wholesale, so the two layers must not disagree about which lists are valid, in
+// either direction: a list one layer accepts and the other refuses is a config
+// that boots file-side and stores nowhere, or a stored value the daemon then
+// refuses to start with.
+func ValidateRepositories(repos []config.Repo) error {
+	seen := make(map[string]struct{}, len(repos))
 	for i, r := range repos {
 		if r.Owner == "" || r.Name == "" {
 			return fmt.Errorf("%w: repos[%d] needs owner and name", ErrInvalidInput, i)
 		}
-		if glob := r.ResolvedTestGlob(); glob != "" {
-			if _, err := filepath.Match(glob, ""); err != nil {
-				return fmt.Errorf("%w: repos[%d] test_glob %q: %w", ErrInvalidInput, i, glob, err)
-			}
+		if _, exists := seen[r.FullName()]; exists {
+			return fmt.Errorf("%w: repos[%d] duplicates %q", ErrInvalidInput, i, r.FullName())
 		}
+		seen[r.FullName()] = struct{}{}
+		if err := validateTestGlob(r.ResolvedTestGlob()); err != nil {
+			return fmt.Errorf("%w: repos[%d] %w", ErrInvalidInput, i, err)
+		}
+	}
+	return nil
+}
+
+// validateTestGlob reports whether glob is a pattern the test-protection gate can
+// compile. It has one caller on each side through ValidateRepositories, so the
+// rule has one definition rather than a copy per layer.
+func validateTestGlob(glob string) error {
+	if glob == "" {
+		return nil
+	}
+	if _, err := filepath.Match(glob, ""); err != nil {
+		return fmt.Errorf("test_glob %q: %w", glob, err)
 	}
 	return nil
 }

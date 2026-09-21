@@ -708,8 +708,16 @@ func seedStoreResources(t *testing.T, st *store.Store, configPath string) {
 	if err != nil {
 		t.Fatalf("build control plane server: %v", err)
 	}
-	if _, err := server.ImportConfig(t.Context(), doc.Config); err != nil {
+	_, skipped, err := server.ImportConfig(t.Context(), doc.Config)
+	if err != nil {
 		t.Fatalf("seed store resources: %v", err)
+	}
+	if len(skipped) > 0 {
+		// This helper stands in for the State Store's own seeding, which seeds
+		// every kind it can and leaves the rest absent. A skipped kind here
+		// would mean the fixture store is missing a resource it claims to hold,
+		// and the verdict under test would be about a different store.
+		t.Fatalf("seed store resources: %d kind(s) refused: %+v", len(skipped), skipped)
 	}
 }
 

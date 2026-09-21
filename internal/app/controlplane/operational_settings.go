@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
 const (
@@ -40,25 +41,27 @@ func operationalDefinitions() []Definition {
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: seedTools, Validate: validateTools},
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
-		}, Validate: func(input []byte) error { return validateAs(input, func(pluginSettings) error { return nil }) }},
+		}, Validate: validatePluginSettings},
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Schema: objectSchema, Seed: func(cfg config.Config) any { return cfg.Containers }, Validate: validateContainers},
 	}
 }
 
+// validatePluginSettings accepts every value: the four directories are free-form
+// operator paths with no cross-field rule and no rule the configuration package
+// applies either (configuration.Validate has no say over them), so there is
+// nothing yet for this validator to enforce. It stays a real function rather than
+// an inline no-op so the place to add a rule is obvious when one exists -- e.g.
+// "a path that is absolute" or "a skills dir under the plugin dir".
+func validatePluginSettings(input []byte) error {
+	return validateAs(input, func(pluginSettings) error { return nil })
+}
+
 func validateRepositories(input []byte) error {
-	return validateAs(input, func(repos []config.Repo) error {
-		seen := make(map[string]struct{}, len(repos))
-		for _, repo := range repos {
-			if strings.TrimSpace(repo.Owner) == "" || strings.TrimSpace(repo.Name) == "" {
-				return fmt.Errorf("repository owner and name are required")
-			}
-			if _, exists := seen[repo.FullName()]; exists {
-				return fmt.Errorf("duplicate repository %q", repo.FullName())
-			}
-			seen[repo.FullName()] = struct{}{}
-		}
-		return nil
-	})
+	// The rules live in the configuration package and are shared with the file
+	// document's own validation (configuration.ValidateRepositories): which
+	// repository lists are valid cannot differ between the file that seeds this
+	// resource and the resource that replaces it.
+	return validateAs(input, configuration.ValidateRepositories)
 }
 
 func validateScheduling(input []byte) error {
@@ -66,11 +69,18 @@ func validateScheduling(input []byte) error {
 		if policy.MaxRetries < 0 {
 			return fmt.Errorf("max_retries must not be negative")
 		}
-		if policy.PollInterval != "0s" {
-			interval, err := time.ParseDuration(policy.PollInterval)
-			if err != nil || interval < 0 {
-				return fmt.Errorf("poll_interval must be a non-negative duration")
-			}
+		// A positive interval, not a non-negative one: the file layer's rule is
+		// the same, and there is no defaulting behind a stored value -- a stored
+		// "0s" reaches cfg.PollInterval as zero and stops archied starting.
+		interval, err := time.ParseDuration(policy.PollInterval)
+		if err != nil || interval <= 0 {
+			return fmt.Errorf("poll_interval must be a positive duration")
+		}
+		// Same reason as the repository rules above: RuntimeConfig replaces
+		// cfg.Dispatch from this resource, and the daemon refuses to start with a
+		// trigger it does not know.
+		if !configuration.DispatchTriggerValid(policy.Dispatch.Trigger) {
+			return fmt.Errorf("dispatch.trigger %q is not a discovery rule the daemon can poll with", policy.Dispatch.Trigger)
 		}
 		return nil
 	})
@@ -83,6 +93,11 @@ func validateContainers(input []byte) error {
 		}
 		if settings.PullPolicy != "" && settings.PullPolicy != "missing" && settings.PullPolicy != "always" {
 			return fmt.Errorf("pull_policy must be missing or always")
+		}
+		// The image is required for autonomous workflow workers; the same rule
+		// holds for the stored policies that replace the file's [containers].
+		if strings.TrimSpace(settings.Image) == "" {
+			return fmt.Errorf("container image is required for autonomous workflow workers")
 		}
 		return nil
 	})

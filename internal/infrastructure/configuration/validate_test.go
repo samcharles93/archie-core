@@ -69,6 +69,12 @@ func TestValidate_IsCallableOutsideThePackage(t *testing.T) {
 	}
 }
 
+// TestValidate_RejectsTheSameProblemsAsLoaderLoad pins the direction that still
+// holds after archie-core-i3qm split the bootstrap checks from the effective
+// ones: every problem the load path rejects, Validate rejects too. Validate
+// additionally rejects the settings the control plane owns, which the load path
+// must let through (validateBootstrap) so a stale TOML value cannot fail a
+// process's startup. The name is kept from when the two check sets were equal.
 func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 	tests := []struct {
 		name    string

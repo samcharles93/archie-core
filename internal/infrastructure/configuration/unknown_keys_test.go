@@ -89,6 +89,60 @@ func TestUnknownSchedulingKeyIsStillReported(t *testing.T) {
 	}
 }
 
+// TestOverlayUnknownKeysAreStillReported pins that the overlay path kept its
+// drift detection when the overlay file started being applied through the
+// config fold instead of being decoded into the document's config. That matters
+// twice over there: the report comes from a separate decode, and a file is
+// parsed by TOML while the fold applies it with a yaml decode, which do not
+// match keys the same way. A key the APPLY cannot consume has to be reported,
+// or a spelling that works in the base config would silently do nothing in the
+// overlay.
+func TestOverlayUnknownKeysAreStillReported(t *testing.T) {
+	tests := []struct {
+		name        string
+		overlay     string
+		wantUnknown string
+	}{
+		{
+			name:        "a key no decode target consumes",
+			overlay:     "[containers]\nmax_concurrancy = 4\n", // typo: concurrancy
+			wantUnknown: "containers.max_concurrancy",
+		},
+		{
+			// TOML matches keys case-insensitively, so the file's own decode
+			// consumes BOT_USER and reports nothing; the apply folds the file's
+			// mapping with a yaml decode, which does not match it. Without the
+			// second source for this report the value would be dropped in
+			// silence, so the spelling is reported instead.
+			name:        "a key only the file decode can match",
+			overlay:     "BOT_USER = \"upper\"\n",
+			wantUnknown: "BOT_USER",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			basePath := filepath.Join(dir, "config.toml")
+			overlayPath := filepath.Join(dir, "dev.toml")
+			if err := os.WriteFile(basePath, []byte(minimalValidConfigTOML), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(overlayPath, []byte(tt.overlay), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			doc, err := New(nil).Resolve(basePath, overlayPath)
+			if err != nil {
+				t.Fatalf("Resolve: %v (an unknown key must not fail the load)", err)
+			}
+			if !slices.Contains(doc.UnknownKeys, tt.wantUnknown) {
+				t.Errorf("UnknownKeys = %v, want it to contain %q", doc.UnknownKeys, tt.wantUnknown)
+			}
+		})
+	}
+}
+
 // TestExampleConfigHasNoUnknownKeys is the contract test the design
 // promised: the checked-in template must never itself trip the detector.
 func TestExampleConfigHasNoUnknownKeys(t *testing.T) {

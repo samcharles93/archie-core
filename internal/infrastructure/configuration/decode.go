@@ -27,6 +27,32 @@ func decodeConfigFileKeys(path string, target any) ([]string, error) {
 	}
 }
 
+// decodeFileMapping parses a configuration file into the nested mapping it
+// carries, with no typed target. An overlay needs this shape: a typed decode
+// cannot distinguish a key the file omits from a key it sets to the zero
+// value, and that distinction is what carrying the fields of a partially
+// addressed map entry forward is built on (see applyOverlayFile).
+func decodeFileMapping(path string) (map[string]any, error) {
+	var doc map[string]any
+	switch filepath.Ext(path) {
+	case ".yaml", ".yml":
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("%w: reading %s: %w", ErrUnreadable, path, err)
+		}
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return nil, fmt.Errorf("%w: parsing %s: %w", ErrUnreadable, path, err)
+		}
+	case ".toml":
+		if _, err := toml.DecodeFile(path, &doc); err != nil {
+			return nil, fmt.Errorf("%w: parsing %s: %w", ErrUnreadable, path, err)
+		}
+	default:
+		return nil, fmt.Errorf("%w: config file %s must end in .toml, .yaml, or .yml", ErrUnreadable, path)
+	}
+	return doc, nil
+}
+
 // decodeTOMLKeys decodes a TOML file into target, additionally
 // returning the top-level dotted key paths present in the file that
 // target did not consume (toml.MetaData.Undecoded()). A single decode
@@ -72,15 +98,25 @@ func decodeYAML(path string, target any) error {
 // into cfg directly. Memory and tools are sub-structs whose keys sit at the
 // top level of their own file rather than nested under a "memory:" or
 // "tools:" key, so they decode into the sub-struct.
-func decodeFeature(cfg *config.Config, feature Feature, path string) error {
+//
+// An overlay layer's feature file is folded over the base layer, for the same
+// reason and with the same precedence as a main overlay file. The keys that fold
+// reports are dropped here: only a main file reports unknown keys today
+// (decodeMain), and a feature file reporting a second, differently-shaped set
+// would be a new surface rather than a fix to this one.
+func decodeFeature(cfg *config.Config, feature Feature, path string, layer Layer) error {
+	target := any(cfg)
 	switch feature {
 	case FeatureMemory:
-		return decodeYAML(path, &cfg.Memory)
+		target = &cfg.Memory
 	case FeatureTools:
-		return decodeYAML(path, &cfg.Tools)
-	default:
-		return decodeYAML(path, cfg)
+		target = &cfg.Tools
 	}
+	if layer == LayerOverlay {
+		_, err := applyOverlayFile(path, target)
+		return err
+	}
+	return decodeYAML(path, target)
 }
 
 // decodeExtra decodes an unrecognised conf.d/ file into cfg.Extra under name.

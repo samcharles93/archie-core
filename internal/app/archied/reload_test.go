@@ -30,8 +30,12 @@ func minimalConfigTOML(botUser string) string {
 	return "bot_user = \"" + botUser + "\"\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 }
 
+// invalidConfigTOML carries a value the bootstrap document still owns, so
+// resolving it fails. The settings the control plane owns are no longer judged
+// at load, so using one of those here would silently turn these tests into a
+// false pass.
 func invalidConfigTOML() string {
-	return "bot_user = \"widget\"\ndispatch = { trigger = \"bogus-trigger\" }\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	return "bot_user = \"widget\"\n[memory]\nengine = \"not-a-real-engine\"\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 }
 
 func TestReloadAppliesAndPublishes(t *testing.T) {

@@ -13,12 +13,21 @@ import (
 )
 
 // resourceReader is the one read the layering performs: a resource kind's value
-// and the version it came from. The gRPC client and the in-process server both
-// provide it, so "what the database covers in the running config" has exactly
-// one implementation. The offline validate runs the same code as boot, which is
-// the only way its verdict can be boot's verdict.
+// and the version it came from, or nothing at all when the store holds no value
+// for that kind. The gRPC client and the in-process server both provide it, so
+// "what the database covers in the running config" has exactly one
+// implementation. The offline validate runs the same code as boot, which is the
+// only way its verdict can be boot's verdict.
+//
+// found is false only for the reader that dials a live State Store: a kind with
+// no stored value leaves the file document's value in effect instead of failing
+// the process, which is the state a seed ImportConfig refused leaves behind
+// (controlplane.Server.ImportConfig skips it) and the state of a database the
+// migration has not reached yet. storeReader never reports absent -- it answers
+// with the seed the State Store would write -- so the offline verdict stays
+// boot's.
 type resourceReader interface {
-	query(ctx context.Context, kind string, decode func([]byte) error) (int64, error)
+	query(ctx context.Context, kind string, decode func([]byte) error) (int64, bool, error)
 }
 
 // RuntimeConfig applies restart-scoped database resources over bootstrap
@@ -67,27 +76,28 @@ type storeReader struct {
 	seeds     map[string][]byte
 }
 
-func (r storeReader) query(ctx context.Context, kind string, decode func([]byte) error) (int64, error) {
+func (r storeReader) query(ctx context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
 	resource, err := r.resources.Resource(ctx, kind)
 	if errors.Is(err, store.ErrResourceNotFound) {
 		seed, ok := r.seeds[kind]
 		if !ok {
-			return 0, fmt.Errorf("read %s: %w", kind, store.ErrResourceNotFound)
+			return 0, false, fmt.Errorf("read %s: %w", kind, store.ErrResourceNotFound)
 		}
 		if err := decode(seed); err != nil {
-			return 0, fmt.Errorf("decode %s seed: %w", kind, err)
+			return 0, false, fmt.Errorf("decode %s seed: %w", kind, err)
 		}
 		// No version: nothing has been stored for this kind, so nothing has
-		// been applied either.
-		return 0, nil
+		// been applied either. It is still a value to layer in -- the seed --
+		// which is why this reader never reports the kind absent.
+		return 0, true, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("read %s: %w", kind, err)
+		return 0, false, fmt.Errorf("read %s: %w", kind, err)
 	}
 	if err := decode(resource.Value); err != nil {
-		return 0, fmt.Errorf("decode %s: %w", kind, err)
+		return 0, false, fmt.Errorf("decode %s: %w", kind, err)
 	}
-	return resource.Version, nil
+	return resource.Version, true, nil
 }
 
 func runtimeConfigFrom(ctx context.Context, reader resourceReader, base config.Config) (config.Config, map[string]int64, error) {
@@ -171,7 +181,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader resourceReader, versions 
 
 func runtimeChatConfigFrom(ctx context.Context, reader resourceReader, base config.ChatConfig) (config.ChatConfig, int64, error) {
 	out := base
-	version, err := reader.query(ctx, ChannelSettingsKind, func(value []byte) error {
+	version, found, err := reader.query(ctx, ChannelSettingsKind, func(value []byte) error {
 		var settings channelSettings
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
@@ -186,17 +196,31 @@ func runtimeChatConfigFrom(ctx context.Context, reader resourceReader, base conf
 		}
 		return nil
 	})
-	return out, version, err
+	if err != nil {
+		return out, 0, err
+	}
+	if !found {
+		return out, 0, nil
+	}
+	return out, version, nil
 }
 
 // layerResource decodes a resource and records the version it came from, so the
 // layering ends up holding the version of every kind it applied.
+//
+// A kind with no stored value is not an error and records no version: the file
+// document's value stays in effect. That is the state a seed the resource
+// validator refused leaves behind (controlplane.Server.ImportConfig skips it),
+// and failing here instead would stop the process with a database-named error
+// that editing config.toml cannot clear.
 func layerResource(ctx context.Context, reader resourceReader, versions map[string]int64, kind string, decode func([]byte) error) error {
-	version, err := reader.query(ctx, kind, decode)
+	version, found, err := reader.query(ctx, kind, decode)
 	if err != nil {
 		return err
 	}
-	versions[kind] = version
+	if found {
+		versions[kind] = version
+	}
 	return nil
 }
 
@@ -205,17 +229,23 @@ func layerResourceJSON(ctx context.Context, reader resourceReader, versions map[
 }
 
 // query returns the version of the resource it decoded, so callers that layer
-// a resource in can report the version they applied.
-func (c *Client) query(ctx context.Context, kind string, decode func([]byte) error) (int64, error) {
+// a resource in can report the version they applied. A kind the store holds no
+// value for is reported as not found rather than as an error: the caller leaves
+// the file document's value in effect (see resourceReader).
+func (c *Client) query(ctx context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: kind})
 	if err != nil {
-		return 0, clientError(err)
+		mapped := clientError(err)
+		if errors.Is(mapped, ErrNotFound) {
+			return 0, false, nil
+		}
+		return 0, false, mapped
 	}
 	if response.Resource == nil {
-		return 0, fmt.Errorf("%s resource missing", kind)
+		return 0, false, fmt.Errorf("%s resource missing", kind)
 	}
 	if err := decode(response.Resource.ValueJson); err != nil {
-		return 0, fmt.Errorf("decode %s: %w", kind, err)
+		return 0, false, fmt.Errorf("decode %s: %w", kind, err)
 	}
-	return response.Resource.Version, nil
+	return response.Resource.Version, true, nil
 }
