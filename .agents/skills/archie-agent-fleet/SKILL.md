@@ -104,6 +104,11 @@ worthless in either direction — neither run's verdict tells you anything about
 the tree. Wait for the host to be quiet and bound the wait: still held after
 about twenty minutes means report the contention rather than gate anyway.
 
+The train integrates **local** `main`. Nothing in the gate consults `origin`, and
+the version stamp comes from `git describe --tags` against local tags, so
+unpushed commits neither block nor invalidate a gate run — the remote can lag
+and does, since the maintainer pushes when inclined.
+
 ## The agent-discovery trap
 
 A lane worktree is a **sibling** of the repository (`/work/apps/cp-<lane>`), not a
