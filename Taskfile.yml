@@ -67,6 +67,20 @@ tasks:
     cmds:
       - go -C tools run -mod=readonly ./docsgen check --repo-root ..
 
+  docs:prds:
+    desc: Reject session-bound writing in docs/prds
+    summary: |
+      A PRD states a decision, a requirement, a constraint or evidence. Those
+      survive the code moving underneath them. A line number, a progress
+      report or a dated status claim does not: it is true on the day it is
+      written and silently wrong a month later, while still reading as
+      authoritative. The tracker records progress; the PRD records the design.
+
+      Each finding names the file, the line, the rule and the fix. There is no
+      --fix: the replacement is a judgement about what the sentence was for.
+    cmds:
+      - go -C tools run -mod=readonly ./prdlint --repo-root ..
+
   vet:
     desc: Run go vet
     cmds:
@@ -367,6 +381,7 @@ tasks:
       - task: proto:lint
       - task: proto:check
       - task: docs:check
+      - task: docs:prds
       - task: vet
       - task: lint
       - task: build

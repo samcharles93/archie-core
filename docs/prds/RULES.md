@@ -26,6 +26,11 @@ These rules apply to every file in `docs/prds/`.
   findings; do not copy their prose.
 - Before requesting approval, review every sentence for complexity, repetition,
   and unsupported scope.
+- Write nothing whose truth expires. No `file.go:123` citations (cite the file
+  and the symbol), no progress reports on the work being designed, no dated
+  status claims, and no record of how a finding was produced. A phased plan is
+  durable design; which phase is finished is not. `task docs:prds` enforces
+  this.
 - Every PRD carries one of three statuses. `Draft` until the maintainer
   explicitly approves it, `Approved` once they have and while the work is being
   built, `Finalised` when the work is complete. A finalised PRD does not change;
