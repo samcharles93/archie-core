@@ -27,6 +27,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/archied"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -685,13 +686,29 @@ func writeConfigWithLogFile(t *testing.T, dir string) (string, string) {
 // from the same config file the operator hands validate: the command's verdict
 // is about the pair, and a store whose settings never matched the config is a
 // state boot does not recognise either.
+//
+// The seeding builds its control-plane server from the shared provider set
+// (internal/infrastructure/workflowsteps), which is what every composition root
+// registers -- including openStateStoreControlPlane, the root helper the
+// recovery path uses. This test cannot call that unexported helper, so it
+// registers the same set itself rather than an empty manager: the definitions
+// are decoded with the vocabulary the served path validates against, which is
+// what makes the seeded values the ones validate is asked about.
 func seedStoreResources(t *testing.T, st *store.Store, configPath string) {
 	t.Helper()
 	doc, err := configuration.New(nil).Resolve(configPath, "")
 	if err != nil {
 		t.Fatalf("resolve %s: %v", configPath, err)
 	}
-	if _, err := controlplane.NewServer(st).ImportConfig(t.Context(), doc.Config); err != nil {
+	steps, err := workflowsteps.NewManager()
+	if err != nil {
+		t.Fatalf("register workflow step vocabulary: %v", err)
+	}
+	server, err := controlplane.NewServer(st, steps)
+	if err != nil {
+		t.Fatalf("build control plane server: %v", err)
+	}
+	if _, err := server.ImportConfig(t.Context(), doc.Config); err != nil {
 		t.Fatalf("seed store resources: %v", err)
 	}
 }

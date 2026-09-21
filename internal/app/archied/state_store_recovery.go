@@ -11,6 +11,12 @@
 // cannot stop the process that runs it, so the snapshot that makes a failed
 // update reversible is taken against a serving store through SQLite's own
 // consistent copy.
+//
+// The control-plane server both validate and rollback read through is built by
+// openStateStoreControlPlane -- the same root helper the served path uses -- so
+// the offline checks resolve the same workflow step vocabulary as the process
+// whose verdict they predict, and a constructor error is a refusal here rather
+// than a server that would validate against a different vocabulary.
 package archied
 
 import (
@@ -19,7 +25,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -131,7 +136,10 @@ func validateStore(ctx context.Context, options StateStoreRecoveryOptions) (stri
 	}
 	defer func() { _ = st.Close() }()
 
-	server := controlplane.NewServer(st)
+	server, err := openStateStoreControlPlane(st)
+	if err != nil {
+		return "", err
+	}
 	// Is there a resources table at all? A store written before the control plane
 	// existed has none, and the State Store creates it and seeds every kind from
 	// this same config on its next start -- so there is nothing stored to check
@@ -210,7 +218,10 @@ func rollbackResource(ctx context.Context, options StateStoreRecoveryOptions) (s
 	}
 	defer func() { _ = st.Close() }()
 
-	server := controlplane.NewServer(st)
+	server, err := openStateStoreControlPlane(st)
+	if err != nil {
+		return "", err
+	}
 	if !server.Owns(options.Kind) {
 		return "", fmt.Errorf("unknown resource kind %q", options.Kind)
 	}
