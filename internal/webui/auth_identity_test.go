@@ -162,3 +162,67 @@ func TestSharedTokenStillGatesAnInstanceWithNoProvider(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 }
+
+// TestRefusedBrowserIsSentToSignIn: with a sign-in flow configured, a browser that
+// cannot authenticate belongs at the provider, not on a shared-token paste page
+// that cannot help it. A refusal signing in again cannot fix -- a suspended
+// identity -- is answered instead of redirected.
+func TestRefusedBrowserIsSentToSignIn(t *testing.T) {
+	tests := []struct {
+		name       string
+		authErr    error
+		login      identity.LoginFlow
+		wantStatus int
+		wantLogin  bool
+	}{
+		{
+			name:       "no credential, sign-in available",
+			authErr:    identity.ErrCredentialRejected,
+			login:      stubFlow{},
+			wantStatus: http.StatusSeeOther,
+			wantLogin:  true,
+		},
+		{
+			name:       "no credential, no sign-in flow",
+			authErr:    identity.ErrCredentialRejected,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "suspended identity is told, not redirected",
+			authErr:    identity.ErrIdentityInactive,
+			login:      stubFlow{},
+			wantStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{
+				Login: tc.login,
+				Authenticate: func(context.Context, string) (identity.Identity, error) {
+					return identity.Identity{}, tc.authErr
+				},
+			}
+			handler := s.requireToken(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("an unauthenticated request reached the handler")
+			}))
+
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+			request.Header.Set("Authorization", "Bearer a-token")
+			request.Header.Set("Accept", "text/html")
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tc.wantStatus)
+			}
+			location := recorder.Header().Get("Location")
+			if tc.wantLogin && location != loginPath {
+				t.Fatalf("Location = %q, want %q", location, loginPath)
+			}
+			if !tc.wantLogin && location != "" {
+				t.Fatalf("a refusal that signing in cannot fix redirected to %q", location)
+			}
+		})
+	}
+}

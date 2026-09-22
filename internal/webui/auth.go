@@ -32,10 +32,13 @@ const (
 	loginStateCookie    = "archie_login_state"
 	loginVerifierCookie = "archie_login_verifier"
 	loginCookieMaxAge   = 600
-	// loginRoute and loginCallbackRoute must match the redirect URI registered at
-	// the provider: the provider returns the browser to the path it was given.
-	loginRoute         = "GET /oauth2/login"
-	loginCallbackRoute = "GET /oauth2/callback"
+	// loginPath is where a browser signs in, and the path a refused browser is
+	// sent to. loginCallbackPath must match the redirect URI registered at the
+	// provider: the provider returns the browser to the path it was given.
+	loginPath          = "/oauth2/login"
+	loginCallbackPath  = "/oauth2/callback"
+	loginRoute         = "GET " + loginPath
+	loginCallbackRoute = "GET " + loginCallbackPath
 )
 
 // IsLoopback reports whether a listen address is reachable only from this
@@ -324,6 +327,15 @@ func (s *Server) refuseUnidentified(w http.ResponseWriter, r *http.Request, err 
 		w.Header().Set("WWW-Authenticate", `Bearer realm="archie"`)
 	}
 	if !allowed && wantsDocument(r) {
+		// A browser that cannot authenticate is sent to sign in, when this
+		// instance has a sign-in flow: re-presenting a credential is the only
+		// thing that helps, and a shared-token paste page would be meaningless
+		// here. A refusal the caller cannot fix by signing in again -- a
+		// suspended identity -- is answered rather than redirected.
+		if s.Login != nil {
+			http.Redirect(w, r, loginPath, http.StatusSeeOther)
+			return
+		}
 		s.authPage(w, reason)
 		return
 	}

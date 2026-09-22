@@ -85,13 +85,6 @@ type ProviderSession struct {
 	Expires    time.Time
 }
 
-// Expired reports whether a session's token is past the point of being worth
-// presenting, so a caller can send the browser through the flow again instead of
-// letting every request fail verification.
-func (s ProviderSession) Expired(now time.Time) bool {
-	return !s.Expires.IsZero() && !now.Before(s.Expires)
-}
-
 var (
 	// ErrNoCredential means the request presented nothing to authenticate with.
 	ErrNoCredential = errors.New("no credential presented")
