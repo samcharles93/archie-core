@@ -344,7 +344,15 @@ func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action t
 	if s.Chat == nil || s.Chat.Contract == nil {
 		return fmt.Errorf("%w: no gateway contract is wired", taskactions.ErrUnavailable)
 	}
-	_, err := s.Chat.Contract.ApplyOperatorTaskAction(ctx, id, action)
+	// The actor comes from the credential the middleware resolved and never from
+	// the request, so a caller cannot claim to be someone it did not authenticate
+	// as. An unauthenticated request (the shared-token gate) carries no identity,
+	// and the action is then recorded unattributed rather than as a human's.
+	actor := taskactions.Actor{}
+	if value, ok := ActingIdentity(ctx); ok {
+		actor = taskactions.ActorFor(value)
+	}
+	_, err := s.Chat.Contract.ApplyOperatorTaskAction(ctx, actor, id, action)
 	return err
 }
 

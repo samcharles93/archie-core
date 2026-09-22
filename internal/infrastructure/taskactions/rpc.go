@@ -10,6 +10,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -23,16 +24,35 @@ import (
 const actionSubject = "archie.gateway.task-action"
 
 // Identity is a pointer because its absence is meaningful: nil is a
-// authenticated dashboard operator acting across identities, which the daemon's
-// service distinguishes from any named identity, empty included. It is a SCOPE
-// -- which tasks the caller may touch -- and never an actor. Who acted is not on
-// this request yet, so the daemon records these actions unattributed rather than
-// crediting them to a human: the dashboard's own credential is a shared token,
-// which is not evidence that a person was at the keyboard.
+// caller authenticated across identities, which the daemon's service
+// distinguishes from any named identity, empty included. It is a SCOPE -- which
+// tasks the caller may touch -- and never an actor.
+//
+// Actor carries who performed the action and whose authority permitted it, as
+// resolved by the caller that verified the credential. Its absence is meaningful:
+// an absent actor records an unattributed action, never a human's.
 type actionRequest struct {
 	Identity *string          `json:"identity"`
 	TaskID   int64            `json:"task_id"`
 	Action   taskstate.Action `json:"action"`
+	Actor    *actorPayload    `json:"actor,omitempty"`
+}
+
+type actorPayload struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Principal string `json:"principal"`
+}
+
+func (p *actorPayload) actor() taskactions.Actor {
+	if p == nil {
+		return taskactions.Actor{}
+	}
+	return taskactions.Actor{
+		Identity:  identity.IdentityID(p.ID),
+		Kind:      identity.Kind(p.Kind),
+		Principal: identity.IdentityID(p.Principal),
+	}
 }
 
 // actionResponse carries the error's class beside its message. This hop
@@ -100,7 +120,7 @@ func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (fun
 				natsrpc.Respond(msg, log, "taskactions", actionResponse{Envelope: natsrpc.NewEnvelope(err)})
 				return
 			}
-			err := service.Apply(context.Background(), req.Identity, taskactions.Actor{}, req.TaskID, req.Action)
+			err := service.Apply(context.Background(), req.Identity, req.Actor.actor(), req.TaskID, req.Action)
 			natsrpc.Respond(msg, log, "taskactions", actionResponse{
 				Envelope: natsrpc.NewEnvelope(err),
 				Kind:     actionErrorKind(err),
@@ -119,12 +139,24 @@ func (c Client) rpc() *natsrpc.Client {
 	return &natsrpc.Client{Conn: c.Conn, Timeout: c.Timeout}
 }
 
-// ApplyChatTaskAction sends an operator action to the daemon's responder.
-func (c Client) ApplyChatTaskAction(ctx context.Context, identity *string, id int64, action taskstate.Action) (gateway.TaskActionResult, error) {
+// ApplyChatTaskAction sends an action to the daemon's responder, carrying the
+// scope and the actor the caller resolved. A caller with no verified identity
+// passes the zero actor, which the daemon records as unattributed.
+func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor taskactions.Actor, id int64, action taskstate.Action) (gateway.TaskActionResult, error) {
 	if c.Conn == nil {
 		return gateway.TaskActionResult{}, fmt.Errorf("task action connection is unavailable")
 	}
-	resp, err := natsrpc.Call[actionResponse](ctx, c.rpc(), actionSubject, actionRequest{Identity: identity, TaskID: id, Action: action})
+	request := actionRequest{
+		Identity: scope,
+		TaskID:   id,
+		Action:   action,
+		Actor: &actorPayload{
+			ID:        string(actor.Identity),
+			Kind:      string(actor.Kind),
+			Principal: string(actor.Principal),
+		},
+	}
+	resp, err := natsrpc.Call[actionResponse](ctx, c.rpc(), actionSubject, request)
 	if err != nil {
 		return gateway.TaskActionResult{}, err
 	}

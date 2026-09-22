@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -78,7 +79,7 @@ type ChatTaskActor interface {
 	// across identities -- the distinction internal/domain/taskactions draws,
 	// and not the same as an empty name, which is a real identity in a
 	// single-identity deployment.
-	ApplyChatTaskAction(ctx context.Context, identity *string, taskID int64, action taskstate.Action) (TaskActionResult, error)
+	ApplyChatTaskAction(ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action) (TaskActionResult, error)
 }
 
 // ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
@@ -313,8 +314,11 @@ func taskActionTool(actor ChatTaskActor, identity string) tools.ToolEntry {
 			}
 
 			// The bound identity, never input["identity"]. Passed by
-			// address: chat is always scoped, never an operator.
-			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskID, taskstate.Action(actionStr))
+			// address: chat is always scoped, never an operator. The
+			// actor is that same bound identity, because a bot acting on
+			// its own channel's task is exactly what happened -- and it is
+			// recorded as an agent's action, not a person's.
+			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, taskstate.Action(actionStr))
 			if err != nil {
 				return nil, fmt.Errorf("task_action: %w", err)
 			}

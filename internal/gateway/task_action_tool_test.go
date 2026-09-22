@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -21,7 +22,7 @@ type fakeActor struct {
 	gotAction   taskstate.Action
 }
 
-func (f *fakeActor) ApplyChatTaskAction(_ context.Context, identity *string, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+func (f *fakeActor) ApplyChatTaskAction(_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action) (TaskActionResult, error) {
 	if identity != nil {
 		f.gotIdentity = *identity
 	}

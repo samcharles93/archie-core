@@ -52,6 +52,14 @@ func ActorFor(value identity.Identity) Actor {
 	return Actor{Identity: value.ID, Kind: value.Kind}
 }
 
+// ActorFromScope builds an actor for a caller whose identity archie knows but did
+// not derive from a credential: a chat channel's bound identity. The kind is not
+// known here, so the action is recorded as an agent's rather than a person's, and
+// the authority it acted under is recorded separately when it is known.
+func ActorFromScope(id string) Actor {
+	return Actor{Identity: identity.IdentityID(id)}
+}
+
 // AuthorisedBy records where an action's authority came from.
 func (a Actor) AuthorisedBy(principal identity.IdentityID) Actor {
 	a.Principal = principal

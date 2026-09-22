@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -89,8 +90,14 @@ func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID in
 	return messaging.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }
 
-func (c *Client) ApplyOperatorTaskAction(ctx context.Context, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
-	v, err := c.client.ApplyOperatorTaskAction(ctx, &pb.ApplyOperatorTaskActionRequest{TaskId: taskID, Action: string(action)})
+func (c *Client) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+	v, err := c.client.ApplyOperatorTaskAction(ctx, &pb.ApplyOperatorTaskActionRequest{
+		TaskId:      taskID,
+		Action:      string(action),
+		ActorId:     string(actor.Identity),
+		ActorKind:   string(actor.Kind),
+		PrincipalId: string(actor.Principal),
+	})
 	if err != nil {
 		return messaging.TaskActionResult{}, taskActionError(err)
 	}

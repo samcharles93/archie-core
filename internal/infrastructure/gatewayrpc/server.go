@@ -8,7 +8,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -98,7 +100,12 @@ func (s *server) ApplyTaskAction(ctx context.Context, r *pb.ApplyTaskActionReque
 }
 
 func (s *server) ApplyOperatorTaskAction(ctx context.Context, r *pb.ApplyOperatorTaskActionRequest) (*pb.ApplyOperatorTaskActionResponse, error) {
-	v, err := s.chat.ApplyOperatorTaskAction(ctx, r.TaskId, taskstate.Action(r.Action))
+	actor := taskactions.Actor{
+		Identity:  identity.IdentityID(r.ActorId),
+		Kind:      identity.Kind(r.ActorKind),
+		Principal: identity.IdentityID(r.PrincipalId),
+	}
+	v, err := s.chat.ApplyOperatorTaskAction(ctx, actor, r.TaskId, taskstate.Action(r.Action))
 	if err != nil {
 		return nil, taskActionStatus(err)
 	}

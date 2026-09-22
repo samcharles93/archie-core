@@ -44,6 +44,11 @@ func Run(ctx context.Context, options Options) error {
 	}
 	cleanups = append(cleanups, closeGateway)
 
+	authenticate, err := dashboardAuthenticator(ctx, opts, tasks, log)
+	if err != nil {
+		return err
+	}
+
 	srv := compose(deps{
 		Options:      opts,
 		Log:          log,
@@ -52,6 +57,7 @@ func Run(ctx context.Context, options Options) error {
 		Health:       newReadinessRegistry(opts, tasks, chat),
 		ControlPlane: tasks.ControlPlane(),
 		Identities:   tasks,
+		Authenticate: authenticate,
 	})
 
 	// Live activity has no in-process bus in this process: the pump reads

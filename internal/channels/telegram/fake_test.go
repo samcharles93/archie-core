@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -85,6 +86,6 @@ func (f *fakeChatContract) ApplyTaskAction(ctx context.Context, identity string,
 	return messaging.TaskActionResult{}, nil
 }
 
-func (f *fakeChatContract) ApplyOperatorTaskAction(ctx context.Context, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+func (f *fakeChatContract) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
 	return messaging.TaskActionResult{}, nil
 }

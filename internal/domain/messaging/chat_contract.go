@@ -3,6 +3,7 @@ package messaging
 import (
 	"context"
 
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -32,10 +33,13 @@ type ChatTaskActionContract interface {
 	// may only act on its own tasks.
 	ApplyTaskAction(context.Context, string, int64, taskstate.Action) (TaskActionResult, error)
 	// ApplyOperatorTaskAction applies an action on behalf of an authenticated
-	// dashboard operator, who acts across identities. It is a separate method
-	// rather than an empty identity because "" is a real identity in a
-	// single-identity deployment (see chatTaskProfiles in the daemon).
-	ApplyOperatorTaskAction(context.Context, int64, taskstate.Action) (TaskActionResult, error)
+	// dashboard caller, who acts across identities. The actor is who the
+	// credential resolved to, or the zero Actor when the caller presented
+	// nothing archie could verify -- which is recorded unattributed rather than
+	// credited to a human. It is a separate method rather than an empty identity
+	// because "" is a real identity in a single-identity deployment (see
+	// chatTaskProfiles in the daemon).
+	ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action) (TaskActionResult, error)
 }
 
 // TaskActionResult is what task_action returns.

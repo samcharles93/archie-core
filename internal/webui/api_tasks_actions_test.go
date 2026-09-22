@@ -70,7 +70,7 @@ type daemonActions struct {
 }
 
 func (d *daemonActions) ApplyChatTaskAction(
-	ctx context.Context, identity *string, id int64, action taskstate.Action,
+	ctx context.Context, identity *string, actor taskactions.Actor, id int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
 	d.scopes = append(d.scopes, identity)
 	service := taskactionstore.NewService(
@@ -82,7 +82,7 @@ func (d *daemonActions) ApplyChatTaskAction(
 		d.publish(),
 		d.srv.logf,
 	)
-	if err := service.Apply(ctx, identity, taskactions.Actor{}, id, action); err != nil {
+	if err := service.Apply(ctx, identity, actor, id, action); err != nil {
 		return gateway.TaskActionResult{}, err
 	}
 	return gateway.TaskActionResult{TaskID: id, Action: string(action)}, nil

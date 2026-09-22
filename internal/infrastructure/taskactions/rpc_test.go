@@ -105,7 +105,7 @@ func TestActionErrorKeepsItsSentinelAcrossNATS(t *testing.T) {
 				t.Fatalf("flush: %v", err)
 			}
 
-			_, err = Client{Conn: nc}.ApplyChatTaskAction(t.Context(), nil, 7, tc.action)
+			_, err = Client{Conn: nc}.ApplyChatTaskAction(t.Context(), nil, domain.Actor{}, 7, tc.action)
 			if err == nil {
 				t.Fatalf("ApplyChatTaskAction(%s) error = nil, want %v", tc.action, tc.want)
 			}
@@ -152,7 +152,7 @@ func TestActionScopeCrossesNATS(t *testing.T) {
 				t.Fatalf("flush: %v", err)
 			}
 
-			result, err := Client{Conn: nc}.ApplyChatTaskAction(t.Context(), tc.identity, 7, taskstate.ActionAbandon)
+			result, err := Client{Conn: nc}.ApplyChatTaskAction(t.Context(), tc.identity, domain.Actor{}, 7, taskstate.ActionAbandon)
 			if err != nil {
 				t.Fatalf("apply: %v", err)
 			}

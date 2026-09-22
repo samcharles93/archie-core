@@ -32,6 +32,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -670,13 +671,13 @@ type chatTaskActorAdapter struct {
 }
 
 func (a chatTaskActorAdapter) ApplyChatTaskAction(
-	ctx context.Context, identity *string, taskID int64, action taskstate.Action,
+	ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
 	if a.contract == nil {
 		return gateway.TaskActionResult{}, gateway.ErrChatCapabilityUnavailable
 	}
 	if identity == nil {
-		return a.contract.ApplyOperatorTaskAction(ctx, taskID, action)
+		return a.contract.ApplyOperatorTaskAction(ctx, actor, taskID, action)
 	}
 	return a.contract.ApplyTaskAction(ctx, *identity, taskID, action)
 }

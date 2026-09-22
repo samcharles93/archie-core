@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/archieui"
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
@@ -24,11 +25,14 @@ func main() { os.Exit(run()) }
 
 func run() int {
 	var options archieui.Options
+	showVersion := buildinfo.RegisterVersionFlag("archie-ui")
 	flag.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory (only [services.*] targets and [web] are read)")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	flag.StringVar(&options.Listen, "listen", "", "dashboard HTTP listen address (defaults to [web].listen, else 127.0.0.1:8484)")
 	flag.StringVar(&options.Token, "token", "", "dashboard token; required for a non-loopback listener")
 	flag.StringVar(&options.TokenFile, "token-file", "", "file holding the dashboard token, minted on first use")
+	flag.StringVar(&options.OidcIssuer, "oidc-issuer", "", "identity provider issuer URL; requests must then carry a token it signed")
+	flag.StringVar(&options.OidcAudience, "oidc-audience", "", "audience (resource identifier) this dashboard accepts tokens for; required with -oidc-issuer")
 	flag.StringVar(&options.Gateway.Target, "gateway-target", "", "archie-gateway gRPC address (defaults to [services.gateway].target)")
 	flag.StringVar(&options.Gateway.Token, "gateway-token", "", "bearer token presented to archie-gateway")
 	flag.StringVar(&options.State.Target, "state-target", "", "archie-state-store gRPC address (defaults to [services.state].target)")
@@ -47,6 +51,7 @@ func run() int {
 		return nil
 	})
 	flag.Parse()
+	showVersion()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

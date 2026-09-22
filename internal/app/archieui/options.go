@@ -59,6 +59,13 @@ type Options struct {
 	// use. It is the explicit opt-in to a non-loopback listener: without it
 	// a reachable bind must be given a token.
 	TokenFile string
+	// OidcIssuer and OidcAudience are endpoint references for the identity
+	// provider, not configuration. The issuer is read for its discovery document
+	// and signing keys, and the audience is the resource identifier this process
+	// accepts credentials for. Both empty leaves the shared-token gate in place;
+	// an issuer with no audience is refused rather than accepted without the check.
+	OidcIssuer   string
+	OidcAudience string
 	// TrustForwardedHeaders is tri-state so an explicit false on the command
 	// line can override a configuration file that enables it. Nil means the
 	// operator did not say, and the file (else false) decides.

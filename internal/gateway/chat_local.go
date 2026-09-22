@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -121,14 +122,14 @@ func (a *LocalChatAdapter) ApplyTaskAction(ctx context.Context, identity string,
 	if a.TaskActor == nil {
 		return TaskActionResult{}, ErrChatCapabilityUnavailable
 	}
-	return a.TaskActor.ApplyChatTaskAction(ctx, &identity, taskID, action)
+	return a.TaskActor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, action)
 }
 
-func (a *LocalChatAdapter) ApplyOperatorTaskAction(ctx context.Context, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+func (a *LocalChatAdapter) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action) (TaskActionResult, error) {
 	if a.TaskActor == nil {
 		return TaskActionResult{}, ErrChatCapabilityUnavailable
 	}
-	return a.TaskActor.ApplyChatTaskAction(ctx, nil, taskID, action)
+	return a.TaskActor.ApplyChatTaskAction(ctx, nil, actor, taskID, action)
 }
 
 func (a *LocalChatAdapter) Stream(ctx context.Context, in Inbound) (<-chan ChatEvent, error) {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -73,7 +74,7 @@ func (f *fakeChat) ApplyTaskAction(context.Context, string, int64, taskstate.Act
 	return gateway.TaskActionResult{}, nil
 }
 
-func (f *fakeChat) ApplyOperatorTaskAction(context.Context, int64, taskstate.Action) (gateway.TaskActionResult, error) {
+func (f *fakeChat) ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action) (gateway.TaskActionResult, error) {
 	return gateway.TaskActionResult{}, nil
 }
 

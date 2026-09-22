@@ -36,6 +36,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -133,7 +134,7 @@ func (f *fakeGateway) ApplyTaskAction(context.Context, string, int64, taskstate.
 	return messaging.TaskActionResult{}, nil
 }
 
-func (f *fakeGateway) ApplyOperatorTaskAction(_ context.Context, id int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+func (f *fakeGateway) ApplyOperatorTaskAction(_ context.Context, actor taskactions.Actor, id int64, action taskstate.Action) (messaging.TaskActionResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.actions = append(f.actions, fmt.Sprintf("%d:%s", id, action))
