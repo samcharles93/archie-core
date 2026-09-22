@@ -994,6 +994,14 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
 		return
 	}
 
+	if ok, reason := d.identityMayAct(ctx, tm.Identity); !ok {
+		d.Log.Error("nats intake rejected: "+reason, "subject", msg.Subject())
+		if err := msg.Ack(); err != nil {
+			d.Log.Warn("ack failed", "err", err)
+		}
+		return
+	}
+
 	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, strings.Join(tm.Labels, ","), tm.Identity)
 	if err != nil {
 		d.Log.Error("nats enqueue failed", "err", err)
@@ -1125,6 +1133,10 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	ctx, finished := d.running.begin(ctx, task.ID, task.Identity)
 	defer finished()
 	defer d.openTaskLog(task)()
+
+	if d.parkIfIdentityUnresolvable(ctx, task) {
+		return
+	}
 
 	trees := d.treesFor(task)
 	repo, ok := d.repoFor(task)
@@ -1768,6 +1780,40 @@ func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 		}
 	}
 	return nil
+}
+
+// identityMayAct reports whether the identity a task carries may be acted on.
+// An empty identity is the single-identity root and always may act. A
+// non-empty identity must resolve to a configured runner and pass the
+// lifecycle check; otherwise the returned reason says why it may not. This is
+// the single task-side fail-closed point, mirroring identity.Resolve's
+// credential-side behaviour: a task naming an identity archie no longer knows
+// -- renamed, retired, or deleted in the control plane -- must park, never
+// fall back to the root forge's credential.
+func (d *Daemon) identityMayAct(ctx context.Context, name string) (bool, string) {
+	if name == "" {
+		return true, ""
+	}
+	runner := d.identityFor(&workflow.Task{Identity: name})
+	if runner == nil {
+		return false, "identity " + name + " no longer resolves"
+	}
+	if !d.identityActive(ctx, runner.ID) {
+		return false, "identity " + runner.Name + " may not act"
+	}
+	return true, ""
+}
+
+// parkIfIdentityUnresolvable parks task when its non-empty identity cannot be
+// acted on, reporting whether it did. An empty identity is the root
+// single-identity path and never parks here.
+func (d *Daemon) parkIfIdentityUnresolvable(ctx context.Context, task *workflow.Task) bool {
+	ok, reason := d.identityMayAct(ctx, task.Identity)
+	if ok {
+		return false
+	}
+	d.parkRunningTask(ctx, task.ID, reason)
+	return true
 }
 
 func (d *Daemon) identityActive(ctx context.Context, id identity.IdentityID) bool {
