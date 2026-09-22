@@ -28,6 +28,8 @@ const (
 	StateStoreService_SuspendIdentity_FullMethodName            = "/state.v1.StateStoreService/SuspendIdentity"
 	StateStoreService_ReactivateIdentity_FullMethodName         = "/state.v1.StateStoreService/ReactivateIdentity"
 	StateStoreService_RetireIdentity_FullMethodName             = "/state.v1.StateStoreService/RetireIdentity"
+	StateStoreService_ResolveIdentitySubject_FullMethodName     = "/state.v1.StateStoreService/ResolveIdentitySubject"
+	StateStoreService_BindIdentitySubject_FullMethodName        = "/state.v1.StateStoreService/BindIdentitySubject"
 	StateStoreService_EnqueueIssue_FullMethodName               = "/state.v1.StateStoreService/EnqueueIssue"
 	StateStoreService_EnqueueChatTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueChatTask"
 	StateStoreService_ClaimNext_FullMethodName                  = "/state.v1.StateStoreService/ClaimNext"
@@ -105,6 +107,11 @@ type StateStoreServiceClient interface {
 	SuspendIdentity(ctx context.Context, in *SuspendIdentityRequest, opts ...grpc.CallOption) (*SuspendIdentityResponse, error)
 	ReactivateIdentity(ctx context.Context, in *ReactivateIdentityRequest, opts ...grpc.CallOption) (*ReactivateIdentityResponse, error)
 	RetireIdentity(ctx context.Context, in *RetireIdentityRequest, opts ...grpc.CallOption) (*RetireIdentityResponse, error)
+	// Subject bindings. A verified provider subject is resolved to the identity it
+	// is bound to; the authenticating process calls these rather than owning the
+	// identity store.
+	ResolveIdentitySubject(ctx context.Context, in *ResolveIdentitySubjectRequest, opts ...grpc.CallOption) (*ResolveIdentitySubjectResponse, error)
+	BindIdentitySubject(ctx context.Context, in *BindIdentitySubjectRequest, opts ...grpc.CallOption) (*BindIdentitySubjectResponse, error)
 	// Lifecycle
 	EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(ctx context.Context, in *EnqueueChatTaskRequest, opts ...grpc.CallOption) (*EnqueueChatTaskResponse, error)
@@ -299,6 +306,26 @@ func (c *stateStoreServiceClient) RetireIdentity(ctx context.Context, in *Retire
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RetireIdentityResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RetireIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ResolveIdentitySubject(ctx context.Context, in *ResolveIdentitySubjectRequest, opts ...grpc.CallOption) (*ResolveIdentitySubjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveIdentitySubjectResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ResolveIdentitySubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) BindIdentitySubject(ctx context.Context, in *BindIdentitySubjectRequest, opts ...grpc.CallOption) (*BindIdentitySubjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindIdentitySubjectResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_BindIdentitySubject_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -877,6 +904,11 @@ type StateStoreServiceServer interface {
 	SuspendIdentity(context.Context, *SuspendIdentityRequest) (*SuspendIdentityResponse, error)
 	ReactivateIdentity(context.Context, *ReactivateIdentityRequest) (*ReactivateIdentityResponse, error)
 	RetireIdentity(context.Context, *RetireIdentityRequest) (*RetireIdentityResponse, error)
+	// Subject bindings. A verified provider subject is resolved to the identity it
+	// is bound to; the authenticating process calls these rather than owning the
+	// identity store.
+	ResolveIdentitySubject(context.Context, *ResolveIdentitySubjectRequest) (*ResolveIdentitySubjectResponse, error)
+	BindIdentitySubject(context.Context, *BindIdentitySubjectRequest) (*BindIdentitySubjectResponse, error)
 	// Lifecycle
 	EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error)
@@ -1013,6 +1045,12 @@ func (UnimplementedStateStoreServiceServer) ReactivateIdentity(context.Context, 
 }
 func (UnimplementedStateStoreServiceServer) RetireIdentity(context.Context, *RetireIdentityRequest) (*RetireIdentityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RetireIdentity not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ResolveIdentitySubject(context.Context, *ResolveIdentitySubjectRequest) (*ResolveIdentitySubjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveIdentitySubject not implemented")
+}
+func (UnimplementedStateStoreServiceServer) BindIdentitySubject(context.Context, *BindIdentitySubjectRequest) (*BindIdentitySubjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindIdentitySubject not implemented")
 }
 func (UnimplementedStateStoreServiceServer) EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueIssue not implemented")
@@ -1349,6 +1387,42 @@ func _StateStoreService_RetireIdentity_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RetireIdentity(ctx, req.(*RetireIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ResolveIdentitySubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveIdentitySubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ResolveIdentitySubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ResolveIdentitySubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ResolveIdentitySubject(ctx, req.(*ResolveIdentitySubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_BindIdentitySubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindIdentitySubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).BindIdentitySubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_BindIdentitySubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).BindIdentitySubject(ctx, req.(*BindIdentitySubjectRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2310,6 +2384,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RetireIdentity",
 			Handler:    _StateStoreService_RetireIdentity_Handler,
+		},
+		{
+			MethodName: "ResolveIdentitySubject",
+			Handler:    _StateStoreService_ResolveIdentitySubject_Handler,
+		},
+		{
+			MethodName: "BindIdentitySubject",
+			Handler:    _StateStoreService_BindIdentitySubject_Handler,
 		},
 		{
 			MethodName: "EnqueueIssue",

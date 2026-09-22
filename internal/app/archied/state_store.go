@@ -322,6 +322,13 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if identities, ok := b.st.(identity.Repository); ok {
 		deps.Identities = identities
 	}
+	// Subject bindings are asserted separately from the repository facade: only
+	// the authenticating path resolves a verified subject, and a store that
+	// cannot is one where the dashboard cannot name its caller rather than one
+	// that fails to boot.
+	if bindings, ok := b.st.(identity.SubjectBinding); ok {
+		deps.SubjectBindings = bindings
+	}
 	// Task logs live in the state directory, which this process owns, and the
 	// dashboard process owns no such directory -- so this is where a task-log
 	// read is served from (docs/prds/ui-service-boundary.md). The reader is

@@ -39,6 +39,15 @@ type Verifier interface {
 	Verify(ctx context.Context, rawToken string) (Credential, error)
 }
 
+// SubjectBinding resolves a verified provider subject and binds one to an
+// identity. It is the pair a store implements to support authentication, kept
+// separate from Repository so the administrative facade keeps its shape and a
+// consumer that only authenticates takes a narrower dependency.
+type SubjectBinding interface {
+	SubjectResolver
+	BindSubject(context.Context, IdentityID, Subject, Audit) error
+}
+
 // SubjectResolver resolves a verified provider subject to the identity bound to
 // it. It is deliberately narrower than Repository: authenticating a request
 // needs to resolve a subject, not to administer identities, so a consumer that

@@ -27,6 +27,9 @@ type deps struct {
 	Health       *health.Registry
 	ControlPlane controlpb.ControlPlaneServiceClient
 	Identities   identity.Repository
+	// Authenticate resolves a presented credential to the identity that may
+	// act. Nil when no provider is configured, which keeps the shared token.
+	Authenticate func(context.Context, string) (identity.Identity, error)
 }
 
 // compose builds the dashboard server for the UI process. It sets exactly the
@@ -67,6 +70,7 @@ func compose(d deps) *webui.Server {
 		Store:                 d.Store,
 		Log:                   d.Log,
 		Token:                 d.Options.Token,
+		Authenticate:          d.Authenticate,
 		TrustForwardedHeaders: d.Options.trustForwardedHeaders(),
 		Health:                d.Health,
 		ControlPlane:          d.ControlPlane,

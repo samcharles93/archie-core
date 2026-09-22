@@ -514,6 +514,7 @@ type Config struct {
 
 	Budgets    Budgets         `toml:"budgets" yaml:"budgets"`
 	Web        Web             `toml:"web" yaml:"web"`
+	Oidc       Oidc            `toml:"oidc" yaml:"oidc"`
 	Health     Health          `toml:"health" yaml:"health"`
 	Log        Log             `toml:"log" yaml:"log"`
 	Notify     Notify          `toml:"notify" yaml:"notify"`
@@ -1062,6 +1063,19 @@ type Notify struct {
 	// Webhook receives JSON POSTs for events that need a human (e.g.
 	// feasibility PRDs awaiting go/no-go). Empty disables.
 	Webhook string `toml:"webhook" json:"webhook" yaml:"webhook"`
+}
+
+// Oidc configures verification of identity-provider tokens. An empty issuer
+// disables it, and the dashboard keeps its shared-token gate -- which attributes
+// a request to a credential, not to a person.
+type Oidc struct {
+	// Issuer is the provider's issuer URL. Discovery and the signing keys are
+	// read from it, so archie holds no key material of its own.
+	Issuer string `toml:"issuer" yaml:"issuer"`
+	// Audience is the resource identifier archie accepts tokens for. Required
+	// when an issuer is set: without it a token the provider minted for another
+	// service would authenticate here.
+	Audience string `toml:"audience" yaml:"audience"`
 }
 
 // Web configures the observability dashboard.

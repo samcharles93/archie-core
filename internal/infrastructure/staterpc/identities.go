@@ -69,6 +69,46 @@ func (s *server) RetireIdentity(ctx context.Context, request *pb.RetireIdentityR
 	return &pb.RetireIdentityResponse{Identity: identityProto(value)}, err
 }
 
+func (s *server) ResolveIdentitySubject(ctx context.Context, request *pb.ResolveIdentitySubjectRequest) (*pb.ResolveIdentitySubjectResponse, error) {
+	if s.deps.SubjectBindings == nil {
+		return nil, status.Error(codes.Unavailable, "identity subject bindings unavailable")
+	}
+	value, err := s.deps.SubjectBindings.ResolveSubject(ctx, identity.Subject{Issuer: request.Issuer, Subject: request.Subject})
+	if err != nil {
+		return nil, identityStatus(err)
+	}
+	return &pb.ResolveIdentitySubjectResponse{Identity: identityProto(value)}, nil
+}
+
+func (s *server) BindIdentitySubject(ctx context.Context, request *pb.BindIdentitySubjectRequest) (*pb.BindIdentitySubjectResponse, error) {
+	if s.deps.SubjectBindings == nil {
+		return nil, status.Error(codes.Unavailable, "identity subject bindings unavailable")
+	}
+	subject := identity.Subject{Issuer: request.Issuer, Subject: request.Subject}
+	if err := s.deps.SubjectBindings.BindSubject(ctx, identity.IdentityID(request.Id), subject, identityAudit(request.Audit)); err != nil {
+		return nil, identityStatus(err)
+	}
+	value, err := s.deps.Identities.Get(ctx, identity.IdentityID(request.Id))
+	if err != nil {
+		return nil, identityStatus(err)
+	}
+	return &pb.BindIdentitySubjectResponse{Identity: identityProto(value)}, nil
+}
+
+func (c *Client) ResolveSubject(ctx context.Context, subject identity.Subject) (identity.Identity, error) {
+	response, err := c.client.ResolveIdentitySubject(ctx, &pb.ResolveIdentitySubjectRequest{Issuer: subject.Issuer, Subject: subject.Subject})
+	if err != nil {
+		return identity.Identity{}, identityClientError(err)
+	}
+	return identityValue(response.Identity), nil
+}
+
+func (c *Client) BindSubject(ctx context.Context, id identity.IdentityID, subject identity.Subject, audit identity.Audit) error {
+	_, err := c.client.BindIdentitySubject(ctx, &pb.BindIdentitySubjectRequest{Id: string(id), Issuer: subject.Issuer, Subject: subject.Subject, Audit: auditProto(audit)})
+	return identityClientError(err)
+}
+
+// applyIdentityCommand applies one lifecycle command through the store facade.
 func (s *server) applyIdentityCommand(ctx context.Context, id string, version int64, audit *pb.IdentityAudit, command identity.Command) (identity.Identity, error) {
 	value, err := s.deps.Identities.Apply(ctx, identity.IdentityID(id), version, command, identityAudit(audit))
 	if err != nil {

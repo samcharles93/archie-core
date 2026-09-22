@@ -1646,9 +1646,20 @@ func (x *ApplyTaskActionResponse) GetMessage() string {
 // carries no identity to scope against -- the distinction the daemon's task
 // action service draws with a nil identity (internal/domain/taskactions).
 type ApplyOperatorTaskActionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TaskId int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Action string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	// actor_id is the identity that performed the action, as asserted by the
+	// caller that verified the credential the request presented. actor_kind
+	// travels beside it so the record can say an agent acted without a reader
+	// resolving the identity. principal_id is the identity whose authority the
+	// action used; empty means the action is recorded unattributed rather than
+	// credited to the actor's own authority. All three are empty when the caller
+	// has no verified identity, which is recorded as an unattributed action and
+	// never as a human's.
+	ActorId       string `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorKind     string `protobuf:"bytes,4,opt,name=actor_kind,json=actorKind,proto3" json:"actor_kind,omitempty"`
+	PrincipalId   string `protobuf:"bytes,5,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1693,6 +1704,27 @@ func (x *ApplyOperatorTaskActionRequest) GetTaskId() int64 {
 func (x *ApplyOperatorTaskActionRequest) GetAction() string {
 	if x != nil {
 		return x.Action
+	}
+	return ""
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetActorKind() string {
+	if x != nil {
+		return x.ActorKind
+	}
+	return ""
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
 	}
 	return ""
 }
@@ -2924,10 +2956,14 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x17ApplyTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"Q\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xae\x01\n" +
 	"\x1eApplyOperatorTaskActionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
-	"\x06action\x18\x02 \x01(\tR\x06action\"l\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x1d\n" +
+	"\n" +
+	"actor_kind\x18\x04 \x01(\tR\tactorKind\x12!\n" +
+	"\fprincipal_id\x18\x05 \x01(\tR\vprincipalId\"l\n" +
 	"\x1fApplyOperatorTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +

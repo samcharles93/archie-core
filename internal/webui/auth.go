@@ -1,9 +1,11 @@
 package webui
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
 
 // tokenCookie carries the dashboard token once it has been exchanged from the
@@ -89,8 +93,12 @@ func LoadOrCreateToken(path string) (string, error) {
 	return tok, nil
 }
 
-// requireToken wraps h with token authentication. A zero token disables the
-// check entirely, which is how loopback binds stay frictionless.
+// requireToken wraps h with the credential check this process is configured for.
+//
+// With an identity provider configured, the check is a provider-issued bearer
+// token that resolves to a named identity, and a request that cannot produce one
+// is refused. With no provider, the shared token is the gate, which is the
+// frictionless loopback behaviour a single-operator instance wants.
 //
 // The token may arrive as ?t=... once; it is then moved into a
 // SameSite=Strict, HttpOnly cookie and the caller redirected to the clean URL.
@@ -98,6 +106,9 @@ func LoadOrCreateToken(path string) (string, error) {
 // The token is read per request rather than captured when the handler is
 // built, so a Server whose Token is set after Handler() is still protected.
 func (s *Server) requireToken(h http.Handler) http.Handler {
+	if s.Authenticate != nil {
+		return s.requireIdentity(h)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.Token == "" {
 			h.ServeHTTP(w, r)
@@ -147,6 +158,83 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "unauthorised: open the dashboard URL archied logged at startup", http.StatusUnauthorized)
 	})
+}
+
+// requireIdentity authenticates a request from a provider-issued bearer token and
+// attaches the identity that token resolved to.
+//
+// Nothing about the caller is read from the request body, a header or a query
+// parameter: the subject comes from the credential the provider signed, and the
+// identity is the record that subject is bound to. That is why an agent's action
+// can be attributed at all -- a caller cannot assert who it is, it can only
+// present what the provider gave it.
+func (s *Server) requireIdentity(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		credential, ok := bearerCredential(r)
+		if !ok {
+			s.refuseUnidentified(w, r, identity.ErrNoCredential)
+			return
+		}
+		value, err := s.Authenticate(r.Context(), credential)
+		if err != nil {
+			s.refuseUnidentified(w, r, err)
+			return
+		}
+		h.ServeHTTP(w, r.WithContext(WithActingIdentity(r.Context(), value)))
+	})
+}
+
+// bearerCredential reads the credential a request presented. An empty token is
+// reported as absent rather than as a rejected one: there is nothing to verify.
+func bearerCredential(r *http.Request) (string, bool) {
+	const prefix = "Bearer "
+	header := r.Header.Get("Authorization")
+	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(header[len(prefix):])
+	return token, token != ""
+}
+
+// refuseUnidentified answers a request archie could not attribute to an identity.
+//
+// The status is HTTP's own distinction: absent or unverifiable credentials are
+// 401 and name the scheme, while a credential that verified for an identity that
+// may not act is 403 -- the caller proved who it is and is still not allowed.
+func (s *Server) refuseUnidentified(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Cache-Control", "no-store")
+	allowed := errors.Is(err, identity.ErrIdentityInactive) || errors.Is(err, identity.ErrSubjectUnbound)
+	status := http.StatusUnauthorized
+	reason := "That credential was not accepted."
+	switch {
+	case errors.Is(err, identity.ErrIdentityInactive):
+		status, reason = http.StatusForbidden, "That identity may not act."
+	case errors.Is(err, identity.ErrSubjectUnbound):
+		status, reason = http.StatusForbidden, "That credential is not bound to an identity here."
+	default:
+		w.Header().Set("WWW-Authenticate", `Bearer realm="archie"`)
+	}
+	if !allowed && wantsDocument(r) {
+		s.authPage(w, reason)
+		return
+	}
+	http.Error(w, reason, status)
+}
+
+type actingIdentityContextKey struct{}
+
+// WithActingIdentity returns a context carrying the identity a request resolved
+// to, so a handler can attribute what it does without re-verifying anything.
+func WithActingIdentity(ctx context.Context, value identity.Identity) context.Context {
+	return context.WithValue(ctx, actingIdentityContextKey{}, value)
+}
+
+// ActingIdentity returns the identity a request resolved to, if it resolved to
+// one. A false result means the request was not authenticated, which is a
+// different fact from an authenticated request whose actor is unrecorded.
+func ActingIdentity(ctx context.Context) (identity.Identity, bool) {
+	value, ok := ctx.Value(actingIdentityContextKey{}).(identity.Identity)
+	return value, ok
 }
 
 // wantsDocument reports whether a request is a browser navigation rather than an

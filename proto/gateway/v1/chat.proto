@@ -141,7 +141,21 @@ message ApplyTaskActionResponse { int64 task_id = 1; string action = 2; string m
 // An authenticated dashboard operator acts across identities, so this request
 // carries no identity to scope against -- the distinction the daemon's task
 // action service draws with a nil identity (internal/domain/taskactions).
-message ApplyOperatorTaskActionRequest { int64 task_id = 1; string action = 2; }
+message ApplyOperatorTaskActionRequest {
+  int64 task_id = 1;
+  string action = 2;
+  // actor_id is the identity that performed the action, as asserted by the
+  // caller that verified the credential the request presented. actor_kind
+  // travels beside it so the record can say an agent acted without a reader
+  // resolving the identity. principal_id is the identity whose authority the
+  // action used; empty means the action is recorded unattributed rather than
+  // credited to the actor's own authority. All three are empty when the caller
+  // has no verified identity, which is recorded as an unattributed action and
+  // never as a human's.
+  string actor_id = 3;
+  string actor_kind = 4;
+  string principal_id = 5;
+}
 message ApplyOperatorTaskActionResponse { int64 task_id = 1; string action = 2; string message = 3; }
 message SaveSessionResponse {}
 message SaveSessionRequest { Session session = 1; }

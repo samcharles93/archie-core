@@ -100,6 +100,13 @@ type Server struct {
 	// stay frictionless -- see IsLoopback.
 	Token string
 
+	// Authenticate resolves a credential a request presented to the identity
+	// that may act, and is the whole of the provider integration: verification
+	// and binding both live behind it. Non-nil replaces the shared token, so
+	// every request resolves to a named identity or is refused; nil keeps the
+	// shared-token gate for an instance with no provider configured.
+	Authenticate func(context.Context, string) (identity.Identity, error)
+
 	// Events publishes operator actions so they reach the task timeline and
 	// the live activity stream. Optional: nil means the action is recorded
 	// in the store but invisible to anyone watching.

@@ -60,8 +60,12 @@ const taskLogChunkBytes = 256 << 10
 // codes.Unavailable) exactly as their daemon-side consumers already treat a
 // nil Mappings/Bindings/BindingDispatcher/BindingTaskCreator as "disabled".
 type Deps struct {
-	ControlPlane    controlpb.ControlPlaneServiceServer
-	Identities      identity.Repository
+	ControlPlane controlpb.ControlPlaneServiceServer
+	Identities   identity.Repository
+	// SubjectBindings fronts the subject-binding surface, which only the
+	// authenticating path needs. Unset means this process cannot resolve a
+	// verified subject, and the RPCs answer Unavailable rather than pretending.
+	SubjectBindings identity.SubjectBinding
 	Grants          *TaskGrants
 	Tasks           storecontract.TaskStore
 	Captures        storecontract.CaptureStore

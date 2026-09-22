@@ -23,6 +23,11 @@ service StateStoreService {
   rpc SuspendIdentity(SuspendIdentityRequest) returns (SuspendIdentityResponse);
   rpc ReactivateIdentity(ReactivateIdentityRequest) returns (ReactivateIdentityResponse);
   rpc RetireIdentity(RetireIdentityRequest) returns (RetireIdentityResponse);
+  // Subject bindings. A verified provider subject is resolved to the identity it
+  // is bound to; the authenticating process calls these rather than owning the
+  // identity store.
+  rpc ResolveIdentitySubject(ResolveIdentitySubjectRequest) returns (ResolveIdentitySubjectResponse);
+  rpc BindIdentitySubject(BindIdentitySubjectRequest) returns (BindIdentitySubjectResponse);
   // Lifecycle
   rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
   rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
@@ -189,6 +194,18 @@ message RenameIdentityResponse { Identity identity = 1; }
 message SuspendIdentityResponse { Identity identity = 1; }
 message ReactivateIdentityResponse { Identity identity = 1; }
 message RetireIdentityResponse { Identity identity = 1; }
+message ResolveIdentitySubjectRequest {
+  string issuer = 1;
+  string subject = 2;
+}
+message ResolveIdentitySubjectResponse { Identity identity = 1; }
+message BindIdentitySubjectRequest {
+  string id = 1;
+  string issuer = 2;
+  string subject = 3;
+  IdentityAudit audit = 4;
+}
+message BindIdentitySubjectResponse { Identity identity = 1; }
 
 // Task mirrors internal/domain/workflow.Task.
 message Task {
