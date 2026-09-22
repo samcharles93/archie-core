@@ -5,6 +5,39 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.37.1] - 2026-09-22
+
+### archied — A recorded event names the actor in its own fields
+
+- **Event attribution survives the trip to the State Store.** The acting
+  identity, its kind, and the authorising principal are carried on the event
+  itself, so an audit query finds the actor in its own fields rather than only in
+  the event's prose. An approval taken through the dashboard is the case that
+  exposed the gap.
+
+### archied — A chat reply that contains code renders the way it was written
+
+- **A code fence closes only on a run of the same character that is at least as
+  long as the one that opened it.** A four-backtick fence, a tilde fence, or a
+  reply that wraps its own code in a longer fence now arrives as code instead of
+  as a broken language tag or paragraphs of leaked text.
+
+### archied — A tool call is one line with its own icon
+
+- **A tool call takes a single line instead of a label plus a fenced block.**
+  Telegram draws a fenced block as a full code widget — language header, copy
+  button and panel — and the block parser inserts a spacer before it, so a
+  handful of calls filled the screen to show a few word counts. Each call now
+  shows the icon its own tool declares, and a tool that declares none renders
+  without one.
+- **The status word prints only when the outcome is not success.** Every tool
+  line previously read "done", including the ones that had not finished.
+
+### archied — Runtime dependencies updated
+
+- **Runtime dependencies updated**, including the OpenID Connect and OAuth
+  libraries.
+
 ## [1.37.0] - 2026-09-22
 
 ### archied — A request is attributed to the identity that made it
