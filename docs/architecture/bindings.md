@@ -5,9 +5,9 @@ through `.5`, `.7`, `.9`-`.15`)
 **Date:** 2026-09-03
 
 This document covers the binding model and the intake threat model portion
-of `archie-core-t2db.6`. It does not cover the `ARCHITECTURE.md` task-lifecycle
-addendum or the operator walkthrough -- those remain separate, open pieces of
-the same ticket.
+of `archie-core-t2db.6`. It does not cover the task-lifecycle provenance rule
+(`messaging-and-work-intake.md`'s "Intake provenance") or the operator
+walkthrough -- that walkthrough remains an open piece of the same ticket.
 
 ## What a binding is
 
@@ -177,9 +177,6 @@ execution-time idempotency, now landed (`archie-core-t2db.17` closed): the
 
 ## What this document does not cover
 
-- The `ARCHITECTURE.md` task-lifecycle section noting that a
-  playbook-originated task has different provenance from a forge-issue
-  task -- open, part of `archie-core-t2db.6`.
 - An end-to-end operator walkthrough (point an external app at archie,
   build a first playbook) -- open, part of `archie-core-t2db.6`.
 - The playbook YAML / CEL / Module/Channel/Forge action-position work

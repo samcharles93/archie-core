@@ -12,7 +12,8 @@ each question and saying which packages change.
 ## 1. In-process typed families, not out-of-process dispatch
 
 Archie has no out-of-process extension mechanism. The plugin engine
-rule (`ARCHITECTURE.md#plugin-engine-rule-strict`, mechanically checked by
+rule (`docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict`,
+mechanically checked by
 `internal/plugin/architecture_test.go`) keeps every capability family
 in-process behind a narrow typed registrar; NATS RPC exists for
 daemon<->agentexec, a different actor with a different trust boundary (task

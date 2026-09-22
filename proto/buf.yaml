@@ -7,3 +7,18 @@ lint:
 breaking:
   use:
     - FILE
+  # Two intentional wire breaks, both widening an id-shaped field from int64 to
+  # string in place, on the same field numbers and names. The PocketBase
+  # migration moved the event-capture contract's record ids to PocketBase's
+  # string record ids: CapturedEvent, Mapping, Binding, RecordDispatchRequest,
+  # EnqueueBindingTaskRequest, Task.binding_id and the Id-bearing
+  # request/response messages. Separately, EventsSinceRequest.since_id now
+  # carries the opaque "<at>|<row id>" resume cursor instead of a rowid.
+  #
+  # The State Store contract's two halves ship from this repository together, so
+  # they cannot be versioned apart. Only the type rule is relaxed, and only in
+  # this file: every other FILE breaking rule still applies here, so a rename,
+  # a renumber or a removal is still caught, and no other contract is affected.
+  ignore_only:
+    FIELD_SAME_TYPE:
+      - state/v1/state.proto

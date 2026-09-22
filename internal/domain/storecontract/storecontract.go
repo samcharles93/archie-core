@@ -80,7 +80,7 @@ type TaskQueries interface {
 // TaskEvents groups observability and lifecycle methods.
 type TaskEvents interface {
 	InsertEvent(ctx context.Context, e events.Event) (int64, error)
-	EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error)
+	EventsSince(ctx context.Context, cursor string, limit int) ([]events.Event, error)
 	TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error)
 	WorkflowStats(ctx context.Context) ([]WorkflowStat, error)
 	StageStats(ctx context.Context) ([]StageStat, error)
@@ -94,7 +94,7 @@ type TaskEvents interface {
 // should not acquire the full task-lifecycle surface, mirroring why
 // TaskArchiver is split out above. See docs/prds/event-capture-storage.md.
 type CaptureStore interface {
-	InsertCapture(ctx context.Context, c CapturedEvent, retention time.Duration, maxEvents int) (int64, error)
+	InsertCapture(ctx context.Context, c CapturedEvent, retention time.Duration, maxEvents int) (string, error)
 	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
 }
 
@@ -142,11 +142,11 @@ type ApplyStatusStore interface {
 // surface, not the full task or capture APIs. See
 // docs/prds/payload-field-mapping.md.
 type MappingStore interface {
-	InsertMapping(ctx context.Context, m mapping.Mapping) (int64, error)
-	GetMapping(ctx context.Context, id int64) (*mapping.Mapping, error)
+	InsertMapping(ctx context.Context, m mapping.Mapping) (string, error)
+	GetMapping(ctx context.Context, id string) (*mapping.Mapping, error)
 	ListMappings(ctx context.Context) ([]mapping.Mapping, error)
 	UpdateMapping(ctx context.Context, m mapping.Mapping) error
-	DeleteMapping(ctx context.Context, id int64) error
+	DeleteMapping(ctx context.Context, id string) error
 }
 
 // BindingStore persists playbook bindings (t2db.4 Phase B): CRUD and the
@@ -156,12 +156,12 @@ type MappingStore interface {
 // BindingDispatcher; the daemon depends on both. See
 // docs/prds/playbook-binding.md.
 type BindingStore interface {
-	InsertBinding(ctx context.Context, b binding.Binding) (int64, error)
-	GetBinding(ctx context.Context, id int64) (*binding.Binding, error)
+	InsertBinding(ctx context.Context, b binding.Binding) (string, error)
+	GetBinding(ctx context.Context, id string) (*binding.Binding, error)
 	ListBindings(ctx context.Context) ([]binding.Binding, error)
 	UpdateBinding(ctx context.Context, b binding.Binding) error
-	DeleteBinding(ctx context.Context, id int64) error
-	ApproveBinding(ctx context.Context, id int64) error
+	DeleteBinding(ctx context.Context, id string) error
+	ApproveBinding(ctx context.Context, id string) error
 }
 
 // BindingDispatcher is the dispatch-loop surface over the bindings store:
@@ -174,9 +174,11 @@ type BindingDispatcher interface {
 	ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error)
 	RecordDispatch(
 		ctx context.Context,
-		bindingID int64,
+		bindingID string,
 		bindingVersion int64,
-		captureID int64,
+		captureID string,
+		// taskID addresses the SQLite-owned task tables, which are not
+		// migrating: it stays an integer on purpose.
 		taskID int64,
 	) error
 	ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]CapturedEvent, error)
@@ -187,7 +189,7 @@ type BindingDispatcher interface {
 // keeps the lifecycle surface narrow (8 methods, the interfacebloat limit)
 // and keeps the binding-specific shape on the binding interfaces.
 type BindingTaskCreator interface {
-	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*task.Task, error)
+	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*task.Task, error)
 }
 
 // PlaybookDispatcher is the idempotency-ledger surface for side-effecting
@@ -231,7 +233,7 @@ type TaskLogStore interface {
 // no forge/task association -- just what arrived, from where, and when.
 // See docs/prds/event-capture-storage.md.
 type CapturedEvent struct {
-	ID          int64     `json:"id"`
+	ID          string    `json:"id"`
 	ReceivedAt  time.Time `json:"received_at"`
 	Source      string    `json:"source"`
 	RemoteAddr  string    `json:"remote_addr"`

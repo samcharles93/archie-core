@@ -251,6 +251,32 @@ Current intake is fragmented:
 - `store.Task` collapses an external source reference and durable execution
   state.
 
+## Intake provenance
+
+A task's origin determines which enqueue path created it, though every origin
+converges on the same `tasks` table and the same `Route`/`Run` lifecycle once
+queued.
+
+- Forge-sourced work -- discovered by polling or, in single-identity
+  deployments, delivered by the forge webhook receiver (`internal/forge/webhook`)
+  -- enqueues through the same `workintake.TaskEnvelope` and `PublishTask` path.
+  `TaskEnvelope.IdempotencyKey` is keyed on `owner/repo/number` and not on the
+  delivery source, so a webhook-delivered issue and a later poll of the same
+  issue dedup through `PublishUnique` instead of double-enqueuing.
+- Chat-spawned and playbook-binding-dispatched work enqueues through
+  `EnqueueChatTask`/`EnqueueBindingTask` (`internal/store`), stamped with
+  `binding_id`/`binding_version` for provenance.
+
+Webhook intake is opt-in per deployment (`Forge.Intake` = `poll` (default),
+`webhook`, or `both`) and single-identity only: a config naming
+`webhook`/`both` alongside `[[identities]]`, or setting intake on a
+`[identities.forge]` entry, is rejected at validation rather than started with
+the setting ignored. One receiver binds one secret and one dispatch predicate,
+so it cannot judge a second identity's events by the right rules. A
+multi-identity deployment polls per identity until per-identity intake lands.
+The decided contract is `docs/prds/event-sources-and-reactions.md`; the binding
+model and its threat model are `docs/architecture/bindings.md`.
+
 ## Current hazards
 
 - Treating every agent interaction as a work request would remove Archie's

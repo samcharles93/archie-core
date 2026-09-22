@@ -13,10 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -24,12 +22,12 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
-	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
+	"github.com/samcharles93/archie-core/internal/infrastructure/stateadmin"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -49,6 +47,11 @@ func configuredIdentityNames(cfg config.Config) []string {
 	return names
 }
 
+// edaDBPath derives the event-capture database from the configured db_path,
+// beside the task database rather than inside it: the two stores have separate
+// lifecycles and only meet at binding_dispatches.task_id.
+func edaDBPath(configuredPath string) string { return configuredPath + "-eda.sqlite" }
+
 // StateStoreOptions contains process inputs for the standalone State Store.
 type StateStoreOptions struct {
 	Config  string
@@ -65,6 +68,10 @@ type StateStoreOptions struct {
 	// address: GET /healthz (liveness) and GET /health/detailed (the
 	// state_db probe). Empty disables it.
 	ReadyAddr string
+	// AdminAddr, when non-empty, starts the read-only operator dashboard on
+	// the address. It co-tenants on the same SQLite file this process already
+	// owns, so it needs no lock and no database of its own. Empty disables it.
+	AdminAddr string
 }
 
 // RunStateStore owns the single archie.db SQLite file, registers every
@@ -107,12 +114,11 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err != nil {
 		return err
 	}
-	versions, skipped, err := control.ImportConfig(ctx, b.cfg)
+	_, skipped, err := control.ImportConfig(ctx, b.cfg)
 	if err != nil {
 		return fmt.Errorf("import control-plane resources: %w", err)
 	}
 	b.reportUnseededResources(skipped)
-	migrateLegacySchedules(ctx, control, b.cfg.DBPath, versions[controlplane.SchedulesKind], b.log)
 
 	token := options.Token
 	if token == "" {
@@ -131,10 +137,8 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	defer listener.Close()
 	b.log.Info("archie-state-store running", "addr", listener.Addr().String(), "token_required", !loopback)
 
-	if options.ReadyAddr != "" {
-		if err := b.startStateStoreReadiness(ctx, options.ReadyAddr); err != nil {
-			return err
-		}
+	if err := b.startOptionalSurfaces(ctx, options); err != nil {
+		return err
 	}
 
 	deps := b.stateStoreDeps(grants)
@@ -188,81 +192,6 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 	return server, nil
 }
 
-// migrateLegacySchedules carries a legacy cronstore file -- the old daemon's
-// <state dir>/cron/jobs.json -- into the schedules resource, once, on a fresh
-// seed. It moves only the jobs the schedules resource can hold: workflow
-// jobs, the one delivery the router maps. Chat and unrecognised kinds were
-// already dead deliveries in the old engine (the delivery router maps
-// KindWorkflow alone), so they are reported and left in the legacy file
-// rather than being allowed to refuse the replace the whole store depends on.
-//
-// Nothing here is fatal. The migration is a legacy-data courtesy: an
-// unreadable or refused sidecar is logged and left in place for the next
-// start, the way ImportConfig skips a seed the resource validator refuses --
-// a value this process cannot use must not stop the one process every other
-// process dials (docs/prds/runtime-control-plane.md, "Bootstrap, migration,
-// and recovery"). A successful replace is marked by renaming the file to
-// jobs.json.migrated, so the whole legacy list -- the skipped jobs included
-// -- stays on disk for the operator; until the rename lands, the replaying
-// request ID keeps the replace idempotent across restarts.
-func migrateLegacySchedules(ctx context.Context, control *controlplane.Server, dbPath string, version int64, log *slog.Logger) {
-	if version != 1 {
-		return
-	}
-	path := filepath.Join(filepath.Dir(dbPath), "cron", "jobs.json")
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return
-		}
-		log.Warn("legacy cron store not readable; schedules migration skipped and retried on the next start", "path", path, "err", err)
-		return
-	}
-	jobs, err := readLegacyJobs(ctx, path)
-	if err != nil {
-		log.Error("legacy cron store unreadable; schedules migration skipped and retried on the next start", "path", path, "err", err)
-		return
-	}
-	migratable := make([]cronstore.JobSpec, 0, len(jobs))
-	for _, job := range jobs {
-		if job.Kind == cronstore.KindWorkflow {
-			migratable = append(migratable, job)
-			continue
-		}
-		log.Warn("legacy cron job is not a workflow job; the schedules resource does not carry it and it stays in the legacy file", "id", job.ID, "kind", job.Kind)
-	}
-	if len(migratable) == 0 {
-		log.Info("legacy cron store holds no workflow jobs; nothing to migrate", "path", path, "jobs", len(jobs))
-		return
-	}
-	value, err := json.Marshal(migratable)
-	if err != nil {
-		log.Error("encode legacy cron jobs; schedules migration skipped and retried on the next start", "path", path, "err", err)
-		return
-	}
-	if _, err := control.Command(ctx, &controlpb.CommandRequest{Kind: controlplane.SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: 1, Actor: "system:migration", Source: "legacy-cronstore", RequestId: "import:legacy-schedules"}); err != nil {
-		log.Error("legacy cron jobs do not satisfy the schedules resource; migration skipped and retried on the next start", "path", path, "err", err)
-		return
-	}
-	if err := os.Rename(path, path+".migrated"); err != nil {
-		log.Error("mark the migrated legacy cron file; migration retried on the next start", "path", path, "err", err)
-	}
-}
-
-// readLegacyJobs reads the legacy cronstore file and closes its handle,
-// reporting whichever failure came first.
-func readLegacyJobs(ctx context.Context, path string) ([]cronstore.JobSpec, error) {
-	legacy, err := cronstore.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	jobs, listErr := legacy.List(ctx)
-	closeErr := legacy.Close()
-	if listErr != nil {
-		return nil, listErr
-	}
-	return jobs, closeErr
-}
-
 // openStateStore opens the single task-store SQLite file exactly once for
 // service ownership. It resolves secrets (for the binding cipher) but does
 // NOT open gateway chat sessions -- those live in the separate archie-gateway
@@ -298,7 +227,23 @@ func (b *boot) openStateStore(ctx context.Context) error {
 			log.Error("release state store ownership", "err", err)
 		}
 	})
-	st, err := openProductionTaskStore(ctx, path, store.WithBindingCipher(bindingCipher))
+	eda, err := edastore.Open(edastore.Config{
+		DBPath:  edaDBPath(cfg.DBPath),
+		DataDir: filepath.Join(filepath.Dir(path), "eda"),
+		Cipher:  bindingCipher,
+	})
+	if err != nil {
+		log.Error("open event-capture store", "err", err)
+		return err
+	}
+	b.eda = eda
+	b.addCleanup(func() {
+		if err := eda.Close(); err != nil {
+			log.Error("close event-capture store", "err", err)
+		}
+	})
+
+	st, err := openProductionTaskStore(ctx, path)
 	if err != nil {
 		log.Error("open state store", "err", err)
 		return err
@@ -345,20 +290,24 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if b.taskLogs != nil {
 		deps.TaskLogs = b.taskLogs
 	}
-	if cs, ok := b.st.(storecontract.CaptureStore); ok {
-		deps.Captures = cs
+	// The event-capture contracts are served by the PocketBase store, not the
+	// task store: those tables moved. BindingTaskCreator stays below on the
+	// task store, because creating a task is the one thing it still does.
+	if b.eda != nil {
+		deps.Captures = b.eda
+		deps.Mappings = b.eda
+		deps.Bindings = b.eda
+		deps.BindingDispatcher = b.eda
+		deps.PlaybookDispatcher = b.eda
 	}
-	if ms, ok := b.st.(storecontract.MappingStore); ok {
-		deps.Mappings = ms
-	}
-	if bs, ok := b.st.(storecontract.BindingStore); ok {
-		deps.Bindings = bs
-	}
-	if bd, ok := b.st.(storecontract.BindingDispatcher); ok {
-		deps.BindingDispatcher = bd
-	}
-	if pd, ok := b.st.(storecontract.PlaybookDispatcher); ok {
-		deps.PlaybookDispatcher = pd
+	// tool_call events project into the tool_calls collection on the same
+	// event-capture store: this process legitimately owns both, so the
+	// projection rides on the task-store surface it decorates. With no
+	// event-capture store (or no task store) there is nothing to project
+	// through, and Tasks passes through unwrapped rather than decorating a
+	// nil operand.
+	if b.eda != nil && b.st != nil {
+		deps.Tasks = newToolCallProjectingTaskStore(b.st, b.eda, b.log)
 	}
 	if btc, ok := b.st.(storecontract.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
@@ -419,6 +368,55 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 		_ = json.NewEncoder(w).Encode(report)
 	})
 	return b.serveHealth(ctx, readyAddr, mux, "state store readiness")
+}
+
+// startOptionalSurfaces starts the HTTP surfaces this process serves beside
+// the gRPC contract, each enabled only by its own flag.
+//
+// They are gathered here rather than branched inline because RunStateStore is
+// at its complexity budget: a surface that is off by default belongs to its
+// own decision, not to the boot sequence that triggers it -- the same reason
+// reportUnseededResources is a method.
+func (b *boot) startOptionalSurfaces(ctx context.Context, options StateStoreOptions) error {
+	if options.ReadyAddr != "" {
+		if err := b.startStateStoreReadiness(ctx, options.ReadyAddr); err != nil {
+			return err
+		}
+	}
+	if options.AdminAddr != "" {
+		if err := b.startStateAdmin(ctx, options.AdminAddr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// startStateAdmin starts the read-only operator dashboard on adminAddr.
+//
+// It is started here, inside the process that already holds the database's
+// ownership claim (openStateStore above), because that claim is what makes a
+// second reader safe to co-tenant: a separate admin process would be a second
+// opener of a single-owner file. The surface exposes view collections only and
+// refuses the routes that could write, so the StateStoreService contract this
+// process serves stays the only writer of task state.
+func (b *boot) startStateAdmin(ctx context.Context, adminAddr string) error {
+	admin, err := stateadmin.New(stateadmin.Config{
+		DBPath:  taskDBPath(b.cfg.DBPath),
+		DataDir: filepath.Join(filepath.Dir(taskDBPath(b.cfg.DBPath)), "admin"),
+	})
+	if err != nil {
+		return err
+	}
+	b.addCleanup(func() {
+		if err := admin.Close(); err != nil {
+			b.log.Error("close state admin", "err", err)
+		}
+	})
+	handler, err := admin.Handler()
+	if err != nil {
+		return fmt.Errorf("build state admin handler: %w", err)
+	}
+	return b.serveHealth(ctx, adminAddr, handler, "state store admin")
 }
 
 // stateStoreServerOpts applies the transport security boundary (§9): a

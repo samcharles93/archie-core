@@ -231,7 +231,7 @@ message Task {
   int64 watch_comment_id = 20;
   string source = 21;
   string identity = 22;
-  int64 binding_id = 23;
+  string binding_id = 23;
   int64 binding_version = 24;
   google.protobuf.Timestamp created_at = 25;
   google.protobuf.Timestamp updated_at = 26;
@@ -280,7 +280,7 @@ message Event {
 
 // CapturedEvent mirrors internal/store.CapturedEvent.
 message CapturedEvent {
-  int64 id = 1;
+  string id = 1;
   google.protobuf.Timestamp received_at = 2;
   string source = 3;
   string remote_addr = 4;
@@ -300,7 +300,7 @@ message MappingField {
 
 // Mapping mirrors internal/domain/mapping.Mapping.
 message Mapping {
-  int64 id = 1;
+  string id = 1;
   string name = 2;
   string source_hint = 3;
   repeated MappingField fields = 4;
@@ -315,10 +315,10 @@ message BindingMatcher {
 
 // Binding mirrors internal/domain/binding.Binding.
 message Binding {
-  int64 id = 1;
+  string id = 1;
   string name = 2;
   BindingMatcher matcher = 3;
-  int64 mapping_id = 4;
+  string mapping_id = 4;
   string workflow = 5;
   string owner = 6;
   string repo = 7;
@@ -470,7 +470,12 @@ message InsertEventRequest { Event event = 1; }
 message InsertEventResponse { int64 id = 1; }
 
 message EventsSinceRequest {
-  int64 since_id = 1;
+  // since_id is the opaque resume cursor returned by the previous page (the SSE
+  // id: field, echoed back as Last-Event-ID). Empty means "from the
+  // beginning". The field keeps its name and number so the wire name stays
+  // put; only its type widened, from the SQLite rowid to the fixed-width
+  // "<at>|<row id>" cursor.
+  string since_id = 1;
   int64 limit = 2;
 }
 message EventsSinceResponse { repeated Event events = 1; }
@@ -610,7 +615,7 @@ message InsertCaptureRequest {
   int64 retention_seconds = 2;
   int64 max_events = 3;
 }
-message InsertCaptureResponse { int64 id = 1; }
+message InsertCaptureResponse { string id = 1; }
 
 message ListCapturesRequest { int64 limit = 1; }
 message ListCapturesResponse { repeated CapturedEvent captures = 1; }
@@ -619,9 +624,9 @@ message StreamCapturesRequest { int64 limit = 1; }
 message StreamCapturesResponse { CapturedEvent capture = 1; }
 
 message InsertMappingRequest { Mapping mapping = 1; }
-message InsertMappingResponse { int64 id = 1; }
+message InsertMappingResponse { string id = 1; }
 
-message GetMappingRequest { int64 id = 1; }
+message GetMappingRequest { string id = 1; }
 message GetMappingResponse {
   Mapping mapping = 1;
   bool found = 2;
@@ -633,13 +638,13 @@ message ListMappingsResponse { repeated Mapping mappings = 1; }
 message UpdateMappingRequest { Mapping mapping = 1; }
 message UpdateMappingResponse {}
 
-message DeleteMappingRequest { int64 id = 1; }
+message DeleteMappingRequest { string id = 1; }
 message DeleteMappingResponse {}
 
 message InsertBindingRequest { Binding binding = 1; }
-message InsertBindingResponse { int64 id = 1; }
+message InsertBindingResponse { string id = 1; }
 
-message GetBindingRequest { int64 id = 1; }
+message GetBindingRequest { string id = 1; }
 message GetBindingResponse {
   Binding binding = 1;
   bool found = 2;
@@ -651,19 +656,20 @@ message ListBindingsResponse { repeated Binding bindings = 1; }
 message UpdateBindingRequest { Binding binding = 1; }
 message UpdateBindingResponse {}
 
-message DeleteBindingRequest { int64 id = 1; }
+message DeleteBindingRequest { string id = 1; }
 message DeleteBindingResponse {}
 
-message ApproveBindingRequest { int64 id = 1; }
+message ApproveBindingRequest { string id = 1; }
 message ApproveBindingResponse {}
 
 message ArmedBindingsForSourceRequest { string source = 1; }
 message ArmedBindingsForSourceResponse { repeated Binding bindings = 1; }
 
 message RecordDispatchRequest {
-  int64 binding_id = 1;
+  string binding_id = 1;
   int64 binding_version = 2;
-  int64 capture_id = 3;
+  string capture_id = 3;
+  // task_id addresses the SQLite-owned task tables, which are not migrating.
   int64 task_id = 4;
 }
 message RecordDispatchResponse {}
@@ -698,7 +704,7 @@ message EnqueueBindingTaskRequest {
   string body = 4;
   string workflow = 5;
   string identity = 6;
-  int64 binding_id = 7;
+  string binding_id = 7;
   int64 binding_version = 8;
 }
 message EnqueueBindingTaskResponse { Task task = 1; }

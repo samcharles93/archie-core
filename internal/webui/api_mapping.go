@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -73,8 +72,8 @@ func (s *Server) handleMappingGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid mapping id", http.StatusBadRequest)
 		return
 	}
@@ -99,8 +98,8 @@ func (s *Server) handleMappingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid mapping id", http.StatusBadRequest)
 		return
 	}
@@ -140,8 +139,8 @@ func (s *Server) handleMappingDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid mapping id", http.StatusBadRequest)
 		return
 	}
@@ -161,7 +160,7 @@ func (s *Server) handleMappingDelete(w http.ResponseWriter, r *http.Request) {
 // against a real captured event before saving anything -- Fields is loose
 // input, not a saved mapping ID, per docs/prds/payload-field-mapping.md.
 type mappingPreviewRequest struct {
-	CaptureID int64           `json:"capture_id"`
+	CaptureID string          `json:"capture_id"`
 	Fields    []mapping.Field `json:"fields"`
 }
 
@@ -201,7 +200,7 @@ func (s *Server) handleMappingPreview(w http.ResponseWriter, r *http.Request) {
 // exactly one reader, the dashboard list view, so a by-ID lookup was never
 // needed until preview), so this scans the newest window rather than
 // adding a new store method for a single low-volume caller.
-func (s *Server) captureByID(ctx context.Context, id int64) (*storecontract.CapturedEvent, error) {
+func (s *Server) captureByID(ctx context.Context, id string) (*storecontract.CapturedEvent, error) {
 	captures, err := s.Captures.ListCaptures(ctx, mappingCaptureScanWindow(s.CaptureMaxEvents))
 	if err != nil {
 		return nil, err

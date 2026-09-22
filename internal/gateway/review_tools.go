@@ -24,6 +24,9 @@ type PRReviewResult struct {
 	// Reason explains why a not_run/skipped review did not execute.
 	Reason   string            `json:"reason,omitempty"`
 	Findings []PRReviewFinding `json:"findings"`
+	// ArtifactURL is the editor deep link for the published review artifact,
+	// empty when artifact publishing is disabled or failed.
+	ArtifactURL string `json:"artifact_url,omitempty"`
 }
 
 // PRReviewFinding is one defect from an operator-triggered review.

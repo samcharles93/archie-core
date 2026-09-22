@@ -9,7 +9,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // phaseDispatch names the step that failed on a KindJobError the Router emits.
@@ -43,7 +42,7 @@ type Router struct {
 // emission — the router still refuses, it is just unobservable, the same
 // tolerance the engine has for its own nil sink.
 //
-// An empty kind resolves to cronstore.KindChat, so a deployment only needs a
+// An empty kind resolves to scheduling.KindChat, so a deployment only needs a
 // mapping for the kinds it actually uses.
 func NewRouter(specs RouterStore, runners map[string]scheduling.Runner, sink scheduling.Sink) (*Router, error) {
 	if specs == nil {
@@ -67,7 +66,7 @@ func (r *Router) Run(ctx context.Context, job scheduling.Job) error {
 
 	kind := spec.Kind
 	if kind == "" {
-		kind = cronstore.KindChat
+		kind = scheduling.KindChat
 	}
 	runner, ok := r.runners[kind]
 	if !ok {
@@ -86,12 +85,12 @@ func (r *Router) Run(ctx context.Context, job scheduling.Job) error {
 // per tick instead.
 //
 // A schedule kind with no recurring next run -- a one-shot -- reports
-// cronstore.ErrScheduleUnsupported, which is the job's definition rather than a
+// scheduling.ErrScheduleUnsupported, which is the job's definition rather than a
 // run failure, so it is swallowed. Anything else is returned: the run happened
 // but the bookkeeping did not, and hiding that would leave the job silently
 // re-firing.
 func (r *Router) recordRun(ctx context.Context, job scheduling.Job) error {
-	if err := r.specs.MarkRun(ctx, job.ID, time.Now()); err != nil && !errors.Is(err, cronstore.ErrScheduleUnsupported) {
+	if err := r.specs.MarkRun(ctx, job.ID, time.Now()); err != nil && !errors.Is(err, scheduling.ErrScheduleUnsupported) {
 		return fmt.Errorf("crondelivery: record run of job %q: %w", job.ID, err)
 	}
 	return nil

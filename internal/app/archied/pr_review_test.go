@@ -2,13 +2,16 @@ package archied
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/artifactsync"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -240,4 +243,75 @@ func hasReviewPRTool(entries []tools.ToolEntry) bool {
 		}
 	}
 	return false
+}
+
+type fakeArtifactSender struct {
+	calls int
+	url   string
+	err   error
+	last  artifactsync.Artifact
+}
+
+func (f *fakeArtifactSender) Publish(_ context.Context, a artifactsync.Artifact) (string, error) {
+	f.calls++
+	f.last = a
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.url, nil
+}
+
+func TestPrReviewerPublishesTheCompletedReview(t *testing.T) {
+	fake := &fakeArtifactSender{url: "https://offloaded.dev/collab?document=a_1"}
+	r := &prReviewer{artifacts: fake, log: slog.New(slog.DiscardHandler)}
+	report := workflow.NewCompletedReviewReport([]workflow.ReviewFinding{{
+		File: "handler.go", Line: 42, Defect: "nil deref",
+		FailureScenario: "empty payload crashes", Verdict: workflow.ReviewVerdictConfirmed,
+		Level: workflow.ReviewLevelError,
+	}}, "one finding")
+	report.Checked = []workflow.ReviewCheck{{Property: "p", Evidence: "e"}}
+
+	url := r.publishArtifact(context.Background(), "system:pr-reviewer", "acme", "widget", 7, report)
+	if url != fake.url {
+		t.Fatalf("publishArtifact = %q, want the sender's url %q", url, fake.url)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("Publish called %d times, want 1", fake.calls)
+	}
+	got := fake.last
+	if got.Meta.Format != "markdown" || got.Meta.Category != "pr-review" {
+		t.Fatalf("format/category = %s/%s, want markdown/pr-review", got.Meta.Format, got.Meta.Category)
+	}
+	if got.Meta.Actor != "system:pr-reviewer" || got.Meta.Origin != "pr-review" {
+		t.Fatalf("attribution = %s/%s", got.Meta.Actor, got.Meta.Origin)
+	}
+	if got.Meta.Visibility != "account-only" || got.Meta.Egress != "none" {
+		t.Fatalf("visibility/egress = %s/%s", got.Meta.Visibility, got.Meta.Egress)
+	}
+	if got.Title != "Review of acme/widget#7" {
+		t.Fatalf("title = %q", got.Title)
+	}
+	if got.Meta.RequestID != "artifact:pr-review:acme/widget#7" {
+		t.Fatalf("requestId = %q, want the deterministic artifact key", got.Meta.RequestID)
+	}
+	if got.Meta.Task == nil || got.Meta.Task.Owner != "acme" || got.Meta.Task.Number != 7 {
+		t.Fatalf("task coordinates = %+v", got.Meta.Task)
+	}
+	if !strings.Contains(got.Source, "## Findings") {
+		t.Fatalf("source is not the rendered report:\n%s", got.Source)
+	}
+}
+
+func TestPrReviewerPublishDegradesOnSenderFailure(t *testing.T) {
+	r := &prReviewer{artifacts: &fakeArtifactSender{err: errors.New("503 exhausted")}, log: slog.New(slog.DiscardHandler)}
+	if url := r.publishArtifact(context.Background(), "system:pr-reviewer", "acme", "widget", 7, workflow.NewCompletedReviewReport(nil, "s")); url != "" {
+		t.Fatalf("url = %q, want empty on a failed publish", url)
+	}
+}
+
+func TestPrReviewerPublishIsANoOpWithoutASender(t *testing.T) {
+	r := &prReviewer{}
+	if url := r.publishArtifact(context.Background(), "system:pr-reviewer", "acme", "widget", 7, workflow.NewCompletedReviewReport(nil, "s")); url != "" {
+		t.Fatalf("url = %q, want empty when the sender is disabled", url)
+	}
 }

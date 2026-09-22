@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -25,16 +26,18 @@ func captureTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return &Server{
-		Store:    s,
-		Log:      slog.New(slog.DiscardHandler),
-		Captures: s,
+		Store: s,
+		Log:   slog.New(slog.DiscardHandler),
+		// Captures come from the event-capture store; the task store no
+		// longer holds them.
+		Captures: edastore.OpenTest(t),
 	}
 }
 
 // seedCapture inserts a captured row directly through the CaptureStore.
 // These tests cover the list read; the write path itself lives in
 // internal/infrastructure/captureintake and is tested there.
-func seedCapture(t *testing.T, srv *Server, source string) int64 {
+func seedCapture(t *testing.T, srv *Server, source string) string {
 	t.Helper()
 	id, err := srv.Captures.InsertCapture(t.Context(), store.CapturedEvent{
 		ReceivedAt: time.Now().UTC(),

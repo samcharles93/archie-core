@@ -332,7 +332,8 @@ Each step is independently verifiable and lands green on its own.
 4. **Chat write path.** The tool adapter onto CRUD and the turn's subject on the
    context. *Depends on 3, because a write is only observable through the read.*
 5. **Delete `internal/memory` and the dead config/dashboard surface**, and
-   rewrite `ARCHITECTURE.md`'s "Memory engine family" section to describe the
+   rewrite the "Memory engine family" section of
+   `docs/architecture/plugins-and-extensions.md` to describe the
    engine family rather than a manager it deleted. *Depends on 3 and 4.*
 
 Steps 3 and 4 are separable from each other; step 1 is separable from everything.

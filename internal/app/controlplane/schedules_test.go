@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
+	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 )
 
 func TestScheduleDefinitionComputesFirstRunAndRejectsDuplicateIDs(t *testing.T) {
 	t.Parallel()
 
 	definition := scheduleDefinition()
-	jobs := []cronstore.JobSpec{{ID: "daily", Kind: cronstore.KindWorkflow, Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)}}}
+	jobs := []scheduling.JobSpec{{ID: "daily", Kind: scheduling.KindWorkflow, Schedule: scheduling.Schedule{Kind: scheduling.ScheduleInterval, Interval: scheduling.Duration(time.Hour)}}}
 	input, err := json.Marshal(jobs)
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +21,7 @@ func TestScheduleDefinitionComputesFirstRunAndRejectsDuplicateIDs(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var normalized []cronstore.JobSpec
+	var normalized []scheduling.JobSpec
 	if err := json.Unmarshal(got, &normalized); err != nil {
 		t.Fatal(err)
 	}

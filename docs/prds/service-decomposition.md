@@ -116,7 +116,7 @@ re-baselined coupling inventory is below, and the ratified boundary is
 - Any concrete adoption of Pi (or another external agent harness) as an
   execution runner. Raised in conversation alongside this decomposition,
   but it is a separate decision (agent execution as a strict data
-  boundary, `ARCHITECTURE.md`) and does not gate or get gated by this PRD.
+  boundary, `docs/architecture/agent-system.md`) and does not gate or get gated by this PRD.
 
 ## Open questions
 

@@ -29,24 +29,23 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // SpecLookup resolves a job id to its persisted spec.
 //
-// It is declared here (consumer-owned) rather than imported from cronstore as
-// a concrete type so this package depends on the one method it uses.
-// *cronstore.Store satisfies it as written, so a deployment passes the store
-// straight in.
+// It is declared here (consumer-owned) rather than imported from the document's
+// owner as a concrete type so this package depends on the one method it uses.
+// scheduleResourceStore in internal/app/archied satisfies it as written, so a
+// deployment passes that in.
 type SpecLookup interface {
 	// Get returns the job and whether it was found; the error is reserved
-	// for I/O failures, matching cronstore.Store.Get.
-	Get(ctx context.Context, id string) (cronstore.JobSpec, bool, error)
+	// for I/O failures, matching scheduleResourceStore.Get.
+	Get(ctx context.Context, id string) (scheduling.JobSpec, bool, error)
 }
 
 // RunRecorder advances a job's schedule once a run has completed. It is
 // declared here (consumer-owned) for the same reason SpecLookup is, and
-// *cronstore.Store satisfies it as written.
+// scheduleResourceStore satisfies it as written.
 //
 // MarkRun is the only step that moves a job's NextRun, so a store whose Due
 // keeps reporting an already-completed job keeps handing it back on every
@@ -98,20 +97,18 @@ var errSpecMissing = errors.New("crondelivery: job spec not found")
 
 // hydrate loads the job's persisted spec, wrapping both a store error and the
 // not-found case so a caller can match on one sentinel.
-func hydrate(ctx context.Context, specs SpecLookup, job scheduling.Job) (cronstore.JobSpec, error) {
+func hydrate(ctx context.Context, specs SpecLookup, job scheduling.Job) (scheduling.JobSpec, error) {
 	spec, ok, err := specs.Get(ctx, job.ID)
 	if err != nil {
-		return cronstore.JobSpec{}, fmt.Errorf("crondelivery: load job %q: %w", job.ID, err)
+		return scheduling.JobSpec{}, fmt.Errorf("crondelivery: load job %q: %w", job.ID, err)
 	}
 	if !ok {
-		return cronstore.JobSpec{}, fmt.Errorf("%w: id %q", errSpecMissing, job.ID)
+		return scheduling.JobSpec{}, fmt.Errorf("%w: id %q", errSpecMissing, job.ID)
 	}
 	return spec, nil
 }
 
-// compile-time check: the store is the lookup a deployment hands in unchanged.
-var (
-	_ SpecLookup  = (*cronstore.Store)(nil)
-	_ RunRecorder = (*cronstore.Store)(nil)
-	_ RouterStore = (*cronstore.Store)(nil)
-)
+// Compile-time check that the production store satisfies the contract. It
+// lives in internal/app/archied, which imports this package, so the assertion
+// is made there (scheduling.go) rather than here, where it would be an import
+// cycle.

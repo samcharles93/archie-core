@@ -13,8 +13,10 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -31,7 +33,15 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
 	)
-	RegisterServer(server, Deps{Tasks: local, Captures: local, Bindings: local, BindingDispatcher: local, PlaybookDispatcher: local, Grants: grants, ConfigSnapshots: local, ApplyStatus: local})
+	// One event-capture store serves every EDA surface, as the real
+	// composition does: separate instances would not share a database.
+	eda := edastore.OpenTest(t)
+	RegisterServer(server, Deps{
+		Tasks: local, ConfigSnapshots: local, ApplyStatus: local,
+		Captures: eda, Mappings: eda, Bindings: eda,
+		BindingDispatcher: eda, PlaybookDispatcher: eda,
+		Grants: grants,
+	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
@@ -74,18 +84,27 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 		}
 	}
 	// ListUndispatchedCaptures only returns sources with an armed binding
-	// (internal/store/bindings.go), so "large" needs one taken through the
+	// A binding's mapping is a real relation now, so it must point at a
+	// mapping that exists; the store refuses a dangling id.
+	mappingID, mapErr := admin.InsertMapping(t.Context(), mapping.Mapping{
+		Name:   "m",
+		Fields: []mapping.Field{{Name: "title", Path: "title", Type: mapping.TypeString}},
+	})
+	if mapErr != nil {
+		t.Fatal(mapErr)
+	}
+	// (edastore.ArmedBindingsForSource), so "large" needs one taken through the
 	// public draft -> pending_approval -> armed lifecycle.
 	id, err := admin.InsertBinding(ctx, binding.Binding{
 		Name: "large binding", Matcher: binding.Matcher{Source: "large"},
-		MappingID: 1, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		MappingID: mappingID, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := admin.UpdateBinding(ctx, binding.Binding{
 		ID: id, Name: "large binding", Matcher: binding.Matcher{Source: "large"},
-		MappingID: 1, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		MappingID: mappingID, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
 	}); err != nil {
 		t.Fatal(err)
 	}

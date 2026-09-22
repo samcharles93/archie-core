@@ -42,7 +42,8 @@ long as it's implemented behind one of the typed engine families below.
   generic interface -- see "Typed positions, not one generic hook" below,
   which is how it stays compliant with the plugin engine rule instead of
   reopening that document's #4.
-- `ARCHITECTURE.md#plugin-engine-rule-strict` governs every extension point
+- `docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict`
+  governs every extension point
   introduced here. Every position below is a typed domain contract with an
   owning registry, not a generic callback map. This is a hard constraint,
   confirmed against the existing rule text before writing this doc.

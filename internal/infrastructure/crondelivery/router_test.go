@@ -8,7 +8,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // --- Router -------------------------------------------------------------------
@@ -19,17 +18,17 @@ import (
 func routerFixture(t *testing.T, kind string) (*Router, *countingRunner, *countingRunner, *recordingSink) {
 	t.Helper()
 	s := newStore(t)
-	createJob(t, s, cronstore.JobSpec{
+	createJob(t, s, scheduling.JobSpec{
 		ID:       "routed",
 		Detail:   "routed job",
 		Kind:     kind,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
+		Schedule: scheduling.Schedule{Kind: scheduling.ScheduleInterval, Interval: scheduling.Duration(time.Hour)},
 	})
 	chat, workflow := &countingRunner{}, &countingRunner{}
 	sink := &recordingSink{}
 	r, err := NewRouter(s, map[string]scheduling.Runner{
-		cronstore.KindChat:     chat,
-		cronstore.KindWorkflow: workflow,
+		scheduling.KindChat:     chat,
+		scheduling.KindWorkflow: workflow,
 	}, sink)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -44,8 +43,8 @@ func TestRouterDispatchesByKind(t *testing.T) {
 		wantChat     int
 		wantWorkflow int
 	}{
-		{"chat kind reaches the chat runner", cronstore.KindChat, 1, 0},
-		{"workflow kind reaches the workflow runner", cronstore.KindWorkflow, 0, 1},
+		{"chat kind reaches the chat runner", scheduling.KindChat, 1, 0},
+		{"workflow kind reaches the workflow runner", scheduling.KindWorkflow, 0, 1},
 		{"empty kind defaults to the chat runner", "", 1, 0},
 	}
 	for _, tc := range tests {
@@ -117,15 +116,15 @@ func TestRouterUnknownKindIsRefusedAtTheGate(t *testing.T) {
 // tolerance: a nil sink disables emission without disabling the refusal.
 func TestRouterNilSinkDoesNotPanicOnUnknownKind(t *testing.T) {
 	s := newStore(t)
-	createJob(t, s, cronstore.JobSpec{
+	createJob(t, s, scheduling.JobSpec{
 		ID:       "routed",
 		Kind:     "teleport",
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
+		Schedule: scheduling.Schedule{Kind: scheduling.ScheduleInterval, Interval: scheduling.Duration(time.Hour)},
 	})
 	chat, workflow := &countingRunner{}, &countingRunner{}
 	r, err := NewRouter(s, map[string]scheduling.Runner{
-		cronstore.KindChat:     chat,
-		cronstore.KindWorkflow: workflow,
+		scheduling.KindChat:     chat,
+		scheduling.KindWorkflow: workflow,
 	}, nil)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -143,7 +142,7 @@ func TestRouterNilSinkDoesNotPanicOnUnknownKind(t *testing.T) {
 func TestRouterMissingSpecReturnsError(t *testing.T) {
 	s := newStore(t)
 	r, err := NewRouter(s, map[string]scheduling.Runner{
-		cronstore.KindChat: &countingRunner{},
+		scheduling.KindChat: &countingRunner{},
 	}, &recordingSink{})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -161,7 +160,7 @@ func TestRouterMissingSpecReturnsError(t *testing.T) {
 // the job the engine built, not a re-derived one: identity and pool are the
 // engine's, and the runner's event attribution depends on them surviving.
 func TestRouterPassesTheEngineJobThrough(t *testing.T) {
-	r, chat, _, _ := routerFixture(t, cronstore.KindChat)
+	r, chat, _, _ := routerFixture(t, scheduling.KindChat)
 	job := scheduling.Job{ID: "routed", Pool: scheduling.PoolSequential, Detail: "detail from engine"}
 
 	if err := r.Run(t.Context(), job); err != nil {
@@ -185,7 +184,7 @@ func TestRouterPassesTheEngineJobThrough(t *testing.T) {
 // honours cancellation would make this pass whether or not the runner checks,
 // which is the failure mode the criterion exists to prevent.
 func TestEveryRunnerHonoursCancellation(t *testing.T) {
-	lookup := &fakeLookup{specs: map[string]cronstore.JobSpec{
+	lookup := &fakeLookup{specs: map[string]scheduling.JobSpec{
 		"chat-job": chatSpec("chat-job", "ops-room", "hello"),
 		"wf-job":   workflowSpec("wf-job", "workflow job", "body"),
 	}}
@@ -204,8 +203,8 @@ func TestEveryRunnerHonoursCancellation(t *testing.T) {
 	// router's own guard: a cancelled run must not reach the dispatch.
 	forwarded := &naiveRunner{}
 	router, err := NewRouter(lookup, map[string]scheduling.Runner{
-		cronstore.KindChat:     forwarded,
-		cronstore.KindWorkflow: workflow,
+		scheduling.KindChat:     forwarded,
+		scheduling.KindWorkflow: workflow,
 	}, &recordingSink{})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -246,27 +245,27 @@ func TestEveryRunnerHonoursCancellation(t *testing.T) {
 const dailyStatusSummary = "Daily status summary: all workers healthy, no tasks parked."
 
 // TestDailyStatusSummaryEndToEnd is the epic's headline scenario exercised
-// through the whole chain a deployment uses: a real job persisted in a real
-// cronstore is reported due by the store's own JobSource, handed to the router
+// through the whole chain a deployment uses: a scheduled job in the schedules
+// document is reported due by its own JobSource, handed to the router
 // the engine is given, dispatched to the chat runner, and delivered as the
 // composed message.
 func TestDailyStatusSummaryEndToEnd(t *testing.T) {
 	s := newStore(t)
 	const chatID = "ops-room"
 
-	spec := cronstore.JobSpec{
+	spec := scheduling.JobSpec{
 		ID:       "daily-status",
 		Detail:   "daily status summary",
-		Kind:     cronstore.KindChat,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(24 * time.Hour)},
-		Target:   cronstore.Target{ChatID: chatID},
-		Payload:  cronstore.Payload{Text: dailyStatusSummary},
+		Kind:     scheduling.KindChat,
+		Schedule: scheduling.Schedule{Kind: scheduling.ScheduleInterval, Interval: scheduling.Duration(24 * time.Hour)},
+		Target:   scheduling.Target{ChatID: chatID},
+		Payload:  scheduling.Payload{Text: dailyStatusSummary},
 		// Due now: create it with a next_run in the past, the state a
 		// long-idle daemon wakes up to.
 		NextRun: time.Now().UTC().Add(-time.Minute),
 	}
 	if err := s.Create(t.Context(), spec); err != nil {
-		t.Fatalf("cronstore.Create: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
 
 	// The engine's source: the store itself, answering what is due.
@@ -284,7 +283,7 @@ func TestDailyStatusSummaryEndToEnd(t *testing.T) {
 		t.Fatalf("NewChatCourier: %v", err)
 	}
 	router, err := NewRouter(s, map[string]scheduling.Runner{
-		cronstore.KindChat: courierRunner,
+		scheduling.KindChat: courierRunner,
 	}, &recordingSink{})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -334,7 +333,7 @@ func TestConstructorsRejectNilDependencies(t *testing.T) {
 		}},
 		{"Router without a spec lookup", func() error {
 			_, err := NewRouter(nil, map[string]scheduling.Runner{
-				cronstore.KindChat: &countingRunner{},
+				scheduling.KindChat: &countingRunner{},
 			}, nil)
 			return err
 		}},
@@ -363,7 +362,7 @@ func TestImplementsSchedulingRunner(t *testing.T) {
 }
 
 // TestRouterAdvancesTheScheduleAfterASuccessfulRun is the acceptance criterion
-// for a recurring job's timing: cronstore.Store.MarkRun is the only step that
+// for a recurring job's timing: the recording step is the only thing that
 // moves a job's NextRun, and the Router is the single Runner the engine hands
 // every job. With no caller the store keeps reporting the job due on every
 // tick, so a job scheduled every hour fires once per tick instead.
@@ -380,7 +379,7 @@ func TestRouterAdvancesTheScheduleAfterASuccessfulRun(t *testing.T) {
 	}
 
 	r, err := NewRouter(s, map[string]scheduling.Runner{
-		cronstore.KindChat: &countingRunner{},
+		scheduling.KindChat: &countingRunner{},
 	}, &recordingSink{})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -404,23 +403,23 @@ func TestRouterAdvancesTheScheduleAfterASuccessfulRun(t *testing.T) {
 
 // TestRouterToleratesAOnceScheduleWithoutANextRun pins the other half: a
 // one-shot job has no recurring next run by definition, so MarkRun reports
-// cronstore.ErrScheduleUnsupported. That is not a run failure -- the job ran --
+// scheduling.ErrScheduleUnsupported. That is not a run failure -- the job ran --
 // and returning it would make the engine emit KindJobError for a job that
 // succeeded.
 func TestRouterToleratesAOnceScheduleWithoutANextRun(t *testing.T) {
 	s := newStore(t)
 	at := time.Now().Add(-time.Hour)
-	job := createJob(t, s, cronstore.JobSpec{
+	job := createJob(t, s, scheduling.JobSpec{
 		ID:       "one-shot",
 		Detail:   "one-shot job",
-		Kind:     cronstore.KindChat,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleOnce, At: &at},
-		Target:   cronstore.Target{ChatID: "chat-1"},
-		Payload:  cronstore.Payload{Text: "once"},
+		Kind:     scheduling.KindChat,
+		Schedule: scheduling.Schedule{Kind: scheduling.ScheduleOnce, At: &at},
+		Target:   scheduling.Target{ChatID: "chat-1"},
+		Payload:  scheduling.Payload{Text: "once"},
 	})
 
 	r, err := NewRouter(s, map[string]scheduling.Runner{
-		cronstore.KindChat: &countingRunner{},
+		scheduling.KindChat: &countingRunner{},
 	}, &recordingSink{})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)

@@ -25,11 +25,13 @@ assigned/labelled to it, works each one in an isolated git worktree through a
 routed workflow (bootstrap / implement / TDD / feasibility), and opens pull
 requests for human review.
 
-See `ARCHITECTURE.md` for the package map, workflow engine design, task
-lifecycle, and key design decisions. Read it before making non-trivial changes.
-Key invariants: env-enforced gates, model never runs git, and agent execution
-functions as a strict data boundary. Before adding a new plugin engine, satisfy
-`ARCHITECTURE.md#plugin-engine-rule-strict`.
+Architecture of record lives in `docs/architecture/` -- `organisation.md` for
+the package map, `agent-system.md` for the workflow-execution lifecycle and its
+invariants, `plugins-and-extensions.md` for engine families. Read it before
+making non-trivial changes. Key invariants: env-enforced gates, model never runs
+git, and agent execution functions as a strict data boundary. Before adding a new
+plugin engine, satisfy
+`docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict`.
 
 ## Scope Discipline
 
@@ -257,7 +259,8 @@ structures found in legacy packages.
 - Webhook intake refuses to start when `[[identities]]` is configured (one
   receiver, one dispatch config). Do not silently enable it for multi-identity
   deployments without first building per-identity routing -- see
-  `ARCHITECTURE.md`'s "Webhook intake" section.
+  `docs/architecture/messaging-and-work-intake.md`'s "Intake provenance"
+  section.
 - **`internal/domain/embedding/` + `internal/infrastructure/embedding/`:**
   Embedding client contract + implementation. Config-driven exactly like chat
   model roles: `models.embedding = "provider/model"` plus a `[providers.*]`

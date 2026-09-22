@@ -61,21 +61,3 @@ var _ ChannelStatusStore = (*Store)(nil)
 
 // Compile-time check: *Store satisfies workflow.Store.
 var _ workflow.Store = (*Store)(nil)
-
-// Compile-time check: *Store satisfies CaptureStore.
-var _ CaptureStore = (*Store)(nil)
-
-// Compile-time check: *Store satisfies MappingStore.
-var _ MappingStore = (*Store)(nil)
-
-// Compile-time check: *Store satisfies BindingStore.
-var _ BindingStore = (*Store)(nil)
-
-// Compile-time check: *Store satisfies BindingDispatcher.
-var _ BindingDispatcher = (*Store)(nil)
-
-// Compile-time check: *Store satisfies BindingTaskCreator.
-var _ BindingTaskCreator = (*Store)(nil)
-
-// Compile-time check: *Store satisfies PlaybookDispatcher.
-var _ PlaybookDispatcher = (*Store)(nil)

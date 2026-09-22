@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/app/agentworker"
@@ -15,6 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/artifactsync"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -29,6 +31,9 @@ type prReviewer struct {
 	models    map[string]string
 	providers map[string]agentexec.Provider
 	maxSteps  int
+	// artifacts publishes the completed review to the collaborative editor.
+	// nil = publishing is disabled (no [artifacts] base_url configured).
+	artifacts artifactsync.Sender
 	// currentMaxSteps lets the composition root apply live control-plane
 	// versions to reviews that have not started yet. Tests and direct
 	// constructions retain maxSteps as the fallback.
@@ -115,7 +120,9 @@ func (r *prReviewer) ReviewPR(ctx context.Context, identity *string, repo string
 		MaxSteps:    maxSteps,
 	})
 	r.logReview(key, model, report)
-	return mapReviewResult(repo, number, model, report), nil
+
+	result := mapReviewResult(repo, number, model, report)
+	return r.attachArtifact(ctx, result, identity, owner, name, number, report), nil
 }
 
 // authorize enforces the identity-scoped repository allow-list. A nil
@@ -172,6 +179,62 @@ func (r *prReviewer) logReview(key, model string, report workflow.ReviewReport) 
 	r.log.Info("operator PR review complete",
 		"pr", key, "model", model, "status", string(report.Status),
 		"findings", len(report.Findings), "blocking", blocking)
+}
+
+// attachArtifact publishes the report when the sender is configured and
+// records the editor deep link on the result. Publishing never fails the
+// review: a failure degrades to an empty URL.
+func (r *prReviewer) attachArtifact(ctx context.Context, result gateway.PRReviewResult, identity *string, owner, name string, number int, report workflow.ReviewReport) gateway.PRReviewResult {
+	result.ArtifactURL = r.publishArtifact(ctx, reviewActor(identity), owner, name, number, report)
+	return result
+}
+
+// reviewActor resolves the attribution: the requesting chat identity when one
+// exists, else the daemon's operator-reviewer actor.
+func reviewActor(identity *string) string {
+	if identity != nil && *identity != "" {
+		return *identity
+	}
+	return "system:pr-reviewer"
+}
+
+// publishArtifact renders the report and hands it to the collaborative
+// editor when artifact publishing is configured. It returns the editor deep
+// link, or "" when publishing is disabled or failed: a publish failure is a
+// logged degradation, never an error that fails the producing review.
+func (r *prReviewer) publishArtifact(ctx context.Context, actor, owner, name string, number int, report workflow.ReviewReport) string {
+	if r.artifacts == nil {
+		return ""
+	}
+	title := fmt.Sprintf("Review of %s/%s#%d", owner, name, number)
+	artifact := artifactsync.Artifact{
+		Title:  title,
+		Source: report.RenderMarkdown(title),
+		Meta: artifactsync.Meta{
+			Format:     "markdown",
+			Category:   "pr-review",
+			Visibility: "account-only",
+			Egress:     "none",
+			Actor:      actor,
+			Origin:     "pr-review",
+			RequestID:  "artifact:pr-review:" + owner + "/" + name + "#" + strconv.Itoa(number),
+			Version:    "r1",
+			SentAt:     time.Now().UTC(),
+			Task:       &artifactsync.Task{Owner: owner, Repo: name, Number: number},
+		},
+	}
+	url, err := r.artifacts.Publish(ctx, artifact)
+	if err != nil {
+		if r.log != nil {
+			r.log.Warn("artifact publish failed; the review result is unaffected",
+				"artifact", artifact.RequestID(), "err", err)
+		}
+		return ""
+	}
+	if r.log != nil {
+		r.log.Info("artifact published", "artifact", artifact.RequestID(), "url", url)
+	}
+	return url
 }
 
 // splitOwnerRepo splits "owner/name" with the same validation the gateway's
@@ -264,6 +327,7 @@ func (b *boot) prReviewer() gateway.ChatPRReviewer {
 		models:    b.cfg.Models,
 		providers: executionProviders(b.cfg),
 		maxSteps:  maxSteps,
+		artifacts: b.artifactSender(),
 		allowed:   buildReviewAllowlist(b.cfg),
 		log:       b.log,
 	}
@@ -272,4 +336,32 @@ func (b *boot) prReviewer() gateway.ChatPRReviewer {
 	}
 	b.chatPRReviewer = review
 	return b.chatPRReviewer
+}
+
+// artifactSender builds the collaborative-editor sender when the [artifacts]
+// section configures one. An empty base_url disables publishing entirely; a
+// base_url with an unresolvable token is a missing credential, which disables
+// the capability with a loud warning rather than stopping the daemon
+// (docs/architecture/configuration.md, "A missing credential disables a
+// capability").
+func (b *boot) artifactSender() artifactsync.Sender {
+	cfg := b.cfg.Artifacts
+	if cfg.BaseURL == "" {
+		return nil
+	}
+	token, err := b.secrets.Resolve(cfg.Token)
+	if err != nil {
+		b.log.Warn("artifact publishing disabled: the service credential could not be resolved",
+			"base_url", cfg.BaseURL, "token_engine", cfg.Token.Engine, "err", err)
+		return nil
+	}
+	if token == "" {
+		token = b.secrets.Getenv(cfg.TokenEnv)
+	}
+	if token == "" {
+		b.log.Warn("artifact publishing disabled: no service token; set the token secret or its environment variable",
+			"base_url", cfg.BaseURL, "token_env", cfg.TokenEnv)
+		return nil
+	}
+	return artifactsync.NewClient(cfg.BaseURL, token)
 }

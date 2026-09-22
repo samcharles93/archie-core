@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	provider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
@@ -232,78 +231,6 @@ func TestUnrestrictedFilesystemReachesOutsideWorkspace(t *testing.T) {
 		_ = p.Start(context.Background())
 		_ = p.Stop(context.Background())
 	})
-}
-
-// stubGrepIndex records whether the grep tool consulted a supplied workspace
-// index, and serves a fixed candidate set.
-type stubGrepIndex struct {
-	mu      sync.Mutex
-	calls   int
-	pattern string
-	files   []string
-}
-
-func (s *stubGrepIndex) Candidates(_ context.Context, pattern string, _, _ bool) ([]string, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.calls++
-	s.pattern = pattern
-	return s.files, true
-}
-
-func (s *stubGrepIndex) observed() (int, string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.calls, s.pattern
-}
-
-// TestGrepConsultsSuppliedWorkspaceIndex covers the wiring this provider is
-// the only production owner of. internal/tools/builtin.RegisterBuiltins has
-// always accepted a GrepIndex, and nothing ever passed one, so every grep ran
-// the direct walk regardless of configuration. A provider that accepts an
-// index and then drops it on the floor is the exact failure worth a test:
-// it looks wired from the outside and changes nothing.
-func TestGrepConsultsSuppliedWorkspaceIndex(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "hit.go"), []byte("package p\n\nfunc Target() {}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	idx := &stubGrepIndex{files: []string{filepath.Join(dir, "hit.go")}}
-
-	p := provider.New(dir, false, idx)
-	if err := p.Start(context.Background()); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	t.Cleanup(func() { _ = p.Stop(context.Background()) })
-
-	entries, err := p.Discover(context.Background())
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	var grep func(context.Context, map[string]any) (any, error)
-	for _, e := range entries {
-		if e.Name == "grep" {
-			grep = e.Handler
-		}
-	}
-	if grep == nil {
-		t.Fatal("no grep tool discovered")
-	}
-
-	if _, err := grep(context.Background(), map[string]any{"pattern": "Target"}); err != nil {
-		t.Fatalf("grep handler: %v", err)
-	}
-
-	calls, pattern := idx.observed()
-	if calls == 0 {
-		t.Fatal("grep never consulted the supplied workspace index, so the index is decoded, constructed and ignored")
-	}
-	if pattern != "Target" {
-		t.Errorf("index asked for pattern %q, want the caller's pattern %q", pattern, "Target")
-	}
 }
 
 // TestWorkspaceToolsCarryTheirOwnIcon pins that each builtin declares an icon

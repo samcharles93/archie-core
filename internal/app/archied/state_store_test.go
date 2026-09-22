@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -145,12 +146,16 @@ func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
 
 	b := newBootstrap()
 	b.st = st
+	// The playbook ledger moved to the event-capture store with the rest of
+	// the dispatch tables; the task store no longer serves it.
+	eda := edastore.OpenTest(t)
+	b.eda = eda
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
 	if deps.PlaybookDispatcher == nil {
 		t.Fatal("stateStoreDeps leaves PlaybookDispatcher nil; the standalone State Store is the only production server for the playbook dispatch ledger")
 	}
-	if deps.PlaybookDispatcher != storecontract.PlaybookDispatcher(st) {
-		t.Fatalf("PlaybookDispatcher = %T, want the opened *store.Store", deps.PlaybookDispatcher)
+	if deps.PlaybookDispatcher != storecontract.PlaybookDispatcher(eda) {
+		t.Fatalf("PlaybookDispatcher = %T, want the opened *edastore.Store", deps.PlaybookDispatcher)
 	}
 	// A boot without a store must not fabricate one: nil keeps the RPCs honest
 	// as unavailable rather than depending on a nil receiver.

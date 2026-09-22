@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -24,13 +25,19 @@ import (
 // docs/prds/state-store-contract.md §11's conformance requirement.
 type contract interface {
 	store.TaskStore
+	store.BindingTaskCreator
+	store.ConfigSnapshotStore
+	store.ApplyStatusStore
+}
+
+// edaContract is the event-capture half, which the PocketBase store serves.
+// It is a separate interface because no single type implements both halves
+// any more: that split is the point of the migration, not an accident.
+type edaContract interface {
 	store.CaptureStore
 	store.MappingStore
 	store.BindingStore
 	store.BindingDispatcher
-	store.BindingTaskCreator
-	store.ConfigSnapshotStore
-	store.ApplyStatusStore
 }
 
 // playbookContract is the playbook-dispatch idempotency-ledger surface, split
@@ -48,24 +55,43 @@ type taskLogContract interface {
 	store.TaskLogStore
 }
 
+// remoteEDA fronts both stores for a battery that exercises event-capture
+// surfaces over the wire.
+func remoteEDA(t *testing.T, local *store.Store, eda *edastore.Store) *Client {
+	t.Helper()
+	return remoteTaskStore(t, local, nil, eda)
+}
+
 func remoteContract(t *testing.T, local *store.Store) contract {
 	t.Helper()
-	return remoteTaskStore(t, local, nil)
+	return remoteTaskStore(t, local, nil, nil)
 }
 
 // remoteTaskStore serves local behind a bufconn listener with a task-log
 // reader attached, and returns a client for it. The reader is a parameter
 // because the log files are internal/logging's, not the store's: this contract
 // fronts a reader rather than a table.
-func remoteTaskStore(t *testing.T, local *store.Store, logs store.TaskLogStore) *Client {
+// remoteTaskStore fronts the same two stores the real composition wires: the
+// task store for the task surfaces, the event-capture store for captures,
+// mappings, bindings and the dispatch ledgers. eda may be nil for a battery
+// that exercises only task surfaces.
+func remoteTaskStore(t *testing.T, local *store.Store, logs store.TaskLogStore, eda *edastore.Store) *Client {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
-	RegisterServer(server, Deps{
-		Tasks: local, Captures: local, Mappings: local, Bindings: local,
-		BindingDispatcher: local, BindingTaskCreator: local, PlaybookDispatcher: local, ConfigSnapshots: local, ApplyStatus: local,
+	deps := Deps{
+		Tasks: local, BindingTaskCreator: local,
+		ConfigSnapshots: local, ApplyStatus: local,
 		TaskLogs: logs,
-	})
+	}
+	if eda != nil {
+		deps.Captures = eda
+		deps.Mappings = eda
+		deps.Bindings = eda
+		deps.BindingDispatcher = eda
+		deps.PlaybookDispatcher = eda
+	}
+	RegisterServer(server, deps)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	conn, err := grpc.NewClient("passthrough:///state",
@@ -87,11 +113,14 @@ func TestStateStoreConformance(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			ctx := t.Context()
 			local := store.OpenTest(t)
+			eda := edastore.OpenTest(t)
 			var c contract = local
-			var pc playbookContract = local
+			var ec edaContract = eda
+			var pc playbookContract = eda
 			if mode == "grpc" {
-				remote := remoteTaskStore(t, local, nil)
+				remote := remoteTaskStore(t, local, nil, eda)
 				c = remote
+				ec = remote
 				pc = remote
 			}
 
@@ -203,7 +232,7 @@ func TestStateStoreConformance(t *testing.T) {
 			if !ok || doc["bot_user"] != "archie" {
 				t.Errorf("config_captured payload = %#v, want the decoded document under its own key", evs[1].Data)
 			}
-			if _, err := c.EventsSince(ctx, 0, 10); err != nil {
+			if _, err := c.EventsSince(ctx, "", 10); err != nil {
 				t.Fatalf("EventsSince: %v", err)
 			}
 			if _, err := c.WorkflowStats(ctx); err != nil {
@@ -253,30 +282,30 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 
 			// Mapping: found=false, ErrMappingNotFound.
-			mappingID, err := c.InsertMapping(ctx, mapping.Mapping{Name: "m1", Fields: []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}}})
-			if err != nil || mappingID == 0 {
+			mappingID, err := ec.InsertMapping(ctx, mapping.Mapping{Name: "m1", Fields: []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}}})
+			if err != nil || mappingID == "" {
 				t.Fatalf("InsertMapping: %v %v", mappingID, err)
 			}
-			missingMapping, err := c.GetMapping(ctx, mappingID+999999)
+			missingMapping, err := ec.GetMapping(ctx, "rabsent00000000")
 			if err != nil || missingMapping != nil {
 				t.Fatalf("GetMapping missing: %+v %v", missingMapping, err)
 			}
-			gotMapping, err := c.GetMapping(ctx, mappingID)
+			gotMapping, err := ec.GetMapping(ctx, mappingID)
 			if err != nil || gotMapping == nil || gotMapping.Name != "m1" {
 				t.Fatalf("GetMapping: %+v %v", gotMapping, err)
 			}
-			if _, err := c.ListMappings(ctx); err != nil {
+			if _, err := ec.ListMappings(ctx); err != nil {
 				t.Fatalf("ListMappings: %v", err)
 			}
 			gotMapping.Name = "m1-renamed"
-			if err := c.UpdateMapping(ctx, *gotMapping); err != nil {
+			if err := ec.UpdateMapping(ctx, *gotMapping); err != nil {
 				t.Fatalf("UpdateMapping: %v", err)
 			}
-			err = c.UpdateMapping(ctx, mapping.Mapping{ID: mappingID + 999999, Name: "x", Fields: gotMapping.Fields})
+			err = ec.UpdateMapping(ctx, mapping.Mapping{ID: "rabsent00000000", Name: "x", Fields: gotMapping.Fields})
 			if !errors.Is(err, store.ErrMappingNotFound) {
 				t.Fatalf("UpdateMapping missing = %v, want ErrMappingNotFound", err)
 			}
-			err = c.DeleteMapping(ctx, mappingID+999999)
+			err = ec.DeleteMapping(ctx, "rabsent00000000")
 			if !errors.Is(err, store.ErrMappingNotFound) {
 				t.Fatalf("DeleteMapping missing = %v, want ErrMappingNotFound", err)
 			}
@@ -284,63 +313,63 @@ func TestStateStoreConformance(t *testing.T) {
 			// Binding: found=false, ErrBindingNotFound, ErrBindingOverlap,
 			// ErrBindingTransition, and the dispatch surface incl.
 			// ErrAlreadyDispatched.
-			bindingID, err := c.InsertBinding(ctx, binding.Binding{
+			bindingID, err := ec.InsertBinding(ctx, binding.Binding{
 				Name: "b1", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
 				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
 			})
-			if err != nil || bindingID == 0 {
+			if err != nil || bindingID == "" {
 				t.Fatalf("InsertBinding: %v %v", bindingID, err)
 			}
-			_, err = c.InsertBinding(ctx, binding.Binding{
+			_, err = ec.InsertBinding(ctx, binding.Binding{
 				Name: "b2", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
 				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
 			})
 			if !errors.Is(err, store.ErrBindingOverlap) {
 				t.Fatalf("InsertBinding overlap = %v, want ErrBindingOverlap", err)
 			}
-			missingBinding, err := c.GetBinding(ctx, bindingID+999999)
+			missingBinding, err := ec.GetBinding(ctx, "rabsent00000000")
 			if err != nil || missingBinding != nil {
 				t.Fatalf("GetBinding missing: %+v %v", missingBinding, err)
 			}
-			gotBinding, err := c.GetBinding(ctx, bindingID)
+			gotBinding, err := ec.GetBinding(ctx, bindingID)
 			if err != nil || gotBinding == nil || gotBinding.Name != "b1" {
 				t.Fatalf("GetBinding: %+v %v", gotBinding, err)
 			}
-			if _, err := c.ListBindings(ctx); err != nil {
+			if _, err := ec.ListBindings(ctx); err != nil {
 				t.Fatalf("ListBindings: %v", err)
 			}
-			err = c.ApproveBinding(ctx, bindingID)
+			err = ec.ApproveBinding(ctx, bindingID)
 			if !errors.Is(err, store.ErrBindingTransition) {
 				t.Fatalf("ApproveBinding from draft = %v, want ErrBindingTransition", err)
 			}
-			err = c.DeleteBinding(ctx, bindingID+999999)
+			err = ec.DeleteBinding(ctx, "rabsent00000000")
 			if !errors.Is(err, store.ErrBindingNotFound) {
 				t.Fatalf("DeleteBinding missing = %v, want ErrBindingNotFound", err)
 			}
 
 			// Capture + dispatch.
-			captureID, err := c.InsertCapture(ctx, store.CapturedEvent{Source: "sentry", Body: `{"id":1}`, Authenticated: true}, 0, 0)
-			if err != nil || captureID == 0 {
+			captureID, err := ec.InsertCapture(ctx, store.CapturedEvent{Source: "sentry", Body: `{"id":1}`, Authenticated: true}, 0, 0)
+			if err != nil || captureID == "" {
 				t.Fatalf("InsertCapture: %v %v", captureID, err)
 			}
-			if _, err := c.ListCaptures(ctx, 10); err != nil {
+			if _, err := ec.ListCaptures(ctx, 10); err != nil {
 				t.Fatalf("ListCaptures: %v", err)
 			}
-			if _, err := c.ArmedBindingsForSource(ctx, "sentry"); err != nil {
+			if _, err := ec.ArmedBindingsForSource(ctx, "sentry"); err != nil {
 				t.Fatalf("ArmedBindingsForSource: %v", err)
 			}
 			bindingTask, err := c.EnqueueBindingTask(ctx, "acme", "widget", "t", "b", "implement", "", bindingID, 1)
 			if err != nil || bindingTask == nil {
 				t.Fatalf("EnqueueBindingTask: %+v %v", bindingTask, err)
 			}
-			if err := c.RecordDispatch(ctx, bindingID, 1, captureID, bindingTask.ID); err != nil {
+			if err := ec.RecordDispatch(ctx, bindingID, 1, captureID, bindingTask.ID); err != nil {
 				t.Fatalf("RecordDispatch: %v", err)
 			}
-			err = c.RecordDispatch(ctx, bindingID, 1, captureID, bindingTask.ID)
+			err = ec.RecordDispatch(ctx, bindingID, 1, captureID, bindingTask.ID)
 			if !errors.Is(err, store.ErrAlreadyDispatched) {
 				t.Fatalf("RecordDispatch dup = %v, want ErrAlreadyDispatched", err)
 			}
-			if _, err := c.ListUndispatchedCaptures(ctx, []string{"sentry"}, 10); err != nil {
+			if _, err := ec.ListUndispatchedCaptures(ctx, []string{"sentry"}, 10); err != nil {
 				t.Fatalf("ListUndispatchedCaptures: %v", err)
 			}
 

@@ -9,13 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
@@ -37,7 +37,9 @@ func (r *recordingPublisher) Publish(_ context.Context, e events.Event) {
 // wrote.
 type testReceiver struct {
 	*Receiver
-	store *store.Store
+	// store is the event-capture store the receiver writes through, kept so a
+	// test asserts on persisted rows rather than on a mock's recollection.
+	store *edastore.Store
 }
 
 // Handler serves the receiver's route the way its host process mounts it,
@@ -58,11 +60,7 @@ func captureTestServerWithoutStore(t *testing.T) testReceiver {
 
 func captureTestServer(t *testing.T) testReceiver {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
+	s := edastore.OpenTest(t)
 	return testReceiver{
 		Receiver: &Receiver{
 			Log:          slog.New(slog.DiscardHandler),
@@ -125,9 +123,9 @@ func (s *stubBindingStore) ApproveBinding(_ context.Context, _ int64) error {
 
 func (s *stubBindingStore) RecordDispatch(
 	_ context.Context,
+	_ string,
 	_ int64,
-	_ int64,
-	_ int64,
+	_ string,
 	_ int64,
 ) error {
 	return nil
@@ -148,10 +146,10 @@ func captureBindingServer(t *testing.T, secret, source string) testReceiver {
 	srv.Bindings = &stubBindingStore{
 		armedBySource: map[string][]binding.Binding{
 			source: {{
-				ID:        1,
+				ID:        "rbind0000000001",
 				Name:      "test",
 				Matcher:   binding.Matcher{Source: source},
-				MappingID: 1,
+				MappingID: "rmap00000000001",
 				Workflow:  "implement",
 				Version:   1,
 				Status:    binding.StatusArmed,
@@ -425,8 +423,8 @@ type captureInsertErrorStore struct {
 	store.CaptureStore
 }
 
-func (captureInsertErrorStore) InsertCapture(context.Context, store.CapturedEvent, time.Duration, int) (int64, error) {
-	return 0, errors.New("boom")
+func (captureInsertErrorStore) InsertCapture(context.Context, store.CapturedEvent, time.Duration, int) (string, error) {
+	return "", errors.New("boom")
 }
 
 func TestHandleCaptureStorageFailureIs500(t *testing.T) {
@@ -543,8 +541,8 @@ func TestHandleCaptureWithMultipleArmedBindingsReturns409(t *testing.T) {
 	srv.Bindings = &stubBindingStore{
 		armedBySource: map[string][]binding.Binding{
 			"github": {
-				{ID: 1, Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "abcdefghijklmnop"},
-				{ID: 2, Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "qrstuvwxyz123456"},
+				{ID: "rbind0000000001", Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "abcdefghijklmnop"},
+				{ID: "rbind0000000002", Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "qrstuvwxyz123456"},
 			},
 		},
 	}

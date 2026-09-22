@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, id);
+CREATE INDEX IF NOT EXISTS idx_events_at ON events(at, id);
 `
 
 // InsertEvent appends an event to the log and returns its row id.
@@ -53,7 +55,7 @@ func insertEvent(ctx context.Context, execer eventExecer, e events.Event) (int64
 	res, err := execer.ExecContext(ctx, `
 		INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.At.UTC().Format(time.RFC3339Nano), e.Kind, e.TaskID, e.Repo, e.Issue,
+		e.At.UTC().Format(storecontract.EventCursorLayout), e.Kind, e.TaskID, e.Repo, e.Issue,
 		e.Workflow, e.Stage, e.Attempt, e.ActorID, e.ActorKind, e.PrincipalID,
 		clip(e.Detail, 4000), string(data))
 	if err != nil {
@@ -74,7 +76,7 @@ func scanEvents(rows *sql.Rows) (out []events.Event, retErr error) {
 			&e.PrincipalID, &e.Detail, &data); err != nil {
 			return nil, err
 		}
-		e.At, _ = time.Parse(time.RFC3339Nano, at)
+		e.At = parseEventAt(at)
 		_ = json.Unmarshal([]byte(data), &e.Data)
 		out = append(out, e)
 	}
@@ -83,15 +85,40 @@ func scanEvents(rows *sql.Rows) (out []events.Event, retErr error) {
 
 const eventCols = "id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data"
 
-// EventsSince returns up to limit events with id > sinceID, oldest
-// first  --  SSE catch-up and the live feed.
-func (s *Store) EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error) {
+// EventsSince returns up to limit events after the opaque cursor, oldest
+// first  --  SSE catch-up and the live feed. The cursor carries the total
+// order (at, id): at is the fixed-width sort key and id only breaks ties, so
+// a non-monotonic id scheme can neither skip nor repeat an event. An empty or
+// malformed cursor means "from the beginning".
+func (s *Store) EventsSince(ctx context.Context, cursor string, limit int) ([]events.Event, error) {
+	at, id, ok := storecontract.ParseEventCursor(cursor)
+	if !ok {
+		rows, err := s.db.QueryContext(ctx,
+			`SELECT `+eventCols+` FROM events ORDER BY at, id LIMIT ?`, limit)
+		if err != nil {
+			return nil, err
+		}
+		return scanEvents(rows)
+	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+eventCols+` FROM events WHERE id > ? ORDER BY id LIMIT ?`, sinceID, limit)
+		`SELECT `+eventCols+` FROM events WHERE at > ? OR (at = ? AND id > ?) ORDER BY at, id LIMIT ?`,
+		at, at, id, limit)
 	if err != nil {
 		return nil, err
 	}
 	return scanEvents(rows)
+}
+
+// parseEventAt reads the stored timestamp, tolerating both the fixed-width
+// layout new rows are written in and the RFC3339Nano form older rows carried
+// before the migration normalised them.
+func parseEventAt(raw string) time.Time {
+	for _, layout := range []string{storecontract.EventCursorLayout, time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // TaskEvents returns a task's full timeline, oldest first.

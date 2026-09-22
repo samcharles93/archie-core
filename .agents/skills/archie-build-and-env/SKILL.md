@@ -26,7 +26,7 @@ No root `README*` or `CONTRIBUTING*` file exists. Begin with:
 
 ```bash
 sed -n '1,240p' CLAUDE.md
-sed -n '1,240p' ARCHITECTURE.md
+ls docs/architecture/
 task --list
 ```
 

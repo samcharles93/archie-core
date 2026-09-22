@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -24,11 +24,12 @@ func mappingTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
+	eda := edastore.OpenTest(t)
 	return &Server{
 		Store:    s,
 		Log:      slog.New(slog.DiscardHandler),
-		Mappings: s,
-		Captures: s,
+		Mappings: eda,
+		Captures: eda,
 	}
 }
 
@@ -86,11 +87,11 @@ func TestHandleMappingCreateAndGet(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal created mapping: %v", err)
 	}
-	if created.ID == 0 || created.Name != "sentry issue opened" {
+	if created.ID == "" || created.Name != "sentry issue opened" {
 		t.Fatalf("created mapping = %+v", created)
 	}
 
-	w = doJSON(t, srv, http.MethodGet, "/api/mappings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodGet, "/api/mappings/"+created.ID, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -151,7 +152,7 @@ func TestHandleMappingUpdate(t *testing.T) {
 	var created mapping.Mapping
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 
-	w = doJSON(t, srv, http.MethodPatch, "/api/mappings/"+strconv.FormatInt(created.ID, 10), map[string]any{
+	w = doJSON(t, srv, http.MethodPatch, "/api/mappings/"+created.ID, map[string]any{
 		"name":   "renamed",
 		"fields": []mapping.Field{{Name: "b", Path: "b", Type: mapping.TypeBool}},
 	})
@@ -159,7 +160,7 @@ func TestHandleMappingUpdate(t *testing.T) {
 		t.Fatalf("update status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	w = doJSON(t, srv, http.MethodGet, "/api/mappings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodGet, "/api/mappings/"+created.ID, nil)
 	var got mapping.Mapping
 	_ = json.Unmarshal(w.Body.Bytes(), &got)
 	if got.Name != "renamed" || len(got.Fields) != 1 || got.Fields[0].Name != "b" {
@@ -187,11 +188,11 @@ func TestHandleMappingDelete(t *testing.T) {
 	var created mapping.Mapping
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 
-	w = doJSON(t, srv, http.MethodDelete, "/api/mappings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodDelete, "/api/mappings/"+created.ID, nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want %d; body = %s", w.Code, http.StatusNoContent, w.Body.String())
 	}
-	w = doJSON(t, srv, http.MethodGet, "/api/mappings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodGet, "/api/mappings/"+created.ID, nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("get after delete status = %d, want %d", w.Code, http.StatusNotFound)
 	}
@@ -235,7 +236,7 @@ func TestHandleMappingPreviewResolvesAgainstARealCapture(t *testing.T) {
 func TestHandleMappingPreviewUnknownCaptureReturns404(t *testing.T) {
 	srv := mappingTestServer(t)
 	w := doJSON(t, srv, http.MethodPost, "/api/mappings/preview", map[string]any{
-		"capture_id": 999,
+		"capture_id": "rabsent00000000",
 		"fields":     []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
 	})
 	if w.Code != http.StatusNotFound {
@@ -284,7 +285,7 @@ func TestHandleMappingMutationsRequireCSRFHeader(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal created mapping: %v; body = %s", err, w.Body.String())
 	}
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	tests := []struct {
 		name, method, path string

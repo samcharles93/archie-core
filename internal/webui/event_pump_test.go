@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -26,8 +27,9 @@ func newTestPump(t *testing.T, srv *Server) *eventPump {
 // (sseStream.catchUp), not the pump's job.
 func TestEventPumpPrimesPastHistoryThenDeliversNewEvents(t *testing.T) {
 	srv := newRemoteTestServer(t)
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, detail := range []string{"first", "second"} {
-		if _, err := srv.Store.InsertEvent(t.Context(), events.Event{Kind: "task_created", Detail: detail}); err != nil {
+		if _, err := srv.Store.InsertEvent(t.Context(), events.Event{Kind: "task_created", Detail: detail, At: t0}); err != nil {
 			t.Fatalf("seed history: %v", err)
 		}
 	}
@@ -45,7 +47,8 @@ func TestEventPumpPrimesPastHistoryThenDeliversNewEvents(t *testing.T) {
 		t.Fatalf("pump delivered %d pre-existing events; priming must advance past history", delivered)
 	}
 
-	id, err := srv.Store.InsertEvent(t.Context(), events.Event{Kind: "task_started", Detail: "after the pump"})
+	t1 := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
+	id, err := srv.Store.InsertEvent(t.Context(), events.Event{Kind: "task_started", Detail: "after the pump", At: t1})
 	if err != nil {
 		t.Fatalf("insert live event: %v", err)
 	}
@@ -56,8 +59,8 @@ func TestEventPumpPrimesPastHistoryThenDeliversNewEvents(t *testing.T) {
 	if delivered != 1 {
 		t.Fatalf("pump delivered %d events, want the 1 inserted after priming", delivered)
 	}
-	if pump.watermark != id {
-		t.Fatalf("watermark = %d, want %d: the pump must not refetch a delivered event", pump.watermark, id)
+	if want := storecontract.EventCursor(t1, id); pump.watermark != want {
+		t.Fatalf("watermark = %q, want %q: the pump must not refetch a delivered event", pump.watermark, want)
 	}
 }
 
@@ -77,7 +80,7 @@ func TestEventPumpKeepsItsWatermarkAcrossAStoreFailure(t *testing.T) {
 		t.Fatal("deliver against a cancelled context returned no error")
 	}
 	if pump.watermark != before {
-		t.Fatalf("watermark moved to %d on a failed fetch, want %d", pump.watermark, before)
+		t.Fatalf("watermark moved to %q on a failed fetch, want %q", pump.watermark, before)
 	}
 }
 
@@ -172,7 +175,7 @@ type flakyEventReader struct {
 	calls    int
 }
 
-func (f *flakyEventReader) EventsSince(context.Context, int64, int) ([]events.Event, error) {
+func (f *flakyEventReader) EventsSince(context.Context, string, int) ([]events.Event, error) {
 	f.calls++
 	if f.calls <= f.failures {
 		return nil, errors.New("connection refused")

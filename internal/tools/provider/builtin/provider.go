@@ -32,11 +32,6 @@ type Provider struct {
 	// config.ChatConfig.UnrestrictedFilesystem for when that is wanted.
 	unrestricted bool
 
-	// workspaceIndex narrows grep's candidate files. Optional: nil leaves
-	// grep on its direct walk, which is the behaviour when no index is
-	// configured or its build has not finished.
-	workspaceIndex toolsbuiltin.GrepIndex
-
 	// registry holds the constructed tools. Built once in Start so
 	// Discover cannot partially fail.
 	registry *toolsbuiltin.Registry
@@ -48,15 +43,8 @@ type Provider struct {
 //
 // unrestricted lets the file tools reach absolute paths outside workspace;
 // relative paths still resolve against it either way.
-// A workspace index is optional and variadic to match
-// toolsbuiltin.RegisterBuiltins, which has always taken one the same way.
-// Only the first is used.
-func New(workspace string, unrestricted bool, indexes ...toolsbuiltin.GrepIndex) *Provider {
-	p := &Provider{workspace: workspace, unrestricted: unrestricted}
-	if len(indexes) > 0 {
-		p.workspaceIndex = indexes[0]
-	}
-	return p
+func New(workspace string, unrestricted bool) *Provider {
+	return &Provider{workspace: workspace, unrestricted: unrestricted}
 }
 
 // Manifest declares the adapter's tool capability.
@@ -84,14 +72,7 @@ func (p *Provider) Start(ctx context.Context) error {
 	toolsbuiltin.SetPathConfinement(!p.unrestricted)
 
 	registry := toolsbuiltin.NewRegistry()
-	// Forwarded only when present. Passing a nil interface would still work
-	// today (grep nil-checks it), but an explicit branch keeps a typed-nil
-	// index from reaching a call on a nil receiver.
-	var indexes []toolsbuiltin.GrepIndex
-	if p.workspaceIndex != nil {
-		indexes = append(indexes, p.workspaceIndex)
-	}
-	if err := toolsbuiltin.RegisterBuiltins(registry, p.workspace, indexes...); err != nil {
+	if err := toolsbuiltin.RegisterBuiltins(registry, p.workspace); err != nil {
 		return fmt.Errorf("workspace tool provider: register builtins: %w", err)
 	}
 	p.registry = registry

@@ -43,10 +43,10 @@ type Matcher struct {
 // for an event to be marked authenticated; it is never returned by
 // GET handlers.
 type Binding struct {
-	ID        int64   `json:"id"`
+	ID        string  `json:"id"`
 	Name      string  `json:"name"`
 	Matcher   Matcher `json:"matcher"`
-	MappingID int64   `json:"mapping_id"`
+	MappingID string  `json:"mapping_id"`
 	Workflow  string  `json:"workflow"`
 	// Owner and Repo pin a binding to a specific configured repo, so a
 	// multi-repo deployment can dispatch correctly. Both empty means "no
@@ -110,8 +110,8 @@ func (b Binding) validateCommon() error {
 	if strings.TrimSpace(b.Matcher.Source) == "" {
 		return fmt.Errorf("binding: matcher.source is required")
 	}
-	if b.MappingID <= 0 {
-		return fmt.Errorf("binding: mapping_id must be positive")
+	if strings.TrimSpace(b.MappingID) == "" {
+		return fmt.Errorf("binding: mapping_id is required")
 	}
 	if strings.TrimSpace(b.Workflow) == "" {
 		return fmt.Errorf("binding: workflow is required")

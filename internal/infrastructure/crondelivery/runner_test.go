@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // --- ChatCourier --------------------------------------------------------------
@@ -83,7 +82,7 @@ func TestChatCourierHonoursCancellation(t *testing.T) {
 	t.Run("cancelled before the run sends nothing", func(t *testing.T) {
 		// Both the lookup and the courier ignore ctx, so only the
 		// runner's own guard can stop the send.
-		lookup := &fakeLookup{specs: map[string]cronstore.JobSpec{
+		lookup := &fakeLookup{specs: map[string]scheduling.JobSpec{
 			"cancel-me": chatSpec("cancel-me", "ops-room", "morning"),
 		}}
 		courier := &naiveCourier{}
@@ -224,7 +223,7 @@ func TestWorkflowTaskHonoursCancellation(t *testing.T) {
 	t.Run("cancelled before the run submits nothing", func(t *testing.T) {
 		// Both the lookup and the submitter ignore ctx, so only the
 		// runner's own guard can stop the submit.
-		lookup := &fakeLookup{specs: map[string]cronstore.JobSpec{
+		lookup := &fakeLookup{specs: map[string]scheduling.JobSpec{
 			"cancel-me": workflowSpec("cancel-me", "cancel me", "body"),
 		}}
 		sub := &naiveSubmitter{}

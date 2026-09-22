@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -43,15 +44,17 @@ func newRemoteTestServer(t *testing.T) *Server {
 		t.Fatalf("listen: %v", err)
 	}
 	server := grpc.NewServer()
-	// The same concrete *store.Store satisfies every interface the server's
-	// per-surface accessors need; leaving one nil makes ListMappings/ListBindings
-	// fail closed with err*Unavailable, which is the real composition's wiring.
+	// Two stores, as in the real composition: the task store serves the task
+	// surfaces, the event-capture store serves captures/mappings/bindings.
+	// Leaving one nil makes ListMappings/ListBindings fail closed with
+	// err*Unavailable, which is also the real wiring.
+	eda := edastore.OpenTest(t)
 	staterpc.RegisterServer(server, staterpc.Deps{
 		Tasks:              st,
-		Captures:           st,
-		Mappings:           st,
-		Bindings:           st,
-		BindingDispatcher:  st,
+		Captures:           eda,
+		Mappings:           eda,
+		Bindings:           eda,
+		BindingDispatcher:  eda,
 		BindingTaskCreator: st,
 		Log:                slog.New(slog.DiscardHandler),
 	})

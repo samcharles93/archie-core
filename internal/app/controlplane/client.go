@@ -11,9 +11,9 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
+	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // Client is the control-plane client for every resource that does not resolve
@@ -25,7 +25,7 @@ import (
 // Client is the control-plane client a process that serves the store uses. It
 // embeds the Messaging Service's client -- the generic resource read path and
 // the channel-settings projection -- and adds the resource-specific reads and
-// watches, which need the workflow and cronstore engines that such a process
+// watches, which need the workflow and scheduling engines that such a process
 // already links (archie-core-1ng1).
 type Client struct {
 	*controlplanerpc.Client
@@ -213,19 +213,19 @@ func sendUpdate[T any](ctx context.Context, out chan<- T, update T) bool {
 	}
 }
 
-func (c *Client) Schedules(ctx context.Context) ([]cronstore.JobSpec, int64, error) {
+func (c *Client) Schedules(ctx context.Context) ([]scheduling.JobSpec, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: SchedulesKind})
 	if err != nil {
 		return nil, 0, controlplanerpc.ClientError(err)
 	}
-	var jobs []cronstore.JobSpec
+	var jobs []scheduling.JobSpec
 	if err := json.Unmarshal(response.Resource.ValueJson, &jobs); err != nil {
 		return nil, 0, err
 	}
 	return jobs, response.Resource.Version, nil
 }
 
-func (c *Client) ReplaceSchedules(ctx context.Context, jobs []cronstore.JobSpec, expectedVersion int64, actor, source, requestID string) (int64, error) {
+func (c *Client) ReplaceSchedules(ctx context.Context, jobs []scheduling.JobSpec, expectedVersion int64, actor, source, requestID string) (int64, error) {
 	value, err := json.Marshal(jobs)
 	if err != nil {
 		return 0, err
