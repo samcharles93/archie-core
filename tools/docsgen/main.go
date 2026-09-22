@@ -40,14 +40,14 @@ const (
 // AsyncAPI output), which must not be reported as stale merely for existing.
 //
 // docs/data/generated is shared. docsgen writes contracts.json from the
-// Go contract types; tools/docsite writes docs.json from the Markdown sources.
-// Each tool verifies its OWN file, and both files are named here because this map
-// is the directory's ownership record: whichever tool runs first must not report
-// the other's artifact as an unaccounted file. docsgen does not verify docs.json,
-// and tools/docsite keeps no registry of its own for that reason -- one fact, one
-// home.
+// Go contract types; tools/docsite writes docs.json and dev-docs.json from the
+// Markdown sources, one per published set. Each tool verifies its OWN files, and
+// all three are named here because this map is the directory's ownership record:
+// whichever tool runs first must not report the others' artifacts as unaccounted
+// files. docsgen does not verify the docsite artifacts, and tools/docsite keeps no
+// registry of its own for that reason -- one fact, one home.
 var generatedArtifacts = map[string][]string{
-	"docs/data/generated": {"contracts.json", "docs.json"},
+	"docs/data/generated": {"contracts.json", "docs.json", "dev-docs.json"},
 }
 
 // options is a parsed command line.

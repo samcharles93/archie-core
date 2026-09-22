@@ -1,26 +1,28 @@
-// Command docsite derives the public documentation set into one canonical,
-// host-neutral artifact.
+// Command docsite derives the documentation sets into canonical, host-neutral
+// artifacts.
 //
-// The Markdown is the source; docs/data/generated/docs.json is the fact set every
-// renderer reads. MkDocs was the first renderer and the Astro app is the second,
-// so the artifact is the product and the Markdown stays the source --
-// tools/newsgen states the same principle for releases, where the JSON is
-// canonical and the Markdown is an adapter.
+// The Markdown is the source; the JSON is the fact set every renderer reads.
+// MkDocs was the first renderer and the Astro app is the second, so the artifact
+// is the product and the Markdown stays the source -- tools/newsgen states the
+// same principle for releases, where the JSON is canonical and the Markdown is an
+// adapter.
 //
-// The published set is declared here rather than in a site configuration, because
-// the exclusions are decisions rather than details: see publishRules. A renderer
-// that reads this artifact needs no copy of them.
+// One source tree yields two sets, each with its own artifact and its own url
+// base: see publishRules for the split and the reasons. A renderer reads both
+// files and serves each under its own base; the file a page arrives in is the set
+// it belongs to, so neither carries a discriminator.
 //
 // Output is generated and committed:
 //
 //	docs/data/generated/docs.json
+//	docs/data/generated/dev-docs.json
 //
-// `docsite check` regenerates the artifact in a temporary directory and fails when
-// the committed one differs, without touching the tree.
+// `docsite check` regenerates both in memory and fails when a committed one
+// differs, without touching the tree.
 //
 // This tool keeps no registry of the generated directory it writes into: that
-// directory is accounted for by docsgen's generatedArtifacts, which names this
-// file, so a second registry here would be a second home for one fact.
+// directory is accounted for by docsgen's generatedArtifacts, which names both
+// files, so a second registry here would be a second home for one fact.
 package main
 
 import (
@@ -40,16 +42,27 @@ import (
 	"unicode"
 )
 
-// artifactPath is the committed artifact this tool owns, relative to the
-// repository root.
-const artifactPath = "docs/data/generated/docs.json"
-
 // docsDir is the Markdown source tree, relative to the repository root.
 const docsDir = "docs"
 
-// urlPrefix is the path every page is served under. The directory-style paths
-// MkDocs produced are kept exactly, so existing links keep working.
-const urlPrefix = "/docs/"
+// docSet is one published set: the pages it holds, the path they are served
+// under, and the committed artifact this tool writes for it.
+type docSet struct {
+	Name         string
+	URLPrefix    string
+	ArtifactPath string
+}
+
+// The two sets. The public set keeps the directory-style paths MkDocs produced
+// exactly, so existing links keep working.
+var (
+	publicDocs      = docSet{Name: "public", URLPrefix: "/docs/", ArtifactPath: "docs/data/generated/docs.json"}
+	developmentDocs = docSet{Name: "development", URLPrefix: "/dev/", ArtifactPath: "docs/data/generated/dev-docs.json"}
+
+	// sets is the write and check order, so a run reports its files the same way
+	// every time.
+	sets = []docSet{publicDocs, developmentDocs}
+)
 
 type mode int
 
@@ -125,40 +138,45 @@ type navNode struct {
 	Items []navNode `json:"items,omitempty"`
 }
 
-// publishRules is the published set, and the reasons, carried from the site
-// configuration this replaces. Everything under docs/ is public except:
+// publishRules is the split, and the reasons. Everything under docs/ publishes,
+// in one set or the other, except:
 //
 //   - archive/     superseded design. Publishing it competes with the current
 //     architecture for a reader's attention, which is the exact failure this
 //     repository already fights.
 //   - inspiration/ research notes that discuss other products by name.
-//   - prds/        open design decisions rather than settled architecture. Two
-//     kinds of PRD are published anyway, and for different reasons:
-//     · ui-service-boundary.md, service-decomposition.md and config-schema.md
-//     are ratified and read as reference.
-//     · memory-engine-unification.md and messaging-service-boundary.md are
-//     cited by documents of record -- settled architecture and the migration
-//     register -- so excluding them withheld nothing a reader was spared: it
-//     broke citations. A blanket prds/* rule had left those links 404 on the
-//     published site, which is worse than either publishing or not linking.
 //   - news/        release notes, which tools/newsgen owns and a renderer reads
 //     from releases.json.
 //   - github-token.md  setup notes about credentials.
 //
-// Widening the set means editing this list. The comment is the record: a renderer
-// that reads the artifact cannot see why a page is absent, and neither can the
-// next person deciding whether a citation should publish its target.
+// What remains divides by audience, not by sensitivity: every development page
+// may be read by anyone. architecture/ and prds/ are written for contributors --
+// the organisation rules, the migration register, the review procedure, the open
+// design decisions -- and a reader looking for what Archie is and how to point an
+// event at it is not served by meeting them in one sidebar. They are the
+// development set. Everything else is the public set.
+//
+// Selective PRD publication is gone with the split rather than carried into it: it
+// existed only because settled architecture cites PRDs and a link to a held-back
+// target fails this tool, so five PRDs published to keep citations alive. Both
+// halves of those citations are now in the development set.
+//
+// Changing either set means editing this list. The comment is the record: a
+// renderer that reads an artifact cannot see why a page is absent from it, and
+// neither can the next person deciding where a new page belongs.
 var (
-	heldBackTrees = map[string]bool{"archive": true, "inspiration": true, "news": true}
-	publishedPRDs = map[string]bool{
-		"ui-service-boundary.md":        true,
-		"service-decomposition.md":      true,
-		"config-schema.md":              true,
-		"memory-engine-unification.md":  true,
-		"messaging-service-boundary.md": true,
-	}
-	heldBackPages = map[string]bool{"github-token.md": true}
+	heldBackTrees   = map[string]bool{"archive": true, "inspiration": true, "news": true}
+	heldBackPages   = map[string]bool{"github-token.md": true}
+	developmentTree = map[string]bool{"architecture": true, "prds": true}
 )
+
+// setFor is the set one published page belongs to, by its top-level directory.
+func setFor(relative string) docSet {
+	if developmentTree[strings.Split(relative, "/")[0]] {
+		return developmentDocs
+	}
+	return publicDocs
+}
 
 // heldBack reports whether one path relative to docs/ is deliberately absent from
 // the published set. Links and pages are judged by this one rule, so a page is
@@ -167,17 +185,10 @@ func heldBack(relative string) bool {
 	if heldBackPages[relative] {
 		return true
 	}
-	segments := strings.Split(relative, "/")
-	if heldBackTrees[segments[0]] {
-		return true
-	}
-	if segments[0] == "prds" && len(segments) > 1 && !publishedPRDs[strings.Join(segments[1:], "/")] {
-		return true
-	}
-	return false
+	return heldBackTrees[strings.Split(relative, "/")[0]]
 }
 
-// published reports whether one path relative to docs/ is a page the artifact
+// published reports whether one path relative to docs/ is a page either artifact
 // carries.
 func published(relative string) bool {
 	return strings.HasSuffix(relative, ".md") && !heldBack(relative)
@@ -186,6 +197,53 @@ func published(relative string) bool {
 // intraDocsLink matches a Markdown inline link or image. The target is the only
 // part this tool rewrites; everything else in the match is preserved.
 var intraDocsLink = regexp.MustCompile(`\]\(\s*([^)\s]+)`)
+
+// fenceDelimiter opens or closes a fenced code block.
+var fenceDelimiter = regexp.MustCompile("^\\s*(```|~~~)")
+
+// maskCode blanks the code spans in one line, keeping its length and every other
+// byte, so a link match found in the masked line indexes the real one. Code is
+// prose to a Markdown renderer's link parser: `Resolve[T](i, src)` is a generic
+// call, not a link to `i,`, and the difference is the backticks.
+func maskCode(line string) string {
+	masked := []byte(line)
+	for index := 0; index < len(masked); {
+		if masked[index] != '`' {
+			index++
+			continue
+		}
+		open := index
+		for index < len(masked) && masked[index] == '`' {
+			index++
+		}
+		run := index - open
+		closed := -1
+		for scan := index; scan < len(masked); {
+			if masked[scan] != '`' {
+				scan++
+				continue
+			}
+			start := scan
+			for scan < len(masked) && masked[scan] == '`' {
+				scan++
+			}
+			if scan-start == run {
+				closed = scan
+				break
+			}
+		}
+		// An unclosed run is literal text to a Markdown renderer, so it is literal
+		// here too and the scan continues past it.
+		if closed < 0 {
+			continue
+		}
+		for blank := open; blank < closed; blank++ {
+			masked[blank] = ' '
+		}
+		index = closed
+	}
+	return string(masked)
+}
 
 // unresolvedLink names a link the artifact cannot honestly carry: its target is a
 // page or asset the published set holds back. It is reported rather than rewritten
@@ -299,11 +357,12 @@ func linkResolver(relative string, urls map[string]string, slugs map[string]map[
 			}
 			return url + fragment, ""
 		}
-		// An asset is served at its own path, when the set does not hold it back
-		// and it is actually there.
+		// An asset is served at its own path under the public base, whichever set
+		// links to it: docs/public/ is one file set, and serving one file under two
+		// paths would invent a second location for it.
 		if !heldBack(resolved) {
 			if _, err := os.Stat(filepath.Join(sourceDir, filepath.FromSlash(resolved))); err == nil {
-				return urlPrefix + resolved + fragment, ""
+				return publicDocs.URLPrefix + resolved + fragment, ""
 			}
 		}
 		return "", whyTargetAbsent
@@ -311,30 +370,47 @@ func linkResolver(relative string, urls map[string]string, slugs map[string]map[
 }
 
 // resolveLinks rewrites every intra-docs link in body and reports the ones whose
-// target the published set holds back.
+// target neither set carries. Code is skipped, span and block alike: what a
+// Markdown renderer draws as a link is the only thing this tool may rewrite, and
+// the only thing it may refuse a page for.
 func resolveLinks(relative, body string, urls map[string]string, slugs map[string]map[string]bool, sourceDir string) (string, []unresolvedLink) {
 	resolve := linkResolver(relative, urls, slugs, sourceDir)
 	var unresolved []unresolvedLink
 	lines := strings.Split(body, "\n")
+	inFence := false
 	for index, line := range lines {
-		lines[index] = intraDocsLink.ReplaceAllStringFunc(line, func(match string) string {
-			target := strings.TrimSpace(strings.TrimPrefix(match, "]("))
+		if fenceDelimiter.MatchString(line) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		var rewritten strings.Builder
+		end := 0
+		for _, match := range intraDocsLink.FindAllStringSubmatchIndex(maskCode(line), -1) {
+			target := line[match[2]:match[3]]
 			replacement, why := resolve(target)
 			if why != "" {
 				unresolved = append(unresolved, unresolvedLink{File: relative, Line: index + 1, Target: target, Why: why})
-				return match
+				continue
 			}
-			return "](" + replacement
-		})
+			rewritten.WriteString(line[end:match[2]])
+			rewritten.WriteString(replacement)
+			end = match[3]
+		}
+		if end == 0 {
+			continue
+		}
+		rewritten.WriteString(line[end:])
+		lines[index] = rewritten.String()
 	}
 	return strings.Join(lines, "\n"), unresolved
 }
 
-// load reads every published page and derives the sidebar from the layout, which
-// is how MkDocs derived it: a page added under a directory appears without a
-// second edit anywhere.
-func load(repoRoot string) (document, error) {
-	sourceDir := filepath.Join(repoRoot, docsDir)
+// readPages reads the source of every page either set carries, keyed by its path
+// relative to docs/.
+func readPages(sourceDir string) (map[string]string, error) {
 	bodies := map[string]string{}
 	err := filepath.WalkDir(sourceDir, func(filename string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -359,10 +435,29 @@ func load(repoRoot string) (document, error) {
 		return nil
 	})
 	if err != nil {
-		return document{}, fmt.Errorf("walk %s: %w", docsDir, err)
+		return nil, fmt.Errorf("walk %s: %w", docsDir, err)
 	}
 	if len(bodies) == 0 {
-		return document{}, fmt.Errorf("no published pages under %s", docsDir)
+		return nil, fmt.Errorf("no published pages under %s", docsDir)
+	}
+	return bodies, nil
+}
+
+// setDocument pairs one set with the artifact generated for it.
+type setDocument struct {
+	Set      docSet
+	Document document
+}
+
+// load reads every published page and derives each set's sidebar from the layout,
+// which is how MkDocs derived it: a page added under a directory appears without a
+// second edit anywhere. Both sets are built in one pass over one url map, so a
+// link that crosses between them resolves to the base its target is served under.
+func load(repoRoot string) ([]setDocument, error) {
+	sourceDir := filepath.Join(repoRoot, docsDir)
+	bodies, err := readPages(sourceDir)
+	if err != nil {
+		return nil, err
 	}
 
 	// Every page's url first, so a link resolves against the whole set rather than
@@ -374,12 +469,13 @@ func load(repoRoot string) (document, error) {
 		slugs[relative] = headingSlugs(body)
 	}
 
-	var doc document
+	pages := map[string][]page{}
 	var unresolved []unresolvedLink
 	for relative, body := range bodies {
 		resolved, missing := resolveLinks(relative, body, urls, slugs, sourceDir)
 		unresolved = append(unresolved, missing...)
-		doc.Pages = append(doc.Pages, page{
+		set := setFor(relative)
+		pages[set.Name] = append(pages[set.Name], page{
 			URL:     urls[relative],
 			Title:   pageTitle(relative, body),
 			Section: sectionFor(relative),
@@ -397,28 +493,40 @@ func load(repoRoot string) (document, error) {
 		for _, link := range unresolved {
 			problems = append(problems, link.Error())
 		}
-		return document{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%d link(s) cannot be carried; see each reason:\n  %s",
 			len(unresolved), strings.Join(problems, "\n  "))
 	}
 
-	sort.Slice(doc.Pages, func(i, j int) bool { return doc.Pages[i].URL < doc.Pages[j].URL })
-	doc.Nav = navFor(doc.Pages)
-	return doc, nil
+	generated := make([]setDocument, 0, len(sets))
+	for _, set := range sets {
+		entries := pages[set.Name]
+		if len(entries) == 0 {
+			return nil, fmt.Errorf("no pages in the %s set", set.Name)
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].URL < entries[j].URL })
+		generated = append(generated, setDocument{
+			Set:      set,
+			Document: document{Pages: entries, Nav: navFor(entries, set.URLPrefix)},
+		})
+	}
+	return generated, nil
 }
 
-// pageURL is the directory-style path a static site produces for one source file:
-// docs/index.md is the root, docs/a/index.md is the section's own landing page,
-// and docs/a/b.md is a page inside it.
+// pageURL is the directory-style path a static site produces for one source file,
+// under the base of the set the file belongs to: docs/index.md is the public
+// root, docs/a/index.md is a section's own landing page, and docs/a/b.md is a page
+// inside it.
 func pageURL(relative string) string {
+	prefix := setFor(relative).URLPrefix
 	if relative == "index.md" {
-		return urlPrefix
+		return prefix
 	}
 	dir, file := path.Split(relative)
 	if file == "index.md" {
-		return urlPrefix + dir // path.Split keeps the trailing slash
+		return prefix + dir // path.Split keeps the trailing slash
 	}
-	return urlPrefix + dir + strings.TrimSuffix(file, ".md") + "/"
+	return prefix + dir + strings.TrimSuffix(file, ".md") + "/"
 }
 
 // pageTitle is the page's own first heading, which is the title its author chose,
@@ -463,7 +571,7 @@ func readableName(name string) string {
 // navFor derives the sidebar tree from the pages. At each level the landing page
 // comes first and the rest follow alphabetically, so a reader meets the section's
 // own page before its children -- the order a static site's navigation uses.
-func navFor(pages []page) []navNode {
+func navFor(pages []page, urlPrefix string) []navNode {
 	type node struct {
 		title    string
 		url      string
@@ -536,14 +644,24 @@ func marshal(doc document) ([]byte, error) {
 	return append(encoded, '\n'), nil
 }
 
-// write regenerates the artifact, leaving the file untouched when its bytes
+// write regenerates every artifact, leaving a file untouched when its bytes
 // already match so a no-op run does not churn the tree.
 func write(repoRoot string) error {
-	doc, err := load(repoRoot)
+	generated, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
-	encoded, err := marshal(doc)
+	for _, entry := range generated {
+		if err := writeSet(repoRoot, entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeSet(repoRoot string, entry setDocument) error {
+	artifactPath := entry.Set.ArtifactPath
+	encoded, err := marshal(entry.Document)
 	if err != nil {
 		return err
 	}
@@ -562,38 +680,43 @@ func write(repoRoot string) error {
 	if err := os.WriteFile(target, encoded, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", artifactPath, err)
 	}
-	fmt.Printf("docsite: wrote %s (%d pages)\n", artifactPath, len(doc.Pages))
+	fmt.Printf("docsite: wrote %s (%d pages)\n", artifactPath, len(entry.Document.Pages))
 	return nil
 }
 
-// check regenerates into a temporary directory and compares, so a source edit that
-// has not been reflected in the committed artifact fails without the tree being
-// touched.
+// check regenerates in memory and compares, so a source edit that has not been
+// reflected in a committed artifact fails without the tree being touched.
 func check(repoRoot string) error {
-	tmpDir, err := os.MkdirTemp("", "docsite-check-")
-	if err != nil {
-		return fmt.Errorf("create temporary directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
 	generated, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
-	expected, err := marshal(generated)
+	for _, entry := range generated {
+		if err := checkSet(repoRoot, entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const regenerate = "regenerate it by running `go -C tools run ./docsite --repo-root ..` from the tools module"
+
+func checkSet(repoRoot string, entry setDocument) error {
+	artifactPath := entry.Set.ArtifactPath
+	expected, err := marshal(entry.Document)
 	if err != nil {
 		return err
 	}
 	committed, err := os.ReadFile(filepath.Join(repoRoot, artifactPath))
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%s is missing; regenerate it by running `go -C tools run ./docsite --repo-root ..` from the tools module", artifactPath)
+		return fmt.Errorf("%s is missing; %s", artifactPath, regenerate)
 	}
 	if err != nil {
 		return fmt.Errorf("read %s: %w", artifactPath, err)
 	}
-	if bytes.Equal(expected, committed) {
-		fmt.Printf("docsite: %s is up to date (%d pages)\n", artifactPath, len(generated.Pages))
-		return nil
+	if !bytes.Equal(expected, committed) {
+		return fmt.Errorf("%s is stale; %s", artifactPath, regenerate)
 	}
-	return fmt.Errorf("%s is stale; regenerate it by running `go -C tools run ./docsite --repo-root ..` from the tools module", artifactPath)
+	fmt.Printf("docsite: %s is up to date (%d pages)\n", artifactPath, len(entry.Document.Pages))
+	return nil
 }

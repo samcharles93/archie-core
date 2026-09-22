@@ -7,26 +7,85 @@ import (
 	"testing"
 )
 
-// TestPublishedSetIsTheDecision pins the count against the real tree. The number
-// is the decision this tool carries: everything under docs/ is public except five
-// named exclusions, so a page added or removed on purpose has to be
-// acknowledged here rather than sliding into the published site.
-func TestPublishedSetIsTheDecision(t *testing.T) {
-	doc, err := load("../..")
+// documentFor is the generated artifact for one set.
+func documentFor(t *testing.T, generated []setDocument, set docSet) document {
+	t.Helper()
+	for _, entry := range generated {
+		if entry.Set.Name == set.Name {
+			return entry.Document
+		}
+	}
+	t.Fatalf("no %s set was generated", set.Name)
+	return document{}
+}
+
+// TestTheSplitIsByAudience pins the two sets against the real tree. The public
+// set is a decision page by page, so its contents are listed: a page joining or
+// leaving what a customer reads has to be acknowledged here rather than sliding
+// onto the site. The development set is a rule rather than a list, because a PRD
+// is added most weeks and pinning a count would make this test a chore that
+// teaches nothing.
+func TestTheSplitIsByAudience(t *testing.T) {
+	generated, err := load("../..")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(doc.Pages) != 23 {
-		titles := make([]string, 0, len(doc.Pages))
-		for _, entry := range doc.Pages {
-			titles = append(titles, entry.URL)
+	public := documentFor(t, generated, publicDocs)
+	development := documentFor(t, generated, developmentDocs)
+
+	publicURLs := urlSet(t, public)
+	if len(publicURLs) != 2 {
+		t.Errorf("public set = %v, want the landing page and the guide", sortedKeys(publicURLs))
+	}
+	for _, want := range []string{"/docs/", "/docs/guides/first-playbook/"} {
+		if !publicURLs[want] {
+			t.Errorf("%s is not in the public set", want)
 		}
-		t.Fatalf("pages = %d, want the 21 the published set declares:\n  %s", len(doc.Pages), strings.Join(titles, "\n  "))
 	}
 
-	published := map[string]bool{}
+	developmentURLs := urlSet(t, development)
+	for _, want := range []string{
+		"/dev/architecture/",
+		"/dev/architecture/organisation/",
+		"/dev/prds/ui-service-boundary/",
+		// Selective PRD publication is gone: an open PRD is a development page like
+		// any other, which is what removes the pressure that published five of them
+		// to keep citations from settled architecture alive.
+		"/dev/prds/curator-sampler-wave1/",
+	} {
+		if !developmentURLs[want] {
+			t.Errorf("%s is not in the development set", want)
+		}
+	}
+
+	// Neither set may carry the other's pages, and neither may carry a held-back
+	// tree.
+	for url := range publicURLs {
+		if strings.HasPrefix(url, "/docs/architecture/") || strings.HasPrefix(url, "/docs/prds/") {
+			t.Errorf("%s is in the public set; architecture/ and prds/ are development pages", url)
+		}
+	}
+	for url := range developmentURLs {
+		if !strings.HasPrefix(url, "/dev/") {
+			t.Errorf("%s is in the development set but is not served under its base", url)
+		}
+	}
+	for _, held := range []string{"archive/", "inspiration/", "news/", "github-token/"} {
+		for _, url := range append(sortedKeys(publicURLs), sortedKeys(developmentURLs)...) {
+			if strings.Contains(url, held) {
+				t.Errorf("%s is published; it is held back deliberately", url)
+			}
+		}
+	}
+}
+
+// urlSet indexes a set's pages by url, asserting on the way that each carries the
+// body a renderer needs.
+func urlSet(t *testing.T, doc document) map[string]bool {
+	t.Helper()
+	urls := map[string]bool{}
 	for _, entry := range doc.Pages {
-		published[entry.URL] = true
+		urls[entry.URL] = true
 		if entry.Body == "" {
 			t.Errorf("%s carries no body; the artifact is the source a renderer needs", entry.URL)
 		}
@@ -34,53 +93,34 @@ func TestPublishedSetIsTheDecision(t *testing.T) {
 			t.Errorf("%s body does not start with a heading: %q", entry.URL, firstLine(entry.Body))
 		}
 	}
-	for _, held := range []string{"/docs/archive/", "/docs/inspiration/", "/docs/news/", "/docs/github-token/"} {
-		for url := range published {
-			if strings.HasPrefix(url, held) {
-				t.Errorf("%s is published; it is held back deliberately", url)
-			}
-		}
+	return urls
+}
+
+func sortedKeys(urls map[string]bool) []string {
+	keys := make([]string, 0, len(urls))
+	for url := range urls {
+		keys = append(keys, url)
 	}
-	for _, want := range []string{
-		"/docs/",
-		"/docs/architecture/organisation/",
-		"/docs/prds/ui-service-boundary/",
-		"/docs/prds/service-decomposition/",
-		"/docs/prds/config-schema/",
-		// Cited by documents of record, so a blanket prds/* exclusion had left
-		// these links 404 on the published site.
-		"/docs/prds/memory-engine-unification/",
-		"/docs/prds/messaging-service-boundary/",
-	} {
-		if !published[want] {
-			t.Errorf("%s is not published; the set declares it", want)
-		}
-	}
-	// An unpublished PRD is the common case, so one absence is asserted to keep the
-	// rule from being satisfied by publishing everything.
-	if published["/docs/prds/curator-sampler-wave1/"] {
-		t.Error("an open PRD is published; prds/ is held back except the ratified and cited ones")
-	}
+	return keys
 }
 
 func firstLine(body string) string {
-	line := body
-	if index := strings.IndexByte(body, '\n'); index >= 0 {
-		line = body[:index]
-	}
+	line, _, _ := strings.Cut(body, "\n")
 	return line
 }
 
 // TestPageURLsAreTheStaticSitePaths: every existing link points at the
 // directory-style path a static site produces, so the artifact has to reproduce
-// it exactly rather than inventing a cleaner one.
+// it exactly rather than inventing a cleaner one. The base is the one its set is
+// served under.
 func TestPageURLsAreTheStaticSitePaths(t *testing.T) {
 	for _, tc := range []struct{ relative, want string }{
 		{"index.md", "/docs/"},
-		{"architecture/index.md", "/docs/architecture/"},
-		{"architecture/organisation.md", "/docs/architecture/organisation/"},
-		{"prds/config-schema.md", "/docs/prds/config-schema/"},
+		{"guides/first-playbook.md", "/docs/guides/first-playbook/"},
 		{"guides/nested/deep.md", "/docs/guides/nested/deep/"},
+		{"architecture/index.md", "/dev/architecture/"},
+		{"architecture/organisation.md", "/dev/architecture/organisation/"},
+		{"prds/config-schema.md", "/dev/prds/config-schema/"},
 	} {
 		if got := pageURL(tc.relative); got != tc.want {
 			t.Errorf("pageURL(%q) = %q, want %q", tc.relative, got, tc.want)
@@ -94,52 +134,54 @@ func TestPageURLsAreTheStaticSitePaths(t *testing.T) {
 func TestNavMirrorsTheLayout(t *testing.T) {
 	nav := navFor([]page{
 		{URL: "/docs/", Title: "Archie"},
-		{URL: "/docs/architecture/", Title: "Architecture"},
-		{URL: "/docs/architecture/organisation/", Title: "Organisation"},
-		{URL: "/docs/architecture/policy/", Title: "Policy"},
 		{URL: "/docs/guides/first-playbook/", Title: "Building your first playbook binding"},
-	})
-	if len(nav) != 3 {
-		t.Fatalf("nav = %+v, want home plus two groups", nav)
+	}, publicDocs.URLPrefix)
+	if len(nav) != 2 {
+		t.Fatalf("nav = %+v, want home plus one group", nav)
 	}
 	if nav[0].URL != "/docs/" {
 		t.Errorf("first entry = %+v, want the home page", nav[0])
 	}
-	architecture := nav[1]
-	if architecture.Title != "Architecture" || architecture.URL != "/docs/architecture/" {
+	// A directory holding one page is still a group: collapsing it would be a
+	// shape this artifact invented rather than one it reports.
+	guides := nav[1]
+	if guides.Title != "Guides" || len(guides.Items) != 1 || guides.Items[0].URL != "/docs/guides/first-playbook/" {
+		t.Errorf("guides = %+v, want a group wrapping its single page", guides)
+	}
+
+	// The development set has no page of its own at its base, so its sidebar opens
+	// with the sections rather than a home link.
+	devNav := navFor([]page{
+		{URL: "/dev/architecture/", Title: "Architecture"},
+		{URL: "/dev/architecture/organisation/", Title: "Organisation"},
+		{URL: "/dev/architecture/policy/", Title: "Policy"},
+		{URL: "/dev/prds/config-schema/", Title: "Config schema"},
+	}, developmentDocs.URLPrefix)
+	if len(devNav) != 2 {
+		t.Fatalf("nav = %+v, want the two sections and no home entry", devNav)
+	}
+	architecture := devNav[0]
+	if architecture.Title != "Architecture" || architecture.URL != "/dev/architecture/" {
 		t.Errorf("group = %+v, want the section with its own landing page", architecture)
 	}
 	if len(architecture.Items) != 2 || architecture.Items[0].Title != "Organisation" {
 		t.Errorf("items = %+v, want the section's pages in order", architecture.Items)
 	}
-	// A directory holding one page is still a group: collapsing it would be a
-	// shape this artifact invented rather than one it reports.
-	guides := nav[2]
-	if guides.Title != "Guides" || len(guides.Items) != 1 || guides.Items[0].URL != "/docs/guides/first-playbook/" {
-		t.Errorf("guides = %+v, want a group wrapping its single page", guides)
-	}
 }
 
 // TestCheckFailsOnAStaleArtifactAndLeavesTheTreeAlone: check is what runs in the
-// gate, so it has to fail on a source edit that never reached the artifact without
-// writing anything itself.
+// gate, so it has to fail on a source edit that never reached an artifact without
+// writing anything itself. A stale development artifact fails it exactly as a
+// stale public one does; before both were checked, a change to a development page
+// could land with no artifact carrying it.
 func TestCheckFailsOnAStaleArtifactAndLeavesTheTreeAlone(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "docs", "index.md"), "# Archie\n\nHello.\n")
 	writeFile(t, filepath.Join(root, "docs", "architecture", "policy.md"), "# Policy\n\nRules.\n")
 	writeFile(t, filepath.Join(root, "docs", "archive", "old.md"), "# Old\n\nSuperseded.\n")
-	stale := filepath.Join(root, "docs", "data", "generated", "docs.json")
-	writeFile(t, stale, "{}\n")
 
 	if err := check(root); err == nil {
-		t.Fatal("check(stale) = nil, want a failure: the committed artifact disagrees with the sources")
-	}
-	before, err := os.ReadFile(stale)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != "{}\n" {
-		t.Fatalf("check rewrote the artifact: %q", before)
+		t.Fatal("check(missing) = nil, want a failure: no artifact is committed")
 	}
 
 	if err := write(root); err != nil {
@@ -149,12 +191,28 @@ func TestCheckFailsOnAStaleArtifactAndLeavesTheTreeAlone(t *testing.T) {
 		t.Fatalf("check after write = %v, want it to pass", err)
 	}
 
-	doc, err := load(root)
+	stale := filepath.Join(root, "docs", "data", "generated", "dev-docs.json")
+	writeFile(t, stale, "{}\n")
+	if err := check(root); err == nil {
+		t.Fatal("check(stale development artifact) = nil, want a failure")
+	}
+	before, err := os.ReadFile(stale)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Pages) != 2 {
-		t.Fatalf("pages = %d, want the two published pages (archive/ is held back)", len(doc.Pages))
+	if string(before) != "{}\n" {
+		t.Fatalf("check rewrote the artifact: %q", before)
+	}
+
+	generated, err := load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pages := documentFor(t, generated, publicDocs).Pages; len(pages) != 1 {
+		t.Fatalf("public pages = %d, want the landing page alone", len(pages))
+	}
+	if pages := documentFor(t, generated, developmentDocs).Pages; len(pages) != 1 {
+		t.Fatalf("development pages = %d, want the architecture page alone (archive/ is held back)", len(pages))
 	}
 }
 
@@ -168,23 +226,24 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// TestLinksResolveInsideTheSetAndFailOutside pins both halves of link handling.
+// TestLinksResolveAcrossSetsAndFailOutsideThem pins both halves of link handling.
 // An intra-docs link becomes the target page's url, using the same rule that
-// builds the target's url, and anchors and scheme-qualified links pass through. A
-// link whose target the set holds back fails the load, naming the file, the line
-// and the target: that refusal is what made a blanket prds/* exclusion visible,
-// because three citations from settled architecture had been 404s on the published
-// site, and a hopeful rewrite would have hidden them.
-func TestLinksResolveInsideTheSetAndFailOutside(t *testing.T) {
+// builds the target's url, so a citation that crosses from one set to the other
+// lands on the base its target is actually served under. Anchors and
+// scheme-qualified links pass through. A link whose target neither set carries
+// fails the load, naming the file, the line and the target, because a hopeful
+// rewrite would hide a 404 rather than report it.
+func TestLinksResolveAcrossSetsAndFailOutsideThem(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "docs", "organisation.md"), "# Organisation\n\nBack [home](index.md).\n")
+	writeFile(t, filepath.Join(root, "docs", "architecture", "organisation.md"),
+		"# Organisation\n\nBack [home](../index.md).\n")
 	writeFile(t, filepath.Join(root, "docs", "archive", "old.md"), "# Old\n")
 	writeFile(t, filepath.Join(root, "docs", "index.md"),
-		"# Archie\n\nSee [Organisation](organisation.md#organisation).\n\n[Old](archive/old.md) is held back.\n")
+		"# Archie\n\nSee [Organisation](architecture/organisation.md#organisation).\n\n[Old](archive/old.md) is held back.\n")
 
 	_, err := load(root)
 	if err == nil {
-		t.Fatal("load = nil, want a refusal: a published page links into archive/, which the set holds back")
+		t.Fatal("load = nil, want a refusal: a page links into archive/, which is held back")
 	}
 	for _, want := range []string{"index.md:5", "archive/old.md", "not in the published set"} {
 		if !strings.Contains(err.Error(), want) {
@@ -192,29 +251,39 @@ func TestLinksResolveInsideTheSetAndFailOutside(t *testing.T) {
 		}
 	}
 
-	// The same tree without the out-of-set link: the in-set link becomes the target
-	// page's url, and the anchor rides along.
+	// The same tree without the out-of-set link: each link becomes the target page's
+	// url, under the target's own base.
 	writeFile(t, filepath.Join(root, "docs", "index.md"),
-		"# Archie\n\nSee [Organisation](organisation.md#organisation), [OpenAI](https://openai.com/) and [below](#anchors).\n")
-	doc, err := load(root)
+		"# Archie\n\nSee [Organisation](architecture/organisation.md#organisation), [OpenAI](https://openai.com/) and [below](#anchors).\n")
+	generated, err := load(root)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	var index string
-	for _, entry := range doc.Pages {
-		if entry.URL == "/docs/" {
-			index = entry.Body
-		}
-	}
+	index := bodyOf(t, documentFor(t, generated, publicDocs), "/docs/")
 	for _, want := range []string{
-		"(/docs/organisation/#organisation)",
+		"(/dev/architecture/organisation/#organisation)",
 		"(https://openai.com/)",
 		"(#anchors)",
 	} {
 		if !strings.Contains(index, want) {
-			t.Errorf("resolved body = %q, want it to contain %q", index, want)
+			t.Errorf("public body = %q, want it to contain %q", index, want)
 		}
 	}
+	organisation := bodyOf(t, documentFor(t, generated, developmentDocs), "/dev/architecture/organisation/")
+	if !strings.Contains(organisation, "(/docs/)") {
+		t.Errorf("development body = %q, want the link back to the public landing page", organisation)
+	}
+}
+
+func bodyOf(t *testing.T, doc document, url string) string {
+	t.Helper()
+	for _, entry := range doc.Pages {
+		if entry.URL == url {
+			return entry.Body
+		}
+	}
+	t.Fatalf("no page at %s", url)
+	return ""
 }
 
 // TestFragmentsAreValidatedAgainstTheTargetsHeadings: a link can resolve to a page
@@ -224,10 +293,10 @@ func TestLinksResolveInsideTheSetAndFailOutside(t *testing.T) {
 // rendered page carries.
 func TestFragmentsAreValidatedAgainstTheTargetsHeadings(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "docs", "decisions.md"),
+	writeFile(t, filepath.Join(root, "docs", "architecture", "decisions.md"),
 		"# Decisions\n\n## 5. Memory placement and storage\n\n## Bindings & secrets\n")
 	writeFile(t, filepath.Join(root, "docs", "index.md"),
-		"# Archie\n\n[Good](decisions.md#5-memory-placement-and-storage).\n\n[Bad](decisions.md#5).\n")
+		"# Archie\n\n[Good](architecture/decisions.md#5-memory-placement-and-storage).\n\n[Bad](architecture/decisions.md#5).\n")
 
 	_, err := load(root)
 	if err == nil {
@@ -245,17 +314,12 @@ func TestFragmentsAreValidatedAgainstTheTargetsHeadings(t *testing.T) {
 	// A fragment that does match, including one whose heading has punctuation and an
 	// ampersand, passes and is carried verbatim.
 	writeFile(t, filepath.Join(root, "docs", "index.md"),
-		"# Archie\n\n[Good](decisions.md#5-memory-placement-and-storage).\n\n[Also](decisions.md#bindings-secrets).\n")
-	doc, err := load(root)
+		"# Archie\n\n[Good](architecture/decisions.md#5-memory-placement-and-storage).\n\n[Also](architecture/decisions.md#bindings-secrets).\n")
+	generated, err := load(root)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	for _, entry := range doc.Pages {
-		if entry.URL != "/docs/" {
-			continue
-		}
-		if !strings.Contains(entry.Body, "(/docs/decisions/#bindings-secrets)") {
-			t.Errorf("resolved body = %q, want the ampersand heading's slug", entry.Body)
-		}
+	if index := bodyOf(t, documentFor(t, generated, publicDocs), "/docs/"); !strings.Contains(index, "(/dev/architecture/decisions/#bindings-secrets)") {
+		t.Errorf("resolved body = %q, want the ampersand heading's slug", index)
 	}
 }

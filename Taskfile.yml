@@ -132,20 +132,23 @@ tasks:
       - go -C tools run -mod=readonly ./newsgen check --repo-root ..
 
   docs:artifact:
-    desc: Regenerate the canonical public-docs artifact from the Markdown sources
+    desc: Regenerate the canonical docs artifacts from the Markdown sources
     summary: |
-      Writes docs/data/generated/docs.json: every published page's url, title,
-      section and raw Markdown body, plus the sidebar tree derived from the
-      layout. The JSON is the canonical, host-neutral fact set a renderer reads;
-      the Markdown stays the source. MkDocs was the first renderer and the Astro
-      app is the second, so the artifact is the product.
+      Writes docs/data/generated/docs.json and dev-docs.json: every published
+      page's url, title, section and raw Markdown body, plus the sidebar tree
+      derived from the layout, one file per set. The JSON is the canonical,
+      host-neutral fact set a renderer reads; the Markdown stays the source.
+      MkDocs was the first renderer and the Astro app is the second, so the
+      artifact is the product.
 
-      The published set lives in tools/docsite/main.go with the reasons for what
-      is held back -- archive/, inspiration/, news/, most of prds/ and the
-      credential notes -- because a renderer reading the artifact cannot see why
-      a page is absent.
+      Two sets, split by audience: the public set (served under /docs/) is what a
+      reader of the product needs, the development set (/dev/) is architecture/
+      and prds/. The split and the reasons for what is held back entirely --
+      archive/, inspiration/, news/ and the credential notes -- live in
+      tools/docsite/main.go, because a renderer reading an artifact cannot see
+      why a page is absent from it.
 
-      The file is committed, so this dirties the tree deliberately: review the
+      The files are committed, so this dirties the tree deliberately: review the
       diff and commit it with the page that produced it.
 
       The artifact's keys are a frozen contract: an application is built against
@@ -154,14 +157,14 @@ tasks:
       - go -C tools run -mod=readonly ./docsite --repo-root ..
 
   docs:artifact:check:
-    desc: Verify the committed public-docs artifact matches the Markdown sources
+    desc: Verify the committed docs artifacts match the Markdown sources
     summary: |
-      Reproduces the artifact in a temporary directory and fails when the
-      committed file differs, without modifying the working tree. Runs in
-      `task check`, so a page edit cannot land without its regeneration.
+      Reproduces both artifacts in memory and fails when a committed file
+      differs, without modifying the working tree. Runs in `task check`, so a
+      page edit cannot land without its regeneration.
 
       The generated directory is accounted for by docsgen's generatedArtifacts,
-      which names this file alongside contracts.json: one registry for the
+      which names both files alongside contracts.json: one registry for the
       directory rather than one per writer.
     cmds:
       - go -C tools run -mod=readonly ./docsite check --repo-root ..
