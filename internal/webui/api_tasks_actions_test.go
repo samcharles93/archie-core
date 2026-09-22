@@ -686,7 +686,7 @@ func TestArchiveRemovesOnlyOneTerminalTask(t *testing.T) {
 	if other, err := srv.Store.TaskByIssue(ctx, "acme", "widget", 2); err != nil || other == nil {
 		t.Fatalf("archive removed another task: (%+v, %v)", other, err)
 	}
-	history, err := srv.Store.EventsSince(ctx, 0, 10)
+	history, err := srv.Store.EventsSince(ctx, "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}

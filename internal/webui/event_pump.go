@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -38,18 +39,19 @@ const (
 //
 // Polling is sufficient rather than a compromise, for the reasons recorded in
 // docs/architecture/migration-decisions.md ("Dashboard live event delivery"):
-// the store serialises writes on a single connection, so the id cursor is
-// assigned in commit order and cannot skip; sseStream.drain treats a broadcast
-// as a wakeup and re-reads the gap from the store, so nothing here changes SSE
-// semantics; and reading the table catches writers that never touch a bus,
-// including the audit event ArchiveTask writes inside its transaction.
+// EventsSince pages a total order over (at, id) with a fixed-width time key
+// and a deterministic id tie-break, so the cursor cannot skip or repeat;
+// sseStream.drain treats a broadcast as a wakeup and re-reads the gap from the
+// store, so nothing here changes SSE semantics; and reading the table catches
+// writers that never touch a bus, including the audit event ArchiveTask writes
+// inside its transaction.
 type eventPump struct {
 	store     eventReader
 	log       func(string, ...any)
 	broadcast func(events.Event)
-	// watermark is the highest event id already handed to broadcast. It only
+	// watermark is the highest event cursor already handed to broadcast. It only
 	// ever moves forward, and only past an event that was delivered.
-	watermark int64
+	watermark string
 	// primeRetryMin is the first backoff between priming attempts. Zero
 	// means eventPumpPrimeRetryMin; a test sets it small.
 	primeRetryMin time.Duration
@@ -85,7 +87,7 @@ func (p *eventPump) primeWithRetry(ctx context.Context) error {
 // eventReader is the one method the pump needs, so a test can drive it
 // without a whole TaskStore.
 type eventReader interface {
-	EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error)
+	EventsSince(ctx context.Context, cursor string, limit int) ([]events.Event, error)
 }
 
 func (s *Server) newEventPump() *eventPump {
@@ -122,8 +124,8 @@ func (p *eventPump) prime(ctx context.Context) error {
 		}
 		before := p.watermark
 		for _, e := range batch {
-			if e.ID > p.watermark {
-				p.watermark = e.ID
+			if cursor := storecontract.EventCursor(e.At, e.ID); cursor > p.watermark {
+				p.watermark = cursor
 			}
 		}
 		// A short page is the end of the table. The watermark check is the
@@ -147,11 +149,12 @@ func (p *eventPump) deliver(ctx context.Context) (int, error) {
 		}
 		before := p.watermark
 		for _, e := range batch {
-			if e.ID <= p.watermark {
+			cursor := storecontract.EventCursor(e.At, e.ID)
+			if cursor <= p.watermark {
 				continue
 			}
 			p.broadcast(e)
-			p.watermark = e.ID
+			p.watermark = cursor
 			delivered++
 		}
 		if len(batch) < eventPumpPageSize || p.watermark == before {

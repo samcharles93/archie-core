@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -425,11 +426,10 @@ func TestStoreOperationsHonorContextCancellation(t *testing.T) {
 func TestOversizedEventPayload(t *testing.T) {
 	s := openTest(t)
 	detail := strings.Repeat("x", 5000)
-	id, err := s.InsertEvent(t.Context(), events.Event{Kind: events.KindLog, Detail: detail})
-	if err != nil {
+	if _, err := s.InsertEvent(t.Context(), events.Event{Kind: events.KindLog, Detail: detail}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.EventsSince(t.Context(), id-1, 1)
+	got, err := s.EventsSince(t.Context(), "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,14 +440,13 @@ func TestOversizedEventPayload(t *testing.T) {
 
 func TestInsertEventWithUnmarshalableData(t *testing.T) {
 	s := openTest(t)
-	id, err := s.InsertEvent(t.Context(), events.Event{
+	if _, err := s.InsertEvent(t.Context(), events.Event{
 		Kind: events.KindLog,
 		Data: map[string]any{"channel": make(chan int)},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.EventsSince(t.Context(), id-1, 1)
+	got, err := s.EventsSince(t.Context(), "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,6 +470,133 @@ func openTest(t *testing.T) *Store {
 		}
 	})
 	return s
+}
+
+// TestEventsSinceOrdersByAt pins the total-order invariant: the feed cursor
+// must page by at, not by row id. Inserting a later-timestamped event before
+// an earlier one must still return the earlier one first, because row id is
+// insertion order, not chronology.
+func TestEventsSinceOrdersByAt(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	later := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
+	earlier := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := s.InsertEvent(ctx, events.Event{Kind: "log", At: later, Detail: "later"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertEvent(ctx, events.Event{Kind: "log", At: earlier, Detail: "earlier"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.EventsSince(ctx, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("EventsSince returned %d events, want 2", len(got))
+	}
+	if got[0].Detail != "earlier" || got[1].Detail != "later" {
+		t.Fatalf("order = %q then %q; want earlier then later (at order, not insertion order)", got[0].Detail, got[1].Detail)
+	}
+}
+
+// TestInsertEventWritesFixedWidthTimeKey pins the write format the total
+// order depends on: a whole-second timestamp and a full-precision one must
+// render to the same length, or lexicographic order stops being chronological
+// order. time.RFC3339Nano trims trailing zeros, so today this fails.
+func TestInsertEventWritesFixedWidthTimeKey(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	whole := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	precise := time.Date(2026, 1, 1, 0, 0, 0, 123456789, time.UTC)
+	for _, e := range []events.Event{
+		{Kind: "log", At: whole, Detail: "whole"},
+		{Kind: "log", At: precise, Detail: "precise"},
+	} {
+		if _, err := s.InsertEvent(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT at FROM events ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ats []string
+	for rows.Next() {
+		var at string
+		if err := rows.Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		ats = append(ats, at)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(ats) != 2 {
+		t.Fatalf("stored %d event rows, want 2", len(ats))
+	}
+	if len(ats[0]) != len(ats[1]) {
+		t.Fatalf("at renders %d and %d chars (%q vs %q); want a fixed-width key", len(ats[0]), len(ats[1]), ats[0], ats[1])
+	}
+}
+
+// TestEventsSincePagesIdenticalTimestampsWithoutSkipOrRepeat is the
+// regression guard for the id tie-break: many events sharing one timestamp
+// must still page exactly once each, in a stable order, no matter what their
+// ids are. It walks the returned cursor to exhaustion with a page size smaller
+// than the set, so every page boundary is exercised.
+func TestEventsSincePagesIdenticalTimestampsWithoutSkipOrRepeat(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	const total = 50
+	inserted := make(map[int64]string, total)
+	for i := 0; i < total; i++ {
+		detail := fmt.Sprintf("event-%d", i)
+		id, err := s.InsertEvent(ctx, events.Event{Kind: "log", At: at, Detail: detail})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inserted[id] = detail
+	}
+
+	var got []events.Event
+	cursor := ""
+	for {
+		page, err := s.EventsSince(ctx, cursor, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		got = append(got, page...)
+		last := page[len(page)-1]
+		cursor = storecontract.EventCursor(last.At, last.ID)
+	}
+
+	if len(got) != total {
+		t.Fatalf("paged %d events, want %d (a skip or a repeat)", len(got), total)
+	}
+	seen := make(map[int64]bool, total)
+	for i, e := range got {
+		if _, ok := inserted[e.ID]; !ok {
+			t.Fatalf("event %d (%d) was never inserted", i, e.ID)
+		}
+		if seen[e.ID] {
+			t.Fatalf("event %d (%d) delivered twice", i, e.ID)
+		}
+		seen[e.ID] = true
+		if i > 0 {
+			prev := got[i-1]
+			if storecontract.EventCursor(prev.At, prev.ID) >= storecontract.EventCursor(e.At, e.ID) {
+				t.Fatalf("order regressed at %d: %q then %q", i,
+					storecontract.EventCursor(prev.At, prev.ID), storecontract.EventCursor(e.At, e.ID))
+			}
+		}
+	}
 }
 
 // TestTasksBindingColumnsRoundTrip confirms the binding_id and
@@ -684,20 +810,24 @@ func TestEnqueueIsIdempotent(t *testing.T) {
 func TestEventLogRoundTrip(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	id1, err := s.InsertEvent(ctx, events.Event{Kind: "stage_start", TaskID: 1, Stage: "plan", Attempt: 1})
+	id1, err := s.InsertEvent(ctx, events.Event{Kind: "stage_start", TaskID: 1, Stage: "plan", Attempt: 1, At: at})
 	if err != nil || id1 == 0 {
 		t.Fatalf("insert = (%d, %v)", id1, err)
 	}
 	id2, err := s.InsertEvent(ctx, events.Event{
-		Kind: "stage_finish", TaskID: 1, Workflow: "implement", Stage: "plan", Attempt: 2,
+		Kind: "stage_finish", TaskID: 1, Workflow: "implement", Stage: "plan", Attempt: 2, At: at,
 		Data: map[string]any{"duration_ms": 1200},
 	})
 	if err != nil || id2 <= id1 {
 		t.Fatalf("second insert = (%d, %v)", id2, err)
 	}
 
-	evs, err := s.EventsSince(ctx, id1, 10)
+	// Two events sharing a timestamp must still page exactly once each via the
+	// id tie-break: the cursor carries (at, id), so resuming after id1 yields
+	// only id2.
+	evs, err := s.EventsSince(ctx, storecontract.EventCursor(at, id1), 10)
 	if err != nil || len(evs) != 1 || evs[0].Kind != "stage_finish" {
 		t.Fatalf("EventsSince = (%+v, %v)", evs, err)
 	}

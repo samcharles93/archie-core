@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -46,22 +45,26 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	conn, unregister := s.registerSSEConn()
 	defer unregister()
 
-	if !stream.catchUp(r.Context(), 0) {
+	if !stream.catchUp(r.Context(), "") {
 		return
 	}
 	stream.drain(r.Context(), conn)
 }
 
-// sseSince resolves the event ID a client wants to resume after. A valid
+// sseSince resolves the cursor a client wants to resume after. A valid
 // Last-Event-ID header  --  how EventSource itself resumes a dropped
 // connection  --  takes precedence over the ?since= query parameter, which
-// only matters for a client's very first connection.
-func sseSince(r *http.Request) int64 {
-	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+// only matters for a client's very first connection. An absent or unparseable
+// cursor degrades to "from the beginning": a browser holding a legacy integer
+// id (the pre-cursor id: field) or garbage must not break the feed, exactly
+// as a failed ParseInt yielded 0 before the cursor became a string.
+func sseSince(r *http.Request) string {
+	since := r.URL.Query().Get("since")
 	if header := r.Header.Get("Last-Event-ID"); header != "" {
-		if fromHeader, err := strconv.ParseInt(header, 10, 64); err == nil {
-			since = fromHeader
-		}
+		since = header
+	}
+	if _, _, ok := storecontract.ParseEventCursor(since); !ok {
+		return ""
 	}
 	return since
 }
@@ -86,19 +89,19 @@ func (s *Server) registerSSEConn() (chan events.Event, func()) {
 
 // sseStream renders one client's event-stream response: an SSE frame per
 // event, an SSE comment when the persisted backlog can't be read, and the
-// running "since" watermark that deduplicates the backlog against live
+// running "since" cursor that deduplicates the backlog against live
 // broadcasts covering the same event.
 type sseStream struct {
 	store storecontract.TaskStore
 	log   *slog.Logger
 	w     http.ResponseWriter
 	fl    http.Flusher
-	since int64
+	since string
 }
 
 // newSSEStream builds a stream over w, reporting false if w cannot be
 // flushed incrementally  --  SSE does not work without that.
-func newSSEStream(st storecontract.TaskStore, log *slog.Logger, w http.ResponseWriter, since int64) (*sseStream, bool) {
+func newSSEStream(st storecontract.TaskStore, log *slog.Logger, w http.ResponseWriter, since string) (*sseStream, bool) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		return nil, false
@@ -116,7 +119,7 @@ func (s *sseStream) send(e events.Event) bool {
 		s.log.Error("sse event marshal failed", "error", err, "event_id", e.ID)
 		return false
 	}
-	if _, err := s.w.Write([]byte("id: " + strconv.FormatInt(e.ID, 10) + "\ndata: " + string(body) + "\n\n")); err != nil {
+	if _, err := s.w.Write([]byte("id: " + storecontract.EventCursor(e.At, e.ID) + "\ndata: " + string(body) + "\n\n")); err != nil {
 		return false
 	}
 	s.fl.Flush()
@@ -134,10 +137,10 @@ func (s *sseStream) writeErrorComment(err error) {
 }
 
 // catchUp sends every persisted event after s.since, advancing s.since as
-// it goes, until it reaches targetID (0 means "drain everything currently
+// it goes, until it reaches target ("" means "drain everything currently
 // available"), runs out of backlog, or fails. It reports false on failure
 // -- a fetch error or a dead connection -- meaning the caller must stop.
-func (s *sseStream) catchUp(ctx context.Context, targetID int64) bool {
+func (s *sseStream) catchUp(ctx context.Context, target string) bool {
 	for {
 		before := s.since
 		backlog, err := s.store.EventsSince(ctx, s.since, sseBacklogPageSize)
@@ -146,7 +149,7 @@ func (s *sseStream) catchUp(ctx context.Context, targetID int64) bool {
 			s.writeErrorComment(err)
 			return false
 		}
-		reachedTarget, ok := s.sendPage(backlog, targetID)
+		reachedTarget, ok := s.sendPage(backlog, target)
 		if !ok {
 			return false
 		}
@@ -157,24 +160,25 @@ func (s *sseStream) catchUp(ctx context.Context, targetID int64) bool {
 }
 
 // sendPage sends every event in backlog newer than s.since, advancing it as
-// it goes. reachedTarget reports whether targetID was reached mid-page --
+// it goes. reachedTarget reports whether target was reached mid-page --
 // stopping there is correct, since nothing beyond it is needed yet -- and
 // ok reports whether every send succeeded.
 //
 // since advances past a filtered-out event (sseVisible false) exactly as it
-// would for a sent one: EventsSince only ever returns events with
-// id > since, so leaving since behind a filtered event would make the next
-// catchUp refetch it forever.
-func (s *sseStream) sendPage(backlog []events.Event, targetID int64) (reachedTarget, ok bool) {
+// would for a sent one: EventsSince only ever returns events after since, so
+// leaving since behind a filtered event would make the next catchUp refetch
+// it forever.
+func (s *sseStream) sendPage(backlog []events.Event, target string) (reachedTarget, ok bool) {
 	for _, e := range backlog {
-		if e.ID <= s.since {
+		cursor := storecontract.EventCursor(e.At, e.ID)
+		if cursor <= s.since {
 			continue
 		}
 		if sseVisible(e) && !s.send(e) {
 			return false, false
 		}
-		s.since = e.ID
-		if targetID > 0 && s.since >= targetID {
+		s.since = cursor
+		if target != "" && cursor >= target {
 			return true, true
 		}
 	}
@@ -192,17 +196,18 @@ func (s *sseStream) drain(ctx context.Context, conn <-chan events.Event) {
 		case <-ctx.Done():
 			return
 		case e := <-conn:
-			if e.ID <= s.since {
+			cursor := storecontract.EventCursor(e.At, e.ID)
+			if cursor <= s.since {
 				continue
 			}
-			if !s.catchUp(ctx, e.ID) {
+			if !s.catchUp(ctx, cursor) {
 				return
 			}
-			if e.ID > s.since {
+			if cursor > s.since {
 				if sseVisible(e) && !s.send(e) {
 					return
 				}
-				s.since = e.ID
+				s.since = cursor
 			}
 		}
 	}

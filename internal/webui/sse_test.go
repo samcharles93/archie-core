@@ -8,12 +8,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
-func newTestSSEStream(since int64) (*sseStream, *httptest.ResponseRecorder) {
+// testAt is a fixed instant every synthetic event in this file shares, so a
+// cursor can be built for an event from its id alone. Two events sharing a
+// timestamp exercise the id tie-break, which is the point of the cursor.
+var testAt = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// cursor builds the opaque resume cursor for a synthetic event with id id.
+func cursor(id int64) string {
+	return storecontract.EventCursor(testAt, id)
+}
+
+func newTestSSEStream(since string) (*sseStream, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	return &sseStream{
 		log:   slog.New(slog.DiscardHandler),
@@ -24,13 +36,19 @@ func newTestSSEStream(since int64) (*sseStream, *httptest.ResponseRecorder) {
 }
 
 // sendPage is the seam catchUp's page-boundary logic depends on: it must
-// stop the instant targetID is reached, even mid-page, rather than sending
+// stop the instant target is reached, even mid-page, rather than sending
 // events beyond what the caller asked for.
 func TestSSEStreamSendPageStopsAtTargetMidPage(t *testing.T) {
-	s, _ := newTestSSEStream(0)
-	backlog := []events.Event{{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}}
+	s, _ := newTestSSEStream("")
+	backlog := []events.Event{
+		{ID: 1, At: testAt},
+		{ID: 2, At: testAt},
+		{ID: 3, At: testAt},
+		{ID: 4, At: testAt},
+		{ID: 5, At: testAt},
+	}
 
-	reachedTarget, ok := s.sendPage(backlog, 3)
+	reachedTarget, ok := s.sendPage(backlog, cursor(3))
 
 	if !ok {
 		t.Fatal("sendPage() ok = false, want true")
@@ -38,18 +56,18 @@ func TestSSEStreamSendPageStopsAtTargetMidPage(t *testing.T) {
 	if !reachedTarget {
 		t.Fatal("reachedTarget = false, want true: target 3 was inside the page")
 	}
-	if s.since != 3 {
-		t.Fatalf("since = %d, want 3 (stopped at the target, not the end of the page)", s.since)
+	if s.since != cursor(3) {
+		t.Fatalf("since = %q, want %q (stopped at the target, not the end of the page)", s.since, cursor(3))
 	}
 }
 
 // A target beyond the page must not be reported reached: the caller needs
 // another page.
 func TestSSEStreamSendPageDoesNotReportTargetReachedBeyondThePage(t *testing.T) {
-	s, _ := newTestSSEStream(0)
-	backlog := []events.Event{{ID: 1}, {ID: 2}, {ID: 3}}
+	s, _ := newTestSSEStream("")
+	backlog := []events.Event{{ID: 1, At: testAt}, {ID: 2, At: testAt}, {ID: 3, At: testAt}}
 
-	reachedTarget, ok := s.sendPage(backlog, 10)
+	reachedTarget, ok := s.sendPage(backlog, cursor(10))
 
 	if !ok {
 		t.Fatal("sendPage() ok = false, want true")
@@ -57,36 +75,36 @@ func TestSSEStreamSendPageDoesNotReportTargetReachedBeyondThePage(t *testing.T) 
 	if reachedTarget {
 		t.Fatal("reachedTarget = true, want false: target 10 was never reached in this page")
 	}
-	if s.since != 3 {
-		t.Fatalf("since = %d, want 3 (the whole page was sent)", s.since)
+	if s.since != cursor(3) {
+		t.Fatalf("since = %q, want %q (the whole page was sent)", s.since, cursor(3))
 	}
 }
 
-// targetID == 0 means "drain everything available"; sendPage must never
+// target == "" means "drain everything available"; sendPage must never
 // treat it as a target to stop at, or catchUp's initial call (which always
-// passes 0) would stop after the very first event.
+// passes "") would stop after the very first event.
 func TestSSEStreamSendPageIgnoresZeroTarget(t *testing.T) {
-	s, _ := newTestSSEStream(0)
-	backlog := []events.Event{{ID: 1}, {ID: 2}, {ID: 3}}
+	s, _ := newTestSSEStream("")
+	backlog := []events.Event{{ID: 1, At: testAt}, {ID: 2, At: testAt}, {ID: 3, At: testAt}}
 
-	reachedTarget, ok := s.sendPage(backlog, 0)
+	reachedTarget, ok := s.sendPage(backlog, "")
 
 	if !ok || reachedTarget {
-		t.Fatalf("sendPage(targetID=0) = (%v, %v), want (false, true)", reachedTarget, ok)
+		t.Fatalf("sendPage(target=\"\") = (%v, %v), want (false, true)", reachedTarget, ok)
 	}
-	if s.since != 3 {
-		t.Fatalf("since = %d, want 3 (the whole page was sent)", s.since)
+	if s.since != cursor(3) {
+		t.Fatalf("since = %q, want %q (the whole page was sent)", s.since, cursor(3))
 	}
 }
 
 // A send failure must stop the page immediately and report failure, not
 // silently skip the failed event and keep going.
 func TestSSEStreamSendPageStopsOnWriteFailure(t *testing.T) {
-	s, _ := newTestSSEStream(0)
+	s, _ := newTestSSEStream("")
 	s.w = failingWriter{}
-	backlog := []events.Event{{ID: 1}, {ID: 2}}
+	backlog := []events.Event{{ID: 1, At: testAt}, {ID: 2, At: testAt}}
 
-	reachedTarget, ok := s.sendPage(backlog, 0)
+	reachedTarget, ok := s.sendPage(backlog, "")
 
 	if ok {
 		t.Fatal("sendPage() ok = true, want false: the write failed")
@@ -94,8 +112,8 @@ func TestSSEStreamSendPageStopsOnWriteFailure(t *testing.T) {
 	if reachedTarget {
 		t.Fatal("reachedTarget = true, want false on failure")
 	}
-	if s.since != 0 {
-		t.Fatalf("since = %d, want 0 (unchanged: the first send already failed)", s.since)
+	if s.since != "" {
+		t.Fatalf("since = %q, want empty (unchanged: the first send already failed)", s.since)
 	}
 }
 
@@ -110,16 +128,16 @@ func (failingWriter) WriteHeader(statusCode int) {}
 var errWriteFailed = errors.New("write failed")
 
 // fakeEventStore serves EventsSince from a fixed, pre-seeded slice, paginating
-// the same way the real store does: up to limit events with id > sinceID.
+// the same way the real store does: up to limit events after cursor.
 type fakeEventStore struct {
 	store.TaskStore
 	all []events.Event
 }
 
-func (f *fakeEventStore) EventsSince(_ context.Context, sinceID int64, limit int) ([]events.Event, error) {
+func (f *fakeEventStore) EventsSince(_ context.Context, since string, limit int) ([]events.Event, error) {
 	page := make([]events.Event, 0, limit)
 	for _, e := range f.all {
-		if e.ID <= sinceID {
+		if storecontract.EventCursor(e.At, e.ID) <= since {
 			continue
 		}
 		page = append(page, e)
@@ -137,40 +155,40 @@ func TestSSEStreamCatchUpPagesAcrossMultipleFetches(t *testing.T) {
 	const total = sseBacklogPageSize + 50
 	all := make([]events.Event, total)
 	for i := range all {
-		all[i] = events.Event{ID: int64(i + 1)}
+		all[i] = events.Event{ID: int64(i + 1), At: testAt}
 	}
 
-	s, rec := newTestSSEStream(0)
+	s, rec := newTestSSEStream("")
 	s.store = &fakeEventStore{all: all}
 
-	if !s.catchUp(context.Background(), 0) {
+	if !s.catchUp(context.Background(), "") {
 		t.Fatal("catchUp() = false, want true")
 	}
-	if s.since != int64(total) {
-		t.Fatalf("since = %d, want %d (every event drained across pages)", s.since, total)
+	if s.since != cursor(total) {
+		t.Fatalf("since = %q, want %q (every event drained across pages)", s.since, cursor(total))
 	}
 	if n := countSSEFrames(rec.Body.String()); n != total {
 		t.Fatalf("sent %d SSE frames, want %d", n, total)
 	}
 }
 
-// A targetID landing exactly on the last event of a full page must still be
+// A target landing exactly on the last event of a full page must still be
 // recognised as reached, not mistaken for "page not yet exhausted, fetch
 // another".
 func TestSSEStreamCatchUpStopsAtTargetOnPageBoundary(t *testing.T) {
 	all := make([]events.Event, sseBacklogPageSize+50)
 	for i := range all {
-		all[i] = events.Event{ID: int64(i + 1)}
+		all[i] = events.Event{ID: int64(i + 1), At: testAt}
 	}
 
-	s, _ := newTestSSEStream(0)
+	s, _ := newTestSSEStream("")
 	s.store = &fakeEventStore{all: all}
 
-	if !s.catchUp(context.Background(), sseBacklogPageSize) {
+	if !s.catchUp(context.Background(), cursor(sseBacklogPageSize)) {
 		t.Fatal("catchUp() = false, want true")
 	}
-	if s.since != sseBacklogPageSize {
-		t.Fatalf("since = %d, want %d (stopped exactly at the target, not the whole backlog)", s.since, sseBacklogPageSize)
+	if s.since != cursor(sseBacklogPageSize) {
+		t.Fatalf("since = %q, want %q (stopped exactly at the target, not the whole backlog)", s.since, cursor(sseBacklogPageSize))
 	}
 }
 
@@ -186,28 +204,66 @@ func countSSEFrames(body string) int {
 // the dashboard's Live Activity panel. It must never reach the SSE client,
 // but since must still advance past it -- otherwise the next catchUp
 // refetches the same filtered event forever, since EventsSince only ever
-// returns events with id > since.
+// returns events after since.
 func TestSSEStreamSendPageSkipsNoiseKindsButAdvancesSince(t *testing.T) {
-	s, rec := newTestSSEStream(0)
+	s, rec := newTestSSEStream("")
 	backlog := []events.Event{
-		{ID: 1, Kind: events.KindTaskQueued},
-		{ID: 2, Kind: events.KindTurnCompleted, Detail: "100000000"},
-		{ID: 3, Kind: events.KindTurnCompleted, Detail: "100000000"},
-		{ID: 4, Kind: events.KindParked},
+		{ID: 1, At: testAt, Kind: events.KindTaskQueued},
+		{ID: 2, At: testAt, Kind: events.KindTurnCompleted, Detail: "100000000"},
+		{ID: 3, At: testAt, Kind: events.KindTurnCompleted, Detail: "100000000"},
+		{ID: 4, At: testAt, Kind: events.KindParked},
 	}
 
-	reachedTarget, ok := s.sendPage(backlog, 0)
+	reachedTarget, ok := s.sendPage(backlog, "")
 
 	if !ok || reachedTarget {
 		t.Fatalf("sendPage() = (%v, %v), want (false, true)", reachedTarget, ok)
 	}
-	if s.since != 4 {
-		t.Fatalf("since = %d, want 4 (advanced past every event, including filtered ones)", s.since)
+	if s.since != cursor(4) {
+		t.Fatalf("since = %q, want %q (advanced past every event, including filtered ones)", s.since, cursor(4))
 	}
 	if n := countSSEFrames(rec.Body.String()); n != 2 {
 		t.Fatalf("sent %d SSE frames, want 2 (turn_completed excluded)", n)
 	}
 	if strings.Contains(rec.Body.String(), "turn_completed") {
 		t.Error("SSE body contains a turn_completed frame, want it excluded entirely")
+	}
+}
+
+// TestSSESinceDegradesUnparseableCursorToBeginning is the legacy-cursor
+// tolerance guard: a browser holding the pre-cursor integer id: field, or a
+// ?since= carrying garbage, must resume from the beginning rather than error
+// or skip. This deliberately preserves the old failed-ParseInt-yields-0
+// degradation.
+func TestSSESinceDegradesUnparseableCursorToBeginning(t *testing.T) {
+	valid := storecontract.EventCursor(testAt, 1)
+	tests := []struct {
+		name   string
+		since  string
+		header string
+		want   string
+	}{
+		{name: "absent", want: ""},
+		{name: "legacy integer header", header: "42", want: ""},
+		{name: "garbage query", since: "not-a-cursor", want: ""},
+		{name: "garbage header", header: "garbage", want: ""},
+		{name: "valid query cursor", since: valid, want: valid},
+		{name: "valid header cursor beats garbage query", since: "garbage", header: valid, want: valid},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/events", nil)
+			if tt.since != "" {
+				q := req.URL.Query()
+				q.Set("since", tt.since)
+				req.URL.RawQuery = q.Encode()
+			}
+			if tt.header != "" {
+				req.Header.Set("Last-Event-ID", tt.header)
+			}
+			if got := sseSince(req); got != tt.want {
+				t.Fatalf("sseSince = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

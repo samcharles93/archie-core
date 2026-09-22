@@ -15,6 +15,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -131,6 +132,9 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 	if err := migrateResourceHistoryToPerKindRequestIDs(ctx, tx); err != nil {
 		return err
 	}
+	if err := migrateEventTimestamps(ctx, tx); err != nil {
+		return err
+	}
 	return finishTaskMigration(ctx, tx, columns)
 }
 
@@ -170,6 +174,68 @@ func migrateResourceHistoryToPerKindRequestIDs(ctx context.Context, tx *sql.Tx) 
 		}
 	}
 	return nil
+}
+
+// migrateEventTimestamps normalises the events.at column to the fixed-width
+// layout the EventsSince cursor sorts on. Rows written before the cursor
+// change used time.RFC3339Nano, which trims trailing zeros, so a whole-second
+// row (20 chars) and a full-precision row (30 chars) would compare out of
+// chronological order as strings. The ALTER-only migration arms never UPDATE
+// values, so this is a separate idempotent step (the v4 precedent): it
+// re-evaluates on every open, detects an already-normalised file by length,
+// and re-runs cleanly on one that has never been migrated.
+func migrateEventTimestamps(ctx context.Context, tx *sql.Tx) error {
+	updates, err := scanLegacyEventTimestamps(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, u := range updates {
+		if _, err := tx.ExecContext(ctx, `UPDATE events SET at = ? WHERE id = ?`, u.at, u.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// eventTimestampUpdate is one event row whose at predates the fixed-width
+// layout, re-rendered into that layout.
+type eventTimestampUpdate struct {
+	id int64
+	at string
+}
+
+// scanLegacyEventTimestamps reads every event row whose at predates the
+// fixed-width layout, parses it, and re-renders it. The read cursor is closed
+// by the defer before this function returns, so the caller's UPDATEs run on a
+// free connection -- the store opens with SetMaxOpenConns(1), and a still-open
+// read cursor would hold that single connection and deadlock the writes.
+func scanLegacyEventTimestamps(ctx context.Context, tx *sql.Tx) ([]eventTimestampUpdate, error) {
+	// A fixed-width row is exactly len(EventCursorLayout) characters; anything
+	// else predates the layout and needs re-formatting.
+	fixed := strings.Repeat("?", len(storecontract.EventCursorLayout))
+	rows, err := tx.QueryContext(ctx, `SELECT id, at FROM events WHERE at NOT GLOB '`+fixed+`'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var updates []eventTimestampUpdate
+	for rows.Next() {
+		var u eventTimestampUpdate
+		if err := rows.Scan(&u.id, &u.at); err != nil {
+			return nil, err
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, u.at)
+		if err != nil {
+			return nil, fmt.Errorf("normalise event timestamp %q: %w", u.at, err)
+		}
+		u.at = parsed.UTC().Format(storecontract.EventCursorLayout)
+		updates = append(updates, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return updates, nil
 }
 
 func finishTaskMigration(ctx context.Context, tx *sql.Tx, columns map[string]bool) error {
