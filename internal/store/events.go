@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS events (
 	workflow  TEXT NOT NULL DEFAULT '',
 	stage     TEXT NOT NULL DEFAULT '',
 	attempt   INTEGER NOT NULL DEFAULT 0,
+	actor_id  TEXT NOT NULL DEFAULT '',
+	actor_kind TEXT NOT NULL DEFAULT '',
+	principal_id TEXT NOT NULL DEFAULT '',
 	detail    TEXT NOT NULL DEFAULT '',
 	data      TEXT NOT NULL DEFAULT '{}'
 );
@@ -48,10 +51,11 @@ func insertEvent(ctx context.Context, execer eventExecer, e events.Event) (int64
 		data = fmt.Appendf(nil, `{"marshal_error":%q}`, err.Error())
 	}
 	res, err := execer.ExecContext(ctx, `
-		INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, detail, data)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.At.UTC().Format(time.RFC3339Nano), e.Kind, e.TaskID, e.Repo, e.Issue,
-		e.Workflow, e.Stage, e.Attempt, clip(e.Detail, 4000), string(data))
+		e.Workflow, e.Stage, e.Attempt, e.ActorID, e.ActorKind, e.PrincipalID,
+		clip(e.Detail, 4000), string(data))
 	if err != nil {
 		return 0, err
 	}
@@ -66,7 +70,8 @@ func scanEvents(rows *sql.Rows) (out []events.Event, retErr error) {
 		var e events.Event
 		var at, data string
 		if err := rows.Scan(&e.ID, &at, &e.Kind, &e.TaskID, &e.Repo, &e.Issue,
-			&e.Workflow, &e.Stage, &e.Attempt, &e.Detail, &data); err != nil {
+			&e.Workflow, &e.Stage, &e.Attempt, &e.ActorID, &e.ActorKind,
+			&e.PrincipalID, &e.Detail, &data); err != nil {
 			return nil, err
 		}
 		e.At, _ = time.Parse(time.RFC3339Nano, at)
@@ -76,7 +81,7 @@ func scanEvents(rows *sql.Rows) (out []events.Event, retErr error) {
 	return out, rows.Err()
 }
 
-const eventCols = "id, at, kind, task_id, repo, issue, workflow, stage, attempt, detail, data"
+const eventCols = "id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data"
 
 // EventsSince returns up to limit events with id > sinceID, oldest
 // first  --  SSE catch-up and the live feed.

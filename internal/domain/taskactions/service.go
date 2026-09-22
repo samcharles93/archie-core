@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -29,6 +31,84 @@ type Task struct {
 	Attempt int
 }
 
+// Actor is the identity that performed an action, and the principal whose
+// authority permitted it.
+//
+// The two are separate fields because an agent acting under a person's standing
+// approval is not the same fact as a person acting: a record that collapsed
+// them would answer "who approved this" with the wrong identity. An empty
+// Principal means UNATTRIBUTED -- no authority was recorded, which is a
+// different fact from the actor authorising itself.
+type Actor struct {
+	Identity  identity.IdentityID
+	Kind      identity.Kind
+	Principal identity.IdentityID
+}
+
+// ActorFor builds an actor from the identity a credential resolved to. The kind
+// travels with the actor so an event can record that an agent acted without a
+// consumer having to resolve the identity to find out.
+func ActorFor(value identity.Identity) Actor {
+	return Actor{Identity: value.ID, Kind: value.Kind}
+}
+
+// AuthorisedBy records where an action's authority came from.
+func (a Actor) AuthorisedBy(principal identity.IdentityID) Actor {
+	a.Principal = principal
+	return a
+}
+
+// Human reports whether a person performed the action. Only a human's action is
+// recorded as a human's: the event kind describes the actor.
+func (a Actor) Human() bool { return a.Kind == identity.KindUser }
+
+// Attributed reports whether the action is attributed to an identity. An action
+// with no identity is still recorded -- refusing it would hide the action from
+// the timeline -- but its record claims nothing about who performed it, and its
+// kind says so.
+func (a Actor) Attributed() bool { return strings.TrimSpace(string(a.Identity)) != "" }
+
+// describe renders the attribution for a human reading a task timeline.
+func (a Actor) describe(verb string) string {
+	if !a.Attributed() {
+		return verb + " with no recorded actor"
+	}
+	text := verb + " by " + string(a.Identity)
+	if a.Kind != "" {
+		text += " (" + string(a.Kind) + ")"
+	}
+	if a.Principal != "" {
+		return text + ", authorised by " + string(a.Principal)
+	}
+	return text + ", no authorising principal"
+}
+
+// approvedKind and rejectedKind name what happened and who did it. There is no
+// single kind for an approval: an agent's approval recorded as a human's is the
+// falsehood this trio exists to prevent, and an action with no verified actor
+// is recorded as a task-level event rather than credited to anyone.
+func approvedKind(actor Actor) string {
+	switch {
+	case actor.Human():
+		return events.KindHumanApproved
+	case actor.Attributed():
+		return events.KindAgentApproved
+	default:
+		return events.KindTaskApproved
+	}
+}
+
+func rejectedKind(actor Actor) string {
+	switch {
+	case actor.Human():
+		return events.KindHumanRejected
+	case actor.Attributed():
+		return events.KindAgentRejected
+	default:
+		return events.KindTaskRejected
+	}
+}
+
 type Store interface {
 	TaskByID(context.Context, int64) (*Task, error)
 	Transition(context.Context, int64, string, string, string) error
@@ -49,9 +129,13 @@ type Service struct {
 	Warn       func(string, ...any)
 }
 
-// Apply scopes chat requests to an identity. A nil identity denotes an
-// authenticated dashboard operator, who may act across identities.
-func (s Service) Apply(ctx context.Context, identity *string, id int64, action taskstate.Action) error {
+// Apply scopes chat requests to an identity. A nil scope denotes a caller
+// authenticated across identities, which is the dashboard's own credential;
+// scope limits which task a chat identity may act on, and never says who acted.
+//
+// The actor is not derived from scope: scope is which tasks a caller may touch,
+// actor is who touched one, and the two are only equal by coincidence.
+func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64, action taskstate.Action) error {
 	task, err := s.Store.TaskByID(ctx, id)
 	if err != nil {
 		return err
@@ -59,18 +143,18 @@ func (s Service) Apply(ctx context.Context, identity *string, id int64, action t
 	if task == nil {
 		return fmt.Errorf("task %d: %w", id, ErrNotFound)
 	}
-	if identity != nil && task.Identity != *identity {
-		return fmt.Errorf("task %d belongs to %q, not %q", id, task.Identity, *identity)
+	if scope != nil && task.Identity != *scope {
+		return fmt.Errorf("task %d belongs to %q, not %q", id, task.Identity, *scope)
 	}
 	if err := taskstate.CheckAction(task.Status, action); err != nil {
 		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
-	mutation, err := s.apply(ctx, task, identity, action)
+	mutation, err := s.apply(ctx, task, actor, action)
 	if err != nil {
 		return err
 	}
 	if mutation.verb != "" && task.ForgeBacked {
-		s.closeRejectedIssue(ctx, task, identity, mutation.verb)
+		s.closeRejectedIssue(ctx, task, actor, mutation.verb)
 	}
 	s.emit(ctx, mutation.event)
 	return nil
@@ -85,37 +169,48 @@ type outcome struct {
 // record alongside it. Errors from the store are returned unwrapped: the
 // caller maps them to a response, and the rules-level errors (ErrConflict)
 // were already checked above.
-func (s Service) apply(ctx context.Context, task *Task, identity *string, action taskstate.Action) (outcome, error) {
-	source := "the dashboard"
-	if identity != nil {
-		source = "chat"
-	}
-	o := outcome{event: events.Event{TaskID: task.ID, Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber, Attempt: task.Attempt}}
+func (s Service) apply(ctx context.Context, task *Task, actor Actor, action taskstate.Action) (outcome, error) {
+	o := outcome{event: s.attributed(task, actor)}
 	switch action {
 	case taskstate.ActionApprove:
 		err := s.Store.Requeue(ctx, task.ID, "waiting_human", "implement")
-		o.event.Kind, o.event.Detail = events.KindHumanApproved, "approved via "+source
+		o.event.Kind, o.event.Detail = approvedKind(actor), actor.describe("approved")
 		return o, err
 	case taskstate.ActionRetry:
-		return s.applyRetry(ctx, task, source, o)
+		return s.applyRetry(ctx, task, actor, o)
 	case taskstate.ActionStop:
-		return s.applyStop(ctx, task, source, o)
+		return s.applyStop(ctx, task, actor, o)
 	case taskstate.ActionReject:
-		o.event.Kind, o.event.Detail, o.verb = events.KindHumanRejected, "rejected via "+source, "rejected"
+		o.event.Kind, o.event.Detail, o.verb = rejectedKind(actor), actor.describe("rejected"), "rejected"
 		if task.Status == "running" && s.CancelTask != nil {
 			s.CancelTask(task.ID)
 		}
-		return o, s.Store.Transition(ctx, task.ID, task.Status, "closed_wont_do", "declined from "+source)
+		return o, s.Store.Transition(ctx, task.ID, task.Status, "closed_wont_do", actor.describe("declined"))
 	case taskstate.ActionCancel, taskstate.ActionAbandon:
-		return s.applyCancelOrAbandon(ctx, task, action, source, o)
+		return s.applyCancelOrAbandon(ctx, task, action, actor, o)
 	case taskstate.ActionArchive:
-		return s.applyArchive(ctx, task, source, o)
+		return s.applyArchive(ctx, task, actor, o)
 	default:
 		return o, fmt.Errorf("unsupported task action %q", action)
 	}
 }
 
-func (s Service) applyRetry(ctx context.Context, task *Task, source string, o outcome) (outcome, error) {
+// attributed builds the event skeleton every action carries: the task, the run
+// and both identities. Every event this service records passes through here, so
+// no action can be recorded without its attribution.
+func (s Service) attributed(task *Task, actor Actor) events.Event {
+	return events.Event{
+		TaskID:      task.ID,
+		Repo:        task.Owner + "/" + task.Repo,
+		Issue:       task.IssueNumber,
+		Attempt:     task.Attempt,
+		ActorID:     string(actor.Identity),
+		ActorKind:   string(actor.Kind),
+		PrincipalID: string(actor.Principal),
+	}
+}
+
+func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {
 	limit := 0
 	if s.MaxRetries != nil {
 		limit = s.MaxRetries(task)
@@ -131,33 +226,33 @@ func (s Service) applyRetry(ctx context.Context, task *Task, source string, o ou
 		return o, fmt.Errorf("%w: %s", ErrConflict, reason)
 	}
 	err := s.Store.RetryTask(ctx, task.ID, "parked", "")
-	o.event.Kind, o.event.Detail = events.KindTaskRetried, "retried via "+source
+	o.event.Kind, o.event.Detail = events.KindTaskRetried, actor.describe("retried")
 	o.event.Data = map[string]any{"retry_count": task.RetryCount + 1, "previous_stage": task.Stage, "previous_reason": task.ParkReason}
 	return o, err
 }
 
-func (s Service) applyStop(ctx context.Context, task *Task, source string, o outcome) (outcome, error) {
+func (s Service) applyStop(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {
 	if s.CancelTask == nil {
 		return o, ErrUnavailable
 	}
-	o.event.Kind, o.event.Detail = events.KindTaskStopped, "stopped via "+source+"; recoverable work remains parked"
+	o.event.Kind, o.event.Detail = events.KindTaskStopped, actor.describe("stopped")+"; recoverable work remains parked"
 	if !s.CancelTask(task.ID) {
-		o.event.Detail = "no active execution was found; recoverable work was parked via " + source
+		o.event.Detail = "no active execution was found; recoverable work was parked, " + actor.describe("stopped")
 	}
 	return o, s.Store.Transition(ctx, task.ID, "running", "parked", o.event.Detail)
 }
 
-func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action taskstate.Action, source string, o outcome) (outcome, error) {
+func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action taskstate.Action, actor Actor, o outcome) (outcome, error) {
 	from, kind, verb := "queued", events.KindTaskCancelled, "cancelled"
 	if action == taskstate.ActionAbandon {
 		from, kind, verb = "parked", events.KindTaskAbandoned, "abandoned"
 	}
-	o.event.Kind, o.event.Detail, o.verb = kind, verb+" via "+source, verb
+	o.event.Kind, o.event.Detail, o.verb = kind, actor.describe(verb), verb
 	return o, s.Store.Transition(ctx, task.ID, from, "closed_wont_do", o.event.Detail)
 }
 
-func (s Service) applyArchive(ctx context.Context, task *Task, source string, o outcome) (outcome, error) {
-	o.event.Kind, o.event.Detail = events.KindTaskArchiveRequested, "archive requested via "+source
+func (s Service) applyArchive(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {
+	o.event.Kind, o.event.Detail = events.KindTaskArchiveRequested, actor.describe("archive requested")
 	id, err := s.Store.ArchiveTask(ctx, task.ID, task.Status, o.event)
 	if err != nil {
 		return o, err
@@ -171,15 +266,12 @@ func (s Service) applyArchive(ctx context.Context, task *Task, source string, o 
 	return o, nil
 }
 
-func (s Service) closeRejectedIssue(ctx context.Context, task *Task, identity *string, verb string) {
+func (s Service) closeRejectedIssue(ctx context.Context, task *Task, actor Actor, verb string) {
 	if s.CloseIssue == nil {
 		s.warn("task rejected but no forge is wired; the issue stays open and will be re-polled", "task", task.ID)
 		return
 	}
-	comment := fmt.Sprintf("Closing: this task was %s from the archie %s. Reopen the issue to have archie pick it up again.", verb, "dashboard")
-	if identity != nil {
-		comment = fmt.Sprintf("Closing: this task was %s from archie chat. Reopen the issue to have archie pick it up again.", verb)
-	}
+	comment := fmt.Sprintf("Closing: this task was %s in archie (%s). Reopen the issue to have archie pick it up again.", verb, actor.describe("actioned"))
 	if err := s.CloseIssue(ctx, task.Owner, task.Repo, task.IssueNumber, comment); err != nil {
 		s.warn("closing rejected issue failed; it stays open and will be re-polled", "task", task.ID, "err", err)
 	}

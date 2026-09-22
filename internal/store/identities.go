@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS identity_events (
  id INTEGER PRIMARY KEY AUTOINCREMENT, identity_id TEXT NOT NULL, event_type TEXT NOT NULL,
  from_lifecycle TEXT NOT NULL, to_lifecycle TEXT NOT NULL, display_name TEXT NOT NULL,
  actor_id TEXT NOT NULL, source TEXT NOT NULL, request_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS identity_subjects (
+ issuer TEXT NOT NULL, subject TEXT NOT NULL, identity_id TEXT NOT NULL REFERENCES identities(id),
+ bound_at TEXT NOT NULL, PRIMARY KEY (issuer, subject)
 );`
 
 const identityTimeLayout = time.RFC3339Nano
@@ -128,6 +132,54 @@ func (s *Store) Apply(ctx context.Context, id identity.IdentityID, expectedVersi
 		return identity.Identity{}, err
 	}
 	return next, tx.Commit()
+}
+
+// ResolveSubject returns the identity bound to a provider subject, so a
+// credential that verified against the provider's keys selects an identity
+// archie already knows rather than creating one.
+func (s *Store) ResolveSubject(ctx context.Context, subject identity.Subject) (identity.Identity, error) {
+	value, err := scanIdentity(s.db.QueryRowContext(ctx, `SELECT i.id, i.kind, i.display_name, i.lifecycle, i.version, i.created_at, i.updated_at FROM identities i JOIN identity_subjects b ON b.identity_id=i.id WHERE b.issuer=? AND b.subject=?`, subject.Issuer, subject.Subject))
+	if errors.Is(err, sql.ErrNoRows) {
+		return identity.Identity{}, identity.ErrNotFound
+	}
+	return value, err
+}
+
+// BindSubject binds an identity to the provider subject that asserts it. The
+// binding is audited like any other identity mutation: who authorised a caller
+// to act as this identity is the question the record has to answer later.
+// Rebinding an already-bound subject moves it, because a subject that changed
+// hands must resolve to whoever it belongs to now.
+func (s *Store) BindSubject(ctx context.Context, id identity.IdentityID, subject identity.Subject, audit identity.Audit) error {
+	if err := subject.Validate(); err != nil {
+		return err
+	}
+	if audit.ActorID == "" || audit.Source == "" || audit.RequestID == "" {
+		return fmt.Errorf("%w: audit actor, source, and request ID are required", identity.ErrInvalid)
+	}
+	now := audit.At.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	current, err := scanIdentity(tx.QueryRowContext(ctx, `SELECT id, kind, display_name, lifecycle, version, created_at, updated_at FROM identities WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return identity.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO identity_subjects(issuer,subject,identity_id,bound_at) VALUES(?,?,?,?) ON CONFLICT(issuer,subject) DO UPDATE SET identity_id=excluded.identity_id, bound_at=excluded.bound_at`, subject.Issuer, subject.Subject, id, now.Format(identityTimeLayout)); err != nil {
+		return err
+	}
+	if err = insertIdentityEvent(ctx, tx, current, identity.Event{IdentityID: id, Type: "bind_subject", From: current.Lifecycle, To: current.Lifecycle, DisplayName: subject.Subject}, audit, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) BootstrapIdentities(ctx context.Context, legacyNames []string) error {

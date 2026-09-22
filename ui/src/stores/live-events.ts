@@ -23,6 +23,8 @@ const taskKinds = new Set([
   "pr_rejected",
   "human_approved",
   "human_rejected",
+  "agent_approved",
+  "agent_rejected",
   "changes_captured",
   "config_captured",
   "work_request_submitted",

@@ -22,9 +22,13 @@ import (
 // execution; the standalone Gateway never mutates the task store directly.
 const actionSubject = "archie.gateway.task-action"
 
-// Identity is a pointer because its absence is meaningful: nil is an
-// authenticated dashboard operator acting across identities, which the
-// daemon's service distinguishes from any named identity, empty included.
+// Identity is a pointer because its absence is meaningful: nil is a
+// authenticated dashboard operator acting across identities, which the daemon's
+// service distinguishes from any named identity, empty included. It is a SCOPE
+// -- which tasks the caller may touch -- and never an actor. Who acted is not on
+// this request yet, so the daemon records these actions unattributed rather than
+// crediting them to a human: the dashboard's own credential is a shared token,
+// which is not evidence that a person was at the keyboard.
 type actionRequest struct {
 	Identity *string          `json:"identity"`
 	TaskID   int64            `json:"task_id"`
@@ -96,7 +100,7 @@ func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (fun
 				natsrpc.Respond(msg, log, "taskactions", actionResponse{Envelope: natsrpc.NewEnvelope(err)})
 				return
 			}
-			err := service.Apply(context.Background(), req.Identity, req.TaskID, req.Action)
+			err := service.Apply(context.Background(), req.Identity, taskactions.Actor{}, req.TaskID, req.Action)
 			natsrpc.Respond(msg, log, "taskactions", actionResponse{
 				Envelope: natsrpc.NewEnvelope(err),
 				Kind:     actionErrorKind(err),

@@ -113,7 +113,7 @@ func TestActionErrorKeepsItsSentinelAcrossNATS(t *testing.T) {
 				t.Fatalf("error %v (%T) is not %v", err, err, tc.want)
 			}
 			// The wording the operator reads survives too, not just the class.
-			direct := service.Apply(t.Context(), nil, 7, tc.action)
+			direct := service.Apply(t.Context(), nil, domain.Actor{}, 7, tc.action)
 			if direct == nil || err.Error() != direct.Error() {
 				t.Fatalf("remote message = %q, want the daemon's own %v", err.Error(), direct)
 			}
@@ -122,17 +122,17 @@ func TestActionErrorKeepsItsSentinelAcrossNATS(t *testing.T) {
 }
 
 // TestActionScopeCrossesNATS pins the operator scope over the same hop: a nil
-// identity is an authenticated dashboard operator, and JSON has to carry that
-// absence rather than an empty name. The service records which one acted, so
-// the timeline is the observable.
+// identity is a caller authenticated across identities, and JSON has to carry
+// that absence rather than an empty name. The scope decides which task may be
+// touched and nothing else -- it is not an actor, so it must not change what the
+// timeline says about who acted.
 func TestActionScopeCrossesNATS(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		identity *string
-		want     string
 	}{
-		{name: "operator", want: "abandoned via the dashboard"},
-		{name: "chat identity", identity: new("scout"), want: "abandoned via chat"},
+		{name: "operator scope"},
+		{name: "chat identity scope", identity: new("scout")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := startEmbedded(t)
@@ -159,8 +159,17 @@ func TestActionScopeCrossesNATS(t *testing.T) {
 			if result.TaskID != 7 {
 				t.Fatalf("result = %+v, want task 7", result)
 			}
-			if published.Detail != tc.want {
-				t.Fatalf("event detail = %q, want %q", published.Detail, tc.want)
+			// No actor crosses this hop yet, so the action is recorded with no
+			// actor at all -- and the scope must not be promoted into one.
+			if published.ActorID != "" || published.PrincipalID != "" {
+				t.Fatalf("scope was recorded as an actor: %+v", published)
+			}
+			if published.Kind != events.KindTaskAbandoned {
+				t.Fatalf("event kind = %q, want %q", published.Kind, events.KindTaskAbandoned)
+			}
+			const want = "abandoned with no recorded actor"
+			if published.Detail != want {
+				t.Fatalf("event detail = %q, want %q", published.Detail, want)
 			}
 		})
 	}

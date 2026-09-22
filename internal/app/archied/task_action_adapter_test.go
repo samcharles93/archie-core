@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -24,7 +25,7 @@ type testTaskActor struct{ b *boot }
 func (a testTaskActor) ApplyChatTaskAction(
 	ctx context.Context, identity *string, taskID int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
-	if err := a.b.taskActions().Apply(ctx, identity, taskID, action); err != nil {
+	if err := a.b.taskActions().Apply(ctx, identity, taskactions.Actor{}, taskID, action); err != nil {
 		return gateway.TaskActionResult{}, err
 	}
 	return gateway.TaskActionResult{

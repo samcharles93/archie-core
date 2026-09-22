@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -81,7 +82,7 @@ func (d *daemonActions) ApplyChatTaskAction(
 		d.publish(),
 		d.srv.logf,
 	)
-	if err := service.Apply(ctx, identity, id, action); err != nil {
+	if err := service.Apply(ctx, identity, taskactions.Actor{}, id, action); err != nil {
 		return gateway.TaskActionResult{}, err
 	}
 	return gateway.TaskActionResult{TaskID: id, Action: string(action)}, nil

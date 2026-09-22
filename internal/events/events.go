@@ -39,6 +39,20 @@ const (
 	// seeing, because it explains why a task changed course.
 	KindHumanApproved = "human_approved"
 	KindHumanRejected = "human_rejected"
+	// KindAgentApproved and KindAgentRejected record that an agent performed
+	// the action. They exist because the event kind describes the ACTOR: an
+	// agent approving under a person's standing authority is not a human
+	// approval, and recording it as one asserts something false. The authority
+	// it acted under is PrincipalID, which is a separate fact.
+	KindAgentApproved = "agent_approved"
+	KindAgentRejected = "agent_rejected"
+	// KindTaskApproved and KindTaskRejected record an approval or rejection that
+	// archie cannot attribute to anyone: the request carried no identity archie
+	// could verify. They are task-level events that claim nothing about the
+	// actor, which is the honest record -- a human's approval and an agent's are
+	// recorded as human_* and agent_* respectively.
+	KindTaskApproved = "task_approved"
+	KindTaskRejected = "task_rejected"
 	// KindTaskRetried records what the retry was escaping from. RetryTask
 	// clears stage and park_reason in the same statement that increments the
 	// count, so this event is the only place that context survives.
@@ -129,9 +143,24 @@ type Event struct {
 	// as a first run. The tag is deliberately not omitempty so that
 	// unattributed and absent stay distinguishable on the wire and in the
 	// array the dashboard renders.
-	Attempt int            `json:"attempt"`
-	Detail  string         `json:"detail,omitempty"`
-	Data    map[string]any `json:"data,omitempty"`
+	Attempt int `json:"attempt"`
+	// ActorID is the identity that performed the action this event records,
+	// derived from the credential the request presented. Empty means the event
+	// has no actor: the producers that are task-agnostic or pre-date this field
+	// make no claim about who acted, and a reader must report that rather than
+	// assume a human did.
+	ActorID string `json:"actor_id,omitempty"`
+	// ActorKind is the acting identity's kind, kept beside ActorID so a reader
+	// can tell an agent's action from a person's without resolving the identity
+	// -- and so an agent's action can never be displayed as a human's.
+	ActorKind string `json:"actor_kind,omitempty"`
+	// PrincipalID is the identity whose authority the action used, which is not
+	// the acting identity when an agent acts under a person's standing approval
+	// ("approved by came from me"). Empty means UNATTRIBUTED: no authority was
+	// recorded, which is a different fact from the actor authorising itself.
+	PrincipalID string         `json:"principal_id,omitempty"`
+	Detail      string         `json:"detail,omitempty"`
+	Data        map[string]any `json:"data,omitempty"`
 }
 
 // Sub is one subscriber: a bounded channel plus a drop counter.

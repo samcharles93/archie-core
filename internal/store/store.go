@@ -126,6 +126,9 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		{"bindings", "owner", `ALTER TABLE bindings ADD COLUMN owner TEXT NOT NULL DEFAULT ''`},
 		{"bindings", "repo", `ALTER TABLE bindings ADD COLUMN repo TEXT NOT NULL DEFAULT ''`},
 		{"events", "attempt", `ALTER TABLE events ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0`},
+		{"events", "actor_id", `ALTER TABLE events ADD COLUMN actor_id TEXT NOT NULL DEFAULT ''`},
+		{"events", "actor_kind", `ALTER TABLE events ADD COLUMN actor_kind TEXT NOT NULL DEFAULT ''`},
+		{"events", "principal_id", `ALTER TABLE events ADD COLUMN principal_id TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
 		present := columns
