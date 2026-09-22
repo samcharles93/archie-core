@@ -112,7 +112,7 @@ func (c *Client) Publish(ctx context.Context, a Artifact) (string, error) {
 
 	const attempts = 4 // the initial attempt plus three retries
 	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
+	for attempt := range attempts {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():

@@ -553,7 +553,7 @@ func TestEventsSincePagesIdenticalTimestampsWithoutSkipOrRepeat(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	const total = 50
 	inserted := make(map[int64]string, total)
-	for i := 0; i < total; i++ {
+	for i := range total {
 		detail := fmt.Sprintf("event-%d", i)
 		id, err := s.InsertEvent(ctx, events.Event{Kind: "log", At: at, Detail: detail})
 		if err != nil {
