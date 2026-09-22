@@ -80,6 +80,17 @@ matches() {
 # change is attributed to archied deliberately and not every CI or script edit.
 archied_dirs() {
 	component_dirs ./cmd/archied
+	# Every process the host bundles ships in this release, so a change to a
+	# package only one of them links still lands in the changelog. Without
+	# these, messaging-only, state-store-only and playbooks-only packages closed
+	# over no component and the release silently omitted them (the telegram fence
+	# fix was dropped this way). The gap is pre-existing -- the old two-file
+	# closures named only cmd/archied and cmd/archie-agent -- but it grew teeth
+	# when the Messaging Service was severed from archied in 1.35.0.
+	component_dirs ./cmd/archie-messaging
+	component_dirs ./cmd/archie-state-store
+	component_dirs ./cmd/archie-playbooks
+	component_dirs ./cmd/archie-ui
 	printf '%s\n' "cmd/archied" "Dockerfile.archied" "cmd/archie-ui" "internal/app/archieui" \
 		"Taskfile.yml" ".github/workflows/deploy.yml" "install.sh" \
 		"scripts/archie-update-install" "scripts/archie-update-check" \
