@@ -109,6 +109,9 @@ func validateBootstrap(cfg *config.Config) error {
 	if err := validateImage(cfg); err != nil {
 		return err
 	}
+	if err := validateCurators(cfg); err != nil {
+		return err
+	}
 	return validateCapture(cfg)
 }
 
@@ -168,6 +171,19 @@ func validateImage(cfg *config.Config) error {
 			// found and enabled
 		default:
 			return fmt.Errorf("%w: image.default %q must name an enabled provider under image.hosted or image.local", ErrInvalidInput, cfg.Image.Default)
+		}
+	}
+	return nil
+}
+
+// validateCurators rejects a curator definition with no interval. The
+// interval is a live-path value: a definition missing it is refused with a
+// clear error rather than defaulted at registration or pass time, so a
+// config-defined curator can never silently inherit a code constant.
+func validateCurators(cfg *config.Config) error {
+	for i, def := range cfg.Curators {
+		if def.Interval <= 0 {
+			return fmt.Errorf("%w: curators[%d].interval must be positive", ErrInvalidInput, i)
 		}
 	}
 	return nil

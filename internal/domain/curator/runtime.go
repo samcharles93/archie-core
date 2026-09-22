@@ -207,6 +207,9 @@ func (rt *Runtime) runLoop(ctx context.Context, name string, c CuratorEngine) {
 		}
 		if !due {
 			next = clock.Now().Add(m.Interval)
+			if log := rt.registry.Host().Log; log != nil {
+				log.Debug("curator not due", "curator", name, "next", next)
+			}
 			continue
 		}
 

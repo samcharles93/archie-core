@@ -3,6 +3,7 @@ package curator
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"testing"
@@ -452,6 +453,60 @@ func TestRuntimePassInputRecordsReasonAndLastPass(t *testing.T) {
 	if inputs[1].LastPass.IsZero() {
 		t.Error("second pass LastPass is zero; want the previous pass time")
 	}
+}
+
+// debugCaptureHandler records debug-level messages so a test can observe an
+// idle curator that the runtime would otherwise be silent about.
+type debugCaptureHandler struct {
+	mu   sync.Mutex
+	msgs []string
+}
+
+func (h *debugCaptureHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *debugCaptureHandler) Handle(_ context.Context, r slog.Record) error {
+	if r.Level == slog.LevelDebug {
+		h.mu.Lock()
+		h.msgs = append(h.msgs, r.Message)
+		h.mu.Unlock()
+	}
+	return nil
+}
+func (h *debugCaptureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *debugCaptureHandler) WithGroup(string) slog.Handler      { return h }
+
+func (h *debugCaptureHandler) count(msg string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, m := range h.msgs {
+		if m == msg {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRuntimeLogsWhenCheckReportsNotDue(t *testing.T) {
+	t.Parallel()
+
+	clock := newFakeClock(time.Unix(0, 0))
+	handler := &debugCaptureHandler{}
+	c := newFake("idle", Manifest{Interval: testInterval})
+	c.checkResult = false
+
+	reg := NewRegistry(Registrar{Clock: clock, Events: &testSink{}, Log: slog.New(handler)})
+	if err := reg.Register(c); err != nil {
+		t.Fatalf("Register(idle) = %v, want nil", err)
+	}
+	rt := NewRuntime(reg, RuntimeConfig{})
+	if err := rt.Start(context.Background()); err != nil {
+		t.Fatalf("Start() = %v, want nil", err)
+	}
+	t.Cleanup(func() { _ = rt.Stop(context.Background()) })
+
+	waitFor(t, 2*time.Second, "idle check-in logged", func() bool {
+		return handler.count("curator not due") > 0
+	})
 }
 
 func TestRuntimePassInputSetsSinceToPriorPass(t *testing.T) {

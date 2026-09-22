@@ -55,6 +55,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
+	"github.com/samcharles93/archie-core/internal/infrastructure/toolbuilder"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -1024,6 +1025,10 @@ func (b *boot) setupCurators(ctx context.Context) {
 	b.curatorRegistry = curator.NewRegistry(curator.Registrar{
 		Log:    log.With("component", "curator"),
 		Events: curatorEventSink{b.bus},
+		// Tools resolves declared curator tool names from the same
+		// process-wide registry a chat turn is given (b.toolReg): one
+		// catalogue, resolved down to the declared set by the builder.
+		Tools: toolbuilder.New(b.toolReg),
 		// b.memEngines (*domainmemory.Registry) satisfies
 		// curator.MemoryEngineSource's Get(name) signature directly, no
 		// adapter needed. Set by setupMemoryEngine, which Run() calls before
@@ -1052,6 +1057,33 @@ func (b *boot) setupCurators(ctx context.Context) {
 	}
 	if err := b.curatorRegistry.Register(sessioncurator.New(sessioncurator.DefaultInterval, infraMemory.EngineName)); err != nil {
 		log.Error("session-memory curator registration failed", "err", err)
+	}
+	// Config definitions are seed data: each enabled [[curators]] entry is
+	// registered through the one generic definition-driven engine. Code
+	// registrations above win for their own name (a duplicate is refused
+	// and logged, not silently replaced).
+	for _, def := range b.cfg.Curators {
+		if !def.Enabled {
+			continue
+		}
+		engine := curator.NewDefinitionEngine(curator.Definition{
+			Name:         def.Name,
+			Enabled:      def.Enabled,
+			Instructions: def.Instructions,
+			Manifest: curator.Manifest{
+				Interval:      def.Interval.Std(),
+				Cooldown:      def.Cooldown.Std(),
+				OnInput:       def.OnInput,
+				Tools:         def.Tools,
+				Skills:        def.Skills,
+				MemoryEngine:  def.MemoryEngine,
+				Conversations: def.Conversations,
+				Model:         def.Model,
+			},
+		})
+		if err := b.curatorRegistry.Register(engine); err != nil {
+			log.Error("config curator registration failed", "curator", def.Name, "err", err)
+		}
 	}
 	// The runtime owns the per-curator loops (archie-core-89x): one
 	// goroutine per curator, wake nudges, per-pass budgets, panic

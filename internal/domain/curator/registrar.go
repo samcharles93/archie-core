@@ -74,9 +74,20 @@ type Message struct {
 	Content string
 }
 
-// ChatResult is the model's final answer.
+// ChatResult is the model's final answer plus the tool invocations the
+// model loop executed, so a pass can attribute its actions to the tools
+// that ran.
 type ChatResult struct {
 	Text string
+	// ToolCalls is every tool invocation across the loop, in execution
+	// order. Empty for a single completion with no tools.
+	ToolCalls []ToolCall
+}
+
+// ToolCall is one tool invocation the model loop executed.
+type ToolCall struct {
+	Name  string
+	Input string // JSON-encoded arguments, verbatim from the model
 }
 
 // ToolBuilder resolves declared tool names into a runnable tool set. A

@@ -546,6 +546,13 @@ type Config struct {
 	Repos       []Repo                 `toml:"repos" yaml:"repos"`
 	ModelLimits map[string]ModelLimits `toml:"-" yaml:"-" json:"-"`
 
+	// Curators holds curator definitions as seed data ([[curators]]).
+	// Each entry is a curator.Manifest plus name/enabled/instructions.
+	// Seed data only: the app layer registers each enabled definition
+	// through the one generic definition-driven engine, and (once
+	// persistence lands) a stored definition of the same name wins.
+	Curators []CuratorDefinition `toml:"curators" yaml:"curators" json:"curators,omitempty"`
+
 	// Extra holds additional feature configuration from conf.d/ files that
 	// don't match a known feature name. Keys are the filename stem (e.g.
 	// "custom-tool" for conf.d/custom-tool.yaml).
