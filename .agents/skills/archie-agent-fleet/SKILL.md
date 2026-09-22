@@ -158,7 +158,7 @@ Dolt remote is pushed explicitly (`bd dolt push`) and never assumed to be in syn
 
 `.pi/control-plane-run/` holds a run's scaffold, lane plan, prompts, scripts and
 gate output. It is gitignored and disposable. Treat it as run evidence only: a
-fact worth keeping goes into this skill, `docs/`, or `ARCHITECTURE.md`, not into a
+fact worth keeping goes into this skill or `docs/`, not into a
 run directory the next clean deletes.
 
 ## Worked example

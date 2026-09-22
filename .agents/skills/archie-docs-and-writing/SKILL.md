@@ -1,6 +1,6 @@
 ---
 name: archie-docs-and-writing
-description: Maintain Archie's documentation of record and write durable architecture decisions, migration plans, parity matrices, incident and dead-end records, feature ownership and deprecation records, operational runbooks, and documentation reviews. Use when deciding where an Archie fact belongs; reconciling code with ARCHITECTURE.md, CLAUDE.md, docs/prds, docs/archive, or generated contracts; changing tools/docsgen; documenting a feature so future maintainers can find its owners, consumers, invariants, superseded paths, deletion gates, evidence, and rollback; or checking documentation authority, drift, links, copied content, and source-artifact hygiene.
+description: Maintain Archie's documentation of record and write durable architecture decisions, migration plans, parity matrices, incident and dead-end records, feature ownership and deprecation records, operational runbooks, and documentation reviews. Use when deciding where an Archie fact belongs; reconciling code with `CLAUDE.md`, `docs/architecture`, `docs/prds`, `docs/archive`, or generated contracts; changing `tools/docsgen`; documenting a feature so future maintainers can find its owners, consumers, invariants, superseded paths, deletion gates, evidence, and rollback; or checking documentation authority, drift, links, copied content, and source-artifact hygiene.
 ---
 
 # Maintain Archie documentation
@@ -42,7 +42,6 @@ Verified on 2026-09-18:
 |---|---|---|
 | Live Go code, tests, `Taskfile.yml`, executable config parsing, composition under `internal/app/` (entered from `cmd/`) | `CURRENT` execution evidence | Trace producers and consumers; tests prove only asserted behavior |
 | `CLAUDE.md` | Current contributor and safety protocol plus compact architecture orientation | Verify operational claims against code and `Taskfile.yml`; `AGENTS.md` is a symlink to it |
-| `ARCHITECTURE.md` | Useful architecture history and partial current overview | Corroborate every inventory/status claim; its "Planned" list is stale for implemented skill support |
 | `docs/prds/01-project-management.md` | Index and approved foundation for target architecture | Add or change target decisions in the focused document it names |
 | `docs/architecture/*.md` | Focused target decisions, active review procedure, migration inventory | Read each file's status |
 | `docs/architecture/migration-decisions.md` | `OPEN` migration inventory constrained by approved decisions | Close a question only after code-grounded review |
@@ -77,7 +76,7 @@ The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-09-18.
 | Superseded design retained for context | `docs/archive/`, with historical status |
 | Incident or rejected approach | `archie-failure-archaeology`'s chronology |
 
-Do not duplicate a package map across `CLAUDE.md`, `ARCHITECTURE.md`, a PRD, and
+Do not duplicate a package map across `CLAUDE.md`, a PRD, and
 the site. Name the authoritative map and link to it.
 
 ## Write for future change

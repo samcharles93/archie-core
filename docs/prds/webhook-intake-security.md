@@ -66,10 +66,10 @@ the control.
 Mapped payload fields are treated as ordinary user-controlled text inside an
 agent prompt, exactly like an inbound chat message never as trusted
 instructions. "The agent should ignore instructions in the payload" is not a
-control and must not appear as one anywhere in this feature -- per
-`ARCHITECTURE.md`'s environmental-enforcement-over-prompt-rules principle,
-the boundary is the gate and the sandbox, not a sentence in the system
-prompt.
+control and must not appear as one anywhere in this feature -- per the
+environmental-enforcement principle (`docs/architecture/agent-system.md`,
+"Existing invariants to preserve"), the boundary is the gate and the sandbox,
+not a sentence in the system prompt.
 
 ## 5. Retention and redaction of captured payloads
 

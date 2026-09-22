@@ -63,13 +63,13 @@ Do not simplify these facts into the target model:
 | Workflow | `internal/domain/workflow` routes a `task.Task` into a `map[string]Workflow`, mutates a broad `TaskContext` through sequential stages. | `internal/domain/workflow/workflow.go` |
 | Agent-stage boundary | Versioned `agentexec.Request`/`Result` carries one autonomous stage; validation correlates task, attempt, and stage. | `internal/agentexec/protocol.go` |
 | Container handoff | `internal/taskrun` carries entire task plus `config.Repo` and `config.TaskConfig`; `internal/app/agentworker` owns routing and sequencing while its NATS adapter owns wire mechanics. | `internal/taskrun/taskrun.go`; `internal/app/agentworker/`; `internal/infrastructure/agenttransport/nats/` |
-| Git ownership | Daemon-owned worktree operations clone, commit, push, diff, and clean up. | `internal/worktree/`; `internal/domain/workflow/steps.go`; `ARCHITECTURE.md` |
+| Git ownership | Daemon-owned worktree operations clone, commit, push, diff, and clean up. | `internal/worktree/`; `internal/domain/workflow/steps.go`; `docs/architecture/agent-system.md` |
 | Enforcement | Gates, read-only/protected paths, TDD inverted test gates, and diff caps are represented outside prompt prose. | `internal/gate/`; `internal/domain/workflow/{agent,tdd,steps}.go` |
 | Configuration | `internal/config.Config`, `IdentityConfig`, `Repo`, and task snapshots mix input decoding with runtime concerns. Decoding itself lives in `internal/infrastructure/configuration`. | `internal/config/config.go`; `internal/infrastructure/configuration/` |
 | Identity | Configured names and bot usernames act as process-local identity keys. There is no durable Identity domain. | `internal/daemon/daemon.go`; `internal/domain/storecontract/storecontract.go`; `internal/gateway/session.go` |
 | Messaging | `internal/gateway` contains both the `Message` struct flow and richer `MessageEvent`; channel routing and task control are mixed with conversational behavior. | `internal/gateway/{gateway,messageevent,tasks}.go`; `internal/channels/` |
 | Plugins | `plugin.Plugin` exposes only `Name` and `Version`; current loading interprets operator-installed Go files with Yaegi. | `internal/plugin/plugin.go` |
-| Processes | Agent modes include in-process, subprocess, and NATS. Optional containers add a distinct boundary with known gaps. | `internal/config/config.go`; `internal/app/archied/`; `ARCHITECTURE.md` |
+| Processes | Agent modes include in-process, subprocess, and NATS. Optional containers add a distinct boundary with known gaps. | `internal/config/config.go`; `internal/app/archied/`; `docs/architecture/organisation.md` |
 
 ### Interpret the current lifecycle honestly
 
@@ -98,13 +98,13 @@ not an open design.
 
 | Invariant | Required action | Status and source |
 | --- | --- | --- |
-| The model never runs git | Keep clone, branch, commit, push, diff, and cleanup in deterministic workspace/worktree steps. | CURRENT: `ARCHITECTURE.md`; `internal/worktree/` |
-| Deterministic constraints outrank prompts | Enforce gates, protected paths, read-only stages, test protection, and change caps outside model instructions. | CURRENT: `ARCHITECTURE.md`; `internal/gate/`; `internal/domain/workflow/` |
-| Agent execution is a data boundary | Send bounded, versioned input; validate correlated output before applying it. | CURRENT foundation: `internal/agentexec/protocol.go`; `ARCHITECTURE.md` |
+| The model never runs git | Keep clone, branch, commit, push, diff, and cleanup in deterministic workspace/worktree steps. | CURRENT: `docs/architecture/agent-system.md`; `internal/worktree/` |
+| Deterministic constraints outrank prompts | Enforce gates, protected paths, read-only stages, test protection, and change caps outside model instructions. | CURRENT: `docs/architecture/agent-system.md`; `internal/gate/`; `internal/domain/workflow/` |
+| Agent execution is a data boundary | Send bounded, versioned input; validate correlated output before applying it. | CURRENT foundation: `internal/agentexec/protocol.go`; `docs/architecture/agent-system.md` |
 | Every workflow ends explicitly | Preserve terminal outcome or visible park. Preserve crash recovery of interrupted `running` work. | CURRENT: `internal/domain/workflow/workflow.go`; `internal/store/store.go` |
 | Generic plugins stay metadata-only | Keep `plugin.Plugin` at `Name()`/`Version()`. Behavior on typed capability interface with owning `Registry`/`Manager`. | CURRENT-enforced rule: `internal/plugin/architecture_test.go` |
-| Capability engines own lifecycle | Give resource-owning engines explicit start/health/stop semantics and failure isolation. | APPROVED rule: `ARCHITECTURE.md#plugin-engine-rule-strict` |
-| Trust is explicit | Treat trusted operator-installed in-process code, repository code, out-of-process integrations, and container-isolated code as different trust classes. | APPROVED rule: `ARCHITECTURE.md#plugin-engine-rule-strict` |
+| Capability engines own lifecycle | Give resource-owning engines explicit start/health/stop semantics and failure isolation. | APPROVED rule: `docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict` |
+| Trust is explicit | Treat trusted operator-installed in-process code, repository code, out-of-process integrations, and container-isolated code as different trust classes. | APPROVED rule: `docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict` |
 | Infrastructure stays replaceable | Keep forge, persistence, workspace, transport, container, and model details behind behavior-owned contracts. | APPROVED TARGET: `docs/architecture/dependencies-and-contracts.md` |
 | Same-repository execution serializes by default | Preserve default unless explicit scheduling policy permits concurrency. | CURRENT: `internal/config/config.go`; `internal/daemon/daemon.go` |
 

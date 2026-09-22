@@ -25,8 +25,9 @@ in the repo defines this (`grep -ri image` over `internal/domain` and
 ## Design
 
 Follows the plugin engine family shape already established by
-`internal/domain/curator` and `internal/domain/memory` (ARCHITECTURE.md
-"plugin engine rule strict"): a typed contract with real domain operations,
+`internal/domain/curator` and `internal/domain/memory`
+(`docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict`): a
+typed contract with real domain operations,
 an owning `Registry` (register/get/names, no start/stop lifecycle — see
 below), and narrow host access via a `Registrar`.
 

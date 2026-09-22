@@ -90,7 +90,7 @@ curl -X POST http://localhost:8484/webhooks/capture/sentry \
 This event is captured as **authenticated**, matched against your armed
 binding, and dispatched into a new task through the exact same
 gate/worktree/sandbox pipeline every other task goes through -- see
-`ARCHITECTURE.md`'s Task Lifecycle section, "Provenance by origin." Check
+`docs/architecture/messaging-and-work-intake.md`'s "Intake provenance". Check
 the **Tasks** page; a new task should appear, its body built from the fields
 your mapping resolved.
 
