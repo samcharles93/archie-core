@@ -144,9 +144,22 @@ release_component() {
 	fi
 }
 
+# The host bundle IS the archied artifact: the distribution zip is named and
+# versioned by the archied tag, and every process it ships carries that same
+# version. So the inputs that decide what a host install contains belong in
+# archied's closure -- the build task, the packaging workflow, the installer,
+# the updater scripts it ships, and the instructions packed into the zip.
+# Without them a change to packaging or the installer closes over no
+# component at all, so the standing rule says "skip both" and the fix cannot
+# be released by the mechanism it repairs (archie-core-12rp). Each path is
+# named rather than its whole directory, so a packaging-only change is
+# attributed to archied deliberately and not every CI or script edit is.
 release_component "archied" "$GATEWAY_VERSION" "archied" \
 	"CHANGELOG.archied.md" "./cmd/archied" "cmd/archied" "Dockerfile.archied" \
-	"cmd/archie-ui" "internal/app/archieui"
+	"cmd/archie-ui" "internal/app/archieui" \
+	"Taskfile.yml" ".github/workflows/deploy.yml" "install.sh" \
+	"scripts/archie-update-install" "scripts/archie-update-check" \
+	"scripts/archie-update-watchdog" "deployments/INSTRUCTIONS.md"
 
 # The UI Service ships with the archied release on purpose: archie-ui shares
 # internal/webui (the dashboard HTTP layer and the embedded SPA assets) with
