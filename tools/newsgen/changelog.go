@@ -8,30 +8,17 @@ import (
 	"strings"
 )
 
-// component is one independently versioned binary and the changelog that
-// carries its release notes. key is the tag prefix and the output directory;
-// name is how the component is written for a reader.
-type component struct {
-	key       string
-	name      string
-	changelog string
-}
-
-// components is the fixed publishing order. Archied leads because it is the
-// user-facing entry point; the order only breaks ties between releases that
-// share a date.
-var components = []component{
-	{key: "archied", name: "archied", changelog: "CHANGELOG.archied.md"},
-	{key: "archie", name: "archie-agent", changelog: "CHANGELOG.archie.md"},
-}
+// changelogPath is the one file the release stream lives in. The two
+// per-component changelogs were merged into it; their history is a section of
+// this file rather than a separate source.
+const changelogPath = "CHANGELOG.md"
 
 // release is one changelog section: the facts a host needs to render a version.
+// The per-component detail is inside Body, as labelled level-three sections.
 type release struct {
-	Component string `json:"component"`
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Date      string `json:"date"`
-	Body      string `json:"body"`
+	Version string `json:"version"`
+	Date    string `json:"date"`
+	Body    string `json:"body"`
 }
 
 // releaseHeading matches a changelog release heading. The date is optional in
@@ -46,8 +33,10 @@ var inlineLink = regexp.MustCompile(`\]\(([^)]+)\)`)
 // an in-page anchor. Everything else is relative to the changelog's directory.
 var linkScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
 
-// parseChangelog reads the release sections out of one component's changelog.
-func parseChangelog(c component, source string) ([]release, error) {
+// parseChangelog reads the release sections out of the changelog. `Unreleased`
+// is skipped, not dropped: it is the one place unfinished work is recorded and
+// it carries no version to publish.
+func parseChangelog(source string) ([]release, error) {
 	var releases []release
 	for _, section := range splitSections(source) {
 		if !strings.HasPrefix(section.heading, "## [") {
@@ -55,27 +44,25 @@ func parseChangelog(c component, source string) ([]release, error) {
 		}
 		match := releaseHeading.FindStringSubmatch(section.heading)
 		if match == nil {
-			return nil, fmt.Errorf("%s: %q is not a release heading; write `## [<version>] - <date>`", c.changelog, section.heading)
+			return nil, fmt.Errorf("%s: %q is not a release heading; write `## [<version>] - <date>`", changelogPath, section.heading)
 		}
 		version, date := match[1], match[2]
 		if version == "Unreleased" {
 			continue
 		}
 		if date == "" {
-			return nil, fmt.Errorf("%s: release %s has no date; write `## [<version>] - <date>`", c.changelog, version)
+			return nil, fmt.Errorf("%s: release %s has no date; write `## [<version>] - <date>`", changelogPath, version)
 		}
 		if section.body == "" {
-			return nil, fmt.Errorf("%s: release %s has no notes", c.changelog, version)
+			return nil, fmt.Errorf("%s: release %s has no notes", changelogPath, version)
 		}
 		if target, ok := relativeLink(section.body); ok {
-			return nil, fmt.Errorf("%s: release %s has a relative link %q; release-notes links must be absolute", c.changelog, version, target)
+			return nil, fmt.Errorf("%s: release %s has a relative link %q; release-notes links must be absolute", changelogPath, version, target)
 		}
 		releases = append(releases, release{
-			Component: c.key,
-			Name:      c.name,
-			Version:   version,
-			Date:      date,
-			Body:      section.body,
+			Version: version,
+			Date:    date,
+			Body:    section.body,
 		})
 	}
 	return releases, nil
@@ -145,29 +132,17 @@ func relativeLink(body string) (string, bool) {
 	return "", false
 }
 
-// sortReleases orders releases newest first, then by component, then by
-// descending version. Every host renders this order, so the canonical artifact
-// is also the ordering contract.
+// sortReleases orders releases newest first, then by descending version. Every
+// host renders this order, so the canonical artifact is also the ordering
+// contract.
 func sortReleases(releases []release) {
 	sort.SliceStable(releases, func(i, j int) bool {
 		a, b := releases[i], releases[j]
 		if a.Date != b.Date {
 			return a.Date > b.Date
 		}
-		if ai, bi := componentIndex(a.Component), componentIndex(b.Component); ai != bi {
-			return ai < bi
-		}
 		return compareVersions(a.Version, b.Version) > 0
 	})
-}
-
-func componentIndex(key string) int {
-	for i, c := range components {
-		if c.key == key {
-			return i
-		}
-	}
-	return len(components)
 }
 
 // compareVersions orders dotted versions by their numeric parts, so 1.9.10 is

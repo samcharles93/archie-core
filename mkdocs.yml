@@ -15,8 +15,7 @@ copyright: Vectis Labs
 # that grows with every release would push the architecture tree off the screen.
 # This is not exclude_docs -- the pages are wanted, just not as nav entries.
 not_in_nav: |
-  news/archied/*
-  news/archie/*
+  news/[0-9]*
 
 theme:
   name: material

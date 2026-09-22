@@ -1,17 +1,16 @@
-// Command newsgen derives every published release fact from the component
-// changelogs.
+// Command newsgen derives every published release fact from CHANGELOG.md.
 //
-// CHANGELOG.archied.md and CHANGELOG.archie.md are the release process's frozen
-// notes: tools/release.sh --prepare writes a section, the maintainer edits it,
-// and --tag refuses to tag a version without its section. Tags are deliberately
-// not a source, because CI and deployment check out shallow and a site build has
-// no tags to read.
+// CHANGELOG.md is the release process's frozen notes: tools/release.sh
+// --prepare writes a section, the maintainer edits it, and --tag refuses to tag
+// a version without its section. Tags are deliberately not a source, because CI
+// and deployment check out shallow and a site build has no tags to read.
 //
 // Output is generated and committed:
 //
-//	docs/data/generated/releases.json   the canonical, host-neutral fact set
-//	docs/news/index.md                  the news page
-//	docs/news/<component>/<version>.md  one page per release
+//	docs/news/releases.json      the canonical, host-neutral fact set
+//	docs/news/redirects.json     the retired per-component URLs, mapped to pages
+//	docs/news/index.md           the news page
+//	docs/news/<version>.md       one page per release
 //
 // `newsgen check` reproduces the output in memory and fails when the committed
 // files differ, which keeps a changelog edit from landing without its pages.
@@ -29,6 +28,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -83,19 +83,15 @@ func parseOptions(args []string) (options, error) {
 	return options{mode: selected, repoRoot: *repoRoot}, nil
 }
 
-// load parses every component changelog and returns the releases newest first.
+// load parses the changelog and returns the releases newest first.
 func load(repoRoot string) ([]release, error) {
-	releases := []release{}
-	for _, c := range components {
-		source, err := os.ReadFile(filepath.Join(repoRoot, c.changelog))
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", c.changelog, err)
-		}
-		parsed, err := parseChangelog(c, string(source))
-		if err != nil {
-			return nil, err
-		}
-		releases = append(releases, parsed...)
+	source, err := os.ReadFile(filepath.Join(repoRoot, changelogPath))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", changelogPath, err)
+	}
+	releases, err := parseChangelog(string(source))
+	if err != nil {
+		return nil, err
 	}
 	sortReleases(releases)
 	return releases, nil
@@ -156,7 +152,7 @@ func check(repoRoot string) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 		if !bytes.Equal(current, expected) {
-			problems = append(problems, path+" does not match the changelogs")
+			problems = append(problems, path+" does not match the changelog")
 		}
 	}
 	for _, path := range unownedPages(repoRoot, files) {
@@ -167,37 +163,48 @@ func check(repoRoot string) error {
 		return fmt.Errorf("release notes are stale:\n  %s\n  fix with `task news`, then commit the result",
 			strings.Join(problems, "\n  "))
 	}
-	fmt.Printf("newsgen: %d release notes match the changelogs\n", len(releases))
+	fmt.Printf("newsgen: %d release notes match the changelog\n", len(releases))
 	return nil
 }
 
-// unownedPages lists files inside a generated component directory that this
-// tool does not produce. The news directory's own root is not a generated
-// directory, so a hand-written announcement there is left alone.
+// releasePageName matches the basename of a generated version page, so a page
+// left behind for a release the changelog no longer carries is reported.
+var releasePageName = regexp.MustCompile(`^[0-9]+\.[0-9]+`)
+
+// unownedPages lists files under docs/news that this tool does not produce. A
+// page from the retired per-component layout (a file in a subdirectory) and a
+// stale version page are both unowned; anything else is a hand-written news
+// item, and the news directory's root is where those live.
 func unownedPages(repoRoot string, files map[string][]byte) []string {
 	var unowned []string
-	for _, c := range components {
-		dir := filepath.Join(repoRoot, newsDir, c.key)
-		err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() {
-				return nil
-			}
-			relative, err := filepath.Rel(repoRoot, path)
-			if err != nil {
-				return err
-			}
-			slash := filepath.ToSlash(relative)
-			if _, generated := files[slash]; !generated {
-				unowned = append(unowned, slash)
-			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			unowned = append(unowned, fmt.Sprintf("%s is unreadable: %v", c.key, err))
+	root := filepath.Join(repoRoot, newsDir)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		slash := filepath.ToSlash(relative)
+		if _, generated := files[slash]; generated {
+			return nil
+		}
+		if strings.Contains(slash[len(newsDir)+1:], "/") || looksLikeReleasePage(filepath.Base(path)) {
+			unowned = append(unowned, slash)
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		unowned = append(unowned, fmt.Sprintf("%s is unreadable: %v", newsDir, err))
 	}
 	return unowned
+}
+
+func looksLikeReleasePage(name string) bool {
+	base, ok := strings.CutSuffix(name, ".md")
+	return ok && releasePageName.MatchString(base)
 }

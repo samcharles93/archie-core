@@ -102,12 +102,14 @@ tasks:
       - go -C tools run -mod=readonly ./prdlint --repo-root ..
 
   news:
-    desc: Regenerate the news page and per-version release notes from the changelogs
+    desc: Regenerate the news page and per-version release notes from the changelog
     summary: |
-      Writes docs/news/releases.json and docs/news/. The JSON is the
-      canonical, host-neutral fact set every renderer reads; the markdown is
-      the MkDocs adapter. Both come from CHANGELOG.archied.md and
-      CHANGELOG.archie.md, so cutting a release adds no writing here.
+      Writes docs/news/releases.json, docs/news/redirects.json and docs/news/.
+      The JSON is the canonical, host-neutral fact set every renderer reads;
+      the redirect table maps the retired /news/<component>/<version>/ URLs to
+      the unified page for that version; the markdown is the MkDocs adapter.
+      All of it comes from CHANGELOG.md, so cutting a release adds no writing
+      here.
 
       The files are committed, so this dirties the tree deliberately: review
       the diff and commit it with the changelog that produced it. Never
@@ -119,14 +121,15 @@ tasks:
       - go -C tools run -mod=readonly ./newsgen --repo-root ..
 
   news:check:
-    desc: Verify the committed release notes match the changelogs
+    desc: Verify the committed release notes match the changelog
     summary: |
       Derives the release notes in memory and fails when the committed files
       differ, without modifying the working tree. Runs in `task check`, so a
       changelog edit cannot land without its regeneration.
 
-      A file inside docs/news/<component>/ that the generator does not produce
-      is a finding too: that directory is generated, and a hand-written page
+      A version page the generator does not produce (a page for a release the
+      changelog no longer carries, or one left in the retired
+      docs/news/<component>/ layout) is a finding too; a hand-written news item
       belongs at the docs/news root instead.
     cmds:
       - go -C tools run -mod=readonly ./newsgen check --repo-root ..
@@ -539,23 +542,23 @@ tasks:
       - go -C tools run ./contractaudit --repo-root ..
 
   release:preview:
-    desc: "Show the release notes that would be generated (VERSION=1.2.0, or GATEWAY=/RUNTIME= to version the two components separately)"
+    desc: "Show the release notes that would be generated (VERSION=1.2.0)"
     cmds:
-      - tools/release.sh --gateway {{.GATEWAY | default .VERSION}} --runtime {{.RUNTIME | default .VERSION}} --dry-run
+      - tools/release.sh --version {{.VERSION}} --dry-run
     requires:
       vars: [VERSION]
 
   release:prepare:
-    desc: "Write the generated notes into the changelogs, uncommitted, for editing (VERSION=1.2.0)"
+    desc: "Write the generated notes into CHANGELOG.md, uncommitted, for editing (VERSION=1.2.0)"
     cmds:
-      - tools/release.sh --gateway {{.GATEWAY | default .VERSION}} --runtime {{.RUNTIME | default .VERSION}} --prepare
+      - tools/release.sh --version {{.VERSION}} --prepare
     requires:
       vars: [VERSION]
 
   release:
-    desc: "Freeze the edited changelogs into a release commit and tags (VERSION=1.2.0). Run release:prepare first."
+    desc: "Freeze the edited changelog into a release commit and tag (VERSION=1.2.0). Run release:prepare first."
     cmds:
-      - tools/release.sh --gateway {{.GATEWAY | default .VERSION}} --runtime {{.RUNTIME | default .VERSION}} --tag
+      - tools/release.sh --version {{.VERSION}} --tag
     requires:
       vars: [VERSION]
 

@@ -3,26 +3,25 @@
 # they are frozen into a tag -- the same review window release-please gives
 # you with its release PR.
 #
-#   tools/release.sh --gateway 1.2.0 --runtime 1.2.0 --dry-run   # preview
-#   tools/release.sh --gateway 1.2.0 --runtime 1.2.0 --prepare   # write, then edit
-#   tools/release.sh --gateway 1.2.0 --runtime 1.2.0 --tag       # commit + tag
+#   tools/release.sh --version 1.2.0 --dry-run   # preview
+#   tools/release.sh --version 1.2.0 --prepare   # write, then edit
+#   tools/release.sh --version 1.2.0 --tag       # commit + tag
 #
-# archied and archie-agent are independently versioned (see CHANGELOG.md),
-# so each gets its own version, tag and changelog. Pass "skip" for a
-# component that is not moving this release.
+# There is one release stream: CHANGELOG.md carries every release section,
+# one generated page per version, and one tag names the release. A release is
+# one version covering whatever changed; per-component detail is a labelled
+# section inside it, not a separate number.
 #
-# Which commits land in which changelog is decided by the binary's actual
-# package closure (go list -deps), not by guessing from the commit subject:
-# a change to a package archied does not import cannot appear in archied's
-# changelog. Commits touching neither closure (docs, CI, deployment) are
-# left out of both.
+# Exit codes: 0 released (or previewed/prepared); 1 failure; 3 nothing to
+# release -- a commit set that justifies no version is a result, not an error,
+# so a pipeline can finish green without tagging.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+NOTHING_TO_RELEASE=3
 MODE=""
-GATEWAY_VERSION=""
-RUNTIME_VERSION=""
+VERSION=""
 
 die() {
 	echo "release: $*" >&2
@@ -31,8 +30,7 @@ die() {
 
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--gateway) GATEWAY_VERSION="${2:-}"; shift 2 ;;
-	--runtime) RUNTIME_VERSION="${2:-}"; shift 2 ;;
+	--version) VERSION="${2:-}"; shift 2 ;;
 	--dry-run) MODE="dry-run"; shift ;;
 	--prepare) MODE="prepare"; shift ;;
 	--tag) MODE="tag"; shift ;;
@@ -40,8 +38,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-[ -n "$GATEWAY_VERSION" ] || die "--gateway <version|skip> is required"
-[ -n "$RUNTIME_VERSION" ] || die "--runtime <version|skip> is required"
+[ -n "$VERSION" ] || die "--version <version> is required"
 [ -n "$MODE" ] || die "one of --dry-run, --prepare or --tag is required"
 
 if [ "$MODE" != "dry-run" ]; then
@@ -58,36 +55,6 @@ component_dirs() {
 	go list -deps -f '{{.Dir}}' "$1" 2>/dev/null |
 		grep -F "$PWD/" |
 		sed "s|^$PWD/||"
-}
-
-# section <tag-prefix> <cmd-path> <extra-path>... -- changelog body for the
-# commits since <tag-prefix>'s last tag that touched this component.
-section() {
-	local prefix="$1" cmd="$2"
-	shift 2
-	local last range dirs
-	last="$(git tag --list "$prefix/v*" | sort -V | tail -1)"
-	range="HEAD"
-	if [ -n "$last" ]; then
-		range="$last..HEAD"
-	fi
-
-	dirs="$(component_dirs "$cmd")"$'\n'"$(printf '%s\n' "$@")"
-
-	local sha subject files
-	while read -r sha; do
-		[ -n "$sha" ] || continue
-		subject="$(git log -1 --pretty=%s "$sha")"
-		# Conventional commits only; release commits are not news.
-		case "$subject" in
-		feat:* | feat\(*|fix:* | fix\(*|perf:* | perf\(*|refactor:* | refactor\(*) ;;
-		*) continue ;;
-		esac
-		files="$(git show --pretty=format: --name-only "$sha")"
-		if matches "$files" "$dirs"; then
-			echo "- $subject"
-		fi
-	done < <(git log --no-merges --pretty=%H --reverse "$range")
 }
 
 # matches <changed-files> <dirs> -- true when any changed file lives in one
@@ -107,71 +74,95 @@ matches() {
 	return 1
 }
 
-# prepend <changelog> <version> <body> -- insert a dated section directly
-# under the file's title.
+# The host bundle IS the archied artifact: the distribution zip is named and
+# versioned by the release, and every process it ships carries that version.
+# The paths below are named rather than whole directories, so a packaging-only
+# change is attributed to archied deliberately and not every CI or script edit.
+archied_dirs() {
+	component_dirs ./cmd/archied
+	printf '%s\n' "cmd/archied" "Dockerfile.archied" "cmd/archie-ui" "internal/app/archieui" \
+		"Taskfile.yml" ".github/workflows/deploy.yml" "install.sh" \
+		"scripts/archie-update-install" "scripts/archie-update-check" \
+		"scripts/archie-update-watchdog" "deployments/INSTRUCTIONS.md"
+}
+
+# The UI Service ships with the archied release on purpose (archie-ui shares
+# internal/webui with archied), hence archied_dirs' extra paths above.
+runtime_dirs() {
+	component_dirs ./cmd/archie-agent
+	printf '%s\n' "cmd/archie-agent" "Dockerfile"
+}
+
+# changelog_body -- labelled per-component sections for every releasable commit
+# since the last release. Empty output means nothing to release: a commit set
+# that justifies no version produces no body, and the caller reports that
+# rather than inventing one.
+changelog_body() {
+	local last range archied runtime
+	last="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+	range="HEAD"
+	if [ -n "$last" ]; then
+		range="$last..HEAD"
+	fi
+	archied="$(archied_dirs)"
+	runtime="$(runtime_dirs)"
+
+	local sha subject files in_archied="" in_runtime=""
+	while read -r sha; do
+		[ -n "$sha" ] || continue
+		subject="$(git log -1 --pretty=%s "$sha")"
+		# Conventional commits only; release commits are not news.
+		case "$subject" in
+		feat:* | feat\(*|fix:* | fix\(*|perf:* | perf\(*|refactor:* | refactor\(*) ;;
+		*) continue ;;
+		esac
+		files="$(git show --pretty=format: --name-only "$sha")"
+		if matches "$files" "$archied"; then
+			in_archied="$in_archied- $subject"$'\n'
+		fi
+		if matches "$files" "$runtime"; then
+			in_runtime="$in_runtime- $subject"$'\n'
+		fi
+	done < <(git log --no-merges --pretty=%H --reverse "$range")
+
+	if [ -n "$in_archied" ]; then
+		printf '### archied\n\n%s\n' "$in_archied"
+	fi
+	if [ -n "$in_runtime" ]; then
+		printf '### archie-agent\n\n%s\n' "$in_runtime"
+	fi
+}
+
+# prepend <version> <body-file> -- insert the new section after the title and
+# any [Unreleased] block, which stays at the top, and above every release.
 prepend() {
-	local file="$1" version="$2" body="$3" tmp
+	local version="$1" bodyfile="$2" tmp line
+	line="$(grep -n '^## \[' CHANGELOG.md | grep -v '## \[Unreleased\]' | head -1 | cut -d: -f1)"
+	if [ -z "$line" ]; then
+		line="$(($(wc -l <CHANGELOG.md) + 1))"
+	fi
 	tmp="$(mktemp)"
 	{
-		head -1 "$file"
-		echo
+		head -n "$((line - 1))" CHANGELOG.md
 		echo "## [$version] - $(date +%F)"
 		echo
-		echo "$body"
-		tail -n +2 "$file"
+		cat "$bodyfile"
+		echo
+		tail -n "+$line" CHANGELOG.md
 	} >"$tmp"
-	# Collapse the blank-line run left where the old body started.
-	awk 'BEGIN{blank=0} /^$/{blank++; if(blank>1) next} !/^$/{blank=0} {print}' "$tmp" >"$file"
-	rm -f "$tmp"
+	mv "$tmp" CHANGELOG.md
 }
 
-release_component() {
-	local name="$1" version="$2" prefix="$3" changelog="$4" cmd="$5"
-	shift 5
-	if [ "$version" = "skip" ]; then
-		echo "==> $name: skipped"
-		return
-	fi
-	local body
-	body="$(section "$prefix" "$cmd" "$@")"
-	if [ -z "$body" ]; then
-		body="- chore: no user-facing changes"
-	fi
-	echo "==> $name $version ($prefix/v$version)"
-	echo "$body" | sed 's/^/    /'
-	if [ "$MODE" = "prepare" ]; then
-		prepend "$changelog" "$version" "$body"
-	fi
-}
+body="$(changelog_body)"
 
-# The host bundle IS the archied artifact: the distribution zip is named and
-# versioned by the archied tag, and every process it ships carries that same
-# version. So the inputs that decide what a host install contains belong in
-# archied's closure -- the build task, the packaging workflow, the installer,
-# the updater scripts it ships, and the instructions packed into the zip.
-# Without them a change to packaging or the installer closes over no
-# component at all, so the standing rule says "skip both" and the fix cannot
-# be released by the mechanism it repairs (archie-core-12rp). Each path is
-# named rather than its whole directory, so a packaging-only change is
-# attributed to archied deliberately and not every CI or script edit is.
-release_component "archied" "$GATEWAY_VERSION" "archied" \
-	"CHANGELOG.archied.md" "./cmd/archied" "cmd/archied" "Dockerfile.archied" \
-	"cmd/archie-ui" "internal/app/archieui" \
-	"Taskfile.yml" ".github/workflows/deploy.yml" "install.sh" \
-	"scripts/archie-update-install" "scripts/archie-update-check" \
-	"scripts/archie-update-watchdog" "deployments/INSTRUCTIONS.md"
+if [ -z "$body" ]; then
+	last="$(git describe --tags --abbrev=0 2>/dev/null || echo 'the beginning')"
+	echo "nothing to release: no releasable commits since $last" >&2
+	exit "$NOTHING_TO_RELEASE"
+fi
 
-# The UI Service ships with the archied release on purpose: archie-ui shares
-# internal/webui (the dashboard HTTP layer and the embedded SPA assets) with
-# archied, so the two are versioned together -- an archied/vX.Y.Z tag carries
-# the dashboard and the daemon that publishes its configuration snapshot.
-# The two lines above extend archied's component closure with archie-ui's
-# own packages, so a commit touching only archieui cannot fall between
-# changelogs; it would otherwise land in neither (go list -deps from
-# ./cmd/archied does not include internal/app/archieui).
-
-release_component "archie-agent" "$RUNTIME_VERSION" "archie" \
-	"CHANGELOG.archie.md" "./cmd/archie-agent" "cmd/archie-agent" "Dockerfile"
+echo "==> release $VERSION"
+echo "$body" | sed 's/^/    /'
 
 if [ "$MODE" = "dry-run" ]; then
 	echo
@@ -179,50 +170,37 @@ if [ "$MODE" = "dry-run" ]; then
 	exit 0
 fi
 
+bodyfile="$(mktemp)"
+printf '%s\n' "$body" >"$bodyfile"
+
 if [ "$MODE" = "prepare" ]; then
+	prepend "$VERSION" "$bodyfile"
+	rm -f "$bodyfile"
 	echo
-	echo "changelogs updated and left uncommitted. Edit them -- generated notes"
-	echo "are a starting point, not the release -- then freeze them with:"
+	echo "CHANGELOG.md updated and left uncommitted. Edit it -- generated notes"
+	echo "are a starting point, not the release -- then freeze it with:"
 	echo
-	echo "    tools/release.sh --gateway $GATEWAY_VERSION --runtime $RUNTIME_VERSION --tag"
+	echo "    tools/release.sh --version $VERSION --tag"
 	exit 0
 fi
 
 # --tag: the changelog must already describe this release.
-[ "$GATEWAY_VERSION" = "skip" ] || grep -q "^## \\[$GATEWAY_VERSION\\]" CHANGELOG.archied.md ||
-	die "CHANGELOG.archied.md has no [$GATEWAY_VERSION] section; run --prepare first"
-[ "$RUNTIME_VERSION" = "skip" ] || grep -q "^## \\[$RUNTIME_VERSION\\]" CHANGELOG.archie.md ||
-	die "CHANGELOG.archie.md has no [$RUNTIME_VERSION] section; run --prepare first"
+grep -q "^## \\[$VERSION\\]" CHANGELOG.md ||
+	die "CHANGELOG.md has no [$VERSION] section; run --prepare first"
 
-# The published release notes are derived from the changelogs, so regenerate
+# The published release notes are derived from the changelog, so regenerate
 # them after the maintainer's edit and ship them in the same commit as the
-# sections they describe. newsgen skips a file whose bytes already match, so a
+# section they describe. newsgen skips a file whose bytes already match, so a
 # re-run leaves the tree clean.
 go -C tools run -mod=readonly ./newsgen --repo-root ..
 
-# Plain `[ cond ] && cmd` would abort the script under set -e whenever cond
-# is false, i.e. whenever a component is skipped.
-msg="chore(release):"
-if [ "$GATEWAY_VERSION" != "skip" ]; then
-	msg="$msg archied v$GATEWAY_VERSION"
-fi
-if [ "$RUNTIME_VERSION" != "skip" ]; then
-	msg="$msg archie v$RUNTIME_VERSION"
-fi
-
-git add CHANGELOG.archied.md CHANGELOG.archie.md docs/news
-git commit -m "$msg"
-
-if [ "$GATEWAY_VERSION" != "skip" ]; then
-	git tag -a "archied/v$GATEWAY_VERSION" -m "archied v$GATEWAY_VERSION"
-fi
-if [ "$RUNTIME_VERSION" != "skip" ]; then
-	git tag -a "archie/v$RUNTIME_VERSION" -m "archie-agent v$RUNTIME_VERSION"
-fi
+git add CHANGELOG.md docs/news
+git commit -m "chore(release): v$VERSION"
+git tag -a "v$VERSION" -m "v$VERSION"
 
 echo
 echo "tagged. push with:"
 echo "    git push origin main --follow-tags"
 echo
 echo "The deploy workflow reads the tags pointing at HEAD, so pushing the"
-echo "commit without its tags builds images stamped 'dev'."
+echo "commit without its tag builds images stamped 'dev'."

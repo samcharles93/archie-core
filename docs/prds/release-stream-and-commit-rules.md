@@ -31,6 +31,13 @@ because a version's date is when the last part of it shipped. Where a component'
 date differs from it, that component's section label carries its own date, so the
 per-component fact survives the merge rather than being collapsed into the heading.
 
+The merged history holds 65 versions: 33 that both components released, 31 only
+`archied`, and one only `archie`, from 64 and 34 sections respectively, so 98
+published pages become 65. `## [Unreleased]` is not a release -- it carries no
+version and gets no page -- but it stays at the top of the file, because it is
+the one place unfinished work is recorded. Counting `##` headings rather than
+releases overcounts by one.
+
 This ambiguity is historical only. One version stream with one tag gives a version
 exactly one date, so the rule represents the merged past rather than a design that has
 to hold.

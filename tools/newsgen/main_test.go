@@ -7,29 +7,19 @@ import (
 	"testing"
 )
 
-const archiedFixture = `# archied changelog
+const changelogFixture = `# Changelog
 
 ## [1.31.0] - 2026-09-22
+
+### archied — Gateway
 
 - gateway bullet
 `
 
-const archieFixture = `# archie-agent changelog
-
-## [1.31.0] - 2026-09-22
-
-- runtime bullet
-`
-
-func writeChangelogs(t *testing.T, root, archied, archie string) {
+func writeChangelog(t *testing.T, root, body string) {
 	t.Helper()
-	for name, body := range map[string]string{
-		"CHANGELOG.archied.md": archied,
-		"CHANGELOG.archie.md":  archie,
-	} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
+	if err := os.WriteFile(filepath.Join(root, changelogPath), []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", changelogPath, err)
 	}
 }
 
@@ -44,7 +34,7 @@ func readFile(t *testing.T, root, name string) []byte {
 
 func TestWriteThenCheckIsClean(t *testing.T) {
 	root := t.TempDir()
-	writeChangelogs(t, root, archiedFixture, archieFixture)
+	writeChangelog(t, root, changelogFixture)
 
 	if err := write(root); err != nil {
 		t.Fatalf("write error = %v", err)
@@ -56,7 +46,7 @@ func TestWriteThenCheckIsClean(t *testing.T) {
 
 func TestWriteIsIdempotent(t *testing.T) {
 	root := t.TempDir()
-	writeChangelogs(t, root, archiedFixture, archieFixture)
+	writeChangelog(t, root, changelogFixture)
 
 	if err := write(root); err != nil {
 		t.Fatalf("first write error = %v", err)
@@ -72,48 +62,72 @@ func TestWriteIsIdempotent(t *testing.T) {
 
 func TestCheckReportsAStaleChangelog(t *testing.T) {
 	root := t.TempDir()
-	writeChangelogs(t, root, archiedFixture, archieFixture)
+	writeChangelog(t, root, changelogFixture)
 	if err := write(root); err != nil {
 		t.Fatalf("write error = %v", err)
 	}
 
-	writeChangelogs(t, root, archiedFixture+"\n## [1.32.0] - 2026-09-23\n\n- newer bullet\n", archieFixture)
+	writeChangelog(t, root, changelogFixture+"\n## [1.32.0] - 2026-09-23\n\n- newer bullet\n")
 
 	err := check(root)
 	if err == nil {
 		t.Fatal("check accepted a committed tree that lags the changelog")
 	}
-	for _, want := range []string{"task news", "docs/news/archied/1.32.0.md"} {
+	for _, want := range []string{"task news", "docs/news/1.32.0.md"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want it to mention %q", err, want)
 		}
 	}
 }
 
-func TestCheckReportsFilesItDoesNotOwn(t *testing.T) {
+func TestCheckReportsAStaleVersionPage(t *testing.T) {
 	root := t.TempDir()
-	writeChangelogs(t, root, archiedFixture, archieFixture)
+	writeChangelog(t, root, changelogFixture)
 	if err := write(root); err != nil {
 		t.Fatalf("write error = %v", err)
 	}
 
-	handwritten := filepath.Join(root, "docs", "news", "archied", "handwritten.md")
-	if err := os.WriteFile(handwritten, []byte("mine\n"), 0o644); err != nil {
-		t.Fatalf("write handwritten page: %v", err)
+	stale := filepath.Join(root, "docs", "news", "9.9.9.md")
+	if err := os.WriteFile(stale, []byte("gone from the changelog\n"), 0o644); err != nil {
+		t.Fatalf("write stale page: %v", err)
 	}
 
 	err := check(root)
 	if err == nil {
-		t.Fatal("check ignored a file in a generated directory")
+		t.Fatal("check ignored a page for a version the changelog does not carry")
 	}
-	if !strings.Contains(err.Error(), "handwritten.md") || !strings.Contains(err.Error(), "not generated") {
-		t.Fatalf("error = %q, want it to name the unmanaged page", err)
+	if !strings.Contains(err.Error(), "9.9.9.md") || !strings.Contains(err.Error(), "not generated") {
+		t.Fatalf("error = %q, want it to name the stale page", err)
+	}
+}
+
+func TestCheckReportsTheRetiredComponentLayout(t *testing.T) {
+	root := t.TempDir()
+	writeChangelog(t, root, changelogFixture)
+	if err := write(root); err != nil {
+		t.Fatalf("write error = %v", err)
+	}
+
+	retired := filepath.Join(root, "docs", "news", "archied", "1.31.0.md")
+	if err := os.MkdirAll(filepath.Dir(retired), 0o755); err != nil {
+		t.Fatalf("create retired directory: %v", err)
+	}
+	if err := os.WriteFile(retired, []byte("old layout\n"), 0o644); err != nil {
+		t.Fatalf("write retired page: %v", err)
+	}
+
+	err := check(root)
+	if err == nil {
+		t.Fatal("check ignored a page left in the retired per-component layout")
+	}
+	if !strings.Contains(err.Error(), "archied/1.31.0.md") {
+		t.Fatalf("error = %q, want it to name the retired page", err)
 	}
 }
 
 func TestWriteLeavesOtherNewsFilesAlone(t *testing.T) {
 	root := t.TempDir()
-	writeChangelogs(t, root, archiedFixture, archieFixture)
+	writeChangelog(t, root, changelogFixture)
 	if err := write(root); err != nil {
 		t.Fatalf("write error = %v", err)
 	}
@@ -133,21 +147,22 @@ func TestWriteLeavesOtherNewsFilesAlone(t *testing.T) {
 	}
 }
 
-func TestRealChangelogsParse(t *testing.T) {
+func TestRealChangelogParses(t *testing.T) {
 	releases, err := load(filepath.Join("..", ".."))
 	if err != nil {
-		t.Fatalf("load real changelogs: %v", err)
+		t.Fatalf("load the real changelog: %v", err)
 	}
-	seen := map[string]int{}
+	if len(releases) == 0 {
+		t.Fatal("the real changelog produced no releases")
+	}
+	seen := map[string]bool{}
 	for _, r := range releases {
-		seen[r.Component]++
 		if r.Version == "" || r.Date == "" || r.Body == "" {
 			t.Fatalf("incomplete release: %+v", r)
 		}
-	}
-	for _, c := range components {
-		if seen[c.key] == 0 {
-			t.Fatalf("%s produced no releases", c.changelog)
+		if seen[r.Version] {
+			t.Fatalf("version %s appears twice in the merged history", r.Version)
 		}
+		seen[r.Version] = true
 	}
 }

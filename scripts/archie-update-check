@@ -171,7 +171,7 @@ cat <<EOF
       "Installed": "$(esc "$daemon_installed")",
       "Available": "$(esc "$daemon_available")",
       "Reference": "$(esc "$(reference_for archie-core "$daemon_available" "$daemon_artifacts")")",
-      "Changelog": "https://github.com/${REPO_SLUG}/blob/main/CHANGELOG.archied.md"
+      "Changelog": "https://github.com/${REPO_SLUG}/blob/main/CHANGELOG.md"
     },
     {
       "ID": "agent",
@@ -179,7 +179,7 @@ cat <<EOF
       "Installed": "$(esc "$agent_installed")",
       "Available": "$(esc "$agent_available")",
       "Reference": "$(esc "$(reference_for archie-runtime "$agent_available" "$agent_artifacts")")",
-      "Changelog": "https://github.com/${REPO_SLUG}/blob/main/CHANGELOG.archie.md"
+      "Changelog": "https://github.com/${REPO_SLUG}/blob/main/CHANGELOG.md"
     }
   ],
   "Deferred": false

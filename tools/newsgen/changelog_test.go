@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-const sampleChangelog = `# archied changelog
+const sampleChangelog = `# Changelog
 
 ## [1.31.0] - 2026-09-22
 
-### A heading
+### archied — A heading
 
 - one bullet
 
@@ -27,7 +27,7 @@ Not a release section.
 `
 
 func TestParseChangelogReadsReleaseSections(t *testing.T) {
-	got, err := parseChangelog(components[0], sampleChangelog)
+	got, err := parseChangelog(sampleChangelog)
 	if err != nil {
 		t.Fatalf("parseChangelog error = %v", err)
 	}
@@ -35,13 +35,10 @@ func TestParseChangelogReadsReleaseSections(t *testing.T) {
 		t.Fatalf("got %d releases, want 2: %+v", len(got), got)
 	}
 	first := got[0]
-	if first.Component != "archied" || first.Name != "archied" {
-		t.Fatalf("first release component/name = %q/%q, want archied/archied", first.Component, first.Name)
-	}
 	if first.Version != "1.31.0" || first.Date != "2026-09-22" {
 		t.Fatalf("first release version/date = %q/%q", first.Version, first.Date)
 	}
-	if first.Body != "### A heading\n\n- one bullet" {
+	if first.Body != "### archied — A heading\n\n- one bullet" {
 		t.Fatalf("first release body = %q", first.Body)
 	}
 	if got[1].Version != "1.30.0" || got[1].Body != "Just prose." {
@@ -50,7 +47,7 @@ func TestParseChangelogReadsReleaseSections(t *testing.T) {
 }
 
 func TestParseChangelogSkipsUnreleased(t *testing.T) {
-	got, err := parseChangelog(components[0], sampleChangelog)
+	got, err := parseChangelog(sampleChangelog)
 	if err != nil {
 		t.Fatalf("parseChangelog error = %v", err)
 	}
@@ -95,7 +92,7 @@ func TestParseChangelogRejectsMalformedInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseChangelog(components[0], tt.source)
+			_, err := parseChangelog(tt.source)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -112,14 +109,14 @@ func TestParseChangelogAllowsAbsoluteLinks(t *testing.T) {
 - [vulnerability](https://pkg.go.dev/vuln/GO-2026-6443), [anchor](#section),
   [root](/absolute), [angle](<https://example.com>), [mail](mailto:a@b.c).
 `
-	if _, err := parseChangelog(components[0], source); err != nil {
+	if _, err := parseChangelog(source); err != nil {
 		t.Fatalf("parseChangelog error = %v", err)
 	}
 }
 
 func TestParseChangelogKeepsFencedHeadingsInTheBody(t *testing.T) {
 	source := "## [1.2.0] - 2026-01-01\n\n```sh\n## not a heading\n```\n\n- after the fence\n"
-	got, err := parseChangelog(components[0], source)
+	got, err := parseChangelog(source)
 	if err != nil {
 		t.Fatalf("parseChangelog error = %v", err)
 	}
@@ -151,20 +148,18 @@ func TestCompareVersions(t *testing.T) {
 	}
 }
 
-func TestSortReleasesNewestFirstThenComponentThenVersion(t *testing.T) {
+func TestSortReleasesNewestFirstThenVersion(t *testing.T) {
 	releases := []release{
-		{Component: "archie", Name: "archie-agent", Version: "1.31.0", Date: "2026-09-22"},
-		{Component: "archied", Name: "archied", Version: "1.9.9", Date: "2026-09-22"},
-		{Component: "archied", Name: "archied", Version: "1.30.0", Date: "2026-09-20"},
-		{Component: "archied", Name: "archied", Version: "1.9.10", Date: "2026-09-22"},
-		{Component: "archied", Name: "archied", Version: "1.31.0", Date: "2026-09-22"},
+		{Version: "1.9.9", Date: "2026-09-22"},
+		{Version: "1.30.0", Date: "2026-09-20"},
+		{Version: "1.9.10", Date: "2026-09-22"},
+		{Version: "1.31.0", Date: "2026-09-22"},
 	}
 	sortReleases(releases)
-	want := []string{"archied/1.31.0", "archied/1.9.10", "archied/1.9.9", "archie/1.31.0", "archied/1.30.0"}
+	want := []string{"1.31.0", "1.9.10", "1.9.9", "1.30.0"}
 	for i, w := range want {
-		got := releases[i].Component + "/" + releases[i].Version
-		if got != w {
-			t.Fatalf("position %d = %s, want %s (all: %+v)", i, got, w, releases)
+		if releases[i].Version != w {
+			t.Fatalf("position %d = %s, want %s (all: %+v)", i, releases[i].Version, w, releases)
 		}
 	}
 }

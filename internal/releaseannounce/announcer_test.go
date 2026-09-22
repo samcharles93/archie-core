@@ -71,19 +71,17 @@ func TestAnnouncerBaselinesFirstReleaseWithoutSending(t *testing.T) {
 
 func TestAnnouncerSeparatesChangedAndUnchangedComponents(t *testing.T) {
 	dir := t.TempDir()
-	gatewayChangelog := filepath.Join(dir, "CHANGELOG.archied.md")
-	runtimeChangelog := filepath.Join(dir, "CHANGELOG.archie.md")
-	if err := os.WriteFile(gatewayChangelog, []byte(testChangelog), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(runtimeChangelog, []byte(testChangelog), 0o600); err != nil {
+	// One changelog holds every release now; both components read the section
+	// for their version from it.
+	changelog := filepath.Join(dir, "CHANGELOG.md")
+	if err := os.WriteFile(changelog, []byte(testChangelog), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	announcer := Announcer{
 		StatePath: filepath.Join(dir, "announced.json"),
 		Components: []Component{
-			{ID: "gateway", Label: "THE GATEWAY", Version: "v0.1.0", ChangelogPath: gatewayChangelog},
-			{ID: "runtime", Label: "THE RUNTIME", Version: "v0.1.0", ChangelogPath: runtimeChangelog},
+			{ID: "gateway", Label: "THE GATEWAY", Version: "v0.1.0", ChangelogPath: changelog},
+			{ID: "runtime", Label: "THE RUNTIME", Version: "v0.1.0", ChangelogPath: changelog},
 		},
 	}
 	if err := announcer.Announce(context.Background(), []int64{7}, func(context.Context, int64, string) error {

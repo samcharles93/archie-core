@@ -9,9 +9,8 @@ import (
 
 func sampleReleases() []release {
 	return []release{
-		{Component: "archied", Name: "archied", Version: "1.31.0", Date: "2026-09-22", Body: "### Gateway\n\n- a bullet"},
-		{Component: "archie", Name: "archie-agent", Version: "1.31.0", Date: "2026-09-22", Body: "- a runtime bullet"},
-		{Component: "archied", Name: "archied", Version: "1.30.0", Date: "2026-09-20", Body: "Prose."},
+		{Version: "1.31.0", Date: "2026-09-22", Body: "### archied — Gateway\n\n- a bullet\n\n### archie-agent\n\n- a runtime bullet"},
+		{Version: "1.30.0", Date: "2026-09-20", Body: "Prose."},
 	}
 }
 
@@ -35,7 +34,7 @@ func TestRenderEmitsTheCanonicalJSON(t *testing.T) {
 
 func TestRenderJSONKeepsHTMLCharactersReadable(t *testing.T) {
 	releases := []release{{
-		Component: "archied", Name: "archied", Version: "1.0.0", Date: "2026-01-01",
+		Version: "1.0.0", Date: "2026-01-01",
 		Body: "a -> b and <memory>",
 	}}
 	files, err := render(releases)
@@ -50,16 +49,17 @@ func TestRenderJSONKeepsHTMLCharactersReadable(t *testing.T) {
 	}
 }
 
-func TestRenderWritesOnePagePerComponentVersion(t *testing.T) {
+func TestRenderWritesOnePagePerVersion(t *testing.T) {
 	files, err := render(sampleReleases())
 	if err != nil {
 		t.Fatalf("render error = %v", err)
 	}
 	for _, path := range []string{
 		"docs/news/index.md",
-		"docs/news/archied/1.31.0.md",
-		"docs/news/archie/1.31.0.md",
-		"docs/news/archied/1.30.0.md",
+		"docs/news/1.31.0.md",
+		"docs/news/1.30.0.md",
+		"docs/news/releases.json",
+		"docs/news/redirects.json",
 	} {
 		if _, ok := files[path]; !ok {
 			t.Fatalf("render did not produce %s (files: %v)", path, keys(files))
@@ -70,6 +70,26 @@ func TestRenderWritesOnePagePerComponentVersion(t *testing.T) {
 	}
 }
 
+func TestRenderRedirectsEveryRetiredComponentURL(t *testing.T) {
+	files, err := render(sampleReleases())
+	if err != nil {
+		t.Fatalf("render error = %v", err)
+	}
+	var table map[string]string
+	if err := json.Unmarshal(files[redirectsJSONPath], &table); err != nil {
+		t.Fatalf("redirect table does not decode: %v", err)
+	}
+	want := map[string]string{
+		"/news/archied/1.31.0/": "/news/1.31.0/",
+		"/news/archie/1.31.0/":  "/news/1.31.0/",
+		"/news/archied/1.30.0/": "/news/1.30.0/",
+		"/news/archie/1.30.0/":  "/news/1.30.0/",
+	}
+	if !reflect.DeepEqual(table, want) {
+		t.Fatalf("redirect table = %v, want %v", table, want)
+	}
+}
+
 func TestRenderIndexGroupsByDate(t *testing.T) {
 	files, err := render(sampleReleases())
 	if err != nil {
@@ -77,16 +97,15 @@ func TestRenderIndexGroupsByDate(t *testing.T) {
 	}
 	want := `# News
 
-Release notes for archied and archie-agent, newest first.
+Release notes, newest first.
 
 ## 2026-09-22
 
-- [archied 1.31.0](archied/1.31.0.md)
-- [archie-agent 1.31.0](archie/1.31.0.md)
+- [1.31.0](1.31.0.md)
 
 ## 2026-09-20
 
-- [archied 1.30.0](archied/1.30.0.md)
+- [1.30.0](1.30.0.md)
 `
 	if got := string(files["docs/news/index.md"]); got != want {
 		t.Fatalf("index markdown =\n%s\nwant\n%s", got, want)
@@ -98,13 +117,19 @@ func TestRenderReleasePageKeepsTheBodyVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render error = %v", err)
 	}
-	want := `# archie-agent 1.31.0
+	want := `# 1.31.0
 
-Released 2026-09-22. [All news](../index.md)
+Released 2026-09-22. [All news](index.md)
+
+### archied — Gateway
+
+- a bullet
+
+### archie-agent
 
 - a runtime bullet
 `
-	if got := string(files["docs/news/archie/1.31.0.md"]); got != want {
+	if got := string(files["docs/news/1.31.0.md"]); got != want {
 		t.Fatalf("release page =\n%s\nwant\n%s", got, want)
 	}
 }
@@ -131,7 +156,10 @@ func TestRenderHandlesNoReleases(t *testing.T) {
 	if got := string(files[releasesJSONPath]); got != "[]\n" {
 		t.Fatalf("empty canonical JSON = %q, want %q", got, "[]\n")
 	}
-	if got := string(files["docs/news/index.md"]); got != "# News\n\nRelease notes for archied and archie-agent, newest first.\n" {
+	if got := string(files[redirectsJSONPath]); got != "{}\n" {
+		t.Fatalf("empty redirect table = %q, want %q", got, "{}\n")
+	}
+	if got := string(files["docs/news/index.md"]); got != "# News\n\nRelease notes, newest first.\n" {
 		t.Fatalf("empty index = %q", got)
 	}
 }

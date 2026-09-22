@@ -6,7 +6,7 @@ name: deploy
 on:
   push:
     branches: [main]
-    tags: ["archied/v*", "archie/v*"]
+    tags: ["archied/v*", "archie/v*", "v*"]
 
 # Rapid successive pushes to main (a release commit right after its
 # preceding fix, say) previously queued a full gate+build for each one,
@@ -46,12 +46,12 @@ jobs:
       - name: Resolve archied tag at HEAD
         id: release_tag
         run: |
-          version="$(git tag --points-at HEAD --list 'archied/v*' | sed 's|^archied/v||' | sort -V | tail -1)"
+          version="$(git tag --points-at HEAD --list 'archied/v*' --list 'v*' | sed -e 's|^archied/v||' -e 's|^v||' | sort -V | tail -1)"
           echo "archied_version=$version" >> "$GITHUB_OUTPUT"
           if [ -n "$version" ]; then
             echo "archied release at HEAD: $version"
           else
-            echo "no archied tag at HEAD; distribution zip will be skipped"
+            echo "no release tag at HEAD; distribution zip will be skipped"
           fi
 
       - name: Set up Go
@@ -111,21 +111,22 @@ jobs:
           fail=0
           for tag in $(git tag --points-at HEAD); do
             case "$tag" in
-              archied/v*)
-                # Strip the "v" too: tags are archied/vX.Y.Z, changelog
-                # sections are "## [X.Y.Z]" (see tools/release.sh).
-                ver="${tag#archied/v}"
-                echo "  archied tag $tag  ->  looking for [$ver] in CHANGELOG.archied.md"
-                grep -q "^## \\[$ver\\]" CHANGELOG.archied.md || {
-                  echo "  FAIL: CHANGELOG.archied.md has no [$ver] section"
+              v*)
+                ver="${tag#v}"
+                echo "  release tag $tag  ->  looking for [$ver] in CHANGELOG.md"
+                grep -q "^## \\[$ver\\]" CHANGELOG.md || {
+                  echo "  FAIL: CHANGELOG.md has no [$ver] section"
                   fail=1
                 }
                 ;;
-              archie/v*)
-                ver="${tag#archie/v}"
-                echo "  archie tag $tag  ->  looking for [$ver] in CHANGELOG.archie.md"
-                grep -q "^## \\[$ver\\]" CHANGELOG.archie.md || {
-                  echo "  FAIL: CHANGELOG.archie.md has no [$ver] section"
+              archied/v* | archie/v*)
+                # Legacy per-component tags. History is not re-tagged, and the
+                # merged CHANGELOG.md carries every component's versions, so the
+                # section is found there rather than in a component file.
+                ver="${tag#*/v}"
+                echo "  legacy tag $tag  ->  looking for [$ver] in CHANGELOG.md"
+                grep -q "^## \\[$ver\\]" CHANGELOG.md || {
+                  echo "  FAIL: CHANGELOG.md has no [$ver] section"
                   fail=1
                 }
                 ;;
@@ -290,7 +291,7 @@ jobs:
           name="archie-core-archied-v${{ steps.version.outputs.version }}-linux-amd64"
           mkdir -p "$name"
           cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-ui dist/archie-messaging dist/archie-playbooks "$name/"
-          cp deployments/INSTRUCTIONS.md CHANGELOG.md CHANGELOG.archied.md CHANGELOG.archie.md "$name/"
+          cp deployments/INSTRUCTIONS.md CHANGELOG.md "$name/"
           # README.md doesn't exist yet in this repo; include it once it does
           # rather than fail the release on its absence.
           [ -f README.md ] && cp README.md "$name/"
@@ -332,9 +333,9 @@ jobs:
             index($0, hdr) == 1 { printing = 1 }
             printing && /^## \[/ && index($0, hdr) != 1 { exit }
             printing { print }
-          ' CHANGELOG.archied.md > "$notes"
+          ' CHANGELOG.md > "$notes"
           if ! [ -s "$notes" ]; then
-            echo "no [$version] section extracted from CHANGELOG.archied.md" >&2
+            echo "no [$version] section extracted from CHANGELOG.md" >&2
             exit 1
           fi
           # Idempotent: --clobber replaces the asset and leaves the notes

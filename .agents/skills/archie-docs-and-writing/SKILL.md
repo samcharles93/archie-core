@@ -47,7 +47,7 @@ Verified on 2026-09-18:
 | `docs/architecture/*.md` | Focused target decisions, active review procedure, migration inventory | Read each file's status |
 | `docs/architecture/migration-decisions.md` | `OPEN` migration inventory constrained by approved decisions | Close a question only after code-grounded review |
 | `docs/archive/` | `HISTORICAL` material | Mine rationale and failure evidence |
-| `CHANGELOG.md`, `CHANGELOG.archied.md`, `CHANGELOG.archie.md` | Component release-note index and packaged runtime inputs | Keep gateway and agent-runtime entries separate; `internal/releaseannounce` parses version headings |
+| `CHANGELOG.md` | Release stream and packaged runtime input | One file holds every release; `internal/releaseannounce` parses version headings |
 | `tools/docsgen` | Current, partial generator in nested `tools` Go module | Treat its flags and tests—not planned PRD commands—as executable truth |
 | `docs/data/generated/contracts.json` | Current working-tree `GENERATED` output | Regenerate; never edit by hand |
 | `docs/` | Repository documentation only | Nothing builds, renders, or publishes it; Markdown is the artifact |
@@ -119,15 +119,15 @@ Distinguish evidence strength:
 
 ## Maintain component changelogs
 
-Keep gateway behavior in `CHANGELOG.archied.md` and agent-runtime behavior in
-`CHANGELOG.archie.md`; keep `CHANGELOG.md` as their index.
-`Dockerfile.archied` copies both component files to `/usr/share/archie/`, and
+Keep every release's notes in `CHANGELOG.md`; a release is one version, and
+the components' entries are labelled sections inside it.
+`Dockerfile.archied` copies it to `/usr/share/archie/`, and
 `internal/releaseannounce.changelogSection` parses a version heading.
 
-Version-heading format is settled as of 2026-09-18: both component changelogs
-use `## [1.27.0]` with no `v` prefix, `changelogSection` searches for
+Version-heading format is settled as of 2026-09-18: the changelog uses
+`## [1.27.0]` with no `v` prefix, `changelogSection` searches for
 `## [<version>]`, and `.github/workflows/deploy.yml` gates each release tag with
-`grep -q "^## \[$ver\]" CHANGELOG.<component>.md`. The earlier
+`grep -q "^## \[$ver\]" CHANGELOG.md`. The earlier
 `vX.Y.Z`-vs-`X.Y.Z` contradiction involved `.gitea/workflows/deploy.yml`, which
 was dropped (`dd9bddc2 ci: build and push images to GHCR, drop the Gitea
 workflow`), so that question is `HISTORICAL`, not `OPEN`. The remaining guard is
