@@ -89,6 +89,63 @@ one rule drift.
 - **Scopes are derived, not invented**, and an unknown scope fails loudly rather than
   being accepted.
 
+## The release pipeline
+
+**A Woodpecker workflow performs the release**: gate, generate the release page, run
+the reviewer over it, commit the changelog and the generated pages, tag, push,
+publish images, and trigger the site's artifact sync. No step in that list is an
+operator's.
+
+**It triggers on a push to main**, not on a manual run. A pipeline a human must start
+is a pipeline that can be forgotten, which is the property this change removes. The
+trigger is also not dependent on repairing manual triggering: in this estate a manual
+run fails with zero steps while the same configuration runs on a push, and the
+estate's own Woodpecker configurations trigger on push with cron, manual or
+pull-request events *added* to it rather than instead of it.
+
+**One tag, and the duplicate-build problem shrinks as a consequence.** Concurrency
+keyed on a commit identifier treats an annotated tag as a ref distinct from its
+commit, which starts three builds for one release. One version and one tag removes
+two of those refs. Nothing in the pipeline may depend on a tag object's
+identity, and this is a consequence of one version stream rather than a separate fix.
+
+### The version is computed, not typed
+
+The version is derived from the conventional commits since the last release, which is
+what the commit rules above exist for.
+
+- `feat` bumps the minor version; `fix`, `perf` and `refactor` bump the patch.
+- **A breaking change bumps the major version.** Its form is `!` after the type or
+  scope, as in `feat(api)!:`, and a `BREAKING CHANGE:` trailer — either marks it.
+- `chore`, `docs`, `test`, `style` and `build` bump nothing alone.
+- **No release is a legitimate outcome.** A commit set that justifies no version
+  produces no version, and the pipeline reports that rather than inventing one.
+
+### `tools/release.sh` is designed for the pipeline
+
+- **It never prompts.** Every input arrives as an argument or in the environment, so
+  it runs with no terminal.
+- **Its version is a result as well as an argument.** It may be given one or asked to
+  derive one, and it reports the version it used in a form a pipeline can read.
+- **"Nothing to release" has its own exit code**, distinct from failure, so the
+  pipeline finishes green without tagging.
+- **It commits and tags nothing.** The pipeline owns the commit, the tag and the push;
+  the script writes the notes and reports what it did. A script that pushes cannot be
+  run twice safely, and this one runs on every push to main.
+
+### Which CI is authoritative
+
+Three surfaces exist: GitHub Actions, the Gitea workflow files, and Woodpecker.
+
+- **Woodpecker owns releases**, which is the production path this repository's deploy
+  workflow already names.
+- **GitHub Actions keeps the checks a pull request needs.**
+- **The Gitea workflow files are retired in favour of Woodpecker** once Woodpecker
+  runs the same checks, and are not edited in the meantime: two copies of a pipeline
+  diverge.
+- No check lives in two places with neither authoritative. Where a check must run in
+  both, the second runs the same file rather than a copy of it.
+
 ## Verification
 
 - One changelog file exists, the two component changelogs do not, and the generated
@@ -100,3 +157,10 @@ one rule drift.
   no review ran.
 - The `commit-msg` hook and the CI range check each refuse a non-conforming subject
   and an unknown scope, with the hook absent and present.
+- A push to main carrying releasable commits produces a version, a release page, a
+  tag and a published image with no operator step.
+- A push whose commits justify no release ends green and tags nothing.
+- `tools/release.sh` runs to completion with stdin closed, and exits with its
+  distinct code when there is nothing to release.
+- The release workflow reads no tag object's identity, so one release starts one
+  build.
