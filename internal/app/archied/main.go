@@ -498,8 +498,10 @@ func (s curatorEventSink) Emit(kind, detail string, data map[string]any) {
 
 // curatorLLMRunner adapts the shared ai-sdk runtime to the curator
 // family's narrow LLMRunner contract: one model reference, plain
-// messages, no tools, no streaming -- curators that need more than a
-// single completion are a bigger decision than this adapter makes.
+// messages, and the declared tool set -- no streaming. Tools are built
+// through the same agentexec path a chat turn uses, so a curator's
+// declared set is converted to a runnable core.ToolSet rather than a
+// parallel catalogue.
 type curatorLLMRunner struct {
 	rt *runtime.Runtime
 	// outcomes records this call for /status alongside sendChatTurn's. A
@@ -523,12 +525,26 @@ func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (cu
 	for _, m := range req.Messages {
 		msgs = append(msgs, chat.Message{Role: chat.Role(m.Role), Content: m.Content})
 	}
-	res, err := r.rt.Chat(ctx, req.Model, core.GenerateOptions{Messages: msgs, MaxSteps: max(req.MaxSteps, 1)})
+	toolSet, err := agentexec.BuildToolSetFrom(req.Tools, agentexec.ToolSetOptions{})
+	if err != nil {
+		r.outcomes.record(req.Model, err)
+		return curator.ChatResult{}, err
+	}
+	res, err := r.rt.Chat(ctx, req.Model, core.GenerateOptions{
+		Messages: msgs,
+		Tools:    toolSet,
+		MaxSteps: max(req.MaxSteps, 1),
+	})
 	r.outcomes.record(req.Model, err)
 	if err != nil {
 		return curator.ChatResult{}, err
 	}
-	return curator.ChatResult{Text: res.Text}, nil
+
+	calls := make([]curator.ToolCall, 0, len(res.ToolCalls))
+	for _, call := range res.ToolCalls {
+		calls = append(calls, curator.ToolCall{Name: call.ToolName, Input: call.Input})
+	}
+	return curator.ChatResult{Text: res.Text, ToolCalls: calls}, nil
 }
 
 type chatTaskWriterAdapter struct {
