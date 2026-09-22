@@ -131,6 +131,41 @@ tasks:
     cmds:
       - go -C tools run -mod=readonly ./newsgen check --repo-root ..
 
+  docs:artifact:
+    desc: Regenerate the canonical public-docs artifact from the Markdown sources
+    summary: |
+      Writes docs/data/generated/docs.json: every published page's url, title,
+      section and raw Markdown body, plus the sidebar tree derived from the
+      layout. The JSON is the canonical, host-neutral fact set a renderer reads;
+      the Markdown stays the source. MkDocs was the first renderer and the Astro
+      app is the second, so the artifact is the product.
+
+      The published set lives in tools/docsite/main.go with the reasons for what
+      is held back -- archive/, inspiration/, news/, most of prds/ and the
+      credential notes -- because a renderer reading the artifact cannot see why
+      a page is absent.
+
+      The file is committed, so this dirties the tree deliberately: review the
+      diff and commit it with the page that produced it.
+
+      The artifact's keys are a frozen contract: an application is built against
+      them, so renaming one breaks a consumer this repository does not compile.
+    cmds:
+      - go -C tools run -mod=readonly ./docsite --repo-root ..
+
+  docs:artifact:check:
+    desc: Verify the committed public-docs artifact matches the Markdown sources
+    summary: |
+      Reproduces the artifact in a temporary directory and fails when the
+      committed file differs, without modifying the working tree. Runs in
+      `task check`, so a page edit cannot land without its regeneration.
+
+      The generated directory is accounted for by docsgen's generatedArtifacts,
+      which names this file alongside contracts.json: one registry for the
+      directory rather than one per writer.
+    cmds:
+      - go -C tools run -mod=readonly ./docsite check --repo-root ..
+
   vet:
     desc: Run go vet
     cmds:
@@ -454,6 +489,9 @@ tasks:
       # already freezes. Left out of the gate, a changelog edit would land
       # while the published notes silently lag behind it.
       - task: news:check
+      # The public-docs artifact is what the site renders, so a page edit that
+      # does not reach it publishes a site that disagrees with the repository.
+      - task: docs:artifact:check
       - task: vet
       - task: lint
       - task: build

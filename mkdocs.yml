@@ -5,23 +5,10 @@ repo_url: https://github.com/samcharles93/archie-core
 edit_uri: edit/main/docs/
 copyright: Vectis Labs
 
-# Everything under docs/ is published to the public internet. These subtrees are
-# held back deliberately, each for its own reason:
-#   archive/      superseded design. Publishing it competes with the current
-#                 architecture for a reader's attention, which is the exact
-#                 failure this repo already fights.
-#   inspiration/  research notes that discuss other products by name.
-#   prds/         open design decisions, not settled architecture.
-#   github-token  setup notes about credentials.
-# Widen this by deleting a line; nothing else needs to change.
-exclude_docs: |
-  archive/
-  inspiration/
-  prds/*
-  !prds/ui-service-boundary.md
-  !prds/service-decomposition.md
-  !prds/config-schema.md
-  github-token.md
+# The published set and the reasons for what is held back now live in
+# tools/docsite/main.go, which emits the canonical artifact a renderer reads
+# (docs/data/generated/docs.json). MkDocs is being retired, so its exclusions are
+# not duplicated here: a second copy of a decision is a second thing to keep true.
 
 # The generated release-notes pages are linked from docs/news/index.md and stay
 # published, but they are kept out of the derived navigation: a version list

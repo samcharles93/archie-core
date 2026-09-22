@@ -33,13 +33,21 @@ const (
 	modeCheck
 )
 
-// generatedArtifacts declares the directories docsgen owns end-to-end, and the
-// file names it produces in each. Obsolete detection is scoped to these
-// directories: an arbitrary --out location is not ours to judge, and the target
-// layout anticipates further named artifacts here (catalog.json, AsyncAPI
-// output), which must not be reported as stale merely for existing.
+// generatedArtifacts declares the directories whose contents are generated
+// end-to-end, and every file name accounted for in each. Obsolete detection is
+// scoped to these directories: an arbitrary --out location is not ours to judge,
+// and the target layout anticipates further named artifacts here (catalog.json,
+// AsyncAPI output), which must not be reported as stale merely for existing.
+//
+// docs/data/generated is shared. docsgen writes contracts.json from the
+// Go contract types; tools/docsite writes docs.json from the Markdown sources.
+// Each tool verifies its OWN file, and both files are named here because this map
+// is the directory's ownership record: whichever tool runs first must not report
+// the other's artifact as an unaccounted file. docsgen does not verify docs.json,
+// and tools/docsite keeps no registry of its own for that reason -- one fact, one
+// home.
 var generatedArtifacts = map[string][]string{
-	"docs/data/generated": {"contracts.json"},
+	"docs/data/generated": {"contracts.json", "docs.json"},
 }
 
 // options is a parsed command line.

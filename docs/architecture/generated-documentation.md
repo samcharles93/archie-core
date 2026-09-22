@@ -140,6 +140,7 @@ docs/
     generated/
       catalog.json
       contracts.json
+      docs.json
       cli.json
       configuration.json
       messaging.json
@@ -345,7 +346,9 @@ go -C tools run -mod=readonly ./docsgen check --repo-root ..
 ```
 
 `docsgen all` is still target-only: `docsgen data` and `docsgen asyncapi` do not
-exist, and only the single `contracts.json` artifact is generated today.
+exist. Two artifacts are generated today: `contracts.json` from the Go
+contract types (`docsgen`) and `docs.json` from the Markdown sources
+(`docsite`, the published set a renderer reads) -- see `task docs:artifact`.
 
 ### Step 9: CI
 
