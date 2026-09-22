@@ -27,9 +27,12 @@
 // Two deployment conditions make the tools silently absent, with no error:
 //   - `document.modelContext` needs a secure context. A dashboard served over
 //     plain HTTP (a LAN address, say) never exposes it, even with the
-//     origin-trial flag: `isSecureContext` is false and the API is undefined.
-//     Production terminates TLS in front of the dashboard; a plain-HTTP
-//     deployment gets no tools and no message saying so.
+//     origin-trial flag: `isSecureContext` is false and the API is undefined,
+//     with no error anywhere. Production terminates TLS in front of the
+//     dashboard, and local work needs a secure origin too -- 127.0.0.1 already
+//     is one, and a locally-trusted certificate (mkcert) covers a LAN address
+//     or a hostname. A plain-HTTP origin is a configuration gap with a known
+//     fix, not a place where the tools cannot be tested.
 //   - archie-ui embeds the built ui/dist into its binary, so rebuilding the
 //     dist is not deploying it. A running process keeps serving the bundle it
 //     embedded at build time, and a check against that stale process reports
