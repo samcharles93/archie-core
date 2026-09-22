@@ -141,6 +141,37 @@ func TestBuildTaskSourcesTrackEmbeddedAssets(t *testing.T) {
 	}
 }
 
+func TestBuildTaskStampsInstallTypeOnEveryCommand(t *testing.T) {
+	taskfile := readDeploymentFile(t, "Taskfile.yml")
+	start := strings.Index(taskfile, "\n  build:\n")
+	end := strings.Index(taskfile, "\n  test:\n")
+	if start < 0 || end < start {
+		t.Fatal("Taskfile has no bounded build task")
+	}
+	build := taskfile[start:end]
+	cmdsAt := strings.Index(build, "\n    cmds:\n")
+	if cmdsAt < 0 {
+		t.Fatal("build task has no cmds block")
+	}
+	cmds := build[cmdsAt:]
+
+	buildLine := regexp.MustCompile(`^      - go build .*\./cmd/([a-z0-9-]+)`)
+	found := 0
+	for line := range strings.SplitSeq(cmds, "\n") {
+		m := buildLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		found++
+		if !strings.Contains(line, "internal/installtype.buildType=") {
+			t.Errorf("build task does not stamp installtype.buildType on %s: %s", m[1], strings.TrimSpace(line))
+		}
+	}
+	if found == 0 {
+		t.Fatal("build task has no go build commands under ./cmd/: this guard would assert nothing")
+	}
+}
+
 func TestFormattersExcludeInterpretedSecretEngines(t *testing.T) {
 	config := readDeploymentFile(t, ".golangci.yml")
 	if !strings.Contains(config, `^examples/secret-engines/(age|sops|vault)\.go$`) {
