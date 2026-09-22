@@ -1,5 +1,50 @@
 # archied changelog
 
+## [1.36.0] - 2026-09-22
+
+### The dashboard declares tools an in-browser agent can call
+
+- The dashboard registers **seven WebMCP tools**. Read-only: `list_tasks`, `get_task`,
+  `recent_events`, `daemon_health`. Recovery: `retry_task`, `stop_task`, `cancel_task`. An agent
+  operating the dashboard now reads structured state and recovers stuck work instead of scraping the
+  UI.
+- Every tool wraps the same `ui/src/lib/api.ts` client the dashboard itself calls, so an agent and a
+  person exercise one path rather than two.
+- `archie-ui` cannot be attributed to the agent that called it: a page can invoke its own tools, so an
+  agent's call and a page script's call reach the server identically. Tools therefore record the
+  signed-in identity and a source, and **never** that an agent acted.
+
+### The four judgement verbs are deliberately absent
+
+- `approve`, `reject`, `abandon` and `archive` are **not** exposed. `internal/domain/taskactions`
+  records only a source string and stamps `KindHumanApproved`, so an agent's approval would be written
+  down as a person's. An agent that can approve can approve its own work, and the one control this
+  design exists to keep is a human accepting it. Those verbs land once task actions carry both the
+  acting identity and the authorising principal.
+
+### `consequentialHint` does not gate anything, and the release says so
+
+- Chrome 152 accepts `consequentialHint` at registration and **omits it from `getTools()`**, so no
+  client sees it and the browser cannot enforce what it does not surface. The three recovery tools
+  instead require an explicit `confirm: true`, which is a **deliberate-action signal rather than a
+  security control** an agent can trivially satisfy. The boundary that holds is the session: the tools
+  cannot exceed what the signed-in operator can already do.
+
+### Two ways this fails silently, now recorded next to the code
+
+- **A secure context is required.** On a plain-HTTP origin `document.modelContext` is absent *even
+  with the flag*, and nothing reports why. `mkcert` covers local development.
+- **`archie-ui` embeds `ui/dist` into its binary**, so rebuilding the distribution is not deploying it;
+  a running process can serve a bundle with no tools while the built one has them.
+
+### Binaries built by the development build task can be updated
+
+- `task build` passed the `installtype` stamp for three of six commands, so `archie-messaging`,
+  `archie-state-store` and `archie-ui` were built without it. An unstamped binary reports `unknown`
+  and the self-update path **refuses rather than guesses**, which is how an operator ends up unable to
+  update with `install type is unknown` and no way forward. All six are stamped now, and a test reads
+  the build task and fails naming any command line that omits it.
+
 ## [1.35.0] - 2026-09-22
 
 ### The Messaging Service is severed from the store and workflow runtime
