@@ -534,6 +534,10 @@ type Config struct {
 	// Tools holds MCP server and tool policy configuration (from config.tools.yaml).
 	Tools ToolsConfig `toml:"tools" yaml:"tools"`
 
+	// Artifacts configures publishing artifacts to the collaborative editor.
+	// An empty BaseURL disables the sender entirely.
+	Artifacts ArtifactsConfig `toml:"artifacts" yaml:"artifacts"`
+
 	// Identities declares multi-identity configurations. When non-empty,
 	// each identity runs its own poll loop with its own forge client,
 	// worktree manager, repo list, model/provider config, and NATS subject
@@ -555,6 +559,20 @@ type Config struct {
 	// don't match a known feature name. Keys are the filename stem (e.g.
 	// "custom-tool" for conf.d/custom-tool.yaml).
 	Extra map[string]any `toml:"-" yaml:"-" json:"extra,omitempty"`
+}
+
+// ArtifactsConfig locates the collaborative editor that receives artifacts.
+// An absent section is valid and disables publishing: the capability degrades
+// to a log line rather than stopping the daemon.
+type ArtifactsConfig struct {
+	// BaseURL is the editor origin, e.g. https://offloaded.dev. Empty
+	// disables artifact publishing.
+	BaseURL string `toml:"base_url" yaml:"base_url"`
+	// Token is the service credential the editor's ingest route requires.
+	Token SecretRef `toml:"token" yaml:"token"`
+	// TokenEnv names the environment variable holding the token when Token
+	// is unset. Defaults to WORKSPACE_INGEST_TOKEN.
+	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
 // IdentityConfig is a per-identity configuration subset. Each identity

@@ -76,6 +76,7 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	}
 	l.applyGeneralDefaults(cfg)
 	applyForgeDefaults(cfg)
+	applyArtifactsDefaults(cfg)
 	applyDispatchDefaults(cfg)
 	applyIdentityDefaults(cfg)
 	applyContainerDefaults(cfg)
@@ -276,6 +277,17 @@ func applyForgeDefaults(cfg *config.Config) {
 	}
 	if cfg.Forge.Intake == "" {
 		cfg.Forge.Intake = config.ForgeIntakePoll
+	}
+}
+
+// applyArtifactsDefaults fills the artifacts section, promoting the
+// token_env fallback to a secret reference when no explicit one was given.
+func applyArtifactsDefaults(cfg *config.Config) {
+	if cfg.Artifacts.TokenEnv == "" {
+		cfg.Artifacts.TokenEnv = "WORKSPACE_INGEST_TOKEN"
+	}
+	if cfg.Artifacts.Token == (config.SecretRef{}) {
+		cfg.Artifacts.Token = config.SecretRef{Engine: "env", Key: cfg.Artifacts.TokenEnv}
 	}
 }
 

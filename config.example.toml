@@ -227,6 +227,14 @@ class = "ollama"
 # work_dir = "/path/to/workspace"
 # parallel_tool_calls = false
 
+# Publish artifacts (review reports, design docs) to the collaborative editor.
+# An empty base_url disables publishing entirely. The token is runtime config:
+# set WORKSPACE_INGEST_TOKEN in the daemon's environment or use a secret ref.
+[artifacts]
+# base_url = "https://offloaded.dev"
+# token = { engine = "env", key = "WORKSPACE_INGEST_TOKEN" }
+# token_env = "WORKSPACE_INGEST_TOKEN"
+
 # archied's own liveness surface, always on. GET /healthz and /health answer
 # 200 once the daemon is serving (503 while it is still booting), and
 # /health/detailed reports the readiness probes. This is what the update
