@@ -139,7 +139,7 @@ jobs:
             echo "edit the generated notes, then: task release VERSION=<ver>"
             exit 1
           fi
-          if ! git tag --points-at HEAD | grep -qE 'archie' ; then
+          if ! git tag --points-at HEAD | grep -qE '^(v[0-9]|archied/v|archie/v)' ; then
             echo "::warning ::No release tags at HEAD, so this build publishes :latest for a commit that is not a release. It is stamped dev+<sha> and tagged sha-<sha> so it stays traceable and restorable, but it supersedes the previous release's :latest stamping until the next release is cut."
           fi
 
@@ -176,8 +176,14 @@ jobs:
         run: |
           GATEWAY_TAG="$(git tag --points-at HEAD --list 'archied/v*' | sort -V | tail -1)"
           RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
+          # One release stream: a `v*` tag covers the whole release, so it names
+          # both components' versions. Legacy per-component tags still win where
+          # they exist, because history is not re-tagged.
+          RELEASE_TAG="$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1)"
           GATEWAY_VERSION="${GATEWAY_TAG#archied/}"
           RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
+          [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION="${RELEASE_TAG#v}"
+          [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION="${RELEASE_TAG#v}"
           # Not a bare `dev`. A literal dev tells an operator nothing about which
           # build they are running, and it is what made a release's stamping look
           # transient: the next commit to main republished :latest as `dev`. The
@@ -186,10 +192,14 @@ jobs:
           # case is handled by the dereference above.)
           [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION="dev+${GITHUB_SHA:0:12}"
           [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION="dev+${GITHUB_SHA:0:12}"
-          # Keep the raw tag presence separate from the version fallback:
-          # gateway-only releases must not rebuild the runtime image as dev.
+          # Keep the raw tag presence separate from the version fallback: a
+          # LEGACY gateway-only release (archied/v* and no archie/v*) must not
+          # rebuild the runtime image as dev. A one-stream `v*` release is not
+          # gateway-only -- one version covers the runtime too -- so it does
+          # rebuild it, and release_tag is what tells the two apart.
           echo "gateway_tag=$GATEWAY_TAG" >> "$GITHUB_OUTPUT"
           echo "runtime_tag=$RUNTIME_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "gateway=$GATEWAY_VERSION" >> "$GITHUB_OUTPUT"
           echo "runtime=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -209,7 +219,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=archied
 
       - name: Build and push archie-agent
-        if: steps.versions.outputs.runtime_tag != ''
+        if: steps.versions.outputs.runtime_tag != '' || steps.versions.outputs.release_tag != ''
         uses: docker/build-push-action@v6
         with:
           context: .
