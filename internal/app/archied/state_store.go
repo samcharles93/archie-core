@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
+	"github.com/samcharles93/archie-core/internal/infrastructure/stateadmin"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -65,6 +66,10 @@ type StateStoreOptions struct {
 	// address: GET /healthz (liveness) and GET /health/detailed (the
 	// state_db probe). Empty disables it.
 	ReadyAddr string
+	// AdminAddr, when non-empty, starts the read-only operator dashboard on
+	// the address. It co-tenants on the same SQLite file this process already
+	// owns, so it needs no lock and no database of its own. Empty disables it.
+	AdminAddr string
 }
 
 // RunStateStore owns the single archie.db SQLite file, registers every
@@ -131,10 +136,8 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	defer listener.Close()
 	b.log.Info("archie-state-store running", "addr", listener.Addr().String(), "token_required", !loopback)
 
-	if options.ReadyAddr != "" {
-		if err := b.startStateStoreReadiness(ctx, options.ReadyAddr); err != nil {
-			return err
-		}
+	if err := b.startOptionalSurfaces(ctx, options); err != nil {
+		return err
 	}
 
 	deps := b.stateStoreDeps(grants)
@@ -419,6 +422,55 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 		_ = json.NewEncoder(w).Encode(report)
 	})
 	return b.serveHealth(ctx, readyAddr, mux, "state store readiness")
+}
+
+// startOptionalSurfaces starts the HTTP surfaces this process serves beside
+// the gRPC contract, each enabled only by its own flag.
+//
+// They are gathered here rather than branched inline because RunStateStore is
+// at its complexity budget: a surface that is off by default belongs to its
+// own decision, not to the boot sequence that triggers it -- the same reason
+// reportUnseededResources is a method.
+func (b *boot) startOptionalSurfaces(ctx context.Context, options StateStoreOptions) error {
+	if options.ReadyAddr != "" {
+		if err := b.startStateStoreReadiness(ctx, options.ReadyAddr); err != nil {
+			return err
+		}
+	}
+	if options.AdminAddr != "" {
+		if err := b.startStateAdmin(ctx, options.AdminAddr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// startStateAdmin starts the read-only operator dashboard on adminAddr.
+//
+// It is started here, inside the process that already holds the database's
+// ownership claim (openStateStore above), because that claim is what makes a
+// second reader safe to co-tenant: a separate admin process would be a second
+// opener of a single-owner file. The surface exposes view collections only and
+// refuses the routes that could write, so the StateStoreService contract this
+// process serves stays the only writer of task state.
+func (b *boot) startStateAdmin(ctx context.Context, adminAddr string) error {
+	admin, err := stateadmin.New(stateadmin.Config{
+		DBPath:  taskDBPath(b.cfg.DBPath),
+		DataDir: filepath.Join(filepath.Dir(taskDBPath(b.cfg.DBPath)), "admin"),
+	})
+	if err != nil {
+		return err
+	}
+	b.addCleanup(func() {
+		if err := admin.Close(); err != nil {
+			b.log.Error("close state admin", "err", err)
+		}
+	})
+	handler, err := admin.Handler()
+	if err != nil {
+		return fmt.Errorf("build state admin handler: %w", err)
+	}
+	return b.serveHealth(ctx, adminAddr, handler, "state store admin")
 }
 
 // stateStoreServerOpts applies the transport security boundary (§9): a
