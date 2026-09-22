@@ -1,7 +1,4 @@
-// Command archied is the archie orchestrator daemon: it watches GitHub
-// for issues labelled for archie, works each one in an isolated
-// worktree through its routed workflow, and opens pull requests for
-// human review.
+// Command archied is the archie orchestrator daemon
 package main
 
 import (
