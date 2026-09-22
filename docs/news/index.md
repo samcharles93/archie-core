@@ -4,6 +4,7 @@ Release notes for archied and archie-agent, newest first.
 
 ## 2026-09-22
 
+- [archied 1.37.0](archied/1.37.0.md)
 - [archied 1.36.0](archied/1.36.0.md)
 - [archied 1.35.0](archied/1.35.0.md)
 - [archied 1.34.0](archied/1.34.0.md)
