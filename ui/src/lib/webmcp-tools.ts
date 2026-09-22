@@ -6,6 +6,19 @@
 // inspection, plus the three recovery actions (retry, stop, cancel). The human
 // review gate -- approve and reject -- is deliberately not exposed, because an
 // agent that can approve its own work defeats the design.
+//
+// Security model: these tools run in the signed-in operator's own browser
+// session, so they inherit exactly what that operator can already do and can
+// exceed it in no way. That holds regardless of any annotation.
+//
+// The annotations are advisory, and today they are not enforced: Chrome 152's
+// `getTools()` reports only `readOnlyHint` and `untrustedContentHint` and drops
+// `consequentialHint`, so no agent sees it from discovery, and a page-invoked
+// `executeTool` gates nothing. `consequentialHint` is still set on the recovery
+// tools because the spec accepts it and a conforming client may honour it.
+// The `confirm: true` requirement below is a deliberate-action signal, not a
+// security control: an agent can pass it trivially. Its value is making the
+// model state intent rather than reaching for a mutation mid-sentence.
 import type { WebMcpTool } from "./webmcp";
 
 /** The dashboard client these tools call. `ui/src/lib/api.ts` satisfies it. */
@@ -52,14 +65,39 @@ const taskIDSchema = {
   additionalProperties: false,
 } as const;
 
+// A recovery tool's schema. `confirm` is required and must be true: a
+// deliberate-action signal, not a security control (see the module header).
+const recoverySchema = {
+  type: "object",
+  properties: {
+    task_id: {
+      type: "string",
+      description: "Task id, as shown on the dashboard's task pages.",
+    },
+    confirm: {
+      type: "boolean",
+      description:
+        "Must be true. State the intent explicitly rather than as a side effect of another action.",
+    },
+  },
+  required: ["task_id", "confirm"],
+  additionalProperties: false,
+} as const;
+
 /** One recovery action, published under its own name so the agent chooses by intent. */
 function recoveryTool(client: DashboardApi, name: string, action: string, description: string): WebMcpTool {
   return {
     name,
     description,
-    inputSchema: taskIDSchema,
+    inputSchema: recoverySchema,
     annotations: { readOnlyHint: false, consequentialHint: true },
-    execute: async (input) => jsonEnvelope(await client.taskAction(taskID(input), action)),
+    execute: async (input) => {
+      const id = taskID(input);
+      if (input.confirm !== true) {
+        throw new Error(`${name}: confirm must be true; this action changes a task`);
+      }
+      return jsonEnvelope(await client.taskAction(id, action));
+    },
   };
 }
 

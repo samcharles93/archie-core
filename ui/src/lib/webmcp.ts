@@ -9,6 +9,20 @@
 // shipping Chrome. WebMCP is an origin trial, so an absent modelContext is
 // normal rather than an error: registration no-ops and the dashboard is
 // unaffected.
+//
+// Three shapes in this API are JSON strings where an object is expected, and
+// each failure looks like something else:
+//   - `getTools()` returns each tool's `inputSchema` as a JSON string; parse it
+//     before reading `.properties`, or the schema reads as empty.
+//   - `executeTool(tool, args)` takes its arguments as a JSON string, not an
+//     object (a plain object fails with "Failed to parse input arguments"), and
+//     its first argument must be the RegisteredTool object from `getTools()`,
+//     not a name (a name fails with a TypeError).
+//   - `executeTool` returns the tool's result as a JSON string that parses to
+//     `{content:[{type:"text",text}]}`, not as the envelope object itself.
+//
+// What the browser does not enforce, it should not appear to: see the
+// annotation note in webmcp-tools.ts.
 
 /** The annotation hints a WebMCP host reads. */
 export interface WebMcpAnnotations {

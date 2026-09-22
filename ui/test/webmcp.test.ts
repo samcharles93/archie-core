@@ -145,15 +145,34 @@ test("execute returns the envelope and calls the dashboard's own client methods"
 
 test("recovery tools post the dashboard's own action verbs", async () => {
   const { calls, client } = fakeClient();
-  await toolNamed(client, "retry_task").execute({ task_id: "9" });
-  await toolNamed(client, "stop_task").execute({ task_id: "9" });
-  await toolNamed(client, "cancel_task").execute({ task_id: "9" });
+  await toolNamed(client, "retry_task").execute({ task_id: "9", confirm: true });
+  await toolNamed(client, "stop_task").execute({ task_id: "9", confirm: true });
+  await toolNamed(client, "cancel_task").execute({ task_id: "9", confirm: true });
 
   assert.deepEqual(calls, [
     { method: "taskAction", args: ["9", "retry"] },
     { method: "taskAction", args: ["9", "stop"] },
     { method: "taskAction", args: ["9", "cancel"] },
   ]);
+});
+
+test("recovery tools require an explicit confirm flag before touching the API", async () => {
+  const { calls, client } = fakeClient();
+  const retry = toolNamed(client, "retry_task");
+
+  await assert.rejects(() => Promise.resolve(retry.execute({ task_id: "9" })), /confirm must be true/);
+  await assert.rejects(() => Promise.resolve(retry.execute({ task_id: "9", confirm: false })), /confirm must be true/);
+  assert.equal(calls.length, 0, "a call without confirm reached the API");
+
+  await retry.execute({ task_id: "9", confirm: true });
+  assert.deepEqual(calls, [{ method: "taskAction", args: ["9", "retry"] }]);
+});
+
+test("the recovery schema requires both task_id and confirm", () => {
+  const schema = archieWebMcpTools(fakeClient().client).find((tool) => tool.name === "stop_task")!.inputSchema as {
+    required?: string[];
+  };
+  assert.deepEqual(schema.required, ["task_id", "confirm"]);
 });
 
 test("a recovery tool without a task id fails before touching the API", async () => {
