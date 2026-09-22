@@ -7,3 +7,15 @@ lint:
 breaking:
   use:
     - FILE
+  # The PocketBase migration moved the event-capture contract's record ids from
+  # the SQLite rowid (int64) to PocketBase's string record ids, in place, on the
+  # same field numbers: 16 fields across CapturedEvent, Mapping, Binding,
+  # RecordDispatchRequest, EnqueueBindingTaskRequest, Task.binding_id and the
+  # Id-bearing request/response messages. That is an intentional wire break, and
+  # both ends of the State Store contract ship from this repository together, so
+  # the two halves cannot be versioned apart. Only the type rule is relaxed, and
+  # only in this file: every other FILE breaking rule still applies here, and no
+  # other contract is affected.
+  ignore_only:
+    FIELD_SAME_TYPE:
+      - state/v1/state.proto
