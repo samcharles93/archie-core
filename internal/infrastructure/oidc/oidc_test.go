@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -63,10 +64,18 @@ func newProvider(t *testing.T) *provider {
 	return p
 }
 
+// testClaims is the claim set this provider emits. A machine token carries
+// client_id and no sub; a person's token carries sub.
+type testClaims struct {
+	jwt.Claims
+	ClientID string   `json:"client_id,omitempty"`
+	Scopes   []string `json:"scp,omitempty"`
+}
+
 // token signs a token with the given key for the given claims.
-func (p *provider) token(t *testing.T, signer *rsa.PrivateKey, mutate func(*jwt.Claims)) string {
+func (p *provider) token(t *testing.T, signer *rsa.PrivateKey, mutate func(*testClaims)) string {
 	t.Helper()
-	claims := jwt.Claims{
+	claims := testClaims{
 		Issuer:   p.server.URL,
 		Subject:  "sam",
 		Audience: jwt.Audience{testAudience},
@@ -111,6 +120,88 @@ func TestVerifyAcceptsAProviderIssuedToken(t *testing.T) {
 	}
 }
 
+// TestVerifyDerivesTheSubjectTheWayTheProviderIssuesIt: a person is named by sub
+// and a machine by client_id, because a machine token carries no sub at all.
+// Getting this wrong does not fail loudly -- it binds every machine caller to one
+// identity, or to none.
+func TestVerifyDerivesTheSubjectTheWayTheProviderIssuesIt(t *testing.T) {
+	p := newProvider(t)
+	verifier := p.verifier(t)
+
+	tests := []struct {
+		name        string
+		mutate      func(*testClaims)
+		wantSubject string
+		wantScopes  []string
+	}{
+		{
+			name: "a person's token carries sub",
+			mutate: func(c *testClaims) {
+				c.Subject = "a150ab4b-0000-0000-0000-000000000001"
+				c.Scopes = []string{"openid", "profile", "email", "groups"}
+			},
+			wantSubject: "a150ab4b-0000-0000-0000-000000000001",
+			wantScopes:  []string{"openid", "profile", "email", "groups"},
+		},
+		{
+			name: "a machine token carries client_id and no sub",
+			mutate: func(c *testClaims) {
+				c.Subject = ""
+				c.ClientID = "archie"
+				c.Scopes = []string{"authelia.bearer.authz"}
+			},
+			wantSubject: "archie",
+			wantScopes:  []string{"authelia.bearer.authz"},
+		},
+		{
+			name: "sub wins when a token carries both",
+			mutate: func(c *testClaims) {
+				c.Subject = "a150ab4b-0000-0000-0000-000000000002"
+				c.ClientID = "archie-web"
+			},
+			wantSubject: "a150ab4b-0000-0000-0000-000000000002",
+		},
+		{
+			name: "a space-delimited scope claim is read too",
+			mutate: func(c *testClaims) {
+				c.Subject = "a150ab4b-0000-0000-0000-000000000003"
+				c.ClientID = ""
+				c.Scopes = nil
+			},
+			wantSubject: "a150ab4b-0000-0000-0000-000000000003",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			credential, err := verifier.Verify(context.Background(), p.token(t, p.key, tc.mutate))
+			if err != nil {
+				t.Fatalf("Verify() error = %v", err)
+			}
+			if credential.Subject.Subject != tc.wantSubject {
+				t.Fatalf("subject = %q, want %q", credential.Subject.Subject, tc.wantSubject)
+			}
+			if tc.wantScopes != nil && !slices.Equal(credential.Scopes, tc.wantScopes) {
+				t.Fatalf("scopes = %v, want %v", credential.Scopes, tc.wantScopes)
+			}
+		})
+	}
+}
+
+// TestVerifyRefusesATokenThatNamesNobody: a verified token asserting neither sub
+// nor client_id is an anonymous caller, and accepting it would let any token the
+// provider ever signed act as whoever the binding happened to hold.
+func TestVerifyRefusesATokenThatNamesNobody(t *testing.T) {
+	p := newProvider(t)
+	token := p.token(t, p.key, func(c *testClaims) {
+		c.Subject = ""
+		c.ClientID = ""
+	})
+	if _, err := p.verifier(t).Verify(context.Background(), token); err == nil {
+		t.Fatal("Verify() accepted a token that asserts no caller")
+	}
+}
+
 func TestVerifyRefusesEveryUnacceptableToken(t *testing.T) {
 	p := newProvider(t)
 	verifier := p.verifier(t)
@@ -125,7 +216,7 @@ func TestVerifyRefusesEveryUnacceptableToken(t *testing.T) {
 		},
 		{
 			name:  "expired",
-			token: p.token(t, p.key, func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(time.Now().Add(-time.Hour)) }),
+			token: p.token(t, p.key, func(c *testClaims) { c.Expiry = jwt.NewNumericDate(time.Now().Add(-time.Hour)) }),
 		},
 		{
 			name:  "signed by a key the provider never published",
@@ -133,11 +224,19 @@ func TestVerifyRefusesEveryUnacceptableToken(t *testing.T) {
 		},
 		{
 			name:  "issued for another audience",
-			token: p.token(t, p.key, func(c *jwt.Claims) { c.Audience = jwt.Audience{"another-service"} }),
+			token: p.token(t, p.key, func(c *testClaims) { c.Audience = jwt.Audience{"another-service"} }),
 		},
 		{
 			name:  "issued by another provider",
-			token: p.token(t, p.key, func(c *jwt.Claims) { c.Issuer = "https://someone-else.example" }),
+			token: p.token(t, p.key, func(c *testClaims) { c.Issuer = "https://someone-else.example" }),
+		},
+		{
+			// The human path's failure mode: a token minted without the requested
+			// audience arrives with an empty audience, and the check here refuses
+			// it. The fix is requesting the audience at the authorisation
+			// endpoint, not weakening this check.
+			name:  "issued with no audience at all",
+			token: p.token(t, p.key, func(c *testClaims) { c.Audience = nil }),
 		},
 		{
 			name:  "not a token at all",

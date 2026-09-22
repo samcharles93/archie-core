@@ -28,6 +28,18 @@ indistinguishable in the audit trail and revocable only together, which is the
 property attribution needs and the reason per-client registration is a
 requirement.
 
+**A person's client and an agent's client are registered separately**, because the
+two token shapes differ and a shared registration would collapse the distinction
+the attribution rests on. A person's token names them in `sub`. A machine's token
+carries no `sub` at all and names its client instead, so a machine identity is keyed
+on its client registration and exists one per client. A token asserting neither is
+refused.
+
+**A person's token requests the audience at the authorisation endpoint**, not only
+at the token endpoint. A provider that otherwise returns the audience empty
+produces a valid token archie must refuse, and that refusal looks like a signing
+fault rather than a missing request parameter.
+
 **SPIFFE/SPIRE is not adopted.** It is adopted and maintained, and its attestation
 is strictly stronger than a secret: a workload proves what it is rather than what
 it holds. It is rejected here on operational fit, not on quality: it adds a

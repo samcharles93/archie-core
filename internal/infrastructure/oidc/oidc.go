@@ -57,16 +57,51 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (identity.Creden
 	if err != nil {
 		return identity.Credential{}, fmt.Errorf("oidc: verify: %w", err)
 	}
+	// Claims are read after verification and are the only source of the
+	// identity: an unverified token selects nothing.
 	var claims struct {
-		Scope string `json:"scope"`
+		Subject  string   `json:"sub"`
+		ClientID string   `json:"client_id"`
+		Scope    string   `json:"scope"`
+		Scopes   []string `json:"scp"`
 	}
-	// Claims are read after verification and are advisory: the identity comes
-	// from the verified subject and issuer, never from a claim a caller could
-	// have written into an unverified token.
 	_ = token.Claims(&claims)
+	subject, err := subjectFor(token.Issuer, claims.Subject, claims.ClientID)
+	if err != nil {
+		return identity.Credential{}, err
+	}
 	return identity.Credential{
-		Subject: identity.Subject{Issuer: token.Issuer, Subject: token.Subject},
-		Scopes:  strings.Fields(claims.Scope),
+		Subject: subject,
+		Scopes:  scopesFor(claims.Scope, claims.Scopes),
 		Expires: token.Expiry,
 	}, nil
+}
+
+// subjectFor derives the caller a token asserts.
+//
+// A person's token carries sub, the provider's stable identifier for that person.
+// A machine's token carries no sub at all and identifies its caller by client_id,
+// so a machine identity is keyed on the client and one identity exists per client
+// registration. A token asserting neither identifies nobody and is refused rather
+// than being accepted as an anonymous caller.
+func subjectFor(issuer, subject, clientID string) (identity.Subject, error) {
+	switch {
+	case strings.TrimSpace(subject) != "":
+		return identity.Subject{Issuer: issuer, Subject: strings.TrimSpace(subject)}, nil
+	case strings.TrimSpace(clientID) != "":
+		return identity.Subject{Issuer: issuer, Subject: strings.TrimSpace(clientID)}, nil
+	default:
+		return identity.Subject{}, fmt.Errorf("oidc: token asserts neither sub nor client_id")
+	}
+}
+
+// scopesFor reads the granted scopes from either claim shape. Providers differ:
+// the standard is a space-delimited scope string, and this provider also emits an
+// scp array. Reading only one shape silently yields no scopes at all, which is
+// worse than reading none deliberately.
+func scopesFor(scope string, scopes []string) []string {
+	if len(scopes) > 0 {
+		return scopes
+	}
+	return strings.Fields(scope)
 }
