@@ -264,9 +264,10 @@ around is no longer a boundary.
   returns and validates `workflow.ExecutionSettings`, so any package holding it
   links the workflow domain and therefore `internal/agentexec`. This is why the
   client cannot move as one package -- see open question 2.
-- The schedules document, whose type is `cronstore.JobSpec` in
-  `internal/infrastructure`. A domain vocabulary package may not import
-  infrastructure.
+- The schedules document, whose type is `scheduling.JobSpec` in
+  `internal/domain/scheduling` -- the vocabulary moved there when the legacy
+  file-backed cronstore was deleted, which is also what satisfies the rule
+  that a domain vocabulary package may not import infrastructure.
 - The schema derivation, which describes the documents the server advertises.
 
 **Placement as landed (2026-09-22, `archie-core-1ng1`).** One new package,

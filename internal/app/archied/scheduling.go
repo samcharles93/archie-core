@@ -14,7 +14,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/crondelivery"
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronevents"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // schedulingConfig translates external input into the domain-owned engine
@@ -75,7 +74,7 @@ func (b *boot) setupScheduling() error {
 	if err != nil {
 		return fmt.Errorf("scheduling: build workflow runner: %w", err)
 	}
-	router, err := crondelivery.NewRouter(store, map[string]scheduling.Runner{cronstore.KindWorkflow: workflowRunner}, cfg.Events)
+	router, err := crondelivery.NewRouter(store, map[string]scheduling.Runner{scheduling.KindWorkflow: workflowRunner}, cfg.Events)
 	if err != nil {
 		return fmt.Errorf("scheduling: build router: %w", err)
 	}
@@ -93,17 +92,27 @@ type scheduleResourceStore struct {
 	client *controlplane.Client
 }
 
-func (s scheduleResourceStore) Get(ctx context.Context, id string) (cronstore.JobSpec, bool, error) {
+// The schedules document behind the control plane is the production
+// RouterStore: it resolves a job id to its spec and records a completed run.
+// The assertions this replaces used to pin the retired file-backed store;
+// crondelivery's contract comments name this type as the implementation.
+var (
+	_ crondelivery.SpecLookup  = scheduleResourceStore{}
+	_ crondelivery.RunRecorder = scheduleResourceStore{}
+	_ crondelivery.RouterStore = scheduleResourceStore{}
+)
+
+func (s scheduleResourceStore) Get(ctx context.Context, id string) (scheduling.JobSpec, bool, error) {
 	jobs, _, err := s.client.Schedules(ctx)
 	if err != nil {
-		return cronstore.JobSpec{}, false, err
+		return scheduling.JobSpec{}, false, err
 	}
 	for _, job := range jobs {
 		if job.ID == id {
 			return job, true, nil
 		}
 	}
-	return cronstore.JobSpec{}, false, nil
+	return scheduling.JobSpec{}, false, nil
 }
 
 func (s scheduleResourceStore) Due(ctx context.Context, now time.Time) ([]scheduling.Job, error) {
@@ -132,7 +141,7 @@ func (s scheduleResourceStore) MarkRun(ctx context.Context, id string, runAt tim
 				continue
 			}
 			found = true
-			if jobs[index].Schedule.Resolved().Kind == cronstore.ScheduleOnce {
+			if jobs[index].Schedule.Resolved().Kind == scheduling.ScheduleOnce {
 				jobs = append(jobs[:index], jobs[index+1:]...)
 				break
 			}
@@ -146,7 +155,7 @@ func (s scheduleResourceStore) MarkRun(ctx context.Context, id string, runAt tim
 			break
 		}
 		if !found {
-			return fmt.Errorf("%w: id %q", cronstore.ErrJobNotFound, id)
+			return fmt.Errorf("%w: id %q", scheduling.ErrJobNotFound, id)
 		}
 		_, err = s.client.ReplaceSchedules(ctx, jobs, version, "system:scheduler", "scheduler", fmt.Sprintf("schedule-run:%s:%d", id, runAt.UnixNano()))
 		if err == nil {

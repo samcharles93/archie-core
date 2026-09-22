@@ -6,13 +6,12 @@ package crondelivery
 
 import (
 	"context"
-	"path/filepath"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 // --- fakes --------------------------------------------------------------------
@@ -88,24 +87,24 @@ func (n *naiveRunner) count() int {
 // fakeLookup serves specs from a map and ignores ctx entirely, like
 // naiveCourier.
 //
-// The cancellation tests need it because the real store is itself
-// cancellation-aware: *cronstore.Store.Get returns ctx.Err() before it reads,
-// so with a real store the runner's own guard is masked — hydrate fails and the
-// run returns the context error whether or not the runner checked. A lookup
-// that ignores ctx removes that mask, leaving the runner's guard as the only
-// thing that can prevent the side effect.
+// The cancellation tests need it because a production store is expected to be
+// cancellation-aware: a source whose Get returns ctx.Err() before it reads
+// masks the runner's own guard — hydrate fails and the run returns the context
+// error whether or not the runner checked. A lookup that ignores ctx removes
+// that mask, leaving the runner's guard as the only thing that can prevent the
+// side effect.
 type fakeLookup struct {
-	specs map[string]cronstore.JobSpec
+	specs map[string]scheduling.JobSpec
 }
 
-func (f *fakeLookup) Get(_ context.Context, id string) (cronstore.JobSpec, bool, error) {
+func (f *fakeLookup) Get(_ context.Context, id string) (scheduling.JobSpec, bool, error) {
 	spec, ok := f.specs[id]
 	return spec, ok, nil
 }
 
 // MarkRun satisfies RouterStore. It deliberately does nothing: these tests
 // exercise the runner's and the router's own dispatch guards, and the record
-// step is covered against the real store in
+// step is covered against a store that really advances in
 // TestRouterAdvancesTheScheduleAfterASuccessfulRun.
 func (f *fakeLookup) MarkRun(_ context.Context, _ string, _ time.Time) error { return nil }
 
@@ -247,20 +246,80 @@ func (c *countingRunner) count() int {
 
 // --- helpers ------------------------------------------------------------------
 
-// newStore opens a real cronstore on a temp path and closes it on cleanup.
-func newStore(t *testing.T) *cronstore.Store {
-	t.Helper()
-	s, err := cronstore.Open(filepath.Join(t.TempDir(), "jobs.json"))
-	if err != nil {
-		t.Fatalf("cronstore.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
+// memStore is the test's schedules document: a map with the three faces the
+// production store shows the package — SpecLookup (Get), RunRecorder (MarkRun
+// with real schedule arithmetic), and JobSource (Due). It replaces the file-
+// backed store this package's fixtures used to open, which died with the
+// legacy jobs.json store; the document now lives behind the control plane in
+// production, and what these tests need from persistence is semantics, not a
+// file.
+type memStore struct {
+	mu   sync.Mutex
+	jobs map[string]scheduling.JobSpec
 }
 
-// createJob persists a spec through the real store and returns the scheduling
-// job the engine would hand a runner for it.
-func createJob(t *testing.T, s *cronstore.Store, spec cronstore.JobSpec) scheduling.Job {
+func newStore(t *testing.T) *memStore {
+	t.Helper()
+	return &memStore{jobs: make(map[string]scheduling.JobSpec)}
+}
+
+// Create persists a spec verbatim. Fixtures that want a due job set NextRun
+// themselves (createJob does it when unset).
+func (m *memStore) Create(_ context.Context, spec scheduling.JobSpec) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.jobs[spec.ID]; exists {
+		return fmt.Errorf("memStore: id %q already exists", spec.ID)
+	}
+	m.jobs[spec.ID] = spec
+	return nil
+}
+
+func (m *memStore) Get(_ context.Context, id string) (scheduling.JobSpec, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	spec, ok := m.jobs[id]
+	return spec, ok, nil
+}
+
+// Due returns the jobs whose NextRun is at or before now, the same contract
+// the production source keeps.
+func (m *memStore) Due(_ context.Context, now time.Time) ([]scheduling.Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	due := make([]scheduling.Job, 0, len(m.jobs))
+	for _, spec := range m.jobs {
+		if !spec.NextRun.After(now) {
+			due = append(due, scheduling.Job{ID: spec.ID, Pool: scheduling.Pool(spec.Pool), Detail: spec.Detail})
+		}
+	}
+	return due, nil
+}
+
+// MarkRun advances an interval job's NextRun the way the production
+// recording step does, and reports a once schedule as unsupported — the
+// sentinel the router swallows.
+func (m *memStore) MarkRun(_ context.Context, id string, runAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	spec, ok := m.jobs[id]
+	if !ok {
+		return fmt.Errorf("%w: id %q", scheduling.ErrJobNotFound, id)
+	}
+	next, err := spec.Schedule.NextRun(runAt)
+	if err != nil {
+		return err
+	}
+	at := runAt.UTC()
+	spec.LastRun = &at
+	spec.NextRun = next
+	m.jobs[id] = spec
+	return nil
+}
+
+// createJob persists a spec and returns the scheduling job the engine would
+// hand a runner for it.
+func createJob(t *testing.T, s *memStore, spec scheduling.JobSpec) scheduling.Job {
 	t.Helper()
 	if spec.NextRun.IsZero() {
 		// Due now: the engine only ever hands a runner a job its source
@@ -268,30 +327,30 @@ func createJob(t *testing.T, s *cronstore.Store, spec cronstore.JobSpec) schedul
 		spec.NextRun = time.Now().UTC().Add(-time.Minute)
 	}
 	if err := s.Create(t.Context(), spec); err != nil {
-		t.Fatalf("cronstore.Create(%q): %v", spec.ID, err)
+		t.Fatalf("Create(%q): %v", spec.ID, err)
 	}
 	return scheduling.Job{ID: spec.ID, Pool: scheduling.Pool(spec.Pool), Detail: spec.Detail}
 }
 
 // chatSpec is a minimal chat job.
-func chatSpec(id, chatID, text string) cronstore.JobSpec {
-	return cronstore.JobSpec{
+func chatSpec(id, chatID, text string) scheduling.JobSpec {
+	return scheduling.JobSpec{
 		ID:       id,
 		Detail:   "test job " + id,
-		Kind:     cronstore.KindChat,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
-		Target:   cronstore.Target{ChatID: chatID},
-		Payload:  cronstore.Payload{Text: text},
+		Kind:     scheduling.KindChat,
+		Schedule: scheduling.Schedule{Kind: scheduling.ScheduleInterval, Interval: scheduling.Duration(time.Hour)},
+		Target:   scheduling.Target{ChatID: chatID},
+		Payload:  scheduling.Payload{Text: text},
 	}
 }
 
 // workflowSpec is a minimal workflow job.
-func workflowSpec(id, detail, body string) cronstore.JobSpec {
-	return cronstore.JobSpec{
+func workflowSpec(id, detail, body string) scheduling.JobSpec {
+	return scheduling.JobSpec{
 		ID:       id,
 		Detail:   detail,
-		Kind:     cronstore.KindWorkflow,
-		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleInterval, Interval: cronstore.Duration(time.Hour)},
-		Payload:  cronstore.Payload{Text: body},
+		Kind:     scheduling.KindWorkflow,
+		Schedule: scheduling.Schedule{Kind: scheduling.ScheduleInterval, Interval: scheduling.Duration(time.Hour)},
+		Payload:  scheduling.Payload{Text: body},
 	}
 }

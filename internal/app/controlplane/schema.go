@@ -17,7 +17,7 @@ const bareObjectSchema = `{"type":"object"}`
 var timeType = reflect.TypeFor[time.Time]()
 
 // stdDuration is the marker this tree's string-form duration types satisfy:
-// config.Duration, channelDuration and cronstore.Duration each expose the
+// config.Duration, channelDuration and scheduling.Duration each expose the
 // standard duration for arithmetic.
 var stdDuration = reflect.TypeOf((*interface{ Std() time.Duration })(nil)).Elem()
 
@@ -28,7 +28,7 @@ var stdDuration = reflect.TypeOf((*interface{ Std() time.Duration })(nil)).Elem(
 // stale the moment a fourth duration type appears and the failure is silent in
 // the worst direction: the field derives as an integer and a client renders a
 // number box for a duration. That is exactly what the enumerated version of this
-// function did to cronstore.Duration when the schedules interval became one.
+// function did to scheduling.Duration when the schedules interval became one.
 func durationLike(t reflect.Type) bool {
 	if !t.Implements(stdDuration) {
 		return false

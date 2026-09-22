@@ -1,4 +1,4 @@
-package cronstore
+package scheduling
 
 import (
 	"encoding/json"

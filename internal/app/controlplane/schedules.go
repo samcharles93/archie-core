@@ -8,7 +8,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
-	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 )
 
 const SchedulesKind = "schedules"
@@ -17,9 +16,9 @@ func scheduleDefinition() Definition {
 	return Definition{
 		Kind:      SchedulesKind,
 		Title:     "Schedules",
-		Document:  []cronstore.JobSpec{},
+		Document:  []scheduling.JobSpec{},
 		ApplyMode: "live",
-		Seed:      func(config.Config) any { return []cronstore.JobSpec{} },
+		Seed:      func(config.Config) any { return []scheduling.JobSpec{} },
 		Validate: func(input []byte) error {
 			return validateAs(input, validateSchedules)
 		},
@@ -27,7 +26,7 @@ func scheduleDefinition() Definition {
 	}
 }
 
-func validateSchedules(jobs []cronstore.JobSpec) error {
+func validateSchedules(jobs []scheduling.JobSpec) error {
 	seen := make(map[string]struct{}, len(jobs))
 	for _, job := range jobs {
 		if strings.TrimSpace(job.ID) == "" {
@@ -37,7 +36,7 @@ func validateSchedules(jobs []cronstore.JobSpec) error {
 			return fmt.Errorf("duplicate schedule %q", job.ID)
 		}
 		seen[job.ID] = struct{}{}
-		if job.Kind != cronstore.KindWorkflow {
+		if job.Kind != scheduling.KindWorkflow {
 			return fmt.Errorf("schedule %q has unsupported kind %q", job.ID, job.Kind)
 		}
 		if err := job.Schedule.Validate(); err != nil {
@@ -51,7 +50,7 @@ func validateSchedules(jobs []cronstore.JobSpec) error {
 }
 
 func normalizeSchedules(input []byte) ([]byte, error) {
-	var jobs []cronstore.JobSpec
+	var jobs []scheduling.JobSpec
 	if err := json.Unmarshal(input, &jobs); err != nil {
 		return nil, err
 	}
