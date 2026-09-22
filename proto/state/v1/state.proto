@@ -266,6 +266,16 @@ message Event {
   int64 attempt = 11;
   string detail = 9;
   string data_json = 10;
+  // Attribution. actor_id is the identity that performed the action and
+  // actor_kind its kind, so a reader can tell an agent's action from a person's
+  // without resolving the identity. principal_id is the identity whose authority
+  // the action used, which is a different fact when an agent acts under a
+  // person's standing approval; empty means unattributed. All three must cross
+  // this boundary: a record whose attribution survives only in `detail` is not
+  // queryable, which is the attribution this design exists to replace.
+  string actor_id = 12;
+  string actor_kind = 13;
+  string principal_id = 14;
 }
 
 // CapturedEvent mirrors internal/store.CapturedEvent.

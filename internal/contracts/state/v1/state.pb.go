@@ -1563,9 +1563,19 @@ type Event struct {
 	// first attempt: rows written before the field existed, and the deliberately
 	// task-agnostic producers, all carry zero. A reader must report those as
 	// unattributable rather than presenting them as one run.
-	Attempt       int64  `protobuf:"varint,11,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	Detail        string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
-	DataJson      string `protobuf:"bytes,10,opt,name=data_json,json=dataJson,proto3" json:"data_json,omitempty"`
+	Attempt  int64  `protobuf:"varint,11,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Detail   string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
+	DataJson string `protobuf:"bytes,10,opt,name=data_json,json=dataJson,proto3" json:"data_json,omitempty"`
+	// Attribution. actor_id is the identity that performed the action and
+	// actor_kind its kind, so a reader can tell an agent's action from a person's
+	// without resolving the identity. principal_id is the identity whose authority
+	// the action used, which is a different fact when an agent acts under a
+	// person's standing approval; empty means unattributed. All three must cross
+	// this boundary: a record whose attribution survives only in `detail` is not
+	// queryable, which is the attribution this design exists to replace.
+	ActorId       string `protobuf:"bytes,12,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorKind     string `protobuf:"bytes,13,opt,name=actor_kind,json=actorKind,proto3" json:"actor_kind,omitempty"`
+	PrincipalId   string `protobuf:"bytes,14,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1673,6 +1683,27 @@ func (x *Event) GetDetail() string {
 func (x *Event) GetDataJson() string {
 	if x != nil {
 		return x.DataJson
+	}
+	return ""
+}
+
+func (x *Event) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *Event) GetActorKind() string {
+	if x != nil {
+		return x.ActorKind
+	}
+	return ""
+}
+
+func (x *Event) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
 	}
 	return ""
 }
@@ -7712,7 +7743,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x0ereview_payload\x18\x1b \x01(\tR\rreviewPayload\x12>\n" +
 	"\x1bworkflow_definition_version\x18\x1c \x01(\x03R\x19workflowDefinitionVersion\x12<\n" +
 	"\x1aworkflow_definition_digest\x18\x1d \x01(\tR\x18workflowDefinitionDigest\x128\n" +
-	"\x18workflow_definition_yaml\x18\x1e \x01(\tR\x16workflowDefinitionYaml\"\x9b\x02\n" +
+	"\x18workflow_definition_yaml\x18\x1e \x01(\tR\x16workflowDefinitionYaml\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -7725,7 +7756,11 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\aattempt\x18\v \x01(\x03R\aattempt\x12\x16\n" +
 	"\x06detail\x18\t \x01(\tR\x06detail\x12\x1b\n" +
 	"\tdata_json\x18\n" +
-	" \x01(\tR\bdataJson\"\x8c\x02\n" +
+	" \x01(\tR\bdataJson\x12\x19\n" +
+	"\bactor_id\x18\f \x01(\tR\aactorId\x12\x1d\n" +
+	"\n" +
+	"actor_kind\x18\r \x01(\tR\tactorKind\x12!\n" +
+	"\fprincipal_id\x18\x0e \x01(\tR\vprincipalId\"\x8c\x02\n" +
 	"\rCapturedEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12;\n" +
 	"\vreceived_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +

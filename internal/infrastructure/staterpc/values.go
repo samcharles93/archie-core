@@ -123,6 +123,7 @@ func eventProto(e events.Event) *pb.Event {
 		Id: e.ID, At: timestamp(e.At), Kind: e.Kind, TaskId: e.TaskID, Repo: e.Repo,
 		Issue: int64(e.Issue), Workflow: e.Workflow, Stage: e.Stage, Attempt: int64(e.Attempt),
 		Detail: e.Detail, DataJson: eventDataJSON(e.Data),
+		ActorId: e.ActorID, ActorKind: e.ActorKind, PrincipalId: e.PrincipalID,
 	}
 }
 
@@ -134,6 +135,7 @@ func eventValue(e *pb.Event) events.Event {
 		ID: e.Id, At: timeValue(e.At), Kind: e.Kind, TaskID: e.TaskId, Repo: e.Repo,
 		Issue: int(e.Issue), Workflow: e.Workflow, Stage: e.Stage, Attempt: int(e.Attempt),
 		Detail: e.Detail, Data: eventDataValue(e.DataJson),
+		ActorID: e.ActorId, ActorKind: e.ActorKind, PrincipalID: e.PrincipalId,
 	}
 }
 
