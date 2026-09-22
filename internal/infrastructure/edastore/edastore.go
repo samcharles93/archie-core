@@ -29,6 +29,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // Collection names. They are unprefixed because this store owns its database;
@@ -71,6 +72,12 @@ type Config struct {
 	// Cipher encrypts binding secrets at rest. Nil keeps them plaintext,
 	// which is the behaviour that predates the option.
 	Cipher BindingCipher
+	// Notify receives one event per successful write on the bindings and
+	// mappings tables, so an operator edit surfaces on the dashboard's
+	// activity stream exactly like capture arrival does. Nil keeps writes
+	// silent, which is the behaviour that predates the option and what
+	// every existing constructor gets.
+	Notify func(events.Event)
 	// DBPath is the SQLite file PocketBase owns for these collections.
 	DBPath string
 	// DataDir holds PocketBase's auxiliary database and settings.
@@ -81,6 +88,7 @@ type Config struct {
 type Store struct {
 	app    *pocketbase.PocketBase
 	cipher BindingCipher
+	notify func(events.Event)
 }
 
 // Open bootstraps the store and ensures its collections exist.
@@ -110,7 +118,7 @@ func Open(cfg Config) (*Store, error) {
 	if err := ensureCollections(app); err != nil {
 		return nil, err
 	}
-	return &Store{app: app, cipher: cfg.Cipher}, nil
+	return &Store{app: app, cipher: cfg.Cipher, notify: cfg.Notify}, nil
 }
 
 // App exposes the PocketBase application so one process can serve this store

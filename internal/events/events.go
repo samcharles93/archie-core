@@ -105,6 +105,15 @@ const (
 	// trigger. data: session, channel.
 	KindTurnCompleted = "turn_completed"
 
+	// EDA edit activity (bindings and mappings on the captures store). Each
+	// successful write on the State Store's PocketBase tables emits one
+	// event through the same task-DB path capture arrival uses, so a
+	// dashboard edit is visible on the activity stream without a manual
+	// refresh. data: id (the edited record), action (create, update,
+	// approve, delete).
+	KindBindingChanged = "binding_changed"
+	KindMappingChanged = "mapping_changed"
+
 	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
 	// update -- whether the restarted daemon came back up healthy and on
 	// the version it claimed, relayed once on the boot that finds the

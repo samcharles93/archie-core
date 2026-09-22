@@ -10,6 +10,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // --- mappings ---
@@ -54,6 +55,7 @@ func (s *Store) InsertMapping(_ context.Context, m mapping.Mapping) (string, err
 	if err := s.app.Save(r); err != nil {
 		return "", fmt.Errorf("edastore: insert mapping: %w", err)
 	}
+	s.notifyWrite(events.KindMappingChanged, "mapping", "create", r.Id)
 	return r.Id, nil
 }
 
@@ -96,7 +98,11 @@ func (s *Store) UpdateMapping(_ context.Context, m mapping.Mapping) error {
 	if err := s.applyMapping(r, m); err != nil {
 		return err
 	}
-	return s.app.Save(r)
+	if err := s.app.Save(r); err != nil {
+		return err
+	}
+	s.notifyWrite(events.KindMappingChanged, "mapping", "update", m.ID)
+	return nil
 }
 
 func (s *Store) DeleteMapping(_ context.Context, id string) error {
@@ -107,7 +113,11 @@ func (s *Store) DeleteMapping(_ context.Context, id string) error {
 	if r == nil {
 		return ErrMappingNotFound
 	}
-	return s.app.Delete(r)
+	if err := s.app.Delete(r); err != nil {
+		return err
+	}
+	s.notifyWrite(events.KindMappingChanged, "mapping", "delete", id)
+	return nil
 }
 
 // --- bindings ---
@@ -189,6 +199,7 @@ func (s *Store) InsertBinding(ctx context.Context, b binding.Binding) (string, e
 		return "", fmt.Errorf("edastore: insert binding: %w", err)
 	}
 	_ = ctx
+	s.notifyWrite(events.KindBindingChanged, "binding", "create", r.Id)
 	return r.Id, nil
 }
 
@@ -262,7 +273,11 @@ func (s *Store) UpdateBinding(_ context.Context, b binding.Binding) error {
 	}
 	r.Set("status", string(binding.StatusPendingApproval))
 	r.Set("version", r.GetInt("version")+1)
-	return s.app.Save(r)
+	if err := s.app.Save(r); err != nil {
+		return err
+	}
+	s.notifyWrite(events.KindBindingChanged, "binding", "update", b.ID)
+	return nil
 }
 
 func (s *Store) DeleteBinding(_ context.Context, id string) error {
@@ -273,7 +288,11 @@ func (s *Store) DeleteBinding(_ context.Context, id string) error {
 	if r == nil {
 		return ErrBindingNotFound
 	}
-	return s.app.Delete(r)
+	if err := s.app.Delete(r); err != nil {
+		return err
+	}
+	s.notifyWrite(events.KindBindingChanged, "binding", "delete", id)
+	return nil
 }
 
 // ApproveBinding is the only transition that arms a binding. It moves
@@ -303,7 +322,11 @@ func (s *Store) ApproveBinding(_ context.Context, id string) error {
 		return ErrBindingTransition
 	}
 	r.Set("status", string(binding.StatusArmed))
-	return s.app.Save(r)
+	if err := s.app.Save(r); err != nil {
+		return err
+	}
+	s.notifyWrite(events.KindBindingChanged, "binding", "approve", id)
+	return nil
 }
 
 // --- dispatch ledgers ---
