@@ -107,6 +107,13 @@ type Server struct {
 	// shared-token gate for an instance with no provider configured.
 	Authenticate func(context.Context, string) (identity.Identity, error)
 
+	// Login drives the provider's browser flow, so a person can sign in and the
+	// dashboard learns who they are. Nil removes the sign-in routes, which is what
+	// an instance with no provider configured gets. It is separate from
+	// Authenticate because a caller may present a token without ever signing in
+	// through a browser -- an agent does exactly that.
+	Login identity.LoginFlow
+
 	// Events publishes operator actions so they reach the task timeline and
 	// the live activity stream. Optional: nil means the action is recorded
 	// in the store but invisible to anyone watching.
@@ -309,6 +316,13 @@ func (s *Server) Handler() http.Handler {
 	top := http.NewServeMux()
 	top.HandleFunc("GET /healthz", s.handleHealthz)
 	top.HandleFunc("GET /health", s.handleHealth)
+	// The sign-in routes sit on the bypass mux because they are how a caller
+	// becomes authenticated: gating them behind the credential they obtain would
+	// make signing in impossible.
+	if s.Login != nil {
+		top.HandleFunc(loginRoute, s.handleLogin)
+		top.HandleFunc(loginCallbackRoute, s.handleCallback)
+	}
 	if s.CaptureIntake != nil {
 		top.Handle(captureIntakeRoute, s.CaptureIntake)
 	}

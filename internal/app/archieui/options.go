@@ -66,6 +66,16 @@ type Options struct {
 	// an issuer with no audience is refused rather than accepted without the check.
 	OidcIssuer   string
 	OidcAudience string
+	// OidcClientID and OidcClientSecretEnv are the provider registration for the
+	// browser sign-in. The secret itself is never a flag: the flag names the
+	// environment variable holding it, so it cannot reach a process listing or a
+	// log line. No client id means no sign-in flow, which is what an instance
+	// that only accepts agent tokens wants.
+	OidcClientID        string
+	OidcClientSecretEnv string
+	// OidcRedirectURL is the callback the provider returns the browser to. Its
+	// path must be /oauth2/callback, which is the route this process serves.
+	OidcRedirectURL string
 	// TrustForwardedHeaders is tri-state so an explicit false on the command
 	// line can override a configuration file that enables it. Nil means the
 	// operator did not say, and the file (else false) decides.

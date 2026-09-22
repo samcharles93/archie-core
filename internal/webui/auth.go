@@ -20,7 +20,23 @@ import (
 
 // tokenCookie carries the dashboard token once it has been exchanged from the
 // URL, so the token is not left sitting in browser history or referrers.
-const tokenCookie = "archie_ui"
+const (
+	tokenCookie = "archie_ui"
+	// providerTokenCookie holds the provider's own access token after a browser
+	// sign-in. It is not a session archie issued: the token belongs to the
+	// provider and is verified on every request exactly as a presented header is,
+	// so nothing archie stores can outlive the provider's decision.
+	providerTokenCookie = "archie_provider_token"
+	// The sign-in flow's state and PKCE verifier live in short-lived cookies for
+	// the duration of the redirect, scoped to the callback path.
+	loginStateCookie    = "archie_login_state"
+	loginVerifierCookie = "archie_login_verifier"
+	loginCookieMaxAge   = 600
+	// loginRoute and loginCallbackRoute must match the redirect URI registered at
+	// the provider: the provider returns the browser to the path it was given.
+	loginRoute         = "GET /oauth2/login"
+	loginCallbackRoute = "GET /oauth2/callback"
+)
 
 // IsLoopback reports whether a listen address is reachable only from this
 // machine.
@@ -186,14 +202,107 @@ func (s *Server) requireIdentity(h http.Handler) http.Handler {
 
 // bearerCredential reads the credential a request presented. An empty token is
 // reported as absent rather than as a rejected one: there is nothing to verify.
+//
+// A browser cannot set a header on a navigation, so after the sign-in flow the
+// provider's token is read from its cookie. That cookie holds the provider's
+// credential, not an archie session: it is verified here on every request.
 func bearerCredential(r *http.Request) (string, bool) {
 	const prefix = "Bearer "
 	header := r.Header.Get("Authorization")
-	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
-		return "", false
+	if len(header) > len(prefix) && strings.EqualFold(header[:len(prefix)], prefix) {
+		if token := strings.TrimSpace(header[len(prefix):]); token != "" {
+			return token, true
+		}
 	}
-	token := strings.TrimSpace(header[len(prefix):])
-	return token, token != ""
+	if c, err := r.Cookie(providerTokenCookie); err == nil && strings.TrimSpace(c.Value) != "" {
+		return c.Value, true
+	}
+	return "", false
+}
+
+// handleLogin sends a browser to the provider with the audience requested at the
+// authorization endpoint, and keeps the state and PKCE verifier the callback needs
+// in cookies scoped to the callback path.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.Login == nil {
+		http.NotFound(w, r)
+		return
+	}
+	state, err := randomToken()
+	if err != nil {
+		http.Error(w, "could not start sign-in", http.StatusInternalServerError)
+		return
+	}
+	url, verifier := s.Login.AuthCodeURL(state)
+	setFlowCookie(w, r, loginStateCookie, state)
+	setFlowCookie(w, r, loginVerifierCookie, verifier)
+	http.Redirect(w, r, url, http.StatusSeeOther)
+}
+
+// handleCallback completes the flow. It checks the state it issued, exchanges the
+// code with the PKCE verifier it issued, and then resolves the resulting token
+// through the same check every other request goes through -- so a browser sign-in
+// cannot be accepted on terms a presented token would be refused on.
+func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
+	if s.Login == nil || s.Authenticate == nil {
+		http.NotFound(w, r)
+		return
+	}
+	query := r.URL.Query()
+	if providerErr := query.Get("error"); providerErr != "" {
+		s.refuseUnidentified(w, r, fmt.Errorf("%w: provider returned %s", identity.ErrCredentialRejected, providerErr))
+		return
+	}
+	state, stateErr := r.Cookie(loginStateCookie)
+	if stateErr != nil || !tokenEqual(state.Value, query.Get("state")) {
+		s.refuseUnidentified(w, r, fmt.Errorf("%w: sign-in state did not match", identity.ErrCredentialRejected))
+		return
+	}
+	verifier, verifierErr := r.Cookie(loginVerifierCookie)
+	if verifierErr != nil || strings.TrimSpace(verifier.Value) == "" {
+		s.refuseUnidentified(w, r, fmt.Errorf("%w: sign-in verifier is missing", identity.ErrCredentialRejected))
+		return
+	}
+	session, err := s.Login.Exchange(r.Context(), query.Get("code"), verifier.Value)
+	if err != nil {
+		s.refuseUnidentified(w, r, err)
+		return
+	}
+	if _, err := s.Authenticate(r.Context(), session.Token); err != nil {
+		s.refuseUnidentified(w, r, err)
+		return
+	}
+	clearFlowCookie(w, r, loginStateCookie)
+	clearFlowCookie(w, r, loginVerifierCookie)
+	http.SetCookie(w, &http.Cookie{
+		Name: providerTokenCookie, Value: session.Token, Path: "/",
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func setFlowCookie(w http.ResponseWriter, r *http.Request, name, value string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: name, Value: value, Path: "/oauth2",
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil,
+		MaxAge: loginCookieMaxAge,
+	})
+}
+
+func clearFlowCookie(w http.ResponseWriter, r *http.Request, name string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: name, Value: "", Path: "/oauth2",
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil, MaxAge: -1,
+	})
+}
+
+// randomToken returns a fresh URL-safe nonce for a sign-in's state.
+func randomToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 // refuseUnidentified answers a request archie could not attribute to an identity.

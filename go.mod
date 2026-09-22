@@ -51,7 +51,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
@@ -82,6 +81,7 @@ require (
 	github.com/samcharles93/ai-sdk v0.1.39
 	github.com/traefik/yaegi v0.16.1
 	golang.org/x/net v0.59.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.46.0
 	google.golang.org/grpc v1.85.0-dev.0.20260825072537-93e31b48545e
 	google.golang.org/protobuf v1.36.12

@@ -156,3 +156,121 @@ func TestActionRequestCannotChooseItsActor(t *testing.T) {
 		t.Fatalf("status = %d, want 400 or 200 with the verified actor", w.Code)
 	}
 }
+
+// stubFlow stands in for the provider's authorization-code flow. The flow itself
+// is exercised against a real provider in internal/infrastructure/oidc; what is
+// proved here is that the dashboard's browser path reaches the recorded actor.
+type stubFlow struct {
+	authURL  string
+	verifier string
+	session  identity.ProviderSession
+}
+
+func (f stubFlow) AuthCodeURL(state string) (string, string) {
+	return f.authURL + "?state=" + state, f.verifier
+}
+
+func (f stubFlow) Exchange(context.Context, string, string) (identity.ProviderSession, error) {
+	return f.session, nil
+}
+
+func cookieNamed(t *testing.T, response *http.Response, name string) *http.Cookie {
+	t.Helper()
+	for _, c := range response.Cookies() {
+		if c.Name == name && c.Value != "" {
+			return c
+		}
+	}
+	t.Fatalf("no %q cookie in the response", name)
+	return nil
+}
+
+// TestBrowserSignInRecordsTheSignedInPerson drives the whole browser path: sign in
+// through the provider, come back with a code, and then act on a task holding only
+// the credential the flow stored -- the actor recorded must be that person.
+func TestBrowserSignInRecordsTheSignedInPerson(t *testing.T) {
+	srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "needs a decision")
+	person := identity.Identity{
+		ID: "60000000-0000-5000-8000-000000000001", Kind: identity.KindUser,
+		DisplayName: "sam", Lifecycle: identity.LifecycleActive,
+	}
+	const token = "provider-access-token"
+	srv.Login = stubFlow{
+		authURL:  "http://provider.example/authorize",
+		verifier: "pkce-verifier",
+		session: identity.ProviderSession{
+			Credential: identity.Credential{Subject: identity.Subject{Issuer: "https://idp.example", Subject: "sam"}},
+			Token:      token,
+		},
+	}
+	srv.Authenticate = func(_ context.Context, raw string) (identity.Identity, error) {
+		if raw != token {
+			return identity.Identity{}, identity.ErrCredentialRejected
+		}
+		return person, nil
+	}
+
+	// 1. A browser asks to sign in and is sent to the provider.
+	loginRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/oauth2/login", nil)
+	loginResponse := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(loginResponse, loginRequest)
+	if loginResponse.Code != http.StatusSeeOther {
+		t.Fatalf("login status = %d, want %d", loginResponse.Code, http.StatusSeeOther)
+	}
+	state := cookieNamed(t, loginResponse.Result(), loginStateCookie)
+	verifier := cookieNamed(t, loginResponse.Result(), loginVerifierCookie)
+
+	// 2. The provider sends the browser back with a code.
+	callbackRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/oauth2/callback?code=a-code&state="+state.Value, nil)
+	callbackRequest.AddCookie(state)
+	callbackRequest.AddCookie(verifier)
+	callbackResponse := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(callbackResponse, callbackRequest)
+	if callbackResponse.Code != http.StatusSeeOther {
+		t.Fatalf("callback status = %d, want %d (body %q)", callbackResponse.Code, http.StatusSeeOther, callbackResponse.Body.String())
+	}
+
+	// 3. The signed-in browser acts, presenting only what the flow stored.
+	stored := cookieNamed(t, callbackResponse.Result(), providerTokenCookie)
+	actionRequest := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action", bytes.NewBufferString(`{"action":"approve"}`))
+	actionRequest.Header.Set("Content-Type", "application/json")
+	actionRequest.Header.Set("X-Archie-CSRF", "1")
+	actionRequest.AddCookie(stored)
+	actionResponse := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(actionResponse, actionRequest)
+	if actionResponse.Code != http.StatusOK {
+		t.Fatalf("action status = %d, want %d (body %q)", actionResponse.Code, http.StatusOK, actionResponse.Body.String())
+	}
+
+	recorded := approvalEvent(t, srv, task.ID)
+	if recorded.ActorID != string(person.ID) {
+		t.Fatalf("actor = %q, want the signed-in person %q", recorded.ActorID, person.ID)
+	}
+	if recorded.Kind != events.KindHumanApproved {
+		t.Fatalf("event kind = %q, want %q", recorded.Kind, events.KindHumanApproved)
+	}
+}
+
+// TestCallbackRefusesAMismatchedState: the callback must check the state it issued,
+// or a sign-in response could be replayed against another browser's flow.
+func TestCallbackRefusesAMismatchedState(t *testing.T) {
+	srv, _, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "needs a decision")
+	srv.Login = stubFlow{authURL: "http://provider.example/authorize", verifier: "pkce-verifier"}
+	srv.Authenticate = func(context.Context, string) (identity.Identity, error) {
+		t.Fatal("the callback verified a credential before checking its state")
+		return identity.Identity{}, nil
+	}
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/oauth2/callback?code=a-code&state=not-the-state-i-issued", nil)
+	request.AddCookie(&http.Cookie{Name: loginStateCookie, Value: "the-state-i-issued"})
+	request.AddCookie(&http.Cookie{Name: loginVerifierCookie, Value: "pkce-verifier"})
+	response := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}

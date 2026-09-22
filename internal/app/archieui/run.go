@@ -48,6 +48,10 @@ func Run(ctx context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
+	login, err := dashboardLoginFlow(ctx, opts)
+	if err != nil {
+		return err
+	}
 
 	srv := compose(deps{
 		Options:      opts,
@@ -58,6 +62,7 @@ func Run(ctx context.Context, options Options) error {
 		ControlPlane: tasks.ControlPlane(),
 		Identities:   tasks,
 		Authenticate: authenticate,
+		Login:        login,
 	})
 
 	// Live activity has no in-process bus in this process: the pump reads

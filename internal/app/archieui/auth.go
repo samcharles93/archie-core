@@ -3,6 +3,7 @@ package archieui
 import (
 	"context"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/identity"
@@ -38,4 +39,23 @@ func dashboardAuthenticator(ctx context.Context, opts Options, subjects identity
 		value, _, err := identity.Authenticate(ctx, subjects, verifier, credential)
 		return value, err
 	}, nil
+}
+
+// dashboardLoginFlow builds the browser sign-in flow from endpoint references and
+// the operator's registration, or returns nil when none is configured.
+//
+// The secret is read from the environment variable the operator named and never
+// logged, printed or stored. A client id is optional: an instance that only
+// accepts agent tokens configures none, and then there is simply no sign-in
+// route -- token verification is unaffected.
+func dashboardLoginFlow(ctx context.Context, opts Options) (identity.LoginFlow, error) {
+	if strings.TrimSpace(opts.OidcIssuer) == "" || strings.TrimSpace(opts.OidcClientID) == "" {
+		return nil, nil
+	}
+	secret := ""
+	if name := strings.TrimSpace(opts.OidcClientSecretEnv); name != "" {
+		secret = os.Getenv(name)
+	}
+	return oidc.NewFlow(ctx, oidc.Config{Issuer: opts.OidcIssuer, Audience: opts.OidcAudience},
+		opts.OidcClientID, secret, opts.OidcRedirectURL)
 }

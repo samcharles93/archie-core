@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ type provider struct {
 	// other is a second, unrelated key used to sign a token the provider
 	// never published, which is what a forged or foreign token looks like.
 	other *rsa.PrivateKey
+	// pending holds the PKCE challenge each issued code must be redeemed with.
+	pending sync.Map
 }
 
 func newProvider(t *testing.T) *provider {
@@ -53,6 +56,8 @@ func newProvider(t *testing.T) *provider {
 			"id_token_signing_alg_values_supported": []string{"RS256"},
 		})
 	})
+	mux.HandleFunc("/authorize", p.authorizeEndpoint(t))
+	mux.HandleFunc("/token", p.tokenEndpoint(t))
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
@@ -95,6 +100,17 @@ func (p *provider) token(t *testing.T, signer *rsa.PrivateKey, mutate func(*test
 		t.Fatalf("serialize token: %v", err)
 	}
 	return raw
+}
+
+// personToken is what the token endpoint issues for a signed-in person: a
+// subject, and the audience this dashboard checks.
+func (p *provider) personToken(t *testing.T) string {
+	t.Helper()
+	return p.token(t, p.key, func(c *testClaims) {
+		c.Subject = "a150ab4b-0000-0000-0000-000000000001"
+		c.ClientID = ""
+		c.Scopes = []string{"openid", "profile", "email"}
+	})
 }
 
 func (p *provider) verifier(t *testing.T) *Verifier {
