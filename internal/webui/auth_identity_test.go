@@ -42,7 +42,7 @@ func TestIdentityRequestResolvesToTheCredentialSubject(t *testing.T) {
 		return testActingIdentity, nil
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/api/tasks/7/action", strings.NewReader(`{"actor":"someone-else"}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/tasks/7/action", strings.NewReader(`{"actor":"someone-else"}`))
 	request.Header.Set("Authorization", "Bearer "+"a-provider-token")
 	// A caller-supplied identity must not be consulted: the only source of the
 	// acting identity is the credential the provider signed.
@@ -104,7 +104,7 @@ func TestIdentityRequestRefusesEveryCallerItCannotAttribute(t *testing.T) {
 				return identity.Identity{}, tc.authErr
 			})
 
-			request := httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/tasks", nil)
 			if tc.credential != "" {
 				request.Header.Set("Authorization", tc.credential)
 			}
@@ -133,7 +133,7 @@ func TestIdentityCheckReplacesTheSharedToken(t *testing.T) {
 		return testActingIdentity, nil
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	request.AddCookie(&http.Cookie{Name: tokenCookie, Value: "the-shared-token"})
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -151,7 +151,7 @@ func TestSharedTokenStillGatesAnInstanceWithNoProvider(t *testing.T) {
 	reached := false
 	handler := s.requireToken(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
 
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
