@@ -126,6 +126,7 @@ func NewGrepTool(cwd string, indexes ...GrepIndex) Tool {
 	return Tool{
 		Schema:  grepSchema,
 		Source:  "builtin",
+		Emoji:   "🔍",
 		Execute: makeGrepExecutor(cwd, workspaceIndex),
 	}
 }

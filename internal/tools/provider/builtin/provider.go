@@ -139,6 +139,7 @@ func toEntry(tool toolsbuiltin.Tool) (tools.ToolEntry, error) {
 		Toolset:        toolset,
 		Schema:         schema,
 		Classification: classify(tool.Schema.Name),
+		Emoji:          tool.Emoji,
 		Handler:        handlerFor(tool),
 	}, nil
 }

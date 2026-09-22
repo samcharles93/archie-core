@@ -60,6 +60,7 @@ func (m *chatTurnModel) Prepare(
 		toolInfo:   toolSummaries(options.Tools),
 		toolTokens: gateway.EstimateTokens(string(toolSchema)),
 		outcomes:   m.outcomes,
+		icons:      toolIcons(m.registry),
 	}, nil
 }
 
@@ -70,6 +71,26 @@ type preparedChatTurnModel struct {
 	toolInfo   []gateway.ToolSummary
 	toolTokens int
 	outcomes   *providerOutcomeRecorder
+	// icons maps tool name to the icon that tool registered, for chat
+	// surfaces to render. A nil map yields "" for every lookup, which is
+	// the no-icon rendering.
+	icons map[string]string
+}
+
+// toolIcons snapshots the icon each registered tool declares. It is taken at
+// prepare time alongside the tool set itself, so a turn renders the icons of
+// the tools it was actually given.
+func toolIcons(registry *tools.Registry) map[string]string {
+	if registry == nil {
+		return nil
+	}
+	icons := make(map[string]string)
+	for _, entry := range registry.All() {
+		if entry.Emoji != "" {
+			icons[entry.Name] = entry.Emoji
+		}
+	}
+	return icons
 }
 
 func (m *preparedChatTurnModel) ToolSummaries() []gateway.ToolSummary {
@@ -100,5 +121,5 @@ func (m *preparedChatTurnModel) Generate(
 	// This is one provider response's output allowance, not a turn-
 	// continuation budget. Tool loops remain free to continue.
 	options.MaxTokens = request.MaxOutputTokens
-	return sendChatTurn(ctx, m.llm, m.model, options, stream, m.outcomes)
+	return sendChatTurn(ctx, m.llm, m.model, options, stream, m.outcomes, m.icons)
 }

@@ -19,12 +19,15 @@ const (
 // inputs are noisy, often contain secrets, and are not useful progress text.
 func RenderToolCall(e ToolCallEvent) string {
 	if limit, ok := legacyTurnBudgetLimit(e.Err); ok {
-		return toolProgressBlock("tools", "stopped", fmt.Sprintf("tool-output limit reached (%s chars); further results suppressed", limit))
+		return toolProgressBlock("tools", e.Emoji, "stopped", fmt.Sprintf("tool-output limit reached (%s chars); further results suppressed", limit))
 	}
 	if line := cleanToolError(e.Name, e.Err); line != "" {
-		return toolProgressBlock(e.Name, "failed", line)
+		return toolProgressBlock(e.Name, e.Emoji, "failed", line)
 	}
-	return toolProgressBlock(e.Name, "done", toolPreview(e.Name, e.Output))
+	// Success carries no status word. Every line would read "done", so it
+	// distinguishes nothing; a status is printed only when the outcome is
+	// not the one the preview already implies.
+	return toolProgressBlock(e.Name, e.Emoji, "", toolPreview(e.Name, e.Output))
 }
 
 // FailureKey identifies equivalent tool calls for channel adapters that
@@ -39,16 +42,34 @@ func FailureKey(e ToolCallEvent) string {
 	return "success\x00" + strings.TrimSpace(e.Name) + "\x00" + toolPreview(e.Name, e.Output)
 }
 
-func toolProgressBlock(name, status, preview string) string {
+// ToolPreviewSeparator joins a tool's header to its preview. The preview is
+// always one line (every toolPreview path summarises to one), so it belongs
+// on the header line rather than in a block of its own: Telegram renders a
+// fenced block as a full code widget, and the block parser puts a spacer
+// paragraph before every block, so fencing one line cost four rendered
+// elements to show a word count.
+//
+// Keeping the preview on the line also means a fence marker in the output can
+// never reach column zero, which is why the preview is passed through
+// verbatim instead of having its backticks substituted away.
+const ToolPreviewSeparator = " · "
+
+func toolProgressBlock(name, emoji, status, preview string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "tool"
 	}
-	preview = strings.ReplaceAll(strings.TrimSpace(preview), "```", "''' ")
+	preview = strings.TrimSpace(preview)
 	if preview == "" {
 		preview = "completed"
 	}
-	return "🔧 " + name + " — " + status + "\n```text\n" + truncateRunes(preview, 180) + "\n```"
+	if status != "" {
+		name += " — " + status
+	}
+	if emoji = strings.TrimSpace(emoji); emoji != "" {
+		name = emoji + " " + name
+	}
+	return name + ToolPreviewSeparator + truncateRunes(preview, 180)
 }
 
 func toolPreview(name, output string) string {

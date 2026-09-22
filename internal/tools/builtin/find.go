@@ -73,6 +73,7 @@ func NewFindTool(cwd string) Tool {
 	return Tool{
 		Schema:  findSchema,
 		Source:  "builtin",
+		Emoji:   "📁",
 		Execute: makeFindExecutor(cwd),
 	}
 }

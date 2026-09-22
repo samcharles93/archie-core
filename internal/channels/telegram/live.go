@@ -366,14 +366,27 @@ func (l *liveReply) ToolCall(event messaging.ToolCallEvent) {
 	l.requestRender()
 }
 
+// countedToolLine marks a collapsed entry with how many calls it stands for.
+// The count belongs to the status, not to the preview, so it is inserted
+// before the preview separator rather than appended: "grep — done ×14 · 2
+// matches" counts calls, while "· 2 matches ×14" reads as counting matches.
+// toolLineSeparator joins tool lines. It ends each one with CommonMark's
+// hard-break marker rather than a blank line: a bare "\n" is a soft break,
+// which the block parser space-joins into one run-on paragraph, while a blank
+// line would insert a spacer block between every pair. A hard break gives
+// each line its own block AND suppresses the spacer, so a turn's activity
+// reads as consecutive lines instead of a double-spaced list.
+const toolLineSeparator = "  \n"
+
 func countedToolLine(line string, count int) string {
 	if count <= 1 {
 		return line
 	}
-	if newline := strings.IndexByte(line, '\n'); newline >= 0 {
-		return line[:newline] + fmt.Sprintf(" ×%d", count) + line[newline:]
+	marker := fmt.Sprintf(" ×%d", count)
+	if cut := strings.Index(line, messaging.ToolPreviewSeparator); cut >= 0 {
+		return line[:cut] + marker + line[cut:]
 	}
-	return line + fmt.Sprintf(" ×%d", count)
+	return line + marker
 }
 
 // mediaSendTimeout bounds one Media delivery. It is independent of the
@@ -732,7 +745,7 @@ func (l *liveReply) toolBlockWith(start int) string {
 	if omitted := start; omitted > 0 {
 		prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
 	}
-	return prefix + strings.Join(l.toolLines[start:], "\n")
+	return prefix + strings.Join(l.toolLines[start:], toolLineSeparator)
 }
 
 // clampToRunes cuts s to its last maxRunes runes, marking the cut with a
@@ -766,7 +779,7 @@ func (l *liveReply) finalText(reply string) string {
 	if len(l.toolLines) == 0 {
 		return reply
 	}
-	block := strings.Join(l.toolLines, "\n")
+	block := strings.Join(l.toolLines, toolLineSeparator)
 	if reply == "" {
 		return block + "\n\n_(no response)_"
 	}

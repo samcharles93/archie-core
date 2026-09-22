@@ -74,6 +74,7 @@ func NewShellTool(cwd string, mq *MutationQueue) Tool {
 	return Tool{
 		Schema:  shellSchema,
 		Source:  "builtin",
+		Emoji:   "💻",
 		Execute: makeShellExecutor(cwd, mq),
 	}
 }

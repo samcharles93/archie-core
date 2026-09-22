@@ -209,6 +209,7 @@ func NewReadTool(cwd string, rt *ReadTracker) Tool {
 	return Tool{
 		Schema:  readSchema,
 		Source:  "builtin",
+		Emoji:   "📄",
 		Execute: makeReadExecutor(cwd, rt),
 	}
 }

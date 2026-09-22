@@ -305,3 +305,28 @@ func TestGrepConsultsSuppliedWorkspaceIndex(t *testing.T) {
 		t.Errorf("index asked for pattern %q, want the caller's pattern %q", pattern, "Target")
 	}
 }
+
+// TestWorkspaceToolsCarryTheirOwnIcon pins that each builtin declares an icon
+// and that the conversion carries it. A chat surface renders what the tool
+// registered, so an icon missing here is an icon missing on screen.
+func TestWorkspaceToolsCarryTheirOwnIcon(t *testing.T) {
+	p := startedProvider(t, t.TempDir())
+	entries, err := p.Discover(t.Context())
+	if err != nil {
+		t.Fatalf("Tools: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no workspace tools registered")
+	}
+	seen := make(map[string]bool)
+	for _, entry := range entries {
+		if entry.Emoji == "" {
+			t.Errorf("tool %q registered no icon", entry.Name)
+			continue
+		}
+		seen[entry.Emoji] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("icons = %v, want tools to be distinguishable by icon", seen)
+	}
+}

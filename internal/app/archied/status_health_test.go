@@ -163,7 +163,7 @@ func TestSendChatTurnRecordsEachCallOutcome(t *testing.T) {
 			_, err := sendChatTurn(t.Context(), llm, "openai/gpt-5.6", core.GenerateOptions{
 				Messages: []chat.Message{{Role: chat.RoleUser, Content: "hi"}},
 				MaxSteps: 1,
-			}, nil, recorder)
+			}, nil, recorder, nil)
 
 			if tc.wantErr == "" && err != nil {
 				t.Fatalf("sendChatTurn = %v, want success (request path %q)", err, requestedPath)

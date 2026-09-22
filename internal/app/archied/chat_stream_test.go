@@ -163,7 +163,7 @@ func TestDrainChatStream(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sink := &recordingStream{}
-			text := drainChatStream(streamOf(tc.parts...), sink)
+			text := drainChatStream(streamOf(tc.parts...), sink, nil)
 
 			if text != tc.wantText {
 				t.Fatalf("text = %q, want %q", text, tc.wantText)
@@ -204,7 +204,7 @@ func TestDrainChatStreamCorrelatesBoundsAndRedactsToolParameters(t *testing.T) {
 			ToolName:   "shell",
 			Output:     "ok",
 		}},
-	), sink)
+	), sink, nil)
 
 	if len(sink.events) != 2 {
 		t.Fatalf("events = %v, want two completed calls", sink.events)
@@ -231,9 +231,43 @@ func TestDrainChatStreamWithoutASinkStillCollectsText(t *testing.T) {
 		core.StreamPart{Type: core.StreamPartTextDelta, TextDelta: "a"},
 		core.StreamPart{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{ToolName: "shell", Output: "ok"}},
 		core.StreamPart{Type: core.StreamPartTextDelta, TextDelta: "b"},
-	), nil)
+	), nil, nil)
 
 	if text != "ab" {
 		t.Fatalf("text = %q, want %q", text, "ab")
 	}
 }
+
+// TestDrainChatStreamCarriesTheToolsRegisteredIcon pins the seam between the
+// tool registry and what a chat surface renders. The icon is looked up by
+// tool name at report time, so a tool that registers one gets it and a tool
+// that does not is reported without one rather than with a generic stand-in.
+func TestDrainChatStreamCarriesTheToolsRegisteredIcon(t *testing.T) {
+	sink := &iconRecordingStream{}
+	drainChatStream(streamOf(
+		core.StreamPart{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{ToolName: "shell", Output: "ok"}},
+		core.StreamPart{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{ToolName: "mcp.github.search", Output: "ok"}},
+	), sink, map[string]string{"shell": "💻"})
+
+	want := []string{"shell:💻", "mcp.github.search:"}
+	if len(sink.icons) != len(want) {
+		t.Fatalf("icons = %v, want %v", sink.icons, want)
+	}
+	for i, w := range want {
+		if sink.icons[i] != w {
+			t.Errorf("icons[%d] = %q, want %q", i, sink.icons[i], w)
+		}
+	}
+}
+
+type iconRecordingStream struct {
+	icons []string
+}
+
+func (s *iconRecordingStream) Delta(string) {}
+
+func (s *iconRecordingStream) ToolCall(event gateway.ToolCallEvent) {
+	s.icons = append(s.icons, event.Name+":"+event.Emoji)
+}
+
+func (s *iconRecordingStream) Media(gateway.MediaEvent) {}

@@ -74,6 +74,7 @@ func NewEditTool(cwd string, mq *MutationQueue, rt *ReadTracker) Tool {
 	return Tool{
 		Schema:  editSchema,
 		Source:  "builtin",
+		Emoji:   "✏️",
 		Execute: makeEditExecutor(cwd, mq, rt),
 	}
 }

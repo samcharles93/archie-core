@@ -13,6 +13,10 @@ type ToolCallEvent struct {
 	// Parameters is a bounded, redacted JSON summary of the invocation input.
 	// It is safe for channel adapters to render directly.
 	Parameters string
+	// Emoji is the icon the tool registered for itself, empty when it
+	// declared none. Chat surfaces render it verbatim; they do not invent
+	// one, so an unrecognised tool simply shows no icon.
+	Emoji string
 	// Output is what the tool returned, verbatim.
 	Output string
 	// Err is non-empty when the tool failed, in which case Output is

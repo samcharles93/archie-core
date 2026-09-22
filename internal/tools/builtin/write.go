@@ -53,6 +53,7 @@ func NewWriteTool(cwd string, mq *MutationQueue, rt *ReadTracker) Tool {
 	return Tool{
 		Schema:  writeSchema,
 		Source:  "builtin",
+		Emoji:   "📝",
 		Execute: makeWriteExecutor(cwd, mq, rt),
 	}
 }

@@ -63,6 +63,10 @@ type Tool struct {
 	Schema  Schema
 	Execute Executor
 	Source  string // "builtin", "extension:<name>"
+	// Emoji is the icon chat surfaces show for this tool. It is deliberately
+	// not part of Schema: Schema is serialised to the model as the tool's
+	// contract, and an icon is presentation. Empty means no icon.
+	Emoji string
 }
 
 // Registry holds all registered tools and provides thread-safe access.

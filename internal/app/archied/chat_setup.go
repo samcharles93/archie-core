@@ -243,15 +243,15 @@ func chatRepoEnv(cfg config.Config, identity string) []gateway.RepoEnv {
 // and records at its own adapter (curatorLLMRunner). Anything that reaches the
 // runtime without recording leaves /status reporting a stale last-known
 // outcome, which is a /status that lies about the provider.
-func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, outcomes *providerOutcomeRecorder) (string, error) {
-	text, err := runChatTurn(ctx, llm, chatModel, options, turn)
+func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, outcomes *providerOutcomeRecorder, icons map[string]string) (string, error) {
+	text, err := runChatTurn(ctx, llm, chatModel, options, turn, icons)
 	// record tolerates a nil recorder: a setup built without one (tests, a
 	// deployment whose health surface is unwired) still makes its calls.
 	outcomes.record(chatModel, err)
 	return text, err
 }
 
-func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream) (string, error) {
+func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, icons map[string]string) (string, error) {
 	if turn == nil {
 		result, err := llm.Chat(ctx, chatModel, options)
 		if err != nil {
@@ -263,7 +263,7 @@ func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, op
 	if err != nil {
 		return "", fmt.Errorf("llm chat stream: %w", err)
 	}
-	text := drainChatStream(stream.FullStream, turn)
+	text := drainChatStream(stream.FullStream, turn, icons)
 	if _, err := stream.FinishReason(); err != nil {
 		return "", fmt.Errorf("llm chat stream: %w", err)
 	}
@@ -280,7 +280,7 @@ func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, op
 // A tool is reported on its result, never on its call: the call part carries
 // no outcome yet, so reporting both would show every tool twice, once with
 // nothing to say.
-func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) string {
+func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream, icons map[string]string) string {
 	type pendingToolCall struct {
 		name       string
 		parameters string
@@ -319,6 +319,7 @@ func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) stri
 			turn.ToolCall(gateway.ToolCallEvent{
 				ID:         part.ToolResult.ToolCallID,
 				Name:       name,
+				Emoji:      icons[name],
 				Parameters: call.parameters,
 				Output:     part.ToolResult.Output,
 				Err:        part.ToolResult.Error,
@@ -401,8 +402,10 @@ func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, first
 	// caller. Sharing the process-wide recorder let a title that merely timed
 	// out overwrite the chat-model health line with "failed", reporting a
 	// broken provider on the strength of a call no user was waiting for.
+	// No tool set and no stream, so no tool call can be reported: this turn
+	// needs no icons.
 	text, err := sendChatTurn(ctx, g.llm, g.chatModels.ActiveModel(),
-		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, nil)
+		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, nil, nil)
 	if err != nil {
 		if g.log != nil {
 			g.log.Error("session title generation failed", "session", sessionID, "err", err)

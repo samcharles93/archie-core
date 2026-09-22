@@ -44,7 +44,7 @@ func TestToolCallEventRenderToolCallBoundsOutputAndPreservesFailure(t *testing.T
 		t.Fatalf("oversized contents were not bounded: %q", got)
 	}
 	failed := RenderToolCall(ToolCallEvent{Name: "shell", Output: "ignored", Err: "command_exit: exit status 2"})
-	if failed != "🔧 shell — failed\n```text\ncommand_exit: exit status 2\n```" {
+	if failed != "shell — failed · command_exit: exit status 2" {
 		t.Fatalf("failure render = %q", failed)
 	}
 }
@@ -74,7 +74,79 @@ func TestToolCallEventFailureKeyCollapsesLegacyTurnBudget(t *testing.T) {
 	if FailureKey(first) == "" || FailureKey(first) != FailureKey(second) {
 		t.Fatalf("legacy output-limit failures should share one key: %q vs %q", FailureKey(first), FailureKey(second))
 	}
-	if RenderToolCall(first) != "🔧 tools — stopped\n```text\ntool-output limit reached (200000 chars); further results suppressed\n```" {
+	if RenderToolCall(first) != "tools — stopped · tool-output limit reached (200000 chars); further results suppressed" {
 		t.Fatalf("legacy output-limit render = %q", RenderToolCall(first))
+	}
+}
+
+// TestRenderToolCallKeepsAOneLinePreviewOnItsOwnLine pins the shape that
+// decides how much vertical space a turn's tool activity costs.
+//
+// Telegram renders a fenced block as a full code widget: a language header
+// bar, a copy button and a panel. The block parser also inserts a spacer
+// paragraph before every block, so a fenced one-line preview cost four
+// rendered elements (header, spacer, panel, spacer) to display a word count.
+// A single-line preview belongs on the header line.
+func TestRenderToolCallKeepsAOneLinePreviewOnItsOwnLine(t *testing.T) {
+	got := RenderToolCall(ToolCallEvent{Name: "shell", Output: "63"})
+	if want := "shell · 63"; got != want {
+		t.Fatalf("render = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "```") {
+		t.Errorf("a one-line preview must not open a code block: %q", got)
+	}
+}
+
+// TestRenderToolCallCollapsesMultiLineOutputToOneLine pins that the preview
+// is always a single line, whatever the tool printed. Every toolPreview path
+// already summarises to one line, which is why the fence it used to sit in
+// was never wrapping more than one.
+func TestRenderToolCallCollapsesMultiLineOutputToOneLine(t *testing.T) {
+	got := RenderToolCall(ToolCallEvent{Name: "shell", Output: `{"content":"alpha\nbeta\ngamma"}`})
+	if strings.Contains(got, "\n") {
+		t.Fatalf("render spans several lines: %q", got)
+	}
+	if !strings.Contains(got, "alpha") {
+		t.Errorf("render dropped the informative line: %q", got)
+	}
+}
+
+// TestRenderToolCallNeverOpensACodeBlock pins that output carrying its own
+// fence cannot start one. The preview follows the header on the same line, so
+// a fence marker can never reach column zero -- which is what lets the render
+// pass the output through verbatim instead of substituting the backticks away
+// and corrupting it.
+func TestRenderToolCallNeverOpensACodeBlock(t *testing.T) {
+	got := RenderToolCall(ToolCallEvent{Name: "read", Output: "```go\nx := 1\n```"})
+	if strings.HasPrefix(got, "```") || strings.Contains(got, "\n```") {
+		t.Fatalf("render opens a code block: %q", got)
+	}
+	if !strings.Contains(got, "```go") {
+		t.Errorf("backticks were corrupted rather than passed through: %q", got)
+	}
+}
+
+// TestRenderToolCallUsesTheToolsOwnIcon pins that the icon is data carried on
+// the event, not a constant in the renderer. One icon for every tool
+// distinguishes nothing, and a renderer that invents one cannot be corrected
+// by registering a tool.
+func TestRenderToolCallUsesTheToolsOwnIcon(t *testing.T) {
+	got := RenderToolCall(ToolCallEvent{Name: "shell", Emoji: "💻", Output: "63"})
+	if want := "💻 shell · 63"; got != want {
+		t.Fatalf("render = %q, want %q", got, want)
+	}
+	failed := RenderToolCall(ToolCallEvent{Name: "shell", Emoji: "💻", Err: "command_exit: exit status 2"})
+	if want := "💻 shell — failed · command_exit: exit status 2"; failed != want {
+		t.Fatalf("failure render = %q, want %q", failed, want)
+	}
+}
+
+// TestRenderToolCallOmitsTheIconWhenTheToolDeclaresNone pins the fallback: a
+// tool with no icon costs no column, rather than borrowing a generic one that
+// says nothing about which tool ran.
+func TestRenderToolCallOmitsTheIconWhenTheToolDeclaresNone(t *testing.T) {
+	got := RenderToolCall(ToolCallEvent{Name: "mcp.github.search", Output: "63"})
+	if want := "mcp.github.search · 63"; got != want {
+		t.Fatalf("render = %q, want %q", got, want)
 	}
 }

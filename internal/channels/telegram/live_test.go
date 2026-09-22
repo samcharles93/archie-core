@@ -194,12 +194,12 @@ func TestLiveReplyCollapsesRepeatedSuccessfulEquivalentToolCalls(t *testing.T) {
 	live.finalize(context.Background(), "done")
 
 	got := (*calls)[len(*calls)-1].body()
-	want := "🔧 grep — done ×14\n\n2 matches\n\ndone"
+	want := "grep ×14 · 2 matches\n\ndone"
 	if got != want {
 		t.Fatalf("repeated successful grep calls rendered as:\n%s\nwant:\n%s", got, want)
 	}
-	if strings.Count(got, "🔧 grep") != 1 {
-		t.Fatalf("repeated successful grep calls should occupy one entry, got %d:\n%s", strings.Count(got, "🔧 grep"), got)
+	if strings.Count(got, "grep") != 1 {
+		t.Fatalf("repeated successful grep calls should occupy one entry, got %d:\n%s", strings.Count(got, "grep"), got)
 	}
 }
 
@@ -213,10 +213,10 @@ func TestLiveReplyDoesNotCollapseSuccessfulCallsWithDifferentResults(t *testing.
 	live.finalize(context.Background(), "done")
 
 	got := (*calls)[len(*calls)-1].body()
-	if strings.Count(got, "🔧 ") != 3 {
+	if strings.Count(got, " · ") != 3 {
 		t.Fatalf("successful calls with different tools or summaries were collapsed:\n%s", got)
 	}
-	if !strings.Contains(got, "🔧 grep — done ×2") || strings.Contains(got, "×3") {
+	if !strings.Contains(got, "grep ×2") || strings.Contains(got, "×3") {
 		t.Fatalf("only equivalent successful calls should be counted together:\n%s", got)
 	}
 }
@@ -229,7 +229,7 @@ func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
 	live.finalize(context.Background(), "done")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.body(), "🔧 shell — done\n\nexit 0\n\ndone") {
+	if !strings.Contains(last.body(), "shell · exit 0\n\ndone") {
 		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.body())
 	}
 }
@@ -269,10 +269,10 @@ func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
 	// A tool result is described, never quoted with an invented line count:
 	// "… 7 more lines" was the renderer counting its own truncated sample, and
 	// it cannot agree with the total the tool actually reported.
-	want := "🔧 read — done\n\npackage gateway\n\n" +
-		"🔧 find — done\n\n/home/sam/projects/unrelated/main.go\n\n" +
-		"🔧 shell — failed\n\ncommand_exit: exit status 2\n\n" +
-		"🔧 tools — stopped ×5\n\ntool-output limit reached (200000 chars); further results suppressed\n\n" +
+	want := "read · package gateway\n\n" +
+		"find · /home/sam/projects/unrelated/main.go\n\n" +
+		"shell — failed · command_exit: exit status 2\n\n" +
+		"tools — stopped ×5 · tool-output limit reached (200000 chars); further results suppressed\n\n" +
 		"I found the relevant renderer and stopped after the output-volume cap."
 	if got != want {
 		t.Fatalf("Telegram-visible text:\n%s\n\nwant:\n%s", got, want)
@@ -316,8 +316,8 @@ func TestLiveReplyToolCalls(t *testing.T) {
 		{
 			name:          "shown",
 			showToolCalls: true,
-			wantLive:      "🔧 shell — done\n\nexit 0\n\nchecking ▌",
-			wantFinal:     "🔧 shell — done\n\nexit 0\n\nchecking",
+			wantLive:      "shell · exit 0\n\nchecking ▌",
+			wantFinal:     "shell · exit 0\n\nchecking",
 		},
 		{
 			name:          "hidden",
@@ -694,7 +694,7 @@ func TestLiveReplyToolLinesSurviveTheLiveClamp(t *testing.T) {
 	live.flushRendering()
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.HasPrefix(last.body(), "🔧 shell — done\n\nexit 0\n\n") {
+	if !strings.HasPrefix(last.body(), "shell · exit 0\n\n") {
 		t.Fatalf("live frame lost the tool line once the answer grew past the clamp: %.60q…", last.body())
 	}
 	if n := len([]rune(last.body())); n > 4096 {
@@ -712,10 +712,10 @@ func TestLiveReplyFinalizeWithToolsAndNoReplyMarksTheAbsence(t *testing.T) {
 	live.finalize(context.Background(), "")
 
 	last := (*calls)[len(*calls)-1]
-	if last.body() == "🔧 shell — done\n\nexit 0" {
+	if last.body() == "shell · exit 0" {
 		t.Fatalf("finalize sent the bare tool line as the finished answer: %q", last.body())
 	}
-	if !strings.Contains(last.body(), "🔧 shell — done\n\nexit 0") {
+	if !strings.Contains(last.body(), "shell · exit 0") {
 		t.Fatalf("finalize dropped the tool activity: %q", last.body())
 	}
 	if !strings.Contains(last.body(), "no response") {
@@ -1197,7 +1197,7 @@ func TestLiveReplyToolBlockKeepsEveryLineThatFits(t *testing.T) {
 
 	block := live.toolBlock()
 	for _, name := range []string{"read", "grep", "find"} {
-		if !strings.Contains(block, "🔧 "+name) {
+		if !strings.Contains(block, name+" · ") {
 			t.Errorf("tool block dropped %s while every line still fits the %d-rune budget:\n%s",
 				name, liveToolMaxRunes, block)
 		}
@@ -1234,5 +1234,45 @@ func TestLiveReplyClampAnswerAlwaysMarksTheCut(t *testing.T) {
 				t.Errorf("clamped answer is %d runes, over the 50-rune budget", n)
 			}
 		})
+	}
+}
+
+// TestToolLinesRenderAsConsecutiveBlocksWithoutSpacers pins the vertical cost
+// of a turn's tool activity, which is what the separator and the one-line
+// render exist to control.
+//
+// Each call used to emit a header paragraph, a spacer, a fenced code block
+// and another spacer: four rendered elements, the code block carrying a
+// language header bar and a copy button, to show a word count. Each call now
+// costs exactly one paragraph, and only the answer is set apart.
+func TestToolLinesRenderAsConsecutiveBlocksWithoutSpacers(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+	live.ToolCall(toolEvent("read", "package config", ""))
+	live.ToolCall(toolEvent("shell", "63", ""))
+	live.ToolCall(toolEvent("grep", "/src/a.go:12:match\n/src/b.go:40:match", ""))
+	live.finalize(context.Background(), "The answer.")
+
+	blocks := (*calls)[len(*calls)-1].richBlocks
+	want := []string{
+		"read · package config",
+		"shell · 63",
+		"grep · 2 matches",
+		"",
+		"The answer.",
+	}
+	if len(blocks) != len(want) {
+		got := make([]string, len(blocks))
+		for i, b := range blocks {
+			got[i] = blockText(b)
+		}
+		t.Fatalf("blocks = %d %q, want %d %q", len(blocks), got, len(want), want)
+	}
+	for i, w := range want {
+		if got := blockText(blocks[i]); got != w {
+			t.Errorf("block[%d] = %q, want %q", i, got, w)
+		}
+		if blocks[i].Type != models.RichBlockTypeParagraph {
+			t.Errorf("block[%d] type = %q, want paragraph -- a one-line preview needs no code widget", i, blocks[i].Type)
+		}
 	}
 }
