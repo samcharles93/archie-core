@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/pocketbase/pocketbase/tools/cron"
 )
 
 // Duration is a schedule interval as the document writes it: the human string
@@ -77,21 +79,20 @@ type Schedule struct {
 	Start time.Time `json:"start"`
 }
 
-// Schedule kinds the store recognises. Slice 1 fully implements
-// Interval; Once is accepted at Create / fires at Due exactly once, but
-// has no next-run arithmetic for MarkRun (one-shot by definition). Cron
-// is parsed at Create but has no firing arithmetic yet — Slice 2 will
-// add the parser. MarkRun on a kind this build does not implement
-// returns ErrScheduleUnsupported rather than silently advancing next_run.
+// Schedule kinds the store recognises. Interval and Cron have full
+// next-run arithmetic; Once is accepted at Create / fires at Due exactly
+// once, but has no next-run arithmetic for MarkRun (one-shot by
+// definition). MarkRun on a kind this build does not implement returns
+// ErrScheduleUnsupported rather than silently advancing next_run.
 const (
 	// ScheduleInterval fires every Interval after the last successful run
 	// (or after Start, if never run). The simplest recurring schedule.
 	ScheduleInterval = "interval"
 
 	// ScheduleCron fires at the next moment matching a standard 5-field
-	// cron expression after the last successful run. Slice 2 will add
-	// the parser; until then, MarkRun on a cron job returns
-	// ErrScheduleUnsupported.
+	// cron expression (or one of the @ macros) after the last successful
+	// run, computed in the zone of that run time. Expressions are parsed
+	// with pocketbase tools/cron.
 	ScheduleCron = "cron"
 
 	// ScheduleOnce fires once at the configured At time. Subsequent
@@ -110,8 +111,8 @@ func (s Schedule) Validate() error {
 			return fmt.Errorf("%w: interval must be positive, got %v", ErrInvalidSpec, s.Interval)
 		}
 	case ScheduleCron:
-		if s.Cron == "" {
-			return fmt.Errorf("%w: cron expression must be non-empty", ErrInvalidSpec)
+		if _, err := parseCronSpec(s.Cron); err != nil {
+			return err
 		}
 	case ScheduleOnce:
 		if s.At == nil {
@@ -136,8 +137,8 @@ func (s Schedule) resolve() Schedule {
 // firstRun returns when the job should fire the very first time it has
 // never run before. For Interval, it is Start + Interval (or now + Interval
 // when Start is zero, so a freshly-created job with no Start still has a
-// finite next-run). For Once, it is At. For Cron, it is left as a future
-// responsibility — Slice 1 will not synthesise a value it cannot honour.
+// finite next-run). For Once, it is At. For Cron, it is the first matching
+// minute strictly after Start (or after now when Start is zero).
 func (s Schedule) firstRun(now time.Time) (time.Time, error) {
 	switch s.resolve().Kind {
 	case ScheduleInterval:
@@ -151,10 +152,60 @@ func (s Schedule) firstRun(now time.Time) (time.Time, error) {
 		}
 		return *s.At, nil
 	case ScheduleCron:
-		return time.Time{}, fmt.Errorf("%w: cron parsing not yet implemented (slice 2)", ErrScheduleUnsupported)
+		sched, err := parseCronSpec(s.Cron)
+		if err != nil {
+			return time.Time{}, err
+		}
+		anchor := now
+		if !s.Start.IsZero() {
+			anchor = s.Start
+		}
+		return nextCronRun(sched, anchor)
 	default:
 		return time.Time{}, fmt.Errorf("%w: unknown kind %q", ErrScheduleUnsupported, s.Kind)
 	}
+}
+
+// parseCronSpec parses expr with pocketbase tools/cron — the project's
+// chosen cron dialect: standard 5-field expressions plus the @yearly,
+// @monthly, @weekly, @daily and @hourly macros — and wraps any parse
+// failure in ErrInvalidSpec so callers need only the one sentinel.
+func parseCronSpec(expr string) (*cron.Schedule, error) {
+	sched, err := cron.NewSchedule(expr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: cron expression %q: %w", ErrInvalidSpec, expr, err)
+	}
+	return sched, nil
+}
+
+// cronHorizon bounds the next-run scan. A satisfiable expression always
+// fires well within it (the sparsest realistic case, Feb 29, recurs every
+// four years); only a spec that can never fire — e.g. "0 0 30 2 *", which
+// the parser's field ranges cannot reject — exhausts the scan.
+const cronHorizon = 5 * 365 * 24 * time.Hour
+
+// nextCronRun returns the first wall-clock minute in the location of from
+// at which sched is due, strictly after the minute containing from — the
+// minute that just fired is never its own successor. Whole months and
+// hours that cannot match are skipped, so even a sparse expression costs
+// a handful of iterations per year scanned.
+func nextCronRun(sched *cron.Schedule, from time.Time) (time.Time, error) {
+	t := from.Truncate(time.Minute).Add(time.Minute)
+	for limit := from.Add(cronHorizon); t.Before(limit); {
+		if sched.IsDue(cron.NewMoment(t)) {
+			return t, nil
+		}
+		if _, ok := sched.Months[int(t.Month())]; !ok {
+			t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, 1, 0)
+			continue
+		}
+		if _, ok := sched.Hours[t.Hour()]; !ok {
+			t = t.Add(time.Hour).Truncate(time.Hour)
+			continue
+		}
+		t = t.Add(time.Minute)
+	}
+	return time.Time{}, fmt.Errorf("%w: cron expression does not match any minute within the next five years", ErrInvalidSpec)
 }
 
 func (s Schedule) FirstRun(now time.Time) (time.Time, error) { return s.firstRun(now) }
@@ -165,9 +216,9 @@ func (s Schedule) Resolved() Schedule { return s.resolve() }
 
 // nextRun returns when the job should fire after a successful run at
 // lastRun. It is the engine-side counterpart to firstRun: every MarkRun
-// advances next_run through this function. Interval is fully implemented;
-// Once and Cron deliberately fail so a silently-wrong value cannot reach
-// the ticker.
+// advances next_run through this function. Interval and Cron are fully
+// implemented; Once deliberately fails (there is no recurring next run)
+// so a silently-wrong value cannot reach the ticker.
 func (s Schedule) nextRun(lastRun time.Time) (time.Time, error) {
 	switch s.resolve().Kind {
 	case ScheduleInterval:
@@ -175,7 +226,11 @@ func (s Schedule) nextRun(lastRun time.Time) (time.Time, error) {
 	case ScheduleOnce:
 		return time.Time{}, fmt.Errorf("%w: once schedule has no next run", ErrScheduleUnsupported)
 	case ScheduleCron:
-		return time.Time{}, fmt.Errorf("%w: cron arithmetic not yet implemented (slice 2)", ErrScheduleUnsupported)
+		sched, err := parseCronSpec(s.Cron)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return nextCronRun(sched, lastRun)
 	default:
 		return time.Time{}, fmt.Errorf("%w: unknown kind %q", ErrScheduleUnsupported, s.Kind)
 	}
