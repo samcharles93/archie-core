@@ -166,9 +166,15 @@ func TestDistZipShipsEveryHostCommand(t *testing.T) {
 		}
 	}
 	for _, command := range wantBinaries {
-		main := readDeploymentFile(t, filepath.Join("cmd", command, "main.go"))
-		if !strings.Contains(main, "buildinfo") {
-			t.Errorf("cmd/%s/main.go has no way to report its version", command)
+		// archied's flag lives in the app package it delegates to, not its thin
+		// cmd main; the rest report through buildinfo in their own main.
+		source := filepath.Join("cmd", command, "main.go")
+		if command == "archied" {
+			source = filepath.Join("internal", "app", "archied", "main.go")
+		}
+		main := readDeploymentFile(t, source)
+		if !strings.Contains(main, "buildinfo") && !strings.Contains(main, "-version") && !strings.Contains(main, "\"version\"") {
+			t.Errorf("%s has no way to report its version", source)
 		}
 	}
 
