@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -164,5 +165,32 @@ func TestDashboardIsServed(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/_/", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("GET /_/ status = %d, want 200: the dashboard is the surface's reason to exist", rec.Code)
+	}
+}
+
+// TestNoOpenRegistration pins that the surface has no self-service signup.
+// PocketBase creates a "users" auth collection on first bootstrap whose
+// createRule is open, so an unauthenticated caller could POST a record and
+// write a row into the State Store's own database file. The surface is
+// superuser-only by design, so the collection is removed rather than left
+// with a tightened rule: a collection that does not exist cannot regress.
+func TestNoOpenRegistration(t *testing.T) {
+	srv := newAdmin(t, openArchieDB(t))
+
+	if _, err := srv.App().FindCollectionByNameOrId("users"); err == nil {
+		t.Error("the default users collection still exists; it accepts unauthenticated record creation into archie's database file")
+	}
+
+	mux, err := srv.Handler()
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
+	body := strings.NewReader(`{"email":"nobody@example.com","password":"hunter2hunter2","passwordConfirm":"hunter2hunter2"}`)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/collections/users/records", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code < 400 {
+		t.Errorf("POST /api/collections/users/records status = %d, want a refusal: unauthenticated writes must not reach the State Store's file", rec.Code)
 	}
 }

@@ -107,6 +107,9 @@ func New(cfg Config) (*Server, error) {
 	if err := app.RunAllMigrations(); err != nil {
 		return nil, fmt.Errorf("stateadmin: run migrations: %w", err)
 	}
+	if err := removeDefaultAuthCollection(app); err != nil {
+		return nil, err
+	}
 	if err := registerViews(app); err != nil {
 		return nil, err
 	}
@@ -140,6 +143,25 @@ func registerViews(app core.App) error {
 		if err := app.Save(collection); err != nil {
 			return fmt.Errorf("stateadmin: register view %q: %w", v.name, err)
 		}
+	}
+	return nil
+}
+
+// removeDefaultAuthCollection deletes the "users" collection PocketBase
+// creates on first bootstrap.
+//
+// Its createRule is open, so leaving it in place lets an unauthenticated
+// caller POST a record and write a row into the State Store's database file.
+// This surface authenticates superusers only and has no notion of end users,
+// so the collection is deleted rather than given a tighter rule: a collection
+// that is not there cannot be loosened again by a later PocketBase default.
+func removeDefaultAuthCollection(app core.App) error {
+	collection, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		return nil // already absent, including on every restart after the first
+	}
+	if err := app.Delete(collection); err != nil {
+		return fmt.Errorf("stateadmin: remove default users collection: %w", err)
 	}
 	return nil
 }
