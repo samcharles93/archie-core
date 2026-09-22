@@ -1,45 +1,35 @@
 # Releasing
 
-Two components, independently versioned: `archied` (gateway/daemon) and
-`archie-agent` (runtime). Tags are `archied/vX.Y.Z` and `archie/vX.Y.Z`.
-`CHANGELOG.md` / `CHANGELOG.archied.md` / `CHANGELOG.archie.md` document the
-split — see those for what each component actually is.
+One release stream. `CHANGELOG.md` carries every release section, one generated page
+per version describes it, and one tag names the release. A release is one version
+covering whatever changed; the components' entries are labelled sections inside it
+(`### archied`, `### archie-agent`), not separate numbers or separate pages.
 
-The UI Service (`archie-ui`) is not a third component: it ships inside the
-`archied` release, versioned by the same `archied/vX.Y.Z` tag. It shares
-`internal/webui` (dashboard HTTP layer, embedded SPA) with the daemon, so the
-two move together; `tools/release.sh` extends archied's `go list -deps`
-closure with `cmd/archie-ui` and `internal/app/archieui` for exactly this
-reason — without them a commit touching only the UI process would land in
-neither changelog.
+The host bundle ships six processes — `archied`, `archie-gateway`,
+`archie-state-store`, `archie-ui`, `archie-messaging`, `archie-playbooks` — and one
+version covers all of them. `archie-agent`, the per-task sandboxed runtime, ships as a
+container image and its changes are the `## [version]` release's `### archie-agent`
+section.
 
-## The standing rule
+`tools/release.sh` decides which commits a release carries from the package closure of
+**every shipped binary**, not from commit-message guessing: a change to a package only
+the messaging service, state store, playbook runner or UI links still lands in the
+changelog. Read its header comment for how it partitions commits and enforces
+`main`-only, clean-tree releases.
 
-**Only version a component that actually has unreleased commits touching its
-own package closure.** `tools/release.sh` decides this mechanically (`go list
--deps`, not commit-message guessing — see its header comment), and
-`task release:preview VERSION=X.Y.Z` shows you the split before anything is
-written. If a component's list comes back empty, or its only entries are
-unrelated backlog from before the change you're actually releasing, **skip
-it**: pass `RUNTIME=skip` or `GATEWAY=skip`. Do not bump a component's version
-just because the other one moved, and do not bundle a large unrelated backlog
-into a release "because it's due" — that's a separate release, on its own
-review pass, not a rider on this one.
+## What justifies a version
 
-In practice: most sessions touch `archied` (webui, gateway, daemon, chat,
-archieui) and leave `archie-agent` (the per-task sandboxed runtime)
-untouched, so most releases are gateway-only with `RUNTIME=skip`. Don't ask
-whether to skip an untouched component — skip it, and say so in the handoff.
-Only ask when the runtime genuinely has unreleased changes and there's a
-real judgment call about whether to bundle a large pre-existing backlog in
-or cut it separately.
+`task release:preview VERSION=X.Y.Z` shows exactly what would land, before anything is
+written. A commit set that justifies no version produces no version: `release.sh`
+exits **3** with "nothing to release" rather than inventing one, so a pipeline can
+finish green without tagging.
 
-Note that a runtime code change (e.g. something in `internal/app/agentworker`)
-being *merged to `main`* is not the same as it being *in production* — the
-archie-agent Docker image isn't rebuilt by a gateway-only release. If a change
-needs the new agent image to actually take effect, say so explicitly and
-either cut an agent release or note that `docker compose build agent` /
-`docker compose pull agent` is needed separately.
+Most sessions touch the gateway side (daemon, gateway, web UI, chat, messaging) and
+leave the agent runtime alone. That is no longer a per-component `skip` decision — one
+version covers the release — but a runtime code change being merged to `main` is still
+not the same as it being in production: the `archie-agent` image is rebuilt by the
+release, and a host that runs the agent must pull the new image
+(`docker compose pull agent`) to get it.
 
 ## What the notes are for
 
@@ -60,59 +50,51 @@ where implementers look, because there they are requirements rather than news.
 Do not apply this mechanically: deleting a caveat a reader needs misleads them,
 which is the failure this rule exists to prevent.
 
+## Cutting a release
 
 ```bash
-task release:preview VERSION=1.3.0     # preview what would land, both components
-task release:prepare VERSION=1.3.0     # write changelog sections, uncommitted
-# edit CHANGELOG.archied.md and CHANGELOG.archie.md -- generated notes
-# are a starting point, not the release
-task release VERSION=1.3.0             # commit + tag
+task release:preview VERSION=1.3.0     # preview what would land
+task release:prepare VERSION=1.3.0     # write the section into CHANGELOG.md, uncommitted
+# edit CHANGELOG.md -- generated notes are a starting point, not the release
+task release VERSION=1.3.0             # commit + annotated tag
 git push origin main --follow-tags     # CI stamps images with real versions
 ```
 
-Pass `GATEWAY=<ver>` / `RUNTIME=<ver>` to version the two components
-independently, or `skip` on either to hold it back per the rule above. All
-three `task release:*` targets forward to `tools/release.sh` — read its header
-comment for exactly how it partitions commits and enforces `main`-only,
-clean-tree releases.
+`release:prepare` emits bare commit subjects; they are a starting point. Rewrite them
+to say what a reader gets, per "What the notes are for" above.
 
-Pushing is a separate, explicit step — never push without confirming first
-(see the repo's general "check before doing anything hard to reverse" rule).
-The deploy workflow reads tags pointing at `HEAD`; pushing the commit without
-its tags gets images stamped `dev`.
+Pushing is a separate, explicit step — never push without confirming first (see the
+repo's general "check before doing anything hard to reverse" rule). The deploy
+workflow reads tags pointing at `HEAD`; pushing the commit without its tag gets images
+stamped `dev`.
 
 ## What a release publishes
 
-Tagging both components at one commit produces, from a single `deploy` run:
+Tagging one version produces, from a single `deploy` run:
 
-- **Container images** — `ghcr.io/samcharles93/archied:latest` and, when the
-  runtime moved, `ghcr.io/samcharles93/archie-agent:latest`. A gateway-only
-  release (`RUNTIME=skip`) does not rebuild the agent image, so runtime commits
-  merged to `main` do not reach a running sandbox until an agent release is cut
-  and the host pulls the new image.
-- **A GitHub Release with a distribution zip** — `dist-zip` builds every
-  process the reference deployment runs (`archied`, `archie-gateway`,
-  `archie-state-store`, `archie-ui`, `archie-messaging`, `archie-playbooks`) for
-  linux/amd64, packs
-  them with `deployments/INSTRUCTIONS.md` and the changelogs, and attaches the
-  zip to the Release for the **archied** tag. The Release body is that
-  version's `CHANGELOG.archied.md` section. Both jobs are keyed to the archied
-  tag, so a gateway-only release still produces the zip.
+- **Container images** — `ghcr.io/samcharles93/archied:latest` and
+  `ghcr.io/samcharles93/archie-agent:latest`. The runtime image is rebuilt by the
+  release, so runtime commits merged to `main` do not reach a running sandbox until the
+  host pulls the new image.
+- **A GitHub Release with a distribution zip** — `dist-zip` builds every process the
+  reference deployment runs (`archied`, `archie-gateway`, `archie-state-store`,
+  `archie-ui`, `archie-messaging`, `archie-playbooks`) for linux/amd64, packs them with
+  `deployments/INSTRUCTIONS.md` and `CHANGELOG.md`, and attaches the zip to the
+  Release. The Release body is that version's `## [version]` section of `CHANGELOG.md`.
 
-The zip is also uploaded as an Actions artifact, but that is a backup copy:
-artifacts expire after 90 days and need an Actions login to download. The
-Release asset is the durable, operator-reachable one.
+The zip is also uploaded as an Actions artifact, but that is a backup copy: artifacts
+expire after 90 days and need an Actions login to download. The Release asset is the
+durable, operator-reachable one.
 
 ## Gate
 
-CI (`deploy.yml`) runs `task check` before building images, then verifies any
-release tag at `HEAD` has a matching `[version]` section in its changelog. A
-tag with no changelog entry is a hard failure. No tags at `HEAD` is a warning,
-not a failure — images get stamped `dev`.
+CI (`deploy.yml`) runs `task check` before building images, then verifies any release
+tag at `HEAD` has a matching `[version]` section in `CHANGELOG.md`. A tag with no
+changelog entry is a hard failure. No tags at `HEAD` is a warning, not a failure —
+images get stamped `dev`.
 
-One consequence worth knowing when a release commit needs amending: GitHub
-Actions runs the workflow **from the commit that triggered it**, so a fix to
-`deploy.yml` only takes effect for a release if it is an ancestor of the tagged
-commit. Delete and re-cut the tags (`git tag -d`, `task release`) rather than
-committing the fix on top of an already-tagged release.
-
+One consequence worth knowing when a release commit needs amending: GitHub Actions
+runs the workflow **from the commit that triggered it**, so a fix to `deploy.yml` only
+takes effect for a release if it is an ancestor of the tagged commit. Delete and re-cut
+the tag (`git tag -d`, `task release`) rather than committing the fix on top of an
+already-tagged release.

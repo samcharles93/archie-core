@@ -148,6 +148,11 @@ what the commit rules above exist for.
 - **A breaking change bumps the major version.** Its form is `!` after the type or
   scope, as in `feat(api)!:`, and a `BREAKING CHANGE:` trailer — either marks it.
 - `chore`, `docs`, `test`, `style` and `build` bump nothing alone.
+- **The scope decides whether a commit is the product's.** A commit whose scope is
+  the repository's own machinery -- `release`, `ci`, `docs`, `build`, `test` -- does
+  not bump the version even when its type is `feat` or `fix`, because it changes how
+  the project is delivered rather than what it does. Without this filter the first
+  improvement anyone makes to the release process inflates the product's version.
 - **No release is a legitimate outcome.** A commit set that justifies no version
   produces no version, and the pipeline reports that rather than inventing one.
 
