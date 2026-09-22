@@ -36,6 +36,14 @@
 //     the tools as missing. Verify against a freshly built bundle, or restart
 //     the process.
 //
+// Attribution: a WebMCP tool call cannot be attributed to an agent. The page
+// can invoke its own tools with `executeTool`, so an agent's call and a page
+// script's call reach the server identically. A durable record can honestly
+// say only that the actor was the signed-in identity and the source was
+// webmcp -- a hint, not proof -- and must never claim a human approved. Real
+// agent attribution needs the agent to authenticate with its own credential,
+// which is the A2A work where an agent is an Identity.
+//
 // What the browser does not enforce, it should not appear to: see the
 // annotation note in webmcp-tools.ts.
 
