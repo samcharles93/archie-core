@@ -20,6 +20,21 @@
 //     not a name (a name fails with a TypeError).
 //   - `executeTool` returns the tool's result as a JSON string that parses to
 //     `{content:[{type:"text",text}]}`, not as the envelope object itself.
+// A thrown `execute` error is also flattened by `executeTool` into a generic
+// UnknownError, so its text cannot tell a rejected call from a failed one; a
+// guard inside `execute` has to be pinned by a unit test, not by a browser run.
+//
+// Two deployment conditions make the tools silently absent, with no error:
+//   - `document.modelContext` needs a secure context. A dashboard served over
+//     plain HTTP (a LAN address, say) never exposes it, even with the
+//     origin-trial flag: `isSecureContext` is false and the API is undefined.
+//     Production terminates TLS in front of the dashboard; a plain-HTTP
+//     deployment gets no tools and no message saying so.
+//   - archie-ui embeds the built ui/dist into its binary, so rebuilding the
+//     dist is not deploying it. A running process keeps serving the bundle it
+//     embedded at build time, and a check against that stale process reports
+//     the tools as missing. Verify against a freshly built bundle, or restart
+//     the process.
 //
 // What the browser does not enforce, it should not appear to: see the
 // annotation note in webmcp-tools.ts.
