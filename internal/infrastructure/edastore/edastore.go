@@ -27,6 +27,8 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	_ "modernc.org/sqlite"
+
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
 // Collection names. They are unprefixed because this store owns its database;
@@ -40,19 +42,21 @@ const (
 	CollToolCalls          = "tool_calls"
 )
 
-// Binding lifecycle. A binding is only live once a human approves it, which is
-// an acceptance criterion of the epic rather than a convention.
-const (
-	StatusDraft    = "draft"
-	StatusApproved = "approved"
+// Sentinels are re-exported from the contract rather than redefined. Their
+// exact message strings are the wire contract: staterpc matches on (code,
+// canonical message) to rehydrate them on the client, so a second definition
+// with different text would break errors.Is across the gRPC boundary without
+// changing anything visible.
+var (
+	ErrBindingNotFound   = storecontract.ErrBindingNotFound
+	ErrBindingOverlap    = storecontract.ErrBindingOverlap
+	ErrBindingTransition = storecontract.ErrBindingTransition
+	ErrAlreadyDispatched = storecontract.ErrAlreadyDispatched
+	ErrMappingNotFound   = storecontract.ErrMappingNotFound
 )
 
-var (
-	// ErrBindingNotFound reports an operation naming a binding that is absent.
-	ErrBindingNotFound = errors.New("edastore: binding not found")
-	// ErrCaptureNotFound reports a capture that is absent or aged out.
-	ErrCaptureNotFound = errors.New("edastore: capture not found")
-)
+// ErrCaptureNotFound reports a capture that is absent or aged out.
+var ErrCaptureNotFound = errors.New("edastore: capture not found")
 
 // Collections returns every collection this store owns.
 func Collections() []string {
@@ -64,6 +68,9 @@ func Collections() []string {
 
 // Config describes one store.
 type Config struct {
+	// Cipher encrypts binding secrets at rest. Nil keeps them plaintext,
+	// which is the behaviour that predates the option.
+	Cipher BindingCipher
 	// DBPath is the SQLite file PocketBase owns for these collections.
 	DBPath string
 	// DataDir holds PocketBase's auxiliary database and settings.
@@ -71,7 +78,10 @@ type Config struct {
 }
 
 // Store is the PocketBase-backed EDA persistence.
-type Store struct{ app *pocketbase.PocketBase }
+type Store struct {
+	app    *pocketbase.PocketBase
+	cipher BindingCipher
+}
 
 // Open bootstraps the store and ensures its collections exist.
 func Open(cfg Config) (*Store, error) {
@@ -100,7 +110,7 @@ func Open(cfg Config) (*Store, error) {
 	if err := ensureCollections(app); err != nil {
 		return nil, err
 	}
-	return &Store{app: app}, nil
+	return &Store{app: app, cipher: cfg.Cipher}, nil
 }
 
 // App exposes the PocketBase application so one process can serve this store

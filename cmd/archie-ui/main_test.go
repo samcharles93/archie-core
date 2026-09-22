@@ -37,6 +37,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -601,8 +602,9 @@ func TestUIProcessLinksMultiIdentityTaskRowsToTheirOwningForge(t *testing.T) {
 	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
+		eda := edastore.OpenTest(t)
 		staterpc.RegisterServer(r, staterpc.Deps{
-			Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st,
+			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			Log: slog.New(slog.DiscardHandler),
 		})
 	})
@@ -657,8 +659,9 @@ func TestUIProcessServesTheDashboardAgainstLiveDependencies(t *testing.T) {
 	gateway := &fakeGateway{}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
+		eda := edastore.OpenTest(t)
 		staterpc.RegisterServer(r, staterpc.Deps{
-			Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st,
+			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			Log: slog.New(slog.DiscardHandler),
 		})
 	})

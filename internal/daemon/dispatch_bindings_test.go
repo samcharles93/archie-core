@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -35,7 +36,7 @@ func TestDispatchBindingsCreatesTaskFromArmedCapture(t *testing.T) {
 	}
 	got := tasks[0]
 	if got.BindingID != bindingID {
-		t.Errorf("task.BindingID = %d, want %d", got.BindingID, bindingID)
+		t.Errorf("task.BindingID = %q, want %q", got.BindingID, bindingID)
 	}
 	if got.BindingVersion != bindingVersion {
 		t.Errorf("task.BindingVersion = %d, want %d", got.BindingVersion, bindingVersion)
@@ -230,9 +231,9 @@ func TestDispatchBindingsNilDispatcherIsNoOp(t *testing.T) {
 
 	d := &Daemon{
 		Cfg:      config.NewHolder(config.Config{Repos: []config.Repo{{Owner: "acme", Name: "widget"}}}),
-		Store:    s,
-		Mappings: s,
-		Bindings: s,
+		Store:    s.Store,
+		Mappings: s.EdaStore,
+		Bindings: s.EdaStore,
 		// BindingDispatcher and BindingTaskCreator intentionally nil.
 		Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
@@ -248,22 +249,31 @@ func TestDispatchBindingsNilDispatcherIsNoOp(t *testing.T) {
 // production uses (CREATE TABLE + ALTER TABLE migrations), so
 // binding_id / binding_version / binding_dispatches all exist on the
 // store by the time a test runs.
-func openDispatchTestStore(t *testing.T) *store.Store {
+// dispatchStores pairs the two stores the dispatcher spans: tasks stay on
+// SQLite, event capture is the PocketBase store. They are embedded so a seed
+// helper still reads as one handle; the method sets no longer overlap, which
+// is exactly what the split bought.
+type dispatchStores struct {
+	*store.Store
+	EdaStore *edastore.Store
+}
+
+func openDispatchTestStore(t *testing.T) *dispatchStores {
 	t.Helper()
 	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "dispatch.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	return s
+	return &dispatchStores{Store: s, EdaStore: edastore.OpenTest(t)}
 }
 
 // seedMapping inserts a mapping with the given fields and returns its id.
 // The Name field is "sentry-mapping" by default; callers pass fields
 // inline.
-func seedMapping(t *testing.T, s *store.Store, sourceHint string, fields ...mapping.Field) int64 {
+func seedMapping(t *testing.T, s *dispatchStores, sourceHint string, fields ...mapping.Field) string {
 	t.Helper()
-	id, err := s.InsertMapping(t.Context(), mapping.Mapping{
+	id, err := s.EdaStore.InsertMapping(t.Context(), mapping.Mapping{
 		Name:       sourceHint + "-mapping",
 		SourceHint: sourceHint,
 		Fields:     fields,
@@ -281,7 +291,7 @@ func seedMapping(t *testing.T, s *store.Store, sourceHint string, fields ...mapp
 // advances through pending_approval via the store's test-only DB
 // accessor -- production callers must use the structured methods
 // (bindings.go) rather than touching the SQL directly.
-func seedArmedBinding(t *testing.T, s *store.Store, source string, mappingID int64) (int64, int) {
+func seedArmedBinding(t *testing.T, s *dispatchStores, source, mappingID string) (string, int) {
 	t.Helper()
 	return seedArmedBindingWithRepo(t, s, source, mappingID, "", "")
 }
@@ -289,9 +299,9 @@ func seedArmedBinding(t *testing.T, s *store.Store, source string, mappingID int
 // seedArmedBindingWithRepo is seedArmedBinding with an explicit
 // owner/repo pin (pass "", "" for the unpinned case seedArmedBinding
 // covers).
-func seedArmedBindingWithRepo(t *testing.T, s *store.Store, source string, mappingID int64, owner, repo string) (int64, int) {
+func seedArmedBindingWithRepo(t *testing.T, s *dispatchStores, source, mappingID, owner, repo string) (string, int) {
 	t.Helper()
-	id, err := s.InsertBinding(t.Context(), binding.Binding{
+	id, err := s.EdaStore.InsertBinding(t.Context(), binding.Binding{
 		Name:      "test " + source,
 		Matcher:   binding.Matcher{Source: source},
 		MappingID: mappingID,
@@ -303,13 +313,25 @@ func seedArmedBindingWithRepo(t *testing.T, s *store.Store, source string, mappi
 	if err != nil {
 		t.Fatalf("InsertBinding: %v", err)
 	}
-	if _, err := s.DB().ExecContext(t.Context(), `UPDATE bindings SET status='pending_approval' WHERE id=?`, id); err != nil {
-		t.Fatalf("force pending_approval: %v", err)
+	// Edit moves a draft to pending_approval through the real lifecycle,
+	// which is what makes it approvable. The old raw-SQL shortcut reached
+	// into a table the task store no longer owns.
+	if err := s.EdaStore.UpdateBinding(t.Context(), binding.Binding{
+		ID:        id,
+		Name:      "test " + source,
+		Matcher:   binding.Matcher{Source: source},
+		MappingID: mappingID,
+		Workflow:  "implement",
+		Owner:     owner,
+		Repo:      repo,
+		Secret:    "0123456789abcdef0123456789abcdef",
+	}); err != nil {
+		t.Fatalf("UpdateBinding to pending_approval: %v", err)
 	}
-	if err := s.ApproveBinding(t.Context(), id); err != nil {
+	if err := s.EdaStore.ApproveBinding(t.Context(), id); err != nil {
 		t.Fatalf("ApproveBinding: %v", err)
 	}
-	got, err := s.GetBinding(t.Context(), id)
+	got, err := s.EdaStore.GetBinding(t.Context(), id)
 	if err != nil || got == nil {
 		t.Fatalf("GetBinding after approve: %+v, %v", got, err)
 	}
@@ -321,9 +343,9 @@ func seedArmedBindingWithRepo(t *testing.T, s *store.Store, source string, mappi
 // the per-insert pruning the production path uses, so a test that
 // only needs a single row in the table is not at the mercy of
 // maxEvents=0's "no cap" reading.
-func seedCapture(t *testing.T, s *store.Store, source string, authenticated bool, body string) {
+func seedCapture(t *testing.T, s *dispatchStores, source string, authenticated bool, body string) {
 	t.Helper()
-	_, err := s.InsertCapture(t.Context(), store.CapturedEvent{
+	_, err := s.EdaStore.InsertCapture(t.Context(), store.CapturedEvent{
 		Source:        source,
 		Body:          body,
 		Authenticated: authenticated,
@@ -341,7 +363,7 @@ func seedCapture(t *testing.T, s *store.Store, source string, authenticated bool
 // single-repo fallback accepts the dispatch; with zero or many
 // configured repos the loop would log and skip, masking the test's
 // positive assertions.
-func newDispatchDaemon(t *testing.T, s *store.Store) *Daemon {
+func newDispatchDaemon(t *testing.T, s *dispatchStores) *Daemon {
 	t.Helper()
 	return newDispatchDaemonWithRepos(t, s, []config.Repo{{Owner: "acme", Name: "widget"}})
 }
@@ -349,36 +371,37 @@ func newDispatchDaemon(t *testing.T, s *store.Store) *Daemon {
 // newDispatchDaemonWithRepos is newDispatchDaemon with an explicit repo
 // list, for tests exercising resolveBindingRepo's owner/repo-pin path
 // against zero, one, or several configured repos.
-func newDispatchDaemonWithRepos(t *testing.T, s *store.Store, repos []config.Repo) *Daemon {
+func newDispatchDaemonWithRepos(t *testing.T, s *dispatchStores, repos []config.Repo) *Daemon {
 	t.Helper()
 	cfg := config.Config{Repos: repos}
 	return &Daemon{
 		Cfg:                config.NewHolder(cfg),
-		Store:              s,
-		Mappings:           s,
-		Bindings:           s,
-		BindingDispatcher:  s,
-		BindingTaskCreator: s,
+		Store:              s.Store,
+		Mappings:           s.EdaStore,
+		Bindings:           s.EdaStore,
+		BindingDispatcher:  s.EdaStore,
+		BindingTaskCreator: s.Store,
 		Log:                slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 }
 
 // assertDispatchRecorded reads the dedup ledger directly: the
-// (binding_id, capture_id) primary key is what guarantees no double
+// (binding, capture) unique index is what guarantees no double
 // dispatch. Going through the SQL table rather than the public
 // BindingStore surface keeps the assertion focused on the contract
 // Phase E actually writes to, not on a ListDispatches helper that
 // may not exist.
-func assertDispatchRecorded(t *testing.T, s *store.Store, bindingID, taskID int64) {
+func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string, taskID int64) {
 	t.Helper()
-	var gotBindingID, gotTaskID int64
-	if err := s.DB().QueryRowContext(
-		t.Context(),
-		`SELECT binding_id, task_id FROM binding_dispatches WHERE binding_id=?`, bindingID,
-	).Scan(&gotBindingID, &gotTaskID); err != nil {
+	var gotBindingID string
+	var gotTaskID int64
+	if err := s.EdaStore.App().DB().NewQuery(
+		"SELECT binding, task_id FROM binding_dispatches WHERE binding = {:binding}").
+		Bind(map[string]any{"binding": bindingID}).
+		Row(&gotBindingID, &gotTaskID); err != nil {
 		t.Fatalf("binding_dispatches row missing: %v", err)
 	}
 	if gotBindingID != bindingID || gotTaskID != taskID {
-		t.Fatalf("binding_dispatches row = (%d, %d), want (%d, %d)", gotBindingID, gotTaskID, bindingID, taskID)
+		t.Fatalf("binding_dispatches row = (%q, %d), want (%q, %d)", gotBindingID, gotTaskID, bindingID, taskID)
 	}
 }

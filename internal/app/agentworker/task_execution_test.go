@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/installtype"
@@ -376,9 +377,10 @@ func startStateStoreGRPC(t *testing.T, local *store.Store) string {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
+	eda := edastore.OpenTest(t)
 	staterpc.RegisterServer(server, staterpc.Deps{
-		Tasks: local, Captures: local, Mappings: local, Bindings: local,
-		BindingDispatcher: local, BindingTaskCreator: local,
+		Tasks: local, Captures: eda, Mappings: eda, Bindings: eda,
+		BindingDispatcher: eda, BindingTaskCreator: local,
 	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })

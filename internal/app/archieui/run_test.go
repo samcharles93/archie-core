@@ -21,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -151,7 +152,8 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
+		eda := edastore.OpenTest(t)
+		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
 	})
 	defer stopState()
 	chat := &fakeChat{sessions: []gateway.SessionContext{

@@ -486,7 +486,7 @@ func TestTasksBindingColumnsRoundTrip(t *testing.T) {
 	}
 	if _, err := s.db.ExecContext(ctx,
 		`UPDATE tasks SET binding_id=?, binding_version=? WHERE id=?`,
-		int64(42), 3, task.ID); err != nil {
+		"rbind0000000001", 3, task.ID); err != nil {
 		t.Fatalf("UPDATE binding provenance: %v", err)
 	}
 
@@ -501,8 +501,8 @@ func TestTasksBindingColumnsRoundTrip(t *testing.T) {
 		if got == nil {
 			t.Fatalf("%s: nil task", name)
 		}
-		if got.BindingID != 42 || got.BindingVersion != 3 {
-			t.Fatalf("%s: BindingID=%d BindingVersion=%d, want 42/3",
+		if got.BindingID != "rbind0000000001" || got.BindingVersion != 3 {
+			t.Fatalf("%s: BindingID=%q BindingVersion=%d, want rbind0000000001/3",
 				name, got.BindingID, got.BindingVersion)
 		}
 	}
@@ -511,7 +511,7 @@ func TestTasksBindingColumnsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tasks: %v", err)
 	}
-	if len(listed) == 0 || listed[0].BindingID != 42 || listed[0].BindingVersion != 3 {
+	if len(listed) == 0 || listed[0].BindingID != "rbind0000000001" || listed[0].BindingVersion != 3 {
 		t.Fatalf("Tasks() round-trip: %+v", listed)
 	}
 }

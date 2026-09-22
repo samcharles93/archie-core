@@ -25,6 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/stateadmin"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -45,6 +46,11 @@ func configuredIdentityNames(cfg config.Config) []string {
 	}
 	return names
 }
+
+// edaDBPath derives the event-capture database from the configured db_path,
+// beside the task database rather than inside it: the two stores have separate
+// lifecycles and only meet at binding_dispatches.task_id.
+func edaDBPath(configuredPath string) string { return configuredPath + "-eda.sqlite" }
 
 // StateStoreOptions contains process inputs for the standalone State Store.
 type StateStoreOptions struct {
@@ -221,7 +227,23 @@ func (b *boot) openStateStore(ctx context.Context) error {
 			log.Error("release state store ownership", "err", err)
 		}
 	})
-	st, err := openProductionTaskStore(ctx, path, store.WithBindingCipher(bindingCipher))
+	eda, err := edastore.Open(edastore.Config{
+		DBPath:  edaDBPath(cfg.DBPath),
+		DataDir: filepath.Join(filepath.Dir(path), "eda"),
+		Cipher:  bindingCipher,
+	})
+	if err != nil {
+		log.Error("open event-capture store", "err", err)
+		return err
+	}
+	b.eda = eda
+	b.addCleanup(func() {
+		if err := eda.Close(); err != nil {
+			log.Error("close event-capture store", "err", err)
+		}
+	})
+
+	st, err := openProductionTaskStore(ctx, path)
 	if err != nil {
 		log.Error("open state store", "err", err)
 		return err
@@ -268,20 +290,15 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if b.taskLogs != nil {
 		deps.TaskLogs = b.taskLogs
 	}
-	if cs, ok := b.st.(storecontract.CaptureStore); ok {
-		deps.Captures = cs
-	}
-	if ms, ok := b.st.(storecontract.MappingStore); ok {
-		deps.Mappings = ms
-	}
-	if bs, ok := b.st.(storecontract.BindingStore); ok {
-		deps.Bindings = bs
-	}
-	if bd, ok := b.st.(storecontract.BindingDispatcher); ok {
-		deps.BindingDispatcher = bd
-	}
-	if pd, ok := b.st.(storecontract.PlaybookDispatcher); ok {
-		deps.PlaybookDispatcher = pd
+	// The event-capture contracts are served by the PocketBase store, not the
+	// task store: those tables moved. BindingTaskCreator stays below on the
+	// task store, because creating a task is the one thing it still does.
+	if b.eda != nil {
+		deps.Captures = b.eda
+		deps.Mappings = b.eda
+		deps.Bindings = b.eda
+		deps.BindingDispatcher = b.eda
+		deps.PlaybookDispatcher = b.eda
 	}
 	if btc, ok := b.st.(storecontract.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc

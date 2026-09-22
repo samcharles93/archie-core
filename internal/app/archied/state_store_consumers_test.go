@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -15,14 +16,33 @@ import (
 // b.stateStore rather than b.st: the two differ by identity, so an assertion
 // that a consumer field holds storeB (not storeA) can only pass if the wiring
 // reads b.stateStore.
-func openSecondStore(t *testing.T) *store.Store {
+// stateStoreAdapter stands in for the real adapter (*staterpc.Client), which
+// fronts both halves of the contract over one connection: the task store and
+// the event-capture store. A plain *store.Store no longer satisfies the
+// event-capture surfaces, so a test that asserts "everything routes through
+// the adapter" needs something that implements them, exactly as the client
+// does in production.
+// edaSide aliases the event-capture store so it can be embedded beside
+// *store.Store: both are named Store, and Go allows only one embedded field
+// per name.
+type edaSide = edastore.Store
+
+type stateStoreAdapter struct {
+	*store.Store
+	*edaSide
+}
+
+// Close disambiguates the two embedded stores, which both have one.
+func (a *stateStoreAdapter) Close() error { return a.Store.Close() }
+
+func openSecondStore(t *testing.T) *stateStoreAdapter {
 	t.Helper()
 	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state-store.db"))
 	if err != nil {
 		t.Fatalf("open second store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return st
+	return &stateStoreAdapter{Store: st, edaSide: edastore.OpenTest(t)}
 }
 
 // TestBuildDaemonRoutesTaskStoreThroughStateStore proves the daemon's task

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -16,7 +15,7 @@ import (
 type bindingRequest struct {
 	Name      string          `json:"name"`
 	Matcher   binding.Matcher `json:"matcher"`
-	MappingID int64           `json:"mapping_id"`
+	MappingID string          `json:"mapping_id"`
 	Workflow  string          `json:"workflow"`
 	// Owner and Repo optionally pin the binding to one configured repo,
 	// for multi-repo deployments. Both empty is valid (falls back to the
@@ -104,8 +103,8 @@ func (s *Server) handleBindingGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid binding id", http.StatusBadRequest)
 		return
 	}
@@ -131,8 +130,8 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid binding id", http.StatusBadRequest)
 		return
 	}
@@ -194,8 +193,8 @@ func (s *Server) handleBindingDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid binding id", http.StatusBadRequest)
 		return
 	}
@@ -219,8 +218,8 @@ func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		http.Error(w, "invalid binding id", http.StatusBadRequest)
 		return
 	}

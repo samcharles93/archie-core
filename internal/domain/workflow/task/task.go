@@ -82,8 +82,8 @@ type Task struct {
 	// from a playbook binding dispatch (t2db.4 Phase B). They record
 	// provenance: which binding fired this task and at what version, so
 	// later edits to the binding cannot silently rewrite history.
-	BindingID      int64 `json:"binding_id"`
-	BindingVersion int   `json:"binding_version"`
+	BindingID      string `json:"binding_id"`
+	BindingVersion int    `json:"binding_version"`
 	// ReviewPayload is the JSON-encoded review unit (the forge review's
 	// actionable comments) the remediate workflow's current run must
 	// address. The daemon's reaction consumer injects it before queuing a

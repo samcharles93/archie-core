@@ -6,7 +6,7 @@ func validBinding() Binding {
 	return Binding{
 		Name:      "sentry alerts",
 		Matcher:   Matcher{Source: "sentry"},
-		MappingID: 1,
+		MappingID: "m1",
 		Workflow:  "implement",
 		Secret:    "0123456789abcdef0123456789abcdef",
 	}

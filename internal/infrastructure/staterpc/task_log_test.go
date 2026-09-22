@@ -41,7 +41,7 @@ func TestTaskLogContract(t *testing.T) {
 
 			var c taskLogContract = reader
 			if mode == "grpc" {
-				c = remoteTaskStore(t, store.OpenTest(t), reader)
+				c = remoteTaskStore(t, store.OpenTest(t), reader, nil)
 			}
 
 			t.Run("a page carries the decoded entries and their fields", func(t *testing.T) {

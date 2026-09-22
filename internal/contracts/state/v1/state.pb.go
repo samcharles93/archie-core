@@ -1288,7 +1288,7 @@ type Task struct {
 	WatchCommentId int64                  `protobuf:"varint,20,opt,name=watch_comment_id,json=watchCommentId,proto3" json:"watch_comment_id,omitempty"`
 	Source         string                 `protobuf:"bytes,21,opt,name=source,proto3" json:"source,omitempty"`
 	Identity       string                 `protobuf:"bytes,22,opt,name=identity,proto3" json:"identity,omitempty"`
-	BindingId      int64                  `protobuf:"varint,23,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	BindingId      string                 `protobuf:"bytes,23,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,24,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,25,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,26,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
@@ -1490,11 +1490,11 @@ func (x *Task) GetIdentity() string {
 	return ""
 }
 
-func (x *Task) GetBindingId() int64 {
+func (x *Task) GetBindingId() string {
 	if x != nil {
 		return x.BindingId
 	}
-	return 0
+	return ""
 }
 
 func (x *Task) GetBindingVersion() int64 {
@@ -1711,7 +1711,7 @@ func (x *Event) GetPrincipalId() string {
 // CapturedEvent mirrors internal/store.CapturedEvent.
 type CapturedEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	ReceivedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
 	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
 	RemoteAddr    string                 `protobuf:"bytes,4,opt,name=remote_addr,json=remoteAddr,proto3" json:"remote_addr,omitempty"`
@@ -1753,11 +1753,11 @@ func (*CapturedEvent) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{26}
 }
 
-func (x *CapturedEvent) GetId() int64 {
+func (x *CapturedEvent) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 func (x *CapturedEvent) GetReceivedAt() *timestamppb.Timestamp {
@@ -1881,7 +1881,7 @@ func (x *MappingField) GetRequired() bool {
 // Mapping mirrors internal/domain/mapping.Mapping.
 type Mapping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	SourceHint    string                 `protobuf:"bytes,3,opt,name=source_hint,json=sourceHint,proto3" json:"source_hint,omitempty"`
 	Fields        []*MappingField        `protobuf:"bytes,4,rep,name=fields,proto3" json:"fields,omitempty"`
@@ -1921,11 +1921,11 @@ func (*Mapping) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{28}
 }
 
-func (x *Mapping) GetId() int64 {
+func (x *Mapping) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 func (x *Mapping) GetName() string {
@@ -2011,10 +2011,10 @@ func (x *BindingMatcher) GetSource() string {
 // Binding mirrors internal/domain/binding.Binding.
 type Binding struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Matcher       *BindingMatcher        `protobuf:"bytes,3,opt,name=matcher,proto3" json:"matcher,omitempty"`
-	MappingId     int64                  `protobuf:"varint,4,opt,name=mapping_id,json=mappingId,proto3" json:"mapping_id,omitempty"`
+	MappingId     string                 `protobuf:"bytes,4,opt,name=mapping_id,json=mappingId,proto3" json:"mapping_id,omitempty"`
 	Workflow      string                 `protobuf:"bytes,5,opt,name=workflow,proto3" json:"workflow,omitempty"`
 	Owner         string                 `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
 	Repo          string                 `protobuf:"bytes,7,opt,name=repo,proto3" json:"repo,omitempty"`
@@ -2057,11 +2057,11 @@ func (*Binding) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{30}
 }
 
-func (x *Binding) GetId() int64 {
+func (x *Binding) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 func (x *Binding) GetName() string {
@@ -2078,11 +2078,11 @@ func (x *Binding) GetMatcher() *BindingMatcher {
 	return nil
 }
 
-func (x *Binding) GetMappingId() int64 {
+func (x *Binding) GetMappingId() string {
 	if x != nil {
 		return x.MappingId
 	}
-	return 0
+	return ""
 }
 
 func (x *Binding) GetWorkflow() string {
@@ -5763,7 +5763,7 @@ func (x *InsertCaptureRequest) GetMaxEvents() int64 {
 
 type InsertCaptureResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5798,11 +5798,11 @@ func (*InsertCaptureResponse) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{101}
 }
 
-func (x *InsertCaptureResponse) GetId() int64 {
+func (x *InsertCaptureResponse) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type ListCapturesRequest struct {
@@ -6028,7 +6028,7 @@ func (x *InsertMappingRequest) GetMapping() *Mapping {
 
 type InsertMappingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6063,16 +6063,16 @@ func (*InsertMappingResponse) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{107}
 }
 
-func (x *InsertMappingResponse) GetId() int64 {
+func (x *InsertMappingResponse) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type GetMappingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6107,11 +6107,11 @@ func (*GetMappingRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{108}
 }
 
-func (x *GetMappingRequest) GetId() int64 {
+func (x *GetMappingRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type GetMappingResponse struct {
@@ -6328,7 +6328,7 @@ func (*UpdateMappingResponse) Descriptor() ([]byte, []int) {
 
 type DeleteMappingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6363,11 +6363,11 @@ func (*DeleteMappingRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{114}
 }
 
-func (x *DeleteMappingRequest) GetId() int64 {
+func (x *DeleteMappingRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type DeleteMappingResponse struct {
@@ -6452,7 +6452,7 @@ func (x *InsertBindingRequest) GetBinding() *Binding {
 
 type InsertBindingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6487,16 +6487,16 @@ func (*InsertBindingResponse) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{117}
 }
 
-func (x *InsertBindingResponse) GetId() int64 {
+func (x *InsertBindingResponse) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type GetBindingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6531,11 +6531,11 @@ func (*GetBindingRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{118}
 }
 
-func (x *GetBindingRequest) GetId() int64 {
+func (x *GetBindingRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type GetBindingResponse struct {
@@ -6752,7 +6752,7 @@ func (*UpdateBindingResponse) Descriptor() ([]byte, []int) {
 
 type DeleteBindingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6787,11 +6787,11 @@ func (*DeleteBindingRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{124}
 }
 
-func (x *DeleteBindingRequest) GetId() int64 {
+func (x *DeleteBindingRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type DeleteBindingResponse struct {
@@ -6832,7 +6832,7 @@ func (*DeleteBindingResponse) Descriptor() ([]byte, []int) {
 
 type ApproveBindingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6867,11 +6867,11 @@ func (*ApproveBindingRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{126}
 }
 
-func (x *ApproveBindingRequest) GetId() int64 {
+func (x *ApproveBindingRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return 0
+	return ""
 }
 
 type ApproveBindingResponse struct {
@@ -7000,12 +7000,13 @@ func (x *ArmedBindingsForSourceResponse) GetBindings() []*Binding {
 
 type RecordDispatchRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	BindingId      int64                  `protobuf:"varint,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	BindingId      string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,2,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
-	CaptureId      int64                  `protobuf:"varint,3,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
-	TaskId         int64                  `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	CaptureId      string                 `protobuf:"bytes,3,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	// task_id addresses the SQLite-owned task tables, which are not migrating.
+	TaskId        int64 `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RecordDispatchRequest) Reset() {
@@ -7038,11 +7039,11 @@ func (*RecordDispatchRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{130}
 }
 
-func (x *RecordDispatchRequest) GetBindingId() int64 {
+func (x *RecordDispatchRequest) GetBindingId() string {
 	if x != nil {
 		return x.BindingId
 	}
-	return 0
+	return ""
 }
 
 func (x *RecordDispatchRequest) GetBindingVersion() int64 {
@@ -7052,11 +7053,11 @@ func (x *RecordDispatchRequest) GetBindingVersion() int64 {
 	return 0
 }
 
-func (x *RecordDispatchRequest) GetCaptureId() int64 {
+func (x *RecordDispatchRequest) GetCaptureId() string {
 	if x != nil {
 		return x.CaptureId
 	}
-	return 0
+	return ""
 }
 
 func (x *RecordDispatchRequest) GetTaskId() int64 {
@@ -7487,7 +7488,7 @@ type EnqueueBindingTaskRequest struct {
 	Body           string                 `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
 	Workflow       string                 `protobuf:"bytes,5,opt,name=workflow,proto3" json:"workflow,omitempty"`
 	Identity       string                 `protobuf:"bytes,6,opt,name=identity,proto3" json:"identity,omitempty"`
-	BindingId      int64                  `protobuf:"varint,7,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	BindingId      string                 `protobuf:"bytes,7,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,8,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -7565,11 +7566,11 @@ func (x *EnqueueBindingTaskRequest) GetIdentity() string {
 	return ""
 }
 
-func (x *EnqueueBindingTaskRequest) GetBindingId() int64 {
+func (x *EnqueueBindingTaskRequest) GetBindingId() string {
 	if x != nil {
 		return x.BindingId
 	}
-	return 0
+	return ""
 }
 
 func (x *EnqueueBindingTaskRequest) GetBindingVersion() int64 {
@@ -7734,7 +7735,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x06source\x18\x15 \x01(\tR\x06source\x12\x1a\n" +
 	"\bidentity\x18\x16 \x01(\tR\bidentity\x12\x1d\n" +
 	"\n" +
-	"binding_id\x18\x17 \x01(\x03R\tbindingId\x12'\n" +
+	"binding_id\x18\x17 \x01(\tR\tbindingId\x12'\n" +
 	"\x0fbinding_version\x18\x18 \x01(\x03R\x0ebindingVersion\x129\n" +
 	"\n" +
 	"created_at\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
@@ -7762,7 +7763,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"actor_kind\x18\r \x01(\tR\tactorKind\x12!\n" +
 	"\fprincipal_id\x18\x0e \x01(\tR\vprincipalId\"\x8c\x02\n" +
 	"\rCapturedEvent\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12;\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12;\n" +
 	"\vreceived_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"receivedAt\x12\x16\n" +
 	"\x06source\x18\x03 \x01(\tR\x06source\x12\x1f\n" +
@@ -7778,7 +7779,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x1a\n" +
 	"\brequired\x18\x04 \x01(\bR\brequired\"\xf4\x01\n" +
 	"\aMapping\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
 	"\vsource_hint\x18\x03 \x01(\tR\n" +
 	"sourceHint\x12.\n" +
@@ -7790,11 +7791,11 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x0eBindingMatcher\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\"\x86\x03\n" +
 	"\aBinding\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +
 	"\amatcher\x18\x03 \x01(\v2\x18.state.v1.BindingMatcherR\amatcher\x12\x1d\n" +
 	"\n" +
-	"mapping_id\x18\x04 \x01(\x03R\tmappingId\x12\x1a\n" +
+	"mapping_id\x18\x04 \x01(\tR\tmappingId\x12\x1a\n" +
 	"\bworkflow\x18\x05 \x01(\tR\bworkflow\x12\x14\n" +
 	"\x05owner\x18\x06 \x01(\tR\x05owner\x12\x12\n" +
 	"\x04repo\x18\a \x01(\tR\x04repo\x12\x18\n" +
@@ -8024,7 +8025,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"max_events\x18\x03 \x01(\x03R\tmaxEvents\"'\n" +
 	"\x15InsertCaptureResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"+\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"+\n" +
 	"\x13ListCapturesRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x03R\x05limit\"K\n" +
 	"\x14ListCapturesResponse\x123\n" +
@@ -8036,9 +8037,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x14InsertMappingRequest\x12+\n" +
 	"\amapping\x18\x01 \x01(\v2\x11.state.v1.MappingR\amapping\"'\n" +
 	"\x15InsertMappingResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"#\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"#\n" +
 	"\x11GetMappingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"W\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"W\n" +
 	"\x12GetMappingResponse\x12+\n" +
 	"\amapping\x18\x01 \x01(\v2\x11.state.v1.MappingR\amapping\x12\x14\n" +
 	"\x05found\x18\x02 \x01(\bR\x05found\"\x15\n" +
@@ -8049,14 +8050,14 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\amapping\x18\x01 \x01(\v2\x11.state.v1.MappingR\amapping\"\x17\n" +
 	"\x15UpdateMappingResponse\"&\n" +
 	"\x14DeleteMappingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\x17\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x17\n" +
 	"\x15DeleteMappingResponse\"C\n" +
 	"\x14InsertBindingRequest\x12+\n" +
 	"\abinding\x18\x01 \x01(\v2\x11.state.v1.BindingR\abinding\"'\n" +
 	"\x15InsertBindingResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"#\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"#\n" +
 	"\x11GetBindingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"W\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"W\n" +
 	"\x12GetBindingResponse\x12+\n" +
 	"\abinding\x18\x01 \x01(\v2\x11.state.v1.BindingR\abinding\x12\x14\n" +
 	"\x05found\x18\x02 \x01(\bR\x05found\"\x15\n" +
@@ -8067,10 +8068,10 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\abinding\x18\x01 \x01(\v2\x11.state.v1.BindingR\abinding\"\x17\n" +
 	"\x15UpdateBindingResponse\"&\n" +
 	"\x14DeleteBindingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\x17\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x17\n" +
 	"\x15DeleteBindingResponse\"'\n" +
 	"\x15ApproveBindingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\x18\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
 	"\x16ApproveBindingResponse\"7\n" +
 	"\x1dArmedBindingsForSourceRequest\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\"O\n" +
@@ -8078,10 +8079,10 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bbindings\x18\x01 \x03(\v2\x11.state.v1.BindingR\bbindings\"\x97\x01\n" +
 	"\x15RecordDispatchRequest\x12\x1d\n" +
 	"\n" +
-	"binding_id\x18\x01 \x01(\x03R\tbindingId\x12'\n" +
+	"binding_id\x18\x01 \x01(\tR\tbindingId\x12'\n" +
 	"\x0fbinding_version\x18\x02 \x01(\x03R\x0ebindingVersion\x12\x1d\n" +
 	"\n" +
-	"capture_id\x18\x03 \x01(\x03R\tcaptureId\x12\x17\n" +
+	"capture_id\x18\x03 \x01(\tR\tcaptureId\x12\x17\n" +
 	"\atask_id\x18\x04 \x01(\x03R\x06taskId\"\x18\n" +
 	"\x16RecordDispatchResponse\"\xa3\x01\n" +
 	"\x1dRecordPlaybookDispatchRequest\x12\x1f\n" +
@@ -8113,7 +8114,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bworkflow\x18\x05 \x01(\tR\bworkflow\x12\x1a\n" +
 	"\bidentity\x18\x06 \x01(\tR\bidentity\x12\x1d\n" +
 	"\n" +
-	"binding_id\x18\a \x01(\x03R\tbindingId\x12'\n" +
+	"binding_id\x18\a \x01(\tR\tbindingId\x12'\n" +
 	"\x0fbinding_version\x18\b \x01(\x03R\x0ebindingVersion\"@\n" +
 	"\x1aEnqueueBindingTaskResponse\x12\"\n" +
 	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task2\xe1)\n" +

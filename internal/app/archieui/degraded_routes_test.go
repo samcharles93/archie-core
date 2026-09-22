@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -165,8 +166,9 @@ func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 	logs := logging.NewTaskRegistry(filepath.Join(t.TempDir(), "logs", "tasks"), logging.NewFeed(10), logging.TaskSinkOptions{})
 
 	target, stop := serveGRPC(t, func(r grpc.ServiceRegistrar) {
+		eda := edastore.OpenTest(t)
 		staterpc.RegisterServer(r, staterpc.Deps{
-			Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st,
+			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			TaskLogs: logs, Log: slog.New(slog.DiscardHandler),
 		})
 	})

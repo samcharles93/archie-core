@@ -1,4 +1,4 @@
-package store
+package edastore
 
 import (
 	"crypto/aes"

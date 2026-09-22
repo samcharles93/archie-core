@@ -50,7 +50,7 @@ type Field struct {
 // through one example captured event but not pinned to that event or its
 // source -- t2db.4's matcher decides which events a binding applies to.
 type Mapping struct {
-	ID         int64     `json:"id"`
+	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	SourceHint string    `json:"source_hint"`
 	Fields     []Field   `json:"fields"`

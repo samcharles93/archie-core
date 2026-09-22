@@ -31,7 +31,7 @@ func TestEventAttributionSurvivesTheStateStoreBoundary(t *testing.T) {
 			local := store.OpenTest(t)
 			var c contract = local
 			if mode == "grpc" {
-				c = remoteTaskStore(t, local, nil)
+				c = remoteTaskStore(t, local, nil, nil)
 			}
 
 			task, err := c.EnqueueChatTask(ctx, "acme", "widget", "title", "body", "implement", "")

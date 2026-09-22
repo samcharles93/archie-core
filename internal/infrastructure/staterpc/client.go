@@ -257,10 +257,10 @@ func (c *Client) TokensByDay(ctx context.Context, days int) ([]storecontract.Day
 
 // Capture
 
-func (c *Client) InsertCapture(ctx context.Context, ce storecontract.CapturedEvent, retention time.Duration, maxEvents int) (int64, error) {
+func (c *Client) InsertCapture(ctx context.Context, ce storecontract.CapturedEvent, retention time.Duration, maxEvents int) (string, error) {
 	r, err := c.client.InsertCapture(ctx, &pb.InsertCaptureRequest{Capture: capturedEventProto(ce), RetentionSeconds: int64(retention.Seconds()), MaxEvents: int64(maxEvents)})
 	if err != nil {
-		return 0, unmapError(err)
+		return "", unmapError(err)
 	}
 	return r.Id, nil
 }
@@ -357,15 +357,15 @@ func (c *Client) ListCaptures(ctx context.Context, limit int) ([]storecontract.C
 
 // Mapping
 
-func (c *Client) InsertMapping(ctx context.Context, m mapping.Mapping) (int64, error) {
+func (c *Client) InsertMapping(ctx context.Context, m mapping.Mapping) (string, error) {
 	r, err := c.client.InsertMapping(ctx, &pb.InsertMappingRequest{Mapping: mappingProto(m)})
 	if err != nil {
-		return 0, unmapError(err)
+		return "", unmapError(err)
 	}
 	return r.Id, nil
 }
 
-func (c *Client) GetMapping(ctx context.Context, id int64) (*mapping.Mapping, error) {
+func (c *Client) GetMapping(ctx context.Context, id string) (*mapping.Mapping, error) {
 	r, err := c.client.GetMapping(ctx, &pb.GetMappingRequest{Id: id})
 	if err != nil {
 		return nil, unmapError(err)
@@ -390,22 +390,22 @@ func (c *Client) UpdateMapping(ctx context.Context, m mapping.Mapping) error {
 	return unmapError(err)
 }
 
-func (c *Client) DeleteMapping(ctx context.Context, id int64) error {
+func (c *Client) DeleteMapping(ctx context.Context, id string) error {
 	_, err := c.client.DeleteMapping(ctx, &pb.DeleteMappingRequest{Id: id})
 	return unmapError(err)
 }
 
 // Binding
 
-func (c *Client) InsertBinding(ctx context.Context, b binding.Binding) (int64, error) {
+func (c *Client) InsertBinding(ctx context.Context, b binding.Binding) (string, error) {
 	r, err := c.client.InsertBinding(ctx, &pb.InsertBindingRequest{Binding: bindingProto(b)})
 	if err != nil {
-		return 0, unmapError(err)
+		return "", unmapError(err)
 	}
 	return r.Id, nil
 }
 
-func (c *Client) GetBinding(ctx context.Context, id int64) (*binding.Binding, error) {
+func (c *Client) GetBinding(ctx context.Context, id string) (*binding.Binding, error) {
 	r, err := c.client.GetBinding(ctx, &pb.GetBindingRequest{Id: id})
 	if err != nil {
 		return nil, unmapError(err)
@@ -430,12 +430,12 @@ func (c *Client) UpdateBinding(ctx context.Context, b binding.Binding) error {
 	return unmapError(err)
 }
 
-func (c *Client) DeleteBinding(ctx context.Context, id int64) error {
+func (c *Client) DeleteBinding(ctx context.Context, id string) error {
 	_, err := c.client.DeleteBinding(ctx, &pb.DeleteBindingRequest{Id: id})
 	return unmapError(err)
 }
 
-func (c *Client) ApproveBinding(ctx context.Context, id int64) error {
+func (c *Client) ApproveBinding(ctx context.Context, id string) error {
 	_, err := c.client.ApproveBinding(ctx, &pb.ApproveBindingRequest{Id: id})
 	return unmapError(err)
 }
@@ -450,7 +450,7 @@ func (c *Client) ArmedBindingsForSource(ctx context.Context, source string) ([]b
 	return mapValues(r.Bindings, bindingValue), nil
 }
 
-func (c *Client) RecordDispatch(ctx context.Context, bindingID, bindingVersion, captureID, taskID int64) error {
+func (c *Client) RecordDispatch(ctx context.Context, bindingID string, bindingVersion int64, captureID string, taskID int64) error {
 	_, err := c.client.RecordDispatch(ctx, &pb.RecordDispatchRequest{BindingId: bindingID, BindingVersion: bindingVersion, CaptureId: captureID, TaskId: taskID})
 	return unmapError(err)
 }
@@ -489,7 +489,7 @@ func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string,
 
 // BindingTaskCreator
 
-func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*task.Task, error) {
+func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*task.Task, error) {
 	r, err := c.client.EnqueueBindingTask(ctx, &pb.EnqueueBindingTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, BindingId: bindingID, BindingVersion: int64(bindingVersion)})
 	if err != nil {
 		return nil, unmapError(err)

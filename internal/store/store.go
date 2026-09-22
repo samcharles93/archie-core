@@ -20,8 +20,7 @@ import (
 )
 
 type Store struct {
-	db             *sql.DB
-	bindingsCipher BindingCipher
+	db *sql.DB
 }
 
 // taskSchemaVersion is the newest schema this binary opens. ValidateFile
@@ -32,16 +31,7 @@ const taskSchemaVersion = 4
 // OpenOption configures the store at open time.
 type OpenOption func(*openOptions)
 
-type openOptions struct {
-	bindingsCipher BindingCipher
-}
-
-// WithBindingCipher installs an at-rest encryption cipher for binding secrets
-// (docs/prds/binding-secret-encryption.md). When omitted, binding secrets are
-// persisted as plaintext -- legacy behaviour, unchanged.
-func WithBindingCipher(c BindingCipher) OpenOption {
-	return func(o *openOptions) { o.bindingsCipher = c }
-}
+type openOptions struct{}
 
 // Open opens (creating if needed) the SQLite database and its schema.
 func Open(ctx context.Context, path string, opts ...OpenOption) (*Store, error) {
@@ -57,13 +47,13 @@ func Open(ctx context.Context, path string, opts ...OpenOption) (*Store, error) 
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, schema+eventsSchema+capturesSchema+mappingsSchema+bindingsSchema+playbookDispatchesSchema+configSnapshotSchema+channelStatusSchema+applyStatusSchema+resourcesSchema+identitiesSchema); err != nil {
+	if _, err := db.ExecContext(ctx, schema+eventsSchema+configSnapshotSchema+channelStatusSchema+applyStatusSchema+resourcesSchema+identitiesSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: init schema: %w", err), db.Close())
 	}
 	if err := migrateTasks(ctx, db); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
-	return &Store{db: db, bindingsCipher: o.bindingsCipher}, nil
+	return &Store{db: db}, nil
 }
 
 func sqliteDSN(path string) string {
@@ -94,10 +84,6 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	bindingColumns, err := tableColumns(ctx, tx, "bindings")
-	if err != nil {
-		return err
-	}
 	// events is created by `CREATE TABLE IF NOT EXISTS` (eventsSchema), which
 	// is a no-op against a database that already has the table. On an existing
 	// archie.db this read plus the `events` arm below is therefore the ONLY
@@ -117,25 +103,22 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		{"tasks", "retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
 		{"tasks", "identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
-		{"tasks", "binding_id", `ALTER TABLE tasks ADD COLUMN binding_id INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "binding_id", `ALTER TABLE tasks ADD COLUMN binding_id TEXT NOT NULL DEFAULT ''`},
 		{"tasks", "binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "review_payload", `ALTER TABLE tasks ADD COLUMN review_payload TEXT NOT NULL DEFAULT ''`},
 		{"tasks", "workflow_definition_version", `ALTER TABLE tasks ADD COLUMN workflow_definition_version INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "workflow_definition_digest", `ALTER TABLE tasks ADD COLUMN workflow_definition_digest TEXT NOT NULL DEFAULT ''`},
 		{"tasks", "workflow_definition_yaml", `ALTER TABLE tasks ADD COLUMN workflow_definition_yaml TEXT NOT NULL DEFAULT ''`},
-		{"bindings", "owner", `ALTER TABLE bindings ADD COLUMN owner TEXT NOT NULL DEFAULT ''`},
-		{"bindings", "repo", `ALTER TABLE bindings ADD COLUMN repo TEXT NOT NULL DEFAULT ''`},
 		{"events", "attempt", `ALTER TABLE events ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0`},
 		{"events", "actor_id", `ALTER TABLE events ADD COLUMN actor_id TEXT NOT NULL DEFAULT ''`},
 		{"events", "actor_kind", `ALTER TABLE events ADD COLUMN actor_kind TEXT NOT NULL DEFAULT ''`},
 		{"events", "principal_id", `ALTER TABLE events ADD COLUMN principal_id TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
+		// Only tasks and events remain here; the event-capture tables moved
+		// to internal/infrastructure/edastore, which owns their schema.
 		present := columns
-		switch migration.table {
-		case "bindings":
-			present = bindingColumns
-		case "events":
+		if migration.table == "events" {
 			present = eventsColumns
 		}
 		if present[migration.column] {
@@ -248,7 +231,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 	retry_count   INTEGER NOT NULL DEFAULT 0,
 	source        TEXT NOT NULL DEFAULT 'forge',
 	identity      TEXT NOT NULL DEFAULT '',
-	binding_id    INTEGER NOT NULL DEFAULT 0,
+	-- binding_id carries the id of the edastore binding that produced this
+	-- task, or "" for a task nobody bound. It is TEXT because bindings are
+	-- PocketBase records; a database created before that stores the same
+	-- values in an INTEGER-affinity column, which SQLite keeps as TEXT.
+	binding_id    TEXT NOT NULL DEFAULT '',
 	binding_version INTEGER NOT NULL DEFAULT 0,
 	review_payload TEXT NOT NULL DEFAULT '',
 	workflow_definition_version INTEGER NOT NULL DEFAULT 0,
@@ -344,7 +331,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 // a future repair pass could backfill. This is the same
 // best-effort-provenance pattern the rest of the task lifecycle uses
 // for fields added after the row's primary insert.
-func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*workflow.Task, error) {
+func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*workflow.Task, error) {
 	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity)
 	if err != nil {
 		return nil, err

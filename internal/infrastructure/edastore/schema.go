@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/samcharles93/archie-core/internal/domain/binding"
 )
 
 // isDataDB reports whether PocketBase is asking for its main database, as
@@ -73,7 +75,13 @@ func ensureCaptures(app core.App) error {
 		&core.JSONField{Name: "headers", MaxSize: 1 << 20},
 		&core.TextField{Name: "body", Max: 1 << 20},
 		&core.BoolField{Name: "authenticated"},
-		&core.AutodateField{Name: "received_at", OnCreate: true},
+		// received_at is written by the store, not an autodate field, because
+		// it is also the sort key. PocketBase autodates are millisecond
+		// precision and record ids are random, so two captures arriving in
+		// the same millisecond would order arbitrarily -- the old store got
+		// insertion order free from an autoincrement id. capturedAtLayout is
+		// fixed-width so lexicographic order is chronological order.
+		&core.TextField{Name: "received_at"},
 	)
 	c.AddIndex("idx_captures_source", false, "source, received_at", "")
 	return save(app, c)
@@ -111,9 +119,14 @@ func ensureBindings(app core.App) error {
 		&core.TextField{Name: "owner"},
 		&core.TextField{Name: "repo"},
 		&core.NumberField{Name: "version"},
-		// status carries the approval gate. It is deliberately not defaulted
-		// to anything live: a binding reaches "approved" only by ApproveBinding.
-		&core.SelectField{Name: "status", Values: []string{StatusDraft, StatusApproved}, MaxSelect: 1},
+		// status is the domain's three-state lifecycle, not a local
+		// vocabulary: draft -> pending_approval -> armed. Only
+		// ApproveBinding reaches armed, which is the epic's approval gate.
+		&core.SelectField{Name: "status", MaxSelect: 1, Values: []string{
+			string(binding.StatusDraft),
+			string(binding.StatusPendingApproval),
+			string(binding.StatusArmed),
+		}},
 		&core.TextField{Name: "secret"},
 		&core.AutodateField{Name: "created_at", OnCreate: true},
 		&core.AutodateField{Name: "updated_at", OnCreate: true, OnUpdate: true},

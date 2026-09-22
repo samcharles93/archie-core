@@ -678,7 +678,7 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	if hasBlockingFailure(m.Fields, failures) {
 		_, _ = d.Store.InsertEvent(ctx, events.Event{
 			Kind:   "binding_dispatch_failure",
-			Detail: fmt.Sprintf("binding %d (capture %d): required field failed", b.ID, c.ID),
+			Detail: fmt.Sprintf("binding %q (capture %q): required field failed", b.ID, c.ID),
 			Data: map[string]any{
 				"binding_id":      b.ID,
 				"binding_version": b.Version,
@@ -746,7 +746,7 @@ func hasBlockingFailure(fields []mapping.Field, failures []mapping.Failure) bool
 // provenance to hand back to the operator.
 func renderBindingBody(values map[string]any, c storecontract.CapturedEvent) string {
 	if len(values) == 0 {
-		return fmt.Sprintf("(no fields resolved from capture %d)", c.ID)
+		return fmt.Sprintf("(no fields resolved from capture %q)", c.ID)
 	}
 	parts := make([]string, 0, len(values))
 	for k, v := range values {

@@ -5,13 +5,13 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -25,19 +25,20 @@ func bindingTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
+	eda := edastore.OpenTest(t)
 	return &Server{
 		Store:        s,
 		Log:          slog.New(slog.DiscardHandler),
-		Mappings:     s,
-		Captures:     s,
-		Bindings:     s,
+		Mappings:     eda,
+		Captures:     eda,
+		Bindings:     eda,
 		ControlPlane: workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{ID: "implement", YAML: "id: implement\nsteps:\n  - type: implement.prepare\n"}}}),
 	}
 }
 
 // seedMapping inserts one payload mapping and returns its row ID, so
 // binding tests have a valid non-zero mapping_id without hand-rolling SQL.
-func seedMapping(t *testing.T, srv *Server, name string) int64 {
+func seedMapping(t *testing.T, srv *Server, name string) string {
 	t.Helper()
 	id, err := srv.Mappings.InsertMapping(t.Context(), mapping.Mapping{
 		Name:       name,
@@ -54,7 +55,7 @@ func seedMapping(t *testing.T, srv *Server, name string) int64 {
 // binding.Validate and server-side workflow validation. The Secret is 32
 // bytes (above the 16-byte floor) so length never accidentally trips
 // validation in a test that isn't about secret length.
-func validBindingRequest(suffix, source string, mappingID int64) map[string]any {
+func validBindingRequest(suffix, source, mappingID string) map[string]any {
 	return map[string]any{
 		"name":       "binding " + suffix,
 		"matcher":    map[string]any{"source": source},
@@ -76,7 +77,7 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal created: %v", err)
 	}
-	if created.ID == 0 {
+	if created.ID == "" {
 		t.Fatalf("created.ID = 0; body = %s", w.Body.String())
 	}
 	if created.Status != binding.StatusDraft {
@@ -86,7 +87,7 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 		t.Fatalf("created.Secret = %q, want \"\" (response must strip secret)", created.Secret)
 	}
 
-	w = doJSON(t, srv, http.MethodGet, "/api/bindings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodGet, "/api/bindings/"+created.ID, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -95,7 +96,7 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 		t.Fatalf("unmarshal got: %v", err)
 	}
 	if got.ID != created.ID {
-		t.Fatalf("got.ID = %d, want %d", got.ID, created.ID)
+		t.Fatalf("got.ID = %q, want %q", got.ID, created.ID)
 	}
 	if got.Secret != "" {
 		t.Fatalf("get.Secret = %q, want \"\"", got.Secret)
@@ -128,7 +129,7 @@ func TestHandleBindingCreateAndUpdateRoundTripsOwnerRepo(t *testing.T) {
 	updateReq := validBindingRequest("a", "sentry", mappingID)
 	updateReq["owner"] = "other-org"
 	updateReq["repo"] = "other-repo"
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), updateReq)
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, updateReq)
 	if w.Code != http.StatusOK {
 		t.Fatalf("update status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -256,7 +257,7 @@ func TestHandleBindingUpdatePreservesOtherFields(t *testing.T) {
 	// pending_approval yet, an edit on a draft row correctly stays
 	// draft. This test pins the editable-fields half of the contract.
 	update := validBindingRequest("renamed", "sentry", mappingID)
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), update)
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, update)
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -268,7 +269,7 @@ func TestHandleBindingUpdatePreservesOtherFields(t *testing.T) {
 		t.Fatalf("updated.Name = %q, want %q", updated.Name, "binding renamed")
 	}
 	if updated.MappingID != mappingID {
-		t.Fatalf("updated.MappingID = %d, want %d", updated.MappingID, mappingID)
+		t.Fatalf("updated.MappingID = %q, want %q", updated.MappingID, mappingID)
 	}
 	// Status MUST not regress from a state the caller never asked for.
 	if updated.Status != binding.StatusDraft && updated.Status != binding.StatusPendingApproval {
@@ -291,7 +292,7 @@ func TestHandleBindingUpdateWithEmptySecretPreservesExisting(t *testing.T) {
 
 	update := validBindingRequest("renamed", "sentry", mappingID)
 	update["secret"] = ""
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), update)
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, update)
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want %d (empty secret must mean 'keep existing', not fail validation); body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -315,7 +316,7 @@ func TestHandleBindingApproveFromDraftRejected(t *testing.T) {
 	// draft is NOT a valid source state for approve; the binding must
 	// first land in pending_approval (via PATCH). Approve from draft
 	// returns ErrBindingTransition -> 409.
-	w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+strconv.FormatInt(created.ID, 10)+"/approve", nil)
+	w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+created.ID+"/approve", nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
 	}
@@ -335,7 +336,7 @@ func TestHandleBindingApproveHappyPath(t *testing.T) {
 		t.Fatalf("created status = %q, want %q", created.Status, binding.StatusDraft)
 	}
 
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), validBindingRequest("renamed", "sentry", mappingID))
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, validBindingRequest("renamed", "sentry", mappingID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -345,7 +346,7 @@ func TestHandleBindingApproveHappyPath(t *testing.T) {
 		t.Fatalf("patched status = %q, want %q", patched.Status, binding.StatusPendingApproval)
 	}
 
-	w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+strconv.FormatInt(created.ID, 10)+"/approve", nil)
+	w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+created.ID+"/approve", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("approve status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -367,11 +368,11 @@ func TestHandleBindingEditOnArmedDropsToPendingApproval(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 
 	// Drive it to armed via the happy path.
-	_ = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), validBindingRequest("a", "sentry", mappingID))
-	_ = doJSON(t, srv, http.MethodPost, "/api/bindings/"+strconv.FormatInt(created.ID, 10)+"/approve", nil)
+	_ = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, validBindingRequest("a", "sentry", mappingID))
+	_ = doJSON(t, srv, http.MethodPost, "/api/bindings/"+created.ID+"/approve", nil)
 
 	// Now edit. Status must drop back to pending_approval.
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), validBindingRequest("a-edited", "sentry", mappingID))
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, validBindingRequest("a-edited", "sentry", mappingID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
 	}
@@ -397,11 +398,11 @@ func TestHandleBindingDeleteRemovesRow(t *testing.T) {
 	var created binding.Binding
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 
-	w = doJSON(t, srv, http.MethodDelete, "/api/bindings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodDelete, "/api/bindings/"+created.ID, nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want %d; body = %s", w.Code, http.StatusNoContent, w.Body.String())
 	}
-	w = doJSON(t, srv, http.MethodGet, "/api/bindings/"+strconv.FormatInt(created.ID, 10), nil)
+	w = doJSON(t, srv, http.MethodGet, "/api/bindings/"+created.ID, nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("get after delete status = %d, want %d", w.Code, http.StatusNotFound)
 	}
@@ -428,7 +429,7 @@ func TestHandleBindingMutationsRequireCSRFHeader(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal created binding: %v; body = %s", err, w.Body.String())
 	}
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	tests := []struct {
 		name, method, path string

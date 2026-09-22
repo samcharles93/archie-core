@@ -54,7 +54,7 @@ func TestTaskLogPageCarriesNoNilCollectionFields(t *testing.T) {
 
 				var c taskLogContract = reader
 				if mode == "grpc" {
-					c = remoteTaskStore(t, store.OpenTest(t), reader)
+					c = remoteTaskStore(t, store.OpenTest(t), reader, nil)
 				}
 
 				page, err := c.TaskLog(ctx, taskID, 0, logging.Query{})

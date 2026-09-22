@@ -50,6 +50,11 @@ var refusedPrefixes = []string{"/api/backups", "/api/sql"}
 // collection name is prefixed so it cannot collide with a PocketBase system
 // collection, and every query must select an "id": PocketBase keys view
 // records on it, and resources is keyed by kind rather than a row id.
+//
+// Only the task-lifecycle tables appear here. The event-capture tables moved
+// to internal/infrastructure/edastore, which owns them as real, editable
+// collections; mirroring them as read-only views would be a second, weaker
+// surface over data that already has a better one.
 var views = []struct {
 	name  string
 	query string
@@ -57,7 +62,6 @@ var views = []struct {
 	{"archie_tasks", `SELECT id, owner, repo, issue_number, title, status, workflow, stage, branch, pr_number, tokens_used, iterations, attempt, park_reason, identity, created_at, updated_at FROM tasks`},
 	{"archie_transitions", `SELECT id, task_id, at, from_status, to_status, detail FROM transitions`},
 	{"archie_events", `SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt FROM events`},
-	{"archie_bindings", `SELECT id, name, source, mapping_id, workflow, owner, repo, version, status FROM bindings`},
 	{"archie_identities", `SELECT id, kind, display_name, lifecycle, version, created_at, updated_at FROM identities`},
 	{"archie_resources", `SELECT kind AS id, kind, version, updated_at FROM resources`},
 }

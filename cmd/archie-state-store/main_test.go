@@ -372,8 +372,8 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertEvent config_captured: %v", err)
 	}
-	if capID, err := cl.InsertCapture(ctx, capture("sentry", `{"id":1}`), 0, 0); err != nil || capID == 0 {
-		t.Fatalf("InsertCapture = (%d, %v)", capID, err)
+	if capID, err := cl.InsertCapture(ctx, capture("sentry", `{"id":1}`), 0, 0); err != nil || capID == "" {
+		t.Fatalf("InsertCapture = (%q, %v)", capID, err)
 	}
 
 	got, err := cl.TaskByID(ctx, task.ID)
@@ -583,8 +583,8 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 
 	ctx := t.Context()
 	mappingID, err := cl.InsertMapping(ctx, mapping.Mapping{Name: "m1", Fields: []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}}})
-	if err != nil || mappingID == 0 {
-		t.Fatalf("InsertMapping = (%d, %v)", mappingID, err)
+	if err != nil || mappingID == "" {
+		t.Fatalf("InsertMapping = (%q, %v)", mappingID, err)
 	}
 	if got, err := cl.GetMapping(ctx, mappingID); err != nil || got == nil || got.Name != "m1" {
 		t.Fatalf("GetMapping = %+v, %v", got, err)
@@ -593,8 +593,8 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 		Name: "b1", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
 		Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
 	})
-	if err != nil || bindingID == 0 {
-		t.Fatalf("InsertBinding = (%d, %v)", bindingID, err)
+	if err != nil || bindingID == "" {
+		t.Fatalf("InsertBinding = (%q, %v)", bindingID, err)
 	}
 	// A binding starts as draft and must be edited (draft -> pending_approval)
 	// then approved (pending_approval -> armed) before it is armed for a
@@ -613,7 +613,7 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 		t.Fatalf("ArmedBindingsForSource = %+v, %v", armed, err)
 	}
 	// Remote surfaces share error-sentinel fidelity on the wire too.
-	missing := mapping.Mapping{ID: mappingID + 999999, Name: "x", Fields: []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}}}
+	missing := mapping.Mapping{ID: "rabsent00000000", Name: "x", Fields: []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}}}
 	if err := cl.UpdateMapping(ctx, missing); !errors.Is(err, store.ErrMappingNotFound) {
 		t.Fatalf("UpdateMapping missing = %v, want ErrMappingNotFound", err)
 	}

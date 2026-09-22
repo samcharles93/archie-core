@@ -46,6 +46,7 @@ import (
 	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
@@ -105,7 +106,8 @@ type boot struct {
 
 	playbooks *playbook.Store
 
-	st storecontract.TaskStore
+	st  storecontract.TaskStore
+	eda *edastore.Store
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
 	// dialed to the standalone archie-state-store gRPC service at

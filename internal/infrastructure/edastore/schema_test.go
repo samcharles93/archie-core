@@ -7,6 +7,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 )
 
@@ -46,23 +48,13 @@ func TestCollectionsAreCreated(t *testing.T) {
 // refused by the schema rather than by the caller remembering to ignore it.
 func TestBindingDispatchIsIdempotent(t *testing.T) {
 	st := newStore(t)
-	first, err := st.RecordDispatch(t.Context(), edastore.Dispatch{
-		BindingID: "b1", BindingVersion: 1, CaptureID: "c1", TaskID: 42,
-	})
-	if err != nil {
+	if err := st.RecordDispatch(t.Context(), "b1", 1, "c1", 42); err != nil {
 		t.Fatalf("first RecordDispatch() error = %v", err)
 	}
-	if !first {
-		t.Fatal("first RecordDispatch() = false, want true: a fresh dispatch must be recorded")
-	}
-	second, err := st.RecordDispatch(t.Context(), edastore.Dispatch{
-		BindingID: "b1", BindingVersion: 1, CaptureID: "c1", TaskID: 99,
-	})
-	if err != nil {
-		t.Fatalf("second RecordDispatch() error = %v", err)
-	}
-	if second {
-		t.Error("second RecordDispatch() = true, want false: (binding, capture) is an at-most-once ledger")
+	// A replay of the same (binding, capture) must be refused, not run again.
+	err := st.RecordDispatch(t.Context(), "b1", 1, "c1", 99)
+	if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
+		t.Errorf("second RecordDispatch() error = %v, want ErrAlreadyDispatched: (binding, capture) is an at-most-once ledger", err)
 	}
 }
 
@@ -70,12 +62,12 @@ func TestBindingDispatchIsIdempotent(t *testing.T) {
 // four-part playbook key (playbook, version, event, action).
 func TestPlaybookDispatchIsIdempotent(t *testing.T) {
 	st := newStore(t)
-	key := edastore.PlaybookDispatch{PlaybookID: "p1", PlaybookVersion: "v1", EventID: "e1", ActionID: "a1"}
-	if ok, err := st.RecordPlaybookDispatch(t.Context(), key); err != nil || !ok {
-		t.Fatalf("first RecordPlaybookDispatch() = %v, %v; want true, nil", ok, err)
+	if err := st.RecordPlaybookDispatch(t.Context(), "p1", "v1", "e1", "a1"); err != nil {
+		t.Fatalf("first RecordPlaybookDispatch() error = %v", err)
 	}
-	if ok, err := st.RecordPlaybookDispatch(t.Context(), key); err != nil || ok {
-		t.Fatalf("second RecordPlaybookDispatch() = %v, %v; want false, nil", ok, err)
+	err := st.RecordPlaybookDispatch(t.Context(), "p1", "v1", "e1", "a1")
+	if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
+		t.Errorf("second RecordPlaybookDispatch() error = %v, want ErrAlreadyDispatched", err)
 	}
 }
 
@@ -84,7 +76,9 @@ func TestPlaybookDispatchIsIdempotent(t *testing.T) {
 // binding created without a status must not default to anything live.
 func TestBindingStartsAsDraft(t *testing.T) {
 	st := newStore(t)
-	id, err := st.InsertBinding(t.Context(), edastore.Binding{Name: "n", Source: "sentry", Workflow: "implement"})
+	id, err := st.InsertBinding(t.Context(), binding.Binding{
+		Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
+	})
 	if err != nil {
 		t.Fatalf("InsertBinding() error = %v", err)
 	}
@@ -92,15 +86,15 @@ func TestBindingStartsAsDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBinding() error = %v", err)
 	}
-	if b.Status != edastore.StatusDraft {
-		t.Errorf("new binding status = %q, want %q: a binding must not be live before approval", b.Status, edastore.StatusDraft)
+	if b.Status != binding.StatusDraft {
+		t.Errorf("new binding status = %q, want %q: a binding must not be live before approval", b.Status, binding.StatusDraft)
 	}
 }
 
 // TestApproveRejectsUnknownBinding pins the sentinel the gRPC layer maps.
 func TestApproveRejectsUnknownBinding(t *testing.T) {
 	st := newStore(t)
-	if err := st.ApproveBinding(t.Context(), "nosuchbinding"); !errors.Is(err, edastore.ErrBindingNotFound) {
+	if err := st.ApproveBinding(t.Context(), "nosuchbinding"); !errors.Is(err, storecontract.ErrBindingNotFound) {
 		t.Errorf("ApproveBinding(unknown) error = %v, want ErrBindingNotFound", err)
 	}
 }
@@ -111,19 +105,90 @@ func TestApproveRejectsUnknownBinding(t *testing.T) {
 func TestCaptureRoundTripsPayload(t *testing.T) {
 	st := newStore(t)
 	body := `{"action":"created","issue":{"number":7,"title":"it broke"}}`
-	id, err := st.InsertCapture(t.Context(), edastore.Capture{
+	if _, err := st.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		Source: "sentry", Body: body, Headers: `{"X-Hook":"1"}`, ContentType: "application/json",
-	})
-	if err != nil {
+	}, 0, 0); err != nil {
 		t.Fatalf("InsertCapture() error = %v", err)
 	}
-	got, err := st.Capture(t.Context(), id)
+	list, err := st.ListCaptures(t.Context(), 10)
 	if err != nil {
-		t.Fatalf("Capture() error = %v", err)
+		t.Fatalf("ListCaptures() error = %v", err)
 	}
+	if len(list) != 1 {
+		t.Fatalf("ListCaptures() returned %d captures, want 1", len(list))
+	}
+	got := list[0]
 	if got.Body != body {
 		t.Errorf("Body round-trip = %q, want %q: the raw payload is what field mapping is designed against", got.Body, body)
 	}
 }
 
 var _ = core.Collection{}
+
+// TestBindingLifecycleIsThreeStates pins draft -> pending_approval -> armed.
+// The states are the domain's, not this package's: collapsing them (as an
+// earlier version of this store did) removes the review step while still
+// looking like an approval gate, which is the worst of both.
+func TestBindingLifecycleIsThreeStates(t *testing.T) {
+	st := newStore(t)
+	id, err := st.InsertBinding(t.Context(), binding.Binding{
+		Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
+	})
+	if err != nil {
+		t.Fatalf("InsertBinding() error = %v", err)
+	}
+
+	// A draft cannot skip review.
+	if err := st.ApproveBinding(t.Context(), id); !errors.Is(err, storecontract.ErrBindingTransition) {
+		t.Fatalf("ApproveBinding(draft) error = %v, want ErrBindingTransition: draft must not skip review", err)
+	}
+
+	// Editing sends it to pending_approval.
+	if err := st.UpdateBinding(t.Context(), binding.Binding{
+		ID: id, Name: "n2", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
+	}); err != nil {
+		t.Fatalf("UpdateBinding() error = %v", err)
+	}
+	b, err := st.GetBinding(t.Context(), id)
+	if err != nil {
+		t.Fatalf("GetBinding() error = %v", err)
+	}
+	if b.Status != binding.StatusPendingApproval {
+		t.Fatalf("status after edit = %q, want %q", b.Status, binding.StatusPendingApproval)
+	}
+
+	// Approval arms it, and only from pending_approval.
+	if err := st.ApproveBinding(t.Context(), id); err != nil {
+		t.Fatalf("ApproveBinding(pending_approval) error = %v", err)
+	}
+	if b, err = st.GetBinding(t.Context(), id); err != nil || b.Status != binding.StatusArmed {
+		t.Fatalf("status after approve = %q (err %v), want %q", b.Status, err, binding.StatusArmed)
+	}
+	if err := st.ApproveBinding(t.Context(), id); !errors.Is(err, storecontract.ErrBindingTransition) {
+		t.Errorf("re-approving an armed binding = %v, want ErrBindingTransition", err)
+	}
+
+	// Only armed bindings dispatch.
+	armed, err := st.ArmedBindingsForSource(t.Context(), "sentry")
+	if err != nil || len(armed) != 1 {
+		t.Fatalf("ArmedBindingsForSource() = %d bindings (err %v), want 1", len(armed), err)
+	}
+}
+
+// TestOneBindingPerSource pins the overlap guard: a second binding on a
+// source that already has one is refused, so a capture can never match two.
+func TestOneBindingPerSource(t *testing.T) {
+	st := newStore(t)
+	mk := func() error {
+		_, err := st.InsertBinding(t.Context(), binding.Binding{
+			Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
+		})
+		return err
+	}
+	if err := mk(); err != nil {
+		t.Fatalf("first InsertBinding() error = %v", err)
+	}
+	if err := mk(); !errors.Is(err, storecontract.ErrBindingOverlap) {
+		t.Errorf("second InsertBinding() error = %v, want ErrBindingOverlap", err)
+	}
+}
