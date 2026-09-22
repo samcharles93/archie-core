@@ -8,15 +8,16 @@ import (
 	"testing"
 )
 
-func TestDeployWorkflowOnlyPublishesRuntimeImageForRuntimeTag(t *testing.T) {
+func TestDeployWorkflowOnlyPublishesRuntimeImageForTaggedRelease(t *testing.T) {
 	source := readDeploymentFile(t, ".github/workflows/deploy.yml")
 
 	// The fallback remains necessary because Dockerfile.archied accepts a
 	// runtime version, but it must not be used as the image-publish selector.
 	for _, required := range []string{
 		`RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"`,
+		`RELEASE_TAG="$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1)"`,
 		`echo "runtime_tag=$RUNTIME_TAG" >> "$GITHUB_OUTPUT"`,
-		"if: steps.versions.outputs.runtime_tag != ''",
+		`echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"`,
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("deploy workflow is missing runtime-image guard %q", required)
@@ -24,13 +25,18 @@ func TestDeployWorkflowOnlyPublishesRuntimeImageForRuntimeTag(t *testing.T) {
 	}
 
 	// The gateway build remains unconditional, while the runtime build is
-	// guarded. This verifies both sides of the gateway-only/dual-tag contract.
+	// guarded. Both selectors are required. A one-stream release creates only a
+	// `v*` tag -- release.sh has no archie/v* arm any more -- so a
+	// runtime_tag-only condition would mean the agent image is never rebuilt
+	// again, and `docker compose pull agent` would fetch an ancient image
+	// forever. The legacy archie/v* arm stays because history is not re-tagged.
 	agentMarker := "      - name: Build and push archie-agent\n"
 	agentStart := strings.Index(source, agentMarker)
 	if agentStart < 0 {
 		t.Fatal("deploy workflow has no archie-agent build step")
 	}
-	if !strings.Contains(source[agentStart:], agentMarker+"        if: steps.versions.outputs.runtime_tag != ''\n") {
+	agentIf := "        if: steps.versions.outputs.runtime_tag != '' || steps.versions.outputs.release_tag != ''\n"
+	if !strings.Contains(source[agentStart:], agentMarker+agentIf) {
 		t.Fatal("archie-agent build step is not conditionally enabled")
 	}
 
