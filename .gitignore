@@ -51,3 +51,8 @@ __pycache__/
 
 # MkDocs build output (task docs:site)
 /site/
+
+# Locally-trusted development certificates (mkcert and friends). The private
+# key is generated per machine and must never be committed.
+*.pem
+*.key
