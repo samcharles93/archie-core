@@ -282,6 +282,15 @@ structures found in legacy packages.
 2. **Green (Implementation):** Implement minimal code to satisfy the failing
    tests.
 3. **Quality Gate:** Run `task check`.
+   - **The gate gates the commit.** Let the gate's exit status decide whether
+     the commit runs, as one conditional chain (`check && commit && push`).
+     Writing them as separate statements on one command line makes the gate
+     decorative: nothing reads its status but the operator, and a failure is
+     discovered after it has already been pushed.
+   - **Never assert a gate result you have not just produced on that exact
+     tree.** A commit message outlives the tree it describes, and "verified"
+     is read by people who were not there. If the tree moved, describe the
+     change and let the run speak.
 4. **Formatting is LAW:** Adopt all formatting and simplification changes from
    `task fmt` (`go fix` + the configured golangci-lint formatters) verbatim.
    Never revert or fight canonical linter/formatter diffs.
