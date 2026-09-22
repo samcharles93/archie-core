@@ -103,6 +103,12 @@ run fails with zero steps while the same configuration runs on a push, and the
 estate's own Woodpecker configurations trigger on push with cron, manual or
 pull-request events *added* to it rather than instead of it.
 
+**Prerequisite: Woodpecker must watch this repository.** Adding the workflow to the
+repository and enabling the repository in Woodpecker are two steps, and the second is
+a configuration action rather than a file. A release pipeline that is correct and
+never runs is invisible until someone asks why no release happened, so the repository
+being enabled is a prerequisite of this design rather than an assumption behind it.
+
 **One tag, and the duplicate-build problem shrinks as a consequence.** Concurrency
 keyed on a commit identifier treats an annotated tag as a ref distinct from its
 commit, which starts three builds for one release. One version and one tag removes
