@@ -139,7 +139,7 @@ jobs:
             exit 1
           fi
           if ! git tag --points-at HEAD | grep -qE 'archie' ; then
-            echo "::warning ::No release tags at HEAD  --  images will be stamped 'dev'"
+            echo "::warning ::No release tags at HEAD, so this build publishes :latest for a commit that is not a release. It is stamped dev+<sha> and tagged sha-<sha> so it stays traceable and restorable, but it supersedes the previous release's :latest stamping until the next release is cut."
           fi
 
   build-and-push:
@@ -150,6 +150,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Deliberately NOT `github.sha`. On a tag push that is the ref's OBJECT id,
+      # and every release tag in this repo is annotated — measured, 80 of 80
+      # `archied/v*` and `archie/v*` tags are tag objects — so it names something
+      # that cannot be checked out. `archied/v1.36.0` is an instance: it points at
+      # 6720bc42 (a tag object) and dereferences to commit c25f8d39. The producer
+      # is right to create annotated tags; the consumer stops guessing.
+      - name: Resolve the commit this ref points at
+        id: commit
+        run: |
+          sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=${sha:0:12}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -164,8 +177,14 @@ jobs:
           RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
           GATEWAY_VERSION="${GATEWAY_TAG#archied/}"
           RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
-          [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION=dev
-          [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
+          # Not a bare `dev`. A literal dev tells an operator nothing about which
+          # build they are running, and it is what made a release's stamping look
+          # transient: the next commit to main republished :latest as `dev`. The
+          # commit is appended so a main build is identifiable and is visibly not
+          # a release. (On an untagged push GITHUB_SHA IS the commit — the tag
+          # case is handled by the dereference above.)
+          [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION="dev+${GITHUB_SHA:0:12}"
+          [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION="dev+${GITHUB_SHA:0:12}"
           # Keep the raw tag presence separate from the version fallback:
           # gateway-only releases must not rebuild the runtime image as dev.
           echo "gateway_tag=$GATEWAY_TAG" >> "$GITHUB_OUTPUT"
@@ -179,7 +198,9 @@ jobs:
           context: .
           file: Dockerfile.archied
           push: true
-          tags: ghcr.io/samcharles93/archied:latest
+          tags: |
+            ghcr.io/samcharles93/archied:latest
+            ghcr.io/samcharles93/archied:sha-${{ steps.commit.outputs.sha }}
           build-args: |
             GATEWAY_VERSION=${{ steps.versions.outputs.gateway }}
             RUNTIME_VERSION=${{ steps.versions.outputs.runtime }}
@@ -193,7 +214,9 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/samcharles93/archie-agent:latest
+          tags: |
+            ghcr.io/samcharles93/archie-agent:latest
+            ghcr.io/samcharles93/archie-agent:sha-${{ steps.commit.outputs.sha }}
           build-args: |
             RUNTIME_VERSION=${{ steps.versions.outputs.runtime }}
           cache-from: type=gha,scope=archie-agent
