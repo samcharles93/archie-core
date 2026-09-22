@@ -89,10 +89,12 @@ const (
 	// (or after Start, if never run). The simplest recurring schedule.
 	ScheduleInterval = "interval"
 
-	// ScheduleCron fires at the next moment matching a standard 5-field
-	// cron expression (or one of the @ macros) after the last successful
+	// ScheduleCron fires at the next moment matching a 5-field cron
+	// expression (or one of the @ macros) after the last successful
 	// run, computed in the zone of that run time. Expressions are parsed
-	// with pocketbase tools/cron.
+	// with pocketbase tools/cron, which ANDs day-of-month with day-of-week
+	// instead of Vixie cron's OR: "0 0 1 * 1" means only Monday the 1st,
+	// not "the 1st or any Monday".
 	ScheduleCron = "cron"
 
 	// ScheduleOnce fires once at the configured At time. Subsequent
