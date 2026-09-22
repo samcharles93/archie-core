@@ -23,6 +23,23 @@ them. The changelog is the only source of release prose, and tags are not a sour
 CI and deployment check out shallow, so tags are absent from a site build while the
 changelog is always present.
 
+### The merged history
+
+Two version streams become one file, so a version that both components released
+carries one heading and one date: **the newest date among that version's sections**,
+because a version's date is when the last part of it shipped. Where a component's own
+date differs from it, that component's section label carries its own date, so the
+per-component fact survives the merge rather than being collapsed into the heading.
+
+This ambiguity is historical only. One version stream with one tag gives a version
+exactly one date, so the rule represents the merged past rather than a design that has
+to hold.
+
+The merge is verified by content, not by the generator succeeding: the section count
+per source, the merged version set equal to the union of both sources with nothing
+extra, and every section title still present. A generator that agrees with the file it
+just wrote is evidence of nothing.
+
 ## One version stream
 
 **`GATEWAY` and `RUNTIME` stop being release inputs.** `release:prepare` and
