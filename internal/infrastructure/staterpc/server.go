@@ -283,7 +283,7 @@ func (s *server) InsertEvent(ctx context.Context, r *pb.InsertEventRequest) (*pb
 }
 
 func (s *server) EventsSince(ctx context.Context, r *pb.EventsSinceRequest) (*pb.EventsSinceResponse, error) {
-	evs, err := s.deps.Tasks.EventsSince(ctx, r.SinceId, int(r.Limit))
+	evs, err := s.deps.Tasks.EventsSince(ctx, r.Cursor, int(r.Limit))
 	if err != nil {
 		return nil, s.logErr("EventsSince", err)
 	}

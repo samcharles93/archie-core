@@ -215,8 +215,8 @@ func (c *Client) InsertEvent(ctx context.Context, e events.Event) (int64, error)
 	return r.Id, nil
 }
 
-func (c *Client) EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error) {
-	r, err := c.client.EventsSince(ctx, &pb.EventsSinceRequest{SinceId: sinceID, Limit: int64(limit)})
+func (c *Client) EventsSince(ctx context.Context, cursor string, limit int) ([]events.Event, error) {
+	r, err := c.client.EventsSince(ctx, &pb.EventsSinceRequest{Cursor: cursor, Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}

@@ -171,7 +171,7 @@ func TestDispatchBindingsSkipsWhenResolveFails(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Fatalf("required-field failure spawned %d task(s), want 0", len(tasks))
 	}
-	events, err := s.EventsSince(t.Context(), 0, 100)
+	events, err := s.EventsSince(t.Context(), "", 100)
 	if err != nil {
 		t.Fatalf("EventsSince: %v", err)
 	}

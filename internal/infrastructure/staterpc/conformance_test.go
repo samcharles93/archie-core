@@ -232,7 +232,7 @@ func TestStateStoreConformance(t *testing.T) {
 			if !ok || doc["bot_user"] != "archie" {
 				t.Errorf("config_captured payload = %#v, want the decoded document under its own key", evs[1].Data)
 			}
-			if _, err := c.EventsSince(ctx, 0, 10); err != nil {
+			if _, err := c.EventsSince(ctx, "", 10); err != nil {
 				t.Fatalf("EventsSince: %v", err)
 			}
 			if _, err := c.WorkflowStats(ctx); err != nil {

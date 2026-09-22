@@ -4133,9 +4133,12 @@ func (x *InsertEventResponse) GetId() int64 {
 }
 
 type EventsSinceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SinceId       int64                  `protobuf:"varint,1,opt,name=since_id,json=sinceId,proto3" json:"since_id,omitempty"`
-	Limit         int64                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// cursor is the opaque resume cursor returned by the previous page (the SSE
+	// id: field, echoed back as Last-Event-ID). Empty means "from the
+	// beginning".
+	Cursor        string `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit         int64  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4170,11 +4173,11 @@ func (*EventsSinceRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{70}
 }
 
-func (x *EventsSinceRequest) GetSinceId() int64 {
+func (x *EventsSinceRequest) GetCursor() string {
 	if x != nil {
-		return x.SinceId
+		return x.Cursor
 	}
-	return 0
+	return ""
 }
 
 func (x *EventsSinceRequest) GetLimit() int64 {
@@ -7925,9 +7928,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x12InsertEventRequest\x12%\n" +
 	"\x05event\x18\x01 \x01(\v2\x0f.state.v1.EventR\x05event\"%\n" +
 	"\x13InsertEventResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"E\n" +
-	"\x12EventsSinceRequest\x12\x19\n" +
-	"\bsince_id\x18\x01 \x01(\x03R\asinceId\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"B\n" +
+	"\x12EventsSinceRequest\x12\x16\n" +
+	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x03R\x05limit\">\n" +
 	"\x13EventsSinceResponse\x12'\n" +
 	"\x06events\x18\x01 \x03(\v2\x0f.state.v1.EventR\x06events\",\n" +

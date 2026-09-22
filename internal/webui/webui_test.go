@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -95,11 +96,11 @@ func (s *stubStore) TokensByDay(ctx context.Context, days int) ([]store.DayToken
 	return s.TaskStore.TokensByDay(ctx, days)
 }
 
-func (s *stubStore) EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error) {
+func (s *stubStore) EventsSince(ctx context.Context, cursor string, limit int) ([]events.Event, error) {
 	if s.eventsSinceErr != nil {
 		return nil, s.eventsSinceErr
 	}
-	return s.TaskStore.EventsSince(ctx, sinceID, limit)
+	return s.TaskStore.EventsSince(ctx, cursor, limit)
 }
 
 func (s *stubStore) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error) {
@@ -350,11 +351,12 @@ func TestHandleSSEUsesLastEventIDForCatchUp(t *testing.T) {
 	srv := newTestServer(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	first, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "first"})
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	first, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "first", At: at})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "second"}); err != nil {
+	if _, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "second", At: at}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -364,7 +366,7 @@ func TestHandleSSEUsesLastEventIDForCatchUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Last-Event-ID", strconv.FormatInt(first, 10))
+	req.Header.Set("Last-Event-ID", storecontract.EventCursor(at, first))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -394,7 +396,8 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 	srv := newTestServer(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog"})
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog", At: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +429,7 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 	// Now broadcast a live event and confirm it's delivered too. Give
 	// the SSE handler a moment to register its subscriber.
 	time.Sleep(50 * time.Millisecond)
-	srv.Broadcast(events.Event{ID: id + 1, Kind: "log", Detail: "live"})
+	srv.Broadcast(events.Event{ID: id + 1, Kind: "log", Detail: "live", At: t0.Add(time.Second)})
 
 	if _, err := readLineUntil(reader, "live"); err != nil {
 		t.Fatalf("live event not received: %v", err)
@@ -442,7 +445,8 @@ func TestHandleSSEFiltersTurnCompletedFromLiveBroadcast(t *testing.T) {
 	srv := newTestServer(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog"})
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog", At: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,8 +473,8 @@ func TestHandleSSEFiltersTurnCompletedFromLiveBroadcast(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	srv.Broadcast(events.Event{ID: id + 1, Kind: events.KindTurnCompleted, Detail: "100000000"})
-	srv.Broadcast(events.Event{ID: id + 2, Kind: "log", Detail: "after-noise"})
+	srv.Broadcast(events.Event{ID: id + 1, Kind: events.KindTurnCompleted, Detail: "100000000", At: t0.Add(time.Second)})
+	srv.Broadcast(events.Event{ID: id + 2, Kind: "log", Detail: "after-noise", At: t0.Add(2 * time.Second)})
 
 	seen, err := readLinesUntil(reader, "after-noise")
 	if err != nil {
