@@ -26,6 +26,7 @@
 package stateadmin
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -134,9 +135,15 @@ func connectTo(dbPath string) core.DBConnectFunc {
 func registerViews(app core.App) error {
 	for _, v := range views {
 		collection, err := app.FindCollectionByNameOrId(v.name)
-		if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
 			collection = core.NewViewCollection(v.name)
-		} else if !collection.IsView() {
+		case err != nil:
+			// A lookup that failed for any other reason must not be read as
+			// "absent": creating a second collection over a live one would
+			// be a schema change made on the strength of a transient error.
+			return fmt.Errorf("stateadmin: look up view %q: %w", v.name, err)
+		case !collection.IsView():
 			return fmt.Errorf("stateadmin: collection %q exists and is not a view", v.name)
 		}
 		collection.ViewQuery = v.query
@@ -157,8 +164,13 @@ func registerViews(app core.App) error {
 // that is not there cannot be loosened again by a later PocketBase default.
 func removeDefaultAuthCollection(app core.App) error {
 	collection, err := app.FindCollectionByNameOrId("users")
-	if err != nil {
-		return nil // already absent, including on every restart after the first
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// Already absent: every restart after the first, and any deployment
+		// whose PocketBase version stops shipping the default.
+		return nil
+	case err != nil:
+		return fmt.Errorf("stateadmin: look up default users collection: %w", err)
 	}
 	if err := app.Delete(collection); err != nil {
 		return fmt.Errorf("stateadmin: remove default users collection: %w", err)
