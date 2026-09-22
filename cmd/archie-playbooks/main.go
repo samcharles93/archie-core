@@ -22,6 +22,7 @@ import (
 	"os"
 
 	"github.com/samcharles93/archie-core/internal/app/archieplaybooks"
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 )
 
 func main() {
@@ -34,6 +35,11 @@ func run(args []string, stderr io.Writer) int {
 	// here, not a restructuring.
 	commands := map[string]func([]string, io.Writer) int{
 		"lint": runLint,
+	}
+
+	if len(args) > 0 && (args[0] == "-version" || args[0] == "--version") {
+		buildinfo.Print("archie-playbooks")
+		return 0
 	}
 
 	if len(args) == 0 {

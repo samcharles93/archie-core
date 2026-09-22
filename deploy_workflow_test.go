@@ -152,6 +152,26 @@ func TestDistZipShipsEveryHostCommand(t *testing.T) {
 	// The installer now REFUSES an update when a service unit is missing and
 	// tells the operator to create it from this runbook, so a service the
 	// runbook never shows is a dead end rather than a documentation gap.
+	// Stamping is its own list, and a third build site made it three: the zip,
+	// install.sh and the updater each build the host binaries. A binary that
+	// cannot say what it is cannot be compared (archie-core-k94o), so a seventh
+	// command added unstamped fails here rather than waiting to be noticed.
+	for name, source := range map[string]string{
+		"deploy.yml":            workflow,
+		"install.sh":            installSh,
+		"archie-update-install": installer,
+	} {
+		if !strings.Contains(source, "internal/buildinfo.Version=") {
+			t.Errorf("%s does not stamp internal/buildinfo.Version", name)
+		}
+	}
+	for _, command := range wantBinaries {
+		main := readDeploymentFile(t, filepath.Join("cmd", command, "main.go"))
+		if !strings.Contains(main, "buildinfo") {
+			t.Errorf("cmd/%s/main.go has no way to report its version", command)
+		}
+	}
+
 	// The installer writes the units, so the runbook no longer carries their
 	// contents; it must still name each unit, or an operator cannot find one to
 	// inspect or override.

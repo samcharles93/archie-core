@@ -117,7 +117,38 @@ if [ -n "$RT_TARGET" ] && [ "$RT_TARGET" != "$PREV_RT" ]; then
   components="${components:+$components,}agent"
 fi
 
+# Per-binary skew is a different question from the unit set, and the one the
+# updater could not answer (archie-core-k94o): it is component-driven, so a host
+# whose individual binaries disagree -- a hand-installed outlier beside an
+# otherwise current install -- looks healthy, because "no approved component
+# changes" short-circuits before any binary is read. Ask every installed binary
+# what it is and refuse, named, rather than reporting the install current.
+verify_installed_versions() {
+  reference="$1"
+  problems=""
+  for cmd in $GATEWAY_BINARIES; do
+    [ -f "$BIN_DIR/$cmd" ] || continue
+    reported="$("$BIN_DIR/$cmd" -version 2>/dev/null | awk -v want="$cmd" '$1 == want { print $2; exit }')"
+    [ -n "$reported" ] || reported="unknown"
+    if [ "$reported" != "$reference" ]; then
+      problems="${problems:+$problems }$cmd=$reported"
+    fi
+  done
+  if [ -n "$problems" ]; then
+    echo "refusing: installed binaries disagree with $reference: $problems" >&2
+    echo "each host binary must report the release it was built from; reinstall the outliers from archied/v$reference, or approve an update that rebuilds them" >&2
+    return 1
+  fi
+}
+
 if [ -z "$components" ]; then
+  reference="$PREV_GW"
+  if [ -z "$reference" ]; then
+    reference="$("$BIN_DIR/archied" -version 2>/dev/null | awk '$1 == "archied" { print $2; exit }')"
+  fi
+  if [ -n "$reference" ] && ! verify_installed_versions "$reference"; then
+    exit 1
+  fi
   echo '==> no approved component changes; nothing to install'
   echo 'ARCHIE_UPDATE_RESULT {"previous":{},"installed":{},"components":[],"restart_requested":false}'
   exit 0
@@ -243,6 +274,10 @@ if [[ ",$components," == *,daemon,* ]]; then
   ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=$GW"
   ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=$RT"
   ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+  # The updater is a build site too: without this stamp its own outputs would
+  # report "dev" and fail the skew check it just installed.
+  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Version=$GW"
+  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=$RT"
   for cmd in $GATEWAY_BINARIES; do
     [ -d "./cmd/$cmd" ] || continue
     echo "==> building $cmd $GW"
@@ -264,6 +299,12 @@ if [[ ",$components," == *,daemon,* ]]; then
   for cmd in $built; do
     install -m755 "$tmp/$cmd" "$BIN_DIR/$cmd"
   done
+
+  # Every installed binary must now report the release just installed; a binary
+  # this release did not rebuild is skew, not success.
+  if ! verify_installed_versions "$GW"; then
+    exit 1
+  fi
 fi
 if [[ ",$components," == *,agent,* ]]; then
   # Independent versioning: the agent tag usually points at a different

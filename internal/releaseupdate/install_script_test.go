@@ -349,6 +349,14 @@ func runUpdateInstallWithConfig(t *testing.T, environment map[string]string, con
 // change that text -- which is exactly the state the guard must catch.
 func runUpdateInstallEdited(t *testing.T, environment map[string]string, configBody string, edit func(string) string, wantErr bool) (Result, []string, string) {
 	t.Helper()
+	return runUpdateInstallFull(t, environment, configBody, nil, edit, wantErr)
+}
+
+// runUpdateInstallFull is runUpdateInstallEdited with control over the versions
+// already installed in the bin directory, so a skewed host can be built on
+// purpose (archie-core-k94o).
+func runUpdateInstallFull(t *testing.T, environment map[string]string, configBody string, installed map[string]string, edit func(string) string, wantErr bool) (Result, []string, string) {
+	t.Helper()
 	ctx := t.Context()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -366,10 +374,16 @@ func runUpdateInstallEdited(t *testing.T, environment map[string]string, configB
 	if err := os.WriteFile(configPath, []byte(configBody), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"archied", "archie-agent"} {
-		if err := os.WriteFile(filepath.Join(binDir, name), []byte("old "+name), 0o755); err != nil {
-			t.Fatal(err)
-		}
+	previousVersion := environment["ARCHIE_UPDATE_DAEMON_PREVIOUS"]
+	if previousVersion == "" {
+		previousVersion = "dev"
+	}
+	writeFakeBinary(t, binDir, "archied", previousVersion)
+	if err := os.WriteFile(filepath.Join(binDir, "archie-agent"), []byte("old archie-agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, version := range installed {
+		writeFakeBinary(t, binDir, name, version)
 	}
 	writeFakeCommand(t, fakeDir, "git", `
 printf '%s\n' "git $*" >> "$ARCHIE_TEST_CALLS"
@@ -399,12 +413,24 @@ if [ "$1" = "run" ]; then
   exit 0
 fi
 out=""
+name=""
+version="dev"
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then out="$2"; break; fi
+  if [ "$1" = "-o" ]; then out="$2"; fi
+  case "$1" in
+    ./cmd/*) name="${1#./cmd/}" ;;
+    *buildinfo.Version=*)
+      version="${1##*buildinfo.Version=}"
+      version="${version%% *}"
+      ;;
+  esac
   shift
 done
 mkdir -p "$(dirname "$out")"
-printf 'built\n' > "$out"
+# The installed binary must answer -version the way a real one does, or the
+# updater's skew check cannot read it.
+printf '#!/usr/bin/env bash\necho "%s %s"\n' "$name" "$version" > "$out"
+chmod 755 "$out"
 `)
 	writeFakeCommand(t, fakeDir, "docker", `
 printf '%s\n' "docker $*" >> "$ARCHIE_TEST_CALLS"
@@ -520,6 +546,14 @@ fi
 		t.Fatalf("installer output has no result sentinel:\n%s", output)
 	}
 	return result, calls, string(output)
+}
+
+func writeFakeBinary(t *testing.T, dir, name, version string) {
+	t.Helper()
+	body := "#!/usr/bin/env bash\necho " + strconv.Quote(name+" "+version) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeFakeCommand(t *testing.T, dir, name, body string) {
@@ -718,6 +752,45 @@ func TestUpdateInstallRefusesWhenTheServiceListOmitsAHostUnit(t *testing.T) {
 	// Nothing may be replaced on a host the update would leave partial.
 	assertCallAbsent(t, calls, "go build")
 	assertCallAbsent(t, calls, "install -m755")
+}
+
+// Carina's actual pair (archie-core-k94o): archie-messaging 1.35.0 beside an
+// archie-state-store 1.30.0, the daemon at 1.30.0, and nothing approved to
+// install. The component-driven updater reported only "nothing to install"
+// while the two disagreed; now it reads each installed binary and names them.
+func TestUpdateInstallRefusesWhenInstalledBinariesDisagree(t *testing.T) {
+	_, calls, output := runUpdateInstallFull(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.30.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.30.0",
+	}, "[containers]\nimage = 'registry.example/archie-agent:stable'\n", map[string]string{
+		"archie-messaging":   "1.35.0",
+		"archie-state-store": "1.30.0",
+	}, nil, true)
+
+	if !strings.Contains(output, "archie-messaging=1.35.0") {
+		t.Errorf("refusal must name the skewed binary and its version; output = %q", output)
+	}
+	if strings.Contains(output, "archie-state-store=") {
+		t.Errorf("refusal named a binary that agrees; output = %q", output)
+	}
+	assertCallAbsent(t, calls, "go build")
+	assertCallAbsent(t, calls, "install -m755")
+	t.Logf("refusal output:\n%s", strings.TrimSpace(output))
+}
+
+// A binary built outside a release reports "dev"; on a released host that is
+// skew too, and it must be named rather than read as agreement.
+func TestUpdateInstallRefusesAnUnstampedBinary(t *testing.T) {
+	_, _, output := runUpdateInstallFull(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.30.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.30.0",
+	}, "[containers]\nimage = 'registry.example/archie-agent:stable'\n", map[string]string{
+		"archie-ui": "dev",
+	}, nil, true)
+
+	if !strings.Contains(output, "archie-ui=dev") {
+		t.Errorf("refusal must name the unstamped binary; output = %q", output)
+	}
 }
 
 // The deployment is several processes, so the watchdog must cycle all of them,

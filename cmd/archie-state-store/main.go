@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
@@ -32,6 +33,7 @@ func run() int {
 		return runRecovery(args, os.Stdout, os.Stderr)
 	}
 	var options archied.StateStoreOptions
+	showVersion := buildinfo.RegisterVersionFlag("archie-state-store")
 	flag.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	flag.StringVar(&options.Listen, "listen", "", "state store gRPC listen address (defaults to [services.state].listen, else 127.0.0.1:9090)")
@@ -42,6 +44,7 @@ func run() int {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	showVersion()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := archied.RunStateStore(ctx, options); err != nil {

@@ -174,6 +174,10 @@ echo "==> Building native archie binaries..."
   LDFLAGS="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${GATEWAY_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+  # Every host binary carries the release it was built from, so the updater can
+  # ask each installed binary what it is (archie-core-k94o).
+  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION}"
+  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION}"
   # archied does not run alone: the State Store owns archie.db, the Gateway
   # serves the chat contract, the dashboard is its own process, and the
   # Messaging Service owns the chat channels. Building only archied leaves it

@@ -254,7 +254,7 @@ jobs:
           # ran on with a dead Telegram bot and no error anywhere
           # (archie-core-1c01). TestDistZipShipsEveryHostCommand fails if this
           # list and the copy list below stop matching the commands in cmd/.
-          ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+          ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary -X github.com/samcharles93/archie-core/internal/buildinfo.Version=${{ steps.version.outputs.version }}"
           mkdir -p dist
           for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks; do
             go build -ldflags "$ldflags" -o "dist/$cmd" "./cmd/$cmd"
