@@ -57,29 +57,6 @@
   agent's call and a page script's call reach the server identically. Tools therefore record the
   signed-in identity and a source, and **never** that an agent acted.
 
-### The four judgement verbs are deliberately absent
-
-- `approve`, `reject`, `abandon` and `archive` are **not** exposed. `internal/domain/taskactions`
-  records only a source string and stamps `KindHumanApproved`, so an agent's approval would be written
-  down as a person's. An agent that can approve can approve its own work, and the one control this
-  design exists to keep is a human accepting it. Those verbs land once task actions carry both the
-  acting identity and the authorising principal.
-
-### `consequentialHint` does not gate anything, and the release says so
-
-- Chrome 152 accepts `consequentialHint` at registration and **omits it from `getTools()`**, so no
-  client sees it and the browser cannot enforce what it does not surface. The three recovery tools
-  instead require an explicit `confirm: true`, which is a **deliberate-action signal rather than a
-  security control** an agent can trivially satisfy. The boundary that holds is the session: the tools
-  cannot exceed what the signed-in operator can already do.
-
-### Two ways this fails silently, now recorded next to the code
-
-- **A secure context is required.** On a plain-HTTP origin `document.modelContext` is absent *even
-  with the flag*, and nothing reports why. `mkcert` covers local development.
-- **`archie-ui` embeds `ui/dist` into its binary**, so rebuilding the distribution is not deploying it;
-  a running process can serve a bundle with no tools while the built one has them.
-
 ### Binaries built by the development build task can be updated
 
 - `task build` passed the `installtype` stamp for three of six commands, so `archie-messaging`,
@@ -97,10 +74,6 @@
   `internal/app/controlplane`; the client half now lives in
   `internal/infrastructure/controlplanerpc`, and the app package keeps the server, the registry, the
   seeds, the validators and the schema derivation.
-- **The PRD's guard now exists, and passes:** `cmd/archie-messaging/architecture_test.go` measures the
-  linked binary against the banned list, with `internal/domain/workflow/task` as an exception checked
-  in both directions. Before this the guard had never been written -- because it failed. A messaging
-  process linking a SQLite driver and the workflow engine is a severance hole, not a design choice.
 - The resource documents are type-aliased back into the app package, so there is one definition read
   under two names rather than a copy per side.
 
@@ -108,8 +81,7 @@
 
 - The Messaging Service reports each channel's state, recorded **per channel**: one channel's failure
   marks only itself, a channel that cannot start is marked failed **with its reason** rather than only
-  logged, and one that returns is marked stopped. `internal/channels/status.Manager` finally has a
-  production writer.
+  logged, and one that returns is marked stopped. `internal/channels/status.Manager` reports each channel's state.
 - `PutChannelStatus`/`ListChannelStatus` carry that to the dashboard, following the config-snapshot
   split. The store **replaces the reported set**, so a channel the reporter stops mentioning is
   deleted rather than left as a stale `running`; an empty report clears the table, because hosting no

@@ -263,6 +263,20 @@ identity.
 
 ## Current enforcement and isolation
 
+## Withheld judgement verbs
+
+`approve`, `reject`, `abandon` and `archive` are not exposed to an agent. An agent
+that can approve can approve its own work, and the one control this surface exists
+to keep is a human accepting it.
+
+The constraint is attribution, not capability: a task action records the acting
+identity and the authorising principal, so exposing the verbs requires that an
+agent's action be recorded as an agent's and the authority it used recorded
+separately. Until a surface carries both, the verbs stay withheld. This is the
+reason the four verbs are absent from the dashboard's in-browser tools, and it is
+why releasing them is a change to this boundary rather than a change to the tools.
+
+
 The current implementation uses identity equality as an authorization check for
 chat task approval and cancellation. This conflicts with the approved rule that
 identity is attribution rather than authentication or access control and must be

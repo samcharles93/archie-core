@@ -41,7 +41,15 @@ needs the new agent image to actually take effect, say so explicitly and
 either cut an agent release or note that `docker compose build agent` /
 `docker compose pull agent` is needed separately.
 
-## Process
+## What the notes are for
+
+**Release notes state what a reader gets.** A reader scanning releases does not
+need to know what was withheld, what a browser API cannot do, or what the
+engineering took; and a note about an absence reads as a feature to someone who
+never had the thing. Design constraints, withheld capabilities and failure modes
+belong in `docs/architecture/`, where implementers look, because there they are
+requirements rather than news.
+
 
 ```bash
 task release:preview VERSION=1.3.0     # preview what would land, both components
