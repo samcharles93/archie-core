@@ -145,10 +145,10 @@ func TestMarkdownToBlocksStripsInlineMarkers(t *testing.T) {
 	}
 }
 
-func TestMarkdownToBlocksToolBlockBecomesParagraphAndCode(t *testing.T) {
-	// The tool progress block composes a label line then a ```text fence.
-	// Non-heading blocks get an explicit spacer paragraph on both sides; see
-	// appendBlock.
+func TestMarkdownToBlocksLabelledFenceBecomesParagraphAndCode(t *testing.T) {
+	// A label line followed by a fence. Non-heading blocks get an explicit
+	// spacer paragraph on both sides; see appendBlock. That cost per fenced
+	// block is why a one-line tool preview is not given one.
 	in := "🔧 shell — done\n```text\nexit 0\n```\ndone"
 	blocks := markdownToBlocks(in)
 	if len(blocks) != 5 {
@@ -459,5 +459,102 @@ func TestMarkdownToBlocksHardBreakDoesNotLeakPastABlankLine(t *testing.T) {
 		if texts[i] != w {
 			t.Errorf("block[%d] = %q, want %q", i, texts[i], w)
 		}
+	}
+}
+
+// blockLang returns a preformatted block's language, for assertions.
+func blockLang(b models.InputRichBlock) string {
+	if b.Type == models.RichBlockTypePreformatted && b.InputRichBlockPreformatted != nil {
+		return b.InputRichBlockPreformatted.Language
+	}
+	return ""
+}
+
+// TestMarkdownToBlocksFenceRunLengths pins CommonMark's fence rules, which
+// models exercise constantly: a fence is three OR MORE of its character, and
+// the info string belongs to the opening fence alone.
+//
+// A hardcoded three-backtick prefix silently mangled every longer fence --
+// "````go" left one backtick glued to the language, so Telegram received
+// "`go" and matched no grammar at all.
+func TestMarkdownToBlocksFenceRunLengths(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		md   string
+		lang string
+		text string
+	}{
+		{"three backticks", "```go\nx := 1\n```", "go", "x := 1"},
+		{"four backticks", "````go\nx := 1\n````", "go", "x := 1"},
+		{"six backticks", "``````go\nx := 1\n``````", "go", "x := 1"},
+		{"three tildes", "~~~go\nx := 1\n~~~", "go", "x := 1"},
+		{"five tildes", "~~~~~go\nx := 1\n~~~~~", "go", "x := 1"},
+		{"no info string", "```\nx := 1\n```", "", "x := 1"},
+		{"longer closer is allowed", "```go\nx := 1\n`````", "go", "x := 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			blocks := markdownToBlocks(tc.md)
+			if len(blocks) != 1 {
+				t.Fatalf("blocks = %d (%v), want 1 preformatted", len(blocks), blockTypes(blocks))
+			}
+			if got := blockLang(blocks[0]); got != tc.lang {
+				t.Errorf("language = %q, want %q", got, tc.lang)
+			}
+			if got := blockText(blocks[0]); got != tc.text {
+				t.Errorf("text = %q, want %q", got, tc.text)
+			}
+		})
+	}
+}
+
+// TestMarkdownToBlocksLongFenceWrapsShorterFence pins the reason longer
+// fences exist at all: wrapping content that itself contains a fence. The
+// inner fence must survive verbatim rather than closing the outer block and
+// spilling the code out as prose.
+func TestMarkdownToBlocksLongFenceWrapsShorterFence(t *testing.T) {
+	blocks := markdownToBlocks("````\n```go\nx := 1\n```\n````")
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d (%v), want 1 -- the inner fence must not close the outer one", len(blocks), blockTypes(blocks))
+	}
+	if got, want := blockText(blocks[0]), "```go\nx := 1\n```"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+}
+
+// TestMarkdownToBlocksFenceClosesOnlyOnAMatchingRun pins the two ways a line
+// that looks like a fence is not one: too short, or the other character.
+func TestMarkdownToBlocksFenceClosesOnlyOnAMatchingRun(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		md   string
+		text string
+	}{
+		{"shorter run does not close", "````\na\n```\nb\n````", "a\n```\nb"},
+		{"other character does not close", "```\na\n~~~\nb\n```", "a\n~~~\nb"},
+		{"info string on closer does not close", "```go\na\n```go\nb\n```", "a\n```go\nb"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			blocks := markdownToBlocks(tc.md)
+			if len(blocks) != 1 {
+				t.Fatalf("blocks = %d (%v), want 1", len(blocks), blockTypes(blocks))
+			}
+			if got := blockText(blocks[0]); got != tc.text {
+				t.Errorf("text = %q, want %q", got, tc.text)
+			}
+		})
+	}
+}
+
+// TestMarkdownToBlocksTildeFenceSurvivesTheEmphasisStripper pins that a tilde
+// fence is recognised before the strikethrough stripper reaches it. Falling
+// through to the paragraph case fed "~~~go" to the "~~" pass, which ate two
+// of the three tildes and rendered "~go".
+func TestMarkdownToBlocksTildeFenceSurvivesTheEmphasisStripper(t *testing.T) {
+	blocks := markdownToBlocks("~~~\na ~~struck~~ b\n~~~")
+	if len(blocks) != 1 || blocks[0].Type != models.RichBlockTypePreformatted {
+		t.Fatalf("blocks = %v, want one preformatted block", blockTypes(blocks))
+	}
+	if got, want := blockText(blocks[0]), "a ~~struck~~ b"; got != want {
+		t.Errorf("text = %q, want %q -- fenced content is verbatim", got, want)
 	}
 }

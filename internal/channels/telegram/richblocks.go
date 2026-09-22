@@ -227,12 +227,17 @@ func markdownToBlocks(md string) []models.InputRichBlock {
 // multi-line construct (paragraph, code fence, list, block quote) is
 // currently open.
 type markdownBlockParser struct {
-	blocks     []models.InputRichBlock
-	paragraph  strings.Builder
-	codeLines  []string
-	codeLang   string
-	inCode     bool
-	indented   bool
+	blocks    []models.InputRichBlock
+	paragraph strings.Builder
+	codeLines []string
+	codeLang  string
+	inCode    bool
+	indented  bool
+	// fenceChar and fenceLen record the opening fence, so only a run of the
+	// same character that is at least as long closes the block. Without
+	// them a fence could never wrap content containing a shorter one.
+	fenceChar  byte
+	fenceLen   int
 	listItems  [][]models.InputRichBlock
 	quoteLines []string
 	// hardBreak records that the line just consumed ended in CommonMark's
@@ -253,9 +258,10 @@ func (p *markdownBlockParser) handleLine(line string) {
 	}
 
 	switch {
-	case strings.HasPrefix(trimmed, "```"):
+	case isFence(trimmed):
+		char, length, info := parseFence(trimmed)
 		p.flush()
-		p.codeLang = strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+		p.codeLang, p.fenceChar, p.fenceLen = info, char, length
 		p.inCode = true
 		p.codeLines = nil
 	case headingDepth(trimmed) > 0:
@@ -327,13 +333,57 @@ func trimHardBreak(trimmed string) string {
 	return strings.TrimRight(strings.TrimSuffix(trimmed, "\\"), " ")
 }
 
+// fenceRun measures the leading run of CommonMark's two fence characters,
+// returning the character, its run length and the rest of the line. A run
+// shorter than three is not a fence, and is reported as length zero.
+func fenceRun(trimmed string) (byte, int, string) {
+	if trimmed == "" || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return 0, 0, ""
+	}
+	char := trimmed[0]
+	n := 0
+	for n < len(trimmed) && trimmed[n] == char {
+		n++
+	}
+	if n < 3 {
+		return 0, 0, ""
+	}
+	return char, n, strings.TrimSpace(trimmed[n:])
+}
+
+// isFence reports whether trimmed opens or closes a fenced code block.
+func isFence(trimmed string) bool {
+	_, n, _ := fenceRun(trimmed)
+	return n > 0
+}
+
+// parseFence splits an opening fence into its character, run length and info
+// string. A backtick fence may not carry a backtick in its info string, which
+// is what keeps an inline code span from being read as a fence.
+func parseFence(trimmed string) (byte, int, string) {
+	char, n, info := fenceRun(trimmed)
+	if char == '`' && strings.Contains(info, "`") {
+		return char, n, ""
+	}
+	return char, n, info
+}
+
+// closesFence reports whether trimmed ends the open fenced block: the same
+// character, a run at least as long as the opening one, and nothing after it.
+// A shorter run, the other character, or a trailing info string is ordinary
+// content and stays in the block.
+func (p *markdownBlockParser) closesFence(trimmed string) bool {
+	char, n, info := fenceRun(trimmed)
+	return n > 0 && char == p.fenceChar && n >= p.fenceLen && info == ""
+}
+
 // consumeCodeLine handles one line while a code block is open, reporting
 // whether that block claimed it. A fenced block ends at its closing fence; an
 // indented block ends at the first non-indented, non-blank line, which is not
 // a terminator and must still be parsed normally.
 func (p *markdownBlockParser) consumeCodeLine(line, trimmed string) bool {
 	if !p.indented {
-		if strings.HasPrefix(trimmed, "```") {
+		if p.closesFence(trimmed) {
 			p.closeCode()
 		} else {
 			p.codeLines = append(p.codeLines, line)
@@ -450,6 +500,7 @@ func (p *markdownBlockParser) closeCode() {
 		p.appendBlock(preformattedBlock(strings.Join(lines, "\n"), p.codeLang))
 	}
 	p.codeLines, p.codeLang, p.inCode, p.indented = nil, "", false, false
+	p.fenceChar, p.fenceLen = 0, 0
 }
 
 // indentedCodeLine reports whether line opens or continues an indented code
