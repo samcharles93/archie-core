@@ -43,12 +43,22 @@ either cut an agent release or note that `docker compose build agent` /
 
 ## What the notes are for
 
-**Release notes state what a reader gets.** A reader scanning releases does not
-need to know what was withheld, what a browser API cannot do, or what the
-engineering took; and a note about an absence reads as a feature to someone who
-never had the thing. Design constraints, withheld capabilities and failure modes
-belong in `docs/architecture/`, where implementers look, because there they are
-requirements rather than news.
+**Release notes describe the reader's experience of what shipped.** The test is
+the reader, not whether a sentence is negative:
+
+- A capability that **never existed** leaves no expectation to correct, so a note
+  about it reads as a feature to someone who never had the thing — out.
+- **The implementation's journey** — what was rebuilt, what a guard finally
+  covers, what a browser API refuses to surface — is not the reader's experience
+  either — out.
+- A capability that **shipped but is not yet wired** *is* the reader's
+  experience, so it belongs, worded as a caveat on the capability and paired with
+  the behaviour that compensates for it.
+
+Design constraints and withheld capabilities belong in `docs/architecture/`,
+where implementers look, because there they are requirements rather than news.
+Do not apply this mechanically: deleting a caveat a reader needs misleads them,
+which is the failure this rule exists to prevent.
 
 
 ```bash
