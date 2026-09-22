@@ -95,21 +95,25 @@ var unpackagedCommands = map[string]string{
 // they are not services.
 var cliOnlyCommands = map[string]bool{"archie-playbooks": true}
 
-// TestHostCommandListsCannotDrift is why archie-core-1c01 went unnoticed for two
-// days. The v1.30.0 extraction moved Telegram, email and webhook out of archied
-// into a new cmd/archie-messaging that nothing packaged: the release zip omitted
-// it, and scripts/archie-update-install omitted it from both of its lists, so a
-// host install ran on with a dead Telegram bot and no error logged anywhere. The
-// daemon looked healthy throughout.
+// TestDistZipShipsEveryHostCommand is why archie-core-1c01 went unnoticed for
+// two days. The v1.30.0 extraction moved Telegram, email and webhook out of
+// archied into a new cmd/archie-messaging that nothing packaged: the release zip
+// omitted it, scripts/archie-update-install omitted it from both of its lists,
+// and install.sh's build loop omitted it too, so a host install ran on with a
+// dead Telegram bot and no error logged anywhere. The daemon looked healthy
+// throughout.
 //
-// The host component set was enumerated independently in three places (the zip's
-// build loop, the zip's copy list, and the installer's two lists), so two
-// coordinated edits would have drifted again. Every list is pinned to cmd/ here
-// instead: adding a command fails this test until it is packaged, and extracting
-// one fails it until the previous command is removed.
-func TestHostCommandListsCannotDrift(t *testing.T) {
+// The host component set was enumerated independently in four places (the zip's
+// build loop, the zip's copy list, install.sh's build loop, and the updater's
+// two lists), so two coordinated edits would have drifted again. Every list is
+// pinned to cmd/ here instead: adding a command fails this test until it is
+// packaged, and extracting one fails it until the previous command is removed.
+// The updater's service list is separately required to have a documented unit,
+// and its runtime guard refuses a host unit the list omits.
+func TestDistZipShipsEveryHostCommand(t *testing.T) {
 	workflow := readDeploymentFile(t, ".github/workflows/deploy.yml")
 	installer := readDeploymentFile(t, filepath.Join("scripts", "archie-update-install"))
+	installSh := readDeploymentFile(t, "install.sh")
 
 	want := hostRunCommands(t)
 	wantBinaries := want
@@ -127,6 +131,7 @@ func TestHostCommandListsCannotDrift(t *testing.T) {
 	}
 	services := wordsAfter(t, installer, `GATEWAY_SERVICES="`, `"`, nil)
 	binaries := wordsAfter(t, installer, `GATEWAY_BINARIES="`, `"`, map[string][]string{"$GATEWAY_SERVICES": services})
+	installBuilt := installBuildCommands(t, installSh)
 
 	for _, list := range []struct {
 		name string
@@ -135,6 +140,7 @@ func TestHostCommandListsCannotDrift(t *testing.T) {
 	}{
 		{"deploy.yml dist-zip build loop", built, wantBinaries},
 		{"deploy.yml dist-zip copy list", shipped, wantBinaries},
+		{"install.sh build loop", installBuilt, wantBinaries},
 		{"archie-update-install GATEWAY_BINARIES", binaries, wantBinaries},
 		{"archie-update-install GATEWAY_SERVICES", services, wantServices},
 	} {
@@ -156,6 +162,29 @@ func TestHostCommandListsCannotDrift(t *testing.T) {
 	if len(undocumented) > 0 {
 		t.Errorf("deployments/systemd-user-service.md documents no unit for: %s", strings.Join(undocumented, " "))
 	}
+}
+
+// installBuildCommands reads install.sh's build loop. The file has a second
+// `for cmd in` (the git/go preflight), so the loop is located by the go build it
+// drives rather than by the first marker -- and read from the real list, so a
+// missing command is named instead of the marker merely going absent.
+func installBuildCommands(t *testing.T, source string) []string {
+	t.Helper()
+	before, _, ok := strings.Cut(source, `go build -ldflags "${LDFLAGS}"`)
+	if !ok {
+		t.Fatal("install.sh has no go build loop to read")
+	}
+	prefix := before
+	start := strings.LastIndex(prefix, "for cmd in ")
+	if start < 0 {
+		t.Fatal("install.sh build loop has no for cmd list")
+	}
+	rest := prefix[start+len("for cmd in "):]
+	before0, _, ok0 := strings.Cut(rest, "; do")
+	if !ok0 {
+		t.Fatal("install.sh build loop is unterminated")
+	}
+	return strings.Fields(before0)
 }
 
 // hostRunCommands is every command under cmd/, minus the deliberately

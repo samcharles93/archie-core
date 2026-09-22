@@ -340,6 +340,15 @@ func runUpdateInstall(t *testing.T, environment map[string]string, wantErr bool)
 // which is how the task-database backup path came to be wrong.
 func runUpdateInstallWithConfig(t *testing.T, environment map[string]string, configBody string, wantErr bool) (Result, []string, string) {
 	t.Helper()
+	return runUpdateInstallEdited(t, environment, configBody, nil, wantErr)
+}
+
+// runUpdateInstallEdited is runUpdateInstallWithConfig with the ability to edit
+// the installer's text before it runs. The service list is hardcoded, so the
+// only way to test the coverage guard against the stale list it exists for is to
+// change that text -- which is exactly the state the guard must catch.
+func runUpdateInstallEdited(t *testing.T, environment map[string]string, configBody string, edit func(string) string, wantErr bool) (Result, []string, string) {
+	t.Helper()
 	ctx := t.Context()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -413,10 +422,16 @@ fi
 	writeFakeCommand(t, fakeDir, "systemctl", `
 printf '%s\n' "systemctl $*" >> "$ARCHIE_TEST_CALLS"
 if [ "$2" = list-unit-files ]; then
+  # The reference deployment runs exactly these five as units. A command with
+  # no unit -- archie-playbooks, archie-agent -- has to look unitless, or the
+  # coverage guard would mistake every cmd/ directory for a host service.
+  present="${ARCHIE_TEST_PRESENT_UNITS:-archied.service archie-gateway.service archie-state-store.service archie-ui.service archie-messaging.service}"
   case " ${ARCHIE_TEST_ABSENT_UNITS:-} " in
     *" $3 "*) exit 0 ;;
   esac
-  printf '%s enabled enabled\n' "$3"
+  case " $present " in
+    *" $3 "*) printf '%s enabled enabled\n' "$3" ;;
+  esac
 fi
 `)
 	writeFakeCommand(t, fakeDir, "install", `
@@ -450,9 +465,13 @@ fi
 	if err != nil {
 		t.Fatal(err)
 	}
+	script := string(scriptData)
+	if edit != nil {
+		script = edit(script)
+	}
 	scriptPath := filepath.Join(work, "archie-update-install")
-	scriptData = []byte(strings.Replace(string(scriptData), `export PATH="/usr/local/go/bin:$PATH"`, `export PATH="$PATH"`, 1))
-	if err := os.WriteFile(scriptPath, scriptData, 0o755); err != nil {
+	script = strings.Replace(script, `export PATH="/usr/local/go/bin:$PATH"`, `export PATH="$PATH"`, 1)
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.CommandContext(ctx, scriptPath)
@@ -667,7 +686,36 @@ func TestUpdateInstallRefusesWhenAServiceUnitIsMissing(t *testing.T) {
 	if !strings.Contains(output, "archie-state-store.service") {
 		t.Errorf("refusal must name the missing unit; output = %q", output)
 	}
+	t.Logf("refusal output:\n%s", strings.TrimSpace(output))
 	// Nothing may be replaced on a host it would leave broken.
+	assertCallAbsent(t, calls, "go build")
+	assertCallAbsent(t, calls, "install -m755")
+}
+
+// The other half of the same contract, and the failure that actually happened
+// (archie-core-1faq): the installed updater's GATEWAY_SERVICES predated
+// archie-messaging, so the update neither backed it up nor restarted it and a
+// hand-installed binary kept serving under an otherwise updated host. A unit
+// this host runs must be named by the list, or the update refuses and says which.
+func TestUpdateInstallRefusesWhenTheServiceListOmitsAHostUnit(t *testing.T) {
+	_, calls, output := runUpdateInstallEdited(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
+	}, "[containers]\nimage = 'registry.example/archie-agent:stable'\n", func(script string) string {
+		// Drop archie-messaging from the list without touching its unit: the
+		// stale installed updater's view of the host.
+		return strings.Replace(script,
+			`GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui archie-messaging"`,
+			`GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui"`,
+			1)
+	}, true)
+
+	if !strings.Contains(output, "archie-messaging.service") {
+		t.Errorf("refusal must name the unmanaged unit; output = %q", output)
+	}
+	t.Logf("refusal output:\n%s", strings.TrimSpace(output))
+	// Nothing may be replaced on a host the update would leave partial.
 	assertCallAbsent(t, calls, "go build")
 	assertCallAbsent(t, calls, "install -m755")
 }

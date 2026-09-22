@@ -175,15 +175,18 @@ echo "==> Building native archie binaries..."
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
   # archied does not run alone: the State Store owns archie.db, the Gateway
-  # serves the chat contract, and the dashboard is its own process. Building
-  # only archied leaves it unable to boot. Keep this list and the one in
-  # scripts/archie-update-install together.
-  for cmd in archied archie-gateway archie-state-store archie-ui archie-playbooks; do
+  # serves the chat contract, the dashboard is its own process, and the
+  # Messaging Service owns the chat channels. Building only archied leaves it
+  # unable to boot, and omitting archie-messaging leaves the Telegram, email and
+  # webhook channels dead with no error anywhere (archie-core-1c01). This list,
+  # the zip's two lists and the two in scripts/archie-update-install must agree;
+  # TestDistZipShipsEveryHostCommand fails when they do not.
+  for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks; do
     go build -ldflags "${LDFLAGS}" -o "${ARCHIE_BIN_DIR}/${cmd}" "./cmd/${cmd}"
   done
   install -m755 "${SRC_DIR}/scripts/archie-update-install" "${ARCHIE_BIN_DIR}/archie-update-install"
 )
-echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-playbooks and updater to ${ARCHIE_BIN_DIR}/"
+echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-messaging, archie-playbooks and updater to ${ARCHIE_BIN_DIR}/"
 
 # 5. Interactive Configuration: Forge & LLM Provider Setup
 if [ ! -f "${ENV_FILE}" ]; then

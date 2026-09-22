@@ -92,7 +92,7 @@ TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 # archie-messaging is a service, not a CLI: it owns the Telegram, email and
 # webhook channels since the v1.30.0 extraction, so a host that updates without
 # it keeps running with dead channels and no error anywhere
-# (archie-core-1c01). TestUpdateInstallCoversEveryHostRunCommand fails if this
+# (archie-core-1c01). TestDistZipShipsEveryHostCommand fails if this
 # list and GATEWAY_BINARIES stop covering the commands the release zip ships.
 GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui archie-messaging"
 GATEWAY_BINARIES="$GATEWAY_SERVICES archie-playbooks"
@@ -180,6 +180,30 @@ if [[ ",$components," == *,daemon,* ]]; then
   if [ -n "$missing_units" ]; then
     echo "refusing to install archied $GW: it runs as separate processes and this host has no unit for: $missing_units" >&2
     echo "create them from deployments/systemd-user-service.md, then retry the update" >&2
+    exit 1
+  fi
+
+  # The other direction, and the one archie-core-1faq actually was: a unit this
+  # host runs that GATEWAY_SERVICES does not name is never backed up, built,
+  # installed or restarted, so it keeps running the previous release while
+  # everything else moves. The installed updater is refreshed only after an
+  # update proceeds, so a stale list cannot repair itself -- refuse and name
+  # what it left out rather than completing a partial update and reporting
+  # success.
+  unmanaged_units=""
+  for dir in "$source_dir"/cmd/*/; do
+    [ -d "$dir" ] || continue
+    svc="$(basename "$dir")"
+    case " $GATEWAY_SERVICES " in
+      *" $svc "*) continue ;;
+    esac
+    if systemctl --user list-unit-files "$svc.service" --no-legend 2>/dev/null | grep -q .; then
+      unmanaged_units="${unmanaged_units:+$unmanaged_units }$svc.service"
+    fi
+  done
+  if [ -n "$unmanaged_units" ]; then
+    echo "refusing to install archied $GW: this host runs units the update does not manage: $unmanaged_units" >&2
+    echo "the installed $BIN_DIR/archie-update-install predates them; install scripts/archie-update-install from archied/v$GW, then retry" >&2
     exit 1
   fi
 fi
