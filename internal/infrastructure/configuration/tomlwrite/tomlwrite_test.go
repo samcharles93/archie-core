@@ -155,7 +155,7 @@ func TestApply_Idempotent_SecondRunLeavesOtherEditByteIdentical(t *testing.T) {
 	}
 }
 
-// [models], [indexing], [web], and [notify] in the real template all carry
+// [models], [web], and [notify] in the real template all carry
 // a trailing "# ..." comment on the header line itself
 // ("[models] # role -> ..."). The header regexes were anchored with no
 // allowance for that, so Apply's table-tracking never recognised these as

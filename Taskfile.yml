@@ -350,6 +350,10 @@ tasks:
                            archie-gateway and archie-ui dial it -- none owns
                            the DB in-process
                            (docs/prds/state-store-contract.md §12 step 7)
+        * state admin     read-only PocketBase surface over archie.db on
+                           127.0.0.1:8686 (view collections only; the gRPC
+                           contract stays the only writer). Served by the
+                           archie-state-store process, not a sixth one.
         * archie-ui        serves the dashboard on 127.0.0.1:8484 from the
                            embedded dist (deployments/dev.toml). After the
                            UI cutover (archie-core-8cda.5.4) archied runs no
@@ -380,8 +384,12 @@ tasks:
 
   dev:state-store:
     desc: archie-state-store only, no live-reload (prefer `task dev`)
+    # -admin-addr serves the read-only operator dashboard over the same
+    # archie.db this process already owns. It is a flag rather than a config
+    # key for the same reason -ready-addr is: the address is a property of
+    # how this process was launched, not of the deployment's config document.
     cmds:
-      - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml
+      - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml -admin-addr 127.0.0.1:8686
 
   dev:gateway:
     desc: archie-gateway only, no live-reload (prefer `task dev`)

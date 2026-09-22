@@ -227,13 +227,6 @@ class = "ollama"
 # work_dir = "/path/to/workspace"
 # parallel_tool_calls = false
 
-# Workspace code-search index. Paths default under work_dir when unset.
-[indexing]
-# Code-search index files (default: <work_dir>/indexes).
-# index_dir = "/var/lib/archie/indexes"
-# Per-index lifecycle metadata DB (default: <work_dir>/workspace-indexes.db).
-# db_path   = "/var/lib/archie/workspace-indexes.db"
-
 # archied's own liveness surface, always on. GET /healthz and /health answer
 # 200 once the daemon is serving (503 while it is still booting), and
 # /health/detailed reports the readiness probes. This is what the update

@@ -108,7 +108,7 @@ func TestGrepRejectsGoModCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tool := NewGrepTool(cwd, nil)
+	tool := NewGrepTool(cwd)
 	res, err := tool.Execute(context.Background(), json.RawMessage(
 		`{"pattern":"Needle","path":`+quote(cache)+`}`,
 	), nil)

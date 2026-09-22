@@ -50,8 +50,9 @@ configured_agent_image() {
 # rollback would then restore that empty file over the database and delete its
 # -wal/-shm -- destroying the task store it exists to protect.
 #
-# Only the top-level key counts. db_path also appears in other sections
-# ([indexing] owns its own database), and the first match in the file can
+# Only the top-level key counts. db_path can also appear under a TOML table
+# (the retired [indexing] section once owned its own database), and the first
+# match in the file can
 # easily be one of those.
 configured_task_db_path() {
   local base

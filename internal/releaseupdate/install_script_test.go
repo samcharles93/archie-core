@@ -904,7 +904,8 @@ func TestUpdateInstallBacksUpTheSiblingTaskDatabase(t *testing.T) {
 	assertCallAbsent(t, calls, "--setenv=ARCHIE_TASK_DB_PATH="+configured+" ")
 }
 
-// db_path also appears in other sections -- [indexing] owns its own database.
+// db_path can also appear under a TOML table -- the retired [indexing] section
+// once owned its own database there, and a future section could do the same.
 // Reading the first match in the file can select an unrelated database, so the
 // value must come from the daemon's own top-level key.
 func TestUpdateInstallIgnoresDbPathFromOtherSections(t *testing.T) {
@@ -929,7 +930,7 @@ func TestUpdateInstallIgnoresDbPathFromOtherSections(t *testing.T) {
 	assertCallContains(t, calls, "go run ./cmd/archie-state-store backup", "-db "+realStore)
 	for _, call := range calls {
 		if strings.Contains(call, "go run ./cmd/archie-state-store backup") && strings.Contains(call, indexStore) {
-			t.Errorf("backed up the indexing database %s: %q", indexStore, call)
+			t.Errorf("backed up the other section's database %s: %q", indexStore, call)
 		}
 	}
 	assertCallAbsent(t, calls, "--setenv=ARCHIE_TASK_DB_PATH="+indexStore)

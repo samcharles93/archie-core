@@ -15,11 +15,5 @@ func main() {
 	if archied.IsSetupArgs(args) {
 		os.Exit(archied.RunSetup(args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
-	// The codesearch helper is dispatched before the daemon's flags are
-	// parsed: it is this same binary re-invoked as a short-lived child by
-	// internal/indexing, and it must not touch config, the store or NATS.
-	if archied.IsCodesearchHelperArgs(args) {
-		os.Exit(archied.RunCodesearchHelper(args[1:], os.Stdout))
-	}
 	os.Exit(archied.Run())
 }

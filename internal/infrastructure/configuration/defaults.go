@@ -231,7 +231,6 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	if cfg.DBPath == "" {
 		cfg.DBPath = filepath.Join(l.dataHome(), "archie", "archie.db")
 	}
-	cfg.Indexing = cfg.Indexing.WithDefaults(cfg.WorkDir)
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = config.Duration(defaultPollInterval)
 	}

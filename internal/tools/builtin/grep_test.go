@@ -11,27 +11,6 @@ import (
 	"time"
 )
 
-type staticGrepIndex struct{ files []string }
-
-func (s staticGrepIndex) Candidates(context.Context, string, bool, bool) ([]string, bool) {
-	return s.files, true
-}
-
-func TestGrepUsesIndexCandidatesAsAdvisoryFileSet(t *testing.T) {
-	tmp := t.TempDir()
-	indexed := filepath.Join(tmp, "indexed.txt")
-	createGrepTestFile(t, tmp, "indexed.txt", "needle\n")
-	createGrepTestFile(t, tmp, "excluded.txt", "needle\n")
-	tool := NewGrepTool(tmp, staticGrepIndex{files: []string{indexed}})
-	result, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"needle"}`), nil)
-	if err != nil || result.IsError {
-		t.Fatalf("grep result = %#v, err = %v", result, err)
-	}
-	if !strings.Contains(result.Content, "indexed.txt") || strings.Contains(result.Content, "excluded.txt") {
-		t.Fatalf("candidate-filtered output = %s", result.Content)
-	}
-}
-
 // TestGrepReportsSearchFailureRatherThanNoMatches guards the distinction
 // between ripgrep's exit 1 (no matches) and exit 2 (the search never ran). An
 // errorlint autofix once rewrote the check to match any *exec.ExitError and
@@ -42,7 +21,7 @@ func TestGrepUsesIndexCandidatesAsAdvisoryFileSet(t *testing.T) {
 func TestGrepReportsSearchFailureRatherThanNoMatches(t *testing.T) {
 	tmp := t.TempDir()
 	createGrepTestFile(t, tmp, "haystack.txt", "needle\n")
-	tool := NewGrepTool(tmp, nil)
+	tool := NewGrepTool(tmp)
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"(unclosed"}`), nil)
 	if err != nil {
@@ -53,36 +32,6 @@ func TestGrepReportsSearchFailureRatherThanNoMatches(t *testing.T) {
 	}
 	if strings.Contains(result.Content, "no matches found") {
 		t.Fatalf("a failed search was reported as an empty result: %s", result.Content)
-	}
-}
-
-func TestGrepRetriesDirectSearchWhenIndexedCandidatesAreStale(t *testing.T) {
-	tmp := t.TempDir()
-	createGrepTestFile(t, tmp, "live.txt", "needle\n")
-	missing := filepath.Join(tmp, "deleted.txt")
-	tool := NewGrepTool(tmp, staticGrepIndex{files: []string{missing}})
-	result, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"needle"}`), nil)
-	if err != nil || result.IsError {
-		t.Fatalf("grep result = %#v, err = %v", result, err)
-	}
-	if !strings.Contains(result.Content, "live.txt") || result.MetricLabels["search_backend"] != "direct" {
-		t.Fatalf("fallback output = %s, labels = %v", result.Content, result.MetricLabels)
-	}
-}
-
-func TestGrepDiscardsPartialIndexedOutputOnCandidateError(t *testing.T) {
-	tmp := t.TempDir()
-	live := filepath.Join(tmp, "live.txt")
-	createGrepTestFile(t, tmp, "live.txt", "needle\n")
-	createGrepTestFile(t, tmp, "also-live.txt", "needle\n")
-	missing := filepath.Join(tmp, "deleted.txt")
-	tool := NewGrepTool(tmp, staticGrepIndex{files: []string{live, missing}})
-	result, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"needle"}`), nil)
-	if err != nil || result.IsError {
-		t.Fatalf("grep result = %#v, err = %v", result, err)
-	}
-	if !strings.Contains(result.Content, "also-live.txt") || result.MetricLabels["search_backend"] != "direct" {
-		t.Fatalf("partial indexed output was not replaced: %s, labels = %v", result.Content, result.MetricLabels)
 	}
 }
 
@@ -196,7 +145,7 @@ func TestGrepFallback(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := grepFallback(ctx, tc.params, tc.params.Path, tmp, nil)
+			got, err := grepFallback(ctx, tc.params, tc.params.Path, tmp)
 			if err != nil {
 				t.Fatalf("grepFallback error: %v", err)
 			}
@@ -231,7 +180,7 @@ func TestGrepFallback_ContextDedup(t *testing.T) {
 	defer cancel()
 
 	params := GrepParams{Pattern: "Hello", Path: tmp, ContextBefore: 1, ContextAfter: 1}
-	got, err := grepFallback(ctx, params, tmp, tmp, nil)
+	got, err := grepFallback(ctx, params, tmp, tmp)
 	if err != nil {
 		t.Fatalf("grepFallback error: %v", err)
 	}
@@ -305,7 +254,7 @@ func TestGrepFallback_NonExistentPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := grepFallback(ctx, GrepParams{Pattern: "foo"}, "/nonexistent/path", "/nonexistent/path", nil)
+	_, err := grepFallback(ctx, GrepParams{Pattern: "foo"}, "/nonexistent/path", "/nonexistent/path")
 	if err == nil {
 		t.Fatal("expected error for non-existent path")
 	}
@@ -334,7 +283,7 @@ func TestGrepClampsContextLines(t *testing.T) {
 	}
 	createGrepTestFile(t, tmp, "f.txt", strings.Join(lines, "\n")+"\n")
 
-	tool := NewGrepTool(tmp, nil)
+	tool := NewGrepTool(tmp)
 	res, err := tool.Execute(context.Background(), json.RawMessage(
 		`{"pattern":"needle","context_before":40,"context_after":40}`,
 	), nil)
@@ -362,7 +311,7 @@ func TestGrepLeavesModestContextAlone(t *testing.T) {
 	tmp := t.TempDir()
 	createGrepTestFile(t, tmp, "f.txt", "a\nb\nneedle\nd\ne\n")
 
-	tool := NewGrepTool(tmp, nil)
+	tool := NewGrepTool(tmp)
 	res, err := tool.Execute(context.Background(), json.RawMessage(
 		`{"pattern":"needle","context_before":2,"context_after":2}`,
 	), nil)
@@ -376,62 +325,5 @@ func TestGrepLeavesModestContextAlone(t *testing.T) {
 		if !strings.Contains(res.Content, want) {
 			t.Fatalf("missing %q in:\n%s", want, res.Content)
 		}
-	}
-}
-
-// The index served only 5% of searches across the analysed sessions
-// (codesearch 11, direct 199) because it engaged only when the search path was
-// exactly cwd. Any subdirectory-scoped search silently fell back to a walk.
-func TestGrepUsesIndexForSubdirectorySearch(t *testing.T) {
-	tmp := t.TempDir()
-	createGrepTestFile(t, tmp, "sub/inside.txt", "needle\n")
-	createGrepTestFile(t, tmp, "other/outside.txt", "needle\n")
-
-	index := staticGrepIndex{files: []string{
-		filepath.Join(tmp, "sub", "inside.txt"),
-		filepath.Join(tmp, "other", "outside.txt"),
-	}}
-
-	tool := NewGrepTool(tmp, index)
-	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"pattern":"needle","path":"sub"}`,
-	), nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.IsError {
-		t.Fatalf("unexpected tool error: %s", res.Content)
-	}
-	if got := res.MetricLabels["search_backend"]; got != "codesearch" {
-		t.Fatalf("search_backend = %q, want codesearch", got)
-	}
-	if !strings.Contains(res.Content, "inside.txt") {
-		t.Fatalf("expected the in-scope match, got:\n%s", res.Content)
-	}
-	if strings.Contains(res.Content, "outside.txt") {
-		t.Fatalf("candidates outside the search path must be filtered out, got:\n%s", res.Content)
-	}
-}
-
-// If the index has no candidates inside the requested subtree we must not
-// conclude "no matches" from an empty candidate list - fall back to a walk.
-func TestGrepFallsBackToDirectWhenNoCandidatesInSubtree(t *testing.T) {
-	tmp := t.TempDir()
-	createGrepTestFile(t, tmp, "sub/inside.txt", "needle\n")
-
-	index := staticGrepIndex{files: []string{filepath.Join(tmp, "elsewhere.txt")}}
-
-	tool := NewGrepTool(tmp, index)
-	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"pattern":"needle","path":"sub"}`,
-	), nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got := res.MetricLabels["search_backend"]; got != "direct" {
-		t.Fatalf("search_backend = %q, want direct", got)
-	}
-	if !strings.Contains(res.Content, "inside.txt") {
-		t.Fatalf("an empty candidate set must not hide real matches, got:\n%s", res.Content)
 	}
 }

@@ -7,6 +7,8 @@
 //   - the docs tool is not registered and docs.go was not lifted. It serves
 //     tau's own embedded documentation via the tau/docs package, which has
 //     no meaning here. The pluginDocs parameter went with it.
+//   - the workspace codesearch index parameter was removed along with the
+//     index itself; RegisterBuiltins takes only the registry and cwd.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -14,7 +16,7 @@ package builtin
 
 // RegisterBuiltins registers all built-in tools into the given registry.
 // The cwd parameter sets the working directory for file and shell operations.
-func RegisterBuiltins(reg *Registry, cwd string, indexes ...GrepIndex) error {
+func RegisterBuiltins(reg *Registry, cwd string) error {
 	mq := NewMutationQueue()
 	rt := NewReadTracker()
 
@@ -23,7 +25,7 @@ func RegisterBuiltins(reg *Registry, cwd string, indexes ...GrepIndex) error {
 		NewWriteTool(cwd, mq, rt),
 		NewEditTool(cwd, mq, rt),
 		NewShellTool(cwd, mq),
-		NewGrepTool(cwd, indexes...),
+		NewGrepTool(cwd),
 		NewFindTool(cwd),
 	}
 

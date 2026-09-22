@@ -14,6 +14,10 @@
 //     smaller helpers (resolveGrepTargets, runGrepBinary, grepExplicitTargets,
 //     setGrepResultsRelPath, grepWalkVisitor) to satisfy golangci-lint
 //     cyclop/gocognit limits. No behavioural change.
+//   - the workspace codesearch index integration was removed: GrepIndex, the
+//     candidate-narrowing path, the codesearch backend retry, and the
+//     search_backend metric are gone, and grep always walks the requested
+//     path directly.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -67,12 +71,6 @@ type GrepParams struct {
 	Limit         int    `json:"limit,omitempty"`          // max matches to return
 }
 
-// GrepIndex provides conservative workspace-wide candidate files. The grep
-// tool remains responsible for authoritative matching and output formatting.
-type GrepIndex interface {
-	Candidates(context.Context, string, bool, bool) ([]string, bool)
-}
-
 var grepSchema = Schema{
 	Name:        "grep",
 	Description: fmt.Sprintf("Search file contents for a regex pattern using ripgrep (rg). Respects .gitignore. Returns matching lines with file paths and line numbers. Supports alternation (e.g. 'foo|bar') and full regex syntax. Use context_before/context_after to show surrounding lines (capped at %d each). Output is capped at %d matches (adjustable via limit) and long lines are truncated to %d chars.", grepMaxContext, grepDefaultLimit, grepMaxLineChars),
@@ -118,20 +116,16 @@ var grepSchema = Schema{
 
 // NewGrepTool creates the built-in grep tool.
 
-func NewGrepTool(cwd string, indexes ...GrepIndex) Tool {
-	var workspaceIndex GrepIndex
-	if len(indexes) > 0 {
-		workspaceIndex = indexes[0]
-	}
+func NewGrepTool(cwd string) Tool {
 	return Tool{
 		Schema:  grepSchema,
 		Source:  "builtin",
 		Emoji:   "🔍",
-		Execute: makeGrepExecutor(cwd, workspaceIndex),
+		Execute: makeGrepExecutor(cwd),
 	}
 }
 
-func makeGrepExecutor(cwd string, workspaceIndex GrepIndex) Executor {
+func makeGrepExecutor(cwd string) Executor {
 	return func(ctx context.Context, params json.RawMessage, _ UIBridge) (Result, error) {
 		var p GrepParams
 		if err := json.Unmarshal(params, &p); err != nil {
@@ -156,8 +150,6 @@ func makeGrepExecutor(cwd string, workspaceIndex GrepIndex) Executor {
 			return Result{Content: "error: path escapes working directory", IsError: true, ErrorKind: "sandbox_escape"}, nil
 		}
 
-		searchTargets, searchBackend := resolveGrepTargets(ctx, workspaceIndex, p, cwd, searchPath)
-
 		limit := p.Limit
 		if limit <= 0 {
 			limit = grepDefaultLimit
@@ -165,55 +157,37 @@ func makeGrepExecutor(cwd string, workspaceIndex GrepIndex) Executor {
 
 		binary, err := grepBinary()
 		if err != nil {
-			searchBackend = "direct"
 			// No external binary available - use pure-Go fallback.
-			output, err := grepFallback(ctx, p, searchPath, cwd, searchTargets)
+			output, err := grepFallback(ctx, p, searchPath, cwd)
 			if err != nil {
-				return grepBackendResult(Result{Content: fmt.Sprintf("grep error: %v", err), IsError: true}, searchBackend, clamped), nil
+				return applyClampNotice(Result{Content: fmt.Sprintf("grep error: %v", err), IsError: true}, clamped), nil
 			}
 			if output == "" {
-				return grepBackendResult(Result{Content: "no matches found"}, searchBackend, clamped), nil
+				return applyClampNotice(Result{Content: "no matches found"}, clamped), nil
 			}
-			return grepBackendResult(capGrepResult(output, limit), searchBackend, clamped), nil
+			return applyClampNotice(capGrepResult(output, limit), clamped), nil
 		}
 
-		result, backend := runGrepBinary(ctx, binary, cwd, p, searchPath, searchTargets, searchBackend, limit)
-		return grepBackendResult(result, backend, clamped), nil
+		result := runGrepBinary(ctx, binary, cwd, p, searchPath, limit)
+		return applyClampNotice(result, clamped), nil
 	}
 }
 
-// resolveGrepTargets picks the search targets and backend label: the
-// workspace index's narrowed candidates when it can serve the request, or a
-// direct walk of searchPath otherwise.
-//
-// The index is workspace-wide, so it can serve any search scoped at or below
-// cwd once its candidates are narrowed to the requested subtree. Requiring
-// searchPath == cwd meant subdirectory searches silently fell back to a full
-// walk, which is why the index served only 5% of searches across analysed
-// sessions.
-func resolveGrepTargets(ctx context.Context, workspaceIndex GrepIndex, p GrepParams, cwd, searchPath string) ([]string, string) {
-	if workspaceIndex != nil && isConfined(cwd, searchPath) {
-		if candidates, ok := workspaceIndex.Candidates(ctx, p.Pattern, p.Literal, p.CaseSensitive); ok {
-			if scoped := filterUnder(searchPath, candidates); len(scoped) > 0 {
-				return scoped, "codesearch"
-			}
-			// An empty scoped set is NOT evidence of no matches: the index
-			// may simply be cold or stale for this subtree, so fall through
-			// to the authoritative direct walk rather than reporting "no
-			// matches found" from an empty candidate list.
-		}
+// applyClampNotice appends the context-clamp notice to a successful result.
+func applyClampNotice(result Result, clampNotice string) Result {
+	if clampNotice != "" && !result.IsError {
+		result.Content += "\n" + clampNotice
 	}
-	return []string{searchPath}, "direct"
+	return result
 }
 
-// runGrepBinary runs the external rg binary against searchTargets, retrying
-// against the authoritative searchPath if a codesearch-backed run fails, and
-// returns a Result plus the backend that actually produced it.
+// runGrepBinary runs the external rg binary against searchPath and returns
+// the Result it produced.
 func runGrepBinary(
 	ctx context.Context, binary, cwd string, p GrepParams,
-	searchPath string, searchTargets []string, searchBackend string, limit int,
-) (Result, string) {
-	args := append(buildGrepArgs(p), searchTargets...)
+	searchPath string, limit int,
+) Result {
+	args := append(buildGrepArgs(p), searchPath)
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = cwd
 
@@ -222,22 +196,7 @@ func runGrepBinary(
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-
 	output := stdout.String()
-	if searchBackend == "codesearch" && err != nil {
-		// Snapshot candidates can disappear, or an unusually large candidate
-		// argv can fail to spawn. Retry the authoritative workspace path.
-		searchBackend = "direct"
-		args = append(buildGrepArgs(p), searchPath)
-		cmd = exec.CommandContext(ctx, binary, args...)
-		cmd.Dir = cwd
-		stdout.Reset()
-		stderr.Reset()
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err = cmd.Run()
-		output = stdout.String()
-	}
 	if output == "" && err != nil {
 		// Exit 1 means "no matches"; exit 2 means a real failure (bad
 		// pattern, unreadable path). Reporting the latter as an empty
@@ -246,31 +205,16 @@ func runGrepBinary(
 		// error type.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return Result{Content: "no matches found"}, searchBackend
+			return Result{Content: "no matches found"}
 		}
 		errMsg := stderr.String()
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
-		return Result{Content: fmt.Sprintf("grep error: %s", errMsg), IsError: true}, searchBackend
+		return Result{Content: fmt.Sprintf("grep error: %s", errMsg), IsError: true}
 	}
 
-	return capGrepResult(output, limit), searchBackend
-}
-
-// filterUnder returns the candidates at or below root. Paths are compared
-// after cleaning so that a candidate is only kept when root is a genuine path
-// prefix, not merely a string prefix ("/a/bc" is not under "/a/b").
-func filterUnder(root string, candidates []string) []string {
-	root = filepath.Clean(root)
-
-	out := make([]string, 0, len(candidates))
-	for _, c := range candidates {
-		if isConfined(root, filepath.Clean(c)) {
-			out = append(out, c)
-		}
-	}
-	return out
+	return capGrepResult(output, limit)
 }
 
 // clampGrepContext bounds the context window in place and returns a notice
@@ -292,14 +236,6 @@ func clampGrepContext(p *GrepParams) string {
 		"[%s clamped to %d; for a wider window, read the file at the reported line numbers]",
 		strings.Join(clamped, " and "), grepMaxContext,
 	)
-}
-
-func grepBackendResult(result Result, backend, clampNotice string) Result {
-	result.MetricLabels = map[string]string{"search_backend": backend}
-	if clampNotice != "" && !result.IsError {
-		result.Content += "\n" + clampNotice
-	}
-	return result
 }
 
 func capGrepResult(output string, limit int) Result {
@@ -349,21 +285,11 @@ func truncationBoundary(s string, limit int) int {
 }
 
 // grepFallback performs a pure-Go file scan for when ripgrep is not available.
-// Works on all platforms including Windows. When targets has explicit file paths
-// (not just the searchPath directory), only those files are searched.
-func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string, targets []string) (string, error) {
+// Works on all platforms including Windows.
+func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string) (string, error) {
 	matcher, err := buildMatcher(p)
 	if err != nil {
 		return "", err
-	}
-
-	// When explicit files are provided (index candidates), search only those.
-	if len(targets) > 0 && targets[0] != searchPath {
-		results, err := grepExplicitTargets(ctx, targets, cwd, matcher, p)
-		if err != nil {
-			return "", err
-		}
-		return formatGrepResults(results), nil
 	}
 
 	var results []grepResult
@@ -384,26 +310,6 @@ func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string, tar
 	}
 
 	return formatGrepResults(results), nil
-}
-
-// grepExplicitTargets searches only the given files (index candidates),
-// skipping any that fail to read.
-func grepExplicitTargets(ctx context.Context, targets []string, cwd string, matcher func(string) bool, p GrepParams) ([]grepResult, error) {
-	var results []grepResult
-	for _, path := range targets {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		res, fErr := grepFile(ctx, path, matcher, p.ContextBefore, p.ContextAfter)
-		if fErr != nil {
-			continue
-		}
-		setGrepResultsRelPath(res, cwd, path)
-		results = append(results, res...)
-	}
-	return results, nil
 }
 
 // setGrepResultsRelPath fills in each result's relPath relative to cwd,
