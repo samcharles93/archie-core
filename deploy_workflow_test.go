@@ -152,15 +152,18 @@ func TestDistZipShipsEveryHostCommand(t *testing.T) {
 	// The installer now REFUSES an update when a service unit is missing and
 	// tells the operator to create it from this runbook, so a service the
 	// runbook never shows is a dead end rather than a documentation gap.
+	// The installer writes the units, so the runbook no longer carries their
+	// contents; it must still name each unit, or an operator cannot find one to
+	// inspect or override.
 	runbook := readDeploymentFile(t, filepath.Join("deployments", "systemd-user-service.md"))
 	var undocumented []string
 	for _, service := range wantServices {
-		if !strings.Contains(runbook, "/bin/"+service+" ") {
+		if !strings.Contains(runbook, service+".service") {
 			undocumented = append(undocumented, service)
 		}
 	}
 	if len(undocumented) > 0 {
-		t.Errorf("deployments/systemd-user-service.md documents no unit for: %s", strings.Join(undocumented, " "))
+		t.Errorf("deployments/systemd-user-service.md names no unit for: %s", strings.Join(undocumented, " "))
 	}
 }
 

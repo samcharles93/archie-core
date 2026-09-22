@@ -415,11 +415,15 @@ fi
 SERVICE_INSTALLED=false
 if [ "${INSTALL_SYSTEMD}" = true ] && command -v systemctl &>/dev/null && [ -d "${XDG_CONFIG_HOME}" ]; then
   SYSTEMD_USER_DIR="${XDG_CONFIG_HOME}/systemd/user"
-  SERVICE_FILE="${SYSTEMD_USER_DIR}/archied.service"
-
-  echo "==> Configuring systemd user service..."
+  echo "==> Configuring systemd user services..."
   mkdir -p "${SYSTEMD_USER_DIR}"
-  cat <<EOF > "${SERVICE_FILE}"
+
+  # Every service this installer builds gets a unit, with the contents the
+  # runbook used to tell an operator to paste by hand. The runbook is a
+  # description now, not the mechanism: a fresh install must not need four
+  # hand-written units before its own updater will run (archie-core-enow), and
+  # the contents must not live in two places to drift apart.
+  cat <<EOF > "${SYSTEMD_USER_DIR}/archied.service"
 [Unit]
 Description=Archie Core Orchestrator Daemon
 After=network.target
@@ -443,9 +447,82 @@ RestartSec=5s
 [Install]
 WantedBy=default.target
 EOF
+
+  # The State Store owns archie.db and is the process everything else dials, so
+  # its unit is the first dependency the others name.
+  cat <<EOF > "${SYSTEMD_USER_DIR}/archie-state-store.service"
+[Unit]
+Description=Archie State Store Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${ARCHIE_BIN_DIR}/archie-state-store -config ${ARCHIE_CONFIG_DIR}/config.toml -listen 127.0.0.1:9090 -ready-addr 127.0.0.1:9091
+EnvironmentFile=-${ENV_FILE}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+EOF
+
+  cat <<EOF > "${SYSTEMD_USER_DIR}/archie-gateway.service"
+[Unit]
+Description=Archie Gateway Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${ARCHIE_BIN_DIR}/archie-gateway -config ${ARCHIE_CONFIG_DIR}/config.toml -listen 127.0.0.1:8585
+EnvironmentFile=-${ENV_FILE}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+EOF
+
+  cat <<EOF > "${SYSTEMD_USER_DIR}/archie-ui.service"
+[Unit]
+Description=Archie UI Service
+After=network.target archie-state-store.service
+Wants=archie-state-store.service
+
+[Service]
+Type=simple
+ExecStart=${ARCHIE_BIN_DIR}/archie-ui -config ${ARCHIE_CONFIG_DIR}/config.toml
+EnvironmentFile=-${ENV_FILE}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+EOF
+
+  # The Telegram, email and webhook channels run here, not in archied: without
+  # this unit a host looks healthy while its channels are dead (archie-core-1c01).
+  cat <<EOF > "${SYSTEMD_USER_DIR}/archie-messaging.service"
+[Unit]
+Description=Archie Messaging Service
+After=network.target archie-gateway.service archie-state-store.service
+Wants=archie-gateway.service archie-state-store.service
+
+[Service]
+Type=simple
+ExecStart=${ARCHIE_BIN_DIR}/archie-messaging -config ${ARCHIE_CONFIG_DIR}/config.toml
+EnvironmentFile=-${ENV_FILE}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+EOF
+
   systemctl --user daemon-reload || true
   SERVICE_INSTALLED=true
-  echo "  Installed ${SERVICE_FILE}"
+  for unit in archied archie-state-store archie-gateway archie-ui archie-messaging; do
+    echo "  Installed ${SYSTEMD_USER_DIR}/${unit}.service"
+  done
 
   # Enable linger so systemd --user runs continuously without an active login
   # session. $(id -un) is used rather than $USER, which is unset in some
@@ -465,10 +542,12 @@ EOF
     fi
   fi
 
-  # Auto-enable and start service
+  # Auto-enable and start the services, the store first so a fresh boot does
+  # not race a dial it depends on.
   if [ "${AUTO_START}" = true ]; then
-    echo "==> Enabling and starting archied systemd service..."
-    systemctl --user enable --now archied || echo "  Notice: Could not start service automatically. Check systemctl --user status archied"
+    echo "==> Enabling and starting Archie services..."
+    systemctl --user enable --now archie-state-store archie-gateway archied archie-ui archie-messaging ||
+      echo "  Notice: Could not start every service automatically. Check: systemctl --user status archied archie-state-store archie-gateway archie-ui archie-messaging"
   fi
 fi
 
@@ -479,7 +558,7 @@ echo "  ✓ Archie Core Installation Complete!"
 echo "============================================================"
 echo ""
 echo "Installation Details:"
-echo "  - Binaries   : ${ARCHIE_BIN_DIR}/archied"
+echo "  - Binaries   : ${ARCHIE_BIN_DIR}/{archied,archie-state-store,archie-gateway,archie-ui,archie-messaging,archie-playbooks}"
 echo "  - Agent image: ghcr.io/samcharles93/archie-agent:latest"
 echo "  - Config     : ${ARCHIE_CONFIG_DIR}/config.toml"
 echo "  - Secrets    : ${ENV_FILE}"
@@ -523,8 +602,9 @@ fi
 
 if [ "${SERVICE_INSTALLED}" = true ] && [ "${AUTO_START}" = true ]; then
   echo "Service Management:"
+  echo "  - Units installed   : archied archie-state-store archie-gateway archie-ui archie-messaging"
   echo "  - View live logs    : journalctl --user -u archied -f"
-  echo "  - Service status    : systemctl --user status archied"
+  echo "  - Service status    : systemctl --user status archied archie-state-store archie-gateway archie-ui archie-messaging"
   echo "  - Restart daemon    : systemctl --user restart archied"
 else
   echo "Manual Startup:"

@@ -4,46 +4,19 @@ This runbook describes how to manage `archied` as a background user service on L
 
 ---
 
-## 1. Unit Files (`~/.config/systemd/user/archied.service` and `archie-gateway.service`)
+## 1. Unit Files (written by `install.sh`)
 
-Create the systemd user service file at `~/.config/systemd/user/archied.service`:
+`install.sh` writes all five units -- `archied.service`, `archie-state-store.service`,
+`archie-gateway.service`, `archie-ui.service` and `archie-messaging.service` --
+with the contents it
+ships. This page describes what runs and why; the installer owns the contents,
+so inspect a unit with `systemctl --user cat <unit>` rather than copying it from
+here, where it would drift from what is written.
 
-```ini
-[Unit]
-Description=Archie Core Orchestrator Daemon
-After=network.target
+The Gateway unit is `archie-gateway.service`, written by `install.sh` beside
+`archied.service`.
 
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/archied -config %h/.config/archie/config.toml
-EnvironmentFile=-%h/.config/archie/env
-ExecReload=/bin/kill -HUP $MAINPID
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
-
-Create the Gateway Service unit beside it:
-
-```ini
-[Unit]
-Description=Archie Gateway Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/archie-gateway -config %h/.config/archie/config.toml -listen 127.0.0.1:8585
-EnvironmentFile=-%h/.config/archie/env
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
-
-Create the State Store unit beside it. It owns the single `archie.db` SQLite
+The State Store unit is `archie-state-store.service`. It owns the single `archie.db` SQLite
 file and serves the `StateStore` gRPC contract. After the in-process store path
 was deleted, BOTH `archied` and `archie-gateway` dial it via
 `[services.state].target` (see the `archied` config below) and never open
@@ -53,21 +26,7 @@ agent needs the Docker bridge gateway address plus a bearer token via
 `--token`/`STATE_STORE_TOKEN` or `[services.state].target_token`, and a
 non-loopback bind fails closed without one:
 
-```ini
-[Unit]
-Description=Archie State Store Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/archie-state-store -config %h/.config/archie/config.toml -listen 127.0.0.1:9090 -ready-addr 127.0.0.1:9091
-EnvironmentFile=-%h/.config/archie/env
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
+`install.sh` writes `archie-state-store.service` with that loopback bind.
 
 ---
 
@@ -78,30 +37,18 @@ by `archied`, since the v1.30.0 extraction. `archied` starts no gateway for them
 and logs nothing when one is absent, so a host that updates across v1.30.0
 without this unit runs on with dead channels and a daemon that looks perfectly
 healthy -- that was `archie-core-1c01`, found after two days of a silently dead
-Telegram bot. `scripts/archie-update-install` refuses an update when a service
-unit is missing and names what is missing, so create this one before updating.
+Telegram bot. `install.sh` writes this unit on a fresh install;
+`scripts/archie-update-install` refuses an
+update when a host is missing a unit and names what is missing, which now fires
+for a host that drifted or predates this release rather than the normal path.
 
 It dials the Gateway for the chat contract and the State Store for the stored
 channel settings, and reads the same `config.toml`. Like `archie-ui` it resolves
 `GATEWAY_TOKEN` and `STATE_STORE_TOKEN` from its process environment, hence the
 `EnvironmentFile`:
 
-```ini
-[Unit]
-Description=Archie Messaging Service
-After=network.target archie-gateway.service archie-state-store.service
-Wants=archie-gateway.service archie-state-store.service
-
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/archie-messaging -config %h/.config/archie/config.toml
-EnvironmentFile=-%h/.config/archie/env
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
+`install.sh` writes `archie-messaging.service`, whose `After=` and `Wants=`
+lines preserve that store-then-gateway order.
 
 ## 2. UI Service Unit (`~/.config/systemd/user/archie-ui.service`)
 
@@ -126,22 +73,8 @@ probe (token-free by design); the authenticated readiness surface lives at
 the dashboard's health endpoint behind the token. A watchdog can curl
 `/healthz` without credentials.
 
-```ini
-[Unit]
-Description=Archie UI Service
-After=network.target archie-state-store.service
-Wants=archie-state-store.service
-
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/archie-ui -config %h/.config/archie/config.toml
-EnvironmentFile=-%h/.config/archie/env
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
+`install.sh` writes `archie-ui.service`. It has no secret registry of its own,
+so its token handling is the `EnvironmentFile` note above.
 
 Concretely, for a deployment whose dependency tokens live outside
 `config.toml`, `~/.config/archie/env` carries the two names and the unit
@@ -159,9 +92,9 @@ process closes that gap itself: its event pump retries priming with backoff
 until the State Store answers, so the activity feed goes live once the store
 is up rather than staying history-only until the next restart.
 
-```ini
-ExecStart=%h/.local/bin/archie-ui -config %h/.config/archie/config.toml -token-file %h/.local/share/archie/web-token
-```
+For a non-loopback bind, override the installed unit's `ExecStart` with
+`-token-file %h/.local/share/archie/web-token` (or `-token`) in a drop-in rather
+than editing the installer's copy in place.
 
 ---
 

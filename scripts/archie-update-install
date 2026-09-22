@@ -203,7 +203,7 @@ if [[ ",$components," == *,daemon,* ]]; then
   done
   if [ -n "$unmanaged_units" ]; then
     echo "refusing to install archied $GW: this host runs units the update does not manage: $unmanaged_units" >&2
-    echo "the installed $BIN_DIR/archie-update-install predates them; install scripts/archie-update-install from archied/v$GW, then retry" >&2
+    echo "a current install.sh writes units for: $GATEWAY_SERVICES. If the installed updater predates this release, replace $BIN_DIR/archie-update-install with scripts/archie-update-install from archied/v$GW; otherwise remove the extra unit, or add it to GATEWAY_SERVICES if this host is meant to run it." >&2
     exit 1
   fi
 fi
