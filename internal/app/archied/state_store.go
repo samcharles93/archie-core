@@ -300,6 +300,15 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.BindingDispatcher = b.eda
 		deps.PlaybookDispatcher = b.eda
 	}
+	// tool_call events project into the tool_calls collection on the same
+	// event-capture store: this process legitimately owns both, so the
+	// projection rides on the task-store surface it decorates. With no
+	// event-capture store (or no task store) there is nothing to project
+	// through, and Tasks passes through unwrapped rather than decorating a
+	// nil operand.
+	if b.eda != nil && b.st != nil {
+		deps.Tasks = newToolCallProjectingTaskStore(b.st, b.eda, b.log)
+	}
 	if btc, ok := b.st.(storecontract.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
 	}
