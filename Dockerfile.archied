@@ -33,6 +33,8 @@ ARG GATEWAY_VERSION=dev
 ARG RUNTIME_VERSION=dev
 LABEL org.opencontainers.image.version="${GATEWAY_VERSION}"
 LABEL cloud.catlow.archie.runtime-version="${RUNTIME_VERSION}"
-COPY CHANGELOG.archied.md /usr/share/archie/CHANGELOG.archied.md
-COPY CHANGELOG.archie.md /usr/share/archie/CHANGELOG.archie.md
+# One release stream: CHANGELOG.md carries every release section, with each
+# component's detail as a labelled section inside it. The per-component files
+# this used to copy were deleted with the split release.
+COPY CHANGELOG.md /usr/share/archie/CHANGELOG.md
 ENTRYPOINT ["archied"]
