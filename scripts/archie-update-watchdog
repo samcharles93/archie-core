@@ -15,6 +15,8 @@ AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.versi
 AGENT_VERSION_PREVIOUS_EXISTS="${ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS:-0}"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
+DB_SNAPSHOT="${ARCHIE_DB_SNAPSHOT:-$BIN_DIR/archie-db.pre-update.dump}"
+CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 # The daemon exports its own health address (releaseupdate.CommandInstaller);
 # this default only covers a hand-driven run, and must stay the address archied
 # itself serves /healthz on -- [health] listen, defaulted in
@@ -218,6 +220,16 @@ rollback_task_db() {
   rm -f "$TASK_DB_PATH-wal" "$TASK_DB_PATH-shm"
 }
 
+# explain_database_recovery states what a daemon rollback does not do. The
+# PostgreSQL database is never restored automatically: goose Down drops tables,
+# and a restore is destructive, loses every write after the snapshot and needs
+# every service stopped, so it is an operator's decision, not this script's.
+explain_database_recovery() {
+  echo "==> the PostgreSQL database was NOT rolled back; schema migrations are never undone automatically" >&2
+  echo "==> if the previous release refuses the migrated schema, stop every archie service and restore the pre-update snapshot (every write made after it is lost):" >&2
+  echo "==>   archie-state-store restore -config $CONFIG_PATH -from $DB_SNAPSHOT" >&2
+}
+
 start_units
 
 if wait_healthy; then
@@ -272,6 +284,9 @@ else
 fi
 if [ "$rolled_back" = true ]; then
   start_units
+fi
+if [[ ",$COMPONENTS," == *,daemon,* ]]; then
+  explain_database_recovery
 fi
 
 write_report "failed" "$rolled_back"

@@ -411,6 +411,8 @@ printf '%s\n' "go $*" >> "$ARCHIE_TEST_CALLS"
 # must refuse the update.
 if [ "$1" = "run" ]; then
   [ "${ARCHIE_TEST_GO_FAILS_RUN:-}" = "1" ] && exit 1
+  # The PostgreSQL snapshot is the backup run that names no -db file.
+  [ "${ARCHIE_TEST_GO_FAILS_SNAPSHOT:-}" = "1" ] && [[ " $* " != *" -db "* ]] && exit 1
   exit 0
 fi
 out=""

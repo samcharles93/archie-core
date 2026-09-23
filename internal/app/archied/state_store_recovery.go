@@ -5,12 +5,12 @@
 // State Store is up -- is unavailable in exactly the case that needs it
 // (docs/architecture/safe-change-and-recovery.md).
 //
-// Every operation works on the task database file directly, with the State
-// Store stopped, and the ones that write refuse when another process owns the
-// file. Backup is the exception and deliberately so: the update installer
-// cannot stop the process that runs it, so the snapshot that makes a failed
-// update reversible is taken against a serving store through SQLite's own
-// consistent copy.
+// With -db an operation works on the legacy SQLite task file; without it, on
+// the PostgreSQL database database_url names (state_store_recovery_postgres.go).
+// The ones that write refuse while a serving process owns the store. Backup is
+// the exception and deliberately so: the update installer cannot stop the
+// process that runs it, so the snapshot that makes a failed update recoverable
+// is taken against a serving store through a consistent copy.
 //
 // The control-plane server both validate and rollback read through is built by
 // openStateStoreControlPlane -- the same root helper the served path uses -- so
@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -76,31 +77,33 @@ type StateStoreRecoveryOptions struct {
 // RunStateStoreRecovery performs one offline operation on the task database and
 // returns the line the command reports on stdout.
 func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
+	// -db names the legacy SQLite task file; without it the command works on
+	// the PostgreSQL database the configuration names.
+	if options.DB == "" {
+		return runPostgresRecovery(ctx, options)
+	}
 	switch options.Operation {
 	case RecoveryBackup:
-		if options.DB == "" || options.Out == "" {
-			return "", errors.New("backup requires -db and -out")
+		if options.Out == "" {
+			return "", errors.New("backup requires -out")
 		}
 		if err := store.Backup(ctx, options.DB, options.Out); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("backed up %s to %s", options.DB, options.Out), nil
 	case RecoveryRestore:
-		if options.DB == "" || options.From == "" {
-			return "", errors.New("restore requires -db and -from")
+		if options.From == "" {
+			return "", errors.New("restore requires -from")
 		}
 		if err := store.Restore(ctx, options.DB, options.From); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("restored %s from %s; start the State Store again", options.DB, options.From), nil
 	case RecoveryValidate:
-		if options.DB == "" {
-			return "", errors.New("validate requires -db")
-		}
 		return validateStore(ctx, options)
 	case RecoveryRollback:
-		if options.DB == "" || options.Kind == "" {
-			return "", errors.New("rollback requires -db and -kind")
+		if options.Kind == "" {
+			return "", errors.New("rollback requires -kind")
 		}
 		return rollbackResource(ctx, options)
 	default:
@@ -146,34 +149,45 @@ func validateStore(ctx context.Context, options StateStoreRecoveryOptions) (stri
 	// with the writer's validator, and boot's gate is the config check alone.
 	// That is the same stance the layering takes for a kind the table is missing:
 	// what the daemon reads for a kind nothing was ever stored for is the seed.
-	checked := 0
 	stored, err := st.StoresResources(ctx)
 	if err != nil {
 		return "", err
 	}
-	if stored {
-		if checked, err = server.ValidateStored(ctx); err != nil {
-			return "", err
-		}
-	}
-
-	base, err := bootConfig(ctx, options)
+	checked, err := checkBootGate(ctx, server, stored, options)
 	if err != nil {
 		return "", err
+	}
+	return fmt.Sprintf("%s is a valid store at schema version %d; %d stored resources validate", options.DB, version, checked), nil
+}
+
+// checkBootGate runs the writer's per-resource validation over what is stored,
+// then boot's gate over the file config with the stored resources layered on,
+// and returns how many stored resources validated.
+func checkBootGate(ctx context.Context, server *controlplane.Server, stored bool, options StateStoreRecoveryOptions) (int, error) {
+	checked := 0
+	if stored {
+		var err error
+		if checked, err = server.ValidateStored(ctx); err != nil {
+			return 0, err
+		}
+	}
+	base, err := bootConfig(ctx, options)
+	if err != nil {
+		return 0, err
 	}
 	document := base
 	if stored {
 		document, _, err = server.StoredRuntimeConfig(ctx, base)
 		if err != nil {
-			return "", err
+			return 0, err
 		}
 	}
 	if err := configuration.Validate(&document); err != nil {
 		// The daemon's own wording, so an operator can match this failure to the
 		// one that stopped archied starting.
-		return "", fmt.Errorf("validate database settings: %w", err)
+		return 0, fmt.Errorf("validate database settings: %w", err)
 	}
-	return fmt.Sprintf("%s is a valid store at schema version %d; %d stored resources validate", options.DB, version, checked), nil
+	return checked, nil
 }
 
 // bootConfig resolves the configuration the daemon would boot with. validate is
@@ -217,22 +231,27 @@ func rollbackResource(ctx context.Context, options StateStoreRecoveryOptions) (s
 		return "", err
 	}
 	defer func() { _ = st.Close() }()
+	return replayRevision(ctx, st, options)
+}
 
-	server, err := openStateStoreControlPlane(st)
+// replayRevision puts back the revision options names through the control
+// plane's ordinary replace. The caller holds the store's ownership claim.
+func replayRevision(ctx context.Context, resources controlplane.ResourceStore, options StateStoreRecoveryOptions) (string, error) {
+	server, err := openStateStoreControlPlane(resources)
 	if err != nil {
 		return "", err
 	}
 	if !server.Owns(options.Kind) {
 		return "", fmt.Errorf("unknown resource kind %q", options.Kind)
 	}
-	current, err := st.Resource(ctx, options.Kind)
+	current, err := resources.Resource(ctx, options.Kind)
 	if errors.Is(err, store.ErrResourceNotFound) {
 		return "", fmt.Errorf("%s has no stored value to roll back", options.Kind)
 	}
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", options.Kind, err)
 	}
-	revision, err := revisionToReplay(ctx, st, options.Kind, current.Version, options.Revision)
+	revision, err := revisionToReplay(ctx, resources, options.Kind, current.Version, options.Revision)
 	if err != nil {
 		return "", err
 	}
@@ -254,7 +273,7 @@ func rollbackResource(ctx context.Context, options StateStoreRecoveryOptions) (s
 
 // revisionToReplay picks the value to put back: the revision the operator
 // named, or the newest one older than the value the resource carries now.
-func revisionToReplay(ctx context.Context, st *store.Store, kind string, current, requested int64) (store.Resource, error) {
+func revisionToReplay(ctx context.Context, st controlplane.ResourceStore, kind string, current, requested int64) (store.Resource, error) {
 	history, err := st.ResourceHistory(ctx, kind, 0)
 	if err != nil {
 		return store.Resource{}, fmt.Errorf("read %s history: %w", kind, err)
