@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Check, Copy, RefreshCw } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -6,11 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   draftFromBinding,
   emptyDraft,
+  generateSecret,
   type Binding,
   type BindingDraft,
   type MappingOption,
@@ -47,11 +51,12 @@ watch(
 );
 
 const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
-const secretHint = computed(() =>
-  props.binding
-    ? "Leave blank to keep the current secret."
-    : "Senders sign with this via HMAC-SHA256.",
-);
+const copied = ref(false);
+async function copySecret(): Promise<void> {
+  await navigator.clipboard.writeText(draft.value.secret);
+  copied.value = true;
+  setTimeout(() => (copied.value = false), 1500);
+}
 </script>
 
 <template>
@@ -128,9 +133,36 @@ const secretHint = computed(() =>
           </Field>
 
           <Field>
-            <FieldLabel for="binding-secret">Shared secret</FieldLabel>
-            <Input id="binding-secret" v-model="draft.secret" type="password" autocomplete="off" />
-            <FieldDescription>{{ secretHint }}</FieldDescription>
+            <FieldLabel for="binding-secret">Signing secret</FieldLabel>
+            <InputGroup v-if="draft.secret">
+              <InputGroupInput id="binding-secret" :model-value="draft.secret" class="font-mono text-xs" readonly />
+              <InputGroupAddon align="inline-end">
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <InputGroupButton size="icon-xs" aria-label="Copy secret" @click="copySecret">
+                      <Check v-if="copied" />
+                      <Copy v-else />
+                    </InputGroupButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Copy secret</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <InputGroupButton size="icon-xs" aria-label="Regenerate secret" @click="draft.secret = generateSecret()">
+                      <RefreshCw />
+                    </InputGroupButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Regenerate</TooltipContent>
+                </Tooltip>
+              </InputGroupAddon>
+            </InputGroup>
+            <div v-else class="flex h-9 items-center justify-between rounded-md border px-3 text-sm">
+              <span class="text-fg-muted">Stored · HMAC-SHA256</span>
+              <Button type="button" variant="ghost" size="sm" @click="draft.secret = generateSecret()">
+                <RefreshCw data-icon="inline-start" />
+                Replace
+              </Button>
+            </div>
           </Field>
         </FieldGroup>
 

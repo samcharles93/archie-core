@@ -11,10 +11,10 @@
  * server-side "keep the current one".
  */
 export interface Binding {
-  id: number;
+  id: string;
   name: string;
   matcher?: { source?: string };
-  mapping_id?: number;
+  mapping_id?: string;
   workflow?: string;
   /** A pin is a complete owner/repo pair or not a pin at all. */
   owner?: string;
@@ -25,7 +25,7 @@ export interface Binding {
 
 /** The fields of GET /api/mappings this page needs. */
 export interface MappingOption {
-  id: number;
+  id: string;
   name: string;
 }
 
@@ -61,11 +61,10 @@ export function statusKind(status?: string): StatusKind {
 }
 
 /**
- * The editor's field state. mappingId is the select's string value because a
- * select's model is its option values; the store's mapping_id is a number.
+ * The editor's field state.
  */
 export interface BindingDraft {
-  id: number | null;
+  id: string | null;
   name: string;
   source: string;
   mappingId: string;
@@ -84,7 +83,7 @@ export function emptyDraft(): BindingDraft {
     workflow: "",
     owner: "",
     repo: "",
-    secret: "",
+    secret: generateSecret(),
   };
 }
 
@@ -93,7 +92,7 @@ export function draftFromBinding(binding: Binding): BindingDraft {
     id: binding.id,
     name: binding.name,
     source: binding.matcher?.source || "",
-    mappingId: binding.mapping_id ? String(binding.mapping_id) : "",
+    mappingId: binding.mapping_id || "",
     workflow: binding.workflow || "",
     owner: binding.owner || "",
     repo: binding.repo || "",
@@ -103,19 +102,23 @@ export function draftFromBinding(binding: Binding): BindingDraft {
   };
 }
 
-/** The body POST /api/bindings and PATCH /api/bindings/{id} both accept. A
- * blank mapping is 0, which the store rejects -- a binding with no mapping
- * could never be dispatched. */
+/** The body POST /api/bindings and PATCH /api/bindings/{id} both accept. */
 export function bindingPayload(draft: BindingDraft): Record<string, unknown> {
   return {
     name: draft.name,
     matcher: { source: draft.source },
-    mapping_id: Number(draft.mappingId) || 0,
+    mapping_id: draft.mappingId,
     workflow: draft.workflow,
     owner: draft.owner,
     repo: draft.repo,
     secret: draft.secret,
   };
+}
+
+/** A 32-byte hex signing secret for a new binding. */
+export function generateSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** The repo pin a row shows, or an em dash when the binding takes the

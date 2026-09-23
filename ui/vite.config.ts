@@ -29,6 +29,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: "http://127.0.0.1:8484", changeOrigin: false },
       "/health": { target: "http://127.0.0.1:8484", changeOrigin: false },
+      "/webhooks": { target: "http://127.0.0.1:8484", changeOrigin: false },
     },
   },
 });
