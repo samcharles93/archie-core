@@ -5,18 +5,11 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
-	"regexp"
 	"slices"
 	"sync"
-)
 
-// stepTypeIdentifier is the shape a provider name and a step type name must
-// have: a lowercase, dotted identifier, so a contributed step type cannot
-// smuggle whitespace or case into the vocabulary two processes compare, and so
-// one step type has exactly one spelling. It reserves nothing: a contribution
-// that spells a shipped stage's name is well formed, and what refuses it is
-// Register's claimed-name check, not this rule.
-var stepTypeIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
+	"github.com/samcharles93/archie-core/internal/domain/stableid"
+)
 
 // StepType is one named workflow step type: the vocabulary word a YAML
 // workflow names, plus the factory that builds its stage.
@@ -88,7 +81,7 @@ func (m *Manager) Register(provider StepTypeProvider) error {
 		return errors.New("workflow step type provider is nil")
 	}
 	name := provider.Name()
-	if !stepTypeIdentifier.MatchString(name) {
+	if !stableid.Valid(name) {
 		return fmt.Errorf("workflow step type provider name %q is not a stable identifier", name)
 	}
 
@@ -97,7 +90,7 @@ func (m *Manager) Register(provider StepTypeProvider) error {
 	order := make([]string, 0, len(contributed))
 	for _, stepType := range contributed {
 		switch {
-		case !stepTypeIdentifier.MatchString(stepType.Name):
+		case !stableid.Valid(stepType.Name):
 			return fmt.Errorf("workflow step type provider %q: step type %q is not a stable identifier", name, stepType.Name)
 		case stepType.Factory == nil:
 			return fmt.Errorf("workflow step type provider %q: step type %q has no factory", name, stepType.Name)

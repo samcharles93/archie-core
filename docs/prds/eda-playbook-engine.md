@@ -169,7 +169,10 @@ a case that should just be visible and fixed by a human. Instead:
   exiting non-zero on any collision / malformed file / invalid binding.
   A finding about one binding key leads with the key's `file:line`, read
   from the `yaml.Node` the loader decodes; the linter agrees with runtime
-  validation by construction, which is the load-bearing property.
+  validation by construction, which is the load-bearing property. That
+  agreement covers the routing loaders only: EDA playbooks under
+  `eda_playbook_dir` (`playbook.Load`, with its CEL and action-id checks)
+  have no lint path yet and are validated only at daemon startup.
   Discoverable via `task lint:playbooks` or direct `go run
   ./cmd/archie-playbooks lint -dir ...`. The LSP/serve mode is a later
   entrypoint of the SAME binary, per the shared-package decision above.

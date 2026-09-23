@@ -23,13 +23,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/expr"
+	"github.com/samcharles93/archie-core/internal/domain/stableid"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 )
 
@@ -131,14 +131,6 @@ type rawAction struct {
 	Args     map[string]string `yaml:"args"`
 }
 
-// actionIDPattern is the stable-identifier shape a WORKFLOW action id must
-// match when declared: a lowercase, dotted/dashed identifier (shared with
-// internal/plugin/host.go:21 and internal/domain/workflow/vocabulary.go:19),
-// so an id has exactly one spelling and cannot smuggle whitespace or case into
-// the vocabulary two processes compare. Module action ids are stricter (see
-// validateModuleActionIDs) because they must also be CEL field selections.
-var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
-
 // Module action ids are stricter than workflow ids because they must also be
 // readable as `actions.<id>` in CEL field selection. The authoritative check
 // is expr.IsCELFieldName (which compiles the probe), plus a lowercase policy:
@@ -157,8 +149,8 @@ func validateActionIDs(actions []rawAction) error {
 		if id == "" {
 			continue
 		}
-		if !actionIDPattern.MatchString(id) {
-			return fmt.Errorf("action id %q is not a valid stable identifier (want %s)", id, actionIDPattern.String())
+		if !stableid.Valid(id) {
+			return fmt.Errorf("action id %q is not a valid stable identifier (want %s)", id, stableid.Pattern)
 		}
 		if _, dup := seen[id]; dup {
 			return fmt.Errorf("duplicate action id %q", id)

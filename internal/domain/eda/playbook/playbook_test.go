@@ -520,23 +520,25 @@ func TestValidateActionIDs(t *testing.T) {
 // whole load, naming the playbook path -- never a runtime miss. Under the
 // per-playbook object type these forms are rejected at compile time: the
 // field-selection spelling names the undefined id, while a dynamic index, an
-// `in` test, or a size read fails with cel-go's overload error (no id name).
+// `in` test, or a size read fails with cel-go's overload error on the actions
+// type. wantErr pins that stage, so a case cannot pass on a YAML parse error
+// or an undeclared root instead.
 func TestLoadWhenActionsReferenceFails(t *testing.T) {
 	tests := []struct {
-		name   string
-		when   string
-		wantID string
+		name    string
+		when    string
+		wantErr string
 	}{
-		{name: "undeclared field selection", when: `actions.build.result.x == true`, wantID: "build"},
-		{name: "dynamic index on actions", when: `actions["a"].result.x == true`},
-		{name: "non-literal index key", when: `actions[key].result.x == true`},
-		{name: "in operator on actions", when: `"notify" in actions`},
-		{name: "size of actions", when: `size(actions) > 0`},
+		{name: "undeclared field selection", when: `actions.build.result.x == true`, wantErr: "undefined field 'build'"},
+		{name: "dynamic index on actions", when: `actions["a"].result.x == true`, wantErr: "'_[_]' applied to '(actions, string)'"},
+		{name: "non-literal index key", when: `actions[event.kind].result.x == true`, wantErr: "'_[_]' applied to '(actions, dyn)'"},
+		{name: "in operator on actions", when: `"notify" in actions`, wantErr: "'@in' applied to '(string, actions)'"},
+		{name: "size of actions", when: `size(actions) > 0`, wantErr: "'size' applied to '(actions)'"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+tc.when+"\n")
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: '"+tc.when+"'\n")
 			_, err := Load(dir, testSchemas(t))
 			if err == nil {
 				t.Fatal("Load = nil, want load failure")
@@ -544,8 +546,8 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 			if !strings.Contains(err.Error(), "pb.yaml") {
 				t.Errorf("Load error = %q, want the playbook path named", err.Error())
 			}
-			if tc.wantID != "" && !strings.Contains(err.Error(), tc.wantID) {
-				t.Errorf("Load error = %q, want the unknown id %q named", err.Error(), tc.wantID)
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Load error = %q, want %q", err.Error(), tc.wantErr)
 			}
 		})
 	}
