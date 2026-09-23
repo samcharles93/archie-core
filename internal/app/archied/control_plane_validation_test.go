@@ -92,8 +92,10 @@ const (
 // reported, not fatal -- the kind stays absent, the file's value is the one in
 // effect, and the operator's fix in config.toml is what clears it.
 func TestStateStoreBootsWithStaleDatabaseOwnedValues(t *testing.T) {
+	t.Parallel()
 	for _, tt := range staleDatabaseOwnedSettings {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			path := filepath.Join(dir, "config.toml")
 			body := fmt.Sprintf(

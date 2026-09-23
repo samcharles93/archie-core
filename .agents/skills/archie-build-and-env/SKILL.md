@@ -118,7 +118,7 @@ golangci-lint run ./...
 | `task vet` | `go vet ./...` in the runtime module. |
 | `task lint` | `golangci-lint run ./...`. |
 | `task build` | Builds both commands into `bin/`. |
-| `task test` | `go test ./... -count=1` in the runtime module. |
+| `task test` | `go test -short ./...` in the runtime module, test cache on. `task test:full` is the uncached run including wall-clock-bound tests. |
 | `task check` | `fmt` + `proto:lint` + `proto:check` + `docs:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
 | `task clean` | Recursively removes `bin/`; destructive. |
 | `task docker-build` | `docker compose build agent` only. |

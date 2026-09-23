@@ -105,6 +105,9 @@ const keepaliveWindow = 50 * time.Second
 // above pins the same agreement in microseconds; this case is the end-to-end
 // proof, which is the part a value assertion cannot give.
 func TestStateStoreServerOptionsTolerateTheDialersKeepalive(t *testing.T) {
+	if testing.Short() {
+		t.Skipf("holds a watch open for %s of wall clock; runs in the full suite (task test:full)", keepaliveWindow)
+	}
 	// The options the standalone State Store serves its local profile with,
 	// taken from the composition rather than hand-built here.
 	served, loopback, err := stateStoreServerOpts("127.0.0.1:9090", "", &staterpc.TaskGrants{})

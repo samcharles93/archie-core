@@ -98,7 +98,7 @@ Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
 
 ```bash
 task build      # build archied and archie-agent binaries into bin/
-task test       # go test ./... -count=1
+task test       # go test -short ./... (cached; task test:full runs everything uncached)
 task test:ui    # dashboard node tests (DOM-building primitives)
 task ui         # build dashboard into ui/dist (LAW asset)
 task fmt        # go fix ./... && golangci-lint fmt
