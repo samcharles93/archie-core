@@ -24,7 +24,7 @@ type Binding struct {
     MappingID          // which Mapping resolves payload fields
     Workflow           // registered workflow name to dispatch to
     Version            // bumped on every edit
-    Status             // draft | pending_approval | armed
+    Status             // pending_approval | armed
     Secret             // HMAC-SHA256 shared secret, encrypted at rest, never returned by GET
 }
 ```
@@ -59,18 +59,21 @@ binding currently says."
 ### State machine
 
 ```
-draft ---> pending_approval ---> armed
-  ^              ^                 |
-  |              |                 |
-  +--------------+-----------------+
+create ---> pending_approval ---> armed
+                   ^                |
+                   +----------------+
         (any edit to an armed binding drops it back to pending_approval)
 ```
+
+A binding is created `pending_approval`, so the operator who creates one can
+approve it immediately. Bindings stored as `draft` by an earlier version are
+moved to `pending_approval` when the EDA store opens.
 
 Modeled directly on Telegram's existing `dangerousAction`/`pendingApproval`
 flow (`internal/channels/telegram/dangerous.go`, `approval.go`) -- not a new
 approval mechanism invented for this feature. **Only `armed` evaluates
 against incoming events** (`binding.Matches`, `internal/domain/binding/
-binding.go`); `draft` and `pending_approval` bindings are inert. An edit to
+binding.go`); a `pending_approval` binding is inert. An edit to
 an already-armed binding cannot bypass approval by silent mutation -- it
 drops back to `pending_approval` and requires an explicit `Approve` call to
 re-arm.

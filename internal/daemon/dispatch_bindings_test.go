@@ -284,13 +284,10 @@ func seedMapping(t *testing.T, s *dispatchStores, sourceHint string, fields ...m
 	return id
 }
 
-// seedArmedBinding inserts a binding and walks it draft -> pending_approval
-// -> armed, matching the operator flow an Approve button on the
-// dashboard drives. InsertBinding forces status='draft' and the only
-// sanctioned armed transition is ApproveBinding, so the helper
-// advances through pending_approval via the store's test-only DB
-// accessor -- production callers must use the structured methods
-// (bindings.go) rather than touching the SQL directly.
+// seedArmedBinding inserts a binding and approves it, matching the operator
+// flow an Approve button on the dashboard drives: InsertBinding stores
+// pending_approval and the only sanctioned armed transition is
+// ApproveBinding.
 func seedArmedBinding(t *testing.T, s *dispatchStores, source, mappingID string) (string, int) {
 	t.Helper()
 	return seedArmedBindingWithRepo(t, s, source, mappingID, "", "")
@@ -312,21 +309,6 @@ func seedArmedBindingWithRepo(t *testing.T, s *dispatchStores, source, mappingID
 	})
 	if err != nil {
 		t.Fatalf("InsertBinding: %v", err)
-	}
-	// Edit moves a draft to pending_approval through the real lifecycle,
-	// which is what makes it approvable. The old raw-SQL shortcut reached
-	// into a table the task store no longer owns.
-	if err := s.EdaStore.UpdateBinding(t.Context(), binding.Binding{
-		ID:        id,
-		Name:      "test " + source,
-		Matcher:   binding.Matcher{Source: source},
-		MappingID: mappingID,
-		Workflow:  "implement",
-		Owner:     owner,
-		Repo:      repo,
-		Secret:    "0123456789abcdef0123456789abcdef",
-	}); err != nil {
-		t.Fatalf("UpdateBinding to pending_approval: %v", err)
 	}
 	if err := s.EdaStore.ApproveBinding(t.Context(), id); err != nil {
 		t.Fatalf("ApproveBinding: %v", err)

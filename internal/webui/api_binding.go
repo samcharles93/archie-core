@@ -71,7 +71,7 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		Owner:     req.Owner,
 		Repo:      req.Repo,
 		Secret:    req.Secret,
-		Status:    binding.Normalize(binding.StatusDraft),
+		Status:    binding.StatusPendingApproval,
 	}
 	if err := b.Validate(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

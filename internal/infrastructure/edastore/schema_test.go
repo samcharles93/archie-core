@@ -71,10 +71,10 @@ func TestPlaybookDispatchIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestBindingStartsAsDraft pins the approval gate from the epic's acceptance
-// criteria: "A binding cannot go live without explicit human approval." A
-// binding created without a status must not default to anything live.
-func TestBindingStartsAsDraft(t *testing.T) {
+// TestBindingStartsPendingApproval pins the approval gate from the epic's
+// acceptance criteria: "A binding cannot go live without explicit human
+// approval." A new binding awaits that approval and is not live.
+func TestBindingStartsPendingApproval(t *testing.T) {
 	st := newStore(t)
 	id, err := st.InsertBinding(t.Context(), binding.Binding{
 		Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
@@ -86,8 +86,8 @@ func TestBindingStartsAsDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBinding() error = %v", err)
 	}
-	if b.Status != binding.StatusDraft {
-		t.Errorf("new binding status = %q, want %q: a binding must not be live before approval", b.Status, binding.StatusDraft)
+	if b.Status != binding.StatusPendingApproval {
+		t.Errorf("new binding status = %q, want %q: a binding must not be live before approval", b.Status, binding.StatusPendingApproval)
 	}
 }
 
@@ -129,7 +129,7 @@ var _ = core.Collection{}
 // The states are the domain's, not this package's: collapsing them (as an
 // earlier version of this store did) removes the review step while still
 // looking like an approval gate, which is the worst of both.
-func TestBindingLifecycleIsThreeStates(t *testing.T) {
+func TestBindingLifecycle(t *testing.T) {
 	st := newStore(t)
 	id, err := st.InsertBinding(t.Context(), binding.Binding{
 		Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
@@ -138,23 +138,10 @@ func TestBindingLifecycleIsThreeStates(t *testing.T) {
 		t.Fatalf("InsertBinding() error = %v", err)
 	}
 
-	// A draft cannot skip review.
-	if err := st.ApproveBinding(t.Context(), id); !errors.Is(err, storecontract.ErrBindingTransition) {
-		t.Fatalf("ApproveBinding(draft) error = %v, want ErrBindingTransition: draft must not skip review", err)
-	}
-
-	// Editing sends it to pending_approval.
-	if err := st.UpdateBinding(t.Context(), binding.Binding{
-		ID: id, Name: "n2", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
-	}); err != nil {
-		t.Fatalf("UpdateBinding() error = %v", err)
-	}
+	// It is created awaiting review.
 	b, err := st.GetBinding(t.Context(), id)
-	if err != nil {
-		t.Fatalf("GetBinding() error = %v", err)
-	}
-	if b.Status != binding.StatusPendingApproval {
-		t.Fatalf("status after edit = %q, want %q", b.Status, binding.StatusPendingApproval)
+	if err != nil || b.Status != binding.StatusPendingApproval {
+		t.Fatalf("status after insert = %q (err %v), want %q", b.Status, err, binding.StatusPendingApproval)
 	}
 
 	// Approval arms it, and only from pending_approval.
@@ -190,5 +177,33 @@ func TestOneBindingPerSource(t *testing.T) {
 	}
 	if err := mk(); !errors.Is(err, storecontract.ErrBindingOverlap) {
 		t.Errorf("second InsertBinding() error = %v, want ErrBindingOverlap", err)
+	}
+}
+
+// A binding stored as "draft" by an earlier version could never be approved.
+// Opening the store moves it to pending_approval, so it can be.
+func TestOpenMovesLegacyDraftBindingsToPendingApproval(t *testing.T) {
+	dir := t.TempDir()
+	cfg := edastore.Config{DBPath: filepath.Join(dir, "eda.sqlite"), DataDir: filepath.Join(dir, "pb_data")}
+	st, err := edastore.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := st.InsertBinding(t.Context(), binding.Binding{Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.App().DB().NewQuery("UPDATE bindings SET status = 'draft' WHERE id = {:id}").Bind(map[string]any{"id": id}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+
+	st, err = edastore.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.ApproveBinding(t.Context(), id); err != nil {
+		t.Fatalf("ApproveBinding(legacy draft) = %v, want it approvable after reopen", err)
 	}
 }
