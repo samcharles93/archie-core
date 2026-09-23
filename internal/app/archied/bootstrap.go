@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
 
@@ -108,6 +109,13 @@ type boot struct {
 
 	st  storecontract.TaskStore
 	eda *edastore.Store
+	// pg is the State Store process's process-scoped PostgreSQL pool, opened
+	// and migrated by openStateStorePool. It is the one connection the
+	// standalone archie-state-store binary holds: do not open a second pool
+	// per subsystem. Nil for every process that is not the State Store (the
+	// daemon and gateway dial the State Store over gRPC and never open
+	// Postgres themselves).
+	pg *pgxpool.Pool
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
 	// dialed to the standalone archie-state-store gRPC service at

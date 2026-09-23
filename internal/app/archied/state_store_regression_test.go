@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
 
 // startupGrace is how long RunStateStore is given to either refuse the config
@@ -56,7 +57,7 @@ func TestRunStateStoreAcceptsEnvironmentToken(t *testing.T) {
 	t.Setenv("STATE_STORE_TOKEN", "environment-token")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	data := fmt.Sprintf("bot_user = 'archie'\ndb_path = %q\n[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n[[repos]]\nowner = 'acme'\nname = 'widget'\n", filepath.Join(dir, "state.db"))
+	data := fmt.Sprintf("bot_user = 'archie'\ndb_path = %q\ndatabase_url = %q\n[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n[[repos]]\nowner = 'acme'\nname = 'widget'\n", filepath.Join(dir, "state.db"), pgtest.URL(t))
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}

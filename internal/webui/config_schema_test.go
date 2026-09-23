@@ -64,7 +64,7 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 		"bot_user", "bot_email", "label", "forge.type", "forge.host", "diff_cap_lines",
 		"repos", "models", "providers",
 		"budgets.max_steps", "budgets.wall_clock", "budgets.gate_max_failures",
-		"work_dir", "db_path", "skills_dir", "plugin_dir", "secret_engine_dir",
+		"work_dir", "db_path", "database_url", "skills_dir", "plugin_dir", "secret_engine_dir",
 		"containers.image", "containers.max_concurrency", "containers.max_uptime",
 		"containers.volume_ttl", "containers.pull_policy", "containers.network",
 		"web.listen",
@@ -101,6 +101,7 @@ func TestConfigFieldDescriptorsRestartRequiredIsDeliberate(t *testing.T) {
 		"budgets.gate_max_failures":  false,
 		"work_dir":                   false, // locked, not merely restart-required
 		"db_path":                    false, // locked, not merely restart-required
+		"database_url":               false, // locked, not merely restart-required
 		"skills_dir":                 true,  // absent from reloadableFields
 		"plugin_dir":                 true,
 		"secret_engine_dir":          true,
@@ -148,7 +149,7 @@ func TestConfigFieldDescriptorsStructuredFieldsAreNotEditable(t *testing.T) {
 // renderer does not need runtime state to know not to offer an edit
 // affordance for a key that can never succeed.
 func TestConfigFieldDescriptorsLockedStorageFieldsAreNotEditable(t *testing.T) {
-	locked := map[string]bool{"work_dir": true, "db_path": true}
+	locked := map[string]bool{"work_dir": true, "db_path": true, "database_url": true}
 	for _, section := range configFieldDescriptors() {
 		for _, f := range section.Fields {
 			if locked[f.Key] && f.Editable {

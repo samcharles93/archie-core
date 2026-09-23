@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
@@ -25,10 +24,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func configuredIdentityNames(cfg config.Config) []string {
@@ -187,10 +184,11 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 	return server, nil
 }
 
-// openStateStore opens the single task-store SQLite file exactly once for
-// service ownership. It resolves secrets (for the binding cipher) but does
-// NOT open gateway chat sessions -- those live in the separate archie-gateway
-// process on their own SQLite file and are out of state-store scope.
+// openStateStore composes the State Store process's persistence: it resolves
+// secrets (for the binding cipher), opens and migrates the process-scoped
+// PostgreSQL pool (fail closed), and opens the task and event-capture stores.
+// It does NOT open gateway chat sessions -- those live in the separate
+// archie-gateway process on their own store and are out of state-store scope.
 func (b *boot) openStateStore(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	secrets, err := configuredSecretRegistry(&cfg, log)
@@ -204,51 +202,17 @@ func (b *boot) openStateStore(ctx context.Context) error {
 		log.Error("configure bindings cipher", "err", err)
 		return err
 	}
-	// Claim the database before opening it. This process is the file's owner
-	// for as long as it lives, and the claim is what an offline recovery
-	// command checks before it rewrites the file: without it, "the State Store
-	// is stopped" is a rule the operator is trusted to have followed rather
-	// than a fact the command can verify. A second State Store on the same
-	// database fails here, which is the single-owner invariant stated instead
-	// of merely documented.
-	path := taskDBPath(cfg.DBPath)
-	ownership, err := store.AcquireOwnership(path)
-	if err != nil {
-		log.Error("claim state store ownership", "err", err)
+	// Open the PostgreSQL pool and apply the schema before anything else: the
+	// State Store fails closed without a working database_url.
+	if err := b.openStateStorePool(ctx); err != nil {
 		return err
 	}
-	b.addCleanup(func() {
-		if err := ownership.Release(); err != nil {
-			log.Error("release state store ownership", "err", err)
-		}
-	})
-	eda, err := edastore.Open(edastore.Config{
-		DBPath:  edaDBPath(cfg.DBPath),
-		DataDir: filepath.Join(filepath.Dir(path), "eda"),
-		Cipher:  bindingCipher,
-	})
-	if err != nil {
-		log.Error("open event-capture store", "err", err)
+	if err := b.openTaskStore(ctx, taskDBPath(cfg.DBPath)); err != nil {
 		return err
 	}
-	b.eda = eda
-	b.addCleanup(func() {
-		if err := eda.Close(); err != nil {
-			log.Error("close event-capture store", "err", err)
-		}
-	})
-
-	st, err := openProductionTaskStore(ctx, path)
-	if err != nil {
-		log.Error("open state store", "err", err)
+	if err := b.openEDAStore(cfg, bindingCipher); err != nil {
 		return err
 	}
-	b.st = st
-	b.addCleanup(func() {
-		if err := st.Close(); err != nil {
-			log.Error("close state store", "err", err)
-		}
-	})
 	return nil
 }
 

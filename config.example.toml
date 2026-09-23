@@ -15,6 +15,12 @@
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db" # prefix for independent task and conversation SQLite files
 
+# The standalone State Store's PostgreSQL connection. Required: the store
+# fails closed rather than fall back to SQLite, so leave this unset only if
+# you do not run archie-state-store. `docker compose up -d postgres` starts
+# a matching local postgres:18 with this default URL.
+# database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
+
 # skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
 # plugin_dir = "~/.local/share/archie/plugins" # daemon plugin manifests; unset means no plugins are loaded
 # module_dir = "~/.local/share/archie/modules"   # EDA playbook Module action kinds (log.go etc.); unset means no modules loaded

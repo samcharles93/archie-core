@@ -16,6 +16,10 @@ bot_user = "archie"
 diff_cap_lines = 0
 work_dir = "~/.local/share/archie/work"
 db_path = "~/.local/share/archie/archie.db"
+# The State Store's PostgreSQL connection (required; Postgres-only epic).
+# `docker compose up -d postgres` provides this local default; point it at
+# your own Postgres 18 server otherwise.
+database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 
 [services.gateway]
 target = "127.0.0.1:8585"

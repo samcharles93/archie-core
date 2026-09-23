@@ -226,6 +226,11 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	cfg.WorkDir = expandHomePath(cfg.WorkDir)
 	cfg.DBPath = expandHomePath(cfg.DBPath)
 	cfg.Chat.Workspace = expandHomePath(cfg.Chat.Workspace)
+	// DatabaseURL has no default and is not path-expanded: it is a connection
+	// URL, not a file path. Empty means "not configured", which the State
+	// Store refuses at boot (fail closed) rather than a value this loader can
+	// invent -- a wrong default would point a production store at a database
+	// that does not exist.
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(l.dataHome(), "archie", "work")
 	}

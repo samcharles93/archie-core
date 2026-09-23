@@ -12,6 +12,32 @@
 #         docker compose logs -f nats       (the bus)
 
 services:
+  # ── PostgreSQL (State Store) ───────────────────────────────────
+  # The standalone archie-state-store process's database. PostgreSQL 18 is
+  # the required minimum and target; `postgres.Open` refuses anything older.
+  # `task dev` brings this up before the State Store via dev:postgres. The
+  # credentials and database name below are the dev default mirrored by
+  # deployments/dev.toml's database_url -- change both together.
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: archie
+      POSTGRES_PASSWORD: archie
+      POSTGRES_DB: archie
+      # postgres:18 moved its default PGDATA under a versioned path; pin the
+      # classic location so the named volume keeps working across image updates.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U archie -d archie"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── NATS JetStream ────────────────────────────────────────────────
   nats:
     image: nats:2.14-alpine3.22
@@ -56,6 +82,7 @@ services:
 
 volumes:
   nats_data:
+  pg_data:
 
 # The subnet is pinned for the optional external-broker profile because its
 # configured URL must be reachable from both the native daemon and workers.

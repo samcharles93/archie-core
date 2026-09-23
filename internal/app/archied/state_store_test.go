@@ -13,6 +13,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -170,7 +171,10 @@ func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
 // (RunStateStore's own opener, not a test-only shortcut) round-trips through
 // the file rather than an in-memory or per-process store.
 func TestStateStoreDataSurvivesRestart(t *testing.T) {
-	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "archie")}
+	cfg := config.Config{
+		DBPath:      filepath.Join(t.TempDir(), "archie"),
+		DatabaseURL: pgtest.URL(t),
+	}
 
 	first := newBootstrap()
 	first.cfg = cfg

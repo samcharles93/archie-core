@@ -8,6 +8,12 @@
 # [web], [services.*] and [capture] land in archie-ui; the daemon ignores
 # [web] entirely.
 
+# `task dev` runs archie-state-store against this overlay, and the State Store
+# fails closed without a PostgreSQL URL. This must reach the `postgres`
+# service in docker-compose.yml, which `task dev` brings up first via
+# dev:postgres -- keep the URL and that service in agreement.
+database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
+
 [web]
 listen = "127.0.0.1:8484"
 
