@@ -13,6 +13,9 @@ import (
 // from starting rather than falling back to SQLite, and a migration failure is
 // a startup failure, not a warning.
 //
+// It then claims serve ownership of the database for the process's life, so a
+// second State Store against the same database refuses to start.
+//
 // The pool is stored on boot.pg and closed at shutdown; nothing opens a second
 // pool per subsystem.
 func (b *boot) openStateStorePool(ctx context.Context) error {
@@ -32,7 +35,17 @@ func (b *boot) openStateStorePool(ctx context.Context) error {
 		b.log.Error("migrate state store postgres schema", "err", err)
 		return err
 	}
+	ownership, err := postgres.AcquireOwnership(ctx, pool, "state-store")
+	if err != nil {
+		pool.Close()
+		b.log.Error("claim state store ownership", "err", err)
+		return err
+	}
 	b.pg = pool
 	b.addCleanup(pool.Close)
+	// Registered after the pool so it runs first: the claim is dropped before
+	// the pool closes.
+	releaseCtx := context.WithoutCancel(ctx)
+	b.addCleanup(func() { _ = ownership.Release(releaseCtx) })
 	return nil
 }
