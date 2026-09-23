@@ -260,7 +260,7 @@ func TestUntrackedPagesDoNotReachTheArtifact(t *testing.T) {
 // without it would be asserting nothing.
 func gitIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=docsite", "GIT_AUTHOR_EMAIL=docsite@example.invalid",
 		"GIT_COMMITTER_NAME=docsite", "GIT_COMMITTER_EMAIL=docsite@example.invalid",

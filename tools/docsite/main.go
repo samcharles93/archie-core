@@ -27,6 +27,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -473,7 +474,14 @@ func trackedPages(repoRoot, sourceDir string) ([]string, error) {
 	rel = filepath.ToSlash(rel)
 	// -z because a path may contain anything but NUL; --cached so a page staged
 	// for this commit counts.
-	out, err := exec.Command("git", "-C", repoRoot, "ls-files", "--cached", "-z", "--", rel).Output()
+	//
+	// A background context, deliberately rather than by omission: docsite is a
+	// short-lived CLI whose whole job is one synchronous git call, so there is no
+	// cancellation to propagate -- threading a context through load, write and
+	// check would add eight signatures to serve a rule whose subject is a request
+	// that can be abandoned. If docsite ever grows a long operation, the context
+	// becomes real and belongs in its signature.
+	out, err := exec.CommandContext(context.Background(), "git", "-C", repoRoot, "ls-files", "--cached", "-z", "--", rel).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git ls-files %s: %w", rel, err)
 	}
