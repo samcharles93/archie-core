@@ -138,6 +138,7 @@ type Task struct {
 	WorkflowDefinitionYaml    string
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+	ReviewCursor              int64
 }
 
 type Transition struct {

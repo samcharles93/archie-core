@@ -10,6 +10,94 @@ import (
 	"time"
 )
 
+const archiveTaskDelete = `-- name: ArchiveTaskDelete :execrows
+DELETE FROM tasks WHERE id = $1 AND status = $2
+`
+
+type ArchiveTaskDeleteParams struct {
+	ID     int64
+	Status string
+}
+
+func (q *Queries) ArchiveTaskDelete(ctx context.Context, arg ArchiveTaskDeleteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveTaskDelete, arg.ID, arg.Status)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const beginRemediationTask = `-- name: BeginRemediationTask :execrows
+UPDATE tasks SET status = 'queued', workflow = 'remediate', stage = '', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
+WHERE id = $1 AND status = 'pr_open'
+`
+
+type BeginRemediationTaskParams struct {
+	ID            int64
+	ReviewPayload string
+}
+
+func (q *Queries) BeginRemediationTask(ctx context.Context, arg BeginRemediationTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, beginRemediationTask, arg.ID, arg.ReviewPayload)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimByIssue = `-- name: ClaimByIssue :one
+UPDATE tasks SET status = 'running', attempt = attempt + 1, updated_at = now()
+WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor
+`
+
+type ClaimByIssueParams struct {
+	Owner       string
+	Repo        string
+	IssueNumber int64
+}
+
+func (q *Queries) ClaimByIssue(ctx context.Context, arg ClaimByIssueParams) (Task, error) {
+	row := q.db.QueryRow(ctx, claimByIssue, arg.Owner, arg.Repo, arg.IssueNumber)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Repo,
+		&i.IssueNumber,
+		&i.Title,
+		&i.Body,
+		&i.Labels,
+		&i.Status,
+		&i.Workflow,
+		&i.Stage,
+		&i.Branch,
+		&i.Plan,
+		&i.Notes,
+		&i.PrNumber,
+		&i.TokensUsed,
+		&i.Iterations,
+		&i.Attempt,
+		&i.ParkReason,
+		&i.WatchCommentID,
+		&i.ParkClass,
+		&i.RemediationRounds,
+		&i.RetryCount,
+		&i.Source,
+		&i.Identity,
+		&i.BindingID,
+		&i.BindingVersion,
+		&i.ReviewPayload,
+		&i.WorkflowDefinitionVersion,
+		&i.WorkflowDefinitionDigest,
+		&i.WorkflowDefinitionYaml,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ReviewCursor,
+	)
+	return i, err
+}
+
 const claimNextTask = `-- name: ClaimNextTask :one
 UPDATE tasks
 SET status = 'running', attempt = attempt + 1, updated_at = now()
@@ -20,7 +108,7 @@ WHERE id = (
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor
 `
 
 // FOR UPDATE SKIP LOCKED replaces the SQLite single-writer assumption: two
@@ -62,6 +150,7 @@ func (q *Queries) ClaimNextTask(ctx context.Context) (Task, error) {
 		&i.WorkflowDefinitionYaml,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewCursor,
 	)
 	return i, err
 }
@@ -108,6 +197,38 @@ func (q *Queries) CountTasksByStatus(ctx context.Context) ([]CountTasksByStatusR
 	return items, nil
 }
 
+const enqueueIssue = `-- name: EnqueueIssue :execrows
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, identity)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (owner, repo, issue_number) DO NOTHING
+`
+
+type EnqueueIssueParams struct {
+	Owner       string
+	Repo        string
+	IssueNumber int64
+	Title       string
+	Body        string
+	Labels      string
+	Identity    string
+}
+
+func (q *Queries) EnqueueIssue(ctx context.Context, arg EnqueueIssueParams) (int64, error) {
+	result, err := q.db.Exec(ctx, enqueueIssue,
+		arg.Owner,
+		arg.Repo,
+		arg.IssueNumber,
+		arg.Title,
+		arg.Body,
+		arg.Labels,
+		arg.Identity,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertChatTask = `-- name: InsertChatTask :one
 INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity)
 VALUES (
@@ -120,7 +241,7 @@ VALUES (
     ), $3) + 1,
     $4, $5, 'chat', $6, 'chat', $7
 )
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor
 `
 
 type InsertChatTaskParams struct {
@@ -181,6 +302,7 @@ func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) 
 		&i.WorkflowDefinitionYaml,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewCursor,
 	)
 	return i, err
 }
@@ -205,6 +327,57 @@ func (q *Queries) InsertTransition(ctx context.Context, arg InsertTransitionPara
 		arg.Detail,
 	)
 	return err
+}
+
+const listOpenPRs = `-- name: ListOpenPRs :many
+SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt, review_cursor, watch_comment_id
+FROM tasks WHERE status = 'pr_open'
+`
+
+type ListOpenPRsRow struct {
+	ID             int64
+	Owner          string
+	Repo           string
+	IssueNumber    int64
+	PrNumber       int64
+	Status         string
+	Source         string
+	Identity       string
+	Attempt        int64
+	ReviewCursor   int64
+	WatchCommentID int64
+}
+
+func (q *Queries) ListOpenPRs(ctx context.Context) ([]ListOpenPRsRow, error) {
+	rows, err := q.db.Query(ctx, listOpenPRs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenPRsRow
+	for rows.Next() {
+		var i ListOpenPRsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Owner,
+			&i.Repo,
+			&i.IssueNumber,
+			&i.PrNumber,
+			&i.Status,
+			&i.Source,
+			&i.Identity,
+			&i.Attempt,
+			&i.ReviewCursor,
+			&i.WatchCommentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTaskSummaries = `-- name: ListTaskSummaries :many
@@ -321,6 +494,67 @@ func (q *Queries) RecoverStaleTasks(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const requeueTask = `-- name: RequeueTask :execrows
+UPDATE tasks SET status = 'queued',
+    workflow = CASE WHEN $1::text = '' THEN workflow ELSE $1::text END,
+    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+WHERE id = $2 AND status = $3
+`
+
+type RequeueTaskParams struct {
+	Workflow   string
+	ID         int64
+	FromStatus string
+}
+
+func (q *Queries) RequeueTask(ctx context.Context, arg RequeueTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requeueTask, arg.Workflow, arg.ID, arg.FromStatus)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const retryTask = `-- name: RetryTask :execrows
+UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
+    workflow = CASE WHEN $1::text = '' THEN workflow ELSE $1::text END,
+    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+WHERE id = $2 AND status = $3
+`
+
+type RetryTaskParams struct {
+	Workflow   string
+	ID         int64
+	FromStatus string
+}
+
+func (q *Queries) RetryTask(ctx context.Context, arg RetryTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, retryTask, arg.Workflow, arg.ID, arg.FromStatus)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setReviewCursors = `-- name: SetReviewCursors :execrows
+UPDATE tasks SET review_cursor = $2, watch_comment_id = $3, updated_at = now()
+WHERE id = $1 AND status = 'pr_open'
+`
+
+type SetReviewCursorsParams struct {
+	ID             int64
+	ReviewCursor   int64
+	WatchCommentID int64
+}
+
+func (q *Queries) SetReviewCursors(ctx context.Context, arg SetReviewCursorsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setReviewCursors, arg.ID, arg.ReviewCursor, arg.WatchCommentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const stampTaskBinding = `-- name: StampTaskBinding :exec
 UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1
 `
@@ -337,7 +571,7 @@ func (q *Queries) StampTaskBinding(ctx context.Context, arg StampTaskBindingPara
 }
 
 const taskByID = `-- name: TaskByID :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at FROM tasks WHERE id = $1
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor FROM tasks WHERE id = $1
 `
 
 func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
@@ -376,12 +610,13 @@ func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
 		&i.WorkflowDefinitionYaml,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewCursor,
 	)
 	return i, err
 }
 
 const taskByIssue = `-- name: TaskByIssue :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
 `
 
 type TaskByIssueParams struct {
@@ -426,22 +661,32 @@ func (q *Queries) TaskByIssue(ctx context.Context, arg TaskByIssueParams) (Task,
 		&i.WorkflowDefinitionYaml,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewCursor,
 	)
 	return i, err
 }
 
 const taskByPR = `-- name: TaskByPR :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4
 `
 
 type TaskByPRParams struct {
 	Owner    string
 	Repo     string
 	PrNumber int64
+	Status   string
 }
 
+// OpenTaskByPR is the live-task lookup: it only resolves a PR the task is
+// currently tracking as open, so a merged or rejected task does not read as
+// the owner of a PR number it no longer holds.
 func (q *Queries) TaskByPR(ctx context.Context, arg TaskByPRParams) (Task, error) {
-	row := q.db.QueryRow(ctx, taskByPR, arg.Owner, arg.Repo, arg.PrNumber)
+	row := q.db.QueryRow(ctx, taskByPR,
+		arg.Owner,
+		arg.Repo,
+		arg.PrNumber,
+		arg.Status,
+	)
 	var i Task
 	err := row.Scan(
 		&i.ID,
@@ -476,6 +721,7 @@ func (q *Queries) TaskByPR(ctx context.Context, arg TaskByPRParams) (Task, error
 		&i.WorkflowDefinitionYaml,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewCursor,
 	)
 	return i, err
 }
@@ -507,6 +753,24 @@ func (q *Queries) TransitionTask(ctx context.Context, arg TransitionTaskParams) 
 		arg.ParkClass,
 		arg.Status_2,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateReviewPayloadTask = `-- name: UpdateReviewPayloadTask :execrows
+UPDATE tasks SET review_payload = $2, updated_at = now()
+WHERE id = $1 AND status = 'queued' AND workflow = 'remediate'
+`
+
+type UpdateReviewPayloadTaskParams struct {
+	ID            int64
+	ReviewPayload string
+}
+
+func (q *Queries) UpdateReviewPayloadTask(ctx context.Context, arg UpdateReviewPayloadTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateReviewPayloadTask, arg.ID, arg.ReviewPayload)
 	if err != nil {
 		return 0, err
 	}
