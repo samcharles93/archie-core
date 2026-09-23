@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // syntheticIssueBase mirrors the store's chat issue-number seed. It is the
@@ -176,7 +176,7 @@ func TestClaimSkipsARowAnotherTransactionHolds(t *testing.T) {
 func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	resources := resourcesFor(t)
 	firstAt := time.Date(2026, 9, 24, 1, 0, 0, 0, time.UTC)
-	first, err := resources.PutResource(t.Context(), store.ResourceWrite{
+	first, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
 		Kind: "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "archie-ui",
 		RequestID: "r1", ExpectedVersion: 0, At: firstAt,
 	})
@@ -187,7 +187,7 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 		t.Fatalf("first write = %+v, want version 1 from version 0", first)
 	}
 
-	replay, err := resources.PutResource(t.Context(), store.ResourceWrite{
+	replay, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
 		Kind: "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
 		RequestID: "r1", ExpectedVersion: 0, At: firstAt.Add(time.Minute),
 	})
@@ -198,14 +198,14 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 		t.Fatalf("replay = %+v, want original %+v", replay, first)
 	}
 
-	if _, err := resources.PutResource(t.Context(), store.ResourceWrite{
+	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
 		Kind: "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "archie-ui",
 		RequestID: "r2", ExpectedVersion: 0, At: firstAt.Add(2 * time.Minute),
-	}); !errors.Is(err, store.ErrResourceVersionConflict) {
+	}); !errors.Is(err, storecontract.ErrResourceVersionConflict) {
 		t.Fatalf("stale PutResource = %v, want ErrResourceVersionConflict", err)
 	}
 
-	second, err := resources.PutResource(t.Context(), store.ResourceWrite{
+	second, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
 		Kind: "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "messaging",
 		RequestID: "r2", ExpectedVersion: 1, At: firstAt.Add(3 * time.Minute),
 	})
@@ -215,7 +215,7 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	if second.Version != 2 || second.CurrentVersion != 1 {
 		t.Fatalf("second write = %+v, want version 2 from version 1", second)
 	}
-	lateReplay, err := resources.PutResource(t.Context(), store.ResourceWrite{
+	lateReplay, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
 		Kind: "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
 		RequestID: "r1", ExpectedVersion: 0, At: firstAt.Add(4 * time.Minute),
 	})
@@ -247,7 +247,7 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	if len(history) != 2 {
 		t.Fatalf("history after late replay = %+v, want two revisions", history)
 	}
-	if _, err := resources.Resource(t.Context(), "missing"); !errors.Is(err, store.ErrResourceNotFound) {
+	if _, err := resources.Resource(t.Context(), "missing"); !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Fatalf("missing Resource = %v, want ErrResourceNotFound", err)
 	}
 }
@@ -263,7 +263,7 @@ func TestConcurrentResourceWritesAcceptOnlyOneExpectedVersion(t *testing.T) {
 	for _, requestID := range []string{"first", "second"} {
 		go func() {
 			<-start
-			_, err := resources.PutResource(t.Context(), store.ResourceWrite{
+			_, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
 				Kind: "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "test",
 				RequestID: requestID, ExpectedVersion: 0,
 			})
@@ -278,7 +278,7 @@ func TestConcurrentResourceWritesAcceptOnlyOneExpectedVersion(t *testing.T) {
 		switch {
 		case outcome.err == nil:
 			succeeded++
-		case errors.Is(outcome.err, store.ErrResourceVersionConflict):
+		case errors.Is(outcome.err, storecontract.ErrResourceVersionConflict):
 			conflicted++
 		default:
 			t.Fatalf("concurrent PutResource: %v", outcome.err)
