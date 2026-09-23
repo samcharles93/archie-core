@@ -254,6 +254,16 @@ message Task {
   // combined cursor would silently skip reviews once a larger comment ID
   // landed (docs/prds/pr-review-remediation.md decision 2).
   int64 review_cursor = 31;
+  // park_class is the producer-recorded answer to "what kind of
+  // intervention does this park need?" (taskstate.ParkClass:
+  // needs_human, transient, terminal). Store-side normalization makes
+  // empty and unknown values needs_human, so the class is advisory on
+  // the wire and authoritative only as recorded at the park site.
+  string park_class = 32;
+  // remediation_rounds counts review-triggered remediation rounds
+  // separately from retry_count, so an operator's manual retries no
+  // longer draw down the review-remediation budget (and vice versa).
+  int32 remediation_rounds = 33;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object

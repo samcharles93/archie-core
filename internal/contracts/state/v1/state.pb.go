@@ -1307,9 +1307,19 @@ type Task struct {
 	// comment cursor) because the two forge sequences are independent; one
 	// combined cursor would silently skip reviews once a larger comment ID
 	// landed (docs/prds/pr-review-remediation.md decision 2).
-	ReviewCursor  int64 `protobuf:"varint,31,opt,name=review_cursor,json=reviewCursor,proto3" json:"review_cursor,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ReviewCursor int64 `protobuf:"varint,31,opt,name=review_cursor,json=reviewCursor,proto3" json:"review_cursor,omitempty"`
+	// park_class is the producer-recorded answer to "what kind of
+	// intervention does this park need?" (taskstate.ParkClass:
+	// needs_human, transient, terminal). Store-side normalization makes
+	// empty and unknown values needs_human, so the class is advisory on
+	// the wire and authoritative only as recorded at the park site.
+	ParkClass string `protobuf:"bytes,32,opt,name=park_class,json=parkClass,proto3" json:"park_class,omitempty"`
+	// remediation_rounds counts review-triggered remediation rounds
+	// separately from retry_count, so an operator's manual retries no
+	// longer draw down the review-remediation budget (and vice versa).
+	RemediationRounds int32 `protobuf:"varint,33,opt,name=remediation_rounds,json=remediationRounds,proto3" json:"remediation_rounds,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1555,6 +1565,20 @@ func (x *Task) GetWorkflowDefinitionYaml() string {
 func (x *Task) GetReviewCursor() int64 {
 	if x != nil {
 		return x.ReviewCursor
+	}
+	return 0
+}
+
+func (x *Task) GetParkClass() string {
+	if x != nil {
+		return x.ParkClass
+	}
+	return ""
+}
+
+func (x *Task) GetRemediationRounds() int32 {
+	if x != nil {
+		return x.RemediationRounds
 	}
 	return 0
 }
@@ -7994,7 +8018,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12-\n" +
 	"\x05audit\x18\x04 \x01(\v2\x17.state.v1.IdentityAuditR\x05audit\"M\n" +
 	"\x1bBindIdentitySubjectResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\x8b\b\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xd9\b\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -8035,7 +8059,10 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x1bworkflow_definition_version\x18\x1c \x01(\x03R\x19workflowDefinitionVersion\x12<\n" +
 	"\x1aworkflow_definition_digest\x18\x1d \x01(\tR\x18workflowDefinitionDigest\x128\n" +
 	"\x18workflow_definition_yaml\x18\x1e \x01(\tR\x16workflowDefinitionYaml\x12#\n" +
-	"\rreview_cursor\x18\x1f \x01(\x03R\freviewCursor\"\xf8\x02\n" +
+	"\rreview_cursor\x18\x1f \x01(\x03R\freviewCursor\x12\x1d\n" +
+	"\n" +
+	"park_class\x18  \x01(\tR\tparkClass\x12-\n" +
+	"\x12remediation_rounds\x18! \x01(\x05R\x11remediationRounds\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
