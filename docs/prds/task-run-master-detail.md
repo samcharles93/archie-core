@@ -1,6 +1,6 @@
 # Task run detail as a master-detail split pane
 
-**Status:** Draft
+**Status:** Approved
 **Authority:** the panel contracts stay as ratified in
 `docs/prds/task-run-detail.md`; this document changes only the run page's
 arrangement of them.
