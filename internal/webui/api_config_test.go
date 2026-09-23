@@ -345,7 +345,7 @@ func TestHandleConfigReportsLockedKeys(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, key := range []string{"db_path", "work_dir"} {
+	for _, key := range []string{"db_path", "database_url", "work_dir"} {
 		if got.Locked[key] == "" {
 			t.Errorf("Locked[%q] is empty, want a reason", key)
 		}

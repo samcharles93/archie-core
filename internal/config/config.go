@@ -485,9 +485,16 @@ type Config struct {
 	ModuleDir string `toml:"module_dir" yaml:"module_dir"`
 	// SecretEngineDir contains Yaegi secret-engine plugins. Built-in env and
 	// bws engines remain available when this is empty.
-	SecretEngineDir string   `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
-	DBPath          string   `toml:"db_path" yaml:"db_path"`
-	PollInterval    Duration `toml:"poll_interval" yaml:"poll_interval"`
+	SecretEngineDir string `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
+	DBPath          string `toml:"db_path" yaml:"db_path"`
+	// DatabaseURL is the PostgreSQL connection URL the standalone State Store
+	// process opens at boot. It is bootstrap-only (the same class as db_path
+	// and work_dir): the pool is opened once, so a runtime change cannot take
+	// effect, and it is refused by the runtime overlay. It has no default --
+	// an empty value is a startup error for the State Store, which fails
+	// closed rather than fall back to SQLite (the epic is Postgres-only).
+	DatabaseURL  string   `toml:"database_url" yaml:"database_url"`
+	PollInterval Duration `toml:"poll_interval" yaml:"poll_interval"`
 	// Label marks issues archie should pick up.
 	Label   string `toml:"label" yaml:"label"`
 	BotUser string `toml:"bot_user" yaml:"bot_user"`

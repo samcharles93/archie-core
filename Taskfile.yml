@@ -387,6 +387,25 @@ tasks:
       Ctrl-C stops all five.
     deps: [dev:daemon, dev:gateway, dev:state-store, dev:dashboard, dev:ui]
 
+  dev:postgres:
+    desc: "Start the dev PostgreSQL 18 service and wait until it accepts connections (prefer `task dev`)"
+    cmds:
+      - docker compose up -d postgres
+      # `up -d` returns before the container is ready; wait for its
+      # healthcheck so the State Store (which fails closed on a bad URL) does
+      # not race the boot.
+      - |
+        set -eu
+        for _ in $(seq 1 60); do
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q postgres)" 2>/dev/null || true)
+          if [ "$status" = "healthy" ]; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "postgres did not become healthy within 60s" >&2
+        exit 1
+
   dev:daemon:
     desc: archied only, live-reloading via air (prefer `task dev`)
     cmds:
@@ -399,6 +418,9 @@ tasks:
 
   dev:state-store:
     desc: archie-state-store only, no live-reload (prefer `task dev`)
+    # The State Store fails closed without a PostgreSQL URL (Postgres-only
+    # epic), so bring the Compose service up and wait for it before booting.
+    deps: [dev:postgres]
     cmds:
       - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml
 

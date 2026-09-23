@@ -148,6 +148,7 @@ func configFieldDescriptors() []ConfigSection {
 			Fields: []ConfigField{
 				{Key: "work_dir", Label: "Work directory", Type: FieldString, Editable: false},
 				{Key: "db_path", Label: "State path prefix", Type: FieldString, Editable: false},
+				{Key: "database_url", Label: "PostgreSQL URL", Description: "The State Store's database connection; set at boot, restart required.", Type: FieldString, Editable: false},
 				{Key: "skills_dir", Label: "Shared skills directory", Description: "Empty uses the work directory.", Type: FieldString, Editable: true, RestartRequired: true},
 				{Key: "plugin_dir", Label: "Daemon plugin directory", Description: "Empty means no daemon plugins.", Type: FieldString, Editable: true, RestartRequired: true},
 				{Key: "secret_engine_dir", Label: "Secret engine plugin directory", Description: "Empty means built-in secret engines only.", Type: FieldString, Editable: true, RestartRequired: true},
@@ -192,6 +193,7 @@ func configFieldValues(view ConfigView) map[string]any {
 		"budgets.gate_max_failures":  view.Budgets.GateMaxFailures,
 		"work_dir":                   view.Storage.WorkDir,
 		"db_path":                    view.Storage.DBPath,
+		"database_url":               view.Storage.DatabaseURL,
 		"skills_dir":                 view.Storage.SkillsDir,
 		"plugin_dir":                 view.Storage.PluginDir,
 		"secret_engine_dir":          view.Storage.SecretEngineDir,
