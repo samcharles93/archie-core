@@ -579,7 +579,7 @@ type watchdogRun struct {
 	// condition what the watchdog does between units. Empty keeps the inert
 	// `exit 0` stub.
 	systemctl string
-	env        map[string]string
+	env       map[string]string
 }
 
 func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, []string) {
@@ -1000,7 +1000,8 @@ func TestUpdateInstallWritesABareAgentVersionSidecar(t *testing.T) {
 // closed until the fake State Store binds it.
 func freeAddress(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var listen net.ListenConfig
+	listener, err := listen.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1046,10 +1047,10 @@ case "$*" in
 esac
 exit 0`,
 		env: map[string]string{
-			"ARCHIE_UPDATE_HEALTH_TIMEOUT":          "0",
-			"ARCHIE_UPDATE_UNITS":                   "archie-state-store archie-gateway archied",
-			"ARCHIE_UPDATE_STATE_STORE_TARGET":      target,
-			"ARCHIE_UPDATE_STATE_STORE_TIMEOUT":     "15",
+			"ARCHIE_UPDATE_HEALTH_TIMEOUT":      "0",
+			"ARCHIE_UPDATE_UNITS":               "archie-state-store archie-gateway archied",
+			"ARCHIE_UPDATE_STATE_STORE_TARGET":  target,
+			"ARCHIE_UPDATE_STATE_STORE_TIMEOUT": "15",
 		},
 	})
 
