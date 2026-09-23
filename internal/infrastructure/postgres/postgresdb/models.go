@@ -85,6 +85,19 @@ type IdentitySubject struct {
 	BoundAt    time.Time
 }
 
+type Message struct {
+	ID        int64
+	MessageID string
+	SessionID string
+	SourceID  string
+	Sender    string
+	SenderID  string
+	Role      string
+	Text      string
+	Ts        int64
+	Search    interface{}
+}
+
 type Resource struct {
 	Kind      string
 	Value     []byte
@@ -103,6 +116,19 @@ type ResourceHistory struct {
 	ExpectedVersion int64
 	CurrentVersion  int64
 	At              time.Time
+}
+
+type Session struct {
+	SessionID       string
+	Platform        string
+	BotUser         string
+	ChannelID       string
+	ThreadID        string
+	Title           string
+	ParentSessionID string
+	BranchName      string
+	CreatedAt       int64
+	LastActiveAt    int64
 }
 
 type Task struct {
@@ -147,4 +173,21 @@ type Transition struct {
 	FromStatus string
 	ToStatus   string
 	Detail     string
+}
+
+type Turn struct {
+	TurnID             string
+	SessionID          string
+	SourceID           string
+	Status             string
+	Attempt            int64
+	OwnerID            string
+	InputMessageID     string
+	AssistantMessageID string
+	PartialText        string
+	ResponseText       string
+	ToolCalls          string
+	Error              string
+	CreatedAt          int64
+	UpdatedAt          int64
 }
