@@ -16,6 +16,40 @@ type ApplyStatus struct {
 	ReportedAt     time.Time
 }
 
+type Binding struct {
+	ID        string
+	Name      string
+	Source    string
+	Mapping   string
+	Workflow  string
+	Owner     string
+	Repo      string
+	Version   int64
+	Status    string
+	Secret    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type BindingDispatch struct {
+	Binding        string
+	BindingVersion int64
+	Capture        string
+	TaskID         int64
+	DispatchedAt   time.Time
+}
+
+type Capture struct {
+	ID            string
+	Source        string
+	RemoteAddr    string
+	ContentType   string
+	Headers       string
+	Body          string
+	Authenticated bool
+	ReceivedAt    time.Time
+}
+
 type ChannelStatus struct {
 	ID              string
 	Name            string
@@ -85,6 +119,23 @@ type IdentitySubject struct {
 	BoundAt    time.Time
 }
 
+type Mapping struct {
+	ID         string
+	Name       string
+	SourceHint string
+	Fields     string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type PlaybookDispatch struct {
+	PlaybookID      string
+	PlaybookVersion string
+	EventID         string
+	ActionID        string
+	DispatchedAt    time.Time
+}
+
 type Resource struct {
 	Kind      string
 	Value     []byte
@@ -139,6 +190,18 @@ type Task struct {
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
 	ReviewCursor              int64
+}
+
+type ToolCall struct {
+	ID         string
+	TaskID     int64
+	Attempt    int64
+	Tool       string
+	Args       string
+	Result     string
+	Error      string
+	DurationMs int64
+	CalledAt   time.Time
 }
 
 type Transition struct {
