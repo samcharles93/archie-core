@@ -3,12 +3,14 @@ package postgres
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
+	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // syntheticIssueBase mirrors the store's chat issue-number seed. It is the
@@ -36,6 +38,12 @@ func queriesFor(t *testing.T) *postgresdb.Queries {
 	t.Helper()
 	_, q := migrated(t)
 	return q
+}
+
+func resourcesFor(t *testing.T) *Resources {
+	t.Helper()
+	pool, _ := migrated(t)
+	return NewResources(pool)
 }
 
 // insertChatTask queues one chat-sourced task.
@@ -159,5 +167,132 @@ func TestClaimSkipsARowAnotherTransactionHolds(t *testing.T) {
 	}
 	if claimed.ID != free.ID {
 		t.Fatalf("claimed %d while %d was held, want the skipped-to row %d", claimed.ID, free.ID, held.ID)
+	}
+}
+
+// A control-plane resource write is optimistic and idempotent: a retry returns
+// the audited original, while a different request based on a stale revision is
+// refused. The history remains the audit trail, newest first.
+func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
+	resources := resourcesFor(t)
+	firstAt := time.Date(2026, 9, 24, 1, 0, 0, 0, time.UTC)
+	first, err := resources.PutResource(t.Context(), store.ResourceWrite{
+		Kind: "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "archie-ui",
+		RequestID: "r1", ExpectedVersion: 0, At: firstAt,
+	})
+	if err != nil {
+		t.Fatalf("first PutResource: %v", err)
+	}
+	if first.Version != 1 || first.CurrentVersion != 0 {
+		t.Fatalf("first write = %+v, want version 1 from version 0", first)
+	}
+
+	replay, err := resources.PutResource(t.Context(), store.ResourceWrite{
+		Kind: "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
+		RequestID: "r1", ExpectedVersion: 0, At: firstAt.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("replay PutResource: %v", err)
+	}
+	if replay.Version != first.Version || string(replay.Value) != string(first.Value) || replay.Actor != first.Actor {
+		t.Fatalf("replay = %+v, want original %+v", replay, first)
+	}
+
+	if _, err := resources.PutResource(t.Context(), store.ResourceWrite{
+		Kind: "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "archie-ui",
+		RequestID: "r2", ExpectedVersion: 0, At: firstAt.Add(2 * time.Minute),
+	}); !errors.Is(err, store.ErrResourceVersionConflict) {
+		t.Fatalf("stale PutResource = %v, want ErrResourceVersionConflict", err)
+	}
+
+	second, err := resources.PutResource(t.Context(), store.ResourceWrite{
+		Kind: "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "messaging",
+		RequestID: "r2", ExpectedVersion: 1, At: firstAt.Add(3 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("second PutResource: %v", err)
+	}
+	if second.Version != 2 || second.CurrentVersion != 1 {
+		t.Fatalf("second write = %+v, want version 2 from version 1", second)
+	}
+	lateReplay, err := resources.PutResource(t.Context(), store.ResourceWrite{
+		Kind: "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
+		RequestID: "r1", ExpectedVersion: 0, At: firstAt.Add(4 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("late replay PutResource: %v", err)
+	}
+	if lateReplay.Version != first.Version || string(lateReplay.Value) != string(first.Value) {
+		t.Fatalf("late replay = %+v, want original %+v", lateReplay, first)
+	}
+	live, err := resources.Resource(t.Context(), "settings")
+	if err != nil {
+		t.Fatalf("Resource: %v", err)
+	}
+	if live.Version != second.Version || string(live.Value) != string(second.Value) {
+		t.Fatalf("live resource after replay = %+v, want second write %+v", live, second)
+	}
+
+	history, err := resources.ResourceHistory(t.Context(), "settings", 1)
+	if err != nil {
+		t.Fatalf("ResourceHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].Version != 2 || history[0].Source != "messaging" {
+		t.Fatalf("limited history = %+v, want newest revision only", history)
+	}
+	history, err = resources.ResourceHistory(t.Context(), "settings", 0)
+	if err != nil {
+		t.Fatalf("unlimited ResourceHistory: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("history after late replay = %+v, want two revisions", history)
+	}
+	if _, err := resources.Resource(t.Context(), "missing"); !errors.Is(err, store.ErrResourceNotFound) {
+		t.Fatalf("missing Resource = %v, want ErrResourceNotFound", err)
+	}
+}
+
+// PostgreSQL admits concurrent writers, unlike SQLite's single writer. The
+// resource lock keeps the expected-version comparison and audit append one
+// serialized operation.
+func TestConcurrentResourceWritesAcceptOnlyOneExpectedVersion(t *testing.T) {
+	resources := resourcesFor(t)
+	type result struct{ err error }
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for _, requestID := range []string{"first", "second"} {
+		go func() {
+			<-start
+			_, err := resources.PutResource(t.Context(), store.ResourceWrite{
+				Kind: "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "test",
+				RequestID: requestID, ExpectedVersion: 0,
+			})
+			results <- result{err: err}
+		}()
+	}
+	close(start)
+
+	var succeeded, conflicted int
+	for range 2 {
+		outcome := <-results
+		switch {
+		case outcome.err == nil:
+			succeeded++
+		case errors.Is(outcome.err, store.ErrResourceVersionConflict):
+			conflicted++
+		default:
+			t.Fatalf("concurrent PutResource: %v", outcome.err)
+		}
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("concurrent writes = %d succeeded, %d conflicted; want 1 each", succeeded, conflicted)
+	}
+
+	history, err := resources.ResourceHistory(t.Context(), "settings", 0)
+	if err != nil {
+		t.Fatalf("ResourceHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].Version != 1 {
+		t.Fatalf("history after race = %+v, want exactly one version 1", history)
 	}
 }
