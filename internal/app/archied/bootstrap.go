@@ -1367,7 +1367,18 @@ func (b *boot) setupForgeWebhook() {
 			"engine", cfg.Forge.WebhookSecret.Engine, "key", cfg.Forge.WebhookSecret.Key, "err", err)
 		return
 	}
-	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, log)
+	// The reaction publisher is the consumer's supply side: the same typed
+	// reaction the poll produces, keyed source-independently, so webhook and
+	// poll deliveries of one review dedup (pr-review-remediation.md
+	// decision 2).
+	publishReaction := func(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error {
+		payload, err := reaction.Encode()
+		if err != nil {
+			return err
+		}
+		return b.d.Tasks.PublishUnique(ctx, reaction.Subject(), reaction.IdempotencyKey(), payload)
+	}
+	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, publishReaction, log)
 	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: receiver}

@@ -137,6 +137,9 @@ type Daemon struct {
 	// reactionConsumer is built lazily by drainReactions and kept for its
 	// lifetime drop counter.
 	reactionConsumer *reactionConsumer
+	// reactionPublisher is built lazily by scanPRReviews; an indirection
+	// only so tests can swap the delivery without the bus.
+	reactionPublisher ReactionPublisher
 	// Reactions pulls the review-reaction fan-out stream
 	// (docs/prds/pr-review-remediation.md). Each cycle it is drained into
 	// queued remediate runs before the task drain, so a reaction can be
@@ -497,6 +500,7 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 func (d *Daemon) maintainAndDrain(ctx context.Context) {
 	d.cleanupExpiredStorage(ctx)
 	d.reconcilePRs(ctx)
+	d.scanPRReviews(ctx)
 	d.dispatchBindings(ctx)
 	d.drainReactions(ctx)
 	if d.Tasks != nil {
@@ -572,6 +576,7 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	d.cleanupExpiredStorage(ctx)
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
+	d.scanPRReviews(ctx)
 	d.dispatchBindings(ctx)
 	d.drainReactions(ctx)
 	if d.Tasks != nil {

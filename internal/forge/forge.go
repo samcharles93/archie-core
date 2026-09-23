@@ -123,6 +123,7 @@ type Review struct {
 	ID          int64
 	Author      string
 	State       string // one of the ReviewState* constants
+	Body        string // the review's own top-level summary; empty for a bare verdict
 	SubmittedAt time.Time
 }
 
@@ -131,7 +132,14 @@ type Review struct {
 // the whole file. InReplyTo is the parent comment ID on GitHub; Gitea's
 // inline comments are flat under a review, so it is 0 there.
 type ReviewComment struct {
-	ID        int64
+	ID int64
+	// ReviewID is the review this comment belongs to. It is what lets a
+	// comment be collected into its review's remediation unit instead of
+	// starting one of its own (pr-review-remediation.md decision 5); a
+	// standalone comment carries 0. GitHub carries it on the comment;
+	// Gitea's flat comment list is walked per review, so the mapping comes
+	// from the walk.
+	ReviewID  int64
 	Author    string
 	Body      string
 	Path      string

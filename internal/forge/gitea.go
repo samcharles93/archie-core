@@ -188,6 +188,7 @@ func (c *GiteaClient) ListReviews(ctx context.Context, owner, repo string, numbe
 				ID:          r.ID,
 				Author:      giteaReviewAuthor(r.Reviewer),
 				State:       normalizeGiteaReviewState(r.State),
+				Body:        r.Body,
 				SubmittedAt: r.Submitted,
 			})
 		}
@@ -219,6 +220,7 @@ func (c *GiteaClient) ListReviewComments(ctx context.Context, owner, repo string
 			}
 			out = append(out, ReviewComment{
 				ID:        cm.ID,
+				ReviewID:  rv.ID,
 				Author:    giteaReviewAuthor(cm.Reviewer),
 				Body:      cm.Body,
 				Path:      cm.Path,

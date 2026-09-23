@@ -80,7 +80,7 @@ type RemediationStarter interface {
 	// comment high-water marks (pr-review-remediation.md decision 2). The
 	// pr_open guard is part of the contract: cursors only move while no
 	// remediation run owns the task.
-	SetReviewCursors(ctx context.Context, taskID int64, reviewCursor, commentCursor int64) error
+	SetReviewCursors(ctx context.Context, taskID, reviewCursor, commentCursor int64) error
 }
 
 // TaskQueries groups read-only task accessors.

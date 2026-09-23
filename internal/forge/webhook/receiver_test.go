@@ -207,7 +207,7 @@ func TestReceiverPublishesMatchingIssue(t *testing.T) {
 			// The receiver always trusts testSecret; tc.secret is what the
 			// request is signed with, so a case can sign with the wrong (or no)
 			// secret to exercise rejection.
-			r := New(testSecret, tc.trigger, tc.cfgLabel, testBot, nil, nil)
+			r := New(testSecret, tc.trigger, tc.cfgLabel, testBot, nil, nil, nil)
 			rec, published := serve(t, r, signedRequest(t, tc.secret, tc.eventType, payload))
 
 			if rec.Code != tc.wantStatus {
@@ -228,7 +228,7 @@ func TestPublishedEnvelopeCarriesIssueIdentityAndKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal event: %v", err)
 	}
-	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+	r := New(testSecret, "label", testLabel, testBot, nil, nil, nil)
 	_, published := serve(t, r, signedRequest(t, testSecret, "issues", payload))
 
 	if len(published) != 1 {
@@ -259,7 +259,7 @@ func TestPublishedEnvelopeCarriesIssueIdentityAndKind(t *testing.T) {
 // the endpoint with a bad signature manufacture a false "receiver is alive
 // and busy" signal.
 func TestReceiverStatusTracksAuthenticatedDeliveries(t *testing.T) {
-	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+	r := New(testSecret, "label", testLabel, testBot, nil, nil, nil)
 
 	before := r.Status()
 	if before.Deliveries != 0 || before.Publishes != 0 {
@@ -327,7 +327,7 @@ func TestReceiverStatusTracksAuthenticatedDeliveries(t *testing.T) {
 // payload really was dispatch-eligible) but must not count as a publish --
 // otherwise Status would report work that never actually reached the queue.
 func TestReceiverStatusDoesNotCountFailedPublish(t *testing.T) {
-	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+	r := New(testSecret, "label", testLabel, testBot, nil, nil, nil)
 	r.publish = func(context.Context, workintake.TaskEnvelope) error {
 		return errors.New("publish unavailable")
 	}
@@ -358,7 +358,7 @@ func TestReceiverStatusDoesNotCountFailedPublish(t *testing.T) {
 // separate health-check subsystem: any GET is answered with the JSON status
 // body, since GitHub only ever POSTs to this receiver.
 func TestReceiverServesStatusOnGET(t *testing.T) {
-	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+	r := New(testSecret, "label", testLabel, testBot, nil, nil, nil)
 	ev := issueEvent(t, "labeled", func(ev *github.IssuesEvent) {
 		ev.Issue.Labels = []*github.Label{{Name: new(testLabel)}}
 	})

@@ -91,6 +91,10 @@ func (f *fakeRemediations) UpdateReviewPayload(ctx context.Context, taskID int64
 	return nil
 }
 
+func (f *fakeRemediations) SetReviewCursors(ctx context.Context, taskID, reviewCursor, commentCursor int64) error {
+	return nil
+}
+
 type fakeReviewLookup struct {
 	task *workflowtask.Task
 	err  error

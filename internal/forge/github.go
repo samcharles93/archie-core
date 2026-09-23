@@ -207,6 +207,7 @@ func (c *GitHubClient) ListReviews(ctx context.Context, owner, repo string, numb
 				ID:          r.GetID(),
 				Author:      r.GetUser().GetLogin(),
 				State:       normalizeReviewState(r.GetState()),
+				Body:        r.GetBody(),
 				SubmittedAt: r.GetSubmittedAt().Time,
 			})
 		}
@@ -237,6 +238,7 @@ func (c *GitHubClient) ListReviewComments(ctx context.Context, owner, repo strin
 			}
 			out = append(out, ReviewComment{
 				ID:        cm.GetID(),
+				ReviewID:  cm.GetPullRequestReviewID(),
 				Author:    cm.GetUser().GetLogin(),
 				Body:      cm.GetBody(),
 				Path:      cm.GetPath(),

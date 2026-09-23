@@ -591,7 +591,7 @@ func (s *Store) UpdateReviewPayload(ctx context.Context, taskID int64, payload s
 // The pr_open guard keeps a cursor from moving while a remediation run owns
 // the task: the run's next round re-reads the cursors the scan wrote, and a
 // write under a running task would desync them from what was consumed.
-func (s *Store) SetReviewCursors(ctx context.Context, taskID int64, reviewCursor, commentCursor int64) error {
+func (s *Store) SetReviewCursors(ctx context.Context, taskID, reviewCursor, commentCursor int64) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET review_cursor=?, watch_comment_id=?, updated_at=datetime('now')
 		WHERE id=? AND status=?`,

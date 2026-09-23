@@ -89,6 +89,7 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		BindingID: t.BindingId, BindingVersion: int(t.BindingVersion),
 		CreatedAt: timeValue(t.CreatedAt), UpdatedAt: timeValue(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
+		ReviewCursor:              t.ReviewCursor,
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYAML:    t.WorkflowDefinitionYaml,

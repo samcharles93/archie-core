@@ -55,37 +55,67 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 // (*daemon.Daemon).PublishTask, the same enqueue path the poller uses.
 type PublishFunc func(ctx context.Context, task workintake.TaskEnvelope) error
 
+// ReactionPublishFunc delivers one decoded review reaction to the reaction
+// stream (pr-review-remediation.md decision 2's webhook producer). The
+// composition root wires it to PublishUnique against the envelope's reaction
+// subject, so a webhook delivery and a poll record of the same review dedup
+// on the envelope's source-independent key. The reaction path carries no
+// dispatch predicate: eligibility is the consumer's owned-PR lookup.
+type ReactionPublishFunc func(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error
+
+// reactionRateLimit bounds reaction deliveries per remote source per window
+// (decision 6's per-source rate limiting, due now that the receiver carries a
+// second event family). It guards spend, not authorization: the owned-task
+// guard at the consumer remains the authorization boundary.
+const (
+	reactionRateLimit     = 60
+	reactionRateWindow    = time.Minute
+	reactionRateBucketTTL = 5 * time.Minute
+)
+
 // Receiver is the HTTP handler for forge webhooks. It verifies the signature,
 // decodes the event, applies the shared dispatch predicate, and publishes
 // matched issues.
 type Receiver struct {
-	secret  string
-	trigger string
-	label   string
-	botUser string
-	publish PublishFunc
-	log     *slog.Logger
+	secret          string
+	trigger         string
+	label           string
+	botUser         string
+	publish         PublishFunc
+	reactionPublish ReactionPublishFunc
+	log             *slog.Logger
 
-	mu             sync.Mutex
-	startedAt      time.Time
-	lastReceivedAt time.Time
-	deliveries     uint64
-	publishes      uint64
+	mu                sync.Mutex
+	startedAt         time.Time
+	lastReceivedAt    time.Time
+	deliveries        uint64
+	publishes         uint64
+	reactionPublishes uint64
+
+	reactionLimiter map[string]*reactionWindow
+}
+
+// reactionWindow is one remote's fixed-window rate budget.
+type reactionWindow struct {
+	start time.Time
+	count int
 }
 
 // New returns an unstarted Receiver.
-func New(secret, trigger, label, botUser string, publish PublishFunc, log *slog.Logger) *Receiver {
+func New(secret, trigger, label, botUser string, publish PublishFunc, reactionPublish ReactionPublishFunc, log *slog.Logger) *Receiver {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Receiver{
-		secret:    secret,
-		trigger:   trigger,
-		label:     label,
-		botUser:   botUser,
-		publish:   publish,
-		log:       log.With("component", "forge-webhook"),
-		startedAt: time.Now(),
+		secret:          secret,
+		trigger:         trigger,
+		label:           label,
+		botUser:         botUser,
+		publish:         publish,
+		reactionPublish: reactionPublish,
+		reactionLimiter: map[string]*reactionWindow{},
+		log:             log.With("component", "forge-webhook"),
+		startedAt:       time.Now(),
 	}
 }
 
@@ -96,10 +126,11 @@ func New(secret, trigger, label, botUser string, publish PublishFunc, log *slog.
 // Publishes counts only what the dispatch predicate turned into work.
 // LastReceivedAt is nil until the first authenticated delivery arrives.
 type Status struct {
-	StartedAt      time.Time  `json:"started_at"`
-	LastReceivedAt *time.Time `json:"last_received_at"`
-	Deliveries     uint64     `json:"deliveries"`
-	Publishes      uint64     `json:"publishes"`
+	StartedAt         time.Time  `json:"started_at"`
+	LastReceivedAt    *time.Time `json:"last_received_at"`
+	Deliveries        uint64     `json:"deliveries"`
+	Publishes         uint64     `json:"publishes"`
+	ReactionPublishes uint64     `json:"reaction_publishes"`
 }
 
 // Status returns a snapshot of the receiver's activity counters.
@@ -107,9 +138,10 @@ func (r *Receiver) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := Status{
-		StartedAt:  r.startedAt,
-		Deliveries: r.deliveries,
-		Publishes:  r.publishes,
+		StartedAt:         r.startedAt,
+		Deliveries:        r.deliveries,
+		Publishes:         r.publishes,
+		ReactionPublishes: r.reactionPublishes,
 	}
 	if !r.lastReceivedAt.IsZero() {
 		last := r.lastReceivedAt
@@ -134,6 +166,13 @@ func (r *Receiver) recordPublish() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.publishes++
+}
+
+// recordReactionPublish marks one delivery as having produced a reaction.
+func (r *Receiver) recordReactionPublish() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.reactionPublishes++
 }
 
 // ServeHTTP handles one forge webhook delivery. GitHub only ever POSTs here,
@@ -177,14 +216,23 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// independent of whether it turns out to be dispatch-eligible.
 	r.recordDelivery()
 
-	issueEvent, ok := event.(*github.IssuesEvent)
-	if !ok {
-		// Not an issue event (ping, pull_request, etc.). Acknowledge and
-		// ignore -- this receiver only turns issue activity into work.
+	switch e := event.(type) {
+	case *github.IssuesEvent:
+		r.serveIssueEvent(w, req, e)
+	case *github.PullRequestReviewEvent:
+		r.serveReviewEvent(w, req, e)
+	case *github.PullRequestReviewCommentEvent:
+		r.serveReviewCommentEvent(w, req, e)
+	default:
+		// Not an event this receiver decodes (ping, push, etc.).
+		// Acknowledge and ignore.
 		w.WriteHeader(http.StatusAccepted)
-		return
 	}
+}
 
+// serveIssueEvent is the receiver's original contract: an eligible issue
+// event becomes a task envelope on the task path.
+func (r *Receiver) serveIssueEvent(w http.ResponseWriter, req *http.Request, issueEvent *github.IssuesEvent) {
 	task, ok := r.taskFromEvent(issueEvent)
 	if !ok {
 		// Delivered but not eligible work (PR, closed, unrelated action,
@@ -201,6 +249,103 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.recordPublish()
 	r.log.Info("published", "task", task.Ref())
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// serveReviewEvent turns a submitted review into a reaction, the webhook
+// half of decision 2: the same typed reaction the poller produces, so
+// PublishUnique dedups the two sources. Only "submitted" carries a verdict
+// or summary to remediate; edited and dismissed restate or withdraw one.
+func (r *Receiver) serveReviewEvent(w http.ResponseWriter, req *http.Request, e *github.PullRequestReviewEvent) {
+	if e.GetAction() != "submitted" || e.GetReview() == nil {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	if !r.allowReactionDelivery(req.RemoteAddr) {
+		r.log.Warn("reaction rate limit exceeded", "remote", req.RemoteAddr)
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
+	if r.reactionPublish == nil {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	review := e.GetReview()
+	reaction := workintake.ReviewCommentEnvelope{
+		Owner:    e.GetRepo().GetOwner().GetLogin(),
+		Repo:     e.GetRepo().GetName(),
+		PRNumber: e.GetPullRequest().GetNumber(),
+		Kind:     workintake.ReviewReactionReview,
+		ReviewID: review.GetID(),
+		Author:   review.GetUser().GetLogin(),
+		State:    review.GetState(),
+		Body:     review.GetBody(),
+	}
+	r.deliverReaction(w, req, reaction)
+}
+
+// serveReviewCommentEvent publishes an inline comment as a reaction. The
+// comment carries its parent review's ID, so the consumer can collect it
+// into that review's unit (decision 5) rather than starting a round of its
+// own.
+func (r *Receiver) serveReviewCommentEvent(w http.ResponseWriter, req *http.Request, e *github.PullRequestReviewCommentEvent) {
+	if e.GetAction() != "created" || e.GetComment() == nil {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	if !r.allowReactionDelivery(req.RemoteAddr) {
+		r.log.Warn("reaction rate limit exceeded", "remote", req.RemoteAddr)
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
+	if r.reactionPublish == nil {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	comment := e.GetComment()
+	reaction := workintake.ReviewCommentEnvelope{
+		Owner:     e.GetRepo().GetOwner().GetLogin(),
+		Repo:      e.GetRepo().GetName(),
+		PRNumber:  e.GetPullRequest().GetNumber(),
+		Kind:      workintake.ReviewReactionComment,
+		ReviewID:  comment.GetPullRequestReviewID(),
+		CommentID: comment.GetID(),
+		Author:    comment.GetUser().GetLogin(),
+		Body:      comment.GetBody(),
+		Path:      comment.GetPath(),
+		Line:      comment.GetLine(),
+	}
+	r.deliverReaction(w, req, reaction)
+}
+
+func (r *Receiver) deliverReaction(w http.ResponseWriter, req *http.Request, reaction workintake.ReviewCommentEnvelope) {
+	if err := r.reactionPublish(req.Context(), reaction); err != nil {
+		r.log.Error("publish reaction", "key", reaction.IdempotencyKey(), "err", err)
+		http.Error(w, "publish failed", http.StatusInternalServerError)
+		return
+	}
+	r.recordReactionPublish()
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// allowReactionDelivery consumes one reaction slot for the remote source.
+// A fixed window keeps the bookkeeping trivial; the failure mode is a burst
+// slightly over one window, which the consumer's dedup and round cap bound.
+func (r *Receiver) allowReactionDelivery(remote string) bool {
+	now := time.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, v := range r.reactionLimiter {
+		if now.Sub(v.start) > reactionRateBucketTTL {
+			delete(r.reactionLimiter, k)
+		}
+	}
+	w, ok := r.reactionLimiter[remote]
+	if !ok || now.Sub(w.start) > reactionRateWindow {
+		r.reactionLimiter[remote] = &reactionWindow{start: now, count: 0}
+		w = r.reactionLimiter[remote]
+	}
+	w.count++
+	return w.count <= reactionRateLimit
 }
 
 // taskFromEvent decodes a GitHub issues event into a task envelope, or
