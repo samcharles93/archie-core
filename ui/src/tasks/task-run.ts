@@ -21,8 +21,12 @@ export interface TaskRunTab {
   label: string;
 }
 
+/**
+ * The inspector's tabs. The stage rail is not one of them: it is the page's
+ * master pane, always visible, and selecting a stage commands the inspector
+ * to the log tab with that stage's filter set (docs/prds/task-run-master-detail.md).
+ */
 export const RUN_TABS: TaskRunTab[] = [
-  { id: "stages", label: "Stages" },
   { id: "log", label: "Log" },
   { id: "changes", label: "Changed files" },
   { id: "config", label: "Configuration" },
@@ -30,6 +34,9 @@ export const RUN_TABS: TaskRunTab[] = [
 ];
 
 const TAB_IDS = new Set(RUN_TABS.map((tab) => tab.id));
+
+/** URL ids from before the split-pane layout that must keep resolving. */
+const LEGACY_TAB_IDS = new Set(["stages"]);
 
 /** The task record as the task list serves it. */
 export interface TaskRecord {
@@ -149,6 +156,9 @@ export function parseTaskId(raw: unknown): number | null {
 
 export function initialTab(query: LocationQuery | undefined): string {
   const requested = String(query?.tab ?? "");
+  // tab=stages named the rail before the split pane; the rail is now always
+  // visible, so the URL resolves to the inspector's first tab.
+  if (LEGACY_TAB_IDS.has(requested)) return "log";
   return TAB_IDS.has(requested) ? requested : RUN_TABS[0].id;
 }
 

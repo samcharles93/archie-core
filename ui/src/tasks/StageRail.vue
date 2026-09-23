@@ -9,7 +9,7 @@ import PanelLoading from "./PanelLoading.vue";
 import StageRow from "./StageRow.vue";
 import { stageStatusMeta } from "./stage-rail";
 import { useTaskRun } from "./use-task-run";
-import type { AttemptsState } from "./task-run";
+import type { AttemptsState, Stage } from "./task-run";
 
 /**
  * The per-attempt stage rail.
@@ -34,6 +34,24 @@ const attempt = computed(() => attempts.value.find((a) => Number(a.attempt) === 
 
 const meta = computed(() => stageStatusMeta(attempt.value?.status));
 const stages = computed(() => attempt.value?.stages || []);
+
+/**
+ * Master-detail selection (docs/prds/task-run-master-detail.md): clicking a
+ * stage commands the inspector to the log tab with this stage's filter set.
+ * Clicking the selected stage clears the filter back to all stages. The
+ * selection is a command, not a binding: the operator can change the filter
+ * afterwards and the rail does not fight them. A stage with no name has
+ * nothing to filter on and is not selectable.
+ */
+function selectedStage(stage: Stage): boolean {
+  return run.tab === "log" && Boolean(stage.name) && run.filters.stage === stage.name;
+}
+
+function selectStage(stage: Stage): void {
+  if (!stage.name) return;
+  run.setFilters({ stage: selectedStage(stage) ? "" : stage.name, level: run.filters.level });
+  run.setTab("log");
+}
 
 /** An attempt's start is rendered as an absolute instant, never as "started 2
  * days ago": on a still-running attempt a relative stamp reads as two days of
@@ -81,6 +99,8 @@ const startedAt = computed(() => {
           :stage="stage"
           :attempt-number="attempt.attempt"
           :events="run.events"
+          :selected="selectedStage(stage)"
+          @select="selectStage(stage)"
         />
       </ol>
       <Empty v-else>
