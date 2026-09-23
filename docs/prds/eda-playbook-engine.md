@@ -374,14 +374,19 @@ by `internal/store` -- the same shape as `BindingDispatcher`
 store's schema application (`internal/store/store.go`). No change
 to `internal/eventbus`; no per-message dedup state on the client.
 
-**Lifetime: no time-based expiry.** Rows live as long as their playbook
-exists; when a playbook is removed from the configured directories, the
-coordinator deletes its rows -- mirroring binding-dispatches-rows-deleted-
-with-binding (`bindings.go`, same transaction as the delete). The
-at-most-once guarantee must not silently decay, which is exactly the
-property that disqualifies `DedupWindow` above; table growth is bounded
-by distinct (playbook, event, action) pairs over the playbook's lifetime
-and is accepted, the same tradeoff `binding_dispatches` already makes.
+**Lifetime: no time-based expiry, and no automatic reclamation.** Rows are
+retained until an explicit `DeletePlaybookDispatches` for their playbook.
+Removing a playbook file does not delete its rows: playbooks are read only
+at boot, so the only place to notice a removal is a boot-time reconcile,
+and a boot that finds the directory missing or unmounted loads as "no
+playbooks" and would reclaim the whole ledger, letting redelivered events
+fire their side effects again. A binding's rows go with an explicit
+operator delete (`bindings.go`, same transaction); a file disappearing is
+not an equally deliberate act. The at-most-once guarantee must not
+silently decay, which is exactly the property that disqualifies
+`DedupWindow` above; table growth is bounded by distinct (playbook,
+event, action) pairs and is accepted, the same tradeoff
+`binding_dispatches` already makes.
 
 **Redelivery behavior: skip the recorded action and continue the run.**
 A detected duplicate is not re-invoked, is not reported to the caller as
