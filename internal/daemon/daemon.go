@@ -220,7 +220,11 @@ type Daemon struct {
 	// and routing is exactly the binding behaviour.
 	Playbooks interface {
 		Dispatch(playbook.DispatchInput) (playbook.Decision, bool)
+		Run(context.Context, storecontract.PlaybookDispatcher, *slog.Logger, playbook.DispatchInput) error
 	}
+	// PlaybookLedger is the at-most-once gate action playbooks run through.
+	// Nil means action playbooks do not run: they never fire unguarded.
+	PlaybookLedger storecontract.PlaybookDispatcher
 
 	// WorkflowDefinitions supplies the active database definitions. A task is
 	// pinned once before dispatch; retries reuse the task's stored YAML.
@@ -1552,6 +1556,7 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 		}
 		return nil
 	}
+	d.runActionPlaybooks(ctx, task)
 	if d.WorkflowDefinitions == nil {
 		return d.pinWorkflowFromCollection(ctx, task, workflow.ShippedDefinitions(), 0)
 	}
@@ -1560,6 +1565,20 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 		return err
 	}
 	return d.pinWorkflowFromCollection(ctx, task, collection, version)
+}
+
+// runActionPlaybooks runs the action playbooks matching a task that is about
+// to be pinned, which happens once per task (docs/prds/action-playbook-run.md).
+// A run never affects routing and its failure never fails the task. A task
+// that already names a workflow is the approval requeue and is skipped, as
+// it is for workflow playbooks.
+func (d *Daemon) runActionPlaybooks(ctx context.Context, task *workflow.Task) {
+	if d.Playbooks == nil || d.PlaybookLedger == nil || task.Workflow != "" {
+		return
+	}
+	if err := d.Playbooks.Run(ctx, d.PlaybookLedger, d.Log, playbookInput(task)); err != nil {
+		d.Log.Warn("action playbook run failed", "task", task.ID, "err", err)
+	}
 }
 
 // resolveWorkflowID picks the definition id to pin. A playbook whose trigger

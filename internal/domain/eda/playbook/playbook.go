@@ -7,8 +7,8 @@
 //   - a workflow playbook is exactly one `workflow` action, unchanged from
 //     the original boundary, and is routed by the daemon's definition pin;
 //   - an action playbook is one or more `module` actions in order, each with
-//     a registered `kind`, `args`, and an optional `when`/`id`. It loads and
-//     type-checks now but has no run path yet (t2db.31).
+//     a registered `kind`, `args`, and an optional `when`/`id`. Store.Run
+//     executes it (docs/prds/action-playbook-run.md).
 //
 // The two shapes never mix in one playbook. This is an ADDITIONAL routing
 // source alongside the flat kind/label binding files (t2db.9/.10/.11): the
@@ -18,6 +18,7 @@
 package playbook
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -43,9 +44,19 @@ type KindSchemas interface {
 	KindSchema(kind string) (args, result reflect.Type, ok bool)
 }
 
+// Modules is the module source an action playbook loads and runs against:
+// the kinds' schemas, the invoke, and the result decode. *module.ModuleRegistry
+// satisfies it.
+type Modules interface {
+	KindSchemas
+	Invoke(ctx context.Context, kind string, args map[string]any) (map[string]any, error)
+	DecodeResult(kind string, raw map[string]any) (any, error)
+}
+
 // Store is the loaded set of playbooks, validated and compiled at load time.
 type Store struct {
 	Playbooks []*Playbook
+	modules   Modules
 }
 
 // Playbook is one trigger+actions document.
@@ -190,10 +201,10 @@ func validateModuleActionIDs(path string, actions []rawAction) error {
 // compile error, an args key error -- fails the whole load: the reject-at-load
 // philosophy of the parent design doc. A missing directory is an empty store
 // (matching the flat binding loaders' convention).
-func Load(dir string, schemas KindSchemas) (*Store, error) {
+func Load(dir string, modules Modules) (*Store, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return &Store{}, nil
+		return &Store{modules: modules}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
@@ -210,10 +221,10 @@ func Load(dir string, schemas KindSchemas) (*Store, error) {
 	}
 	sort.Strings(names)
 
-	store := &Store{}
+	store := &Store{modules: modules}
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		pb, err := loadOne(dir, path, schemas)
+		pb, err := loadOne(dir, path, modules)
 		if err != nil {
 			return nil, err
 		}
@@ -549,8 +560,8 @@ type DispatchInput struct {
 // IsActionPlaybook reports whether pb is an action playbook (one or more
 // module actions), as opposed to a workflow playbook (exactly one workflow
 // action). It is the single two-shape predicate shared by Dispatch (which
-// skips action playbooks) and the daemon's D1 load warning (which logs them),
-// so the two can never disagree.
+// routes only workflow playbooks) and Run (which executes only action
+// playbooks), so the two can never disagree.
 func (pb *Playbook) IsActionPlaybook() bool {
 	return len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow"
 }
@@ -604,9 +615,8 @@ type Decision struct {
 
 // Dispatch returns the workflow name the first matching workflow playbook
 // selects for the input, and whether any playbook matched. Action playbooks
-// are loaded and validated but not routed (multi-action-playbooks.md, D1), so
-// this considers workflow playbooks only: an action playbook cannot hijack the
-// definition pin before its run path exists (t2db.31). No match means trigger
+// choose no workflow, so they are skipped here and executed by Run. No match
+// means trigger
 // mismatch or a when condition evaluating false, and the caller keeps its own
 // routing.
 //
@@ -635,16 +645,8 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 			continue
 		}
 		a := pb.Actions[0]
-		if a.When != nil {
-			val, err := a.env.Eval(a.When, ctx)
-			if err != nil {
-				// J3: evaluation error -> false (skip), caller logs.
-				continue
-			}
-			b, ok := val.(bool)
-			if !ok || !b {
-				continue
-			}
+		if !a.whenHolds(ctx) {
+			continue
 		}
 		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow, ActionID: a.ID, ActionPosition: 1}, true
 	}
@@ -662,9 +664,8 @@ func evalContext(input DispatchInput) expr.Context {
 }
 
 // EvalArgs evaluates a compiled action's args against the dispatch context,
-// returning the resulting name->value map. No shipped position consumes args
-// yet; the consumer arrives with the first side-effecting position (t2db.31).
-// An action declaring no args evaluates to an empty map, nil-program entries
+// returning the resulting name->value map. Run evaluates args the same way
+// against a context that also carries earlier actions' results. An action declaring no args evaluates to an empty map, nil-program entries
 // are skipped, and the first evaluation error is returned. Nil-receiver-safe
 // for the pre-load composition phase.
 //
@@ -673,10 +674,29 @@ func evalContext(input DispatchInput) expr.Context {
 // meaningful substitute and is returned to the caller to abort the dispatch.
 // Ratifying that rule against a real consumer is tracked by archie-core-1h05.
 func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) {
-	if s == nil || len(a.Args) == 0 {
+	if s == nil {
 		return map[string]any{}, nil
 	}
-	ctx := evalContext(input)
+	return a.evalArgs(evalContext(input))
+}
+
+// whenHolds reports whether the action's `when` is absent or evaluates to
+// true. An evaluation error is false (J3: skip, caller logs).
+func (a Action) whenHolds(ctx expr.Context) bool {
+	if a.When == nil {
+		return true
+	}
+	val, err := a.env.Eval(a.When, ctx)
+	if err != nil {
+		return false
+	}
+	b, ok := val.(bool)
+	return ok && b
+}
+
+// evalArgs evaluates the action's args against ctx in key order, returning
+// the first evaluation error.
+func (a Action) evalArgs(ctx expr.Context) (map[string]any, error) {
 	out := make(map[string]any, len(a.Args))
 	keys := make([]string, 0, len(a.Args))
 	for key := range a.Args {

@@ -92,13 +92,13 @@ of the `actions` object typed by its kind's `Result`.
 
 ## Running an action playbook is out of scope
 
-This document makes an action playbook load and its references type-check. It
-does not invoke a Module kind. Invocation, the `playbook_dispatches` gate, and
-stop-on-first-failure across actions are `archie-core-t2db.31`.
+This document makes an action playbook load and its references type-check.
+Running one is designed in `docs/prds/action-playbook-run.md`.
 
 ## Decisions
 
-**D1 — dispatch before `t2db.31`.** Settled: an action playbook loads and
+**D1 — dispatch before `t2db.31`.** Superseded by
+`docs/prds/action-playbook-run.md`. Was: an action playbook loads and
 validates but is not routed; the definition-pin dispatch reports no match for it,
 and the daemon logs a visible warning naming it.
 

@@ -30,7 +30,7 @@ func writeFile(t *testing.T, dir, name, content string) string {
 // tests: *module.ModuleRegistry satisfies playbook.KindSchemas. It consults
 // the built-in kind registry, so no module file needs to be installed for the
 // schema lookup to work.
-func testSchemas(t *testing.T) KindSchemas {
+func testSchemas(t *testing.T) Modules {
 	t.Helper()
 	return module.New()
 }

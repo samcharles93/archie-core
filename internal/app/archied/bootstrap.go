@@ -774,20 +774,14 @@ func (b *boot) loadModules(cfg config.Config, log *slog.Logger) error {
 // rule -- any malformed playbook, mixed/unsupported action shape, unknown
 // module kind, when compile failure, or args key failure aborts startup,
 // matching the routing-file load pattern (not degrade-and-skip). A nonexistent
-// dir is an empty store. Action playbooks load and type-check but have no run
-// path yet (t2db.31), so each one is logged as a visible warning here rather
-// than routed by the definition pin.
+// dir is an empty store. Action playbooks run through the daemon once
+// buildDaemon wires the dispatch ledger (docs/prds/action-playbook-run.md).
 func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
 	var err error
 	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir, b.modules)
 	if err != nil {
 		log.Error("eda playbook load failed", "dir", cfg.EDAPlaybookDir, "err", err)
 		return err
-	}
-	for _, pb := range b.playbooks.Playbooks {
-		if pb.IsActionPlaybook() {
-			log.Warn("eda action playbook loaded: action playbooks do not execute yet", "playbook", pb.ID)
-		}
 	}
 	log.Info("eda playbooks loaded", "dir", cfg.EDAPlaybookDir, "playbooks", len(b.playbooks.Playbooks))
 	return nil
@@ -1326,7 +1320,23 @@ func (b *boot) buildDaemon() {
 	if btc, ok := b.stateStore.(storecontract.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}
+	b.d.PlaybookLedger = playbookLedger(b.stateStore, b.playbooks, b.log)
 	b.setupForgeWebhook()
+}
+
+// playbookLedger returns source's dispatch ledger, or nil with a warning
+// naming each action playbook that therefore will not run: an action playbook
+// never fires without its at-most-once gate.
+func playbookLedger(source any, playbooks *playbook.Store, log *slog.Logger) storecontract.PlaybookDispatcher {
+	if pd, ok := source.(storecontract.PlaybookDispatcher); ok {
+		return pd
+	}
+	for _, pb := range playbooks.Playbooks {
+		if pb.IsActionPlaybook() {
+			log.Warn("eda action playbook will not run: no dispatch ledger is wired", "playbook", pb.ID)
+		}
+	}
+	return nil
 }
 
 // setupForgeWebhook starts the forge webhook receiver when intake is "webhook"
