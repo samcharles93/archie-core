@@ -12,8 +12,12 @@ import (
 
 const insertEvent = `-- name: InsertEvent :one
 
+WITH append_lock AS (
+    SELECT pg_advisory_xact_lock(hashtextextended('archie.events.append', 0))
+)
 INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+FROM append_lock
 RETURNING id
 `
 
@@ -37,6 +41,10 @@ type InsertEventParams struct {
 // fixed-width sort key and id only breaks ties, so a reader pages by
 // "after (at, id)" and never skips or repeats a row. See
 // internal/domain/storecontract/cursor.go.
+// InsertEvent takes the event-append lock before the row draws its id, and
+// holds it until the enclosing transaction commits, so ids become visible in
+// the order they were drawn. The lock is inside the statement so a standalone
+// insert and one inside a longer transaction both take it.
 func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertEvent,
 		arg.At,
