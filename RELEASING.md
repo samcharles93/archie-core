@@ -68,6 +68,26 @@ repo's general "check before doing anything hard to reverse" rule). The deploy
 workflow reads tags pointing at `HEAD`; pushing the commit without its tag gets images
 stamped `dev`.
 
+### After a release, `main` and the working branch have diverged
+
+The release commit lands on `main` — `tools/release.sh` refuses to run anywhere else
+— while the working branch keeps advancing. So after every release, `main` is ahead by
+exactly that commit and the branch is ahead by however far it has moved: **neither tip
+is an ancestor of the other**, and `--ff-only` fails in both directions. That refusal
+reads as "the tree is not ready" when in fact the tree is fine.
+
+Merge the release commit into the branch first, so any conflict is resolved on the
+branch, where it is reversible and nobody is reading the tip:
+
+```bash
+git merge main                  # on the branch
+git merge --ff-only <branch>    # then, in whichever worktree holds main
+```
+
+Confirm which worktree holds `main` with `git worktree list` before the `--ff-only`.
+A detached worktree sitting at the same commit will accept it and move nothing, which
+looks like success.
+
 ## What a release publishes
 
 Tagging one version produces, from a single `deploy` run:
