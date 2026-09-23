@@ -456,9 +456,11 @@ func TestPersonaWatchIsReEstablishedAfterTheStreamEnds(t *testing.T) {
 // than spun, a shutdown that does not wait out the backoff, and a resume point
 // that only updates carrying a version can move.
 func TestKeepWatchGuardrails(t *testing.T) {
+	t.Parallel()
 	log := slog.New(slog.DiscardHandler)
 	versionOf := func(version int64) int64 { return version }
 	t.Run("one stream is held at a time", func(t *testing.T) {
+		t.Parallel()
 		var opens atomic.Int64
 		first := make(chan int64)
 		close(first)
@@ -485,6 +487,7 @@ func TestKeepWatchGuardrails(t *testing.T) {
 	})
 
 	t.Run("a stream that cannot be re-established is retried with backoff", func(t *testing.T) {
+		t.Parallel()
 		var opens atomic.Int64
 		first := make(chan int64)
 		close(first)
@@ -515,6 +518,7 @@ func TestKeepWatchGuardrails(t *testing.T) {
 	})
 
 	t.Run("a cancelled context ends the watch while it is backing off", func(t *testing.T) {
+		t.Parallel()
 		var opens atomic.Int64
 		first := make(chan int64)
 		close(first)
@@ -540,6 +544,7 @@ func TestKeepWatchGuardrails(t *testing.T) {
 	})
 
 	t.Run("the reconnect resumes after the last version delivered", func(t *testing.T) {
+		t.Parallel()
 		// A version this process applied, then the update a stream failure
 		// arrives as: the failure carries no version, so it must not move the
 		// resume point and the next stream must not be asked to replay history.
@@ -744,6 +749,7 @@ func TestAttemptHealthyAtTheWindowBoundary(t *testing.T) {
 // same rule -- it ended at once having delivered nothing -- so the delay has
 // something to reset from.
 func TestKeepWatchBackoffResetsAfterASuccessfulReopen(t *testing.T) {
+	t.Parallel()
 	log, retries := newRetryLog()
 	first := make(chan int64)
 	close(first)
@@ -793,6 +799,7 @@ func TestKeepWatchBackoffResetsAfterASuccessfulReopen(t *testing.T) {
 // minimum they start at. The delay is read off the watch's own log line, which
 // is where the loop states the wait it is about to take.
 func TestKeepWatchChargesAReopenTheStoreMerelyAccepted(t *testing.T) {
+	t.Parallel()
 	log, retries := newRetryLog()
 	first := make(chan int64)
 	close(first)

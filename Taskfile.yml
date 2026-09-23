@@ -286,6 +286,9 @@ tasks:
   ui:deps:
     desc: Install the dashboard's node dependencies (ui/node_modules is gitignored)
     internal: true
+    # Once per invocation: the gate's parallel UI steps both declare this, and
+    # two concurrent installs into one node_modules corrupt it.
+    run: once
     dir: ui
     cmds:
       - npm install --no-audit --no-fund
@@ -314,10 +317,8 @@ tasks:
       Fix a failure with `task ui`, then commit the rebuilt bundle in the same
       commit as the source change that caused it.
 
-      Declares ui:deps like `ui` and `test:ui` do, so a fresh clone works; that
-      means the gate runs `npm install` once for each dependent. Task's
-      sources/generates up-to-date check does not apply to a node_modules
-      directory, so the guard against that is a follow-up, not a claim here.
+      Declares ui:deps like `ui` and `test:ui` do, so a fresh clone works;
+      ui:deps is run: once, so the gate installs a single time.
     deps: [ui:deps]
     cmds:
       - bash tools/uidist.sh check
@@ -478,7 +479,18 @@ tasks:
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:
-    desc: Run the Go test suite
+    desc: Run the Go test suite, skipping wall-clock-bound tests and reusing cached passes
+    summary: |
+      -short skips tests that wait out real timers (the keepalive proof holds a
+      watch open for 50s); each one names task test:full in its skip message.
+      The test cache is left on: go reruns any package whose sources,
+      dependencies, env or test files changed, so a cached pass is a pass on
+      this tree.
+    cmds:
+      - go test -short ./...
+
+  test:full:
+    desc: Run the whole Go test suite uncached, including the wall-clock-bound tests
     cmds:
       - go test ./... -count=1
 
@@ -499,9 +511,16 @@ tasks:
   check:
     desc: "Full quality gate: fmt, proto, docs, vet, lint, build, test, tools tests, ui tests and bundle"
     cmds:
+      # The two steps that rewrite the tree run first and alone; everything
+      # after them only reads it, so it runs concurrently.
       - task: fmt
-      - task: proto:lint
       - task: proto:check
+      - task: check:readonly
+
+  check:readonly:
+    internal: true
+    deps:
+      - task: proto:lint
       - task: docs:check
       - task: docs:prds
       # Release notes are generated from the changelogs the release process
