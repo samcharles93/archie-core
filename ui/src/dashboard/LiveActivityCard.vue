@@ -72,15 +72,24 @@ function openTask(taskID: number) {
         appear without a second hidden summary to keep in sync.
       -->
       <div role="region" aria-label="Live activity" aria-live="polite">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Event</TableHead>
-              <TableHead>Task</TableHead>
-              <TableHead>Detail</TableHead>
-              <TableHead>When</TableHead>
-            </TableRow>
-          </TableHeader>
+        <!--
+          The feed's height is bounded to the card, not the page: group rows
+          multiply with the number of interleaved tasks, and an unbounded
+          table made the dashboard ~4,700px tall on a live instance. The
+          newest events stay visible at the top; the rest scroll inside the
+          card. The header stays put via sticky so the columns keep their
+          labels while scrolling.
+        -->
+        <div class="max-h-[28rem] overflow-y-auto">
+          <Table>
+            <TableHeader class="sticky top-0 z-10 bg-card">
+              <TableRow>
+                <TableHead>Event</TableHead>
+                <TableHead>Task</TableHead>
+                <TableHead>Detail</TableHead>
+                <TableHead>When</TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             <TableRow v-if="!activity.length">
               <TableCell colspan="4">
@@ -139,7 +148,8 @@ function openTask(taskID: number) {
               </template>
             </template>
           </TableBody>
-        </Table>
+          </Table>
+        </div>
       </div>
     </CardContent>
   </Card>
