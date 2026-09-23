@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -519,18 +518,6 @@ func ledgerWrite(err error, what string) error {
 	default:
 		return fmt.Errorf("%s: %w", what, err)
 	}
-}
-
-// isUniqueViolation reports whether err is a PostgreSQL unique-index refusal,
-// detected by SQLSTATE 23505 rather than by matching the driver's error text.
-// A Postgres error whose message happens to say "unique" but whose SQLSTATE is
-// something else must not be treated as one.
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) {
-		return false
-	}
-	return pgErr.Code == "23505"
 }
 
 // --- tool calls ---
