@@ -98,11 +98,10 @@ func TestLintReportsLoadErrorAsFinding(t *testing.T) {
 	}
 	joined := strings.Join(result.Findings, "\n")
 	// Both "bug" and "security" collide across the two files; the loader
-	// sorts a file's keys before checking them (routing.go's
-	// loadPlaybookFile), so "bug" -- alphabetically first -- is always the
-	// one reported, deterministically.
-	if !strings.Contains(joined, "bug") {
-		t.Fatalf("Lint() findings = %q, want the colliding key named", joined)
+	// checks a file's keys in document order, so the first line of b.yaml
+	// is always the one reported, deterministically.
+	if want := filepath.Join(dir, "b.yaml") + `:1: label "security"`; !strings.Contains(joined, want) {
+		t.Fatalf("Lint() findings = %q, want %q", joined, want)
 	}
 	// Fail-fast like the daemon: one definition failure is reported (the
 	// loader returns the first), not an enumeration of every collision.

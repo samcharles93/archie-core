@@ -194,7 +194,7 @@ func (s *Store) InsertBinding(ctx context.Context, b binding.Binding) (string, e
 		return "", err
 	}
 	r.Set("version", 1)
-	r.Set("status", string(binding.StatusDraft))
+	r.Set("status", string(binding.StatusPendingApproval))
 	if err := s.app.Save(r); err != nil {
 		return "", fmt.Errorf("edastore: insert binding: %w", err)
 	}

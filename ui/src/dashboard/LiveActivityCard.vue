@@ -5,7 +5,7 @@ import { useRouter } from "vue-router";
 
 import { ChevronDown, ChevronRight } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ago } from "@/lib/format";
@@ -58,7 +58,6 @@ function openTask(taskID: number) {
   <Card>
     <CardHeader>
       <CardTitle>Live activity</CardTitle>
-      <CardDescription>Last 50, newest first</CardDescription>
       <CardAction>
         <Badge :variant="streamKind">{{ streamState }}</Badge>
       </CardAction>
@@ -72,15 +71,24 @@ function openTask(taskID: number) {
         appear without a second hidden summary to keep in sync.
       -->
       <div role="region" aria-label="Live activity" aria-live="polite">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Event</TableHead>
-              <TableHead>Task</TableHead>
-              <TableHead>Detail</TableHead>
-              <TableHead>When</TableHead>
-            </TableRow>
-          </TableHeader>
+        <!--
+          The feed's height is bounded to the card, not the page: group rows
+          multiply with the number of interleaved tasks, and an unbounded
+          table made the dashboard ~4,700px tall on a live instance. The
+          newest events stay visible at the top; the rest scroll inside the
+          card. The header stays put via sticky so the columns keep their
+          labels while scrolling.
+        -->
+        <div class="max-h-[28rem] overflow-y-auto">
+          <Table>
+            <TableHeader class="sticky top-0 z-10 bg-card">
+              <TableRow>
+                <TableHead>Event</TableHead>
+                <TableHead>Task</TableHead>
+                <TableHead>Detail</TableHead>
+                <TableHead>When</TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             <TableRow v-if="!activity.length">
               <TableCell colspan="4">
@@ -139,7 +147,8 @@ function openTask(taskID: number) {
               </template>
             </template>
           </TableBody>
-        </Table>
+          </Table>
+        </div>
       </div>
     </CardContent>
   </Card>

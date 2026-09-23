@@ -14,7 +14,7 @@ import (
 //
 // This handler is transport only: parsing the log format belongs to the
 // logging package, which owns it. Live output reaches the dashboard over the
-// existing /events stream; this endpoint exists so the view has history from
+// existing /api/stream stream; this endpoint exists so the view has history from
 // before the browser connected, which is the whole reason file logging landed
 // first.
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {

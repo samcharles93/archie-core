@@ -104,8 +104,11 @@ func ensureMappings(app core.App) error {
 
 func ensureBindings(app core.App) error {
 	c, fresh, err := collection(app, CollBindings)
-	if err != nil || !fresh {
+	if err != nil {
 		return err
+	}
+	if !fresh {
+		return promoteDraftBindings(app)
 	}
 	mappings, err := app.FindCollectionByNameOrId(CollMappings)
 	if err != nil {
@@ -119,11 +122,10 @@ func ensureBindings(app core.App) error {
 		&core.TextField{Name: "owner"},
 		&core.TextField{Name: "repo"},
 		&core.NumberField{Name: "version"},
-		// status is the domain's three-state lifecycle, not a local
-		// vocabulary: draft -> pending_approval -> armed. Only
-		// ApproveBinding reaches armed, which is the epic's approval gate.
+		// status is the domain's lifecycle, not a local vocabulary:
+		// pending_approval -> armed. Only ApproveBinding reaches armed,
+		// which is the epic's approval gate.
 		&core.SelectField{Name: "status", MaxSelect: 1, Values: []string{
-			string(binding.StatusDraft),
 			string(binding.StatusPendingApproval),
 			string(binding.StatusArmed),
 		}},
@@ -133,6 +135,18 @@ func ensureBindings(app core.App) error {
 	)
 	c.AddIndex("idx_bindings_source_status", false, "source, status", "")
 	return save(app, c)
+}
+
+// promoteDraftBindings moves bindings an earlier version stored as "draft",
+// a state nothing could leave without an unrelated edit, to
+// pending_approval so they can be approved. It is a no-op once none remain.
+func promoteDraftBindings(app core.App) error {
+	_, err := app.DB().NewQuery("UPDATE " + CollBindings + " SET status = {:pending} WHERE status = 'draft'").
+		Bind(map[string]any{"pending": string(binding.StatusPendingApproval)}).Execute()
+	if err != nil {
+		return fmt.Errorf("edastore: promote draft bindings: %w", err)
+	}
+	return nil
 }
 
 func ensureBindingDispatches(app core.App) error {

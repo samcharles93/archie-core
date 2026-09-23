@@ -40,8 +40,6 @@ function onOpenChange(open: boolean) {
         </DialogDescription>
       </DialogHeader>
 
-      <MappingActionError v-if="actionError" :failure="actionError" />
-
       <Card>
         <CardContent>
           <MappingForm />
@@ -72,6 +70,10 @@ function onOpenChange(open: boolean) {
           <p v-else class="text-sm text-fg-muted">Pick a captured event above to see its payload.</p>
         </CardContent>
       </Card>
+
+      <!-- Beside the buttons, not at the top: the dialog scrolls, and Save is
+           clicked at the bottom, where a refusal must be seen. -->
+      <MappingActionError v-if="actionError" :failure="actionError" />
 
       <DialogFooter>
         <Button variant="outline" @click="closeEditor">Cancel</Button>

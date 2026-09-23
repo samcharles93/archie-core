@@ -2,6 +2,7 @@ package archied
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,71 +11,65 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
+	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 )
 
-// TestLoadEDAPlaybooksWarnsOnActionPlaybook pins the D1 visible warning: an
-// action playbook loads and validates but has no run path yet, so the daemon
-// logs a warning (not debug) naming it and stating plainly that action
-// playbooks do not execute yet -- rather than silently loading a playbook that
-// can never be routed.
-func TestLoadEDAPlaybooksWarnsOnActionPlaybook(t *testing.T) {
+type stubPlaybookLedger struct{}
+
+func (stubPlaybookLedger) RecordPlaybookDispatch(context.Context, string, string, string, string) error {
+	return nil
+}
+
+func (stubPlaybookLedger) DeletePlaybookDispatches(context.Context, string) error { return nil }
+
+func loadBootPlaybooks(t *testing.T, document string) *playbook.Store {
+	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "pb.yaml"), []byte(`trigger:
+	if err := os.WriteFile(filepath.Join(dir, "pb.yaml"), []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := &boot{cfg: config.Config{EDAPlaybookDir: dir}, modules: module.New()}
+	if err := b.loadEDAPlaybooks(b.cfg, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("loadEDAPlaybooks: %v", err)
+	}
+	return b.playbooks
+}
+
+const actionPlaybookDoc = `trigger:
   kind: bug
 actions:
   - position: module
     kind: log
     args:
       message: '"build started"'
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+`
 
-	var buf bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&buf, nil))
-	b := &boot{cfg: config.Config{EDAPlaybookDir: dir}, modules: module.New()}
-	if err := b.loadEDAPlaybooks(b.cfg, log); err != nil {
-		t.Fatalf("loadEDAPlaybooks: %v", err)
+// An action playbook never runs without the dispatch ledger, and the
+// operator is told which ones are inert rather than finding out by silence.
+func TestPlaybookLedger(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     any
+		document   string
+		wantLedger bool
+		wantWarn   bool
+	}{
+		{name: "ledger wired", source: stubPlaybookLedger{}, document: actionPlaybookDoc, wantLedger: true},
+		{name: "no ledger warns per action playbook", source: struct{}{}, document: actionPlaybookDoc, wantWarn: true},
+		{name: "no ledger, workflow playbook only", source: struct{}{}, document: "trigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n"},
 	}
-
-	out := buf.String()
-	if !strings.Contains(out, "pb.yaml") {
-		t.Errorf("warning output does not name the action playbook: %q", out)
-	}
-	if !strings.Contains(out, "do not execute yet") {
-		t.Errorf("warning output does not state action playbooks do not execute yet: %q", out)
-	}
-	if strings.Contains(out, "level=DEBUG") {
-		t.Errorf("warning output was logged at debug, want a visible warning: %q", out)
-	}
-}
-
-// TestLoadEDAPlaybooksNoWarningOnWorkflowPlaybook is the inverse of the D1
-// warning: a workflow playbook uses the same two-shape predicate but must not
-// be logged as a non-routing action playbook.
-func TestLoadEDAPlaybooksNoWarningOnWorkflowPlaybook(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "pb.yaml"), []byte(`trigger:
-  kind: bug
-actions:
-  - position: workflow
-    workflow: tdd
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	var buf bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&buf, nil))
-	b := &boot{cfg: config.Config{EDAPlaybookDir: dir}, modules: module.New()}
-	if err := b.loadEDAPlaybooks(b.cfg, log); err != nil {
-		t.Fatalf("loadEDAPlaybooks: %v", err)
-	}
-
-	out := buf.String()
-	if strings.Contains(out, "do not execute yet") {
-		t.Errorf("workflow playbook was warned as an action playbook: %q", out)
-	}
-	if strings.Contains(out, "level=WARN") {
-		t.Errorf("workflow playbook produced a warning: %q", out)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			got := playbookLedger(tt.source, loadBootPlaybooks(t, tt.document), slog.New(slog.NewTextHandler(&buf, nil)))
+			if (got != nil) != tt.wantLedger {
+				t.Fatalf("ledger = %v, want wired=%v", got, tt.wantLedger)
+			}
+			out := buf.String()
+			warned := strings.Contains(out, "level=WARN") && strings.Contains(out, "pb.yaml") && strings.Contains(out, "will not run")
+			if warned != tt.wantWarn {
+				t.Fatalf("warning output = %q, want warned=%v", out, tt.wantWarn)
+			}
+		})
 	}
 }

@@ -277,53 +277,44 @@ func (e *Env) Compile(src string) (*Program, error) {
 		return nil, err
 	}
 	ids, resolvable := actionReferences(ast)
-	return &Program{prg: prg, actionIDs: ids, resolvable: resolvable}, nil
+	return &Program{prg: prg, actionIDs: ids, resolvable: resolvable, outType: ast.OutputType()}, nil
 }
 
-// actionReferences walks the compiled AST once and classifies every read of
+// actionReferences walks the checked AST once and classifies every read of
 // the `actions` context root as either a statically-resolvable action id or
-// not. The invariant is exhaustive by construction: each read of `actions`
-// consumes exactly one `actions` identifier node, so counting identifier
-// nodes and counting the reads that match the static access shape (a field
-// selection on the `actions` ident) yields
+// not. A root read is an identifier the checker typed as the `actions`
+// object: matching on type rather than name keeps a comprehension variable
+// that happens to be called `actions` out of the count. Each root read
+// consumes exactly one such identifier, so
 //
 //	resolvable = (identCount == staticCount)
 //
-// Any other spelling that mentions `actions` contributes an identifier node
-// without a matching static access, so it reports unresolvable rather than
-// slipping through as a runtime miss. The returned ids are the sorted,
-// de-duplicated ids of the static accesses.
-//
-// With the per-playbook object type the CEL checker rejects every non-static
-// `actions` read at compile time -- a dynamic index, `in`, `size`, or a
-// method/field selection that is not a declared id never reaches this walk.
-// The one spelling the checker does NOT reject is a bare `actions` value
-// read, which compiles as an object value but cannot be pinned to an action
-// id at load. This walk is retained solely to reject that spelling; the ids
-// return is now informational (the unknown-id check moved to the checker's
-// per-playbook object type).
+// where staticCount is the root reads that are a field selection. The
+// checker already rejects every other non-static read (a dynamic index,
+// `in`, `size`, an undeclared id); the spelling it accepts is a bare
+// `actions` value, which compiles but cannot be pinned to an action id at
+// load. This walk exists to reject that spelling; the ids return is
+// informational. The ids are sorted and de-duplicated.
 func actionReferences(ast *cel.Ast) ([]string, bool) {
 	if ast == nil || ast.NativeRep() == nil {
 		return nil, true
 	}
+	checked := ast.NativeRep()
+	isRoot := func(e celast.Expr) bool {
+		return e.Kind() == celast.IdentKind && checked.GetType(e.ID()).TypeName() == actionsTypeName
+	}
 	var identCount, staticCount int
 	seen := map[string]struct{}{}
 	visitor := celast.NewExprVisitor(func(e celast.Expr) {
-		switch e.Kind() {
-		case celast.IdentKind:
-			if e.AsIdent() == "actions" {
-				identCount++
-			}
-		case celast.SelectKind:
-			sel := e.AsSelect()
-			if !isActionsIdent(sel.Operand()) {
-				return
-			}
+		switch {
+		case isRoot(e):
+			identCount++
+		case e.Kind() == celast.SelectKind && isRoot(e.AsSelect().Operand()):
 			staticCount++
-			seen[sel.FieldName()] = struct{}{}
+			seen[e.AsSelect().FieldName()] = struct{}{}
 		}
 	})
-	celast.PreOrderVisit(ast.NativeRep().Expr(), visitor)
+	celast.PreOrderVisit(checked.Expr(), visitor)
 	ids := make([]string, 0, len(seen))
 	for id := range seen {
 		ids = append(ids, id)
@@ -332,16 +323,50 @@ func actionReferences(ast *cel.Ast) ([]string, bool) {
 	return ids, identCount == staticCount
 }
 
-// isActionsIdent reports whether e is the `actions` context-root identifier.
-func isActionsIdent(e celast.Expr) bool {
-	return e.Kind() == celast.IdentKind && e.AsIdent() == "actions"
-}
-
 // Program is a compiled, cost-limited playbook expression.
 type Program struct {
 	prg        cel.Program
 	actionIDs  []string
 	resolvable bool
+	outType    *cel.Type
+}
+
+// Fits reports whether the program's checked output type can fill a Go value
+// of type t. A dyn output fits anything: its type is known only per
+// evaluation. A Go type with no CEL scalar counterpart is not checked here.
+func (p *Program) Fits(t reflect.Type) bool {
+	if p.outType == nil || p.outType.Kind() == types.DynKind {
+		return true
+	}
+	want, ok := celScalar(t)
+	return !ok || want.IsExactType(p.outType)
+}
+
+// OutputType is the program's checked output type, for error messages.
+func (p *Program) OutputType() string {
+	if p.outType == nil {
+		return "dyn"
+	}
+	return p.outType.String()
+}
+
+// celScalar maps a Go scalar kind to the CEL type an expression must produce
+// to fill it.
+func celScalar(t reflect.Type) (*cel.Type, bool) {
+	switch t.Kind() {
+	case reflect.String:
+		return cel.StringType, true
+	case reflect.Bool:
+		return cel.BoolType, true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return cel.IntType, true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return cel.UintType, true
+	case reflect.Float32, reflect.Float64:
+		return cel.DoubleType, true
+	default:
+		return nil, false
+	}
 }
 
 // ActionReferences reports the action ids the expression reads from the

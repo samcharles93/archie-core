@@ -80,8 +80,8 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 	if created.ID == "" {
 		t.Fatalf("created.ID = 0; body = %s", w.Body.String())
 	}
-	if created.Status != binding.StatusDraft {
-		t.Fatalf("created.Status = %q, want %q", created.Status, binding.StatusDraft)
+	if created.Status != binding.StatusPendingApproval {
+		t.Fatalf("created.Status = %q, want %q", created.Status, binding.StatusPendingApproval)
 	}
 	if created.Secret != "" {
 		t.Fatalf("created.Secret = %q, want \"\" (response must strip secret)", created.Secret)
@@ -272,7 +272,7 @@ func TestHandleBindingUpdatePreservesOtherFields(t *testing.T) {
 		t.Fatalf("updated.MappingID = %q, want %q", updated.MappingID, mappingID)
 	}
 	// Status MUST not regress from a state the caller never asked for.
-	if updated.Status != binding.StatusDraft && updated.Status != binding.StatusPendingApproval {
+	if updated.Status != binding.StatusPendingApproval {
 		t.Fatalf("updated.Status = %q, want draft or pending_approval", updated.Status)
 	}
 }
@@ -306,16 +306,18 @@ func TestHandleBindingUpdateWithEmptySecretPreservesExisting(t *testing.T) {
 	}
 }
 
-func TestHandleBindingApproveFromDraftRejected(t *testing.T) {
+func TestHandleBindingApproveArmedRejected(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")
 	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("a", "sentry", mappingID))
 	var created binding.Binding
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+created.ID+"/approve", nil); w.Code != http.StatusOK {
+		t.Fatalf("first approve status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
 
-	// draft is NOT a valid source state for approve; the binding must
-	// first land in pending_approval (via PATCH). Approve from draft
-	// returns ErrBindingTransition -> 409.
+	// An armed binding is not a valid source state for approve:
+	// ErrBindingTransition -> 409.
 	w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+created.ID+"/approve", nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
@@ -323,27 +325,15 @@ func TestHandleBindingApproveFromDraftRejected(t *testing.T) {
 }
 
 func TestHandleBindingApproveHappyPath(t *testing.T) {
-	// Per docs/prds/webhook-intake-security.md point 2, ANY edit drops status
-	// to pending_approval. The happy path: POST creates draft, PATCH moves
-	// it to pending_approval, POST /approve moves it to armed. This test
-	// pins the rule end-to-end through the webui handlers.
+	// A created binding awaits approval, and approving it arms it: the
+	// operator who just created one can approve it without an edit.
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")
 	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("a", "sentry", mappingID))
 	var created binding.Binding
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
-	if created.Status != binding.StatusDraft {
-		t.Fatalf("created status = %q, want %q", created.Status, binding.StatusDraft)
-	}
-
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, validBindingRequest("renamed", "sentry", mappingID))
-	if w.Code != http.StatusOK {
-		t.Fatalf("patch status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	var patched binding.Binding
-	_ = json.Unmarshal(w.Body.Bytes(), &patched)
-	if patched.Status != binding.StatusPendingApproval {
-		t.Fatalf("patched status = %q, want %q", patched.Status, binding.StatusPendingApproval)
+	if created.Status != binding.StatusPendingApproval {
+		t.Fatalf("created status = %q, want %q", created.Status, binding.StatusPendingApproval)
 	}
 
 	w = doJSON(t, srv, http.MethodPost, "/api/bindings/"+created.ID+"/approve", nil)

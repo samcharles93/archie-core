@@ -30,7 +30,7 @@ func writeFile(t *testing.T, dir, name, content string) string {
 // tests: *module.ModuleRegistry satisfies playbook.KindSchemas. It consults
 // the built-in kind registry, so no module file needs to be installed for the
 // schema lookup to work.
-func testSchemas(t *testing.T) KindSchemas {
+func testSchemas(t *testing.T) Modules {
 	t.Helper()
 	return module.New()
 }
@@ -520,23 +520,25 @@ func TestValidateActionIDs(t *testing.T) {
 // whole load, naming the playbook path -- never a runtime miss. Under the
 // per-playbook object type these forms are rejected at compile time: the
 // field-selection spelling names the undefined id, while a dynamic index, an
-// `in` test, or a size read fails with cel-go's overload error (no id name).
+// `in` test, or a size read fails with cel-go's overload error on the actions
+// type. wantErr pins that stage, so a case cannot pass on a YAML parse error
+// or an undeclared root instead.
 func TestLoadWhenActionsReferenceFails(t *testing.T) {
 	tests := []struct {
-		name   string
-		when   string
-		wantID string
+		name    string
+		when    string
+		wantErr string
 	}{
-		{name: "undeclared field selection", when: `actions.build.result.x == true`, wantID: "build"},
-		{name: "dynamic index on actions", when: `actions["a"].result.x == true`},
-		{name: "non-literal index key", when: `actions[key].result.x == true`},
-		{name: "in operator on actions", when: `"notify" in actions`},
-		{name: "size of actions", when: `size(actions) > 0`},
+		{name: "undeclared field selection", when: `actions.build.result.x == true`, wantErr: "undefined field 'build'"},
+		{name: "dynamic index on actions", when: `actions["a"].result.x == true`, wantErr: "'_[_]' applied to '(actions, string)'"},
+		{name: "non-literal index key", when: `actions[event.kind].result.x == true`, wantErr: "'_[_]' applied to '(actions, dyn)'"},
+		{name: "in operator on actions", when: `"notify" in actions`, wantErr: "'@in' applied to '(string, actions)'"},
+		{name: "size of actions", when: `size(actions) > 0`, wantErr: "'size' applied to '(actions)'"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: "+tc.when+"\n")
+			writeFile(t, dir, "pb.yaml", "\ntrigger:\n  kind: bug\nactions:\n  - position: workflow\n    workflow: tdd\n    when: '"+tc.when+"'\n")
 			_, err := Load(dir, testSchemas(t))
 			if err == nil {
 				t.Fatal("Load = nil, want load failure")
@@ -544,8 +546,8 @@ func TestLoadWhenActionsReferenceFails(t *testing.T) {
 			if !strings.Contains(err.Error(), "pb.yaml") {
 				t.Errorf("Load error = %q, want the playbook path named", err.Error())
 			}
-			if tc.wantID != "" && !strings.Contains(err.Error(), tc.wantID) {
-				t.Errorf("Load error = %q, want the unknown id %q named", err.Error(), tc.wantID)
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Load error = %q, want %q", err.Error(), tc.wantErr)
 			}
 		})
 	}
@@ -699,7 +701,7 @@ func TestCompileArgsReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "event.missing ==",
 	}
 	for range 64 {
-		_, err := compileArgs("pb.yaml", "", "", raw, env, nil)
+		_, err := compileArgs("pb.yaml", nil, "", "", raw, env, nil)
 		if err == nil {
 			t.Fatal("compileArgs = nil, want error")
 		}
@@ -725,7 +727,7 @@ func TestValidateArgsKeysReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "x",
 	}
 	for range 64 {
-		err := validateArgsKeys("pb.yaml", "", "log", argsType, raw)
+		err := validateArgsKeys("pb.yaml", nil, "", "log", argsType, raw)
 		if err == nil {
 			t.Fatal("validateArgsKeys = nil, want error")
 		}
@@ -1437,6 +1439,39 @@ func TestLoadActionPlaybookRejectsActionReferences(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "pb.yaml") {
 				t.Errorf("Load error = %q, want the playbook path named", err.Error())
+			}
+		})
+	}
+}
+
+// An args value whose static CEL type cannot fill the kind's Args field fails
+// the load, naming the key. A dyn value (an event read) is accepted: its type
+// is known only per event, and the module decode refuses a bad one at run.
+func TestLoadArgsValueTypeAgainstArgsSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		wantErr bool
+	}{
+		{name: "string literal", message: `'"hello"'`},
+		{name: "string concatenation", message: `'"n=" + string(1)'`},
+		{name: "dyn event read", message: `event.title`},
+		{name: "int literal", message: `'123'`, wantErr: true},
+		{name: "bool expression", message: `'1 == 1'`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "trigger:\n  kind: bug\nactions:\n  - position: module\n    kind: log\n    args:\n      message: "+tt.message+"\n")
+			_, err := Load(dir, testSchemas(t))
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), `args["message"]`) || !strings.Contains(err.Error(), "string") {
+				t.Fatalf("Load error = %v, want args[\"message\"] refused for not being a string", err)
 			}
 		})
 	}

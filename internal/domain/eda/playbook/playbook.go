@@ -7,8 +7,8 @@
 //   - a workflow playbook is exactly one `workflow` action, unchanged from
 //     the original boundary, and is routed by the daemon's definition pin;
 //   - an action playbook is one or more `module` actions in order, each with
-//     a registered `kind`, `args`, and an optional `when`/`id`. It loads and
-//     type-checks now but has no run path yet (t2db.31).
+//     a registered `kind`, `args`, and an optional `when`/`id`. Store.Run
+//     executes it (docs/prds/action-playbook-run.md).
 //
 // The two shapes never mix in one playbook. This is an ADDITIONAL routing
 // source alongside the flat kind/label binding files (t2db.9/.10/.11): the
@@ -18,18 +18,19 @@
 package playbook
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/expr"
+	"github.com/samcharles93/archie-core/internal/domain/stableid"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 )
 
@@ -43,9 +44,19 @@ type KindSchemas interface {
 	KindSchema(kind string) (args, result reflect.Type, ok bool)
 }
 
+// Modules is the module source an action playbook loads and runs against:
+// the kinds' schemas, the invoke, and the result decode. *module.ModuleRegistry
+// satisfies it.
+type Modules interface {
+	KindSchemas
+	Invoke(ctx context.Context, kind string, args map[string]any) (map[string]any, error)
+	DecodeResult(kind string, raw map[string]any) (any, error)
+}
+
 // Store is the loaded set of playbooks, validated and compiled at load time.
 type Store struct {
 	Playbooks []*Playbook
+	modules   Modules
 }
 
 // Playbook is one trigger+actions document.
@@ -129,15 +140,45 @@ type rawAction struct {
 	Kind     string            `yaml:"kind"`
 	When     string            `yaml:"when"`
 	Args     map[string]string `yaml:"args"`
+
+	// Source lines, so a finding names where the author wrote it: the
+	// action's first line, its `when` key, and each args key.
+	line     int
+	whenLine int
+	argLines map[string]int
 }
 
-// actionIDPattern is the stable-identifier shape a WORKFLOW action id must
-// match when declared: a lowercase, dotted/dashed identifier (shared with
-// internal/plugin/host.go:21 and internal/domain/workflow/vocabulary.go:19),
-// so an id has exactly one spelling and cannot smuggle whitespace or case into
-// the vocabulary two processes compare. Module action ids are stricter (see
-// validateModuleActionIDs) because they must also be CEL field selections.
-var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
+// UnmarshalYAML decodes the action as plain data and records its source
+// lines.
+func (a *rawAction) UnmarshalYAML(n *yaml.Node) error {
+	type plain rawAction
+	if err := n.Decode((*plain)(a)); err != nil {
+		return err
+	}
+	a.line = n.Line
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, val := n.Content[i], n.Content[i+1]
+		switch key.Value {
+		case "when":
+			a.whenLine = key.Line
+		case "args":
+			a.argLines = make(map[string]int, len(val.Content)/2)
+			for j := 0; j+1 < len(val.Content); j += 2 {
+				a.argLines[val.Content[j].Value] = val.Content[j].Line
+			}
+		}
+	}
+	return nil
+}
+
+// at is path:line, the compiler-style location a finding leads with; a zero
+// line (a hand-built action) leaves the bare path.
+func at(path string, line int) string {
+	if line == 0 {
+		return path
+	}
+	return fmt.Sprintf("%s:%d", path, line)
+}
 
 // Module action ids are stricter than workflow ids because they must also be
 // readable as `actions.<id>` in CEL field selection. The authoritative check
@@ -157,8 +198,8 @@ func validateActionIDs(actions []rawAction) error {
 		if id == "" {
 			continue
 		}
-		if !actionIDPattern.MatchString(id) {
-			return fmt.Errorf("action id %q is not a valid stable identifier (want %s)", id, actionIDPattern.String())
+		if !stableid.Valid(id) {
+			return fmt.Errorf("action id %q is not a valid stable identifier (want %s)", id, stableid.Pattern)
 		}
 		if _, dup := seen[id]; dup {
 			return fmt.Errorf("duplicate action id %q", id)
@@ -198,10 +239,10 @@ func validateModuleActionIDs(path string, actions []rawAction) error {
 // compile error, an args key error -- fails the whole load: the reject-at-load
 // philosophy of the parent design doc. A missing directory is an empty store
 // (matching the flat binding loaders' convention).
-func Load(dir string, schemas KindSchemas) (*Store, error) {
+func Load(dir string, modules Modules) (*Store, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return &Store{}, nil
+		return &Store{modules: modules}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
@@ -218,10 +259,10 @@ func Load(dir string, schemas KindSchemas) (*Store, error) {
 	}
 	sort.Strings(names)
 
-	store := &Store{}
+	store := &Store{modules: modules}
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		pb, err := loadOne(dir, path, schemas)
+		pb, err := loadOne(dir, path, modules)
 		if err != nil {
 			return nil, err
 		}
@@ -291,14 +332,14 @@ func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action
 			if len(raw) == 1 && strings.TrimSpace(a.Workflow) != "" {
 				pos = "workflow"
 			} else {
-				return nil, fmt.Errorf("playbook %s: action %d must declare a position (%q or %q)", path, i+1, "workflow", "module")
+				return nil, fmt.Errorf("playbook %s: action %d must declare a position (%q or %q)", at(path, a.line), i+1, "workflow", "module")
 			}
 		}
 		if pos != "workflow" && pos != "module" {
-			return nil, fmt.Errorf("playbook %s: action %d position %q is not supported (want %q or %q)", path, i+1, pos, "workflow", "module")
+			return nil, fmt.Errorf("playbook %s: action %d position %q is not supported (want %q or %q)", at(path, a.line), i+1, pos, "workflow", "module")
 		}
 		a.Position = pos
-		if err := validateActionShapeField(path, i, pos, a); err != nil {
+		if err := validateActionShapeField(at(path, a.line), i, pos, a); err != nil {
 			return nil, err
 		}
 		if pos == "workflow" {
@@ -349,7 +390,7 @@ func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
 	}
 	a := raw[0]
 	if strings.TrimSpace(a.Workflow) == "" {
-		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", path)
+		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", at(path, a.line))
 	}
 
 	env := expr.NewEnv()
@@ -360,13 +401,13 @@ func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
 		env:      env,
 	}
 	if strings.TrimSpace(a.When) != "" {
-		prg, err := compileExpr(path, "when condition", a.When, env)
+		prg, err := compileExpr(at(path, a.whenLine), "when condition", a.When, env)
 		if err != nil {
 			return nil, err
 		}
 		action.When = prg
 	}
-	args, err := compileArgs(path, "", "", a.Args, env, nil)
+	args, err := compileArgs(path, a.argLines, "", "", a.Args, env, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -389,11 +430,11 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 		label := actionLabel(i, a.ID)
 		kind := strings.TrimSpace(a.Kind)
 		if kind == "" {
-			return nil, fmt.Errorf("playbook %s: %s must name a kind", path, label)
+			return nil, fmt.Errorf("playbook %s: %s must name a kind", at(path, a.line), label)
 		}
 		argsType, resultType, ok := schemas.KindSchema(kind)
 		if !ok {
-			return nil, fmt.Errorf("playbook %s: %s has unknown module kind %q", path, label, kind)
+			return nil, fmt.Errorf("playbook %s: %s has unknown module kind %q", at(path, a.line), label, kind)
 		}
 
 		env := expr.NewEnv(declared...)
@@ -404,13 +445,13 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 			env:      env,
 		}
 		if strings.TrimSpace(a.When) != "" {
-			prg, err := compileExpr(path, label+" when condition", a.When, env)
+			prg, err := compileExpr(at(path, a.whenLine), label+" when condition", a.When, env)
 			if err != nil {
 				return nil, err
 			}
 			action.When = prg
 		}
-		args, err := compileArgs(path, label, kind, a.Args, env, argsType)
+		args, err := compileArgs(path, a.argLines, label, kind, a.Args, env, argsType)
 		if err != nil {
 			return nil, err
 		}
@@ -445,6 +486,27 @@ func argsLabel(label, key string) string {
 	return fmt.Sprintf("%s args[%q]", label, key)
 }
 
+// checkArgType refuses an args value whose checked CEL type cannot fill the
+// Args field it names. A dyn value passes: the module decode checks it per
+// event.
+func checkArgType(path, label, kind string, argsSchema reflect.Type, key string, prg *expr.Program) error {
+	t := argsSchema
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	for field := range t.Fields() {
+		if strings.ToLower(field.Name) != key || prg.Fits(field.Type) {
+			continue
+		}
+		loc := kind + " kind"
+		if label != "" {
+			loc = label + " " + loc
+		}
+		return fmt.Errorf("playbook %s: %s args[%q] is %s, want %s", path, loc, key, prg.OutputType(), field.Type)
+	}
+	return nil
+}
+
 // compileArgs compiles every args value as a CEL expression at load, keyed by
 // arg name. J2 has no literal/expression split: the YAML scalar text IS the
 // CEL source, so a string literal is quoted inside YAML and a number or
@@ -453,12 +515,12 @@ func argsLabel(label, key string) string {
 // nil and keep free-form args. Each program goes through the same
 // compile/reference validation as `when`, with label naming the offending
 // action and the args key naming the offending field.
-func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
+func compileArgs(path string, lines map[string]int, label, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	if argsSchema != nil {
-		if err := validateArgsKeys(path, label, kind, argsSchema, raw); err != nil {
+		if err := validateArgsKeys(path, lines, label, kind, argsSchema, raw); err != nil {
 			return nil, err
 		}
 	}
@@ -469,9 +531,14 @@ func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env,
 	sort.Strings(keys)
 	args := make(map[string]*expr.Program, len(raw))
 	for _, key := range keys {
-		prg, err := compileExpr(path, argsLabel(label, key), raw[key], env)
+		prg, err := compileExpr(at(path, lines[key]), argsLabel(label, key), raw[key], env)
 		if err != nil {
 			return nil, err
+		}
+		if argsSchema != nil {
+			if err := checkArgType(at(path, lines[key]), label, kind, argsSchema, key, prg); err != nil {
+				return nil, err
+			}
 		}
 		args[key] = prg
 	}
@@ -484,7 +551,7 @@ func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env,
 // YAML spelling (Message -> message), and the YAML key is compared verbatim:
 // the decoder also matches literal lower-case keys, so `Message` is rejected
 // here rather than loading and then failing at dispatch.
-func validateArgsKeys(path, label, kind string, argsSchema reflect.Type, raw map[string]string) error {
+func validateArgsKeys(path string, lines map[string]int, label, kind string, argsSchema reflect.Type, raw map[string]string) error {
 	t := argsSchema
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -504,7 +571,7 @@ func validateArgsKeys(path, label, kind string, argsSchema reflect.Type, raw map
 	}
 	for _, key := range keys {
 		if _, ok := fields[key]; !ok {
-			return fmt.Errorf("playbook %s: %s args[%q] is not a declared Args field", path, loc, key)
+			return fmt.Errorf("playbook %s: %s args[%q] is not a declared Args field", at(path, lines[key]), loc, key)
 		}
 	}
 	return nil
@@ -557,8 +624,8 @@ type DispatchInput struct {
 // IsActionPlaybook reports whether pb is an action playbook (one or more
 // module actions), as opposed to a workflow playbook (exactly one workflow
 // action). It is the single two-shape predicate shared by Dispatch (which
-// skips action playbooks) and the daemon's D1 load warning (which logs them),
-// so the two can never disagree.
+// routes only workflow playbooks) and Run (which executes only action
+// playbooks), so the two can never disagree.
 func (pb *Playbook) IsActionPlaybook() bool {
 	return len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow"
 }
@@ -612,9 +679,8 @@ type Decision struct {
 
 // Dispatch returns the workflow name the first matching workflow playbook
 // selects for the input, and whether any playbook matched. Action playbooks
-// are loaded and validated but not routed (multi-action-playbooks.md, D1), so
-// this considers workflow playbooks only: an action playbook cannot hijack the
-// definition pin before its run path exists (t2db.31). No match means trigger
+// choose no workflow, so they are skipped here and executed by Run. No match
+// means trigger
 // mismatch or a when condition evaluating false, and the caller keeps its own
 // routing.
 //
@@ -643,16 +709,8 @@ func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 			continue
 		}
 		a := pb.Actions[0]
-		if a.When != nil {
-			val, err := a.env.Eval(a.When, ctx)
-			if err != nil {
-				// J3: evaluation error -> false (skip), caller logs.
-				continue
-			}
-			b, ok := val.(bool)
-			if !ok || !b {
-				continue
-			}
+		if !a.whenHolds(ctx) {
+			continue
 		}
 		return Decision{PlaybookID: pb.ID, Version: pb.Version, Workflow: a.Workflow, ActionID: a.ID, ActionPosition: 1}, true
 	}
@@ -670,9 +728,8 @@ func evalContext(input DispatchInput) expr.Context {
 }
 
 // EvalArgs evaluates a compiled action's args against the dispatch context,
-// returning the resulting name->value map. No shipped position consumes args
-// yet; the consumer arrives with the first side-effecting position (t2db.31).
-// An action declaring no args evaluates to an empty map, nil-program entries
+// returning the resulting name->value map. Run evaluates args the same way
+// against a context that also carries earlier actions' results. An action declaring no args evaluates to an empty map, nil-program entries
 // are skipped, and the first evaluation error is returned. Nil-receiver-safe
 // for the pre-load composition phase.
 //
@@ -681,10 +738,29 @@ func evalContext(input DispatchInput) expr.Context {
 // meaningful substitute and is returned to the caller to abort the dispatch.
 // Ratifying that rule against a real consumer is tracked by archie-core-1h05.
 func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) {
-	if s == nil || len(a.Args) == 0 {
+	if s == nil {
 		return map[string]any{}, nil
 	}
-	ctx := evalContext(input)
+	return a.evalArgs(evalContext(input))
+}
+
+// whenHolds reports whether the action's `when` is absent or evaluates to
+// true. An evaluation error is false (J3: skip, caller logs).
+func (a Action) whenHolds(ctx expr.Context) bool {
+	if a.When == nil {
+		return true
+	}
+	val, err := a.env.Eval(a.When, ctx)
+	if err != nil {
+		return false
+	}
+	b, ok := val.(bool)
+	return ok && b
+}
+
+// evalArgs evaluates the action's args against ctx in key order, returning
+// the first evaluation error.
+func (a Action) evalArgs(ctx expr.Context) (map[string]any, error) {
 	out := make(map[string]any, len(a.Args))
 	keys := make([]string, 0, len(a.Args))
 	for key := range a.Args {

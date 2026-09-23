@@ -11,14 +11,13 @@ import (
 )
 
 // Status is the binding lifecycle state. Mirrors telegram's
-// dangerousAction / pendingApproval shape: armed is the only state that
-// evaluates against incoming events; any edit drops armed back to
-// pending_approval; only an explicit Approve call moves
-// pending_approval -> armed.
+// dangerousAction / pendingApproval shape: a binding is created
+// pending_approval, armed is the only state that evaluates against incoming
+// events, any edit drops armed back to pending_approval, and only an
+// explicit Approve call moves pending_approval -> armed.
 type Status string
 
 const (
-	StatusDraft           Status = "draft"
 	StatusPendingApproval Status = "pending_approval"
 	StatusArmed           Status = "armed"
 )
@@ -136,17 +135,4 @@ func (m Matcher) Matches(source string, authenticated bool) bool {
 		return false
 	}
 	return m.Source == source
-}
-
-// Normalize clamps an arbitrary string into a recognised Status, falling
-// back to StatusDraft for any unknown value. The DB CHECK constraint
-// already rejects bad strings at write time; Normalize is the API-edge
-// guard for inputs that arrive before they ever reach the store.
-func Normalize(s Status) Status {
-	switch s {
-	case StatusDraft, StatusPendingApproval, StatusArmed:
-		return s
-	default:
-		return StatusDraft
-	}
 }

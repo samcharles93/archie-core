@@ -4,6 +4,8 @@
  * and the debug view), and both must show exactly what the daemon stored --
  * no projection, no prettifying beyond indentation.
  */
+import HighlightedJson from "@/base/HighlightedJson.vue";
+
 defineProps<{ value: unknown }>();
 </script>
 
@@ -14,5 +16,5 @@ defineProps<{ value: unknown }>();
   -->
   <pre
     class="max-h-[60vh] overflow-auto rounded-sm border border-border bg-muted p-3 font-mono text-xs leading-normal whitespace-pre-wrap break-words"
-  >{{ JSON.stringify(value ?? {}, null, 2) }}</pre>
+  ><HighlightedJson :text="JSON.stringify(value ?? {}, null, 2)" /></pre>
 </template>

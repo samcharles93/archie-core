@@ -40,13 +40,11 @@ export interface WorkflowOption {
 export type StatusKind = "ok" | "warn" | "idle";
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: "draft",
   pending_approval: "pending approval",
   armed: "armed",
 };
 
 const STATUS_KINDS: Record<string, StatusKind> = {
-  draft: "idle",
   pending_approval: "warn",
   armed: "ok",
 };

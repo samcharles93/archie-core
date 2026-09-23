@@ -149,6 +149,13 @@ export const api = {
   // log-row keeps it beside the panel that uses it.
   taskLogDownloadURL: (id: string, attempt?: number | null) =>
     `/api/tasks/${encodeURIComponent(id)}/logs/download` + (attempt == null ? "" : `?attempt=${attempt}`),
+  // Versions + updates. The install's synchronous phase (clone + build +
+  // install) legitimately runs for minutes; its timeout is therefore minutes,
+  // not the 15s default, and the watchdog owns everything after the restart.
+  version: <T = unknown>() => request<T>("/api/version"),
+  updateSnapshot: <T = unknown>() => request<T>("/api/chat/update"),
+  updateInstall: <T = unknown>(snapshot: unknown) =>
+    request<T>("/api/chat/update/install", { method: "POST", body: { snapshot }, timeoutMs: 15 * 60_000 }),
   captures: <T = unknown>(limit?: number) => request<T>("/api/captures" + qs({ limit })),
   mappings: <T = unknown>() => request<T>("/api/mappings"),
   mappingCreate: <T = unknown>(mapping: Payload) => request<T>("/api/mappings", { method: "POST", body: mapping }),
@@ -210,7 +217,7 @@ export function subscribeEvents(
   onEvent: (event: unknown) => void,
   onStateChange?: (state: StreamState) => void,
 ): () => void {
-  const src = new EventSource("/events");
+  const src = new EventSource("/api/stream");
   src.onopen = () => onStateChange?.("live");
   src.onerror = () => onStateChange?.("reconnecting");
   src.onmessage = (e) => {

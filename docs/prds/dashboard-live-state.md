@@ -5,7 +5,7 @@
 ## Decision
 
 The dashboard must not require passive **Refresh** buttons. One app-wide Pinia
-store owns the existing `/events` EventSource and translates backend events
+store owns the existing `/api/stream` EventSource and translates backend events
 into resource revision counters. Pages load their authoritative HTTP projection
 on entry and re-read it when the relevant revision changes. Event payloads are
 invalidation signals, not substitute read models.
@@ -46,7 +46,7 @@ offered as a fix.
 ## Verification
 
 - No passive page action renders the label **Refresh** or **Retry** for a read.
-- Only one shared `/events` EventSource is opened by the application.
+- Only one shared `/api/stream` EventSource is opened by the application.
 - Resource classification tests distinguish task, capture, curator, skill, and
   update invalidations.
 - UI tests, type checking, generated asset freshness, and `task check` pass.

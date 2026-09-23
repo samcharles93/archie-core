@@ -208,6 +208,8 @@ tasks:
 
       Lint a different set of directories directly:
         go run ./cmd/archie-playbooks lint -dir ./a -dir ./b
+      Lint an EDA playbook directory:
+        go run ./cmd/archie-playbooks lint -eda-dir ./eda-playbooks
     cmds:
       - go run ./cmd/archie-playbooks lint -dir ./playbooks
 

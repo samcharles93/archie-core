@@ -28,9 +28,9 @@ const emit = defineEmits<{
           <Pencil data-icon="inline-start" />
           Edit
         </Button>
-        <!-- Only a pending binding can be approved. A draft is not a state you
-             approve from and an armed binding is already firing, so the button
-             would be a no-op -- or worse, a misleading one. -->
+        <!-- Only a pending binding can be approved. An armed binding is
+             already firing, so the button would be a no-op -- or worse, a
+             misleading one. -->
         <Button v-if="props.binding.status === 'pending_approval'" size="sm" @click="emit('approve', props.binding)">
           <Check data-icon="inline-start" />
           Approve

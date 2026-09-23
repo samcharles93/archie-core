@@ -169,6 +169,9 @@ func TestFailedWritesNotifyNothing(t *testing.T) {
 
 	// Seed one binding and one mapping, then clear the seed-time events.
 	seedID := insertBinding(t, s, bindingInput{Name: "seed", Source: "src-seed", Workflow: "triage"})
+	if err := s.ApproveBinding(t.Context(), seedID); err != nil {
+		t.Fatalf("ApproveBinding(seed) error = %v", err)
+	}
 	mid, err := s.InsertMapping(t.Context(), mapping.Mapping{Name: "seed-map"})
 	if err != nil {
 		t.Fatalf("InsertMapping() error = %v", err)
@@ -181,7 +184,7 @@ func TestFailedWritesNotifyNothing(t *testing.T) {
 			t.Fatalf("UpdateBinding() error = %v, want ErrBindingNotFound", err)
 		}
 	})
-	t.Run("ApproveBinding refuses draft", func(t *testing.T) {
+	t.Run("ApproveBinding refuses an armed binding", func(t *testing.T) {
 		if err := s.ApproveBinding(t.Context(), seedID); !errors.Is(err, ErrBindingTransition) {
 			t.Fatalf("ApproveBinding() error = %v, want ErrBindingTransition", err)
 		}

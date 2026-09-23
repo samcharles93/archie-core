@@ -266,6 +266,24 @@ func TestActionReferences(t *testing.T) {
 			wantIDs:        nil,
 			wantResolvable: false,
 		},
+		{
+			name:           "loop variable named actions is not the root",
+			src:            `event.list.exists(actions, actions == 1)`,
+			wantIDs:        nil,
+			wantResolvable: true,
+		},
+		{
+			name:           "field of a loop variable named actions is not an action id",
+			src:            `event.list.exists(actions, actions.a == 1)`,
+			wantIDs:        nil,
+			wantResolvable: true,
+		},
+		{
+			name:           "bare root still unresolvable beside a shadowing loop",
+			src:            `[actions].exists(actions, actions.build.result.written)`,
+			wantIDs:        []string{"build"},
+			wantResolvable: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

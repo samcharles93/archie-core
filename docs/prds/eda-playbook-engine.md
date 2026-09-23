@@ -167,11 +167,11 @@ a case that should just be visible and fixed by a human. Instead:
   playbook directories against the exact loaders the daemon uses
   (`LoadPlaybookDirs`/`LoadKindWorkflowsYAML`/`LoadLabelWorkflowsYAML`),
   exiting non-zero on any collision / malformed file / invalid binding.
-  Findings are file-granular, not line-granular: the loader decodes with
-  `yaml.Unmarshal` into a plain map, which discards line numbers. A
-  compiler-style file:line diagnostic needs a `yaml.Node` decoding
-  upgrade, tracked separately -- the linter agrees with runtime
-  validation by construction, which is the load-bearing property.
+  A finding about one binding key leads with the key's `file:line`, read
+  from the `yaml.Node` the loader decodes; the linter agrees with runtime
+  validation by construction, which is the load-bearing property. `-eda-dir`
+  lints an `eda_playbook_dir` the same way, through `playbook.Load` with its
+  CEL, action-id and args checks.
   Discoverable via `task lint:playbooks` or direct `go run
   ./cmd/archie-playbooks lint -dir ...`. The LSP/serve mode is a later
   entrypoint of the SAME binary, per the shared-package decision above.
@@ -179,6 +179,14 @@ a case that should just be visible and fixed by a human. Instead:
   inline errors while someone edits a playbook YAML in an editor. Kept
   explicitly in scope per Sam (not deferred), because it's the same schema
   artifact as the linter's, just a different consumer.
+
+  `archie-playbooks serve` is the language server, over stdio. When a file is
+  opened or saved it lints the file's saved directory with the loader the
+  daemon runs for it (a file with a top-level `trigger` key is an EDA
+  playbook, anything else a routing binding file) and publishes the findings
+  for that file as error diagnostics, each on the line of the key, action,
+  `when` or args key it names; a file-level finding sits on the first line.
+  Unsaved edits are not validated. Hover and completion are later additions.
 
 The startup log-and-refuse path exists for what the linter/LSP structurally
 cannot see -- sources composed together only at daemon startup, never
@@ -373,14 +381,19 @@ by `internal/store` -- the same shape as `BindingDispatcher`
 store's schema application (`internal/store/store.go`). No change
 to `internal/eventbus`; no per-message dedup state on the client.
 
-**Lifetime: no time-based expiry.** Rows live as long as their playbook
-exists; when a playbook is removed from the configured directories, the
-coordinator deletes its rows -- mirroring binding-dispatches-rows-deleted-
-with-binding (`bindings.go`, same transaction as the delete). The
-at-most-once guarantee must not silently decay, which is exactly the
-property that disqualifies `DedupWindow` above; table growth is bounded
-by distinct (playbook, event, action) pairs over the playbook's lifetime
-and is accepted, the same tradeoff `binding_dispatches` already makes.
+**Lifetime: no time-based expiry, and no automatic reclamation.** Rows are
+retained until an explicit `DeletePlaybookDispatches` for their playbook.
+Removing a playbook file does not delete its rows: playbooks are read only
+at boot, so the only place to notice a removal is a boot-time reconcile,
+and a boot that finds the directory missing or unmounted loads as "no
+playbooks" and would reclaim the whole ledger, letting redelivered events
+fire their side effects again. A binding's rows go with an explicit
+operator delete (`bindings.go`, same transaction); a file disappearing is
+not an equally deliberate act. The at-most-once guarantee must not
+silently decay, which is exactly the property that disqualifies
+`DedupWindow` above; table growth is bounded by distinct (playbook,
+event, action) pairs and is accepted, the same tradeoff
+`binding_dispatches` already makes.
 
 **Redelivery behavior: skip the recorded action and continue the run.**
 A detected duplicate is not re-invoked, is not reported to the caller as

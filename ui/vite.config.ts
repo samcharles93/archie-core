@@ -24,10 +24,11 @@ export default defineConfig({
   server: {
     // Proxies the API to a locally running archie-ui (the process that serves
     // the dashboard) so the frontend can be developed without rebuilding Go.
+    // changeOrigin stays false: archie-ui refuses a mutation whose Origin
+    // does not match its Host, and the browser's Origin is this dev server.
     proxy: {
-      "/api": "http://127.0.0.1:8484",
-      "/health": "http://127.0.0.1:8484",
-      "/events": { target: "http://127.0.0.1:8484", ws: true },
+      "/api": { target: "http://127.0.0.1:8484", changeOrigin: false },
+      "/health": { target: "http://127.0.0.1:8484", changeOrigin: false },
     },
   },
 });

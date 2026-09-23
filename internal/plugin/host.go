@@ -12,13 +12,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/stableid"
 )
 
 // HostAPIVersion is the capability-host contract version understood by this
 // archied binary.
 const HostAPIVersion = "1.0.0"
-
-var stableIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
 var semanticVersion = regexp.MustCompile(
 	`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`,
@@ -48,7 +48,7 @@ type Manifest struct {
 
 // Validate checks manifest identity, compatibility, declarations, and schema.
 func (m Manifest) Validate() error {
-	if !stableIdentifier.MatchString(m.ID) {
+	if !stableid.Valid(m.ID) {
 		return fmt.Errorf("plugin manifest id %q is not a stable identifier", m.ID)
 	}
 	if strings.TrimSpace(m.Name) == "" {
@@ -167,7 +167,7 @@ func validateIdentifiers(kind string, values []string, required bool) error {
 	}
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		if !stableIdentifier.MatchString(value) {
+		if !stableid.Valid(value) {
 			return fmt.Errorf("plugin manifest %s %q is not a stable identifier", kind, value)
 		}
 		if _, exists := seen[value]; exists {

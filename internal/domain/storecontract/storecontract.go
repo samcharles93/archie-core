@@ -227,10 +227,10 @@ type BindingTaskCreator interface {
 // BindingDispatcher.RecordDispatch -- so a duplicate returns
 // ErrAlreadyDispatched and the caller skips the invoke rather than repeating
 // a non-revocable side effect. DeletePlaybookDispatches deletes one
-// playbook's ledger rows and is the reclamation primitive for when a playbook
-// is removed from the configured directory -- a removal path that does not
-// exist yet and is tracked by archie-core-t2db.30. There is deliberately no
-// *sql.Tx: any transaction stays server-side inside internal/store.
+// playbook's ledger rows on explicit request only: a playbook file missing at
+// boot may be an unmounted directory, and reclaiming on that would let
+// redelivered events fire again. There is deliberately no *sql.Tx: any
+// transaction stays server-side inside internal/store.
 type PlaybookDispatcher interface {
 	RecordPlaybookDispatch(ctx context.Context, playbookID, playbookVersion, eventID, actionID string) error
 	DeletePlaybookDispatches(ctx context.Context, playbookID string) error

@@ -305,8 +305,9 @@ row is the structural `(playbook_id, playbook_version, event_id, action_id)`
 tuple, written **before** the action's side effect fires (the reverse of
 `binding_dispatches`), so a duplicate returns `store.ErrAlreadyDispatched` and
 the coordinator skips the invoke rather than repeating a non-revocable side
-effect. `DeletePlaybookDispatches` is the reclamation primitive for a playbook
-removed from the configured directory. The Go facade is
+effect. `DeletePlaybookDispatches` is the explicit reclamation primitive; nothing
+calls it automatically, because a playbook file's absence at boot is not a
+deliberate removal (`eda-playbook-engine.md`, "Lifetime"). The Go facade is
 `storecontract.PlaybookDispatcher` (2 methods), carried by `*staterpc.Client`
 alongside the rest.
 

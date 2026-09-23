@@ -407,9 +407,12 @@ func TestStateStoreConformance(t *testing.T) {
 			if _, err := ec.ListBindings(ctx); err != nil {
 				t.Fatalf("ListBindings: %v", err)
 			}
+			if err := ec.ApproveBinding(ctx, bindingID); err != nil {
+				t.Fatalf("ApproveBinding from pending_approval = %v", err)
+			}
 			err = ec.ApproveBinding(ctx, bindingID)
 			if !errors.Is(err, store.ErrBindingTransition) {
-				t.Fatalf("ApproveBinding from draft = %v, want ErrBindingTransition", err)
+				t.Fatalf("ApproveBinding when armed = %v, want ErrBindingTransition", err)
 			}
 			err = ec.DeleteBinding(ctx, "rabsent00000000")
 			if !errors.Is(err, store.ErrBindingNotFound) {
