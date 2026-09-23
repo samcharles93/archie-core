@@ -17,26 +17,21 @@ import TokenOutlookCard from "./TokenOutlookCard.vue";
  */
 useDashboard();
 
-const omitSetup = computed(() => {
-  const kind = setupPanelState(setup.value).kind;
-  return kind === "omit" || kind === "dismissed";
-});
+const setupIncomplete = computed(() => setupPanelState(setup.value).kind === "incomplete");
 </script>
 
 <template>
   <DashboardHero />
 
   <!--
-    Each health card takes its own content height rather than the row's.
-    Matching them was right while both held a checklist, but once setup is done
-    that card is a title and a line while Gate pulse carries a gauge and four
-    rows, so equalising them left a mostly-empty box taking a quarter of the
-    first screen. No setup panel to show: the pulse spans the row instead.
+    The Health row holds the pulse alone once setup is done: the checklist
+    only renders while there is setup work left, so the grid collapses to a
+    single column instead of pairing a checklist with an empty neighbour.
   -->
   <DashboardSection title="Health">
     <div
       class="grid items-start gap-4"
-      :class="omitSetup ? 'grid-cols-1' : 'grid-cols-1 min-[1080px]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]'"
+      :class="setupIncomplete ? 'grid-cols-1 min-[1080px]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]' : 'grid-cols-1'"
     >
       <SetupPanel />
       <GatePulseCard />

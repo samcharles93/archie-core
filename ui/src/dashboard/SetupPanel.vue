@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { Check, X } from "@lucide/vue";
+import { Check } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { dismissSetupComplete, setupPanelState, type SetupPanelState } from "./setup-preference";
+import { setupPanelState, type SetupPanelState } from "./setup-preference";
 import { setup } from "./state";
 
 /**
- * The setup checklist, or its completion note.
+ * The setup checklist, rendered only while there is setup work left.
  *
- * Which of the two this shows comes from the state machine rather than from
- * "is setup present at all": guarding on presence showed a 100% checklist with
- * every step struck through where the complete state belongs.
+ * A fully configured daemon renders nothing: the old completion card ("Setup
+ * complete", with a check and a dismiss button) celebrated the absence of a
+ * problem and occupied a grid cell until dismissed. Setup regressing to
+ * incomplete brings the checklist back on its own.
  */
 const panel = ref<SetupPanelState>(setupPanelState(setup.value));
 
@@ -27,11 +27,6 @@ const pct = computed(() => {
   if (!total) return 0;
   return Math.round(((total - panel.value.remaining.length) / total) * 100);
 });
-
-function dismiss() {
-  dismissSetupComplete();
-  panel.value = setupPanelState(setup.value);
-}
 </script>
 
 <template>
@@ -60,18 +55,5 @@ function dismiss() {
         </li>
       </ul>
     </CardContent>
-  </Card>
-
-  <Card v-else-if="panel.kind === 'complete'">
-    <CardHeader>
-      <CardTitle>Setup complete</CardTitle>
-      <CardDescription>Archie is configured and ready to work.</CardDescription>
-      <CardAction class="flex items-center gap-2">
-        <Check class="size-4 text-ok" />
-        <Button variant="ghost" size="icon-sm" aria-label="Dismiss setup complete" @click="dismiss">
-          <X />
-        </Button>
-      </CardAction>
-    </CardHeader>
   </Card>
 </template>
