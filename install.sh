@@ -169,8 +169,16 @@ echo "==> Building native archie binaries..."
   # refuses to self-update (internal/releaseupdate.ErrUnknownInstallType)
   # rather than guess whether /update's configured install command is
   # even the right kind of update for a script-built native binary.
-  GATEWAY_VERSION="$(git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo dev)"
-  RUNTIME_VERSION="$(git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev)"
+  # A from-source build is not a release, and CI is the only thing that stamps
+  # one: the version a release carries is written into the artifact CI
+  # publishes -- the zip's binaries and the container image -- and is never
+  # derived from whatever tags a local checkout happens to have. Deriving it
+  # here made a source-built host claim a release it was not running, and made
+  # the stamp a function of the commit graph, which is the one input a
+  # content-checksum build cache cannot see (archie-core-pdq2). A source build
+  # says `dev`; its traceability is the checkout it came from.
+  GATEWAY_VERSION="dev"
+  RUNTIME_VERSION="dev"
   LDFLAGS="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${GATEWAY_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"

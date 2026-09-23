@@ -439,17 +439,20 @@ tasks:
 
   build:
     desc: Build archie services and agent binaries
-    # Version stamping used to live only in Dockerfile.archied, so any build
-    # from source  --  including a host deployment  --  reported "dev" for
-    # both components and /version was useless there. Derive the same
-    # -X values from the release tags so a source build is stamped too.
-    # git describe (without --abbrev=0) yields 1.7.0-2-gbb54786 when HEAD is
-    # past the tag, which is the honest answer for a mid-cycle build.
+    # A from-source build is not a release, and CI is the only thing that stamps
+    # one: the version a release carries is written into the artifact CI
+    # publishes, the zip's binaries and the container image, and is never
+    # derived from whatever tags a local checkout happens to have.
+    #
+    # Deriving it here also made the stamp a function of the commit graph, which
+    # is the one input a content-checksum build cache cannot see: an empty
+    # commit moved `git describe` while `task build` still reported "up to date"
+    # and shipped the previous stamp (archie-core-pdq2). Stamping `dev` removes
+    # the non-file input rather than caching it, and a local build's
+    # traceability is the checkout it came from.
     vars:
-      GATEWAY_VERSION:
-        sh: git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo dev
-      RUNTIME_VERSION:
-        sh: git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev
+      GATEWAY_VERSION: dev
+      RUNTIME_VERSION: dev
     sources:
       - "**/*.go"
       - go.mod

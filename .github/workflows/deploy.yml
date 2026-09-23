@@ -12,7 +12,7 @@ on:
 # preceding fix, say) previously queued a full gate+build for each one,
 # several minutes apiece, with no caching -- so a burst of pushes left
 # three deploys racing in parallel for the same runner capacity. Only the
-# last one's images matter (both jobs push :latest), so cancel a
+# last one's images matter (each job pushes its image tags), so cancel a
 # superseded run rather than let it fight for resources it can't use.
 #
 # Keyed on the commit, not github.ref: `git push --follow-tags` pushes
@@ -140,7 +140,7 @@ jobs:
             exit 1
           fi
           if ! git tag --points-at HEAD | grep -qE '^(v[0-9]|archied/v|archie/v)' ; then
-            echo "::warning ::No release tags at HEAD, so this build publishes :latest for a commit that is not a release. It is stamped dev+<sha> and tagged sha-<sha> so it stays traceable and restorable, but it supersedes the previous release's :latest stamping until the next release is cut."
+            echo "This commit is not a release, so the images are published as :edge and sha-<sha>; :latest keeps naming the newest release."
           fi
 
   build-and-push:
@@ -184,12 +184,13 @@ jobs:
           RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
           [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION="${RELEASE_TAG#v}"
           [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION="${RELEASE_TAG#v}"
-          # Not a bare `dev`. A literal dev tells an operator nothing about which
-          # build they are running, and it is what made a release's stamping look
-          # transient: the next commit to main republished :latest as `dev`. The
-          # commit is appended so a main build is identifiable and is visibly not
-          # a release. (On an untagged push GITHUB_SHA IS the commit — the tag
-          # case is handled by the dereference above.)
+          # `dev+<sha>` is what a build that is NOT a release reports, and it is
+          # honest now that such a build no longer publishes :latest: the version
+          # names the commit it came from, and the sha-<sha> tag makes it
+          # restorable. Before, this same string reached :latest minutes after a
+          # release and made the release's own stamping read as dev
+          # (archie-core-i5nb). (On an untagged push GITHUB_SHA IS the commit —
+          # the tag case is handled by the dereference above.)
           [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION="dev+${GITHUB_SHA:0:12}"
           [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION="dev+${GITHUB_SHA:0:12}"
           # Keep the raw tag presence separate from the version fallback: a
@@ -202,6 +203,24 @@ jobs:
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "gateway=$GATEWAY_VERSION" >> "$GITHUB_OUTPUT"
           echo "runtime=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+          # :latest names the newest RELEASE, so only a commit that IS one
+          # publishes it. A push to main publishes :edge (mutable, newest main)
+          # and sha-<sha> (immutable) instead. That is what stops a release's
+          # :latest stamping from being overwritten minutes later by the next
+          # ordinary commit, which left a host reporting dev and made the update
+          # path unable to tell current from stale (archie-core-i5nb).
+          #
+          # `if` blocks rather than `[ -n "$X" ] && echo`: the latter returns
+          # non-zero when the test fails, and these steps run under `set -e`.
+          {
+            echo "archied_tags<<EOF"
+            if [ -n "$RELEASE_TAG" ]; then
+              echo "ghcr.io/samcharles93/archied:latest"
+            fi
+            echo "ghcr.io/samcharles93/archied:edge"
+            echo "ghcr.io/samcharles93/archied:sha-${{ steps.commit.outputs.sha }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push archied
         uses: docker/build-push-action@v6
@@ -209,9 +228,7 @@ jobs:
           context: .
           file: Dockerfile.archied
           push: true
-          tags: |
-            ghcr.io/samcharles93/archied:latest
-            ghcr.io/samcharles93/archied:sha-${{ steps.commit.outputs.sha }}
+          tags: ${{ steps.versions.outputs.archied_tags }}
           build-args: |
             GATEWAY_VERSION=${{ steps.versions.outputs.gateway }}
             RUNTIME_VERSION=${{ steps.versions.outputs.runtime }}

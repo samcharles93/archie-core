@@ -76,6 +76,11 @@ Tagging one version produces, from a single `deploy` run:
   `ghcr.io/samcharles93/archie-agent:latest`. The runtime image is rebuilt by the
   release, so runtime commits merged to `main` do not reach a running sandbox until the
   host pulls the new image.
+- **`:latest` names the newest release, not the newest commit.** A push to `main`
+  that is not a release publishes `archied:edge` (mutable, tracking `main`) and
+  `archied:sha-<commit>` (immutable) instead, so a release's `:latest` stamping is
+  not overwritten minutes later by the next ordinary commit. A host that runs
+  releases follows `:latest`; a host that tracks `main` follows `:edge`.
 - **A GitHub Release with a distribution zip** — `dist-zip` builds every process the
   reference deployment runs (`archied`, `archie-gateway`, `archie-state-store`,
   `archie-ui`, `archie-messaging`, `archie-playbooks`) for linux/amd64, packs them with

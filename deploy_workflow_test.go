@@ -50,6 +50,37 @@ func TestDeployWorkflowOnlyPublishesRuntimeImageForTaggedRelease(t *testing.T) {
 	}
 }
 
+// TestDeployWorkflowPublishesLatestOnlyFromARelease pins the rule that keeps a
+// release's :latest stamping from being overwritten by the next ordinary commit.
+//
+// build-and-push runs on any push to main and used to always push :latest, so a
+// release's own stamping survived only until the next commit — minutes, in an
+// active repo — and a host deploying :latest reported dev, leaving the update
+// path unable to tell current from stale (archie-core-i5nb). :latest now moves
+// only from a commit that IS a release; everything else publishes :edge and an
+// immutable sha-<commit>.
+func TestDeployWorkflowPublishesLatestOnlyFromARelease(t *testing.T) {
+	source := readDeploymentFile(t, ".github/workflows/deploy.yml")
+
+	for _, required := range []string{
+		`if [ -n "$RELEASE_TAG" ]; then`,
+		`echo "ghcr.io/samcharles93/archied:latest"`,
+		`echo "ghcr.io/samcharles93/archied:edge"`,
+		`archied_tags<<EOF`,
+		`tags: ${{ steps.versions.outputs.archied_tags }}`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("deploy workflow is missing the release-only :latest guard %q", required)
+		}
+	}
+
+	// One occurrence: the guard above, not a second unconditional copy that would
+	// undo it.
+	if got := strings.Count(source, "ghcr.io/samcharles93/archied:latest"); got != 1 {
+		t.Errorf("archied :latest appears %d times, want exactly 1 inside the release-tag guard", got)
+	}
+}
+
 func TestDeployWorkflowUsesConfiguredFormatters(t *testing.T) {
 	source := readDeploymentFile(t, ".github/workflows/deploy.yml")
 	for _, required := range []string{
