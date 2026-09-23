@@ -119,6 +119,13 @@ type IdentitySubject struct {
 	BoundAt    time.Time
 }
 
+type ImportCompletion struct {
+	ID          int64
+	CompletedAt time.Time
+	Sources     string
+	Report      string
+}
+
 type Mapping struct {
 	ID         string
 	Name       string

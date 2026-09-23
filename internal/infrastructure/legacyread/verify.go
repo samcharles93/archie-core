@@ -242,15 +242,10 @@ var sequenceTables = []string{"tasks", "transitions", "events", "resource_histor
 func (s *Source) Sequences(ctx context.Context) ([]Sequence, error) {
 	out := make([]Sequence, 0, len(sequenceTables))
 	for _, table := range sequenceTables {
-		seq := Sequence{Table: table}
-		var high int64
-		err := s.db.QueryRowContext(ctx, fmt.Sprintf(
-			"SELECT COALESCE((SELECT max(id) FROM %[1]s), 0), COALESCE((SELECT seq FROM sqlite_sequence WHERE name = '%[1]s'), 0)",
-			table)).Scan(&seq.MaxID, &high)
+		seq, err := s.SequenceOf(ctx, table)
 		if err != nil {
-			return nil, fmt.Errorf("legacyread: sequence %s: %w", table, err)
+			return nil, err
 		}
-		seq.Next = max(seq.MaxID, high) + 1
 		out = append(out, seq)
 	}
 	return out, nil

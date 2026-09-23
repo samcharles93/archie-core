@@ -40,7 +40,7 @@ func run() int {
 	flag.StringVar(&options.Token, "token", "", "bearer token required for a non-loopback listener (defaults to [services.state].target_token)")
 	flag.StringVar(&options.ReadyAddr, "ready-addr", "", "optional readiness HTTP listen address (e.g. 127.0.0.1:9091)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: archie-state-store [flags]   # serve the State Store gRPC contract\n\noffline recovery: archie-state-store <backup|restore|validate|rollback> -h\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: archie-state-store [flags]   # serve the State Store gRPC contract\n\noffline recovery: archie-state-store <backup|restore|validate|rollback|import> -h\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

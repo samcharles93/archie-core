@@ -31,6 +31,9 @@ owns it, while backup takes a consistent snapshot of a serving store.
                                     configuration the daemon would boot with
   rollback -db FILE -kind KIND      replay an earlier revision of a stored
            [-revision N]            resource through the ordinary replace
+  import   [-db-path PATH]          copy the legacy SQLite stores named from
+           [-database-url URL]      db_path into an empty Postgres database,
+           [-config FILE]           once; refuses while any Archie service runs
 `
 
 // runRecovery parses and performs one offline recovery command, reporting the
@@ -44,7 +47,8 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 	command := args[0]
 	options := archied.StateStoreRecoveryOptions{Operation: command}
 	switch command {
-	case archied.RecoveryBackup, archied.RecoveryRestore, archied.RecoveryValidate, archied.RecoveryRollback:
+	case archied.RecoveryBackup, archied.RecoveryRestore, archied.RecoveryValidate, archied.RecoveryRollback,
+		archied.RecoveryImport:
 	default:
 		fmt.Fprintf(stderr, "archie-state-store: unknown command %q\n\n", command)
 		fmt.Fprint(stderr, recoveryUsage)
@@ -59,9 +63,14 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&options.From, "from", "", "snapshot file restore reads")
 	flags.StringVar(&options.Kind, "kind", "", "control-plane resource kind rollback replays")
 	flags.Int64Var(&options.Revision, "revision", 0, "revision rollback replays (default: the newest one older than the current value)")
-	// Only validate asks a question about the process rather than the file, so
-	// only validate takes the configuration the process would boot with.
-	if command == archied.RecoveryValidate {
+	// validate asks a question about the process rather than the file, and
+	// import reads db_path and database_url from it, so only those two take
+	// the configuration the process would boot with.
+	if command == archied.RecoveryImport {
+		flags.StringVar(&options.DBPath, "db-path", "", "configured db_path the legacy files are named from (default: the configuration's)")
+		flags.StringVar(&options.DatabaseURL, "database-url", "", "Postgres URL to import into (default: the configuration's database_url)")
+	}
+	if command == archied.RecoveryValidate || command == archied.RecoveryImport {
 		flags.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory the daemon boots with")
 		flags.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	}

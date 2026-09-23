@@ -356,7 +356,7 @@ func TestRecoveryValidateRunsTheGateBootRuns(t *testing.T) {
 // path in the same binary exits 0 for the same request, so a script probing the
 // recovery surface must not read a requested help as a failure.
 func TestRecoveryHelpExitsZero(t *testing.T) {
-	commands := []string{archied.RecoveryBackup, archied.RecoveryRestore, archied.RecoveryValidate, archied.RecoveryRollback}
+	commands := []string{archied.RecoveryBackup, archied.RecoveryRestore, archied.RecoveryValidate, archied.RecoveryRollback, archied.RecoveryImport}
 	for _, command := range commands {
 		code, _, stderr := runRecoveryCmd(t, command, "-h")
 		if code != 0 {
