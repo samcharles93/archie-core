@@ -56,6 +56,9 @@ func TestEventInsertsCommitInIDOrder(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	if visible, err := st.EventsSince(t.Context(), "", 10); err != nil || len(visible) != 0 {
+		t.Fatalf("EventsSince while the first insert is uncommitted = %d events, %v; want none", len(visible), err)
+	}
 	if err := tx.Commit(t.Context()); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -65,5 +68,12 @@ func TestEventInsertsCommitInIDOrder(t *testing.T) {
 	}
 	if r.id <= firstID {
 		t.Fatalf("second id %d, want greater than first id %d", r.id, firstID)
+	}
+	all, err := st.EventsSince(t.Context(), "", 10)
+	if err != nil {
+		t.Fatalf("EventsSince: %v", err)
+	}
+	if len(all) != 2 || all[0].Kind != "first" || all[1].Kind != "second" {
+		t.Fatalf("EventsSince after both commit = %+v, want first then second", all)
 	}
 }

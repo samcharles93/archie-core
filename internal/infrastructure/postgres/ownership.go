@@ -31,7 +31,7 @@ func AcquireOwnership(ctx context.Context, pool *pgxpool.Pool, name string) (*Ow
 		return nil, fmt.Errorf("postgres: ownership %s: %w", name, err)
 	}
 	var taken bool
-	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock(hashtextextended('archie.ownership.' || $1, 0))", name).Scan(&taken); err != nil {
+	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock(hashtextextended('archie.' || $1 || '.owner', 0))", name).Scan(&taken); err != nil {
 		conn.Release()
 		return nil, fmt.Errorf("postgres: ownership %s: %w", name, err)
 	}
@@ -51,7 +51,7 @@ func (o *Ownership) Release(ctx context.Context) error {
 	}
 	conn := o.conn
 	o.conn = nil
-	if _, err := conn.Exec(ctx, "SELECT pg_advisory_unlock(hashtextextended('archie.ownership.' || $1, 0))", o.name); err != nil {
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_unlock(hashtextextended('archie.' || $1 || '.owner', 0))", o.name); err != nil {
 		return errors.Join(fmt.Errorf("postgres: release ownership %s: %w", o.name, err), conn.Hijack().Close(ctx))
 	}
 	conn.Release()

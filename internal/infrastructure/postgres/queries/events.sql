@@ -9,7 +9,7 @@
 -- the order they were drawn. The lock is inside the statement so a standalone
 -- insert and one inside a longer transaction both take it.
 WITH append_lock AS (
-    SELECT pg_advisory_xact_lock(hashtextextended('archie.events.append', 0))
+    SELECT pg_advisory_xact_lock(hashtextextended('archie.events.insert', 0))
 )
 INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data)
 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
