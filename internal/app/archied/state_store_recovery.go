@@ -46,6 +46,7 @@ const (
 	RecoveryRestore  = "restore"
 	RecoveryValidate = "validate"
 	RecoveryRollback = "rollback"
+	RecoveryImport   = "import"
 )
 
 // StateStoreRecoveryOptions are the process inputs for one offline recovery
@@ -71,6 +72,11 @@ type StateStoreRecoveryOptions struct {
 	// Revision is the revision rollback replays. Zero means the newest
 	// revision older than the one the resource carries now.
 	Revision int64
+	// DBPath and DatabaseURL are import's source and target: the configured
+	// db_path every legacy file is named from, and the Postgres URL. Either
+	// left empty is read from the configuration.
+	DBPath      string
+	DatabaseURL string
 }
 
 // RunStateStoreRecovery performs one offline operation on the task database and
@@ -81,18 +87,13 @@ func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOption
 		if options.DB == "" || options.Out == "" {
 			return "", errors.New("backup requires -db and -out")
 		}
-		if err := store.Backup(ctx, options.DB, options.Out); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("backed up %s to %s", options.DB, options.Out), nil
+		return summarise(store.Backup(ctx, options.DB, options.Out), "backed up %s to %s", options.DB, options.Out)
 	case RecoveryRestore:
 		if options.DB == "" || options.From == "" {
 			return "", errors.New("restore requires -db and -from")
 		}
-		if err := store.Restore(ctx, options.DB, options.From); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("restored %s from %s; start the State Store again", options.DB, options.From), nil
+		return summarise(store.Restore(ctx, options.DB, options.From),
+			"restored %s from %s; start the State Store again", options.DB, options.From)
 	case RecoveryValidate:
 		if options.DB == "" {
 			return "", errors.New("validate requires -db")
@@ -103,9 +104,19 @@ func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOption
 			return "", errors.New("rollback requires -db and -kind")
 		}
 		return rollbackResource(ctx, options)
+	case RecoveryImport:
+		return importLegacy(ctx, options)
 	default:
 		return "", fmt.Errorf("unknown recovery command %q", options.Operation)
 	}
+}
+
+// summarise is an operation's stdout line, or its error.
+func summarise(err error, format string, args ...any) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(format, args...), nil
 }
 
 // validateStore answers the question an operator actually has: would archied
