@@ -19,21 +19,31 @@ const recoveryUsage = `usage: archie-state-store <command> [flags]
 
 With no command, archie-state-store serves the State Store gRPC contract.
 
-The recovery commands operate on the task database file directly -- the
-configured db_path with "-tasks.sqlite" appended -- and are how an operator
-recovers a database the control plane will not start on. Stop the State Store
-first: restore and rollback rewrite the file and refuse while another process
-owns it, while backup takes a consistent snapshot of a serving store.
+The recovery commands are how an operator recovers a database the control
+plane will not start on. Without -db they operate on the PostgreSQL database
+the configuration's database_url names, through pg_dump and pg_restore (which
+must be on PATH); with -db, on a legacy SQLite task file (the configured
+db_path with "-tasks.sqlite" appended).
 
-  backup   -db FILE -out FILE       write a snapshot of the database
-  restore  -db FILE -from FILE      replace the database with a snapshot
-  validate -db FILE [-config FILE]  check the file, its stored settings and the
-                                    configuration the daemon would boot with
-  rollback -db FILE -kind KIND      replay an earlier revision of a stored
+backup takes a consistent snapshot of a serving database. restore is
+destructive and offline: stop every archie service first, since it refuses
+while any of them holds its ownership claim, and every write made after the
+snapshot is lost. rollback refuses while the State Store serves. There is no
+automatic schema rollback: the way back from a migration is restoring the
+snapshot taken before it.
+
+  backup   [-db FILE] -out FILE     write a snapshot of the database
+  restore  [-db FILE] -from FILE    replace the database with a snapshot
+  validate [-db FILE]               check the database, its stored settings and
+                                    the configuration the daemon would boot with
+  rollback [-db FILE] -kind KIND    replay an earlier revision of a stored
            [-revision N]            resource through the ordinary replace
   import   [-db-path PATH]          copy the legacy SQLite stores named from
            [-database-url URL]      db_path into an empty Postgres database,
-           [-config FILE]           once; refuses while any Archie service runs
+                                    once; refuses while any Archie service runs
+
+Every command takes -config FILE and -config-overlay FILE: the configuration
+the daemon boots with, which names the database.
 `
 
 // runRecovery parses and performs one offline recovery command, reporting the
@@ -58,22 +68,19 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("archie-state-store "+command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() { fmt.Fprint(stderr, recoveryUsage) }
-	flags.StringVar(&options.DB, "db", "", "task database file the State Store owns (<db_path>-tasks.sqlite)")
+	flags.StringVar(&options.DB, "db", "", "legacy SQLite task file (<db_path>-tasks.sqlite); omit to use the configured database_url")
 	flags.StringVar(&options.Out, "out", "", "snapshot file backup writes")
 	flags.StringVar(&options.From, "from", "", "snapshot file restore reads")
 	flags.StringVar(&options.Kind, "kind", "", "control-plane resource kind rollback replays")
 	flags.Int64Var(&options.Revision, "revision", 0, "revision rollback replays (default: the newest one older than the current value)")
-	// validate asks a question about the process rather than the file, and
-	// import reads db_path and database_url from it, so only those two take
-	// the configuration the process would boot with.
 	if command == archied.RecoveryImport {
 		flags.StringVar(&options.DBPath, "db-path", "", "configured db_path the legacy files are named from (default: the configuration's)")
 		flags.StringVar(&options.DatabaseURL, "database-url", "", "Postgres URL to import into (default: the configuration's database_url)")
 	}
-	if command == archied.RecoveryValidate || command == archied.RecoveryImport {
-		flags.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory the daemon boots with")
-		flags.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
-	}
+	// The configuration names the PostgreSQL database, and validate also checks
+	// the stored settings against it.
+	flags.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory the daemon boots with")
+	flags.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	if err := flags.Parse(args[1:]); err != nil {
 		// A requested help is not a wrong command line: the usage above is the
 		// answer, and the serve path exits 0 for the same request.

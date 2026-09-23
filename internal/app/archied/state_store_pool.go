@@ -35,7 +35,7 @@ func (b *boot) openStateStorePool(ctx context.Context) error {
 		b.log.Error("migrate state store postgres schema", "err", err)
 		return err
 	}
-	ownership, err := postgres.AcquireOwnership(ctx, pool, "state-store")
+	ownership, err := postgres.AcquireOwnership(ctx, pool, postgres.OwnerStateStore)
 	if err != nil {
 		pool.Close()
 		b.log.Error("claim state store ownership", "err", err)

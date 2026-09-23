@@ -80,6 +80,7 @@ AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
 AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
+DB_SNAPSHOT="${ARCHIE_DB_SNAPSHOT:-$BIN_DIR/archie-db.pre-update.dump}"
 # The address the daemon dials for its state, so the watchdog can wait for it to
 # accept connections before it starts archied. Read with the same narrow awk as
 # the task database path and for the same reason: the daemon stays the authority
@@ -284,6 +285,22 @@ if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_
   fi
 fi
 
+# The pre-migration snapshot of the PostgreSQL database: the whole database,
+# since every service shares it. The new State Store migrates on start and a
+# migration is never undone automatically (goose Down drops tables), so this
+# snapshot is the only way back, restored by an operator with every service
+# stopped. The recovery subcommand resolves database_url from the same config
+# the services boot with, so the connection string never passes through this
+# script. No snapshot, no update.
+if [[ ",$components," == *,daemon,* ]]; then
+  echo "==> snapshotting the database before the update migrates it"
+  mkdir -p "$(dirname "$DB_SNAPSHOT")"
+  if ! go run ./cmd/archie-state-store backup -config "$CONFIG_PATH" -out "$DB_SNAPSHOT"; then
+    echo "refusing to install $GW: could not snapshot the database named by $CONFIG_PATH, so a failed migration could not be recovered" >&2
+    exit 1
+  fi
+fi
+
 # Refresh adapters from the approved release source. The running shell
 # continues with this copy; subsequent updates use the current contract.
 install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
@@ -377,6 +394,8 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS="${AGENT_VERSION_PREVIOUS_EXISTS:-0}" \
   --setenv=ARCHIE_TASK_DB_PATH="$TASK_DB_PATH" \
   --setenv=ARCHIE_TASK_DB_BACKUP="$TASK_DB_BACKUP" \
+  --setenv=ARCHIE_DB_SNAPSHOT="$DB_SNAPSHOT" \
+  --setenv=ARCHIE_CONFIG_PATH="$CONFIG_PATH" \
   --setenv=ARCHIE_UPDATE_STATE_STORE_TARGET="$STATE_STORE_TARGET" \
   "$BIN_DIR/archie-update-watchdog"
 

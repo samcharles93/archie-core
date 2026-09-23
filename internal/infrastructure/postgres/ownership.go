@@ -8,6 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// The serving roles that each hold an ownership claim for their whole life.
+const (
+	OwnerStateStore = "state-store"
+	OwnerGateway    = "gateway"
+)
+
 // ErrOwned is returned when another process already owns the named role on
 // this database.
 var ErrOwned = errors.New("postgres: owned by another process")

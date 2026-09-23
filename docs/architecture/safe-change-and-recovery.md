@@ -165,6 +165,31 @@ own `sqlite3` shell, so the installer and an operator run one implementation.
 blunt one, and is also the way back from a schema migration a release cannot
 grow out of.
 
+### The same commands on PostgreSQL
+
+Without `-db`, each command works on the PostgreSQL database the configuration's
+`database_url` names (`internal/app/archied/state_store_recovery_postgres.go`,
+`internal/infrastructure/postgres/maintenance.go`). One database backs every
+service, so the scope is always the whole database.
+
+- `backup -out F` runs `pg_dump --format=custom`, reads the archive back with
+  `pg_restore --list` and only then replaces `F`. It takes no claim and runs
+  against a serving database.
+- `restore -from F` is destructive and offline. It claims every service role's
+  ownership lock (`state-store` and `gateway`) without waiting and refuses if
+  any is held or the check cannot complete, then drops tables the snapshot does
+  not hold and runs `pg_restore --clean --single-transaction`. Every write made
+  after the snapshot is lost.
+- `validate` refuses a schema newer than the binary's highest migration, then
+  runs the same two validation layers.
+- `rollback` holds the `state-store` claim for the replay.
+
+There is no automatic schema rollback. goose `Down` drops tables, so it is data
+loss, not a rollback. `scripts/archie-update-install` refuses a daemon update
+it cannot snapshot first, and on a failed update `scripts/archie-update-watchdog`
+rolls the binaries back, leaves the database alone and prints the `restore`
+command for the pre-update snapshot. Whether to run it is the operator's call.
+
 ## Gateway restart: two constraints learned the hard way
 
 Telegram `/restart` (`internal/channels/telegram/restart.go` plus the `Start`

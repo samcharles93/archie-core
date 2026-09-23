@@ -9,14 +9,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 )
 
-// Service owner names: every Archie process that serves this database holds
-// one of these claims for its whole life, so an offline rewrite checks them
-// all.
-const (
-	OwnerStateStore = "state-store"
-	OwnerGateway    = "gateway"
-)
-
 // ImportComplete reports whether the one-time legacy import committed and
 // verified against this migrated database. Serving over non-empty legacy
 // files is refused without it.
