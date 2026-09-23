@@ -5,6 +5,32 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.40.0] - 2026-09-23
+
+### archied
+
+- **Every park now says what kind of intervention it needs.** A parked task
+  is classified as `needs you` (a decision or fix only an operator can
+  supply), `transient` (an environment problem -- container pool, storage,
+  transport -- retry once it is fixed), or `terminal` (the repository or
+  identity cannot act; retrying cannot succeed). The class shows beside the
+  Parked badge on the dashboard, so "needs you" reads as a request rather
+  than a failure.
+- **Operator retries and review-remediation rounds now have separate
+  budgets.** An operator's manual retries no longer draw down the rounds
+  Archie may spend addressing review feedback on its pull requests, and a
+  round-cap park no longer makes a later retry re-park immediately.
+- **`latest` now names the newest release. A push to `main` that is not a
+  release publishes `edge` and `sha-<commit>` instead. A host that was
+  following `main` by pulling `latest` stops advancing at this release --
+  switch it to `edge` to keep tracking `main`, or leave it on `latest` to
+  follow releases.**
+
+### archie-agent
+
+- The park-classification wire format is part of this image; a host that
+  runs the agent should `docker compose pull agent` to pick it up.
+
 ## [1.39.0] - 2026-09-23
 
 ### archied
