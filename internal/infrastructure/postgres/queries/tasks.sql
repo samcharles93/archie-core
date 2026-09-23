@@ -20,7 +20,10 @@ SELECT * FROM tasks WHERE id = $1;
 SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3;
 
 -- name: TaskByPR :one
-SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3;
+-- OpenTaskByPR is the live-task lookup: it only resolves a PR the task is
+-- currently tracking as open, so a merged or rejected task does not read as
+-- the owner of a PR number it no longer holds.
+SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4;
 
 -- name: ListTaskSummaries :many
 -- The dashboard's list. This projection is deliberately narrow: Plan gates
@@ -89,3 +92,44 @@ WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do');
 
 -- name: RecoverStaleTasks :execrows
 UPDATE tasks SET status = 'queued', updated_at = now() WHERE status = 'running';
+
+-- name: EnqueueIssue :execrows
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, identity)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (owner, repo, issue_number) DO NOTHING;
+
+-- name: ClaimByIssue :one
+UPDATE tasks SET status = 'running', attempt = attempt + 1, updated_at = now()
+WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
+RETURNING *;
+
+-- name: BeginRemediationTask :execrows
+UPDATE tasks SET status = 'queued', workflow = 'remediate', stage = '', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
+WHERE id = $1 AND status = 'pr_open';
+
+-- name: UpdateReviewPayloadTask :execrows
+UPDATE tasks SET review_payload = $2, updated_at = now()
+WHERE id = $1 AND status = 'queued' AND workflow = 'remediate';
+
+-- name: SetReviewCursors :execrows
+UPDATE tasks SET review_cursor = $2, watch_comment_id = $3, updated_at = now()
+WHERE id = $1 AND status = 'pr_open';
+
+-- name: RequeueTask :execrows
+UPDATE tasks SET status = 'queued',
+    workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
+    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+WHERE id = @id AND status = @from_status;
+
+-- name: RetryTask :execrows
+UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
+    workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
+    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+WHERE id = @id AND status = @from_status;
+
+-- name: ArchiveTaskDelete :execrows
+DELETE FROM tasks WHERE id = $1 AND status = $2;
+
+-- name: ListOpenPRs :many
+SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt, review_cursor, watch_comment_id
+FROM tasks WHERE status = 'pr_open';

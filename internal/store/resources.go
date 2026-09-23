@@ -6,34 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
+// Resource types and their sentinels moved to storecontract (the producer-owned
+// contract) so the PostgreSQL implementation can reference them without linking
+// this SQLite package. These aliases keep daemon-side callers (the control
+// plane) and the in-package tests unchanged.
 var (
-	ErrResourceNotFound        = errors.New("resource not found")
-	ErrResourceVersionConflict = errors.New("resource version conflict")
+	ErrResourceNotFound        = storecontract.ErrResourceNotFound
+	ErrResourceVersionConflict = storecontract.ErrResourceVersionConflict
 )
 
-type Resource struct {
-	Kind            string
-	Value           []byte
-	Version         int64
-	Actor           string
-	Source          string
-	RequestID       string
-	ExpectedVersion int64
-	CurrentVersion  int64
-	At              time.Time
-}
+type Resource = storecontract.Resource
 
-type ResourceWrite struct {
-	Kind            string
-	Value           []byte
-	Actor           string
-	Source          string
-	RequestID       string
-	ExpectedVersion int64
-	At              time.Time
-}
+type ResourceWrite = storecontract.ResourceWrite
 
 const resourcesSchema = `
 CREATE TABLE IF NOT EXISTS resources (

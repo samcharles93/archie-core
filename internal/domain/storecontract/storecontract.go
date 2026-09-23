@@ -370,4 +370,42 @@ var (
 	ErrAlreadyDispatched = errors.New("store: binding already dispatched for capture")
 	// ErrMappingNotFound is returned when a mapping ID does not exist.
 	ErrMappingNotFound = errors.New("store: mapping not found")
+
+	// ErrResourceNotFound is returned when a control-plane resource kind has
+	// no stored document. It is in-process only (not on the gRPC wire): the
+	// control plane runs in the daemon against the local store.
+	ErrResourceNotFound = errors.New("resource not found")
+	// ErrResourceVersionConflict is returned when a resource write carries an
+	// expected version that does not match the stored revision.
+	ErrResourceVersionConflict = errors.New("resource version conflict")
 )
+
+// Resource is one control-plane resource document: the stored value for a
+// kind, its revision, and the audit record written with the last write.
+// Resource and ResourceWrite live here (rather than internal/store) so the
+// PostgreSQL implementation and the UI-side consumers can reference them
+// without linking the SQLite implementation.
+type Resource struct {
+	Kind            string
+	Value           []byte
+	Version         int64
+	Actor           string
+	Source          string
+	RequestID       string
+	ExpectedVersion int64
+	CurrentVersion  int64
+	At              time.Time
+}
+
+// ResourceWrite is a control-plane resource write request. ExpectedVersion is
+// the optimistic-concurrency guard: a write whose expectation does not match
+// the stored revision is refused with ErrResourceVersionConflict.
+type ResourceWrite struct {
+	Kind            string
+	Value           []byte
+	Actor           string
+	Source          string
+	RequestID       string
+	ExpectedVersion int64
+	At              time.Time
+}
