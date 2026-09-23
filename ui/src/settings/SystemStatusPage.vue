@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageHeader from "@/base/PageHeader.vue";
 import HealthStatusCard from "./HealthStatusCard.vue";
+import VersionsCard from "./VersionsCard.vue";
 </script>
 
 <template>
@@ -8,5 +9,6 @@ import HealthStatusCard from "./HealthStatusCard.vue";
     <PageHeader title="Status" />
 
     <HealthStatusCard />
+    <VersionsCard class="mt-4" />
   </div>
 </template>

@@ -2,7 +2,7 @@
 import { Check } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { setupPanelState, type SetupPanelState } from "./setup-preference";
 import { setup } from "./state";
@@ -33,7 +33,6 @@ const pct = computed(() => {
   <Card v-if="panel.kind === 'incomplete'">
     <CardHeader>
       <CardTitle>Finish setting up</CardTitle>
-      <CardDescription>Archie needs these before it can work on its own.</CardDescription>
       <CardAction>
         <span class="text-lg font-semibold text-link">{{ pct }}%</span>
       </CardAction>

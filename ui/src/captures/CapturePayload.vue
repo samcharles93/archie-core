@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
+import HighlightedJson from "@/base/HighlightedJson.vue";
 import { prettyPrint } from "./capture-payload";
 
 /**
@@ -24,7 +25,7 @@ const text = computed(() => prettyPrint(props.raw));
     <pre
       v-else
       class="rounded-sm border border-border-strong bg-muted p-3 font-mono text-xs whitespace-pre-wrap wrap-break-word"
-      >{{ text }}</pre
+      ><HighlightedJson :text="text" /></pre
     >
   </section>
 </template>
