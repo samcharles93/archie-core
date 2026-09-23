@@ -2,68 +2,57 @@ package archieplaybooks
 
 import (
 	"context"
-	"encoding/json"
 	"net"
-	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/sourcegraph/jsonrpc2"
+	"go.lsp.dev/jsonrpc2"
+	"go.lsp.dev/protocol"
+	"go.lsp.dev/uri"
 )
 
-// lspClient drives Serve over an in-memory pipe and collects every
-// publishDiagnostics notification it receives.
-type lspClient struct {
-	conn  *jsonrpc2.Conn
-	diags chan publishDiagnosticsParams
+// diagnosticsClient is the editor side: it collects every
+// publishDiagnostics notification the server sends.
+type diagnosticsClient struct {
+	protocol.UnimplementedClient
+	diags chan *protocol.PublishDiagnosticsParams
 }
 
-func startServe(t *testing.T) *lspClient {
+func (c *diagnosticsClient) PublishDiagnostics(_ context.Context, p *protocol.PublishDiagnosticsParams) error {
+	c.diags <- p
+	return nil
+}
+
+// openInServe starts Serve over an in-memory pipe, initializes it, opens
+// path, and returns the diagnostics published for it.
+func openInServe(t *testing.T, path string) *protocol.PublishDiagnosticsParams {
 	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	t.Cleanup(cancel)
-	server, client := net.Pipe()
-	go func() { _ = Serve(ctx, server) }()
-	c := &lspClient{diags: make(chan publishDiagnosticsParams, 8)}
-	c.conn = jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(client, jsonrpc2.VSCodeObjectCodec{}),
-		jsonrpc2.HandlerWithError(func(_ context.Context, _ *jsonrpc2.Conn, r *jsonrpc2.Request) (any, error) {
-			if r.Method == "textDocument/publishDiagnostics" && r.Params != nil {
-				var p publishDiagnosticsParams
-				if err := json.Unmarshal(*r.Params, &p); err == nil {
-					c.diags <- p
-				}
-			}
-			return nil, nil
-		}))
-	t.Cleanup(func() { _ = c.conn.Close() })
-	var init map[string]any
-	callCtx, stop := context.WithTimeout(ctx, 5*time.Second)
-	defer stop()
-	if err := c.conn.Call(callCtx, "initialize", map[string]any{}, &init); err != nil {
+	serverEnd, clientEnd := net.Pipe()
+	go func() { _ = Serve(ctx, serverEnd) }()
+	client := &diagnosticsClient{diags: make(chan *protocol.PublishDiagnosticsParams, 8)}
+	_, conn, server := protocol.NewClient(ctx, client, jsonrpc2.NewStream(clientEnd))
+	t.Cleanup(func() { _ = conn.Close() })
+
+	if _, err := server.Initialize(ctx, &protocol.InitializeParams{}); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	return c
-}
-
-func (c *lspClient) open(t *testing.T, path string) publishDiagnosticsParams {
-	t.Helper()
-	uri := (&url.URL{Scheme: "file", Path: path}).String()
-	if err := c.conn.Notify(t.Context(), "textDocument/didOpen", map[string]any{
-		"textDocument": map[string]any{"uri": uri, "languageId": "yaml", "version": 1, "text": ""},
-	}); err != nil {
+	u := uri.File(path)
+	if err := server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{TextDocument: protocol.TextDocumentItem{URI: u, LanguageID: "yaml", Version: 1}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case p := <-c.diags:
-		if p.URI != uri {
-			t.Fatalf("diagnostics for %q, want %q", p.URI, uri)
+	case p := <-client.diags:
+		if p.URI != u {
+			t.Fatalf("diagnostics for %q, want %q", p.URI, u)
 		}
 		return p
-	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
 		t.Fatal("no publishDiagnostics received")
 	}
-	return publishDiagnosticsParams{}
+	return nil
 }
 
 func TestServePublishesDiagnostics(t *testing.T) {
@@ -104,16 +93,44 @@ func TestServePublishesDiagnostics(t *testing.T) {
 			for name, content := range tt.files {
 				writeFile(t, filepath.Join(dir, name), content)
 			}
-			p := startServe(t).open(t, filepath.Join(dir, tt.open))
+			p := openInServe(t, filepath.Join(dir, tt.open))
 			if tt.wantLine < 0 {
 				if len(p.Diagnostics) != 0 {
 					t.Fatalf("diagnostics = %+v, want none", p.Diagnostics)
 				}
 				return
 			}
-			if len(p.Diagnostics) != 1 || p.Diagnostics[0].Range.Start.Line != tt.wantLine {
+			if len(p.Diagnostics) != 1 || int(p.Diagnostics[0].Range.Start.Line) != tt.wantLine {
 				t.Fatalf("diagnostics = %+v, want one on line %d", p.Diagnostics, tt.wantLine)
 			}
 		})
+	}
+}
+
+// The exit notification ends Serve. Closing the connection from inside the
+// exit handler waited on that handler, so an editor quitting left the server
+// running.
+func TestServeReturnsAfterExit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	serverEnd, clientEnd := net.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, serverEnd) }()
+	_, conn, server := protocol.NewClient(ctx, &diagnosticsClient{}, jsonrpc2.NewStream(clientEnd))
+	defer conn.Close()
+
+	if _, err := server.Initialize(ctx, &protocol.InitializeParams{}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if err := server.Exit(ctx); err != nil {
+		t.Fatalf("exit: %v", err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("Serve still running after exit")
 	}
 }

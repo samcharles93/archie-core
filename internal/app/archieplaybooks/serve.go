@@ -3,16 +3,17 @@ package archieplaybooks
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/sourcegraph/jsonrpc2"
+	"go.lsp.dev/jsonrpc2"
+	"go.lsp.dev/protocol"
+	"go.lsp.dev/uri"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,93 +23,72 @@ import (
 // it: the whole directory, because a collision is a cross-file finding.
 // Unsaved edits are not validated.
 func Serve(ctx context.Context, rwc io.ReadWriteCloser) error {
-	conn := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(rwc, jsonrpc2.VSCodeObjectCodec{}), jsonrpc2.HandlerWithError(handle))
+	s := &server{exited: make(chan struct{})}
+	_, conn, client := protocol.NewServer(ctx, s, jsonrpc2.NewStream(rwc))
+	s.client = client
 	select {
-	case <-conn.DisconnectNotify():
+	case <-conn.Done():
+		return nil
+	case <-s.exited:
 	case <-ctx.Done():
-		_ = conn.Close()
 	}
+	return conn.Close()
+}
+
+type server struct {
+	protocol.UnimplementedServer
+	client protocol.Client
+	// exited is closed by the exit notification. Serve closes the connection:
+	// closing it from inside the handler would wait on that handler.
+	exited   chan struct{}
+	exitOnce sync.Once
+}
+
+func (s *server) Initialize(context.Context, *protocol.InitializeParams) (*protocol.InitializeResult, error) {
+	// The server reads files from disk, so it needs opens, closes and saves,
+	// not content changes.
+	openClose, change := true, protocol.TextDocumentSyncKindNone
+	return &protocol.InitializeResult{
+		Capabilities: protocol.ServerCapabilities{
+			TextDocumentSync: &protocol.TextDocumentSyncOptions{
+				OpenClose: &openClose,
+				Change:    &change,
+				Save:      protocol.Boolean(true),
+			},
+		},
+		ServerInfo: protocol.ServerInfo{Name: "archie-playbooks"},
+	}, nil
+}
+
+func (s *server) Shutdown(context.Context) error { return nil }
+
+func (s *server) Exit(context.Context) error {
+	s.exitOnce.Do(func() { close(s.exited) })
 	return nil
 }
 
-type position struct {
-	Line      int `json:"line"`
-	Character int `json:"character"`
+func (s *server) DidOpen(ctx context.Context, p *protocol.DidOpenTextDocumentParams) error {
+	return s.client.PublishDiagnostics(ctx, diagnose(p.TextDocument.URI))
 }
 
-type lspRange struct {
-	Start position `json:"start"`
-	End   position `json:"end"`
+func (s *server) DidSave(ctx context.Context, p *protocol.DidSaveTextDocumentParams) error {
+	return s.client.PublishDiagnostics(ctx, diagnose(p.TextDocument.URI))
 }
 
-type diagnostic struct {
-	Range    lspRange `json:"range"`
-	Severity int      `json:"severity"`
-	Source   string   `json:"source"`
-	Message  string   `json:"message"`
+func (s *server) DidClose(ctx context.Context, p *protocol.DidCloseTextDocumentParams) error {
+	return s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{URI: p.TextDocument.URI, Diagnostics: []protocol.Diagnostic{}})
 }
 
-type publishDiagnosticsParams struct {
-	URI         string       `json:"uri"`
-	Diagnostics []diagnostic `json:"diagnostics"`
-}
-
-type textDocumentParams struct {
-	TextDocument struct {
-		URI string `json:"uri"`
-	} `json:"textDocument"`
-}
-
-const severityError = 1
-
-func handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) (any, error) {
-	switch req.Method {
-	case "initialize":
-		// Full sync with save notifications: the server reads files from
-		// disk, so it needs to hear about opens and saves only.
-		return map[string]any{"capabilities": map[string]any{
-			"textDocumentSync": map[string]any{"openClose": true, "change": 0, "save": true},
-		}}, nil
-	case "shutdown":
-		return nil, nil
-	case "exit":
-		return nil, conn.Close()
-	case "textDocument/didOpen", "textDocument/didSave":
-		if uri, ok := documentURI(req); ok {
-			return nil, conn.Notify(ctx, "textDocument/publishDiagnostics", diagnose(uri))
-		}
-	case "textDocument/didClose":
-		if uri, ok := documentURI(req); ok {
-			return nil, conn.Notify(ctx, "textDocument/publishDiagnostics", publishDiagnosticsParams{URI: uri, Diagnostics: []diagnostic{}})
-		}
-	}
-	if req.Notif {
-		return nil, nil
-	}
-	return nil, &jsonrpc2.Error{Code: jsonrpc2.CodeMethodNotFound, Message: "method not supported: " + req.Method}
-}
-
-// documentURI reads a text-document notification's URI. A notification has
-// no response to carry an error, so malformed params are ignored.
-func documentURI(req *jsonrpc2.Request) (string, bool) {
-	var p textDocumentParams
-	if req.Params == nil || json.Unmarshal(*req.Params, &p) != nil || p.TextDocument.URI == "" {
-		return "", false
-	}
-	return p.TextDocument.URI, true
-}
-
-// diagnose lints the directory holding uri's file and returns the findings
-// that belong to that file: a finding naming another file of the directory
-// belongs there, and one naming this file without a line (an EDA load error)
-// goes on its first line.
-func diagnose(uri string) publishDiagnosticsParams {
-	out := publishDiagnosticsParams{URI: uri, Diagnostics: []diagnostic{}}
-	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "file" {
+// diagnose lints the directory holding u's file and returns the findings that
+// belong to that file: a finding naming another file of the directory belongs
+// there, and one naming this file without a line (an EDA load error) goes on
+// its first line.
+func diagnose(u uri.URI) *protocol.PublishDiagnosticsParams {
+	out := &protocol.PublishDiagnosticsParams{URI: u, Diagnostics: []protocol.Diagnostic{}}
+	if !u.IsFile() {
 		return out
 	}
-	path := u.Path
+	path := u.FsPath()
 	var result Result
 	if isEDAPlaybook(path) {
 		result = LintEDA(filepath.Dir(path), io.Discard)
@@ -120,11 +100,11 @@ func diagnose(uri string) publishDiagnosticsParams {
 		if !ok {
 			continue
 		}
-		out.Diagnostics = append(out.Diagnostics, diagnostic{
-			Range:    lspRange{Start: position{Line: line}, End: position{Line: line, Character: 1 << 16}},
-			Severity: severityError,
-			Source:   "archie-playbooks",
-			Message:  finding,
+		out.Diagnostics = append(out.Diagnostics, protocol.Diagnostic{
+			Range:    protocol.Range{Start: protocol.Position{Line: line}, End: protocol.Position{Line: line + 1}},
+			Severity: protocol.DiagnosticSeverityError,
+			Source:   protocol.NewOptional("archie-playbooks"),
+			Message:  protocol.String(finding),
 		})
 	}
 	return out
@@ -148,13 +128,10 @@ func isEDAPlaybook(path string) bool {
 // findingLine places a finding on path. A compiler-style `path:line:` prefix
 // gives the 0-based line; a finding naming path without a line goes on line
 // 0; a finding naming another file is not path's.
-func findingLine(finding, path string) (int, bool) {
+func findingLine(finding, path string) (uint32, bool) {
 	if m := regexp.MustCompile(regexp.QuoteMeta(path) + `:(\d+):`).FindStringSubmatch(finding); m != nil {
-		n, _ := strconv.Atoi(m[1])
-		return max(n-1, 0), true
+		n, _ := strconv.ParseUint(m[1], 10, 32)
+		return uint32(max(n, 1) - 1), true
 	}
-	if strings.Contains(finding, path) {
-		return 0, true
-	}
-	return 0, false
+	return 0, strings.Contains(finding, path)
 }
