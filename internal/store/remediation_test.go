@@ -107,3 +107,114 @@ func TestUpdateReviewPayloadAppendsOnlyWhileARemediationIsQueued(t *testing.T) {
 		t.Errorf("UpdateReviewPayload while running err = %v, want ErrStaleTransition", err)
 	}
 }
+
+// TestParkTaskWritesItsClassification pins the classified park write: the
+// class is recorded at the park site in the same guarded write, and an
+// unclassified park defaults to needs_human.
+func TestParkTaskWritesItsClassification(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widgets", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.TaskByIssue(ctx, "acme", "widgets", 1)
+	if _, err := s.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ParkTask(ctx, task.ID, workflow.StatusRunning, "container acquire failed", "transient"); err != nil {
+		t.Fatalf("ParkTask: %v", err)
+	}
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != workflow.StatusParked || got.ParkReason != "container acquire failed" {
+		t.Errorf("park row = status:%q reason:%q", got.Status, got.ParkReason)
+	}
+	if got.ParkClass != "transient" {
+		t.Errorf("park_class = %q, want transient", got.ParkClass)
+	}
+
+	// Requeue clears the class with the reason: a stale class on a queued
+	// task would group a live task with parked ones.
+	if err := s.Requeue(ctx, task.ID, workflow.StatusParked, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.TaskByID(ctx, task.ID)
+	if got.ParkClass != "needs_human" || got.ParkReason != "" {
+		t.Errorf("after requeue: class=%q reason=%q, want cleared", got.ParkClass, got.ParkReason)
+	}
+}
+
+func TestParkTaskRejectsAnUnknownClass(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widgets", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.TaskByIssue(ctx, "acme", "widgets", 1)
+	if _, err := s.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// An unknown class normalizes to needs_human rather than persisting a
+	// value no consumer knows how to group.
+	if err := s.ParkTask(ctx, task.ID, workflow.StatusRunning, "x", "urgent"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.TaskByID(ctx, task.ID)
+	if got.ParkClass != "needs_human" {
+		t.Errorf("park_class = %q, want the needs_human fallback", got.ParkClass)
+	}
+}
+
+func TestParkTaskStaleGuard(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widgets", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.TaskByIssue(ctx, "acme", "widgets", 1)
+	// Still queued, not running: the from guard must refuse.
+	if err := s.ParkTask(ctx, task.ID, workflow.StatusRunning, "x", "transient"); !errors.Is(err, ErrStaleTransition) {
+		t.Errorf("ParkTask stale err = %v, want ErrStaleTransition", err)
+	}
+}
+
+func TestTransitionToParkedDefaultsTheClass(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widgets", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.TaskByIssue(ctx, "acme", "widgets", 1)
+	if _, err := s.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The generic transition is the workflow engine's park path: every
+	// unclassified park reads as operator-actionable.
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, "gate failed"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.TaskByID(ctx, task.ID)
+	if got.ParkClass != "needs_human" {
+		t.Errorf("park_class = %q, want the needs_human default", got.ParkClass)
+	}
+}
+
+func TestUpdateCarriesRemediationRounds(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widgets", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.TaskByIssue(ctx, "acme", "widgets", 1)
+	task.RemediationRounds = 2
+	if err := s.Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.TaskByID(ctx, task.ID)
+	if got.RemediationRounds != 2 {
+		t.Errorf("remediation_rounds = %d, want 2", got.RemediationRounds)
+	}
+}

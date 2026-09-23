@@ -18,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 type Store struct {
@@ -102,6 +103,8 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 	}{
 		{"tasks", "watch_comment_id", `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "review_cursor", `ALTER TABLE tasks ADD COLUMN review_cursor INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "park_class", `ALTER TABLE tasks ADD COLUMN park_class TEXT NOT NULL DEFAULT 'needs_human'`},
+		{"tasks", "remediation_rounds", `ALTER TABLE tasks ADD COLUMN remediation_rounds INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
 		{"tasks", "identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
@@ -295,6 +298,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	attempt       INTEGER NOT NULL DEFAULT 0,
 	park_reason   TEXT NOT NULL DEFAULT '',
 	watch_comment_id INTEGER NOT NULL DEFAULT 0,
+		park_class TEXT NOT NULL DEFAULT 'needs_human',
+		remediation_rounds INTEGER NOT NULL DEFAULT 0,
 	retry_count   INTEGER NOT NULL DEFAULT 0,
 	source        TEXT NOT NULL DEFAULT 'forge',
 	identity      TEXT NOT NULL DEFAULT '',
@@ -381,7 +386,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, review_payload,
-			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at`,
+			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, park_class, remediation_rounds, created_at, updated_at`,
 		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, wf, identity)
 	return scanTask(row)
 }
@@ -423,7 +428,7 @@ func (s *Store) ClaimNext(ctx context.Context) (*workflow.Task, error) {
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, review_payload,
-			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at`,
+			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, park_class, remediation_rounds, created_at, updated_at`,
 		workflow.StatusRunning, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -440,6 +445,7 @@ func scanTask(row *sql.Row) (*workflow.Task, error) {
 		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity,
 		&t.BindingID, &t.BindingVersion, &t.ReviewPayload,
 		&t.WorkflowDefinitionVersion, &t.WorkflowDefinitionDigest, &t.WorkflowDefinitionYAML,
+		&t.ParkClass, &t.RemediationRounds,
 		sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt})
 	if err != nil {
 		return nil, err
@@ -459,7 +465,7 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, review_payload,
-			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at`,
+			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, park_class, remediation_rounds, created_at, updated_at`,
 		workflow.StatusRunning, owner, repo, number, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -488,9 +494,11 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 		UPDATE tasks
 		SET status=?,
 			park_reason=CASE WHEN ?=? THEN ? ELSE park_reason END,
+			park_class=CASE WHEN ?=? THEN ? ELSE park_class END,
 			updated_at=datetime('now')
 		WHERE id=? AND status=?`,
-		to, to, workflow.StatusParked, clip(detail, 4000), taskID, from)
+		to, to, workflow.StatusParked, clip(detail, 4000),
+		to, to, taskstate.ParkNeedsHuman, taskID, from)
 	if err != nil {
 		return err
 	}
@@ -512,17 +520,57 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 	return tx.Commit()
 }
 
+// ParkTask is the classified park write: the same guarded running->parked
+// transition Transition performs, carrying the park class the site chose.
+// The class is normalized here so an unknown value persists as needs_human
+// -- the safe misread is "an operator should look at this".
+func (s *Store) ParkTask(ctx context.Context, taskID int64, from, detail, class string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE tasks
+		SET status=?,
+			park_reason=?,
+			park_class=?,
+			updated_at=datetime('now')
+		WHERE id=? AND status=?`,
+		workflow.StatusParked, clip(detail, 4000),
+		taskstate.NormalizeParkClass(class), taskID, from)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, ?, ?)`,
+		taskID, from, workflow.StatusParked, clip(detail, 4000)); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // Update persists mutable task fields written by workflows.
 func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET workflow=?, stage=?, branch=?, plan=?, notes=?,
 			pr_number=?, tokens_used=?, iterations=?, park_reason=?,
-			watch_comment_id=?, retry_count=?, review_payload=?, workflow_definition_version=?,
+			watch_comment_id=?, retry_count=?, remediation_rounds=?, review_payload=?, workflow_definition_version=?,
 			workflow_definition_digest=?, workflow_definition_yaml=?, updated_at=datetime('now')
 		WHERE id=?`,
 		t.Workflow, t.Stage, t.Branch, t.Plan, t.Notes,
 		t.PRNumber, t.TokensUsed, t.Iterations, clip(t.ParkReason, 4000),
-		t.WatchCommentID, t.RetryCount, t.ReviewPayload, t.WorkflowDefinitionVersion,
+		t.WatchCommentID, t.RetryCount, t.RemediationRounds, t.ReviewPayload, t.WorkflowDefinitionVersion,
 		t.WorkflowDefinitionDigest, t.WorkflowDefinitionYAML, t.ID)
 	return err
 }
@@ -541,7 +589,7 @@ func (s *Store) BeginRemediation(ctx context.Context, taskID int64, payload stri
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx, `
-		UPDATE tasks SET status=?, workflow=?, stage='', park_reason='', review_payload=?,
+		UPDATE tasks SET status=?, workflow=?, stage='', park_reason='', park_class='needs_human', review_payload=?,
 			updated_at=datetime('now')
 		WHERE id=? AND status=?`, workflow.StatusQueued, "remediate", clip(payload, 4000), taskID, workflow.StatusPROpen)
 	if err != nil {
@@ -616,7 +664,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, review_payload,
-			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at
+			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, park_class, remediation_rounds, created_at, updated_at
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -632,7 +680,7 @@ func (s *Store) OpenTaskByPR(ctx context.Context, owner, repo string, number int
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, review_payload,
-			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at
+			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, park_class, remediation_rounds, created_at, updated_at
 		FROM tasks
 		WHERE owner=? AND repo=? AND pr_number=? AND status=?`,
 		owner, repo, number, workflow.StatusPROpen)
@@ -652,7 +700,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, review_payload,
-			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at
+			workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, park_class, remediation_rounds, created_at, updated_at
 		FROM tasks WHERE id=?`, taskID)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -678,7 +726,7 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, wf string
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET status=?,
 			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
-			stage='', park_reason='', updated_at=datetime('now')
+			stage='', park_reason='', park_class='needs_human', updated_at=datetime('now')
 		WHERE id=? AND status=?`, workflow.StatusQueued, wf, wf, taskID, fromStatus)
 	if err != nil {
 		return err
@@ -714,7 +762,7 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf stri
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET status=?, retry_count=retry_count+1,
 			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
-			stage='', park_reason='', updated_at=datetime('now')
+			stage='', park_reason='', park_class='needs_human', updated_at=datetime('now')
 		WHERE id=? AND status=?`, workflow.StatusQueued, wf, wf, taskID, fromStatus)
 	if err != nil {
 		return err

@@ -100,6 +100,17 @@ type Task struct {
 	// the remediation round counter for this same task, bounded by the
 	// repo's existing max_retries (decision 5's round cap).
 	ReviewPayload string `json:"review_payload"`
+	// ParkClass is the producer-recorded answer to "what kind of
+	// intervention does this park need?" (taskstate.ParkClass). Set at the
+	// park site, never inferred from reason text; needs_human is the
+	// default an unclassified park reads as.
+	ParkClass string `json:"park_class"`
+	// RemediationRounds counts review-triggered remediation rounds,
+	// bounded by the repo's max_retries (pr-review-remediation.md
+	// decision 5). Deliberately separate from RetryCount, the operator
+	// budget: one shared counter made N operator retries eat the
+	// review-remediation budget and vice versa.
+	RemediationRounds int `json:"remediation_rounds"`
 	// CreatedAt and UpdatedAt are the SQLite row timestamps, exposed so
 	// callers can show a task's age and last activity. They are written by
 	// column defaults and the UPDATE statements, never by the caller.

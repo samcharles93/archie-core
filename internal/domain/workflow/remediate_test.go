@@ -70,14 +70,14 @@ func TestStageResumeWorktreeResumesOntoTheTaskBranch(t *testing.T) {
 func TestStageRemediationRoundCapCountsARoundUnderTheCap(t *testing.T) {
 	forge := &fakeForge{}
 	tc := &TaskContext{
-		Task: &Task{ID: 1, RetryCount: 1}, Repo: config.Repo{MaxRetries: 3}, Forge: forge,
+		Task: &Task{ID: 1, RemediationRounds: 1}, Repo: config.Repo{MaxRetries: 3}, Forge: forge,
 		Log: slog.New(slog.DiscardHandler),
 	}
 	if err := StageRemediationRoundCap().Run(t.Context(), tc); err != nil {
 		t.Fatalf("StageRemediationRoundCap: %v", err)
 	}
-	if tc.Task.RetryCount != 2 {
-		t.Fatalf("RetryCount = %d, want 2", tc.Task.RetryCount)
+	if tc.Task.RemediationRounds != 2 {
+		t.Fatalf("RemediationRounds = %d, want 2", tc.Task.RemediationRounds)
 	}
 	if tc.Outcome.Status != "" {
 		t.Fatalf("Outcome = %+v, want zero value (workflow continues)", tc.Outcome)
@@ -90,14 +90,14 @@ func TestStageRemediationRoundCapCountsARoundUnderTheCap(t *testing.T) {
 func TestStageRemediationRoundCapParksAtTheCapAndPostsOneComment(t *testing.T) {
 	forge := &fakeForge{}
 	tc := &TaskContext{
-		Task: &Task{ID: 1, RetryCount: 3, PRNumber: 9}, Repo: config.Repo{MaxRetries: 3}, Forge: forge,
+		Task: &Task{ID: 1, RemediationRounds: 3, PRNumber: 9}, Repo: config.Repo{MaxRetries: 3}, Forge: forge,
 		Log: slog.New(slog.DiscardHandler),
 	}
 	if err := StageRemediationRoundCap().Run(t.Context(), tc); err != nil {
 		t.Fatalf("StageRemediationRoundCap: %v", err)
 	}
-	if tc.Task.RetryCount != 3 {
-		t.Fatalf("RetryCount = %d, want unchanged at 3", tc.Task.RetryCount)
+	if tc.Task.RemediationRounds != 3 {
+		t.Fatalf("RemediationRounds = %d, want unchanged at 3", tc.Task.RemediationRounds)
 	}
 	if tc.Outcome.Status != StatusParked {
 		t.Fatalf("Outcome.Status = %q, want parked", tc.Outcome.Status)
@@ -109,7 +109,7 @@ func TestStageRemediationRoundCapParksAtTheCapAndPostsOneComment(t *testing.T) {
 
 func TestStageRemediationRoundCapZeroMeansUnlimited(t *testing.T) {
 	tc := &TaskContext{
-		Task: &Task{ID: 1, RetryCount: 50}, Repo: config.Repo{}, Cfg: config.Config{MaxRetries: 0},
+		Task: &Task{ID: 1, RemediationRounds: 50}, Repo: config.Repo{}, Cfg: config.Config{MaxRetries: 0},
 		Forge: &fakeForge{}, Log: slog.New(slog.DiscardHandler),
 	}
 	if err := StageRemediationRoundCap().Run(t.Context(), tc); err != nil {
@@ -118,8 +118,8 @@ func TestStageRemediationRoundCapZeroMeansUnlimited(t *testing.T) {
 	if tc.Outcome.Status == StatusParked {
 		t.Fatal("Outcome = parked, want no cap enforced when max_retries is unset")
 	}
-	if tc.Task.RetryCount != 51 {
-		t.Fatalf("RetryCount = %d, want 51", tc.Task.RetryCount)
+	if tc.Task.RemediationRounds != 51 {
+		t.Fatalf("RemediationRounds = %d, want 51", tc.Task.RemediationRounds)
 	}
 }
 
@@ -240,8 +240,8 @@ func TestRemediateEndToEndAddressesCommentsAndReplies(t *testing.T) {
 	if forge.replyCommentID != 10 {
 		t.Fatalf("replyCommentID = %d, want 10", forge.replyCommentID)
 	}
-	if task.RetryCount != 1 {
-		t.Fatalf("RetryCount = %d, want 1 (one round consumed)", task.RetryCount)
+	if task.RemediationRounds != 1 {
+		t.Fatalf("RemediationRounds = %d, want 1 (one round consumed)", task.RemediationRounds)
 	}
 	if task.ReviewPayload != "" {
 		t.Fatalf("ReviewPayload = %q, want cleared", task.ReviewPayload)

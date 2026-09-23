@@ -155,19 +155,22 @@ func StageResumeWorktree() Stage {
 
 // StageRemediationRoundCap enforces the hard stop on an unbounded
 // remediate/re-review exchange (decision 5, "bounding the exchange").
-// Task.RetryCount doubles as the remediation round counter here: on the
+// Task.RemediationRounds is the remediation's own budget, separate from
+// RetryCount (the operator's): one shared counter made N operator retries
+// eat the review-remediation budget and vice versa, and let a repo-level
+// round cap re-park a task an operator had just legally retried. On the
 // cap it parks the task and posts one comment explaining why, without
 // running the builder; under the cap it counts this round and proceeds.
 func StageRemediationRoundCap() Stage {
 	return Stage{Name: "round-cap", Run: func(ctx context.Context, tc *TaskContext) error {
 		maxRounds := tc.Repo.EffectiveMaxRetries(tc.Cfg.MaxRetries)
-		if maxRounds > 0 && tc.Task.RetryCount >= maxRounds {
-			detail := fmt.Sprintf("remediation round cap reached (%d/%d); stopping and parking for an operator", tc.Task.RetryCount, maxRounds)
+		if maxRounds > 0 && tc.Task.RemediationRounds >= maxRounds {
+			detail := fmt.Sprintf("remediation round cap reached (%d/%d); stopping and parking for an operator", tc.Task.RemediationRounds, maxRounds)
 			postRemediationComment(ctx, tc, "Archie has stopped remediating this review: "+detail+".")
 			tc.Outcome = Outcome{Status: StatusParked, Detail: clip(detail, remediationRoundCapBytes)}
 			return nil
 		}
-		tc.Task.RetryCount++
+		tc.Task.RemediationRounds++
 		return nil
 	}}
 }
@@ -272,7 +275,7 @@ func StageRemediationReply() Stage {
 		if tc.BuildNoChanges {
 			summary = "Reviewed -- no code change was required."
 		}
-		reply := fmt.Sprintf("%s\n\n---\n*archie remediation, round %d*", summary, tc.Task.RetryCount)
+		reply := fmt.Sprintf("%s\n\n---\n*archie remediation, round %d*", summary, tc.Task.RemediationRounds)
 
 		if id, ok := tc.reviewUnit.replyTarget(); ok {
 			if err := tc.Forge.ReplyToReview(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, id, reply); err != nil {
@@ -283,7 +286,7 @@ func StageRemediationReply() Stage {
 		}
 
 		tc.Task.ReviewPayload = ""
-		tc.Outcome = Outcome{Status: StatusPROpen, Detail: fmt.Sprintf("remediated review round %d", tc.Task.RetryCount)}
+		tc.Outcome = Outcome{Status: StatusPROpen, Detail: fmt.Sprintf("remediated review round %d", tc.Task.RemediationRounds)}
 		return nil
 	}}
 }

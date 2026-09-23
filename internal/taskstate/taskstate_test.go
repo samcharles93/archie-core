@@ -153,3 +153,24 @@ func TestActionsReturnsIndependentSlices(t *testing.T) {
 		t.Fatalf("mutating returned actions changed lifecycle table: %v", got)
 	}
 }
+
+func TestNormalizeParkClass(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  ParkClass
+	}{
+		{name: "empty defaults to needs_human", input: "", want: ParkNeedsHuman},
+		{name: "a known class passes through", input: ParkTransient, want: ParkTransient},
+		{name: "terminal passes through", input: ParkTerminal, want: ParkTerminal},
+		{name: "an unknown class falls back to needs_human", input: "urgent", want: ParkNeedsHuman},
+		{name: "case differences are not classes", input: "TRANSIENT", want: ParkNeedsHuman},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeParkClass(tt.input); got != tt.want {
+				t.Errorf("NormalizeParkClass(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

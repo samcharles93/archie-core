@@ -194,3 +194,38 @@ func ActionCatalog() []ActionMeta {
 		{ID: string(ActionOpenIssue), Label: "Open issue", Kind: "link"},
 	}
 }
+
+// Park classes: the producer-side answer to "what kind of intervention does
+// this park need?" (docs/prds/pr-review-remediation.md's F2, the typed
+// classification agent-system.md:327 acknowledges the data model lacks).
+// The class is recorded at the park site, where the cause is known, and is
+// never inferred later from reason text. It is part of the on-disk format.
+const (
+	// ParkNeedsHuman parks need an operator decision: gate failures,
+	// review verdicts, diff caps, remediation round caps. It is the
+	// default, so an unclassified park always reads as operator-actionable.
+	ParkNeedsHuman ParkClass = "needs_human"
+	// ParkTransient parks are environmental: storage, container pool,
+	// grants, transport. Nothing about the work is wrong; a requeue can
+	// succeed. Nothing retries them automatically yet -- the class is
+	// recorded so a future retry pass has a safe, queryable input.
+	ParkTransient ParkClass = "transient"
+	// ParkTerminal parks cannot be retried into success: the repo left the
+	// config, the owning identity retired. An operator archives these.
+	ParkTerminal ParkClass = "terminal"
+)
+
+// ParkClass is the persisted park classification string.
+type ParkClass = string
+
+// NormalizeParkClass maps a park class written by a producer to the value
+// the store persists. Empty and unknown fall back to NeedsHuman: the safe
+// misread is "an operator should look at this", never "nothing to do".
+func NormalizeParkClass(class string) ParkClass {
+	switch class {
+	case ParkTransient, ParkTerminal:
+		return class
+	default:
+		return ParkNeedsHuman
+	}
+}
