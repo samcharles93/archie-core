@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,6 +17,19 @@ import (
 
 // minServerVersion is PostgreSQL 18 in server_version_num form.
 const minServerVersion = 180000
+
+//go:embed migrations/*.sql
+var migrations embed.FS
+
+// Migrations is the State Store schema, rooted at the migration files.
+func Migrations() fs.FS {
+	sub, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		// Unreachable: the pattern above embeds the directory.
+		panic(err)
+	}
+	return sub
+}
 
 // ErrServerTooOld is returned for a server older than PostgreSQL 18.
 var ErrServerTooOld = errors.New("postgres: server is older than PostgreSQL 18")

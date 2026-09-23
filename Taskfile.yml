@@ -53,6 +53,22 @@ tasks:
     cmds:
       - bash tools/proto.sh lint
 
+  db:generate:
+    desc: "Regenerate the sqlc query code from the schema and query files"
+    summary: |
+      Writes internal/infrastructure/postgres/postgresdb. The output is
+      committed, so this dirties the tree deliberately: review the diff and
+      commit it with the schema or query change that caused it. Never
+      hand-edit the generated package.
+    cmds:
+      - go -C tools tool sqlc generate -f {{.ROOT_DIR}}/internal/infrastructure/postgres/sqlc.yaml
+
+  db:check:
+    desc: "Regenerate the sqlc code and reject uncommitted generated differences"
+    cmds:
+      - task: db:generate
+      - git diff --exit-code -- internal/infrastructure/postgres/postgresdb
+
   proto:check:
     desc: Regenerate contracts and reject uncommitted generated differences
     cmds:
@@ -507,6 +523,7 @@ tasks:
       # after them only reads it, so it runs concurrently.
       - task: fmt
       - task: proto:check
+      - task: db:check
       - task: check:readonly
 
   check:readonly:

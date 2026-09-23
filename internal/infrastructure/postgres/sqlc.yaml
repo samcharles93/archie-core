@@ -1,0 +1,18 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "migrations"
+    queries: "queries"
+    gen:
+      go:
+        package: "postgresdb"
+        out: "postgresdb"
+        sql_package: "pgx/v5"
+        # The store's list methods return nil for an empty result and its
+        # callers test that; empty slices here would be a silent change.
+        emit_empty_slices: false
+        overrides:
+          # The domain carries every timestamp as time.Time; pgtype would put
+          # a .Time unwrap at each of the mapping sites instead.
+          - db_type: "timestamptz"
+            go_type: "time.Time"
