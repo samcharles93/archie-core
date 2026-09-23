@@ -92,7 +92,9 @@ automatically and note it in the handoff.
 ## Build & Test
 
 Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
-[Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, and Node/npm).
+[Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, Node/npm, and a
+running Docker daemon: Postgres tests start `postgres:18` through
+testcontainers via `internal/infrastructure/postgres/pgtest`).
 `golangci-lint` is the single writer for ordinary Go formatting; standalone
 `gofumpt` formats generated protobuf contracts only.
 
