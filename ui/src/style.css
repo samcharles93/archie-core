@@ -147,7 +147,11 @@
     --warn-soft: rgba(240, 182, 92, 0.16);
     --danger: #F87A88;
     --danger-soft: rgba(248, 122, 136, 0.16);
-    --info: #A76BF5;
+    /* #B08BF8, not the ring's #A76BF5: info doubles as badge text on
+       info-soft and as the log-level label, and #A76BF5 on info-soft over a
+       card is 4.29:1 -- under AA. On every surface it lands on (canvas, card,
+       glass, both softs) #B08BF8 clears 5.5:1. */
+    --info: #B08BF8;
     --info-soft: rgba(167, 107, 245, 0.16);
     --idle: #A79BB8;
     --idle-soft: rgba(167, 155, 184, 0.16);
@@ -207,7 +211,9 @@
     --ring: #8B5FBF;
 
     --fg-muted: #635B6B;
-    --fg-subtle: #6E6577;
+    /* #675E6F, not #6E6577: subtle text also lands on the wash-composited
+       canvas, where #6E6577 is 4.44:1. */
+    --fg-subtle: #675E6F;
 
     --ok: #0C7548;
     --ok-soft: rgba(12, 117, 72, 0.10);
@@ -215,7 +221,10 @@
     --warn-soft: rgba(138, 90, 18, 0.10);
     --danger: #BE2C43;
     --danger-soft: rgba(190, 44, 67, 0.10);
-    --info: #8B5FBF;
+    /* #6F47A6, not the ring's #8B5FBF: on the cream canvas #8B5FBF is
+       4.11:1 and 3.58:1 on info-soft. #6F47A6 clears 5.1:1 on every surface
+       info text lands on, light theme included. */
+    --info: #6F47A6;
     --info-soft: rgba(139, 95, 191, 0.12);
     --idle: #5A6270;
     --idle-soft: rgba(90, 98, 112, 0.10);
