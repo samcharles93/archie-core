@@ -252,7 +252,7 @@ func TestSSESinceDegradesUnparseableCursorToBeginning(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/events", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/stream", nil)
 			if tt.since != "" {
 				q := req.URL.Query()
 				q.Set("since", tt.since)

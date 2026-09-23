@@ -217,7 +217,7 @@ export function subscribeEvents(
   onEvent: (event: unknown) => void,
   onStateChange?: (state: StreamState) => void,
 ): () => void {
-  const src = new EventSource("/events");
+  const src = new EventSource("/api/stream");
   src.onopen = () => onStateChange?.("live");
   src.onerror = () => onStateChange?.("reconnecting");
   src.onmessage = (e) => {

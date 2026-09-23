@@ -85,7 +85,7 @@ func TestEventPumpKeepsItsWatermarkAcrossAStoreFailure(t *testing.T) {
 }
 
 // The bead's headline claim: an event written to the State Store by another
-// process reaches a browser hanging on /events, with no in-process bus.
+// process reaches a browser hanging on /api/stream, with no in-process bus.
 func TestEventPumpReachesALiveSSEClient(t *testing.T) {
 	srv := newRemoteTestServer(t)
 	pump := newTestPump(t, srv)
@@ -123,7 +123,7 @@ func TestEventPumpReachesALiveSSEClient(t *testing.T) {
 	}
 }
 
-// newSSETestServer serves the dashboard's real route set, so /events goes
+// newSSETestServer serves the dashboard's real route set, so /api/stream goes
 // through requireToken and the mux exactly as a browser reaches it.
 func newSSETestServer(t *testing.T, srv *Server) *httptest.Server {
 	t.Helper()
@@ -132,25 +132,25 @@ func newSSETestServer(t *testing.T, srv *Server) *httptest.Server {
 	return ts
 }
 
-// openSSEStream connects to /events and relays each response line on a
+// openSSEStream connects to /api/stream and relays each response line on a
 // channel. The request context ends the handler, which is what lets the
 // test server close.
 func openSSEStream(t *testing.T, ctx context.Context, ts *httptest.Server) <-chan string {
 	t.Helper()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/stream", nil)
 	if err != nil {
 		t.Fatalf("sse request: %v", err)
 	}
 	resp, err := ts.Client().Do(req)
 	if err != nil {
-		t.Fatalf("GET /events: %v", err)
+		t.Fatalf("GET /api/stream: %v", err)
 	}
 	// Closed at cleanup rather than by the reader goroutine: the body is the
 	// live stream and must outlive this function, but it still has exactly
 	// one owner and one close.
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /events = %d, want 200", resp.StatusCode)
+		t.Fatalf("GET /api/stream = %d, want 200", resp.StatusCode)
 	}
 	lines := make(chan string, 64)
 	go func() {
@@ -239,6 +239,31 @@ func TestPumpPriming(t *testing.T) {
 			}
 			if tc.wantCalls > 0 && reader.calls != tc.wantCalls {
 				t.Fatalf("EventsSince called %d times, want %d", reader.calls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+// A dashboard route reloaded in the browser must get the app shell. The live
+// stream once sat at /events, the same path as the Events page, so a reload
+// there rendered the raw event stream instead of the page.
+func TestDashboardRoutesServeTheAppShell(t *testing.T) {
+	ts := newSSETestServer(t, &Server{})
+	for _, path := range []string{"/events", "/events?tab=inspector"} {
+		t.Run(path, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			defer resp.Body.Close()
+			if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "text/event-stream") {
+				t.Fatalf("GET %s served the event stream, want the app shell", path)
 			}
 		})
 	}

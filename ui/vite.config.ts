@@ -27,7 +27,6 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8484",
       "/health": "http://127.0.0.1:8484",
-      "/events": { target: "http://127.0.0.1:8484", ws: true },
     },
   },
 });

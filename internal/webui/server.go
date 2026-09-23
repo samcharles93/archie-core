@@ -310,7 +310,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerChatRoutes(mux)
 
 	mux.HandleFunc("GET /health/detailed", s.handleHealthDetailed)
-	mux.HandleFunc("GET /events", s.handleSSE)
+	mux.HandleFunc("GET /api/stream", s.handleSSE)
 	mux.Handle("GET /", s.assets())
 
 	top := http.NewServeMux()
