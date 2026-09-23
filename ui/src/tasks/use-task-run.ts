@@ -297,6 +297,15 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
     loadEvents();
   });
 
+  // A stage filter is a command scoped to the attempt it was made on: the rail
+  // set it against that attempt's stage list. A different attempt presents a
+  // different list, so the stage filter resets on an attempt switch and the
+  // rail can never highlight a stage the operator did not select here. The
+  // level filter is attempt-agnostic and survives.
+  watch(attemptNumber, () => {
+    if (filters.value.stage) filters.value = { ...filters.value, stage: "" };
+  });
+
   watch([tab, attemptNumber, filters, refreshToken], () => {
     const attempt = attemptNumber.value;
     if (attempt == null) return;

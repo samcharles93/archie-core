@@ -12,46 +12,58 @@ log stage filter, the per-panel honesty rules).
 The run page's five tabs become two panes. The stage rail is the **master**,
 always visible on the left. The four context panels — log, changed files,
 configuration, debug — are the **inspector** on the right, and their tab bar
-moves into the inspector. The "Stages" tab stops existing: the rail is not a
-view of the page, it is the page's spine.
+moves into the inspector. The "Stages" tab stops existing.
 
-Selecting a stage in the rail is a command, not a binding: it switches the
-inspector to the log tab and sets the log pane's stage filter to that stage.
-Changing the filter afterwards is the operator's choice and is not overridden.
-Clearing the selection returns the filter to "all stages". Changed files,
-configuration and debug stay attempt-scoped; a stage selection never pretends
-to scope them.
+Selecting a stage switches the inspector to the log tab and sets the log
+pane's stage filter to that stage. Changing the filter afterwards is the
+operator's choice and is not overridden; rail selection never touches the
+level filter. Clicking the selected stage again returns the filter to all
+stages. A stage with no name is rendered but not selectable.
+
+Switching attempts resets the stage filter to all stages: a selection was
+commanded on the attempt it was made on, and a different attempt presents a
+different stage list. Changed files, configuration and debug stay
+attempt-scoped; a stage selection never scopes them.
 
 ## What does not change
 
 - No new endpoint, RPC, table or configuration field. Every read is one the
   page already makes.
-- The URL contract: `tab` and `attempt` ride in the query string and every
-  view survives a reload. `tab=stages` stays a valid URL and renders the
-  inspector with the log tab; the page never generates it again.
-- Attempt attribution, the log stage filter's coverage limit, and every
-  honesty rule in `task-run-detail.md`. Each pane states what it cannot show
-  under the same rendering rules that document defines.
-- The attempt selector and the task header stay pinned above both panes.
+- The URL contract: `tab` and `attempt` ride in the query string and survive
+  a reload. Log filters are not part of the URL; a reload returns the log to
+  all stages. `tab=stages` stays a valid URL and renders the log tab; the
+  page never generates it again.
+- Attempt attribution, the log stage filter's coverage limit and every
+  honesty rule in `task-run-detail.md` still apply: each pane states what it
+  cannot show under that document's rendering rules.
+- The task header and the attempt selector sit above both panes.
 
 ## Arrangement
 
-- Left pane: fixed-width rail (~320px) with the attempt's stage rows. Status,
-  duration, error and per-stage events render in the rail; the rail scrolls
-  independently.
+- Left pane: fixed-width rail (20rem) with the attempt's stage rows. Status,
+  duration, error, the stage's agent report, the attempt's status badge and
+  start time, and the attempt-attribution footnotes render in the rail.
 - Right pane: the inspector's tab bar plus the selected panel, filling the
   remaining width.
-- Below 900px (the shell's existing frame breakpoint) the rail stacks above
-  the inspector; neither pane is hidden.
-- Keyboard: the rail keeps its list semantics; the inspector keeps the
-  WAI-ARIA tabs pattern the tab bar already provides.
+- Below the shell's 900px frame breakpoint the rail stacks above the
+  inspector; neither pane is hidden.
+- Keyboard: the rail keeps its list semantics and each stage row is a real
+  button, so selection and deselection work without a pointer; the inspector
+  keeps the WAI-ARIA tabs pattern the tab bar already provides.
 
 ## Acceptance
 
 1. The rail is visible without opening any tab, and no "Stages" trigger exists.
-2. Clicking a stage opens the log filtered to that stage; clearing the
-   selection shows all stages.
-3. `tab=stages` loads and renders the log tab.
-4. Every inspector tab and attempt deep-link survives a reload.
-5. Below 900px the rail stacks above the inspector.
-6. `task check` passes clean and `ui/dist` matches the sources.
+2. Clicking a stage opens the log filtered to that stage; clicking it again
+   shows all stages.
+3. After a stage selection, a filter change made by the operator is kept, and
+   the level filter survives the selection.
+4. Switching attempts resets the stage filter to all stages, and no rail row
+   on the new attempt renders as selected unless the operator selected it
+   there.
+5. `tab=stages` loads and renders the log tab.
+6. Every inspector tab and attempt deep-link survives a reload.
+7. A stage is selectable and deselectable by keyboard, and the selection
+   mirrors the log pane's stage filter.
+8. Below 900px the rail stacks above the inspector.
+9. `task check` passes clean and `ui/dist` matches the sources.
