@@ -38,6 +38,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -88,13 +89,14 @@ func buildBinary(t *testing.T, dir string) string {
 // while keeping the process minimal: the standalone binary takes its gRPC
 // listen address from -listen or [services.state].listen, never from the
 // target, so the config only needs the fields validation requires plus the
-// db_path it owns. The
+// db_path and database_url it owns. The
 // forge token resolves from an env var, so no real credential is needed.
 func writeMinimalConfig(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config.toml")
 	content := fmt.Sprintf(`bot_user = "archie-bot"
 db_path = %q
+database_url = %q
 [forge]
 type = "github"
 host = "https://github.example.com"
@@ -102,7 +104,7 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 [[repos]]
 owner = "acme"
 name = "widget"
-`, filepath.Join(dir, "archie.db"))
+`, filepath.Join(dir, "archie.db"), pgtest.URL(t))
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
