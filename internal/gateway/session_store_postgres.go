@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -645,8 +646,8 @@ func (s *postgresSessionStore) RecentTurns(ctx context.Context, sessionID string
 	}
 	// RecentTurns orders newest-first; the contract returns oldest-first.
 	out := make([]TurnRecord, 0, len(rows))
-	for i := len(rows) - 1; i >= 0; i-- {
-		record, err := turnFromRow(rows[i])
+	for _, row := range slices.Backward(rows) {
+		record, err := turnFromRow(row)
 		if err != nil {
 			return nil, err
 		}
