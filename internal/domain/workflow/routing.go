@@ -66,17 +66,17 @@ func LoadKindWorkflowsYAML(path string) (KindWorkflows, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read kind-workflows file %s: %w", path, err)
 	}
-	raw := map[string]string{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	bindings, err := decodeBindings(data)
+	if err != nil {
 		return nil, fmt.Errorf("parse kind-workflows file %s: %w", path, err)
 	}
-	kw := make(KindWorkflows, len(raw))
-	for k, name := range raw {
-		kind := workintake.Kind(k)
+	kw := make(KindWorkflows, len(bindings))
+	for _, b := range bindings {
+		kind := workintake.Kind(b.key)
 		if err := kind.Validate(); err != nil {
-			return nil, fmt.Errorf("kind-workflows file %s: %w", path, err)
+			return nil, fmt.Errorf("kind-workflows file %s:%d: %w", path, b.line, err)
 		}
-		kw[kind] = name
+		kw[kind] = b.value
 	}
 	return kw, nil
 }
@@ -157,22 +157,12 @@ func loadPlaybookFile(path string, kw KindWorkflows, lw LabelWorkflows) error {
 	if err != nil {
 		return fmt.Errorf("read playbook file %s: %w", path, err)
 	}
-	raw := map[string]string{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	bindings, err := decodeBindings(data)
+	if err != nil {
 		return fmt.Errorf("parse playbook file %s: %w", path, err)
 	}
-	// Sorted, not range order: LoadPlaybookDirs' doc comment promises a
-	// reproducible error when a file declares more than one colliding key,
-	// which a raw map range (Go's iteration order is randomized) cannot
-	// keep -- the same file could report a different "first" collision on
-	// every run otherwise.
-	keys := make([]string, 0, len(raw))
-	for key := range raw {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if err := bindPlaybookKey(path, key, raw[key], kw, lw); err != nil {
+	for _, b := range bindings {
+		if err := bindPlaybookKey(fmt.Sprintf("%s:%d", path, b.line), b.key, b.value, kw, lw); err != nil {
 			return err
 		}
 	}
@@ -182,18 +172,19 @@ func loadPlaybookFile(path string, kw KindWorkflows, lw LabelWorkflows) error {
 // bindPlaybookKey classifies one playbook binding key as a closed-vocabulary
 // kind or an arbitrary label, then merges it into kw/lw -- applying the same
 // collision and empty-value rules LoadPlaybookDirs' doc comment describes.
-func bindPlaybookKey(path, key, value string, kw KindWorkflows, lw LabelWorkflows) error {
+// pos is the key's file:line, which every finding leads with.
+func bindPlaybookKey(pos, key, value string, kw KindWorkflows, lw LabelWorkflows) error {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
-		return fmt.Errorf("playbook file %s: empty binding key", path)
+		return fmt.Errorf("playbook file %s: empty binding key", pos)
 	}
 	if value == "" {
-		return fmt.Errorf("playbook file %s: key %q has no workflow name", path, trimmed)
+		return fmt.Errorf("playbook file %s: key %q has no workflow name", pos, trimmed)
 	}
 	if err := workintake.Kind(trimmed).Validate(); err == nil {
 		// It is a kind binding: the closed Kind vocabulary accepts it.
 		if existing, ok := kw[workintake.Kind(trimmed)]; ok {
-			return fmt.Errorf("playbook dirs: kind %q bound in two sources (%q and %q)", trimmed, existing, value)
+			return fmt.Errorf("playbook file %s: kind %q bound in two sources (%q and %q)", pos, trimmed, existing, value)
 		}
 		kw[workintake.Kind(trimmed)] = value
 		return nil
@@ -201,10 +192,10 @@ func bindPlaybookKey(path, key, value string, kw KindWorkflows, lw LabelWorkflow
 	// Otherwise it is an arbitrary-label binding. Reject kind-owned labels
 	// and empty labels with the same rules the single-file loader applies.
 	if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
-		return fmt.Errorf("playbook file %s: label %q is already owned by the kind routing layer", path, trimmed)
+		return fmt.Errorf("playbook file %s: label %q is already owned by the kind routing layer", pos, trimmed)
 	}
 	if existing, ok := lw[trimmed]; ok {
-		return fmt.Errorf("playbook dirs: label %q bound in two sources (%q and %q)", trimmed, existing, value)
+		return fmt.Errorf("playbook file %s: label %q bound in two sources (%q and %q)", pos, trimmed, existing, value)
 	}
 	lw[trimmed] = value
 	return nil
@@ -357,13 +348,15 @@ func LoadLabelWorkflowsYAML(path string) (LabelWorkflows, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read label-workflows file %s: %w", path, err)
 	}
-	raw := map[string]string{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	bindings, err := decodeBindings(data)
+	if err != nil {
 		return nil, fmt.Errorf("parse label-workflows file %s: %w", path, err)
 	}
-	lw := make(LabelWorkflows, len(raw))
-	for label, name := range raw {
-		trimmed := strings.TrimSpace(label)
+	lw := make(LabelWorkflows, len(bindings))
+	for _, b := range bindings {
+		path := fmt.Sprintf("%s:%d", path, b.line)
+		name := b.value
+		trimmed := strings.TrimSpace(b.key)
 		if trimmed == "" {
 			return nil, fmt.Errorf("label-workflows file %s: empty label is not a valid binding", path)
 		}
@@ -379,4 +372,39 @@ func LoadLabelWorkflowsYAML(path string) (LabelWorkflows, error) {
 		lw[trimmed] = name
 	}
 	return lw, nil
+}
+
+// binding is one key of a routing file with the line it was declared on.
+type binding struct {
+	key, value string
+	line       int
+}
+
+// decodeBindings decodes a routing file's top-level string map in document
+// order, so the first finding is the same on every run and each can name
+// its key's line. Values decode exactly as they did into map[string]string,
+// including yaml.v3's duplicate-key refusal.
+func decodeBindings(data []byte) ([]binding, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	if len(doc.Content) == 0 {
+		return nil, nil
+	}
+	root := doc.Content[0]
+	values := map[string]string{}
+	if err := root.Decode(&values); err != nil {
+		return nil, err
+	}
+	bindings := make([]binding, 0, len(values))
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		keyNode := root.Content[i]
+		var key string
+		if err := keyNode.Decode(&key); err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, binding{key: key, value: values[key], line: keyNode.Line})
+	}
+	return bindings, nil
 }

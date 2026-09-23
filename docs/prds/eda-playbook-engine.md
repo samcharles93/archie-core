@@ -167,10 +167,8 @@ a case that should just be visible and fixed by a human. Instead:
   playbook directories against the exact loaders the daemon uses
   (`LoadPlaybookDirs`/`LoadKindWorkflowsYAML`/`LoadLabelWorkflowsYAML`),
   exiting non-zero on any collision / malformed file / invalid binding.
-  Findings are file-granular, not line-granular: the loader decodes with
-  `yaml.Unmarshal` into a plain map, which discards line numbers. A
-  compiler-style file:line diagnostic needs a `yaml.Node` decoding
-  upgrade, tracked separately -- the linter agrees with runtime
+  A finding about one binding key leads with the key's `file:line`, read
+  from the `yaml.Node` the loader decodes; the linter agrees with runtime
   validation by construction, which is the load-bearing property.
   Discoverable via `task lint:playbooks` or direct `go run
   ./cmd/archie-playbooks lint -dir ...`. The LSP/serve mode is a later

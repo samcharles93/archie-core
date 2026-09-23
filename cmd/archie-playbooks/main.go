@@ -8,11 +8,8 @@
 // modes are entrypoints into the same validation source in
 // internal/domain/workflow.
 //
-// Known limitation (as of this slice): findings are file-granular, not
-// line-granular. The loader decodes playbooks with yaml.Unmarshal into a
-// plain map, which discards line numbers; a compiler-style file:line
-// diagnostic needs a yaml.Node decoding upgrade, which is out of scope
-// here and tracked separately.
+// A finding about one binding key leads with the key's file:line; a file
+// that does not parse is reported by path with the YAML parser's message.
 package main
 
 import (
