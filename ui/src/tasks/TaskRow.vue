@@ -15,6 +15,7 @@ export interface Task {
   pr_url?: string;
   source?: string;
   status?: string;
+  park_class?: string;
   workflow?: string;
   stage?: string;
   attempt?: number;
@@ -51,6 +52,23 @@ const router = useRouter();
 // knows renders with the right words and the right colour.
 const label = computed(() => statusLabel(props.task.status ?? ""));
 const kind = computed(() => statusKind(props.task.status ?? "") as StatusKind);
+
+const parkClassLabels: Record<string, string> = {
+  needs_human: "needs you",
+  transient: "transient",
+  terminal: "terminal",
+};
+const parkClassLabel = computed(() => parkClassLabels[props.task.park_class ?? ""] ?? "");
+const parkClassTitle = computed(() => {
+  switch (props.task.park_class) {
+    case "transient":
+      return "Environmental failure: a requeue can succeed";
+    case "terminal":
+      return "Retry cannot succeed: archive or re-create the work";
+    default:
+      return "An operator decision is needed";
+  }
+});
 const title = computed(() => props.task.title || "untitled task");
 
 // Chat-sourced work has no forge issue behind it, so there is no page to open
@@ -129,7 +147,22 @@ function open() {
       </RouterLink>
     </TableCell>
     <TableCell>
-      <Badge :variant="kind">{{ label }}</Badge>
+      <span class="inline-flex items-center gap-1">
+        <Badge :variant="kind">{{ label }}</Badge>
+        <!--
+          The park's class (taskstate.ParkClass), recorded at the park site:
+          it answers what kind of intervention this park needs, which the
+          bare Parked badge never could. A chip only when parked; a queued
+          or running task carries no class worth showing.
+        -->
+        <Badge
+          v-if="props.task.status === 'parked' && parkClassLabel"
+          variant="outline"
+          :title="parkClassTitle"
+        >
+          {{ parkClassLabel }}
+        </Badge>
+      </span>
     </TableCell>
     <TableCell class="text-fg-muted">{{ props.task.workflow || "—" }}</TableCell>
     <TableCell class="text-fg-muted">{{ props.task.stage || "—" }}</TableCell>
