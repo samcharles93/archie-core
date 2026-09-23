@@ -124,21 +124,3 @@ indicates dual-store ownership (`docs/prds/state-store-contract.md` §12 step 7/
 The readiness probe is the single-writer check the runbook has against a
 degraded store: a `503` from `/health/detailed` means `archied` should be
 started only after the store is healthy.
-
-### Inspecting the store
-
-`-admin-addr` starts a read-only operator dashboard on the same process, over
-the file it already owns:
-
-```bash
-archie-state-store -admin-addr 127.0.0.1:8686   # dashboard on http://127.0.0.1:8686/_/
-```
-
-It co-tenants on `<db_path>-tasks.sqlite` rather than opening a second
-database, so it does not disturb the single-writer rule above: it runs inside
-the process that holds the ownership claim, and every archie table is exposed
-as a read-only view collection. The routes that could write past those views
-(`POST /api/sql`, `/api/backups`) are refused, so the gRPC contract stays the
-only writer and `archie-state-store backup` stays the only snapshot path.
-
-Leave the flag off and no dashboard listener is started.

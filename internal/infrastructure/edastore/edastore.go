@@ -7,8 +7,7 @@
 // to a workflow. That loop wants a runtime-editable store with a live view of
 // arriving payloads, which is what PocketBase collections give directly.
 //
-// Unlike the read-only surface in internal/infrastructure/stateadmin, these
-// collections are authoritative and writable: the admin UI editing a binding
+// These collections are authoritative and writable: the admin UI editing a binding
 // IS the feature, not a hazard. The task lifecycle tables stay on SQLite --
 // they carry ordering, cursor and task-grant semantics that gain nothing from
 // being hand-editable. binding_dispatches.task reaches them by plain id, which
