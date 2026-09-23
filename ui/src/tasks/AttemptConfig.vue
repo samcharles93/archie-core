@@ -2,11 +2,12 @@
 import { computed } from "vue";
 
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { configSchema } from "@/lib/task-meta";
 
 import JsonBlock from "./JsonBlock.vue";
 import PanelError from "./PanelError.vue";
 import PanelLoading from "./PanelLoading.vue";
-import { CONFIG_SCHEMA, selectConfigEvent } from "./attempt-config";
+import { selectConfigEvent } from "./attempt-config";
 import type { TaskEvent } from "./task-run";
 
 /**
@@ -28,7 +29,7 @@ const schema = computed(() => {
   return typeof data.schema === "string" ? data.schema : "";
 });
 const document = computed(() => event.value?.data?.document ?? {});
-const recognised = computed(() => schema.value === CONFIG_SCHEMA);
+const recognised = computed(() => schema.value === configSchema());
 </script>
 
 <template>
