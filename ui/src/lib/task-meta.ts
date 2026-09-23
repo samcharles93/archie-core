@@ -22,59 +22,41 @@ import { computed, shallowRef } from "vue";
 
 import { api } from "./api";
 
-/** A lifecycle status as the server describes it. */
-export interface StatusMeta {
-  id: string;
-  label: string;
-  kind: string;
-  needs_you?: boolean;
-}
+import {
+  type ActionMeta,
+  type ChangeStatusMeta,
+  DEFAULT_ACTIONS,
+  DEFAULT_CHANGE_STATUSES,
+  DEFAULT_CONFIG_SCHEMA,
+  DEFAULT_STATUSES,
+  type StatusMeta,
+} from "./task-meta-snapshot";
 
-/** An operator control as the server describes it. */
-export interface ActionMeta {
-  id: string;
-  label: string;
-  kind: string;
-  confirm?: string;
-}
-
-const DEFAULT_STATUSES: StatusMeta[] = [
-  { id: "queued", label: "Queued", kind: "idle" },
-  { id: "running", label: "Working", kind: "info" },
-  { id: "waiting_human", label: "Waiting for you", kind: "warn", needs_you: true },
-  { id: "pr_open", label: "In review", kind: "ok" },
-  { id: "merged", label: "Merged", kind: "ok" },
-  { id: "parked", label: "Parked", kind: "warn", needs_you: true },
-  { id: "dead", label: "Stopped (too many retries)", kind: "danger" },
-  { id: "rejected", label: "Rejected", kind: "danger" },
-  { id: "closed_wont_do", label: "Won't do", kind: "idle" },
-];
-
-const DEFAULT_ACTIONS: ActionMeta[] = [
-  { id: "cancel", label: "Cancel", kind: "quiet", confirm: `Cancel "{title}"? This closes the forge issue.` },
-  { id: "stop", label: "Stop", kind: "primary", confirm: `Stop "{title}"? Recoverable work will remain parked.` },
-  { id: "approve", label: "Approve", kind: "primary" },
-  { id: "reject", label: "Reject", kind: "quiet", confirm: `Reject "{title}"? This closes the forge issue.` },
-  { id: "retry", label: "Retry", kind: "primary" },
-  { id: "abandon", label: "Abandon", kind: "quiet", confirm: `Abandon "{title}"? This closes the forge issue.` },
-  { id: "archive", label: "Archive", kind: "quiet", confirm: `Archive the local record for "{title}"?` },
-  { id: "open_pr", label: "Open PR", kind: "link" },
-  { id: "open_issue", label: "Open issue", kind: "link" },
-];
+export type { ActionMeta, ChangeStatusMeta, StatusMeta };
 
 const statuses = shallowRef<StatusMeta[]>([...DEFAULT_STATUSES]);
 const actions = shallowRef<ActionMeta[]>([...DEFAULT_ACTIONS]);
+const changeStatuses = shallowRef<ChangeStatusMeta[]>([...DEFAULT_CHANGE_STATUSES]);
+const configSchemaRef = shallowRef<string>(DEFAULT_CONFIG_SCHEMA);
 
 const statusById = computed(() => new Map(statuses.value.map((s) => [s.id, s])));
 const actionById = computed(() => new Map(actions.value.map((a) => [a.id, a])));
+const changeStatusById = computed(() => new Map(changeStatuses.value.map((c) => [c.id, c])));
 
 // loadTaskMeta upgrades the dashboard from the server catalog. It never throws:
 // a failed fetch keeps the defaults so the UI still renders.
 export async function loadTaskMeta(): Promise<void> {
   try {
-    const data = await api.taskMeta<{ statuses?: StatusMeta[]; actions?: ActionMeta[] } | null>();
+    const data = await api.taskMeta<{
+      statuses?: StatusMeta[];
+      actions?: ActionMeta[];
+      change_statuses?: ChangeStatusMeta[];
+      config_schema?: string;
+    } | null>();
     if (Array.isArray(data?.statuses)) statuses.value = data.statuses;
     if (Array.isArray(data?.actions)) actions.value = data.actions;
+    if (Array.isArray(data?.change_statuses)) changeStatuses.value = data.change_statuses;
+    if (data?.config_schema) configSchemaRef.value = data.config_schema;
   } catch {
     // archied unreachable or not yet serving this route; keep the defaults.
   }
@@ -114,4 +96,17 @@ export function attentionStatusIds(): Set<string> {
  */
 export function actionFor(id: string): ActionMeta | null {
   return actionById.value.get(id) || null;
+}
+
+/**
+ * changeStatusLabel names a changes_captured file status. An id the catalog
+ * does not know renders as itself rather than breaking the row.
+ */
+export function changeStatusLabel(id: string | undefined): string {
+  return (id && changeStatusById.value.get(id)?.label) || id || "unknown";
+}
+
+/** configSchema is the schema stamp a recognised config_captured payload carries. */
+export function configSchema(): string {
+  return configSchemaRef.value;
 }
