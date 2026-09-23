@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -574,6 +575,10 @@ func writeFakeCommand(t *testing.T, dir, name, body string) {
 type watchdogRun struct {
 	components string
 	curl       string
+	// systemctl replaces the fake systemctl on PATH, so a case can observe or
+	// condition what the watchdog does between units. Empty keeps the inert
+	// `exit 0` stub.
+	systemctl string
 	env        map[string]string
 }
 
@@ -610,7 +615,11 @@ func runUpdateWatchdog(t *testing.T, run watchdogRun) (Report, string, []string)
 			t.Fatal(err)
 		}
 	}
-	writeFakeCommand(t, fakeDir, "systemctl", `exit 0`)
+	systemctl := run.systemctl
+	if systemctl == "" {
+		systemctl = `exit 0`
+	}
+	writeFakeCommand(t, fakeDir, "systemctl", systemctl)
 	if run.curl != "" {
 		writeFakeCommand(t, fakeDir, "curl", run.curl)
 	}
@@ -984,4 +993,68 @@ func TestUpdateInstallWritesABareAgentVersionSidecar(t *testing.T) {
 	if string(recorded) != "1.10.0\n" {
 		t.Fatalf("sidecar = %q, want %q", recorded, "1.10.0\n")
 	}
+}
+
+// freeAddress reserves a loopback address nothing is listening on and releases
+// it, so a case can hand the watchdog a State Store target whose port stays
+// closed until the fake State Store binds it.
+func freeAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return address
+}
+
+// TestUpdateWatchdogWaitsForTheStateStoreBeforeStartingArchied pins why an
+// ordered start is not enough on its own.
+//
+// `systemctl --user start` returns once the process is forked, not once its port
+// accepts. On a real 1.37.1 -> 1.38.0 update the State Store's unit reported
+// started while it was still binding, archied started next, dialled a closed
+// port, exited 1, and was rescued only by systemd's Restart=on-failure seven
+// seconds later -- behind a "build and install succeeded" line, on a unit that
+// need not carry that restart policy at all.
+//
+// The fake State Store binds its port two seconds AFTER systemctl returns, which
+// is the race. The fake systemctl for archied records whether the port was open
+// at the moment it was asked to start, so a watchdog that starts archied without
+// waiting says so in the call log rather than passing quietly.
+func TestUpdateWatchdogWaitsForTheStateStoreBeforeStartingArchied(t *testing.T) {
+	target := freeAddress(t)
+	_, _, calls := runUpdateWatchdog(t, watchdogRun{
+		components: "daemon",
+		curl:       `exit 1`,
+		systemctl: `
+printf '%s\n' "systemctl $*" >> "$ARCHIE_TEST_CALLS"
+case "$*" in
+  *"restart archie-state-store.service")
+    # Bind two seconds late, then hold the port: the State Store's unit returning
+    # before its listener exists is the whole failure being guarded against.
+    ( sleep 2; exec python3 -c "import os,socket,time; h,p=os.environ['ARCHIE_UPDATE_STATE_STORE_TARGET'].rsplit(':',1); s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind((h,int(p))); s.listen(8); time.sleep(30)" ) >/dev/null 2>&1 &
+    ;;
+  *"restart archied.service")
+    if ! (exec 3<>"/dev/tcp/${ARCHIE_UPDATE_STATE_STORE_TARGET%:*}/${ARCHIE_UPDATE_STATE_STORE_TARGET##*:}") 2>/dev/null; then
+      printf '%s\n' 'archied started before the state store accepted' >> "$ARCHIE_TEST_CALLS"
+    fi
+    ;;
+esac
+exit 0`,
+		env: map[string]string{
+			"ARCHIE_UPDATE_HEALTH_TIMEOUT":          "0",
+			"ARCHIE_UPDATE_UNITS":                   "archie-state-store archie-gateway archied",
+			"ARCHIE_UPDATE_STATE_STORE_TARGET":      target,
+			"ARCHIE_UPDATE_STATE_STORE_TIMEOUT":     "15",
+		},
+	})
+
+	assertCallContains(t, calls, "restart archie-state-store.service")
+	assertCallContains(t, calls, "restart archie-gateway.service")
+	assertCallContains(t, calls, "restart archied.service")
+	assertCallAbsent(t, calls, "archied started before the state store accepted")
 }

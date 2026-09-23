@@ -101,6 +101,7 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		sql    string
 	}{
 		{"tasks", "watch_comment_id", `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "review_cursor", `ALTER TABLE tasks ADD COLUMN review_cursor INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
 		{"tasks", "identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
@@ -586,6 +587,28 @@ func (s *Store) UpdateReviewPayload(ctx context.Context, taskID int64, payload s
 	return nil
 }
 
+// SetReviewCursors persists the poll backstop's per-task high-water marks.
+// The pr_open guard keeps a cursor from moving while a remediation run owns
+// the task: the run's next round re-reads the cursors the scan wrote, and a
+// write under a running task would desync them from what was consumed.
+func (s *Store) SetReviewCursors(ctx context.Context, taskID int64, reviewCursor, commentCursor int64) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE tasks SET review_cursor=?, watch_comment_id=?, updated_at=datetime('now')
+		WHERE id=? AND status=?`,
+		reviewCursor, commentCursor, taskID, workflow.StatusPROpen)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+	return nil
+}
+
 // TaskByIssue returns the task tracking an issue, or nil.
 func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
@@ -767,7 +790,8 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 // Narrowing this projection back silently sends those events out unattributed.
 func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt
+		SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt,
+			review_cursor, watch_comment_id
 		FROM tasks WHERE status=?`, workflow.StatusPROpen)
 	if err != nil {
 		return nil, err
@@ -778,7 +802,8 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr erro
 	for rows.Next() {
 		var t workflow.Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber,
-			&t.Status, &t.Source, &t.Identity, &t.Attempt); err != nil {
+			&t.Status, &t.Source, &t.Identity, &t.Attempt,
+			&t.ReviewCursor, &t.WatchCommentID); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

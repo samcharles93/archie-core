@@ -34,6 +34,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -410,8 +411,93 @@ func resolveLinks(relative, body string, urls map[string]string, slugs map[strin
 
 // readPages reads the source of every page either set carries, keyed by its path
 // relative to docs/.
-func readPages(sourceDir string) (map[string]string, error) {
+//
+// The page list comes from the commit, not from the working tree: see
+// sourcePages for why that distinction is the whole of this function's contract.
+func readPages(repoRoot, sourceDir string) (map[string]string, error) {
+	relativePaths, err := sourcePages(repoRoot, sourceDir)
+	if err != nil {
+		return nil, err
+	}
 	bodies := map[string]string{}
+	for _, relative := range relativePaths {
+		if !published(relative) {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(sourceDir, relative))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", relative, err)
+		}
+		bodies[relative] = string(body)
+	}
+	if len(bodies) == 0 {
+		return nil, fmt.Errorf("no published pages under %s", docsDir)
+	}
+	return bodies, nil
+}
+
+// sourcePages lists the published candidate pages, relative to docs/, choosing
+// git over a directory walk whenever git can answer.
+//
+// The artifacts are committed beside their sources, so each one must be derived
+// from the files the commit carries. A walk also sees an UNTRACKED page -- one no
+// commit holds -- and then reported the artifact as stale, which sent the reader
+// to regenerate an artifact that was already correct and would have committed a
+// page belonging to no commit. That happened twice in one session, once to a
+// migration branch and once to an unrelated writer staging a new PRD.
+//
+// The index counts as well as HEAD, deliberately: a page staged for this commit
+// is about to be carried by it, so the artifact must include it and check must
+// fail until it does. Only a file in neither tree is ignored -- and that is
+// exactly the working-tree scratch this exists to exclude.
+//
+// Outside a git work tree there is no commit to disagree with, so the walk is
+// the best answer available and is used unchanged, with a line saying so rather
+// than a silence that reads as the stronger guarantee.
+func sourcePages(repoRoot, sourceDir string) ([]string, error) {
+	pages, err := trackedPages(repoRoot, sourceDir)
+	if err == nil {
+		return pages, nil
+	}
+	fmt.Fprintf(os.Stderr, "docsite: %v; falling back to a directory walk, which cannot tell an untracked page from a committed one\n", err)
+	return walkedPages(sourceDir)
+}
+
+// trackedPages asks git for the .md files under docs/ that the index or HEAD
+// carries.
+func trackedPages(repoRoot, sourceDir string) ([]string, error) {
+	rel, err := filepath.Rel(repoRoot, sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("locate %s under %s: %w", docsDir, repoRoot, err)
+	}
+	rel = filepath.ToSlash(rel)
+	// -z because a path may contain anything but NUL; --cached so a page staged
+	// for this commit counts.
+	out, err := exec.Command("git", "-C", repoRoot, "ls-files", "--cached", "-z", "--", rel).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files %s: %w", rel, err)
+	}
+	var pages []string
+	for _, entry := range strings.Split(string(out), "\x00") {
+		if entry == "" {
+			continue
+		}
+		relative := strings.TrimPrefix(entry, rel+"/")
+		if relative == entry || !strings.HasSuffix(relative, ".md") {
+			continue
+		}
+		pages = append(pages, relative)
+	}
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("git ls-files %s listed no Markdown", rel)
+	}
+	return pages, nil
+}
+
+// walkedPages is the gitless enumeration: every .md under the tree, tracked or
+// not.
+func walkedPages(sourceDir string) ([]string, error) {
+	var pages []string
 	err := filepath.WalkDir(sourceDir, func(filename string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -423,24 +509,13 @@ func readPages(sourceDir string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
-		relative = filepath.ToSlash(relative)
-		if !published(relative) {
-			return nil
-		}
-		body, err := os.ReadFile(filename)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", relative, err)
-		}
-		bodies[relative] = string(body)
+		pages = append(pages, filepath.ToSlash(relative))
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("walk %s: %w", docsDir, err)
 	}
-	if len(bodies) == 0 {
-		return nil, fmt.Errorf("no published pages under %s", docsDir)
-	}
-	return bodies, nil
+	return pages, nil
 }
 
 // setDocument pairs one set with the artifact generated for it.
@@ -455,7 +530,7 @@ type setDocument struct {
 // link that crosses between them resolves to the base its target is served under.
 func load(repoRoot string) ([]setDocument, error) {
 	sourceDir := filepath.Join(repoRoot, docsDir)
-	bodies, err := readPages(sourceDir)
+	bodies, err := readPages(repoRoot, sourceDir)
 	if err != nil {
 		return nil, err
 	}

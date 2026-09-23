@@ -336,6 +336,14 @@ bd remember            # Persist cross-session architectural facts
   (`.gitignore`d, `export.auto: false`) -- never `git add` them and never
   create a commit whose only content is beads bookkeeping. Bead state moves
   through Dolt, not through git commits on this repo.
+- **A bead never carries production instance detail.** No operator host name,
+  hostname, IP or port, filesystem path, PID, or credential -- in the body
+  *or* the title, since both sync to the Dolt remote and are therefore
+  published. Write the mechanism and the evidence shape instead ("a production
+  host", "the State Store target", "the host's `config.toml`"), and put the
+  host-specific facts in the operator's memos instance, which the bead may
+  point at. This is the same class of rule as never committing a credential:
+  the tracker is not a private store.
 
 ## Session Completion Protocol
 

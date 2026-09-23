@@ -43,6 +43,7 @@ service StateStoreService {
   rpc RetryTask(RetryTaskRequest) returns (RetryTaskResponse);
   rpc BeginRemediation(BeginRemediationRequest) returns (BeginRemediationResponse);
   rpc UpdateReviewPayload(UpdateReviewPayloadRequest) returns (UpdateReviewPayloadResponse);
+  rpc SetReviewCursors(SetReviewCursorsRequest) returns (SetReviewCursorsResponse);
 
   // Queries
   rpc TaskByIssue(TaskByIssueRequest) returns (TaskByIssueResponse);
@@ -247,6 +248,12 @@ message Task {
   int64 workflow_definition_version = 28;
   string workflow_definition_digest = 29;
   string workflow_definition_yaml = 30;
+  // review_cursor is the poll backstop's high-water mark over forge review
+  // IDs for this task. It is separate from watch_comment_id (the review-
+  // comment cursor) because the two forge sequences are independent; one
+  // combined cursor would silently skip reviews once a larger comment ID
+  // landed (docs/prds/pr-review-remediation.md decision 2).
+  int64 review_cursor = 31;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -441,6 +448,13 @@ message UpdateReviewPayloadRequest {
   string payload = 2;
 }
 message UpdateReviewPayloadResponse {}
+
+message SetReviewCursorsRequest {
+  int64 task_id = 1;
+  int64 review_cursor = 2;
+  int64 comment_cursor = 3;
+}
+message SetReviewCursorsResponse {}
 
 message TaskByIssueRequest {
   string owner = 1;

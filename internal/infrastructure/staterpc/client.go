@@ -144,6 +144,11 @@ func (c *Client) UpdateReviewPayload(ctx context.Context, taskID int64, payload 
 	return unmapError(err)
 }
 
+func (c *Client) SetReviewCursors(ctx context.Context, taskID int64, reviewCursor, commentCursor int64) error {
+	_, err := c.client.SetReviewCursors(ctx, &pb.SetReviewCursorsRequest{TaskId: taskID, ReviewCursor: reviewCursor, CommentCursor: commentCursor})
+	return unmapError(err)
+}
+
 // Queries
 
 func (c *Client) TaskByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error) {

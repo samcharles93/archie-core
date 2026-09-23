@@ -3,6 +3,11 @@
 **Status:** Approved
 **Date:** 2026-09-21
 **Beads issue:** `archie-core-2ncm.2`
+**Superseded in part:** `docs/prds/release-stream-and-commit-rules.md` supersedes the
+sections "Source of truth" and "Two components" below. There is now one release
+stream: a single `CHANGELOG.md` carries every release section, the per-component
+`CHANGELOG.archied.md` and `CHANGELOG.archie.md` are deleted, and one `vX.Y.Z` tag
+names a release. The rest of this document still holds.
 
 A public news page and a release-notes page for every version. Both are derived
 from the changelogs the release process already produces, so publishing a

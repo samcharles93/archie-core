@@ -105,7 +105,7 @@ func TestOpenMigratesUnversionedTaskSchemas(t *testing.T) {
 			if err := rows.Err(); err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"watch_comment_id", "retry_count", "source", "identity"} {
+			for _, name := range []string{"watch_comment_id", "retry_count", "source", "identity", "review_cursor"} {
 				if !got[name] {
 					t.Errorf("column %q was not migrated", name)
 				}

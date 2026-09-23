@@ -68,6 +68,7 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		BindingId: t.BindingID, BindingVersion: int64(t.BindingVersion),
 		CreatedAt: timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
+		ReviewCursor:              t.ReviewCursor,
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,

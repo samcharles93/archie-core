@@ -64,9 +64,16 @@ type Task struct {
 	// (parking-to-queued transitions). When it reaches the configured
 	// max_retries the daemon moves the task to StatusDead.
 	RetryCount int `json:"retry_count"`
-	// WatchCommentID: replies to the issue after this comment are the
-	// human input a waiting_human task is blocked on.
+	// WatchCommentID is the poll backstop's high-water mark over forge
+	// review-comment IDs for this task (pr-review-remediation.md decision
+	// 2's persisted per-task cursor; the comment-watch design it was
+	// created for never shipped, and the field carries the cursor now).
 	WatchCommentID int64 `json:"watch_comment_id"`
+	// ReviewCursor is the poll backstop's high-water mark over forge
+	// review IDs. It is deliberately separate from WatchCommentID: review
+	// and comment IDs are independent forge sequences, and one combined
+	// cursor would silently skip reviews once a larger comment ID landed.
+	ReviewCursor int64 `json:"review_cursor"`
 	// Source is "forge" (default; a real forge issue backs this task) or
 	// "chat" (created via /spawn with no forge issue). Workflow stages
 	// and daemon reconciliation must skip forge-only operations (issue

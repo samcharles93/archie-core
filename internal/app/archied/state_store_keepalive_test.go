@@ -2,14 +2,11 @@ package archied
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
@@ -137,22 +134,24 @@ func TestStateStoreServerOptionsTolerateTheDialersKeepalive(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			elapsed, recvErr := holdWatch(t, tc.opts, keepaliveWindow)
+			elapsed, recvErr, survived := holdWatch(t, tc.opts, keepaliveWindow)
 			// The server never writes, so the stream can only end because the
-			// window ran out or because the connection was torn down under it.
-			expired := streamEndedByWindow(recvErr)
-			t.Logf("watch ended after %s with %v", elapsed, recvErr)
-			if tc.tornDown {
-				if recvErr == nil || expired {
+			// connection was torn down under it, or because it outlived the window.
+			// Which one happened is the select in holdWatch, not the error the
+			// window's closure surfaces: see holdWatch for why reading the error
+			// made this case flaky.
+			t.Logf("watch lasted %s, survived the window: %v, ended with %v", elapsed, survived, recvErr)
+			if survived {
+				if tc.tornDown {
 					t.Fatalf("the dialer's watch was still open after %s: the default EnforcementPolicy (MinTime 5m) must strike pings that arrive 10s apart and answer with GOAWAY too_many_pings, so this case is not reaching the strike budget and the case below would prove nothing", keepaliveWindow)
-				}
-				if !strings.Contains(recvErr.Error(), "too_many_pings") {
-					t.Fatalf("the dialer's watch ended after %s with %v: want GOAWAY too_many_pings, not some other connection loss", elapsed, recvErr)
 				}
 				return
 			}
-			if recvErr == nil || !expired {
+			if !tc.tornDown {
 				t.Fatalf("the dialer's watch ended after %s: %v\nA watch carrying no traffic must survive on the pings staterpc.Dial sends; a server policy that strikes them answers a quiet connection with a dead one at ~40s, which is worse than the keepalive it was added for", elapsed, recvErr)
+			}
+			if !strings.Contains(recvErr.Error(), "too_many_pings") {
+				t.Fatalf("the dialer's watch ended after %s with %v: want GOAWAY too_many_pings, not some other connection loss", elapsed, recvErr)
 			}
 		})
 	}
@@ -172,11 +171,30 @@ func (w *quietWatch) Watch(_ *controlpb.WatchRequest, stream controlpb.ControlPl
 	return stream.Context().Err()
 }
 
+// keepaliveSlack keeps the stream's own deadline clear of the observation window.
+// They must not be the same duration. The question holdWatch answers is whether
+// the link outlives the window, and with the two identical the client deadline
+// resolves microseconds after the timer either way: Recv returns
+// DeadlineExceeded and the answer becomes a race between two timers rather than
+// a fact about the link. Measured -- the same 50s window reported the healthy
+// case as "ended" at 49.998s while the timer was still pending.
+const keepaliveSlack = 5 * time.Second
+
 // holdWatch serves opts over bufconn, dials it with the shipped dialer
 // (staterpc.Dial, so the client keepalive is exactly the one the daemon, the
 // dashboard and the agent container run), holds one watch stream open for
-// window, and reports how long the stream lasted and how it ended.
-func holdWatch(t *testing.T, opts []grpc.ServerOption, window time.Duration) (time.Duration, error) {
+// window, and reports how long the stream lasted, how it ended, and whether it
+// outlived the window.
+//
+// That last report is the property under test, and it is decided by which arm of
+// a select wins rather than by the flavour of the error the window's closure
+// surfaces. Reading the error instead -- asking for DeadlineExceeded -- made the
+// tolerant case flaky under load: the client deadline, the server's stream
+// context and the transport all resolve within microseconds of one another, so a
+// watch that was still perfectly open was reported as Canceled or Unavailable,
+// and a healthy link failed a test about unhealthy links. Measured on a loaded
+// 16-core host at 49.999s into a 50s window.
+func holdWatch(t *testing.T, opts []grpc.ServerOption, window time.Duration) (time.Duration, error, bool) {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
 	watch := &quietWatch{started: make(chan struct{})}
@@ -194,7 +212,7 @@ func holdWatch(t *testing.T, opts []grpc.ServerOption, window time.Duration) (ti
 	})
 
 	client := dialStateStore(t, listener, restartAdminToken)
-	ctx, cancel := context.WithTimeout(t.Context(), window)
+	ctx, cancel := context.WithTimeout(t.Context(), window+keepaliveSlack)
 	defer cancel()
 	stream, err := client.ControlPlane().Watch(ctx, &controlpb.WatchRequest{Kind: "any"})
 	if err != nil {
@@ -206,14 +224,17 @@ func holdWatch(t *testing.T, opts []grpc.ServerOption, window time.Duration) (ti
 		t.Fatal("the server never started the watch stream")
 	}
 	start := time.Now()
-	// The server never writes, so this returns only when the window ends or the
-	// connection dies.
-	_, recvErr := stream.Recv()
-	return time.Since(start), recvErr
-}
-
-// streamEndedByWindow reports whether err is the window running out rather than
-// the connection being torn down under it.
-func streamEndedByWindow(err error) bool {
-	return err != nil && (errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded)
+	// Buffered so the receiving goroutine cannot outlive the call: cancel runs on
+	// the way out, Recv returns, and the send still has somewhere to land.
+	recv := make(chan error, 1)
+	go func() {
+		_, err := stream.Recv()
+		recv <- err
+	}()
+	select {
+	case err := <-recv:
+		return time.Since(start), err, false
+	case <-time.After(window):
+		return time.Since(start), nil, true
+	}
 }

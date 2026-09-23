@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -213,6 +214,59 @@ func TestCheckFailsOnAStaleArtifactAndLeavesTheTreeAlone(t *testing.T) {
 	}
 	if pages := documentFor(t, generated, developmentDocs).Pages; len(pages) != 1 {
 		t.Fatalf("development pages = %d, want the architecture page alone (archive/ is held back)", len(pages))
+	}
+}
+
+// TestUntrackedPagesDoNotReachTheArtifact pins why the artifact is derived from
+// the commit rather than from the working tree. docs:artifact:check runs in the
+// gate and reads the sources from disk, so an untracked page under docs/ made
+// the committed artifact look stale. The gate then demanded a regeneration that
+// was already correct, and that regeneration would have committed a page no
+// commit carries. It cost two sessions in one day: a migration branch, and an
+// unrelated writer adding a PRD.
+func TestUntrackedPagesDoNotReachTheArtifact(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "docs", "index.md"), "# Archie\n\nHello.\n")
+	writeFile(t, filepath.Join(root, "docs", "architecture", "policy.md"), "# Policy\n\nRules.\n")
+	gitIn(t, root, "init", "--quiet")
+	gitIn(t, root, "add", "docs/index.md", "docs/architecture/policy.md")
+
+	if err := write(root); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Untracked: no commit carries it, so the committed artifact is not required
+	// to contain it and check must not claim the artifact is stale.
+	writeFile(t, filepath.Join(root, "docs", "prds", "scratch.md"), "# Scratch\n\nNot committed.\n")
+	if err := check(root); err != nil {
+		t.Fatalf("check with an untracked page = %v, want it to pass", err)
+	}
+
+	// Staged: this commit is about to carry it, so the artifact must too.
+	gitIn(t, root, "add", "docs/prds/scratch.md")
+	if err := check(root); err == nil {
+		t.Fatal("check with a staged page = nil, want a failure: the artifact does not carry it")
+	}
+	if err := write(root); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := check(root); err != nil {
+		t.Fatalf("check after regenerating for the staged page = %v, want it to pass", err)
+	}
+}
+
+// gitIn runs one git command in dir, failing loudly rather than skipping: task
+// check already requires git for proto:lint, so a test that quietly passed
+// without it would be asserting nothing.
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=docsite", "GIT_AUTHOR_EMAIL=docsite@example.invalid",
+		"GIT_COMMITTER_NAME=docsite", "GIT_COMMITTER_EMAIL=docsite@example.invalid",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
 

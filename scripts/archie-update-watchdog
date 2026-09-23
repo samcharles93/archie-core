@@ -31,6 +31,12 @@ COMPONENTS="${ARCHIE_UPDATE_COMPONENTS:-daemon,agent}"
 UNITS="${ARCHIE_UPDATE_UNITS:-archied}"
 BINARIES="${ARCHIE_UPDATE_BINARIES:-archied}"
 
+# The State Store's address, so the start order below can mean "ready" rather than
+# "launched". Empty when the config names none or the installed updater predates
+# passing one -- waiting is then skipped, which is the previous behaviour.
+STATE_STORE_TARGET="${ARCHIE_UPDATE_STATE_STORE_TARGET:-}"
+STATE_STORE_TIMEOUT_SECONDS="${ARCHIE_UPDATE_STATE_STORE_TIMEOUT:-30}"
+
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -95,13 +101,57 @@ manage_unit() {
   systemctl --user "$action" "$unit.service" || true
 }
 
+# port_accepts reports whether host:port accepts a connection. bash's /dev/tcp
+# costs no process and no dependency, and accepting is exactly the signal this
+# needs: the failure it guards against is `dial tcp ...: connect: connection
+# refused`, which is the port not being bound at all.
+port_accepts() {
+  (exec 3<>"/dev/tcp/${1%:*}/${1##*:}") 2>/dev/null
+}
+
+# wait_for_state_store blocks until the State Store accepts connections, or the
+# budget runs out.
+#
+# Ordering the units is not enough on its own: `systemctl --user start` returns
+# once the process is forked, not once its port accepts. Measured on a 1.37.1 ->
+# 1.38.0 update, the State Store's unit reported started while it was still
+# binding, archied was started next, dialled a closed port and exited 1, and only
+# systemd's Restart=on-failure brought it back seven seconds later. A host whose
+# unit lacks that restart policy gets a failed update behind a healthy-looking
+# "build and install succeeded" line.
+#
+# A timeout does NOT fail the update. If the State Store never comes up, archied
+# fails closed on its own and wait_healthy rolls the release back -- waiting is an
+# optimisation for the ordinary case, and losing the race must stay a slower path
+# to the same place rather than a second failure mode.
+wait_for_state_store() {
+  [ -n "$STATE_STORE_TARGET" ] || {
+    echo "==> no State Store target known; starting the rest without waiting for it" >&2
+    return 0
+  }
+  local deadline=$((SECONDS + STATE_STORE_TIMEOUT_SECONDS))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if port_accepts "$STATE_STORE_TARGET"; then
+      echo "==> $STATE_STORE_TARGET accepts connections"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "==> $STATE_STORE_TARGET did not accept connections within ${STATE_STORE_TIMEOUT_SECONDS}s; starting the rest anyway" >&2
+  return 0
+}
+
 # start_units brings the deployment up in dependency order: the State Store
-# before anything that dials it, the Gateway before archied and the UI.
+# before anything that dials it, the Gateway before archied and the UI. The order
+# sequences the calls; wait_for_state_store is what makes it mean "ready".
 start_units() {
   local unit rc=0
   for unit in $UNITS; do
     echo "==> restarting $unit.service"
     manage_unit restart "$unit" || rc=1
+    if [ "$unit" = archie-state-store ]; then
+      wait_for_state_store
+    fi
   done
   return $rc
 }

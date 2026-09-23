@@ -216,6 +216,13 @@ func (s *server) UpdateReviewPayload(ctx context.Context, r *pb.UpdateReviewPayl
 	return &pb.UpdateReviewPayloadResponse{}, nil
 }
 
+func (s *server) SetReviewCursors(ctx context.Context, r *pb.SetReviewCursorsRequest) (*pb.SetReviewCursorsResponse, error) {
+	if err := s.deps.Tasks.SetReviewCursors(ctx, r.TaskId, r.ReviewCursor, r.CommentCursor); err != nil {
+		return nil, s.logErr("SetReviewCursors", err)
+	}
+	return &pb.SetReviewCursorsResponse{}, nil
+}
+
 // Queries
 
 func (s *server) TaskByIssue(ctx context.Context, r *pb.TaskByIssueRequest) (*pb.TaskByIssueResponse, error) {

@@ -76,6 +76,11 @@ type TaskRetryer interface {
 type RemediationStarter interface {
 	BeginRemediation(ctx context.Context, taskID int64, payload string) error
 	UpdateReviewPayload(ctx context.Context, taskID int64, payload string) error
+	// SetReviewCursors persists the poll backstop's per-task review and
+	// comment high-water marks (pr-review-remediation.md decision 2). The
+	// pr_open guard is part of the contract: cursors only move while no
+	// remediation run owns the task.
+	SetReviewCursors(ctx context.Context, taskID int64, reviewCursor, commentCursor int64) error
 }
 
 // TaskQueries groups read-only task accessors.

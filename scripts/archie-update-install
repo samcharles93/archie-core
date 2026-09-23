@@ -80,6 +80,28 @@ AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
 AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
+# The address the daemon dials for its state, so the watchdog can wait for it to
+# accept connections before it starts archied. Read with the same narrow awk as
+# the task database path and for the same reason: the daemon stays the authority
+# on validation, and this script deliberately understands one scalar rather than
+# parsing TOML. Scoped to [services.state] so the Gateway's own target cannot be
+# mistaken for it, and exact on the key so target_token is not.
+configured_state_store_target() {
+  awk '
+    /^[[:space:]]*\[services\.state\][[:space:]]*$/ { inside = 1; next }
+    /^[[:space:]]*\[/ { inside = 0 }
+    inside && /^[[:space:]]*target[[:space:]]*=/ {
+      value = $0
+      sub(/^[[:space:]]*target[[:space:]]*=[[:space:]]*/, "", value)
+      sub(/[[:space:]]*(#.*)?$/, "", value)
+      if (value ~ /^".*"$/) { sub(/^"/, "", value); sub(/"$/, "", value); print value }
+      else if (length(value) >= 2 && substr(value, 1, 1) == sprintf("%c", 39) && substr(value, length(value), 1) == sprintf("%c", 39)) print substr(value, 2, length(value) - 2)
+      exit
+    }
+  ' "$CONFIG_PATH" 2>/dev/null || true
+}
+
+STATE_STORE_TARGET="${ARCHIE_UPDATE_STATE_STORE_TARGET:-$(configured_state_store_target)}"
 
 # The archied release is a set of processes, not one binary. Listed in start
 # order: the State Store owns archie.db and every other process dials it, the
@@ -355,6 +377,7 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS="${AGENT_VERSION_PREVIOUS_EXISTS:-0}" \
   --setenv=ARCHIE_TASK_DB_PATH="$TASK_DB_PATH" \
   --setenv=ARCHIE_TASK_DB_BACKUP="$TASK_DB_BACKUP" \
+  --setenv=ARCHIE_UPDATE_STATE_STORE_TARGET="$STATE_STORE_TARGET" \
   "$BIN_DIR/archie-update-watchdog"
 
 case "$components" in
