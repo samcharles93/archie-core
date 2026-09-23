@@ -66,11 +66,6 @@ const secretHint = computed(() =>
         </DialogDescription>
       </DialogHeader>
 
-      <Alert v-if="props.error" variant="destructive">
-        <AlertTitle>Could not save</AlertTitle>
-        <AlertDescription>{{ props.error }}</AlertDescription>
-      </Alert>
-
       <form @submit.prevent="emit('save', draft)">
         <FieldGroup>
           <Field>
@@ -138,6 +133,13 @@ const secretHint = computed(() =>
             <FieldDescription>{{ secretHint }}</FieldDescription>
           </Field>
         </FieldGroup>
+
+        <!-- Beside the buttons, not at the top: the dialog scrolls, and Save is
+             clicked at the bottom, where a refusal must be seen. -->
+        <Alert v-if="props.error" variant="destructive" class="mt-4">
+          <AlertTitle>Could not save</AlertTitle>
+          <AlertDescription>{{ props.error }}</AlertDescription>
+        </Alert>
 
         <DialogFooter class="mt-4">
           <Button type="button" variant="outline" @click="open = false">Cancel</Button>
