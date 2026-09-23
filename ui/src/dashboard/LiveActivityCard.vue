@@ -12,7 +12,7 @@ import { ago } from "@/lib/format";
 import { useLiveUpdatesStore } from "@/stores/live-updates";
 import ActivityRow from "./ActivityRow.vue";
 import { activityDetail } from "./activity-detail";
-import { groupActivity, groupKey, type ActivityGroup } from "./activity-group";
+import { groupActivity, type ActivityGroup } from "./activity-group";
 
 /**
  * The last 50 events, newest first, with the stream's own state on the card.
@@ -36,7 +36,7 @@ function toggle(key: string) {
 }
 
 function isOpen(group: ActivityGroup): boolean {
-  return expanded.has(groupKey(group.label, group.taskID));
+  return expanded.has(group.key);
 }
 
 // The collapsed group row shows what its newest event would have shown, so
@@ -92,7 +92,7 @@ function openTask(taskID: number) {
               </TableCell>
             </TableRow>
             <template v-if="activity.length">
-              <template v-for="group in groups" :key="`${group.label}:${group.taskID}`">
+              <template v-for="group in groups" :key="group.key">
                 <!-- A singleton is exactly the row the raw feed would show. -->
                 <ActivityRow v-if="group.count === 1" :event="group.representative" @open="openTask" />
                 <template v-else>
@@ -118,7 +118,7 @@ function openTask(taskID: number) {
                         class="inline-flex items-center gap-1 rounded hover:opacity-80"
                         :aria-expanded="isOpen(group)"
                         :aria-label="`${isOpen(group) ? 'Hide' : 'Show'} ${group.count} ${group.label} events`"
-                        @click.stop="toggle(groupKey(group.label, group.taskID))"
+                        @click.stop="toggle(group.key)"
                       >
                         <ChevronDown v-if="isOpen(group)" class="size-3.5 shrink-0 text-fg-subtle" />
                         <ChevronRight v-else class="size-3.5 shrink-0 text-fg-subtle" />
@@ -133,7 +133,7 @@ function openTask(taskID: number) {
                     <TableCell>{{ groupWhen(group) }}</TableCell>
                   </TableRow>
                   <template v-if="isOpen(group)">
-                    <ActivityRow v-for="(event, i) in group.events" :key="`${group.label}:${group.taskID}:${i}`" :event="event" @open="openTask" />
+                    <ActivityRow v-for="(event, i) in group.events" :key="`${group.key}:${i}`" :event="event" @open="openTask" />
                   </template>
                 </template>
               </template>
