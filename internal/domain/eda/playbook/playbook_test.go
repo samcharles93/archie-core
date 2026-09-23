@@ -1443,3 +1443,36 @@ func TestLoadActionPlaybookRejectsActionReferences(t *testing.T) {
 		})
 	}
 }
+
+// An args value whose static CEL type cannot fill the kind's Args field fails
+// the load, naming the key. A dyn value (an event read) is accepted: its type
+// is known only per event, and the module decode refuses a bad one at run.
+func TestLoadArgsValueTypeAgainstArgsSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		wantErr bool
+	}{
+		{name: "string literal", message: `'"hello"'`},
+		{name: "string concatenation", message: `'"n=" + string(1)'`},
+		{name: "dyn event read", message: `event.title`},
+		{name: "int literal", message: `'123'`, wantErr: true},
+		{name: "bool expression", message: `'1 == 1'`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "pb.yaml", "trigger:\n  kind: bug\nactions:\n  - position: module\n    kind: log\n    args:\n      message: "+tt.message+"\n")
+			_, err := Load(dir, testSchemas(t))
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), `args["message"]`) || !strings.Contains(err.Error(), "string") {
+				t.Fatalf("Load error = %v, want args[\"message\"] refused for not being a string", err)
+			}
+		})
+	}
+}

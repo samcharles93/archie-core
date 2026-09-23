@@ -75,13 +75,16 @@ naming the playbook and the offending action, for:
 - an unknown `position`, an unknown `kind`, or a `module` action with no `kind`;
 - a field belonging to the other shape (`kind` on a `workflow` action, or
   `workflow` on a `module` action);
-- an arg KEY the kind's `Args` schema does not define. Arg VALUE type-checking
-  is tracked as `archie-core-t2db` debt, not shipped here.
+- an arg KEY the kind's `Args` schema does not define;
+- an arg value whose checked CEL type cannot fill its `Args` field (`'123'`
+  for a string field). A `dyn` value, such as an `event` read, passes: its
+  type is known only per event, and the module decode refuses a bad one at
+  run.
 
 Declaring the kind's `Result` schema to CEL at load makes a result-field typo a
 load failure rather than a dispatch failure. Matching arg keys against the
-kind's `Args` schema makes an arg-key typo a load failure; arg value
-type-checking is tracked as `archie-core-t2db` debt.
+kind's `Args` schema makes an arg-key typo or a wrongly typed value a load
+failure.
 
 ## The environment is per playbook
 
@@ -110,8 +113,8 @@ yields a task, not a result, so it cannot feed `actions.<id>.result`.
 by the kind's `Result` struct. `internal/domain/eda/expr` implements it with the
 generic `actionResultProvider`.
 
-**D4 — `args` against the kind's `Args` schema.** Settled: arg KEY checking ships
-now. Arg value type-checking is tracked as `archie-core-t2db` debt.
+**D4 — `args` against the kind's `Args` schema.** Settled: keys and statically
+typed values are checked at load; `dyn` values are checked by the module decode.
 
 **D5 — where the result map becomes the `Result` struct.** Settled:
 `ModuleRegistry` stays schema-agnostic. `ModuleRegistry.DecodeResult`
@@ -123,7 +126,7 @@ now. Arg value type-checking is tracked as `archie-core-t2db` debt.
   loads; the same read of a field the kind's `Result` does not define fails the
   load naming the field; a read of an id no earlier action declares fails; a
   dynamically indexed `actions` read fails.
-- An arg KEY the kind's `Args` schema does not define fails the load. Arg VALUE
-  type-checking is tracked as `archie-core-t2db` debt.
+- An arg KEY the kind's `Args` schema does not define fails the load, and so
+  does `message: '123'` for the `log` kind. `message: event.title` loads.
 - The one-action `workflow` playbook shape, its dispatch, and its existing
   load-time checks are unchanged.

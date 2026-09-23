@@ -448,6 +448,27 @@ func argsLabel(label, key string) string {
 	return fmt.Sprintf("%s args[%q]", label, key)
 }
 
+// checkArgType refuses an args value whose checked CEL type cannot fill the
+// Args field it names. A dyn value passes: the module decode checks it per
+// event.
+func checkArgType(path, label, kind string, argsSchema reflect.Type, key string, prg *expr.Program) error {
+	t := argsSchema
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	for field := range t.Fields() {
+		if strings.ToLower(field.Name) != key || prg.Fits(field.Type) {
+			continue
+		}
+		loc := kind + " kind"
+		if label != "" {
+			loc = label + " " + loc
+		}
+		return fmt.Errorf("playbook %s: %s args[%q] is %s, want %s", path, loc, key, prg.OutputType(), field.Type)
+	}
+	return nil
+}
+
 // compileArgs compiles every args value as a CEL expression at load, keyed by
 // arg name. J2 has no literal/expression split: the YAML scalar text IS the
 // CEL source, so a string literal is quoted inside YAML and a number or
@@ -475,6 +496,11 @@ func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env,
 		prg, err := compileExpr(path, argsLabel(label, key), raw[key], env)
 		if err != nil {
 			return nil, err
+		}
+		if argsSchema != nil {
+			if err := checkArgType(path, label, kind, argsSchema, key, prg); err != nil {
+				return nil, err
+			}
 		}
 		args[key] = prg
 	}

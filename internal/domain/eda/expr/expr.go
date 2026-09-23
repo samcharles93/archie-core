@@ -277,7 +277,7 @@ func (e *Env) Compile(src string) (*Program, error) {
 		return nil, err
 	}
 	ids, resolvable := actionReferences(ast)
-	return &Program{prg: prg, actionIDs: ids, resolvable: resolvable}, nil
+	return &Program{prg: prg, actionIDs: ids, resolvable: resolvable, outType: ast.OutputType()}, nil
 }
 
 // actionReferences walks the checked AST once and classifies every read of
@@ -328,6 +328,45 @@ type Program struct {
 	prg        cel.Program
 	actionIDs  []string
 	resolvable bool
+	outType    *cel.Type
+}
+
+// Fits reports whether the program's checked output type can fill a Go value
+// of type t. A dyn output fits anything: its type is known only per
+// evaluation. A Go type with no CEL scalar counterpart is not checked here.
+func (p *Program) Fits(t reflect.Type) bool {
+	if p.outType == nil || p.outType.Kind() == types.DynKind {
+		return true
+	}
+	want, ok := celScalar(t)
+	return !ok || want.IsExactType(p.outType)
+}
+
+// OutputType is the program's checked output type, for error messages.
+func (p *Program) OutputType() string {
+	if p.outType == nil {
+		return "dyn"
+	}
+	return p.outType.String()
+}
+
+// celScalar maps a Go scalar kind to the CEL type an expression must produce
+// to fill it.
+func celScalar(t reflect.Type) (*cel.Type, bool) {
+	switch t.Kind() {
+	case reflect.String:
+		return cel.StringType, true
+	case reflect.Bool:
+		return cel.BoolType, true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return cel.IntType, true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return cel.UintType, true
+	case reflect.Float32, reflect.Float64:
+		return cel.DoubleType, true
+	default:
+		return nil, false
+	}
 }
 
 // ActionReferences reports the action ids the expression reads from the
