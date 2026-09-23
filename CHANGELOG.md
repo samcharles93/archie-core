@@ -5,6 +5,30 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-09-23
+
+### archied
+
+- **Archie now acts on review comments left on its own pull requests.** A
+  requested-changes review (or a standalone comment) on a PR Archie opened
+  dispatches a remediation run: the smallest change that satisfies the
+  feedback, committed to the same PR branch and answered in the review
+  thread. Approved reviews never remediate, each reaction is its own round,
+  and the exchange is bounded by the repo's `max_retries` before Archie stops
+  and says so on the PR.
+- **The task run page is a master-detail view.** The run's stage rail and
+  detail panels sit beside the run list, so one run's timeline is visible
+  without leaving the page.
+- **Live activity groups related updates instead of stacking them by event
+  kind**, so a burst of progress on one task reads as one story, and the
+  stage filter resets when you switch attempts.
+- Contrast fixes on the info and subtle text tokens clear WCAG AA.
+
+### archie-agent
+
+- The review-reaction remediation path is part of this image; a host that
+  runs the agent should `docker compose pull agent` to pick it up.
+
 ## [1.38.0] - 2026-09-23
 
 ### archied — Event capture, mappings and bindings are PocketBase records
