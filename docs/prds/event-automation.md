@@ -155,12 +155,13 @@ A profile is a named execution environment that a workflow selects:
 - the container image;
 - the tools the agent may call;
 - the secrets injected into it, by reference to the secret store, never
-  inline;
+  inline (superseded by `docs/prds/orgs-and-access.md`: secrets are granted to
+  identities, and a profile holds no secrets);
 - its network access and forge access.
 
 The global `[containers].image` becomes the default profile, so existing
-workflows are unchanged. A secret or permission is granted to a profile, not
-to a binding, so an event can never widen what an agent can do.
+workflows are unchanged. A secret or permission is granted to an identity, never to a binding, so an
+event can never widen what an agent can do (`docs/prds/orgs-and-access.md`).
 
 ### Workflows belong to orgs
 
@@ -216,6 +217,6 @@ nothing to do with a repository can run a workflow.
 - A workflow disabled for an org cannot be targeted, and its existing bindings
   stop dispatching.
 - A binding whose filter excludes an event does not dispatch it.
-- An agent receives only the secrets its profile references.
+- An agent receives only the secrets its identity is granted.
 - An unsigned event on a signed source is captured and not dispatched. An
   event on an unsigned source is dispatched and marked unsigned.
