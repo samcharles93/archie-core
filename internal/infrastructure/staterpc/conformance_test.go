@@ -291,6 +291,46 @@ func TestStateStoreConformance(t *testing.T) {
 			if _, err := c.RecoverStale(ctx); err != nil {
 				t.Fatalf("RecoverStale: %v", err)
 			}
+
+			// Classified park: the guarded transition carries the park class,
+			// and both guards are the wire contract (the stale sentinel must
+			// survive the hop for the daemon's park-with-retry loop to detect
+			// a concurrent terminal write).
+			if err := c.Transition(ctx, claimed.ID, "queued", "running", "claimed"); err != nil {
+				t.Fatalf("re-claim for ParkTask: %v", err)
+			}
+			if err := c.ParkTask(ctx, claimed.ID, "running", "container pool unavailable", "transient"); err != nil {
+				t.Fatalf("ParkTask: %v", err)
+			}
+			parked, err := c.TaskByID(ctx, claimed.ID)
+			if err != nil || parked == nil {
+				t.Fatalf("TaskByID after ParkTask: %+v %v", parked, err)
+			}
+			if parked.Status != "parked" || parked.ParkClass != "transient" || parked.ParkReason != "container pool unavailable" {
+				t.Fatalf("ParkTask row = status:%q class:%q reason:%q", parked.Status, parked.ParkClass, parked.ParkReason)
+			}
+			if err := c.ParkTask(ctx, claimed.ID, "running", "late park", "transient"); !errors.Is(err, store.ErrStaleTransition) {
+				t.Fatalf("ParkTask stale = %v, want ErrStaleTransition", err)
+			}
+			// An unclassified park normalizes to needs_human store-side rather
+			// than failing: a caller that predates the class vocabulary must
+			// not be unable to park.
+			if err := c.Requeue(ctx, claimed.ID, "parked", ""); err != nil {
+				t.Fatalf("Requeue after park: %v", err)
+			}
+			if err := c.Transition(ctx, claimed.ID, "queued", "running", "claimed"); err != nil {
+				t.Fatalf("re-claim 2: %v", err)
+			}
+			if err := c.ParkTask(ctx, claimed.ID, "running", "unclassified park", ""); err != nil {
+				t.Fatalf("ParkTask unclassified: %v", err)
+			}
+			parked2, err := c.TaskByID(ctx, claimed.ID)
+			if err != nil || parked2 == nil {
+				t.Fatalf("TaskByID after unclassified park: %+v %v", parked2, err)
+			}
+			if parked2.ParkClass != "needs_human" {
+				t.Fatalf("unclassified park class = %q, want needs_human", parked2.ParkClass)
+			}
 			byClaim, err := c.ClaimByIssue(ctx, "acme", "widget", 999999)
 			if err != nil || byClaim != nil {
 				t.Fatalf("ClaimByIssue missing: %+v %v", byClaim, err)

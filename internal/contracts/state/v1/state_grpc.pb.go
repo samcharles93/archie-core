@@ -37,6 +37,7 @@ const (
 	StateStoreService_Transition_FullMethodName                 = "/state.v1.StateStoreService/Transition"
 	StateStoreService_Update_FullMethodName                     = "/state.v1.StateStoreService/Update"
 	StateStoreService_Requeue_FullMethodName                    = "/state.v1.StateStoreService/Requeue"
+	StateStoreService_ParkTask_FullMethodName                   = "/state.v1.StateStoreService/ParkTask"
 	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
 	StateStoreService_ArchiveTask_FullMethodName                = "/state.v1.StateStoreService/ArchiveTask"
 	StateStoreService_RetryTask_FullMethodName                  = "/state.v1.StateStoreService/RetryTask"
@@ -123,6 +124,7 @@ type StateStoreServiceClient interface {
 	Transition(ctx context.Context, in *TransitionRequest, opts ...grpc.CallOption) (*TransitionResponse, error)
 	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
 	Requeue(ctx context.Context, in *RequeueRequest, opts ...grpc.CallOption) (*RequeueResponse, error)
+	ParkTask(ctx context.Context, in *ParkTaskRequest, opts ...grpc.CallOption) (*ParkTaskResponse, error)
 	RecoverStale(ctx context.Context, in *RecoverStaleRequest, opts ...grpc.CallOption) (*RecoverStaleResponse, error)
 	// Archive / Retry
 	ArchiveTask(ctx context.Context, in *ArchiveTaskRequest, opts ...grpc.CallOption) (*ArchiveTaskResponse, error)
@@ -402,6 +404,16 @@ func (c *stateStoreServiceClient) Requeue(ctx context.Context, in *RequeueReques
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RequeueResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_Requeue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ParkTask(ctx context.Context, in *ParkTaskRequest, opts ...grpc.CallOption) (*ParkTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ParkTaskResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ParkTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -953,6 +965,7 @@ type StateStoreServiceServer interface {
 	Transition(context.Context, *TransitionRequest) (*TransitionResponse, error)
 	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
 	Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error)
+	ParkTask(context.Context, *ParkTaskRequest) (*ParkTaskResponse, error)
 	RecoverStale(context.Context, *RecoverStaleRequest) (*RecoverStaleResponse, error)
 	// Archive / Retry
 	ArchiveTask(context.Context, *ArchiveTaskRequest) (*ArchiveTaskResponse, error)
@@ -1111,6 +1124,9 @@ func (UnimplementedStateStoreServiceServer) Update(context.Context, *UpdateReque
 }
 func (UnimplementedStateStoreServiceServer) Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Requeue not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ParkTask(context.Context, *ParkTaskRequest) (*ParkTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ParkTask not implemented")
 }
 func (UnimplementedStateStoreServiceServer) RecoverStale(context.Context, *RecoverStaleRequest) (*RecoverStaleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RecoverStale not implemented")
@@ -1597,6 +1613,24 @@ func _StateStoreService_Requeue_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).Requeue(ctx, req.(*RequeueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ParkTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ParkTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ParkTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ParkTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ParkTask(ctx, req.(*ParkTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2522,6 +2556,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Requeue",
 			Handler:    _StateStoreService_Requeue_Handler,
+		},
+		{
+			MethodName: "ParkTask",
+			Handler:    _StateStoreService_ParkTask_Handler,
 		},
 		{
 			MethodName: "RecoverStale",

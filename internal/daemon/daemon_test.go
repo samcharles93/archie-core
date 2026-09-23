@@ -32,6 +32,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -120,7 +121,7 @@ func TestParkRunningTaskRecordsItsReasonInTheTasksOwnLog(t *testing.T) {
 	defer closeLog()
 
 	const reason = "worktree prepare failed: checkout branch fix/42-x: reference not found"
-	d.parkRunningTask(ctx, task.ID, reason)
+	d.parkRunningTask(ctx, task.ID, reason, taskstate.ParkTransient)
 
 	page, err := d.TaskLogs.TaskLog(ctx, task.ID, task.Attempt, logging.Query{})
 	if err != nil {
@@ -166,7 +167,7 @@ func TestParkDoesNotRecordAParkThatLosesTheRace(t *testing.T) {
 	closeLog := d.openTaskLog(task)
 	defer closeLog()
 
-	d.parkRunningTask(ctx, task.ID, "worktree prepare failed: simulated")
+	d.parkRunningTask(ctx, task.ID, "worktree prepare failed: simulated", taskstate.ParkTransient)
 
 	page, err := d.TaskLogs.TaskLog(ctx, task.ID, task.Attempt, logging.Query{})
 	if err != nil {

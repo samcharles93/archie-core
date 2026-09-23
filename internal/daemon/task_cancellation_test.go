@@ -25,6 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -445,7 +446,7 @@ func TestParkRunningTaskGuardedAndLogging(t *testing.T) {
 				_ = s.Close()
 			}
 
-			d.parkRunningTask(callCtx, task.ID, "simulated park reason")
+			d.parkRunningTask(callCtx, task.ID, "simulated park reason", taskstate.ParkTransient)
 
 			logOutput := buf.String()
 			if tt.wantWarning {

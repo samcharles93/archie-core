@@ -36,6 +36,7 @@ service StateStoreService {
   rpc Transition(TransitionRequest) returns (TransitionResponse);
   rpc Update(UpdateRequest) returns (UpdateResponse);
   rpc Requeue(RequeueRequest) returns (RequeueResponse);
+  rpc ParkTask(ParkTaskRequest) returns (ParkTaskResponse);
   rpc RecoverStale(RecoverStaleRequest) returns (RecoverStaleResponse);
 
   // Archive / Retry
@@ -429,6 +430,14 @@ message RequeueRequest {
   string workflow = 3;
 }
 message RequeueResponse {}
+
+message ParkTaskRequest {
+  int64 task_id = 1;
+  string from = 2;
+  string detail = 3;
+  string class = 4;
+}
+message ParkTaskResponse {}
 
 message RecoverStaleRequest {}
 message RecoverStaleResponse { int64 count = 1; }

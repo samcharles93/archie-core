@@ -32,6 +32,7 @@ import (
 // Consumers depend on TaskStore, never on a concrete type.
 type TaskStore interface {
 	TaskLifecycle
+	TaskParker
 	TaskEvents
 	TaskQueries
 	TaskArchiver
@@ -52,6 +53,16 @@ type TaskLifecycle interface {
 	Update(ctx context.Context, t *task.Task) error
 	Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error
 	RecoverStale(ctx context.Context) (int64, error)
+}
+
+// TaskParker is the classified park write, kept off TaskLifecycle so that
+// interface stays under the repo's 8-method cap. It mirrors Transition with
+// a park class attached (taskstate.ParkClass); the class is normalized
+// store-side, so an empty or unknown value becomes needs_human rather than
+// an error -- a park that predates classification must not fail because its
+// caller did not know the vocabulary.
+type TaskParker interface {
+	ParkTask(ctx context.Context, taskID int64, from, detail, class string) error
 }
 
 // TaskArchiver removes one terminal task's local record with an optimistic

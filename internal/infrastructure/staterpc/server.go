@@ -177,6 +177,13 @@ func (s *server) Requeue(ctx context.Context, r *pb.RequeueRequest) (*pb.Requeue
 	return &pb.RequeueResponse{}, nil
 }
 
+func (s *server) ParkTask(ctx context.Context, r *pb.ParkTaskRequest) (*pb.ParkTaskResponse, error) {
+	if err := s.deps.Tasks.ParkTask(ctx, r.TaskId, r.From, r.Detail, r.Class); err != nil {
+		return nil, s.logErr("ParkTask", err)
+	}
+	return &pb.ParkTaskResponse{}, nil
+}
+
 func (s *server) RecoverStale(ctx context.Context, _ *pb.RecoverStaleRequest) (*pb.RecoverStaleResponse, error) {
 	n, err := s.deps.Tasks.RecoverStale(ctx)
 	if err != nil {

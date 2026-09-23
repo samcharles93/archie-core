@@ -111,6 +111,11 @@ func (c *Client) Requeue(ctx context.Context, taskID int64, fromStatus, wf strin
 	return unmapError(err)
 }
 
+func (c *Client) ParkTask(ctx context.Context, taskID int64, from, detail, class string) error {
+	_, err := c.client.ParkTask(ctx, &pb.ParkTaskRequest{TaskId: taskID, From: from, Detail: detail, Class: class})
+	return unmapError(err)
+}
+
 func (c *Client) RecoverStale(ctx context.Context) (int64, error) {
 	r, err := c.client.RecoverStale(ctx, &pb.RecoverStaleRequest{})
 	if err != nil {

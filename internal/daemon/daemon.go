@@ -35,6 +35,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -1046,7 +1047,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
 		return
 	}
 
-	if ok, reason := d.identityMayAct(ctx, tm.Identity); !ok {
+	if ok, reason, _ := d.identityMayAct(ctx, tm.Identity); !ok {
 		d.Log.Error("nats intake rejected: "+reason, "subject", msg.Subject())
 		if err := msg.Ack(); err != nil {
 			d.Log.Warn("ack failed", "err", err)
@@ -1193,36 +1194,11 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	trees := d.treesFor(task)
 	repo, ok := d.repoFor(task)
 	if !ok {
-		d.parkRunningTask(ctx, task.ID, "repo no longer in config")
+		d.parkRunningTask(ctx, task.ID, "repo no longer in config", taskstate.ParkTerminal)
 		return
 	}
-	if d.ContainerPool == nil {
-		const reason = "managed agent container pool is unavailable; refusing to run this task on the host"
-		d.Log.Error("task parked: managed worker unavailable", "task", task.ID,
-			"hint", "enable containers and make the archie-agent image available, then retry the task")
-		if err := d.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
-			d.Log.Warn("managed worker park transition failed", "task", task.ID, "err", err)
-			return
-		}
-		d.recordPark(ctx, task.ID, reason)
-		d.emit(events.Event{
-			Kind: events.KindParked, TaskID: task.ID, Attempt: task.Attempt,
-			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
-		})
-		return
-	}
-	if d.Tasks == nil {
-		const reason = "agent task transport is unavailable; refusing to run this task on the host"
-		d.Log.Error("task parked: agent task transport unavailable", "task", task.ID)
-		if err := d.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
-			d.Log.Warn("agent task transport park transition failed", "task", task.ID, "err", err)
-			return
-		}
-		d.recordPark(ctx, task.ID, reason)
-		d.emit(events.Event{
-			Kind: events.KindParked, TaskID: task.ID, Attempt: task.Attempt,
-			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
-		})
+	if d.ContainerPool == nil || d.Tasks == nil {
+		d.parkCapabilityUnavailable(ctx, task, repo)
 		return
 	}
 
@@ -1242,7 +1218,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels)
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error(), taskstate.ParkTransient)
 		return
 	}
 	task.Branch = branch
@@ -1336,7 +1312,7 @@ func (d *Daemon) acquireTaskContainer(
 ) (*container.Container, func(), bool) {
 	park := func(reason string, err error) {
 		d.Log.Error(reason, "err", err)
-		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error())
+		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error(), taskstate.ParkTransient)
 	}
 
 	// Write task.json  --  the container's boot-time brief.
@@ -1354,7 +1330,7 @@ func (d *Daemon) acquireTaskContainer(
 	// normal operation, Storage is always set when ContainerPool is set.
 	if d.Storage == nil {
 		d.Log.Error("storage backend is nil  --  cannot acquire container")
-		d.parkRunningTask(ctx, task.ID, "storage backend not configured")
+		d.parkRunningTask(ctx, task.ID, "storage backend not configured", taskstate.ParkTransient)
 		return nil, nil, false
 	}
 
@@ -1407,9 +1383,38 @@ func (d *Daemon) acquireTaskContainer(
 	return ctr, revokeStateStoreGrant, true
 }
 
+// parkCapabilityUnavailable parks a task whose daemon-side capability is
+// missing (container pool or task transport): both are environmental, so
+// the park class is transient and the KindParked event carries the class
+// for the dashboard. The reason distinguishes the two in logs and events.
+func (d *Daemon) parkCapabilityUnavailable(ctx context.Context, task *workflow.Task, repo config.Repo) {
+	var reason string
+	if d.ContainerPool == nil {
+		reason = "managed agent container pool is unavailable; refusing to run this task on the host"
+		d.Log.Error("task parked: managed worker unavailable", "task", task.ID,
+			"hint", "enable containers and make the archie-agent image available, then retry the task")
+	} else {
+		reason = "agent task transport is unavailable; refusing to run this task on the host"
+		d.Log.Error("task parked: agent task transport unavailable", "task", task.ID)
+	}
+	if err := d.Store.ParkTask(ctx, task.ID, workflow.StatusRunning, reason, taskstate.ParkTransient); err != nil {
+		d.Log.Warn("capability park transition failed", "task", task.ID, "err", err)
+		return
+	}
+	d.recordPark(ctx, task.ID, reason)
+	d.emit(events.Event{
+		Kind: events.KindParked, TaskID: task.ID, Attempt: task.Attempt,
+		Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
+		Data: map[string]any{"park_class": taskstate.ParkTransient},
+	})
+}
+
 // parkRunningTask transitions a task from running to parked using a context
 // detached from caller cancellation, with a bounded timeout.
 //
+// The park carries the caller's taskstate.ParkClass: every call site states
+// what kind of intervention its park needs, and the store normalizes the
+// class, so an unclassified caller cannot silently mislabel a park.
 // When a task fails or is cancelled (e.g. via /stop or dashboard Stop), ctx is
 // already cancelled. Writing terminal state using the cancelled ctx fails
 // immediately in SQLite transactions and silently leaves the task row 'running'
@@ -1420,14 +1425,14 @@ func (d *Daemon) acquireTaskContainer(
 // The transition remains guarded from StatusRunning: if the worker already
 // recorded a terminal state over storerpc, storecontract.ErrStaleTransition is returned
 // and ignored. Unexpected store errors are logged as warnings.
-func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason string) {
+func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason string, class taskstate.ParkClass) {
 	if d.Store == nil {
 		return
 	}
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
-	if err := d.Store.Transition(writeCtx, taskID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
+	if err := d.Store.ParkTask(writeCtx, taskID, workflow.StatusRunning, reason, class); err != nil {
 		if !errors.Is(err, storecontract.ErrStaleTransition) {
 			d.Log.Warn("terminal park transition failed", "task", taskID, "reason", reason, "err", err)
 		}
@@ -1474,13 +1479,13 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	if d.WorktreeGrants == nil {
 		const reason = "worktree publication grants are unavailable"
 		d.Log.Error(reason, "task", task.ID)
-		d.parkRunningTask(ctx, task.ID, reason)
+		d.parkRunningTask(ctx, task.ID, reason, taskstate.ParkTransient)
 		return
 	}
 	grant, revoke, err := d.WorktreeGrants.Issue(task)
 	if err != nil {
 		d.Log.Error("worktree publication grant failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree publication grant failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "worktree publication grant failed: "+err.Error(), taskstate.ParkTransient)
 		return
 	}
 	defer revoke()
@@ -1489,7 +1494,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	d.captureAttemptConfig(ctx, task, taskCfg)
 	if err := d.pinWorkflowDefinition(ctx, task); err != nil {
 		d.Log.Error("pin workflow definition failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error(), taskstate.ParkTransient)
 		return
 	}
 	req := taskrun.Request{
@@ -1506,26 +1511,26 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	data, err := json.Marshal(req)
 	if err != nil {
 		d.Log.Error("taskrun encode failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "taskrun encode failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "taskrun encode failed: "+err.Error(), taskstate.ParkTransient)
 		return
 	}
 
 	reply, err := d.requestTaskRun(ctx, task.ID, data)
 	if err != nil {
 		d.Log.Error("taskrun request failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "taskrun request failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "taskrun request failed: "+err.Error(), taskstate.ParkTransient)
 		return
 	}
 
 	var resp taskrun.Response
 	if err := json.Unmarshal(reply, &resp); err != nil {
 		d.Log.Error("taskrun decode response failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "taskrun decode response failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "taskrun decode response failed: "+err.Error(), taskstate.ParkTransient)
 		return
 	}
 	if resp.Error != "" {
 		d.Log.Error("taskrun run failed", "task", task.ID, "err", resp.Error)
-		d.parkRunningTask(ctx, task.ID, "taskrun run failed: "+resp.Error)
+		d.parkRunningTask(ctx, task.ID, "taskrun run failed: "+resp.Error, taskstate.ParkTransient)
 		return
 	}
 
@@ -1835,6 +1840,9 @@ func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 }
 
 // identityMayAct reports whether the identity a task carries may be acted on.
+// A denial also carries the park class the task would need: a name that no
+// longer resolves is fixable by re-adding the identity (transient), while a
+// retired or deactivated identity is a deliberate operator state (terminal).
 // An empty identity is the single-identity root and always may act. A
 // non-empty identity must resolve to a configured runner and pass the
 // lifecycle check; otherwise the returned reason says why it may not. This is
@@ -1842,29 +1850,29 @@ func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 // credential-side behaviour: a task naming an identity archie no longer knows
 // -- renamed, retired, or deleted in the control plane -- must park, never
 // fall back to the root forge's credential.
-func (d *Daemon) identityMayAct(ctx context.Context, name string) (bool, string) {
+func (d *Daemon) identityMayAct(ctx context.Context, name string) (bool, string, taskstate.ParkClass) {
 	if name == "" {
-		return true, ""
+		return true, "", ""
 	}
 	runner := d.identityFor(&workflow.Task{Identity: name})
 	if runner == nil {
-		return false, "identity " + name + " no longer resolves"
+		return false, "identity " + name + " no longer resolves", taskstate.ParkTransient
 	}
 	if !d.identityActive(ctx, runner.ID) {
-		return false, "identity " + runner.Name + " may not act"
+		return false, "identity " + runner.Name + " may not act", taskstate.ParkTerminal
 	}
-	return true, ""
+	return true, "", ""
 }
 
 // parkIfIdentityUnresolvable parks task when its non-empty identity cannot be
 // acted on, reporting whether it did. An empty identity is the root
 // single-identity path and never parks here.
 func (d *Daemon) parkIfIdentityUnresolvable(ctx context.Context, task *workflow.Task) bool {
-	ok, reason := d.identityMayAct(ctx, task.Identity)
+	ok, reason, class := d.identityMayAct(ctx, task.Identity)
 	if ok {
 		return false
 	}
-	d.parkRunningTask(ctx, task.ID, reason)
+	d.parkRunningTask(ctx, task.ID, reason, class)
 	return true
 }
 
