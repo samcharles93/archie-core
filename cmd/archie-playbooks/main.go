@@ -3,20 +3,22 @@
 // playbook YAML binding files against the same schema the daemon loads at
 // startup, so a pre-merge check can never disagree with runtime validation.
 //
-// Today it ships one mode (lint). The command dispatch is a table from day
-// one, so a future serve/lsp mode slots in without restructuring -- both
-// modes are entrypoints into the same validation source in
-// internal/domain/workflow.
+// It ships two modes: lint for CI, and serve, a language server that
+// publishes the same findings as editor diagnostics. Both call the loaders
+// the daemon runs.
 //
 // A finding about one binding key leads with the key's file:line; a file
 // that does not parse is reported by path with the YAML parser's message.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/archieplaybooks"
 	"github.com/samcharles93/archie-core/internal/buildinfo"
@@ -31,7 +33,8 @@ func run(args []string, stderr io.Writer) int {
 	// set and returns an exit code. Adding serve/lsp later is a new entry
 	// here, not a restructuring.
 	commands := map[string]func([]string, io.Writer) int{
-		"lint": runLint,
+		"lint":  runLint,
+		"serve": runServe,
 	}
 
 	if len(args) > 0 && (args[0] == "-version" || args[0] == "--version") {
@@ -83,6 +86,30 @@ func runLint(args []string, stderr io.Writer) int {
 	}
 	return code
 }
+
+// runServe runs the language server on stdin/stdout until the editor
+// disconnects or the process is signalled.
+func runServe(args []string, stderr io.Writer) int {
+	if len(args) > 0 {
+		fmt.Fprintln(stderr, "serve: takes no arguments; the editor speaks LSP on stdin/stdout")
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := archieplaybooks.Serve(ctx, stdio{}); err != nil {
+		fmt.Fprintln(stderr, "serve:", err)
+		return 1
+	}
+	return 0
+}
+
+// stdio joins stdin and stdout into the one stream the language server reads
+// and writes.
+type stdio struct{}
+
+func (stdio) Read(p []byte) (int, error)  { return os.Stdin.Read(p) }
+func (stdio) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
+func (stdio) Close() error                { return os.Stdin.Close() }
 
 // multiFlag collects repeated -dir flags.
 type multiFlag []string

@@ -35,6 +35,7 @@ require (
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
@@ -94,6 +95,7 @@ require (
 	github.com/pocketbase/dbx v1.12.0
 	github.com/pocketbase/pocketbase v0.40.4
 	github.com/samcharles93/ai-sdk v0.1.39
+	github.com/sourcegraph/jsonrpc2 v0.2.3
 	github.com/traefik/yaegi v0.16.1
 	golang.org/x/net v0.59.0
 	golang.org/x/oauth2 v0.37.0

@@ -180,6 +180,14 @@ a case that should just be visible and fixed by a human. Instead:
   explicitly in scope per Sam (not deferred), because it's the same schema
   artifact as the linter's, just a different consumer.
 
+  `archie-playbooks serve` is the language server, over stdio. When a file is
+  opened or saved it lints the file's saved directory with the loader the
+  daemon runs for it (a file with a top-level `trigger` key is an EDA
+  playbook, anything else a routing binding file) and publishes the findings
+  for that file as error diagnostics. A routing finding sits on its key's
+  line; an EDA finding carries no line yet and sits on the first line.
+  Unsaved edits are not validated. Hover and completion are later additions.
+
 The startup log-and-refuse path exists for what the linter/LSP structurally
 cannot see -- sources composed together only at daemon startup, never
 checked against each other by either tool. If the linter and LSP do the job
