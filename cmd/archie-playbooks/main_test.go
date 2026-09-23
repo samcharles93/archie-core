@@ -73,3 +73,16 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+// -eda-dir alone is a complete lint request, and its findings set the exit
+// code.
+func TestRunLintEDADir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pb.yaml"), []byte("trigger:\n  kind: bug\nactions:\n  - position: module\n    kind: nope\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if code := run([]string{"lint", "-eda-dir", dir}, &stderr); code != 1 {
+		t.Fatalf("run(lint -eda-dir) = %d, want 1; stderr: %s", code, stderr.String())
+	}
+}

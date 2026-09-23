@@ -1,17 +1,19 @@
 // Package archieplaybooks is the application composition for the standalone
 // playbook-validation CLI (cmd/archie-playbooks). It owns the lint mode's
 // orchestration: collect the configured directories, run the domain
-// validator, and shape the outcome for human consumption. All validation
-// rules live in internal/domain/workflow (LoadKindWorkflowsYAML,
-// LoadLabelWorkflowsYAML, LoadPlaybookDirs) -- this package only calls them
-// and formats results; there is deliberately no second validation path
-// here (per docs/prds/eda-playbook-engine.md and t2db.12).
+// validators, and shape the outcome for human consumption. The rules live in
+// internal/domain/workflow (routing binding files) and
+// internal/domain/eda/playbook (EDA playbooks) -- this package only calls the
+// loaders the daemon runs and formats results; there is deliberately no
+// second validation path here (per docs/prds/eda-playbook-engine.md).
 package archieplaybooks
 
 import (
 	"fmt"
 	"io"
 
+	"github.com/samcharles93/archie-core/internal/domain/eda/module"
+	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
@@ -47,4 +49,14 @@ func Lint(dirs []string, stderr io.Writer) Result {
 		return Result{ExitCode: 1, Findings: findings}
 	}
 	return Result{ExitCode: 0, Findings: nil}
+}
+
+// LintEDA validates an EDA playbook directory (the daemon's eda_playbook_dir)
+// with playbook.Load, the loader the daemon runs at startup.
+func LintEDA(dir string, stderr io.Writer) Result {
+	if _, err := playbook.Load(dir, module.New()); err != nil {
+		fmt.Fprintln(stderr, err)
+		return Result{ExitCode: 1, Findings: []string{err.Error()}}
+	}
+	return Result{}
 }

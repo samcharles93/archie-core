@@ -56,25 +56,32 @@ func run(args []string, stderr io.Writer) int {
 	return cmd(args[1:], stderr)
 }
 
-// runLint validates one or more playbook directories against the domain
-// loaders and reports collisions / malformed files / invalid bindings.
+// runLint validates routing binding directories (-dir) and an EDA playbook
+// directory (-eda-dir) against the loaders the daemon runs at startup.
 // Exit codes: 0 clean, 1 findings, 2 usage error.
 func runLint(args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("archie-playbooks lint", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var dirs multiFlag
-	flags.Var(&dirs, "dir", "playbook directory to lint (repeatable)")
+	flags.Var(&dirs, "dir", "routing binding directory to lint (repeatable)")
+	edaDir := flags.String("eda-dir", "", "EDA playbook directory to lint (the daemon's eda_playbook_dir)")
 	if err := flags.Parse(args); err != nil {
 		return 2 // flag.ContinueOnError already printed the message
 	}
-	if len(dirs) == 0 {
-		fmt.Fprintln(stderr, "lint: at least one -dir is required")
+	if len(dirs) == 0 && *edaDir == "" {
+		fmt.Fprintln(stderr, "lint: at least one -dir or an -eda-dir is required")
 		flags.Usage()
 		return 2
 	}
 
-	result := archieplaybooks.Lint(dirs, stderr)
-	return result.ExitCode
+	code := 0
+	if len(dirs) > 0 {
+		code = max(code, archieplaybooks.Lint(dirs, stderr).ExitCode)
+	}
+	if *edaDir != "" {
+		code = max(code, archieplaybooks.LintEDA(*edaDir, stderr).ExitCode)
+	}
+	return code
 }
 
 // multiFlag collects repeated -dir flags.
