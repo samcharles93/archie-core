@@ -81,10 +81,10 @@ func TestServePublishesDiagnostics(t *testing.T) {
 			wantLine: 1,
 		},
 		{
-			name:     "eda playbook finding without a line",
+			name:     "eda playbook finding on its action line",
 			files:    map[string]string{"pb.yaml": "trigger:\n  kind: bug\nactions:\n  - position: module\n    kind: nope\n"},
 			open:     "pb.yaml",
-			wantLine: 0,
+			wantLine: 3,
 		},
 	}
 	for _, tt := range tests {

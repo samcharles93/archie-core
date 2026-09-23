@@ -184,8 +184,8 @@ a case that should just be visible and fixed by a human. Instead:
   opened or saved it lints the file's saved directory with the loader the
   daemon runs for it (a file with a top-level `trigger` key is an EDA
   playbook, anything else a routing binding file) and publishes the findings
-  for that file as error diagnostics. A routing finding sits on its key's
-  line; an EDA finding carries no line yet and sits on the first line.
+  for that file as error diagnostics, each on the line of the key, action,
+  `when` or args key it names; a file-level finding sits on the first line.
   Unsaved edits are not validated. Hover and completion are later additions.
 
 The startup log-and-refuse path exists for what the linter/LSP structurally

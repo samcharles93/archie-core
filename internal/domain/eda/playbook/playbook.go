@@ -140,6 +140,44 @@ type rawAction struct {
 	Kind     string            `yaml:"kind"`
 	When     string            `yaml:"when"`
 	Args     map[string]string `yaml:"args"`
+
+	// Source lines, so a finding names where the author wrote it: the
+	// action's first line, its `when` key, and each args key.
+	line     int
+	whenLine int
+	argLines map[string]int
+}
+
+// UnmarshalYAML decodes the action as plain data and records its source
+// lines.
+func (a *rawAction) UnmarshalYAML(n *yaml.Node) error {
+	type plain rawAction
+	if err := n.Decode((*plain)(a)); err != nil {
+		return err
+	}
+	a.line = n.Line
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, val := n.Content[i], n.Content[i+1]
+		switch key.Value {
+		case "when":
+			a.whenLine = key.Line
+		case "args":
+			a.argLines = make(map[string]int, len(val.Content)/2)
+			for j := 0; j+1 < len(val.Content); j += 2 {
+				a.argLines[val.Content[j].Value] = val.Content[j].Line
+			}
+		}
+	}
+	return nil
+}
+
+// at is path:line, the compiler-style location a finding leads with; a zero
+// line (a hand-built action) leaves the bare path.
+func at(path string, line int) string {
+	if line == 0 {
+		return path
+	}
+	return fmt.Sprintf("%s:%d", path, line)
 }
 
 // Module action ids are stricter than workflow ids because they must also be
@@ -294,14 +332,14 @@ func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action
 			if len(raw) == 1 && strings.TrimSpace(a.Workflow) != "" {
 				pos = "workflow"
 			} else {
-				return nil, fmt.Errorf("playbook %s: action %d must declare a position (%q or %q)", path, i+1, "workflow", "module")
+				return nil, fmt.Errorf("playbook %s: action %d must declare a position (%q or %q)", at(path, a.line), i+1, "workflow", "module")
 			}
 		}
 		if pos != "workflow" && pos != "module" {
-			return nil, fmt.Errorf("playbook %s: action %d position %q is not supported (want %q or %q)", path, i+1, pos, "workflow", "module")
+			return nil, fmt.Errorf("playbook %s: action %d position %q is not supported (want %q or %q)", at(path, a.line), i+1, pos, "workflow", "module")
 		}
 		a.Position = pos
-		if err := validateActionShapeField(path, i, pos, a); err != nil {
+		if err := validateActionShapeField(at(path, a.line), i, pos, a); err != nil {
 			return nil, err
 		}
 		if pos == "workflow" {
@@ -352,7 +390,7 @@ func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
 	}
 	a := raw[0]
 	if strings.TrimSpace(a.Workflow) == "" {
-		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", path)
+		return nil, fmt.Errorf("playbook %s: workflow-kind action must name a workflow", at(path, a.line))
 	}
 
 	env := expr.NewEnv()
@@ -363,13 +401,13 @@ func compileWorkflowActions(path string, raw []rawAction) ([]Action, error) {
 		env:      env,
 	}
 	if strings.TrimSpace(a.When) != "" {
-		prg, err := compileExpr(path, "when condition", a.When, env)
+		prg, err := compileExpr(at(path, a.whenLine), "when condition", a.When, env)
 		if err != nil {
 			return nil, err
 		}
 		action.When = prg
 	}
-	args, err := compileArgs(path, "", "", a.Args, env, nil)
+	args, err := compileArgs(path, a.argLines, "", "", a.Args, env, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -392,11 +430,11 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 		label := actionLabel(i, a.ID)
 		kind := strings.TrimSpace(a.Kind)
 		if kind == "" {
-			return nil, fmt.Errorf("playbook %s: %s must name a kind", path, label)
+			return nil, fmt.Errorf("playbook %s: %s must name a kind", at(path, a.line), label)
 		}
 		argsType, resultType, ok := schemas.KindSchema(kind)
 		if !ok {
-			return nil, fmt.Errorf("playbook %s: %s has unknown module kind %q", path, label, kind)
+			return nil, fmt.Errorf("playbook %s: %s has unknown module kind %q", at(path, a.line), label, kind)
 		}
 
 		env := expr.NewEnv(declared...)
@@ -407,13 +445,13 @@ func compileModuleActions(path string, raw []rawAction, schemas KindSchemas) ([]
 			env:      env,
 		}
 		if strings.TrimSpace(a.When) != "" {
-			prg, err := compileExpr(path, label+" when condition", a.When, env)
+			prg, err := compileExpr(at(path, a.whenLine), label+" when condition", a.When, env)
 			if err != nil {
 				return nil, err
 			}
 			action.When = prg
 		}
-		args, err := compileArgs(path, label, kind, a.Args, env, argsType)
+		args, err := compileArgs(path, a.argLines, label, kind, a.Args, env, argsType)
 		if err != nil {
 			return nil, err
 		}
@@ -477,12 +515,12 @@ func checkArgType(path, label, kind string, argsSchema reflect.Type, key string,
 // nil and keep free-form args. Each program goes through the same
 // compile/reference validation as `when`, with label naming the offending
 // action and the args key naming the offending field.
-func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
+func compileArgs(path string, lines map[string]int, label, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	if argsSchema != nil {
-		if err := validateArgsKeys(path, label, kind, argsSchema, raw); err != nil {
+		if err := validateArgsKeys(path, lines, label, kind, argsSchema, raw); err != nil {
 			return nil, err
 		}
 	}
@@ -493,12 +531,12 @@ func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env,
 	sort.Strings(keys)
 	args := make(map[string]*expr.Program, len(raw))
 	for _, key := range keys {
-		prg, err := compileExpr(path, argsLabel(label, key), raw[key], env)
+		prg, err := compileExpr(at(path, lines[key]), argsLabel(label, key), raw[key], env)
 		if err != nil {
 			return nil, err
 		}
 		if argsSchema != nil {
-			if err := checkArgType(path, label, kind, argsSchema, key, prg); err != nil {
+			if err := checkArgType(at(path, lines[key]), label, kind, argsSchema, key, prg); err != nil {
 				return nil, err
 			}
 		}
@@ -513,7 +551,7 @@ func compileArgs(path, label, kind string, raw map[string]string, env *expr.Env,
 // YAML spelling (Message -> message), and the YAML key is compared verbatim:
 // the decoder also matches literal lower-case keys, so `Message` is rejected
 // here rather than loading and then failing at dispatch.
-func validateArgsKeys(path, label, kind string, argsSchema reflect.Type, raw map[string]string) error {
+func validateArgsKeys(path string, lines map[string]int, label, kind string, argsSchema reflect.Type, raw map[string]string) error {
 	t := argsSchema
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -533,7 +571,7 @@ func validateArgsKeys(path, label, kind string, argsSchema reflect.Type, raw map
 	}
 	for _, key := range keys {
 		if _, ok := fields[key]; !ok {
-			return fmt.Errorf("playbook %s: %s args[%q] is not a declared Args field", path, loc, key)
+			return fmt.Errorf("playbook %s: %s args[%q] is not a declared Args field", at(path, lines[key]), loc, key)
 		}
 	}
 	return nil

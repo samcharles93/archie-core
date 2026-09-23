@@ -81,7 +81,7 @@ func (s *server) DidClose(ctx context.Context, p *protocol.DidCloseTextDocumentP
 
 // diagnose lints the directory holding u's file and returns the findings that
 // belong to that file: a finding naming another file of the directory belongs
-// there, and one naming this file without a line (an EDA load error) goes on
+// there, and one naming this file without a line (a file-level error) goes on
 // its first line.
 func diagnose(u uri.URI) *protocol.PublishDiagnosticsParams {
 	out := &protocol.PublishDiagnosticsParams{URI: u, Diagnostics: []protocol.Diagnostic{}}

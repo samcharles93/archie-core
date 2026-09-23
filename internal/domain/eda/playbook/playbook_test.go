@@ -701,7 +701,7 @@ func TestCompileArgsReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "event.missing ==",
 	}
 	for range 64 {
-		_, err := compileArgs("pb.yaml", "", "", raw, env, nil)
+		_, err := compileArgs("pb.yaml", nil, "", "", raw, env, nil)
 		if err == nil {
 			t.Fatal("compileArgs = nil, want error")
 		}
@@ -727,7 +727,7 @@ func TestValidateArgsKeysReportsFirstKeyDeterministically(t *testing.T) {
 		"a.bad": "x",
 	}
 	for range 64 {
-		err := validateArgsKeys("pb.yaml", "", "log", argsType, raw)
+		err := validateArgsKeys("pb.yaml", nil, "", "log", argsType, raw)
 		if err == nil {
 			t.Fatal("validateArgsKeys = nil, want error")
 		}
