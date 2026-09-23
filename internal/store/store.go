@@ -526,6 +526,66 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 	return err
 }
 
+// BeginRemediation transitions an Archie-owned open-PR task into a queued
+// remediate run carrying the JSON-encoded review unit. The guarded update is
+// the reaction consumer's dedup: a re-delivered reaction, or a second
+// consumer racing the first, fails the status guard instead of starting a
+// second round. The unit is written in the same transaction, so a task can
+// never be claimed into a remediate run whose payload has not landed.
+func (s *Store) BeginRemediation(ctx context.Context, taskID int64, payload string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE tasks SET status=?, workflow=?, stage='', park_reason='', review_payload=?,
+			updated_at=datetime('now')
+		WHERE id=? AND status=?`, workflow.StatusQueued, "remediate", clip(payload, 4000), taskID, workflow.StatusPROpen)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, ?, ?)`,
+		taskID, workflow.StatusPROpen, workflow.StatusQueued, "review reaction queued remediation"); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// UpdateReviewPayload replaces a queued remediation's review unit: the
+// reaction consumer appends late-arriving comments of the same review while
+// the unit is still pending. The guarded update is the boundary — once a
+// run is claimed, its input is frozen; a late comment is dropped by the
+// caller rather than racing the builder's mission.
+func (s *Store) UpdateReviewPayload(ctx context.Context, taskID int64, payload string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE tasks SET review_payload=?, updated_at=datetime('now')
+		WHERE id=? AND status=? AND workflow=?`,
+		clip(payload, 4000), taskID, workflow.StatusQueued, "remediate")
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+	return nil
+}
+
 // TaskByIssue returns the task tracking an issue, or nil.
 func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `

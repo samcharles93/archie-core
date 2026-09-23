@@ -36,6 +36,7 @@ type TaskStore interface {
 	TaskQueries
 	TaskArchiver
 	TaskRetryer
+	RemediationStarter
 }
 
 // TaskLifecycle manages the core task state machine and enqueuing.
@@ -64,6 +65,17 @@ type TaskArchiver interface {
 // attempt so a partial write cannot evade the retry cap.
 type TaskRetryer interface {
 	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error
+}
+
+// RemediationStarter queues a review-triggered remediation for an
+// Archie-owned open-PR task: one guarded transition that carries the
+// JSON-encoded review unit in the same write, so a claimed remediation
+// always has its input. UpdateReviewPayload appends late-arriving comments
+// to a still-queued unit. Both guards are the reaction consumer's dedup and
+// are documented in docs/prds/pr-review-remediation.md decisions 3 and 5.
+type RemediationStarter interface {
+	BeginRemediation(ctx context.Context, taskID int64, payload string) error
+	UpdateReviewPayload(ctx context.Context, taskID int64, payload string) error
 }
 
 // TaskQueries groups read-only task accessors.

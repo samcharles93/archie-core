@@ -185,6 +185,9 @@ type boot struct {
 	lastReload func() config.ReloadStatus
 
 	natsClient *nats.Client
+	// reactionClient pulls the ARCHIE_REACTIONS fan-out stream; the daemon
+	// drains it each cycle to turn review reactions into remediate runs.
+	reactionClient *nats.Client
 	// natsURL is the endpoint the daemon's own client connected with at
 	// startup. For external mode it is cfg.NATS.URL; for embedded mode it is
 	// the embedded server's ClientURL(). Recorded so Daemon.ConnectedNATS
@@ -552,6 +555,7 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 	// is the deliverable. A future producer (bead archie-core-8li9.3) will
 	// need its own publisher surface, wired when that step lands.
 	b.addCleanup(func() { reactionClient.Close() })
+	b.reactionClient = reactionClient
 	log.Info("nats connected", "url", url, "task_stream", nats.DefaultStreamName, "reaction_stream", nats.DefaultReactionStreamName)
 	return nil
 }
@@ -1289,6 +1293,7 @@ func (b *boot) buildDaemon() {
 		Storage:             b.storeBackend,
 		Log:                 log,
 		Tasks:               b.natsClient,
+		Reactions:           b.reactionClient,
 		WorktreeGrants:      b.worktreeGrants,
 		StateStoreGrants:    b.stateStoreGrants,
 		ContainerPool:       b.containerPool,

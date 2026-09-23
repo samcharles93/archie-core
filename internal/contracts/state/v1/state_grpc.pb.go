@@ -40,6 +40,8 @@ const (
 	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
 	StateStoreService_ArchiveTask_FullMethodName                = "/state.v1.StateStoreService/ArchiveTask"
 	StateStoreService_RetryTask_FullMethodName                  = "/state.v1.StateStoreService/RetryTask"
+	StateStoreService_BeginRemediation_FullMethodName           = "/state.v1.StateStoreService/BeginRemediation"
+	StateStoreService_UpdateReviewPayload_FullMethodName        = "/state.v1.StateStoreService/UpdateReviewPayload"
 	StateStoreService_TaskByIssue_FullMethodName                = "/state.v1.StateStoreService/TaskByIssue"
 	StateStoreService_OpenTaskByPR_FullMethodName               = "/state.v1.StateStoreService/OpenTaskByPR"
 	StateStoreService_TaskByID_FullMethodName                   = "/state.v1.StateStoreService/TaskByID"
@@ -124,6 +126,8 @@ type StateStoreServiceClient interface {
 	// Archive / Retry
 	ArchiveTask(ctx context.Context, in *ArchiveTaskRequest, opts ...grpc.CallOption) (*ArchiveTaskResponse, error)
 	RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error)
+	BeginRemediation(ctx context.Context, in *BeginRemediationRequest, opts ...grpc.CallOption) (*BeginRemediationResponse, error)
+	UpdateReviewPayload(ctx context.Context, in *UpdateReviewPayloadRequest, opts ...grpc.CallOption) (*UpdateReviewPayloadResponse, error)
 	// Queries
 	TaskByIssue(ctx context.Context, in *TaskByIssueRequest, opts ...grpc.CallOption) (*TaskByIssueResponse, error)
 	OpenTaskByPR(ctx context.Context, in *OpenTaskByPRRequest, opts ...grpc.CallOption) (*OpenTaskByPRResponse, error)
@@ -426,6 +430,26 @@ func (c *stateStoreServiceClient) RetryTask(ctx context.Context, in *RetryTaskRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RetryTaskResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RetryTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) BeginRemediation(ctx context.Context, in *BeginRemediationRequest, opts ...grpc.CallOption) (*BeginRemediationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginRemediationResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_BeginRemediation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) UpdateReviewPayload(ctx context.Context, in *UpdateReviewPayloadRequest, opts ...grpc.CallOption) (*UpdateReviewPayloadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateReviewPayloadResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_UpdateReviewPayload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -921,6 +945,8 @@ type StateStoreServiceServer interface {
 	// Archive / Retry
 	ArchiveTask(context.Context, *ArchiveTaskRequest) (*ArchiveTaskResponse, error)
 	RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error)
+	BeginRemediation(context.Context, *BeginRemediationRequest) (*BeginRemediationResponse, error)
+	UpdateReviewPayload(context.Context, *UpdateReviewPayloadRequest) (*UpdateReviewPayloadResponse, error)
 	// Queries
 	TaskByIssue(context.Context, *TaskByIssueRequest) (*TaskByIssueResponse, error)
 	OpenTaskByPR(context.Context, *OpenTaskByPRRequest) (*OpenTaskByPRResponse, error)
@@ -1081,6 +1107,12 @@ func (UnimplementedStateStoreServiceServer) ArchiveTask(context.Context, *Archiv
 }
 func (UnimplementedStateStoreServiceServer) RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RetryTask not implemented")
+}
+func (UnimplementedStateStoreServiceServer) BeginRemediation(context.Context, *BeginRemediationRequest) (*BeginRemediationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginRemediation not implemented")
+}
+func (UnimplementedStateStoreServiceServer) UpdateReviewPayload(context.Context, *UpdateReviewPayloadRequest) (*UpdateReviewPayloadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateReviewPayload not implemented")
 }
 func (UnimplementedStateStoreServiceServer) TaskByIssue(context.Context, *TaskByIssueRequest) (*TaskByIssueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TaskByIssue not implemented")
@@ -1603,6 +1635,42 @@ func _StateStoreService_RetryTask_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RetryTask(ctx, req.(*RetryTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_BeginRemediation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginRemediationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).BeginRemediation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_BeginRemediation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).BeginRemediation(ctx, req.(*BeginRemediationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_UpdateReviewPayload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateReviewPayloadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).UpdateReviewPayload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_UpdateReviewPayload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).UpdateReviewPayload(ctx, req.(*UpdateReviewPayloadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2432,6 +2500,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RetryTask",
 			Handler:    _StateStoreService_RetryTask_Handler,
+		},
+		{
+			MethodName: "BeginRemediation",
+			Handler:    _StateStoreService_BeginRemediation_Handler,
+		},
+		{
+			MethodName: "UpdateReviewPayload",
+			Handler:    _StateStoreService_UpdateReviewPayload_Handler,
 		},
 		{
 			MethodName: "TaskByIssue",

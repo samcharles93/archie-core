@@ -202,6 +202,20 @@ func (s *server) RetryTask(ctx context.Context, r *pb.RetryTaskRequest) (*pb.Ret
 	return &pb.RetryTaskResponse{}, nil
 }
 
+func (s *server) BeginRemediation(ctx context.Context, r *pb.BeginRemediationRequest) (*pb.BeginRemediationResponse, error) {
+	if err := s.deps.Tasks.BeginRemediation(ctx, r.TaskId, r.Payload); err != nil {
+		return nil, s.logErr("BeginRemediation", err)
+	}
+	return &pb.BeginRemediationResponse{}, nil
+}
+
+func (s *server) UpdateReviewPayload(ctx context.Context, r *pb.UpdateReviewPayloadRequest) (*pb.UpdateReviewPayloadResponse, error) {
+	if err := s.deps.Tasks.UpdateReviewPayload(ctx, r.TaskId, r.Payload); err != nil {
+		return nil, s.logErr("UpdateReviewPayload", err)
+	}
+	return &pb.UpdateReviewPayloadResponse{}, nil
+}
+
 // Queries
 
 func (s *server) TaskByIssue(ctx context.Context, r *pb.TaskByIssueRequest) (*pb.TaskByIssueResponse, error) {

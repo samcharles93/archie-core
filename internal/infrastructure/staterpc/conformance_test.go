@@ -172,6 +172,35 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("Transition stale = %v, want ErrStaleTransition", err)
 			}
 
+			// Remediation starter: the guarded transition carries the review
+			// unit, and both guards are the wire contract (the sentinel must
+			// survive the hop for the reaction consumer's dedup to work).
+			if err := c.Transition(ctx, task.ID, "running", "pr_open", "PR opened"); err != nil {
+				t.Fatalf("Transition to pr_open: %v", err)
+			}
+			if err := c.BeginRemediation(ctx, task.ID, `{"review_id":7}`); err != nil {
+				t.Fatalf("BeginRemediation: %v", err)
+			}
+			if err := c.BeginRemediation(ctx, task.ID, `{"review_id":7}`); !errors.Is(err, store.ErrStaleTransition) {
+				t.Fatalf("BeginRemediation stale = %v, want ErrStaleTransition", err)
+			}
+			remediated, err := c.TaskByID(ctx, task.ID)
+			if err != nil || remediated == nil {
+				t.Fatalf("TaskByID after BeginRemediation: %+v %v", remediated, err)
+			}
+			if remediated.Status != "queued" || remediated.Workflow != "remediate" || remediated.ReviewPayload != `{"review_id":7}` {
+				t.Fatalf("BeginRemediation row = status:%q workflow:%q payload:%q", remediated.Status, remediated.Workflow, remediated.ReviewPayload)
+			}
+			if err := c.UpdateReviewPayload(ctx, task.ID, `{"review_id":7,"comments":[{"comment_id":9}]}`); err != nil {
+				t.Fatalf("UpdateReviewPayload: %v", err)
+			}
+			if err := c.Transition(ctx, task.ID, "queued", "running", "claimed"); err != nil {
+				t.Fatalf("claim: %v", err)
+			}
+			if err := c.UpdateReviewPayload(ctx, task.ID, `{}`); !errors.Is(err, store.ErrStaleTransition) {
+				t.Fatalf("UpdateReviewPayload stale = %v, want ErrStaleTransition", err)
+			}
+
 			// TaskQueries: found=false is not an error.
 			missing, err := c.TaskByID(ctx, task.ID+999999)
 			if err != nil || missing != nil {

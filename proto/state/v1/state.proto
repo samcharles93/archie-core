@@ -41,6 +41,8 @@ service StateStoreService {
   // Archive / Retry
   rpc ArchiveTask(ArchiveTaskRequest) returns (ArchiveTaskResponse);
   rpc RetryTask(RetryTaskRequest) returns (RetryTaskResponse);
+  rpc BeginRemediation(BeginRemediationRequest) returns (BeginRemediationResponse);
+  rpc UpdateReviewPayload(UpdateReviewPayloadRequest) returns (UpdateReviewPayloadResponse);
 
   // Queries
   rpc TaskByIssue(TaskByIssueRequest) returns (TaskByIssueResponse);
@@ -427,6 +429,18 @@ message RetryTaskRequest {
   string workflow = 3;
 }
 message RetryTaskResponse {}
+
+message BeginRemediationRequest {
+  int64 task_id = 1;
+  string payload = 2;
+}
+message BeginRemediationResponse {}
+
+message UpdateReviewPayloadRequest {
+  int64 task_id = 1;
+  string payload = 2;
+}
+message UpdateReviewPayloadResponse {}
 
 message TaskByIssueRequest {
   string owner = 1;

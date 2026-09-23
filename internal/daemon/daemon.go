@@ -25,6 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -132,7 +133,17 @@ type Daemon struct {
 	// NATS startup is mandatory (there is no broker-off execution mode), so
 	// production composition always sets it. Nil appears only in tests and
 	// is handled fail-closed at the publish/run sites.
-	Tasks          TaskBus
+	Tasks TaskBus
+	// reactionConsumer is built lazily by drainReactions and kept for its
+	// lifetime drop counter.
+	reactionConsumer *reactionConsumer
+	// Reactions pulls the review-reaction fan-out stream
+	// (docs/prds/pr-review-remediation.md). Each cycle it is drained into
+	// queued remediate runs before the task drain, so a reaction can be
+	// claimed in the same pass that carried it. Optional: nil disables the
+	// reaction consumer (tests, or a deployment without the reaction
+	// stream).
+	Reactions      ReactionSource
 	WorktreeGrants WorktreeGrantIssuer
 	// StateStoreGrants issues per-task State Store credentials for container
 	// env (see containerEnv). Required whenever ConnectedStateStore.URL is
@@ -487,6 +498,7 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 	d.cleanupExpiredStorage(ctx)
 	d.reconcilePRs(ctx)
 	d.dispatchBindings(ctx)
+	d.drainReactions(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	}
@@ -561,6 +573,7 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
 	d.dispatchBindings(ctx)
+	d.drainReactions(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	}
@@ -776,6 +789,40 @@ func (d *Daemon) resolveBindingRepo(b binding.Binding) (string, string, bool) {
 		"hint", "configure exactly one [[repos]] entry, or pin the binding to a specific owner/repo",
 		"configured_repos", len(repos))
 	return "", "", false
+}
+
+// drainReactions turns available review reactions into queued remediate
+// runs. It runs before the task drain so a reaction queued in this pass can
+// be claimed by it; the consumer is built lazily once, so its drop counter
+// spans the process lifetime.
+func (d *Daemon) drainReactions(ctx context.Context) {
+	if d.Reactions == nil || d.Store == nil {
+		return
+	}
+	if d.reactionConsumer == nil {
+		d.reactionConsumer = newReactionConsumer(
+			// The store's owned-PR lookup is the authorization boundary: a
+			// reaction only ever causes work against a PR archie opened and
+			// still owns (pr-review-remediation.md decision 3).
+			d.Store,
+			d.Store,
+			d.botUserForTask,
+			d.Log,
+		)
+	}
+	if _, err := d.reactionConsumer.drain(ctx, d.Reactions, maxReactionsPerCycle); err != nil {
+		d.Log.Error("reaction drain failed", "err", err)
+	}
+}
+
+// botUserForTask resolves the bot login that owns task, so the reaction
+// consumer can exclude Archie's own comments. Identity-derived for
+// multi-identity deployments, the global forge bot user otherwise.
+func (d *Daemon) botUserForTask(task *workflowtask.Task) string {
+	if runner := d.identityFor(task); runner != nil {
+		return runner.Cfg.BotUser
+	}
+	return d.Cfg.Get().BotUser
 }
 
 // drainNATS processes tasks from NATS, falling back to SQLite ClaimNext for

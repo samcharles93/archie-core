@@ -134,6 +134,16 @@ func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf str
 	return unmapError(err)
 }
 
+func (c *Client) BeginRemediation(ctx context.Context, taskID int64, payload string) error {
+	_, err := c.client.BeginRemediation(ctx, &pb.BeginRemediationRequest{TaskId: taskID, Payload: payload})
+	return unmapError(err)
+}
+
+func (c *Client) UpdateReviewPayload(ctx context.Context, taskID int64, payload string) error {
+	_, err := c.client.UpdateReviewPayload(ctx, &pb.UpdateReviewPayloadRequest{TaskId: taskID, Payload: payload})
+	return unmapError(err)
+}
+
 // Queries
 
 func (c *Client) TaskByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error) {
