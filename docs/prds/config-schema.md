@@ -83,7 +83,7 @@ side-channel maps the frontend cross-references by key string.
 `Locked`/`Overridden`/`Reload`/`Provenance` stay as top-level
 `ConfigView` fields; they describe runtime state (what happened on
 the last reload, which keys the overlay refuses), not the field
-catalog, and duplicating that logic per-field would be the same drift
+catalogue, and duplicating that logic per-field would be the same drift
 risk this change exists to remove.
 
 `FieldStructured` fields (repositories, models, providers) carry
@@ -105,12 +105,17 @@ private implementation detail, called generically:
 ```js
 for (const section of schema.sections) {
   const rows = section.fields
-    .filter(f => f.type !== "structured")
-    .map(f => row(f.label, f.value, {
-      key: f.key, type: f.type, options: f.options,
-      locked: f.locked_reason, overridden: f.overridden,
-      restartRequired: f.restart_required,
-    }));
+    .filter((f) => f.type !== "structured")
+    .map((f) =>
+      row(f.label, f.value, {
+        key: f.key,
+        type: f.type,
+        options: f.options,
+        locked: f.locked_reason,
+        overridden: f.overridden,
+        restartRequired: f.restart_required,
+      }),
+    );
   // structured fields render through their dedicated editor (b6ew.4)
 }
 ```
@@ -145,7 +150,7 @@ restart. It knows how to render a section and a field of a given type.
 2. `Repo.ReviewEnabled` reaches the API and the dashboard, alongside
    `AllowConcurrent` and `MaxRetries`.
 3. Adding a new scalar field to the schema requires one backend
-   descriptor and zero frontend changes to appear correctly labeled,
+   descriptor and zero frontend changes to appear correctly labelled,
    sectioned, and editable.
 4. `TestHandleConfigNeverLeaksSecrets`-style coverage extends to the
    schema response; no descriptor exists for a secret-bearing field.

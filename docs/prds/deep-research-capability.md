@@ -12,41 +12,41 @@ findings, and returns one cited report. Grounded in web search and web fetch.
 
 Every claim in this document is mapped to what exists in the tree.
 
-| Claim | Status | Where it stands |
-|---|---|---|
-| `web_fetch` tool (URL → readable text) | **Implemented** | `internal/tools/webfetch/{tool.go,webfetch.go}`; registered in `internal/app/archied/bootstrap.go` `registerStandaloneTools`, disabled-by-config returns `nil` |
-| **Web search** (query → result list) | **Aspirational — zero code** | No search provider, no search tool, no config block anywhere in the tree or in `ai-sdk` v0.1.32 |
-| `agent.Subagent` — nested agent in a fresh context window | **Implemented** (dependency) | `github.com/samcharles93/ai-sdk@v0.1.32/agent/subagent.go`. Synchronous, non-streaming, own model/system/toolset, `MaxSteps` defaults to 10, nesting depth capped at 5, returns final text only |
-| Subagent used in production | **Implemented, one consumer** | `internal/app/agentworker/review.go` — the adversarial reviewer. That is the only non-test use of `Subagent` in the repo |
-| A **delegate/subagent tool** on the chat surface | **Aspirational — zero code** | No `subagent`/`delegate` tool name is registered anywhere |
-| **Fan-out orchestration** (N missions, one collator) | **Aspirational — zero code** | `agentloop`'s package doc states it runs *one* mission: "orchestration across missions lives with the caller". No caller does this yet |
-| Parallel-safe tool execution | **Aspirational — zero code** | The unreachable `internal/tools/dispatch.go` dispatch/gating engine (`ExecutionClass`, `DispatchSequential`/`DispatchConcurrent`/`ClassifyEntry`) was deleted as dead code (tools-core-1); live concurrency is ai-sdk's `GenerateOptions.MaxParallelToolCalls`, which archie-core never sets |
-| Per-result caps + spill-to-disk | **Implemented** | `internal/agentexec/toolset.go` `ToolLimits{MaxResultChars,SpillDir}`, applied in `toolExecute` via `tools.CapPayload` (`limit.go`); no **aggregate** turn cap by design (`toolset.go`). `config.ToolPolicy.SpillDir`; default cap 50k chars, spill dir deliberately not defaulted |
-| Tool guardrails (repeat-failure / no-progress) | **Implemented, not on the call path** | `internal/tools/guardrail.go` engine exists. Its only non-test caller is `dispatchOne` — which is itself unreachable — so **the chat path never consults it**, and the agent path only records per *stage* (`domain/workflow/agent.go`) |
-| Structured capture tools (model reports into a typed store, not prose) | **Implemented** | `internal/app/agentworker/review.go` `record_finding` / `record_checked` — `core.NewTypedTool` appending to a caller-owned slice. This is the pattern a research source ledger should reuse |
-| Curator engine (interval, declared tool set, lifecycle) | **Implemented, tools broken** | `internal/domain/curator`; a curator declaring tools is **refused** at registration (`registry.go`, no `ToolBuilder` implementation) and `curatorLLMRunner` (`internal/app/archied/main.go`) drops `ChatRequest.Tools`. Budgets are time+concurrency only (`runtime.go`) — **no token budget** |
-| Cron / scheduling + delivery router | **Implemented, wired into the daemon** | `internal/domain/scheduling` (ticker engine), `internal/infrastructure/cronstore` (schema v2, `Kind` discriminator), and `internal/infrastructure/crondelivery`; `internal/app/archied/scheduling.go` composes them and `main.go` starts the engine. |
-| Workflow engines (multi-stage, resumable) | **Implemented, worktree-bound** | `internal/domain/workflow` — every non-triage workflow opens with `StagePrepareWorktree()` and mounts `tc.Dir` into a container; the task persists after every stage (`workflow.go`). `triage.go` documents there is "no cheaper directory-less classification primitive" |
-| Long-running chat-initiated work with progress | **Partial** | Chat turns run **once, synchronously**, inline in the channel's turn runner (`internal/gateway/turn.go`). Chat can spawn a *workflow task* (`task_spawn`) which is asynchronous — but that path is worktree/PR-shaped |
-| **Operator-push delivery of an async result** | **Aspirational — zero code** | Nothing pushes a finished result to a chat. No channel subscribes to the event bus (Telegram only *publishes* `KindTurnCompleted`); `crondelivery.Courier` is the intended seam but has **no implementation and no caller**; `send_file` works only inside the live turn. The one out-of-band notification in the tree is feasibility's n8n webhook (`feasibility.go`) |
-| Citation storage / source ledger | **Aspirational — zero code** | No source, citation, or provenance store exists for research output |
+| Claim                                                                  | Status                                 | Where it stands                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web_fetch` tool (URL → readable text)                                 | **Implemented**                        | `internal/tools/webfetch/{tool.go,webfetch.go}`; registered in `internal/app/archied/bootstrap.go` `registerStandaloneTools`, disabled-by-config returns `nil`                                                                                                                                                                                                         |
+| **Web search** (query → result list)                                   | **Aspirational — zero code**           | No search provider, no search tool, no config block anywhere in the tree or in `ai-sdk` v0.1.32                                                                                                                                                                                                                                                                        |
+| `agent.Subagent` — nested agent in a fresh context window              | **Implemented** (dependency)           | `github.com/samcharles93/ai-sdk@v0.1.32/agent/subagent.go`. Synchronous, non-streaming, own model/system/toolset, `MaxSteps` defaults to 10, nesting depth capped at 5, returns final text only                                                                                                                                                                        |
+| Subagent used in production                                            | **Implemented, one consumer**          | `internal/app/agentworker/review.go` — the adversarial reviewer. That is the only non-test use of `Subagent` in the repo                                                                                                                                                                                                                                               |
+| A **delegate/subagent tool** on the chat surface                       | **Aspirational — zero code**           | No `subagent`/`delegate` tool name is registered anywhere                                                                                                                                                                                                                                                                                                              |
+| **Fan-out orchestration** (N missions, one collator)                   | **Aspirational — zero code**           | `agentloop`'s package doc states it runs _one_ mission: "orchestration across missions lives with the caller". No caller does this yet                                                                                                                                                                                                                                 |
+| Parallel-safe tool execution                                           | **Aspirational — zero code**           | The unreachable `internal/tools/dispatch.go` dispatch/gating engine (`ExecutionClass`, `DispatchSequential`/`DispatchConcurrent`/`ClassifyEntry`) was deleted as dead code (tools-core-1); live concurrency is ai-sdk's `GenerateOptions.MaxParallelToolCalls`, which archie-core never sets                                                                           |
+| Per-result caps + spill-to-disk                                        | **Implemented**                        | `internal/agentexec/toolset.go` `ToolLimits{MaxResultChars,SpillDir}`, applied in `toolExecute` via `tools.CapPayload` (`limit.go`); no **aggregate** turn cap by design (`toolset.go`). `config.ToolPolicy.SpillDir`; default cap 50k chars, spill dir deliberately not defaulted                                                                                     |
+| Tool guardrails (repeat-failure / no-progress)                         | **Implemented, not on the call path**  | `internal/tools/guardrail.go` engine exists. Its only non-test caller is `dispatchOne` — which is itself unreachable — so **the chat path never consults it**, and the agent path only records per _stage_ (`domain/workflow/agent.go`)                                                                                                                                |
+| Structured capture tools (model reports into a typed store, not prose) | **Implemented**                        | `internal/app/agentworker/review.go` `record_finding` / `record_checked` — `core.NewTypedTool` appending to a caller-owned slice. This is the pattern a research source ledger should reuse                                                                                                                                                                            |
+| Curator engine (interval, declared tool set, lifecycle)                | **Implemented, tools broken**          | `internal/domain/curator`; a curator declaring tools is **refused** at registration (`registry.go`, no `ToolBuilder` implementation) and `curatorLLMRunner` (`internal/app/archied/main.go`) drops `ChatRequest.Tools`. Budgets are time+concurrency only (`runtime.go`) — **no token budget**                                                                         |
+| Cron / scheduling + delivery router                                    | **Implemented, wired into the daemon** | `internal/domain/scheduling` (ticker engine), `internal/infrastructure/cronstore` (schema v2, `Kind` discriminator), and `internal/infrastructure/crondelivery`; `internal/app/archied/scheduling.go` composes them and `main.go` starts the engine.                                                                                                                   |
+| Workflow engines (multi-stage, resumable)                              | **Implemented, worktree-bound**        | `internal/domain/workflow` — every non-triage workflow opens with `StagePrepareWorktree()` and mounts `tc.Dir` into a container; the task persists after every stage (`workflow.go`). `triage.go` documents there is "no cheaper directory-less classification primitive"                                                                                              |
+| Long-running chat-initiated work with progress                         | **Partial**                            | Chat turns run **once, synchronously**, inline in the channel's turn runner (`internal/gateway/turn.go`). Chat can spawn a _workflow task_ (`task_spawn`) which is asynchronous — but that path is worktree/PR-shaped                                                                                                                                                  |
+| **Operator-push delivery of an async result**                          | **Aspirational — zero code**           | Nothing pushes a finished result to a chat. No channel subscribes to the event bus (Telegram only _publishes_ `KindTurnCompleted`); `crondelivery.Courier` is the intended seam but has **no implementation and no caller**; `send_file` works only inside the live turn. The one out-of-band notification in the tree is feasibility's n8n webhook (`feasibility.go`) |
+| Citation storage / source ledger                                       | **Aspirational — zero code**           | No source, citation, or provenance store exists for research output                                                                                                                                                                                                                                                                                                    |
 
 > **Target state, not current state.** Everything marked aspirational below is
 > design, not a description of the daemon as it runs.
 
 ## Problem
 
-Sam's requirement: *"Deep research should spawn 1 or many subagents for
+Sam's requirement: _"Deep research should spawn 1 or many subagents for
 exploration or research work. And they should collate all findings, they
-should use web search/fetch features."*
+should use web search/fetch features."_
 
 None of the three primitives that sentence needs can be assembled from what
 ships:
 
 1. **Web search does not exist.** `web_fetch` reads a URL you already have. A
-   research loop's first act is to *discover* URLs from a query, and there is
+   research loop's first act is to _discover_ URLs from a query, and there is
    no tool, provider, or config for that — in archie-core or in the shared SDK.
-2. **Nothing can fan out.** `agent.Subagent` can nest *one* nested generation,
+2. **Nothing can fan out.** `agent.Subagent` can nest _one_ nested generation,
    synchronously, and only the PR reviewer calls it. There is no N-way fan-out,
    no bounded concurrency, no shared budget across children, no collation pass.
    `agentloop` explicitly refuses to orchestrate: it runs one mission and the
@@ -63,7 +63,7 @@ from spending unbounded money.
 
 ## What the run actually is
 
-Six stages, each of which must be a *stage* rather than a prompt instruction:
+Six stages, each of which must be a _stage_ rather than a prompt instruction:
 
 1. **Frame.** One cheap model call turns the request into a research brief: the
    question, 3..N distinct sub-questions, and a per-sub-question budget. Output
@@ -72,12 +72,12 @@ Six stages, each of which must be a *stage* rather than a prompt instruction:
 2. **Fan out.** One subagent per sub-question, **in parallel**, with a bounded
    concurrency, each running a read-only research toolset (search + fetch +
    read) against its own fresh context window, each required to record its
-   findings as *typed source records* before finishing, and each compressing
+   findings as _typed source records_ before finishing, and each compressing
    what it returns.
 3. **Cross-check.** Deterministic, no model: group by canonical URL and by
    claim, flag single-sourced claims, mark conflicts. See D6.
-4. **Collate.** One model pass over the children's *conclusions and source
-   records* — never their transcripts — that writes the report body against the
+4. **Collate.** One model pass over the children's _conclusions and source
+   records_ — never their transcripts — that writes the report body against the
    pre-reconciled source set.
 5. **Citation pass.** Its own stage: validate every marker in the body resolves
    to a stored source, and every stored source was fetched successfully.
@@ -98,8 +98,8 @@ peer-reviewed benchmarks), one on open-source deep-research implementations
 read at pinned commits. The findings that changed decisions:
 
 **Only one fan-out unit buys capacity.** Four different units are in use:
-Anthropic fans out *agents with their own context windows*; Google fans out
-*queries*; Perplexity fans out *generated programs*; OpenAI uses pipeline-stage
+Anthropic fans out _agents with their own context windows_; Google fans out
+_queries_; Perplexity fans out _generated programs_; OpenAI uses pipeline-stage
 agents for query enrichment only. Query fan-out is cheap and buys breadth of
 retrieval; agent fan-out is what buys context capacity. Our step 2 is agent
 fan-out, deliberately, because context isolation is the thing a single GPU
@@ -114,9 +114,9 @@ not a mapped merge.
 
 **Citations are lost at the merge in 8 of 10 surveyed repos.** Only `lajosdeme/mole`
 assigns citation markers **mechanically in code before the prompt is built** —
-its `internal/output/report.go` carries the comment *"it cannot introduce a
+its `internal/output/report.go` carries the comment _"it cannot introduce a
 citation, because the citation markers are assigned mechanically before the
-prompt is built"* — and stores a verbatim `Quote` plus a `QuoteOffset` (byte
+prompt is built"_ — and stores a verbatim `Quote` plus a `QuoteOffset` (byte
 offset into the fetched document) so a citation can be re-verified later.
 Claims whose quote is not found in the source are dropped by code
 (`internal/actors/mine.go`: `"claim rejected: quote not found in source"`).
@@ -137,7 +137,7 @@ Both are adopted here: D1 (store, not prose) and a citation pass that is its
 own stage.
 
 **A cross-check stage that no vendor has.** Worker A and worker B never compare
-notes in any disclosed design, and nothing in the published set *resolves*
+notes in any disclosed design, and nothing in the published set _resolves_
 conflicts — Perplexity only "notes" them. Grouping findings by URL and by claim,
 flagging single-sourced claims, and marking unresolved conflicts is the
 cheapest correctness win available and is where a local implementation can beat
@@ -152,28 +152,28 @@ same weights and KV budget, so **wall clock scales roughly linearly with worker
 count** — the isolation benefit survives, the throughput benefit does not. One
 instrumented study puts **web search at 73% of wall-clock time on average (up to
 91%)** (https://cseweb.ucsd.edu/~yiying/2025_NIPS_ERW_Deep_Research_Perf_Study.pdf),
-which is the argument for fanning out *retrieval* aggressively and *generation*
+which is the argument for fanning out _retrieval_ aggressively and _generation_
 sparingly, and for overlapping generation with retrieval.
 
 **Frontier citation volume is not a target.** Frontier runs emit 41-113
 citation URLs per query, while 3-13% of citation URLs are hallucinated and "more
 citations per query do not mean fewer errors per citation"
-(https://arxiv.org/abs/2604.03173). Ten to twenty *verified* citations is a
+(https://arxiv.org/abs/2604.03173). Ten to twenty _verified_ citations is a
 defensible, evidence-backed target.
 
 **Do not port Perplexity's style.** Search-as-code-generation needs
 frontier-class codegen against a bespoke SDK and an atomised self-owned search
-stack. Port the *intent* — deterministic fan-out, dedupe and filter in code
+stack. Port the _intent_ — deterministic fan-out, dedupe and filter in code
 before anything reaches a model — and leave the code generation to the Go
 orchestrator.
 
 ## Architecture: three candidate shapes
 
-| # | Shape | Where a run starts | Durability | New code | Cost |
-|---|---|---|---|---|---|
-| **A** | New capability family `internal/domain/research` + `infrastructure/research`, typed engine, owning registry, lifecycle, background run, completion delivered through an injected courier | A chat tool `research_start` returns a run id | Runs survive the turn; progress observable; resumable | Domain + infra + store + wiring + UI + config | Largest |
-| **B** | A fourth cron job kind (`KindResearch`) in `crondelivery`, reusing `scheduling` + `cronstore` + the delivery router | Chat enqueues a one-shot immediate job | Same store and delivery as cron; no new persistence | Runner + kind + blueprint only | Medium — but fakes "on demand" as a scheduled job, and a job store keyed on a schedule is the wrong shape for a request |
-| **C** | A `deep_research` **tool** that runs the whole fan-out synchronously inside one chat turn, using `agent.Subagent` for the children | Directly — the model calls the tool | None: the run dies with the turn | Search seam + tool + fan-out helper | Smallest |
+| #     | Shape                                                                                                                                                                                    | Where a run starts                            | Durability                                            | New code                                      | Cost                                                                                                                    |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **A** | New capability family `internal/domain/research` + `infrastructure/research`, typed engine, owning registry, lifecycle, background run, completion delivered through an injected courier | A chat tool `research_start` returns a run id | Runs survive the turn; progress observable; resumable | Domain + infra + store + wiring + UI + config | Largest                                                                                                                 |
+| **B** | A fourth cron job kind (`KindResearch`) in `crondelivery`, reusing `scheduling` + `cronstore` + the delivery router                                                                      | Chat enqueues a one-shot immediate job        | Same store and delivery as cron; no new persistence   | Runner + kind + blueprint only                | Medium — but fakes "on demand" as a scheduled job, and a job store keyed on a schedule is the wrong shape for a request |
+| **C** | A `deep_research` **tool** that runs the whole fan-out synchronously inside one chat turn, using `agent.Subagent` for the children                                                       | Directly — the model calls the tool           | None: the run dies with the turn                      | Search seam + tool + fan-out helper           | Smallest                                                                                                                |
 
 **Recommendation: ship C's machinery, then promote it to A.** Slice 2 (below)
 builds the orchestrator as a tool because that is the smallest thing that
@@ -183,29 +183,29 @@ runtime cost and shape are known from real use — which is exactly the order
 AGENTS.md's solo-project rule asks for ("prefer the smallest workable change"),
 and it avoids inventing persistence for a shape that has not been exercised.
 
-Shape B is rejected as the primary path: `cronstore.JobSpec` is a *schedule*
+Shape B is rejected as the primary path: `cronstore.JobSpec` is a _schedule_
 (cron expression, next-run, catch-up); an on-demand research request is not.
 Reusing it would mean every ad-hoc research run leaves a permanent job row.
 
 ### Where the pieces live (shape C, then A)
 
-| Piece | Home | Contract |
-|---|---|---|
-| Search provider seam | `internal/domain/research` (interface) + `internal/infrastructure/research/search/<provider>` (impls) | `Searcher.Search(ctx, query, opts) ([]Result, error)`; `Result{URL, Title, Snippet, RetrievedAt}`. Consumer-owned and one-method, per the `crondelivery.Courier` precedent — nothing here talks to a network |
-| `web_search` tool | `internal/tools/search` | Mirrors `internal/tools/webfetch`: `Tool(cfg) *tools.ToolEntry`, returns `nil` when disabled, `ClassIdempotent`, `Toolset: "web"` |
-| Source store | `internal/domain/research` entity + store | `Source{ID, URL, CanonicalURL, Title, RetrievedAt, Hash, State(ok/failed/duplicate), CitedBy []subq}` |
-| Fan-out orchestrator | `internal/domain/research` (pure) with the model/tool access injected | Bounded worker pool over sub-questions; per-child `agent.Subagent`-shaped `Researcher` seam; shared step/token/wall-clock budget |
-| Collator | `internal/domain/research` | Model pass over `[]ChildConclusion` + source store → report body |
-| Report renderer | `internal/domain/research` | Markdown + numbered citation list rendered **from the store** |
-| Chat trigger | slice 2: `internal/tools/research`; slice 3: gateway tool + courier in `internal/app/archied` | — |
-| Durable run + delivery (slice 3) | `internal/domain/research` + `internal/infrastructure/research` + `internal/app/archied` wiring | Follows the strict plugin-engine rule in `docs/architecture/plugins-and-extensions.md` ("Plugin engine
-rule (strict)"): typed contract, owning registry with start/health/stop, narrow typed registrar |
+| Piece                                                                                           | Home                                                                                                  | Contract                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Search provider seam                                                                            | `internal/domain/research` (interface) + `internal/infrastructure/research/search/<provider>` (impls) | `Searcher.Search(ctx, query, opts) ([]Result, error)`; `Result{URL, Title, Snippet, RetrievedAt}`. Consumer-owned and one-method, per the `crondelivery.Courier` precedent — nothing here talks to a network |
+| `web_search` tool                                                                               | `internal/tools/search`                                                                               | Mirrors `internal/tools/webfetch`: `Tool(cfg) *tools.ToolEntry`, returns `nil` when disabled, `ClassIdempotent`, `Toolset: "web"`                                                                            |
+| Source store                                                                                    | `internal/domain/research` entity + store                                                             | `Source{ID, URL, CanonicalURL, Title, RetrievedAt, Hash, State(ok/failed/duplicate), CitedBy []subq}`                                                                                                        |
+| Fan-out orchestrator                                                                            | `internal/domain/research` (pure) with the model/tool access injected                                 | Bounded worker pool over sub-questions; per-child `agent.Subagent`-shaped `Researcher` seam; shared step/token/wall-clock budget                                                                             |
+| Collator                                                                                        | `internal/domain/research`                                                                            | Model pass over `[]ChildConclusion` + source store → report body                                                                                                                                             |
+| Report renderer                                                                                 | `internal/domain/research`                                                                            | Markdown + numbered citation list rendered **from the store**                                                                                                                                                |
+| Chat trigger                                                                                    | slice 2: `internal/tools/research`; slice 3: gateway tool + courier in `internal/app/archied`         | —                                                                                                                                                                                                            |
+| Durable run + delivery (slice 3)                                                                | `internal/domain/research` + `internal/infrastructure/research` + `internal/app/archied` wiring       | Follows the strict plugin-engine rule in `docs/architecture/plugins-and-extensions.md` ("Plugin engine                                                                                                       |
+| rule (strict)"): typed contract, owning registry with start/health/stop, narrow typed registrar |
 
 ### Why not the curator
 
 The curator family already looks like the right home — a declared interval, a
 declared tool set, an owning registry, per-pass budgets and panic isolation.
-Two facts rule it out as the host for *this*:
+Two facts rule it out as the host for _this_:
 
 - **Its tool path does not work.** A curator declaring tools is refused
   registration because `ToolBuilder` has no implementation, and even if it were
@@ -216,7 +216,7 @@ Two facts rule it out as the host for *this*:
   curators as periodic peers reasoning over memory. A deep-research run is
   operator-initiated work with a deliverable, on the operator's clock.
 
-A research *curator* is a legitimate later idea — "research this standing topic
+A research _curator_ is a legitimate later idea — "research this standing topic
 weekly" — but it is a consumer of this capability, not its foundation.
 
 ## Decisions this design takes
@@ -226,7 +226,7 @@ weekly" — but it is a consumer of this capability, not its foundation.
 Each subagent gets a `record_source` typed tool (the `record_finding` pattern,
 `review.go`) whose handler canonicalises the URL, deduplicates against the
 store, marks which sub-question recorded it, and appends. The collator may
-*select and order* sources; it may not author them. Rendering the reference
+_select and order_ sources; it may not author them. Rendering the reference
 list is then a pure function of the store.
 
 The strongest prior art goes further, and one step of it is worth adopting:
@@ -237,7 +237,7 @@ each claim, and drop any claim whose quote cannot be found in the source
 "the model said so" into a re-checkable "the document says so, at offset N", and
 it makes citation re-verification cheap rather than a second research run.
 
-*Rejected alternative:* require the child to end with a JSON block of sources
+_Rejected alternative:_ require the child to end with a JSON block of sources
 and parse it. A parse failure loses every source in the child's run, and a
 model that reformats its output for readability silently drops citations.
 
@@ -267,14 +267,14 @@ serialised, expensive half.
 `Subagent.Run` sends a prompt and returns a string; the parent's history is
 never passed down and the child's is never returned. That is the property that
 makes N children affordable at all — the parent's context grows by N
-conclusions, not N conversations. This is also why collation is a *separate
-pass* rather than an accumulating agent loop: the collator is the only place
+conclusions, not N conversations. This is also why collation is a _separate
+pass_ rather than an accumulating agent loop: the collator is the only place
 that must hold all N conclusions, and it holds nothing else.
 
 Each child compresses its own findings before returning, so what crosses the
 boundary is a summary, not a transcript. Anthropic names the same pattern
 (filesystem artefacts with lightweight references back) and Perplexity arrived
-at it independently; it is the one disclosed primitive that *increases*
+at it independently; it is the one disclosed primitive that _increases_
 effective capacity without a bigger context window.
 
 ### D4. Search is a provider seam with no silent default
@@ -282,7 +282,7 @@ effective capacity without a bigger context window.
 `web_search` is registered only when a provider resolves, following two
 existing conventions: return `nil` for a disabled capability
 (`webfetch/tool.go` — "an advertised tool that never works costs a round
-trip") and resolve the credential *before* registering
+trip") and resolve the credential _before_ registering
 (`registerMinimaxTool`, `bootstrap.go`). At least two implementations are
 wanted — a self-hosted meta-search endpoint (no per-query cost, no data egress)
 and one hosted API (quality fallback) — behind the same one-method interface,
@@ -298,13 +298,13 @@ cannot tell a negative finding from a missing one.
 ### D6. Two stages no surveyed design has: a mechanical cross-check and a separate citation pass
 
 Children never compare notes in any disclosed design, and nothing in the
-published set *resolves* conflicts — Perplexity only "notes" them. Because
+published set _resolves_ conflicts — Perplexity only "notes" them. Because
 84.7% of final-report errors originate at the orchestrator (mostly citation
 errors), both gaps are worth closing in code rather than in a prompt:
 
 - **Cross-check (deterministic, no model).** Group findings by canonical URL and
   by claim. Flag single-sourced claims, mark unresolved conflicts explicitly,
-  and count sources per sub-question. This runs *before* the collator, so the
+  and count sources per sub-question. This runs _before_ the collator, so the
   collator receives a pre-reconciled set rather than raw prose to untangle.
 - **Citation pass (its own stage, after collation).** Anthropic runs synthesis
   and then a separate CitationAgent. Here the pass is cheaper for being partly
@@ -312,7 +312,7 @@ errors), both gaps are worth closing in code rather than in a prompt:
   source, and that every stored source was actually fetched successfully.
 
 Both stages are small, both are testable without a model, and together they are
-where this implementation can be *better* than the frontier products rather
+where this implementation can be _better_ than the frontier products rather
 than an imitation of them. A run that is expected to emit 10-20 well-verified
 citations rather than 41-113 partly-unverified ones is making a deliberate,
 evidence-supported trade.
@@ -340,7 +340,7 @@ evidence-supported trade.
 ## Failure and security paths
 
 - **SSRF.** Search results are attacker-influenceable (a page can rank for a
-  query). `web_fetch` already vets the *resolved address* at dial time with
+  query). `web_fetch` already vets the _resolved address_ at dial time with
   `AllowPrivateNetworks` off, which is the property to preserve — a search
   tool must not become a way to reach the daemon's own control surfaces by
   returning an internal URL.

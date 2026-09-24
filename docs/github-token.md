@@ -7,7 +7,9 @@ This guide walks you through creating a GitHub Personal Access Token (PAT) for A
 ---
 
 ## Why Archie Core Needs a GitHub Token
+
 Archie Core uses the GitHub API to:
+
 1. Poll assigned or labelled issues (`archie:queued`).
 2. Update issue labels as tasks transition (`archie:working`, `archie:pr`, `archie:parked`).
 3. Post status comments and emoji reactions.
@@ -34,17 +36,21 @@ Archie Core uses the GitHub API to:
 Save your token using any of the following methods:
 
 ### Method A: Environment File (Default XDG Location)
+
 Add your token to `${XDG_CONFIG_HOME:-~/.config}/archie/env`:
+
 ```bash
 ARCHIE_GITHUB_TOKEN="ghp_YOUR_CLASSIC_TOKEN_HERE"
 ```
 
 ### Method B: Environment Variable in Current Shell
+
 ```bash
 export ARCHIE_GITHUB_TOKEN="ghp_YOUR_CLASSIC_TOKEN_HERE"
 ```
 
 ### Method C: Directly in Configuration File (`~/.config/archie/config.toml`)
+
 ```toml
 [forge]
 type = "github"

@@ -33,11 +33,13 @@ function inlineMarkdown(text: string): ChatInline[] {
   const children: ChatInline[] = [];
   let cursor = 0;
   for (const match of String(text).matchAll(INLINE)) {
-    if (match.index > cursor) children.push({ kind: "text", text: text.slice(cursor, match.index) });
+    if (match.index > cursor)
+      children.push({ kind: "text", text: text.slice(cursor, match.index) });
     const value = match[0];
     if (value.startsWith("![")) {
       const img = value.match(/^!\[([^\]]*)\]\((.+)\)$/);
-      if (img) children.push({ kind: "image", alt: img[1] || "Image", src: img[2] });
+      if (img)
+        children.push({ kind: "image", alt: img[1] || "Image", src: img[2] });
     } else if (value.startsWith("~~")) {
       children.push({ kind: "del", text: value.slice(2, -2) });
     } else if (value.startsWith("**") || value.startsWith("__")) {
@@ -45,14 +47,17 @@ function inlineMarkdown(text: string): ChatInline[] {
     } else if (value.startsWith("`")) {
       children.push({ kind: "code", text: value.slice(1, -1) });
     } else if (value.startsWith("[")) {
-      const link = value.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)$/);
+      const link = value.match(
+        /^\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)$/,
+      );
       if (link) children.push({ kind: "link", text: link[1], href: link[2] });
     } else {
       children.push({ kind: "em", text: value.slice(1, -1) });
     }
     cursor = match.index + value.length;
   }
-  if (cursor < text.length) children.push({ kind: "text", text: text.slice(cursor) });
+  if (cursor < text.length)
+    children.push({ kind: "text", text: text.slice(cursor) });
   return children;
 }
 
@@ -71,7 +76,10 @@ export function parseMarkdown(text: string | null | undefined): ChatBlock[] {
   };
   const flushList = () => {
     if (!list) return;
-    blocks.push({ kind: list.tag, items: list.items.map((item) => inlineMarkdown(item)) });
+    blocks.push({
+      kind: list.tag,
+      items: list.items.map((item) => inlineMarkdown(item)),
+    });
     list = null;
   };
 
@@ -93,7 +101,8 @@ export function parseMarkdown(text: string | null | undefined): ChatBlock[] {
       continue;
     }
     const headerCells = tableCells(line);
-    const separatorCells = index + 1 < lines.length ? tableCells(lines[index + 1]) : null;
+    const separatorCells =
+      index + 1 < lines.length ? tableCells(lines[index + 1]) : null;
     if (
       headerCells &&
       separatorCells &&
@@ -127,7 +136,10 @@ export function parseMarkdown(text: string | null | undefined): ChatBlock[] {
     if (heading) {
       flushParagraph();
       flushList();
-      blocks.push({ kind: `h${heading[1].length}` as "h1" | "h2" | "h3", inline: inlineMarkdown(heading[2]) });
+      blocks.push({
+        kind: `h${heading[1].length}` as "h1" | "h2" | "h3",
+        inline: inlineMarkdown(heading[2]),
+      });
       continue;
     }
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
@@ -145,7 +157,10 @@ export function parseMarkdown(text: string | null | undefined): ChatBlock[] {
     if (line.startsWith(">")) {
       flushParagraph();
       flushList();
-      blocks.push({ kind: "blockquote", inline: inlineMarkdown(line.replace(/^>\s?/, "")) });
+      blocks.push({
+        kind: "blockquote",
+        inline: inlineMarkdown(line.replace(/^>\s?/, "")),
+      });
       continue;
     }
     paragraph.push(line);

@@ -3,7 +3,12 @@ import { computed, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { api } from "@/lib/api";
 import StructuredResourceCard from "@/settings/StructuredResourceCard.vue";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
@@ -36,7 +41,9 @@ onMounted(() => Promise.all([load(), controlPlane.load()]));
   <div>
     <PageHeader title="Channels" />
 
-    <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
+    <div
+      class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
+    >
       <Empty v-if="error">
         <EmptyHeader>
           <EmptyTitle>Cannot reach archied</EmptyTitle>
@@ -49,8 +56,17 @@ onMounted(() => Promise.all([load(), controlPlane.load()]));
           <EmptyDescription>Add one below.</EmptyDescription>
         </EmptyHeader>
       </Empty>
-      <ChannelCard v-for="channel in channels" v-else :key="channel.id || channel.name" :channel="channel" />
+      <ChannelCard
+        v-for="channel in channels"
+        v-else
+        :key="channel.id || channel.name"
+        :channel="channel"
+      />
     </div>
-    <StructuredResourceCard v-for="descriptor in settings" :key="descriptor.kind" :descriptor="descriptor" />
+    <StructuredResourceCard
+      v-for="descriptor in settings"
+      :key="descriptor.kind"
+      :descriptor="descriptor"
+    />
   </div>
 </template>

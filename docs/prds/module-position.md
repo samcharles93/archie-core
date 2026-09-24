@@ -14,22 +14,22 @@ not started, because it needs a schema-generation mechanism the parent
 doc deliberately deferred: "This document does not attempt to design the
 full generator." This is that design.
 
-## Do not invent a new mechanism -- generalize the one used three times
+## Do not invent a new mechanism -- generalise the one used three times
 
 Yaegi-interpreted extension code with a fixed, resolved-by-name exported
 function already exists in this codebase for three surfaces, and all three
 follow the identical shape:
 
-| Surface | Fixed signature | Export path | Symbol table |
-|---|---|---|---|
-| Custom gate (`internal/gate/gateeval`) | `func(gate.GateContext) []gate.Finding` | `"gate.Check"` | `gateextract.Symbols` |
-| Workflow stage plugin (`skillbuild`) | stage-specific | skill-declared | `wfextract.Symbols` |
-| Skill plugin (`internal/skill/plugin.go`) | `func(string) string` | `"main.Run"` | none (stdlib only) |
+| Surface                                   | Fixed signature                         | Export path    | Symbol table          |
+| ----------------------------------------- | --------------------------------------- | -------------- | --------------------- |
+| Custom gate (`internal/gate/gateeval`)    | `func(gate.GateContext) []gate.Finding` | `"gate.Check"` | `gateextract.Symbols` |
+| Workflow stage plugin (`skillbuild`)      | stage-specific                          | skill-declared | `wfextract.Symbols`   |
+| Skill plugin (`internal/skill/plugin.go`) | `func(string) string`                   | `"main.Run"`   | none (stdlib only)    |
 
 Each is: read a `.go` file -> `yaegiutil.New` with that surface's symbol
 table -> `yaegiutil.Resolve[T](i, src, exportPath)` -> call the resolved
 function wrapped in `yaegiutil.Safe` for panic recovery. **Module is a
-fourth instance of this same shape**, parameterized by action kind instead
+fourth instance of this same shape**, parameterised by action kind instead
 of hardcoded to one fixed signature. No new interpreter construction, no
 new panic-recovery mechanism, no new symbol-table generation tool --
 `go generate ... yaegi extract` is already how `wfextract`/`gateextract`
@@ -173,7 +173,7 @@ side effect. Concretely:
 ## Recommended first slice
 
 1. `internal/domain/eda/module` package: `ModuleRegistry`, the
-   discover/resolve/invoke mechanics, generalizing `gateeval`'s pattern.
+   discover/resolve/invoke mechanics, generalising `gateeval`'s pattern.
 2. One proof-of-concept kind, side-effect-free (`log`), with its schema
    source + generated extract file, to prove schema -> `go:generate` ->
    Yaegi load -> registry -> playbook dispatch end to end.
@@ -205,7 +205,7 @@ registry as-is.
    to declare its kind name explicitly (frontmatter-style, like a skill's
    `metadata.archie.workflow`) or is the kind inferred from directory/file
    naming (`module/notify/impl.go` implies kind `notify`)? Follow the
-   skill catalog's existing declared-metadata convention unless there's a
+   skill catalogue's existing declared-metadata convention unless there's a
    reason not to -- not decided here.
 2. **Where schema source files live.** This doc assumes
    `internal/domain/eda/module/<kind>/types.go` per kind, but the exact

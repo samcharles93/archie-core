@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { CircleQuestionMark } from "@lucide/vue";
 
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 </script>
 
 <template>

@@ -21,7 +21,9 @@ const props = defineProps<{ id: string }>();
 const run = useTaskRun();
 
 const title = computed(() => run.task?.title || `Task #${props.id}`);
-const workflow = computed(() => (run.task?.workflow ? `${run.task.workflow} workflow` : ""));
+const workflow = computed(() =>
+  run.task?.workflow ? `${run.task.workflow} workflow` : "",
+);
 </script>
 
 <template>

@@ -10,7 +10,13 @@ export interface Skill {
 
 <script setup lang="ts">
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 /** One catalogue entry: what it is, and where it came from. */
 const props = defineProps<{ skill: Skill }>();
@@ -20,12 +26,18 @@ const props = defineProps<{ skill: Skill }>();
   <Card>
     <CardHeader>
       <CardTitle>{{ props.skill.name || "Untitled skill" }}</CardTitle>
-      <CardDescription>{{ props.skill.description || "No description provided." }}</CardDescription>
+      <CardDescription>{{
+        props.skill.description || "No description provided."
+      }}</CardDescription>
     </CardHeader>
     <CardContent>
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-fg-subtle">{{ props.skill.source || "Unknown source" }}</span>
-        <Badge v-if="props.skill.workflow" variant="info">{{ props.skill.workflow }}</Badge>
+        <span class="text-xs text-fg-subtle">{{
+          props.skill.source || "Unknown source"
+        }}</span>
+        <Badge v-if="props.skill.workflow" variant="info">{{
+          props.skill.workflow
+        }}</Badge>
       </div>
     </CardContent>
   </Card>

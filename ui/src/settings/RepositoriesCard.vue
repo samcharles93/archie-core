@@ -1,8 +1,20 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import ConfigCard from "./ConfigCard.vue";
 import { config } from "./state";
 
@@ -29,7 +41,10 @@ function gateSummary(gate?: string[][]): string {
     <Empty>
       <EmptyHeader>
         <EmptyTitle>No repositories configured</EmptyTitle>
-        <EmptyDescription>Add a [[repos]] entry in config.toml so Archie has somewhere to work.</EmptyDescription>
+        <EmptyDescription
+          >Add a [[repos]] entry in config.toml so Archie has somewhere to
+          work.</EmptyDescription
+        >
       </EmptyHeader>
     </Empty>
   </ConfigCard>
@@ -49,11 +64,15 @@ function gateSummary(gate?: string[][]): string {
       </TableHeader>
       <TableBody>
         <TableRow v-for="(repo, index) in repos" :key="index">
-          <TableCell class="font-medium">{{ repo.owner }}/{{ repo.name }}</TableCell>
+          <TableCell class="font-medium"
+            >{{ repo.owner }}/{{ repo.name }}</TableCell
+          >
           <TableCell class="font-mono">{{ repo.base }}</TableCell>
           <TableCell>{{ repo.ecosystem || "go" }}</TableCell>
           <TableCell class="font-mono">{{ gateSummary(repo.gate) }}</TableCell>
-          <TableCell class="font-mono">{{ repo.protect?.length ? repo.protect.join(", ") : "—" }}</TableCell>
+          <TableCell class="font-mono">{{
+            repo.protect?.length ? repo.protect.join(", ") : "—"
+          }}</TableCell>
           <TableCell>{{ repo.allow_concurrent ? "yes" : "no" }}</TableCell>
           <TableCell class="font-mono">{{ repo.max_retries ?? 0 }}</TableCell>
           <TableCell>{{ repo.review_enabled ? "yes" : "no" }}</TableCell>

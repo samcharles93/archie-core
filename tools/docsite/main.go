@@ -2,10 +2,9 @@
 // artifacts.
 //
 // The Markdown is the source; the JSON is the fact set every renderer reads.
-// MkDocs was the first renderer and the Astro app is the second, so the artifact
-// is the product and the Markdown stays the source -- tools/newsgen states the
-// same principle for releases, where the JSON is canonical and the Markdown is an
-// adapter.
+// The external Astro website consumes the artifacts; the JSON is the contract
+// and the Markdown stays the source. tools/newsgen follows the same rule for
+// release facts.
 //
 // One source tree yields two sets, each with its own artifact and its own url
 // base: see publishRules for the split and the reasons. A renderer reads both
@@ -55,8 +54,8 @@ type docSet struct {
 	ArtifactPath string
 }
 
-// The two sets. The public set keeps the directory-style paths MkDocs produced
-// exactly, so existing links keep working.
+// The two sets. The public set keeps directory-style URLs stable so existing
+// links keep working.
 var (
 	publicDocs      = docSet{Name: "public", URLPrefix: "/docs/", ArtifactPath: "docs/data/generated/docs.json"}
 	developmentDocs = docSet{Name: "development", URLPrefix: "/dev/", ArtifactPath: "docs/data/generated/dev-docs.json"}
@@ -534,9 +533,10 @@ type setDocument struct {
 }
 
 // load reads every published page and derives each set's sidebar from the layout,
-// which is how MkDocs derived it: a page added under a directory appears without a
-// second edit anywhere. Both sets are built in one pass over one url map, so a
-// link that crosses between them resolves to the base its target is served under.
+// which keeps the directory-derived route stable: a page added under a
+// directory appears without a second edit anywhere. Both sets are built in one
+// pass over one url map, so a link that crosses between them resolves to the
+// base its target is served under.
 func load(repoRoot string) ([]setDocument, error) {
 	sourceDir := filepath.Join(repoRoot, docsDir)
 	bodies, err := readPages(repoRoot, sourceDir)

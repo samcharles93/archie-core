@@ -11,9 +11,7 @@ import ProviderTable from "./ProviderTable.vue";
 </script>
 
 <template>
-  <ConfigCard
-    title="Models & providers"
-  >
+  <ConfigCard title="Models & providers">
     <ModelRoleList />
     <ProviderTable />
   </ConfigCard>

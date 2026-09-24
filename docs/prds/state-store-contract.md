@@ -4,7 +4,7 @@
 **Revision:** 2e
 **Date:** 2026-09-06
 
-This is the pre-implementation design document that Phase 2 subtasks `.4.2` (generalize
+This is the pre-implementation design document that Phase 2 subtasks `.4.2` (generalise
 `storerpc` as the State Store gRPC contract) and `.4.3` (stand up `archie-state-store`)
 implement against.
 **Beads milestone:** archie-core-8cda.4.1
@@ -26,15 +26,15 @@ limits, mode/config shape, local-adapter compatibility, and cutover/deletion rul
 > semantics and cutover rules stand.
 
 > **Current state — read before `.4.2` starts.** The §12 step 2 relocation (`archie-core-8cda.
-> 4.8`) has landed: `Task`/`Status*`/`Source*` and the 3-method `workflow.Store` now live in
+4.8`) has landed: `Task`/`Status*`/`Source*` and the 3-method `workflow.Store` now live in
 > `internal/domain/workflow`, the six production workflow files import no `internal/store`
 > symbol, and `storerpc`/the NATS transport assert against `workflow.Store` instead of
 > `store.WorkflowStore`. The broader Phase 2 acceptance criterion (State Store as its own
 > service behind gRPC) is still open — that is what `.4.2`/`.4.3` build next.
 
 > **Relationship to migration-decisions §4 — not replaced.** `docs/architecture/
-> migration-decisions.md` §4 (`store.Task → WorkflowExecution`, `mutable Stage →
-> StepExecution history`, `RetryCount/Attempt → Attempt records`, versioned Workflow defs)
+migration-decisions.md` §4 (`store.Task → WorkflowExecution`, `mutable Stage →
+StepExecution history`, `RetryCount/Attempt → Attempt records`, versioned Workflow defs)
 > **remains the authoritative, open document for the long-term Workflow migration.** This PRD
 > does **not** replace it. It only pulls the minimal `Task`/`Status`/`Source` type + interface
 > relocation forward as a Phase 2 prerequisite (because the acceptance criterion requires it);
@@ -61,7 +61,7 @@ extracted), which is the PRD §3 posture; it differs from the gateway's remote-d
 because the gateway is already a separate deployment and the State Store is not.
 
 > **Contract-ownership fork, decided (rev. 2c — resolves the domain contradiction).**
-> Ownership splits by the consumer's *layer*, per the dependency contract's rule #2
+> Ownership splits by the consumer's _layer_, per the dependency contract's rule #2
 > ("a domain defines the smallest interfaces required to perform its work") and rule #7
 > ("database rows … MUST NOT leak into domain models"):
 >
@@ -117,23 +117,23 @@ remains the only composite; every other interface is flat. Narrow slices are spl
 consumer-capability lines so no consumer acquires a surface it does not need
 (`interfacebloat` cap = 8).
 
-| Interface (owner) | Embeds | Methods | Local impl | Remote impl |
-|---|---|---|---|---|
-| `TaskStore` (store) | `TaskLifecycle`, `TaskEvents`, `TaskQueries`, `TaskArchiver`, `TaskRetryer` | 24 (union) | `*Store` | `*staterpc.Client` |
-| `TaskLifecycle` (store) | — | 8 | `*Store` | `*staterpc.Client` |
-| `TaskEvents` (store) | — | 7 | `*Store` | `*staterpc.Client` |
-| `TaskQueries` (store) | — | 7 | `*Store` | `*staterpc.Client` |
-| `TaskArchiver` (store) | — | 1 | `*Store` | `*staterpc.Client` |
-| `TaskRetryer` (store) | — | 1 | `*Store` | `*staterpc.Client` |
-| `workflow.Store` (workflow domain) | — | 3 | `*Store` | `*staterpc.Client` |
-| `CaptureStore` (store) | — | 2 | `*Store` | `*staterpc.Client` |
-| `MappingStore` (store) | — | 5 | `*Store` | `*staterpc.Client` |
-| `BindingStore` (store) | — | 6 | `*Store` | `*staterpc.Client` |
-| `BindingDispatcher` (store) | — | 3 | `*Store` | `*staterpc.Client` |
-| `BindingTaskCreator` (store) | — | 1 | `*Store` | `*staterpc.Client` |
-| `PlaybookDispatcher` (store) | — | 2 | `*Store` | `*staterpc.Client` |
+| Interface (owner)                  | Embeds                                                                      | Methods    | Local impl | Remote impl        |
+| ---------------------------------- | --------------------------------------------------------------------------- | ---------- | ---------- | ------------------ |
+| `TaskStore` (store)                | `TaskLifecycle`, `TaskEvents`, `TaskQueries`, `TaskArchiver`, `TaskRetryer` | 24 (union) | `*Store`   | `*staterpc.Client` |
+| `TaskLifecycle` (store)            | —                                                                           | 8          | `*Store`   | `*staterpc.Client` |
+| `TaskEvents` (store)               | —                                                                           | 7          | `*Store`   | `*staterpc.Client` |
+| `TaskQueries` (store)              | —                                                                           | 7          | `*Store`   | `*staterpc.Client` |
+| `TaskArchiver` (store)             | —                                                                           | 1          | `*Store`   | `*staterpc.Client` |
+| `TaskRetryer` (store)              | —                                                                           | 1          | `*Store`   | `*staterpc.Client` |
+| `workflow.Store` (workflow domain) | —                                                                           | 3          | `*Store`   | `*staterpc.Client` |
+| `CaptureStore` (store)             | —                                                                           | 2          | `*Store`   | `*staterpc.Client` |
+| `MappingStore` (store)             | —                                                                           | 5          | `*Store`   | `*staterpc.Client` |
+| `BindingStore` (store)             | —                                                                           | 6          | `*Store`   | `*staterpc.Client` |
+| `BindingDispatcher` (store)        | —                                                                           | 3          | `*Store`   | `*staterpc.Client` |
+| `BindingTaskCreator` (store)       | —                                                                           | 1          | `*Store`   | `*staterpc.Client` |
+| `PlaybookDispatcher` (store)       | —                                                                           | 2          | `*Store`   | `*staterpc.Client` |
 
-**Key property of the remote client:** `*staterpc.Client` is a *single* adapter that wraps one
+**Key property of the remote client:** `*staterpc.Client` is a _single_ adapter that wraps one
 `StateStoreClient` and is asserted against **whichever narrow Go interfaces its caller needs**
 (exactly as `gatewayrpc.Client` asserts both `gateway.ChatContract` and
 `gateway.SessionStore`). The Go contracts stay narrow (≤8, the `interfacebloat` cap); the wire
@@ -153,20 +153,20 @@ Process legend: **DAEMON** = `archied` (incl. in-process webui + gateway runtime
 `storerpc.Server`); **AGENT** = `archie-agent` worker (no DB connection); **GATEWAY** = store
 access through daemon-side narrow adapter interfaces.
 
-| Contract | Primary consumers (process) | Remote on the wire? |
-|---|---|---|
-| `TaskLifecycle` (8) | DAEMON (dispatch, claim, action) + **AGENT** (`Transition`, `Update` via storerpc) | `Transition`/`Update` = **YES** (agent); rest DAEMON |
-| `TaskArchiver` (1) | DAEMON (`taskactions` archive) | not yet |
-| `TaskRetryer` (1) | DAEMON (`taskactions` retry) | not yet |
-| `TaskQueries` (7) | DAEMON + GATEWAY (status/list adapters) | not yet (`OpenPRs`/`Tasks`/`StatusCounts` cross to gateway adapters in-process) |
-| `TaskEvents` (7) | DAEMON + **AGENT** (`InsertEvent` via storerpc) | `InsertEvent` = **YES** (agent); rest DAEMON |
-| `workflow.Store` (3) | **AGENT** only | **YES** (the sole genuinely remote consumer) |
-| `CaptureStore` (2) | DAEMON (webhook intake + mapping editor) | not yet |
-| `MappingStore` (5) | DAEMON (dashboard editor + dispatch loop) | not yet |
-| `BindingStore` (6) | DAEMON (dashboard editor + dispatch loop) | not yet |
-| `BindingDispatcher` (3) | DAEMON (dispatch loop) | not yet |
-| `BindingTaskCreator` (1) | DAEMON (dispatch loop) | not yet |
-| `PlaybookDispatcher` (2) | DAEMON (EDA playbook dispatch loop) | **YES** (side-effecting-action idempotency ledger over gRPC) |
+| Contract                 | Primary consumers (process)                                                        | Remote on the wire?                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `TaskLifecycle` (8)      | DAEMON (dispatch, claim, action) + **AGENT** (`Transition`, `Update` via storerpc) | `Transition`/`Update` = **YES** (agent); rest DAEMON                            |
+| `TaskArchiver` (1)       | DAEMON (`taskactions` archive)                                                     | not yet                                                                         |
+| `TaskRetryer` (1)        | DAEMON (`taskactions` retry)                                                       | not yet                                                                         |
+| `TaskQueries` (7)        | DAEMON + GATEWAY (status/list adapters)                                            | not yet (`OpenPRs`/`Tasks`/`StatusCounts` cross to gateway adapters in-process) |
+| `TaskEvents` (7)         | DAEMON + **AGENT** (`InsertEvent` via storerpc)                                    | `InsertEvent` = **YES** (agent); rest DAEMON                                    |
+| `workflow.Store` (3)     | **AGENT** only                                                                     | **YES** (the sole genuinely remote consumer)                                    |
+| `CaptureStore` (2)       | DAEMON (webhook intake + mapping editor)                                           | not yet                                                                         |
+| `MappingStore` (5)       | DAEMON (dashboard editor + dispatch loop)                                          | not yet                                                                         |
+| `BindingStore` (6)       | DAEMON (dashboard editor + dispatch loop)                                          | not yet                                                                         |
+| `BindingDispatcher` (3)  | DAEMON (dispatch loop)                                                             | not yet                                                                         |
+| `BindingTaskCreator` (1) | DAEMON (dispatch loop)                                                             | not yet                                                                         |
+| `PlaybookDispatcher` (2) | DAEMON (EDA playbook dispatch loop)                                                | **YES** (side-effecting-action idempotency ledger over gRPC)                    |
 
 **Consequence for migration order:** the **agent's `workflow.Store` is already cross-process
 already** (via the NATS `storerpc` surrogate), so it is the first contract to move to gRPC. The
@@ -190,12 +190,12 @@ The Phase 2 acceptance criterion ("`internal/domain/workflow` … no longer impo
 
 **The relocation (a prerequisite that must land before or with `.4.2`):**
 
-| Current symbol (`internal/store`) | Moves to | Notes |
-|---|---|---|
-| `Task` type | `internal/domain/workflow.Task` | The task-execution record the workflow domain operates on. `internal/store` persists this type (persistence → domain). |
-| `Status` + `Status*` constants | `internal/domain/workflow` | e.g. `StatusClosedWontDo`, `StatusMerged`, `StatusPROpen`, `StatusWaitingHuman`, `StatusRunning` — task-lifecycle vocabulary. |
-| `Source` + `Source*` constants | `internal/domain/workflow` | e.g. `SourceChat` — provenance vocabulary, follows `Task`. |
-| `WorkflowStore` interface (3 methods) | `internal/domain/workflow.Store` | **Consumer-owned** (dependency rule #2). Supersedes `store.WorkflowStore`. |
+| Current symbol (`internal/store`)     | Moves to                         | Notes                                                                                                                         |
+| ------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Task` type                           | `internal/domain/workflow.Task`  | The task-execution record the workflow domain operates on. `internal/store` persists this type (persistence → domain).        |
+| `Status` + `Status*` constants        | `internal/domain/workflow`       | e.g. `StatusClosedWontDo`, `StatusMerged`, `StatusPROpen`, `StatusWaitingHuman`, `StatusRunning` — task-lifecycle vocabulary. |
+| `Source` + `Source*` constants        | `internal/domain/workflow`       | e.g. `SourceChat` — provenance vocabulary, follows `Task`.                                                                    |
+| `WorkflowStore` interface (3 methods) | `internal/domain/workflow.Store` | **Consumer-owned** (dependency rule #2). Supersedes `store.WorkflowStore`.                                                    |
 
 **Resulting dependency direction (correct per the architecture):**
 
@@ -251,25 +251,25 @@ level.
 ### The `StateStore` RPC set (union of the contracts, grouped)
 
 Methods are named after the store methods so the mapping is unambiguous. `workflow.Store` is a
-*view*, not new RPCs — `Update`/`Transition`/`InsertEvent` are shared with
+_view_, not new RPCs — `Update`/`Transition`/`InsertEvent` are shared with
 `TaskLifecycle`/`TaskEvents` and appear once.
 
-| Group | RPCs |
-|---|---|
-| Lifecycle | `EnqueueIssue`, `EnqueueChatTask`, `ClaimNext`, `ClaimByIssue`, `Transition`, `Update`, `Requeue`, `RecoverStale` |
-| Archive / Retry | `ArchiveTask`, `RetryTask` |
-| Queries | `TaskByIssue`, `OpenTaskByPR`, `TaskByID`, `OpenPRs`, `ClearTerminalTasks`, `Tasks`, `StatusCounts`, `IncrementRetryCount` |
-| Events | `InsertEvent`, `EventsSince`, `TaskEvents`, `WorkflowStats`, `StageStats`, `TokensByDay` |
-| Capture | `InsertCapture`, `ListCaptures` |
-| Mapping | `InsertMapping`, `GetMapping`, `ListMappings`, `UpdateMapping`, `DeleteMapping` |
-| Binding | `InsertBinding`, `GetBinding`, `ListBindings`, `UpdateBinding`, `DeleteBinding`, `ApproveBinding` |
-| Dispatch | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures` |
-| Playbook | `RecordPlaybookDispatch`, `DeletePlaybookDispatches` |
-| BindingTaskCreator | `EnqueueBindingTask` |
-| Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
-| Apply status | `PutApplyStatus`, `ListApplyStatus` |
-| Channel status | `PutChannelStatus`, `ListChannelStatus` |
-| Task log | `ReadTaskLog`, `StreamTaskLogContent` |
+| Group              | RPCs                                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle          | `EnqueueIssue`, `EnqueueChatTask`, `ClaimNext`, `ClaimByIssue`, `Transition`, `Update`, `Requeue`, `RecoverStale`          |
+| Archive / Retry    | `ArchiveTask`, `RetryTask`                                                                                                 |
+| Queries            | `TaskByIssue`, `OpenTaskByPR`, `TaskByID`, `OpenPRs`, `ClearTerminalTasks`, `Tasks`, `StatusCounts`, `IncrementRetryCount` |
+| Events             | `InsertEvent`, `EventsSince`, `TaskEvents`, `WorkflowStats`, `StageStats`, `TokensByDay`                                   |
+| Capture            | `InsertCapture`, `ListCaptures`                                                                                            |
+| Mapping            | `InsertMapping`, `GetMapping`, `ListMappings`, `UpdateMapping`, `DeleteMapping`                                            |
+| Binding            | `InsertBinding`, `GetBinding`, `ListBindings`, `UpdateBinding`, `DeleteBinding`, `ApproveBinding`                          |
+| Dispatch           | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures`                                                     |
+| Playbook           | `RecordPlaybookDispatch`, `DeletePlaybookDispatches`                                                                       |
+| BindingTaskCreator | `EnqueueBindingTask`                                                                                                       |
+| Config snapshot    | `PutConfigSnapshot`, `GetConfigSnapshot`                                                                                   |
+| Apply status       | `PutApplyStatus`, `ListApplyStatus`                                                                                        |
+| Channel status     | `PutChannelStatus`, `ListChannelStatus`                                                                                    |
+| Task log           | `ReadTaskLog`, `StreamTaskLogContent`                                                                                      |
 
 That is **51 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
@@ -326,17 +326,17 @@ alongside the rest.
 `workflow.Task` (§4); the daemon/webui store surfaces return the same `workflow.Task` (the store
 persists the domain type).
 
-| Domain type | Package | Notes for `values.go` |
-|---|---|---|
-| `workflow.Task` | `internal/domain/workflow` | time fields stored as layout strings; convert to/from `google.protobuf.Timestamp` |
-| `events.Event` | `internal/events` | `Timestamp` → `google.protobuf.Timestamp` |
-| `store.CapturedEvent` | `internal/store` | headers/body/remote_addr; body capped 256 KiB |
-| `mapping.Mapping` | `internal/domain/mapping` | JSON-path field bindings |
-| `binding.Binding` | `internal/domain/binding` | secret is **already decrypted** before returning; keep decrypted form out of any durable/logged representation |
-| `workflow.Status` / `workflow.Source` | `internal/domain/workflow` | enum-like; map to proto enum or string, keeping the names stable for compatibility |
-| `store.WorkflowStat` | `internal/store` | aggregate row |
-| `store.StageStat` | `internal/store` | aggregate row |
-| `store.DayTokens` | `internal/store` | aggregate row |
+| Domain type                           | Package                    | Notes for `values.go`                                                                                          |
+| ------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `workflow.Task`                       | `internal/domain/workflow` | time fields stored as layout strings; convert to/from `google.protobuf.Timestamp`                              |
+| `events.Event`                        | `internal/events`          | `Timestamp` → `google.protobuf.Timestamp`                                                                      |
+| `store.CapturedEvent`                 | `internal/store`           | headers/body/remote_addr; body capped 256 KiB                                                                  |
+| `mapping.Mapping`                     | `internal/domain/mapping`  | JSON-path field bindings                                                                                       |
+| `binding.Binding`                     | `internal/domain/binding`  | secret is **already decrypted** before returning; keep decrypted form out of any durable/logged representation |
+| `workflow.Status` / `workflow.Source` | `internal/domain/workflow` | enum-like; map to proto enum or string, keeping the names stable for compatibility                             |
+| `store.WorkflowStat`                  | `internal/store`           | aggregate row                                                                                                  |
+| `store.StageStat`                     | `internal/store`           | aggregate row                                                                                                  |
+| `store.DayTokens`                     | `internal/store`           | aggregate row                                                                                                  |
 
 ### Wire-contract blocker fixed here: `RecordDispatch`
 
@@ -369,17 +369,17 @@ same seam.
 
 **Boot handoff contract (additive, not replacing the NATS settings):**
 
-| Field | Where | Source | Notes |
-|---|---|---|---|
+| Field              | Where                  | Source                                                                                     | Notes                                                                                                                                        |
+| ------------------ | ---------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `StateStoreTarget` | `agentworker.Settings` | env `STATE_STORE_URL` (or `-state-store-url` flag), set by the daemon in the container env | `host:port` of the State Store gRPC server. Loopback/Docker-bridge address — the agent reaches it the same way it reaches the daemon's NATS. |
-| `StateStoreToken` | `agentworker.Settings` | env `STATE_STORE_TOKEN` (or `-state-store-token` flag) | Per-task bearer token carried in gRPC metadata by a client interceptor (see §9). |
-| `StoreTimeout` | `agentworker.Settings` | a bounded per-call timeout | Mirrors `natsrpc.Client.Timeout` / the existing `rpcTimeout`; bounds each State Store call when the caller `ctx` has no deadline. |
+| `StateStoreToken`  | `agentworker.Settings` | env `STATE_STORE_TOKEN` (or `-state-store-token` flag)                                     | Per-task bearer token carried in gRPC metadata by a client interceptor (see §9).                                                             |
+| `StoreTimeout`     | `agentworker.Settings` | a bounded per-call timeout                                                                 | Mirrors `natsrpc.Client.Timeout` / the existing `rpcTimeout`; bounds each State Store call when the caller `ctx` has no deadline.            |
 
 **Wiring change in the transport façade:**
 
 - `internal/infrastructure/agenttransport/nats.Transport` — `Store(timeout) store.WorkflowStore`
   returns `&storerpc.Client{Conn: t.conn, Timeout: timeout}`. It becomes
-  `Store(timeout) workflow.Store` and returns a *single long-lived* `staterpc.Client` dialed to
+  `Store(timeout) workflow.Store` and returns a _single long-lived_ `staterpc.Client` dialled to
   `settings.StateStoreTarget` (with the token interceptor and per-call timeout).
 - `internal/app/agentworker/worker.go` `Settings` gains the three fields above; `taskServiceTransport`
   and `taskDependencies` change their `store` type from `store.WorkflowStore` to
@@ -432,24 +432,24 @@ across a single agent process, which is either NATS-backed or gRPC-backed, never
 ### Decision — structured mapping so `errors.Is` survives
 
 The `StateStore` service must map the store's sentinel errors to canonical gRPC codes and
-rehydrate them to the *same* sentinels on the client, so consumer `errors.Is` checks keep
+rehydrate them to the _same_ sentinels on the client, so consumer `errors.Is` checks keep
 working — an improvement over the flattening it replaces, not a regression.
 
-| Store sentinel / outcome | gRPC code | Client rehydrates to |
-|---|---|---|
-| `store.ErrStaleTransition` | `FailedPrecondition` | `store.ErrStaleTransition` |
-| `store.ErrBindingNotFound` | `NotFound` | `store.ErrBindingNotFound` |
-| `store.ErrMappingNotFound` | `NotFound` | `store.ErrMappingNotFound` |
-| `store.ErrBindingOverlap` | `FailedPrecondition` | `store.ErrBindingOverlap` |
-| `store.ErrBindingTransition` | `FailedPrecondition` | `store.ErrBindingTransition` |
-| `store.ErrAlreadyDispatched` | `AlreadyExists` | `store.ErrAlreadyDispatched` |
-| not-found-as-`(nil,nil)` (`TaskByID`, `GetBinding`, `GetMapping`, `ClaimNext`, `ClaimByIssue`, …) | `NotFound` with a `found=false` field (**not** an error) | `(nil, nil)` |
-| infra / wrapped error | `Internal` (**sanitised** message, see below) | wrapped `fmt.Errorf(...%w)` |
-| capability absent | `Unavailable` | context/typed error |
+| Store sentinel / outcome                                                                          | gRPC code                                                | Client rehydrates to         |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------- |
+| `store.ErrStaleTransition`                                                                        | `FailedPrecondition`                                     | `store.ErrStaleTransition`   |
+| `store.ErrBindingNotFound`                                                                        | `NotFound`                                               | `store.ErrBindingNotFound`   |
+| `store.ErrMappingNotFound`                                                                        | `NotFound`                                               | `store.ErrMappingNotFound`   |
+| `store.ErrBindingOverlap`                                                                         | `FailedPrecondition`                                     | `store.ErrBindingOverlap`    |
+| `store.ErrBindingTransition`                                                                      | `FailedPrecondition`                                     | `store.ErrBindingTransition` |
+| `store.ErrAlreadyDispatched`                                                                      | `AlreadyExists`                                          | `store.ErrAlreadyDispatched` |
+| not-found-as-`(nil,nil)` (`TaskByID`, `GetBinding`, `GetMapping`, `ClaimNext`, `ClaimByIssue`, …) | `NotFound` with a `found=false` field (**not** an error) | `(nil, nil)`                 |
+| infra / wrapped error                                                                             | `Internal` (**sanitised** message, see below)            | wrapped `fmt.Errorf(...%w)`  |
+| capability absent                                                                                 | `Unavailable`                                            | context/typed error          |
 
 The `found=false`-not-error convention matters: the repo deliberately returns `(nil, nil)` for
 not-found in reads and a sentinel for not-found in writes. The wire must preserve **both**
-conventions (a `GoogleRPCStatus` with `NotFound` is an *error*, which would wrongly surface to
+conventions (a `GoogleRPCStatus` with `NotFound` is an _error_, which would wrongly surface to
 callers that expect `(nil, nil)`). Implement `found` as an explicit boolean field on read
 responses, and map `(nil,nil)` ⇄ `found=false` + `OK`.
 
@@ -476,9 +476,10 @@ which overrides the upstream default of 10. The Go consumer facades must stay �
 is why it is decomposed; proto services bypass the cap (like `ChatContract`).
 
 **Payload caps:**
+
 - Capture body: `defaultCaptureMaxBodyBytes = 256 KiB` (may reduce further; the wire message
   must not exceed gRPC's default 4 MiB receive limit for a single capture). A single capture
-  fits, but a *batch* of them did not: the caller-side cap of up to 100 captures at 256 KiB each
+  fits, but a _batch_ of them did not: the caller-side cap of up to 100 captures at 256 KiB each
   could exceed 4 MiB in one unary `ListCaptures`/`ListUndispatchedCaptures` response. `.4.7` adds
   `StreamCaptures`/`StreamUndispatchedCaptures` (server-streaming, one capture per message) as
   the path both `staterpc.Client` methods actually call; the original unary RPCs stay defined,
@@ -486,6 +487,7 @@ is why it is decomposed; proto services bypass the cap (like `ChatContract`).
 - Task `detail`/`park_reason`/event `Detail`: 4000-char hard cap (`clip(s, 4000)`).
 
 **Retention (stays server-side in the store; the wire does not carry pruning decisions):**
+
 - `events` table: **no prune, unbounded growth** — a known risk to revisit, not changed here.
 - `captured_events`: prune-on-write, default 7 days / 5000 events.
 
@@ -508,11 +510,11 @@ stated explicitly rather than left implicit.
 
 - **Listener topology — single rule (rev. 2c).** One in-process listener; its bind address is
   chosen by the consumer set, never both at once:
-  - *Agent containers consume it* (the Phase 2 driver during multiplexed serving) → bind to the
+  - _Agent containers consume it_ (the Phase 2 driver during multiplexed serving) → bind to the
     **host-gateway bridge address** so containers can reach it, and **token auth is mandatory**
     (a bridge host is reachable by any process on that bridge). A container **cannot reach the
     host's `127.0.0.1`**, so loopback-only is NOT usable for the agent-consumed path.
-  - *Only the daemon consumes it* (no agent) → bind **loopback-only** (`--listen 127.0.0.1`),
+  - _Only the daemon consumes it_ (no agent) → bind **loopback-only** (`--listen 127.0.0.1`),
     `insecure` is fine because it is not network-reachable; no token required.
   - There is **no dual-listener** design. The practical default during `.4.2` (the reason
     in-process serving exists is to give the agent a gRPC target) is the **bridge address +
@@ -550,7 +552,7 @@ stated explicitly rather than left implicit.
 - **Validation and scope (`.4.7`):** a gRPC interceptor (`staterpc.TaskGrants.UnaryInterceptor`)
   validates the token against the State Store's own issued-grant set; missing/unknown/expired →
   `codes.Unauthenticated`. Unlike the daemon's own administrative token (full access to all ~40
-  RPCs), a task-scoped grant additionally authorizes only `Update`/`Transition`/`InsertEvent` on
+  RPCs), a task-scoped grant additionally authorises only `Update`/`Transition`/`InsertEvent` on
   its own task ID — every other RPC, including the streaming capture surface and
   `RegisterTaskGrant`/`RevokeTaskGrant` themselves, is `codes.PermissionDenied` for a task-scoped
   caller. The token is carried in gRPC metadata, never in a URL.
@@ -584,7 +586,7 @@ an explicit operator decision.
   withdrawn when the State Store was extracted (§12 step 7): the standalone `archie-state-store` process
   exclusively owns `archie.db`, so both `archied` and `archie-gateway` now reject an empty
   target (`internal/app/archied/bootstrap.go` and `state_store_client.go`: `services.state.target
-  is required`). **Set `Target` → dial gRPC** with `*staterpc.Client`; no client opens the
+is required`). **Set `Target` → dial gRPC** with `*staterpc.Client`; no client opens the
   database itself. This differs from the gateway, where `Target` is defaulted to
   `127.0.0.1:8585` because `archie-gateway` is already a separate process whose client and
   server share one default.
@@ -644,7 +646,7 @@ an explicit operator decision.
    `internal/domain/workflow` imports no `internal/store`. Update the store tests and the 6
    workflow production files. **This must land before or with `.4.2`, because `.4.2` cannot move
    the agent's store contract off `store.WorkflowStore` while the domain still imports it.**
-3. **`.4.2` — generalize `storerpc` to the gRPC contract.** Move the agent's `workflow.Store`
+3. **`.4.2` — generalise `storerpc` to the gRPC contract.** Move the agent's `workflow.Store`
    (`Update`/`Transition`/`InsertEvent`) from NATS JSON `storerpc` to `staterpc.Client` over
    gRPC, using the §6 handoff. The daemon serves the gRPC `StateStore` server **in-process
    (multiplexed)** first so the agent has a gRPC target before the standalone binary exists
@@ -662,7 +664,7 @@ an explicit operator decision.
    `archie-state-store`): `Capture → Mapping → Binding → TaskStore`. Each swap is independent —
    add the remote-client composition path, run the per-contract conformance suite, flip
    `[services.state].target`, delete the local use. A consumer mixes in-process and remote
-   contracts for a contract-code (no dual-live *window*; each contract is either local or remote
+   contracts for a contract-code (no dual-live _window_; each contract is either local or remote
    at a time).
 7. **Final flip / deletion of the in-process serving path:** when the daemon no longer owns the
    store (i.e. `TaskStore` has moved), delete the in-process task-store /

@@ -56,7 +56,7 @@ The same model supports other processes:
   workflow with the repository's toolchain, validation steps, and pull request
   as its output.
 
-These are examples of workflows you can build. Their behavior comes from the
+These are examples of workflows you can build. Their behaviour comes from the
 workflow, tools, and access you configure.
 
 ## Agents equipped for their work

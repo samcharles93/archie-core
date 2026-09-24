@@ -7,10 +7,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useLiveResource } from "@/stores/live-updates";
-import { signingKind, signingLabel, sourceURL, type Source } from "./source-signing";
+import {
+  signingKind,
+  signingLabel,
+  sourceURL,
+  type Source,
+} from "./source-signing";
 import { useSources } from "./use-sources";
 
 /**
@@ -18,8 +34,18 @@ import { useSources } from "./use-sources";
  * (docs/prds/event-automation.md "Sources"). Turning signing off is a request
  * that takes effect only once approved.
  */
-const { sources, failure, revealed, busy, load, create, newSecret, requestUnsigned, requireSigning, approveUnsigned } =
-  useSources();
+const {
+  sources,
+  failure,
+  revealed,
+  busy,
+  load,
+  create,
+  newSecret,
+  requestUnsigned,
+  requireSigning,
+  approveUnsigned,
+} = useSources();
 
 const customPath = ref("");
 const copied = ref<string | null>(null);
@@ -45,8 +71,16 @@ function url(source: Source): string {
 
 <template>
   <section class="mb-6 flex flex-col gap-3">
-    <form class="flex flex-wrap items-center justify-end gap-2" @submit.prevent="submit">
-      <Input v-model="customPath" class="w-64 font-mono" placeholder="Custom path (optional)" aria-label="Custom path" />
+    <form
+      class="flex flex-wrap items-center justify-end gap-2"
+      @submit.prevent="submit"
+    >
+      <Input
+        v-model="customPath"
+        class="w-64 font-mono"
+        placeholder="Custom path (optional)"
+        aria-label="Custom path"
+      />
       <Button type="submit" variant="outline" :disabled="busy">
         <Plus data-icon="inline-start" />
         New source
@@ -61,12 +95,27 @@ function url(source: Source): string {
     <Alert v-if="revealed">
       <KeyRound />
       <AlertTitle class="flex items-center justify-between gap-2">
-        <span class="font-mono">{{ revealed.path }} · signing secret, shown once</span>
-        <Button variant="ghost" size="icon-sm" aria-label="Dismiss" @click="revealed = null"><X /></Button>
+        <span class="font-mono"
+          >{{ revealed.path }} · signing secret, shown once</span
+        >
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Dismiss"
+          @click="revealed = null"
+          ><X
+        /></Button>
       </AlertTitle>
       <AlertDescription class="flex items-center gap-2">
-        <code class="min-w-0 break-all font-mono text-xs">{{ revealed.secret }}</code>
-        <Button variant="ghost" size="icon-sm" aria-label="Copy secret" @click="copy(revealed.secret || '')">
+        <code class="min-w-0 break-all font-mono text-xs">{{
+          revealed.secret
+        }}</code>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Copy secret"
+          @click="copy(revealed.secret || '')"
+        >
           <Check v-if="copied === revealed.secret" />
           <Copy v-else />
         </Button>
@@ -85,15 +134,26 @@ function url(source: Source): string {
           </TableHeader>
           <TableBody>
             <TableRow v-for="source in sources" :key="source.path">
-              <TableCell class="max-w-0 truncate font-mono text-fg-muted" :title="url(source)">{{ source.path }}</TableCell>
+              <TableCell
+                class="max-w-0 truncate font-mono text-fg-muted"
+                :title="url(source)"
+                >{{ source.path }}</TableCell
+              >
               <TableCell>
-                <Badge :variant="signingKind(source.signing)">{{ signingLabel(source.signing) }}</Badge>
+                <Badge :variant="signingKind(source.signing)">{{
+                  signingLabel(source.signing)
+                }}</Badge>
               </TableCell>
               <TableCell>
                 <div class="flex items-center justify-end gap-1">
                   <Tooltip>
                     <TooltipTrigger as-child>
-                      <Button variant="ghost" size="icon-sm" aria-label="Copy URL" @click="copy(url(source))">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Copy URL"
+                        @click="copy(url(source))"
+                      >
                         <Check v-if="copied === url(source)" />
                         <Copy v-else />
                       </Button>
@@ -102,7 +162,13 @@ function url(source: Source): string {
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger as-child>
-                      <Button variant="ghost" size="icon-sm" aria-label="New secret" :disabled="busy" @click="newSecret(source)">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="New secret"
+                        :disabled="busy"
+                        @click="newSecret(source)"
+                      >
                         <KeyRound />
                       </Button>
                     </TooltipTrigger>

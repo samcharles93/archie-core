@@ -5,7 +5,7 @@ description: Maintain Archie's documentation of record and write durable archite
 
 # Maintain Archie documentation
 
-Write one durable record for each decision or behavior. Separate what runs now
+Write one durable record for each decision or behaviour. Separate what runs now
 from what Archie has approved as its destination.
 
 Route to `archie-architecture-planning-campaign` for ownership/boundary
@@ -22,14 +22,14 @@ for runtime/operations facts.
 Define a **record of authority** as the one canonical location whose owner may
 change a claim.
 
-| State | Meaning | Permitted wording |
-|---|---|---|
-| `CURRENT` | Verified behavior in checked-out code, tests, composition, or executable config | "Currently does" |
-| `APPROVED TARGET` | Normative destination approved in architecture index | "Must become"; never "currently does" |
-| `OPEN` | Investigation, candidate, or unresolved decision | "Candidate", "unknown", or "requires decision" |
-| `HISTORICAL` | Prior design, incident, dead end, or superseded choice | "Previously did" |
-| `GENERATED` | Derivative output produced from owned source definition | "Generated from"; never hand-edit |
-| `EXTERNAL` | Fact held outside repository, such as deployed config or host state | Date, name verifier, give re-check command |
+| State             | Meaning                                                                          | Permitted wording                              |
+| ----------------- | -------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `CURRENT`         | Verified behaviour in checked-out code, tests, composition, or executable config | "Currently does"                               |
+| `APPROVED TARGET` | Normative destination approved in architecture index                             | "Must become"; never "currently does"          |
+| `OPEN`            | Investigation, candidate, or unresolved decision                                 | "Candidate", "unknown", or "requires decision" |
+| `HISTORICAL`      | Prior design, incident, dead end, or superseded choice                           | "Previously did"                               |
+| `GENERATED`       | Derivative output produced from owned source definition                          | "Generated from"; never hand-edit              |
+| `EXTERNAL`        | Fact held outside repository, such as deployed config or host state              | Date, name verifier, give re-check command     |
 
 When `CURRENT` conflicts with `APPROVED TARGET`, preserve both and state the
 migration delta.
@@ -38,43 +38,43 @@ migration delta.
 
 Verified on 2026-09-18:
 
-| Location | Role | Discipline |
-|---|---|---|
-| Live Go code, tests, `Taskfile.yml`, executable config parsing, composition under `internal/app/` (entered from `cmd/`) | `CURRENT` execution evidence | Trace producers and consumers; tests prove only asserted behavior |
-| `CLAUDE.md` | Current contributor and safety protocol plus compact architecture orientation | Verify operational claims against code and `Taskfile.yml`; `AGENTS.md` is a symlink to it |
-| `docs/prds/01-project-management.md` | Index and approved foundation for target architecture | Add or change target decisions in the focused document it names |
-| `docs/architecture/*.md` | Focused target decisions, active review procedure, migration inventory | Read each file's status |
-| `docs/architecture/migration-decisions.md` | `OPEN` migration inventory constrained by approved decisions | Close a question only after code-grounded review |
-| `docs/archive/` | `HISTORICAL` material | Mine rationale and failure evidence |
-| `CHANGELOG.md` | Release stream and packaged runtime input | One file holds every release; `internal/releaseannounce` parses version headings |
-| `tools/docsgen` | Current, partial generator in nested `tools` Go module | Treat its flags and tests—not planned PRD commands—as executable truth |
-| `docs/data/generated/contracts.json` | Current working-tree `GENERATED` output | Regenerate; never edit by hand |
-| `docs/` | Repository documentation only | Nothing builds, renders, or publishes it; Markdown is the artifact |
+| Location                                                                                                                | Role                                                                          | Discipline                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Live Go code, tests, `Taskfile.yml`, executable config parsing, composition under `internal/app/` (entered from `cmd/`) | `CURRENT` execution evidence                                                  | Trace producers and consumers; tests prove only asserted behaviour                                 |
+| `CLAUDE.md`                                                                                                             | Current contributor and safety protocol plus compact architecture orientation | Verify operational claims against code and `Taskfile.yml`; `AGENTS.md` is a symlink to it          |
+| `docs/prds/01-project-management.md`                                                                                    | Index and approved foundation for target architecture                         | Add or change target decisions in the focused document it names                                    |
+| `docs/architecture/*.md`                                                                                                | Focused target decisions, active review procedure, migration inventory        | Read each file's status                                                                            |
+| `docs/architecture/migration-decisions.md`                                                                              | `OPEN` migration inventory constrained by approved decisions                  | Close a question only after code-grounded review                                                   |
+| `docs/archive/`                                                                                                         | `HISTORICAL` material                                                         | Mine rationale and failure evidence                                                                |
+| `CHANGELOG.md`                                                                                                          | Release stream and packaged runtime input                                     | One file holds every release; `internal/releaseannounce` parses version headings                   |
+| `tools/docsgen`                                                                                                         | Current, partial generator in nested `tools` Go module                        | Treat its flags and tests—not planned PRD commands—as executable truth                             |
+| `docs/data/generated/contracts.json`                                                                                    | Current working-tree `GENERATED` output                                       | Regenerate; never edit by hand                                                                     |
+| `docs/`                                                                                                                 | Markdown sources and generated JSON for the external Astro website            | This repository generates and validates artifacts; the website repository renders and deploys them |
 
 The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-09-18.
 
 ## Choose one destination
 
 1. State the reader's question.
-2. Identify the owner of the behavior or decision.
+2. Identify the owner of the behaviour or decision.
 3. Find the existing record of authority.
 4. Extend that record or link to it. Do not make a second canonical table.
 5. If no owner exists, route the ownership decision through the architecture campaign.
 6. If the fact is generated, change the owned source definition and generator.
 7. If the fact is external, date it and name the exact observation command.
 
-| Content | Destination |
-|---|---|
-| Cross-cutting approved architecture index | `docs/prds/01-project-management.md` |
+| Content                                                                                      | Destination                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cross-cutting approved architecture index                                                    | `docs/prds/01-project-management.md`                                                                                                                                                                    |
 | New capability with no settled design yet (CLAUDE.md's "write a decisive doc before coding") | New `docs/prds/<capability>.md` — use the PRD template in `references/templates.md`, which folds in a multi-agent execution breakdown so the sub-issues can be picked up without re-deriving the design |
-| Focused domain or requirement decision | Matching `docs/architecture/*.md` file |
-| Unresolved migration question | `docs/architecture/migration-decisions.md` |
-| Contributor protocol that must load before work | `CLAUDE.md` |
-| Runtime/API/config reference derivable from code | Domain-owned registry/type, then `tools/docsgen` output |
-| Repository documentation prose | `docs/`, linking back to authority with repository-relative paths |
-| Shipped release behavior | Matching component changelog; keep `CHANGELOG.md` as two-component index |
-| Superseded design retained for context | `docs/archive/`, with historical status |
-| Incident or rejected approach | `archie-failure-archaeology`'s chronology |
+| Focused domain or requirement decision                                                       | Matching `docs/architecture/*.md` file                                                                                                                                                                  |
+| Unresolved migration question                                                                | `docs/architecture/migration-decisions.md`                                                                                                                                                              |
+| Contributor protocol that must load before work                                              | `CLAUDE.md`                                                                                                                                                                                             |
+| Runtime/API/config reference derivable from code                                             | Domain-owned registry/type, then `tools/docsgen` output                                                                                                                                                 |
+| Repository documentation prose                                                               | `docs/`, linking back to authority with repository-relative paths                                                                                                                                       |
+| Shipped release behaviour                                                                    | Matching component changelog; keep `CHANGELOG.md` as two-component index                                                                                                                                |
+| Superseded design retained for context                                                       | `docs/archive/`, with historical status                                                                                                                                                                 |
+| Incident or rejected approach                                                                | `archie-failure-archaeology`'s chronology                                                                                                                                                               |
 
 Do not duplicate a package map across `CLAUDE.md`, a PRD, and
 the site. Name the authoritative map and link to it.
@@ -94,7 +94,7 @@ Every architecture, feature, or migration record must answer:
 - **Deletion gate:** What observable proof permits removal?
 - **Evidence:** Which symbols, tests, commands, and runtime observations support
   the record?
-- **Rollback:** How can behavior and data return safely?
+- **Rollback:** How can behaviour and data return safely?
 - **Unresolved questions:** What remains `OPEN`?
 
 Name one owner for every mutable record. A new path is incomplete until the
@@ -110,7 +110,7 @@ of authority; the command that re-discovers the evidence.
 Write `internal/agentexec.Request` and `tools/docsgen.currentContractTypes`.
 Distinguish evidence strength:
 
-1. Runtime composition and executable behavior.
+1. Runtime composition and executable behaviour.
 2. Tests that exercise the relevant production seam.
 3. Approved target decision.
 4. Comments and summaries corroborated by the first three.
@@ -136,7 +136,7 @@ the CI shell gate plus `internal/releaseannounce`'s announcer tests
 
 ## Maintain generated contracts
 
-Current behavior, verified 2026-09-18:
+Current behaviour, verified 2026-09-18:
 
 - Tool path is `tools/docsgen`, not `tools/cmd/docsgen`.
 - Separate Go module replacing root module with `../`.
@@ -161,24 +161,22 @@ directory, so a failing gate never rewrites the artifact it judges. Fix a
 failure with `task docs:generate` and commit the result with the code change
 that shifted the contract surface.
 
-## Store documentation as repository Markdown
+## Maintain documentation consumed by the external Astro website
 
-`docs/` is Markdown read directly in the repository, an editor, or the forge's
-file view. Nothing builds, renders, or publishes it. The VitePress site, its
-package manifest and lockfile, its landing page, and
-`.github/workflows/docs.yml` were removed on 2026-09-12 as an unnecessary build
-step; the publishing surface is an open decision
-(`docs/architecture/generated-documentation.md`, "Rendering and publishing").
+`docs/` holds Markdown sources and generated JSON consumed by the Astro website
+at `offloaded.dev/docs/`. The website is maintained outside this repository.
+This repository owns artifact generation and drift checks; it does not build,
+preview, or deploy the website.
 
-| Surface | Current state |
-|---|---|
-| Content | Markdown under `docs/`, including `docs/data/generated/contracts.json` |
-| Links | Repository-relative (`../architecture/organisation.md`); no root-absolute links |
-| Build | None. There is no site, no dev server, no link checker, no Pages deploy |
-| Nav | `docs/prds/01-project-management.md` is the index; there is no site nav |
+| Surface          | Current state                                                          |
+| ---------------- | ---------------------------------------------------------------------- |
+| Content          | Markdown under `docs/` and generated JSON under `docs/data/generated/` |
+| Rendering        | External Astro website consumes generated artifacts                    |
+| Build and deploy | Owned by the Astro website repository                                  |
+| Local checks     | `task docs:check`, `task docs:artifact:check`, and `task news:check`   |
 
-Because no build validates links, check them yourself or with a one-off script —
-nothing catches a dead link for you:
+The repository checks artifact drift, not the external site's rendered routes or
+links. Verify those in the website repository.
 
 ```bash
 # every relative markdown link target that does not resolve
@@ -187,9 +185,8 @@ grep -rhoE '\]\([^)#]+' docs --include=*.md | sed -E 's/^\]\(//' | sort -u
 
 ### Enforce source-artifact hygiene
 
-Git tracks no `node_modules` entries (verified 2026-09-12; the 237 `docs/`
-symlinks recorded on 2026-07-28 are gone) and no VitePress output. A future
-renderer must not reintroduce committed installs or build output.
+Git tracks no `node_modules` entries or website build output. The external Astro
+repository owns its installed dependencies and generated site files.
 
 ```bash
 git ls-files | grep -c node_modules                  # expect 0

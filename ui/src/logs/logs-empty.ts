@@ -8,7 +8,10 @@
  * logsEmptyTitle names the situation: a dead stream, a deployment with no
  * durable history, or filters that match nothing.
  */
-export function logsEmptyTitle(durableUnavailable: boolean, streamState: string): string {
+export function logsEmptyTitle(
+  durableUnavailable: boolean,
+  streamState: string,
+): string {
   if (streamState === "unavailable") return "Log stream unavailable";
   if (durableUnavailable) return "No logs yet";
   return "Nothing matches";
@@ -18,7 +21,10 @@ export function logsEmptyTitle(durableUnavailable: boolean, streamState: string)
  * logsEmptyDetail says what to expect next, and never promises live logs from
  * a stream that has stopped.
  */
-export function logsEmptyDetail(durableUnavailable: boolean, streamState: string): string {
+export function logsEmptyDetail(
+  durableUnavailable: boolean,
+  streamState: string,
+): string {
   if (streamState === "unavailable") {
     return "The log stream will reconnect automatically.";
   }

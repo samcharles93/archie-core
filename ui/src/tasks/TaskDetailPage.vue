@@ -54,7 +54,9 @@ const run = provideTaskRun(taskId);
     </TaskMetaBar>
     <TaskNotes :id="rawId" />
 
-    <div class="grid items-start gap-4 min-[900px]:grid-cols-[20rem_minmax(0,1fr)]">
+    <div
+      class="grid items-start gap-4 min-[900px]:grid-cols-[20rem_minmax(0,1fr)]"
+    >
       <!--
         The master pane: the attempt's stage rail, always on screen. It owns
         its own loading, failure and empty states, so the inspector never has
@@ -66,7 +68,11 @@ const run = provideTaskRun(taskId);
 
       <Card>
         <CardContent>
-          <Tabs class="gap-4" :model-value="run.tab" @update:model-value="run.setTab">
+          <Tabs
+            class="gap-4"
+            :model-value="run.tab"
+            @update:model-value="run.setTab"
+          >
             <TabBar />
             <TaskRunPanels :id="rawId" />
           </Tabs>

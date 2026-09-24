@@ -2,7 +2,11 @@ import { ref } from "vue";
 
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
 import type { EventType } from "@/captures/event-types";
-import { uniqueFieldName, type FieldPick, type FieldType } from "./mapping-fields";
+import {
+  uniqueFieldName,
+  type FieldPick,
+  type FieldType,
+} from "./mapping-fields";
 
 /**
  * The mappings page's shared state: the saved mappings, the captured events a
@@ -135,7 +139,9 @@ export async function loadMappings(): Promise<void> {
     // picker instead of taking the mappings list down with it.
     const [listed, captured, types] = await Promise.all([
       api.mappings<{ mappings?: Mapping[] }>(),
-      api.captures<{ captures?: Capture[]; enabled?: boolean }>(100).catch(() => null),
+      api
+        .captures<{ captures?: Capture[]; enabled?: boolean }>(100)
+        .catch(() => null),
       api.eventTypes<{ event_types?: EventType[] }>().catch(() => null),
     ]);
     mappings.value = listed.mappings || [];
@@ -181,7 +187,8 @@ export function closeEditor(): void {
  * that rather than as a payload whose paths all failed.
  */
 export function selectCapture(value: string): void {
-  const capture = captures.value.find((candidate) => String(candidate.id) === value) ?? null;
+  const capture =
+    captures.value.find((candidate) => String(candidate.id) === value) ?? null;
   const current = draft.value;
   current.captureId = capture ? capture.id : null;
   current.preview = null;
@@ -206,7 +213,12 @@ export function addField(pick: FieldPick): void {
     current.fields.map((field) => field.name),
     pick.name,
   );
-  current.fields.push({ name, path: pick.path, type: pick.type, required: true });
+  current.fields.push({
+    name,
+    path: pick.path,
+    type: pick.type,
+    required: true,
+  });
   // Any edit invalidates the preview: it described the fields as they were.
   current.preview = null;
 }
@@ -225,11 +237,17 @@ export function removeField(index: number): void {
 export async function runPreview(): Promise<void> {
   const current = draft.value;
   if (current.captureId === null) {
-    actionError.value = { kind: "incomplete", message: "Pick a captured event to preview against." };
+    actionError.value = {
+      kind: "incomplete",
+      message: "Pick a captured event to preview against.",
+    };
     return;
   }
   try {
-    current.preview = await api.mappingPreview<Preview>(current.captureId, current.fields);
+    current.preview = await api.mappingPreview<Preview>(
+      current.captureId,
+      current.fields,
+    );
     actionError.value = null;
   } catch (err) {
     actionError.value = classifyActionError(err);

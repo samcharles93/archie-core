@@ -168,7 +168,9 @@ export function initialTab(query: LocationQuery | undefined): string {
  * "the current attempt" (taskLogTarget, internal/webui/api_tasks_logs.go), so
  * it selects the current attempt rather than a nonexistent attempt 0.
  */
-export function initialAttempt(query: LocationQuery | undefined): number | null {
+export function initialAttempt(
+  query: LocationQuery | undefined,
+): number | null {
   const raw = query?.attempt;
   if (raw == null || raw === "") return null;
   const n = Number(raw);
@@ -176,7 +178,10 @@ export function initialAttempt(query: LocationQuery | undefined): number | null 
 }
 
 /** The query string a tab and an attempt are addressed by. */
-export function runQuery(tab: string, attempt: number | null): LocationQueryRaw {
+export function runQuery(
+  tab: string,
+  attempt: number | null,
+): LocationQueryRaw {
   const query: LocationQueryRaw = { tab: tab || RUN_TABS[0].id };
   if (attempt) query.attempt = String(attempt);
   return query;
@@ -200,5 +205,10 @@ export function logCacheKey(
   filters: LogFilters = EMPTY_LOG_FILTERS,
 ): string {
   const applied = filters || EMPTY_LOG_FILTERS;
-  return [id, Number(attempt) || 0, applied.level || "", applied.stage || ""].join("|");
+  return [
+    id,
+    Number(attempt) || 0,
+    applied.level || "",
+    applied.stage || "",
+  ].join("|");
 }

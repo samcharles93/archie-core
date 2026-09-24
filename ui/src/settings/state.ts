@@ -1,10 +1,7 @@
 import { computed, ref } from "vue";
 
 import { ApiError, api } from "@/lib/api";
-import type {
-  ConfigView,
-  DangerousActions,
-} from "./types";
+import type { ConfigView, DangerousActions } from "./types";
 
 /**
  * The System pages' shared state.
@@ -32,11 +29,11 @@ function isMissing(err: unknown): boolean {
 export const config = ref<ConfigView | null>(null);
 export const configError = ref<string | null>(null);
 
-
 /** Nothing to render: either the read failed, or archied is running without a
  * config file wired into the dashboard. */
 export const configUnavailable = computed(
-  () => Boolean(configError.value) || Object.keys(config.value ?? {}).length === 0,
+  () =>
+    Boolean(configError.value) || Object.keys(config.value ?? {}).length === 0,
 );
 
 export async function loadConfig(): Promise<void> {
@@ -60,12 +57,18 @@ export async function loadDangerous(): Promise<void> {
   }
 }
 
-export async function requestDangerous(kind: string, spec: unknown): Promise<void> {
+export async function requestDangerous(
+  kind: string,
+  spec: unknown,
+): Promise<void> {
   await api.chatDangerousRequest(kind, spec);
   await loadDangerous();
 }
 
-export async function decideDangerous(id: string, decision: string): Promise<void> {
+export async function decideDangerous(
+  id: string,
+  decision: string,
+): Promise<void> {
   await api.chatDangerousDecision(id, decision);
   await loadDangerous();
 }

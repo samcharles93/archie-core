@@ -19,7 +19,11 @@ const sections = computed(() => sectionsFor(config.value?.schema, props.ids));
 </script>
 
 <template>
-  <ConfigCard v-for="section in sections" :key="section.id" :title="section.label">
+  <ConfigCard
+    v-for="section in sections"
+    :key="section.id"
+    :title="section.label"
+  >
     <ConfigList>
       <ConfigRow
         v-for="field in sectionRows(section)"

@@ -17,7 +17,9 @@ import TokenOutlookCard from "./TokenOutlookCard.vue";
  */
 useDashboard();
 
-const setupIncomplete = computed(() => setupPanelState(setup.value).kind === "incomplete");
+const setupIncomplete = computed(
+  () => setupPanelState(setup.value).kind === "incomplete",
+);
 </script>
 
 <template>
@@ -31,19 +33,29 @@ const setupIncomplete = computed(() => setupPanelState(setup.value).kind === "in
   <DashboardSection title="Health">
     <div
       class="grid items-start gap-4"
-      :class="setupIncomplete ? 'grid-cols-1 min-[1080px]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]' : 'grid-cols-1'"
+      :class="
+        setupIncomplete
+          ? 'grid-cols-1 min-[1080px]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]'
+          : 'grid-cols-1'
+      "
     >
       <SetupPanel />
       <GatePulseCard />
     </div>
   </DashboardSection>
 
-  <DashboardSection v-if="summary" title="Throughput" note="Across all repositories">
+  <DashboardSection
+    v-if="summary"
+    title="Throughput"
+    note="Across all repositories"
+  >
     <ThroughputTiles />
   </DashboardSection>
 
   <DashboardSection v-if="summary" title="Right now">
-    <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+    <div
+      class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]"
+    >
       <TokenOutlookCard />
       <LiveActivityCard />
     </div>

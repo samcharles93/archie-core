@@ -24,9 +24,9 @@ the embedded deployment is selected. It does not run an autonomous model loop.
 
 NATS has two supported deployment shapes:
 
-| mode | meaning |
-| --- | --- |
-| `embedded` | `archied` owns an in-process JetStream server (default). |
+| mode       | meaning                                                   |
+| ---------- | --------------------------------------------------------- |
+| `embedded` | `archied` owns an in-process JetStream server (default).  |
 | `external` | `archied` and workers connect to the configured NATS URL. |
 
 Both shapes have identical task semantics: one container and one full-task

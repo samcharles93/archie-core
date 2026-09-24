@@ -49,7 +49,8 @@ export function tokenizeJson(text: string): JsonToken[] | null {
     }
     last = at + full.length;
   }
-  if (last < text.length) tokens.push({ text: text.slice(last), kind: "punct" });
+  if (last < text.length)
+    tokens.push({ text: text.slice(last), kind: "punct" });
   return tokens;
 }
 

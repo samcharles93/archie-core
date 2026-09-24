@@ -34,12 +34,20 @@
     const found = document.querySelectorAll(sel);
     if (found.length) {
       segment = found[found.length - 1]; // last match = likely the runs-list one
-      console.log("[agent-monitor] matched selector:", sel, "(", found.length, "candidate(s))");
+      console.log(
+        "[agent-monitor] matched selector:",
+        sel,
+        "(",
+        found.length,
+        "candidate(s))",
+      );
       break;
     }
   }
   if (!segment) {
-    console.warn("[agent-monitor] no .ui.attached.segment found on page — markup shape changed, nothing to swap");
+    console.warn(
+      "[agent-monitor] no .ui.attached.segment found on page — markup shape changed, nothing to swap",
+    );
     return;
   }
 
@@ -69,10 +77,16 @@
   // TODO: point this at wherever internal/webui (archie-core's SSE
   // dashboard) is reachable from the browser — reverse-proxy it under
   // this same host to avoid CORS. Override per-load with ?webui=.
-  const WEBUI_BASE = new URLSearchParams(location.search).get("webui")
-    || "https://gitea.example.com/agent-events";
+  const WEBUI_BASE =
+    new URLSearchParams(location.search).get("webui") ||
+    "https://gitea.example.com/agent-events";
 
-  const term = new Terminal({ convertEol: true, disableStdin: true, cursorBlink: false, fontSize: 13 });
+  const term = new Terminal({
+    convertEol: true,
+    disableStdin: true,
+    cursorBlink: false,
+    fontSize: 13,
+  });
   term.open(el);
 
   // FitAddon sizes xterm's internal viewport (rows/cols) to match the
@@ -86,13 +100,18 @@
     window.addEventListener("resize", () => fit.fit());
   }
 
-  term.writeln(`\x1b[90mconnecting to ${WEBUI_BASE} (repo=${repoFilter})...\x1b[0m`);
+  term.writeln(
+    `\x1b[90mconnecting to ${WEBUI_BASE} (repo=${repoFilter})...\x1b[0m`,
+  );
 
   function colorFor(stage) {
     switch (stage) {
-      case "error": return "\x1b[31m";
-      case "done":  return "\x1b[32m";
-      default:      return "\x1b[36m";
+      case "error":
+        return "\x1b[31m";
+      case "done":
+        return "\x1b[32m";
+      default:
+        return "\x1b[36m";
     }
   }
 
@@ -100,7 +119,9 @@
     if (repoFilter && e.repo && e.repo !== repoFilter) return;
     const ts = new Date().toLocaleTimeString();
     const tag = [e.workflow, e.stage].filter(Boolean).join(":");
-    term.writeln(`\x1b[90m${ts}\x1b[0m ${colorFor(e.stage)}[${tag || "event"}]\x1b[0m ${e.detail || ""}`);
+    term.writeln(
+      `\x1b[90m${ts}\x1b[0m ${colorFor(e.stage)}[${tag || "event"}]\x1b[0m ${e.detail || ""}`,
+    );
     if (e.data && Object.keys(e.data).length) {
       term.writeln(`\x1b[90m  ${JSON.stringify(e.data)}\x1b[0m`);
     }
@@ -117,7 +138,11 @@
       if (retrying) term.writeln("\x1b[32m connected\x1b[0m");
       retrying = false;
     };
-    es.onmessage = (msg) => { try { render(JSON.parse(msg.data)); } catch {} };
+    es.onmessage = (msg) => {
+      try {
+        render(JSON.parse(msg.data));
+      } catch {}
+    };
     es.onerror = () => {
       es.close();
       if (!retrying) {

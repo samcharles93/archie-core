@@ -125,7 +125,7 @@ is a pipeline that can be forgotten, which is the property this change removes. 
 trigger is also not dependent on repairing manual triggering: in this estate a manual
 run fails with zero steps while the same configuration runs on a push, and the
 estate's own Woodpecker configurations trigger on push with cron, manual or
-pull-request events *added* to it rather than instead of it.
+pull-request events _added_ to it rather than instead of it.
 
 **Prerequisite: Woodpecker must watch this repository.** Adding the workflow to the
 repository and enabling the repository in Woodpecker are two steps, and the second is

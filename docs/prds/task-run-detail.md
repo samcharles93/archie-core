@@ -27,19 +27,19 @@ that has since moved on.
 
 ## The requirement set
 
-| # | Requirement | Mechanism |
-| --- | --- | --- |
-| R1 | Per-attempt stage rail: stages with name, start, duration, terminal status and error, ordered within one attempt | `GET /api/tasks/{id}/attempts` reads the task's events and groups them by `attempt` |
-| R2 | Events carry an attempt, migrated safely and carried on the wire | `events.attempt` column + presence-gated migrator arm; `Event.attempt = 11` |
-| R3 | Changed files captured at commit/push, persisted per task, exposed, shown with repo/PR links | `changes_captured` durable event written by the commit/push steps; `GET /api/tasks/{id}/changes` |
-| R4 | The effective configuration an attempt ran under, secrets redacted, shown | `config_captured` durable event written once per attempt; read from the events response the page already holds |
-| R5 | Log pane filters by attempt, stage and level; absence stays distinct from an unreadable deployment | `logging.Query.Stage` + `ReadTaskLogRequest.stage = 9`; the pane keeps `disabled` and `found=false` apart |
-| R6 | Retry is reachable from the run view and produces a new attempt shown as a new run | Existing retry action, labelled as a NEW run whose confirm states the previous attempt's commits are discarded |
-| R7 | Raw JSON of the task record and its events for the selected attempt | `GET /api/tasks/{id}/debug` |
-| R8 | Deep-linkable, reload-safe per-task detail page that keeps existing URLs working | `/tasks/{id}` route beside the existing `/tasks?task=N` and `/tasks?status=...` |
-| R9 | Design polish: hierarchy, tokens, both themes, responsive rail, a11y, loading/empty/error states | UI lane; measured at 480px and 700px in both themes |
-| R10 | Documentation of record | This document plus `docs/architecture/observability.md` |
-| R11 | Red-first tests for every new behaviour, full gate, `task ui`, forced `go build ./...`, `go test -race` on touched packages | Per lane; the anti-cost-cutting requirement lives here |
+| #   | Requirement                                                                                                                 | Mechanism                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| R1  | Per-attempt stage rail: stages with name, start, duration, terminal status and error, ordered within one attempt            | `GET /api/tasks/{id}/attempts` reads the task's events and groups them by `attempt`                            |
+| R2  | Events carry an attempt, migrated safely and carried on the wire                                                            | `events.attempt` column + presence-gated migrator arm; `Event.attempt = 11`                                    |
+| R3  | Changed files captured at commit/push, persisted per task, exposed, shown with repo/PR links                                | `changes_captured` durable event written by the commit/push steps; `GET /api/tasks/{id}/changes`               |
+| R4  | The effective configuration an attempt ran under, secrets redacted, shown                                                   | `config_captured` durable event written once per attempt; read from the events response the page already holds |
+| R5  | Log pane filters by attempt, stage and level; absence stays distinct from an unreadable deployment                          | `logging.Query.Stage` + `ReadTaskLogRequest.stage = 9`; the pane keeps `disabled` and `found=false` apart      |
+| R6  | Retry is reachable from the run view and produces a new attempt shown as a new run                                          | Existing retry action, labelled as a NEW run whose confirm states the previous attempt's commits are discarded |
+| R7  | Raw JSON of the task record and its events for the selected attempt                                                         | `GET /api/tasks/{id}/debug`                                                                                    |
+| R8  | Deep-linkable, reload-safe per-task detail page that keeps existing URLs working                                            | `/tasks/{id}` route beside the existing `/tasks?task=N` and `/tasks?status=...`                                |
+| R9  | Design polish: hierarchy, tokens, both themes, responsive rail, a11y, loading/empty/error states                            | UI lane; measured at 480px and 700px in both themes                                                            |
+| R10 | Documentation of record                                                                                                     | This document plus `docs/architecture/observability.md`                                                        |
+| R11 | Red-first tests for every new behaviour, full gate, `task ui`, forced `go build ./...`, `go test -race` on touched packages | Per lane; the anti-cost-cutting requirement lives here                                                         |
 
 ## Attempt attribution: a column, not a guess
 
@@ -148,7 +148,7 @@ under" in any case.
 **Payload.** The result of `config.Config.ForTask()` — the non-secret
 task-runtime subset — plus the schema constant `archie/task-config@1`. Not the
 dashboard's configuration view: that is a larger projection carrying the full
-schema catalog, and it is the wrong object for this. Stored shape and the tab's
+schema catalogue, and it is the wrong object for this. Stored shape and the tab's
 read rule are in `docs/architecture/observability.md`.
 
 **Binding conditions.** It is emitted through the durable path, never the
@@ -279,7 +279,7 @@ than useless.
 4. An attempt with a capture shows per-file added/deleted counts, status, repo
    and PR links; an attempt without one says so and never says "no changes".
 5. The Config tab shows the attempt's document for the selected attempt only,
-   with no secret value present in the serialized document.
+   with no secret value present in the serialised document.
 6. Retry from the run view produces a new attempt shown as a new run, with copy
    stating the previous attempt's commits are discarded.
 7. The log stage filter narrows to stage-bound lines and the pane states the

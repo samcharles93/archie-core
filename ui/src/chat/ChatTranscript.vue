@@ -12,7 +12,12 @@ import {
 } from "@/components/ui/message-scroller";
 import ChatBubble from "./ChatBubble.vue";
 import ChatEmptyState from "./ChatEmptyState.vue";
-import { messages, sendMessage, streamingTurn, type ChatMessage } from "./state";
+import {
+  messages,
+  sendMessage,
+  streamingTurn,
+  type ChatMessage,
+} from "./state";
 
 /**
  * The conversation: the messages so far, the turn still arriving, and what the
@@ -44,17 +49,32 @@ const bubbles = computed(() => messages.value.map(parts));
     <MessageScroller class="min-h-0 flex-1">
       <MessageScrollerViewport>
         <MessageScrollerContent class="gap-4 p-4">
-          <ChatEmptyState v-if="!bubbles.length && !streamingTurn" @prompt="emit('prompt', $event)" />
+          <ChatEmptyState
+            v-if="!bubbles.length && !streamingTurn"
+            @prompt="emit('prompt', $event)"
+          />
 
           <template v-else>
-            <MessageScrollerItem v-for="(bubble, i) in bubbles" :key="i" :message-id="`m${i}`">
-              <ChatBubble :text="bubble.text" :tools="bubble.tools" :assistant="bubble.assistant" />
+            <MessageScrollerItem
+              v-for="(bubble, i) in bubbles"
+              :key="i"
+              :message-id="`m${i}`"
+            >
+              <ChatBubble
+                :text="bubble.text"
+                :tools="bubble.tools"
+                :assistant="bubble.assistant"
+              />
             </MessageScrollerItem>
 
             <!-- The live turn is a bubble like any other, so what arrives is
                  rendered by the same rules as what was already there. It is the
                  scroll anchor while it streams. -->
-            <MessageScrollerItem v-if="streamingTurn" message-id="streaming" scroll-anchor>
+            <MessageScrollerItem
+              v-if="streamingTurn"
+              message-id="streaming"
+              scroll-anchor
+            >
               <ChatBubble
                 :text="streamingTurn.text || '…'"
                 :tools="streamingTurn.tools"

@@ -76,7 +76,9 @@ function usePrompt(text: string): void {
       <!-- The conversation takes the rest of the column: without `min-h-0` on
            the transcript it sizes to its content instead, and the composer
            floats above dead space. -->
-      <div :class="contentFade + ' flex h-full min-h-0 flex-col overflow-hidden'">
+      <div
+        :class="contentFade + ' flex h-full min-h-0 flex-col overflow-hidden'"
+      >
         <ChatHeader />
         <ChatBar />
         <ChatSessionActions v-if="currentSession" />

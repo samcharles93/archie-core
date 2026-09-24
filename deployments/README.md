@@ -4,19 +4,19 @@ This directory contains configuration templates and guides for different deploym
 
 ## Directory Structure
 
-* **[`single-forge-github.toml`](./single-forge-github.toml)**:
+- **[`single-forge-github.toml`](./single-forge-github.toml)**:
   Standard single-forge deployment managing multiple GitHub repositories under a single bot account and GitHub token.
 
-* **[`multi-forge-github-gitea.toml`](./multi-forge-github-gitea.toml)**:
+- **[`multi-forge-github-gitea.toml`](./multi-forge-github-gitea.toml)**:
   Multi-identity deployment running GitHub and a self-hosted Gitea instance simultaneously with distinct bot accounts, tokens, and repository sets.
 
-* **[`local-ollama-standalone.toml`](./local-ollama-standalone.toml)**:
+- **[`local-ollama-standalone.toml`](./local-ollama-standalone.toml)**:
   Self-hosted deployment running local LLM models via Ollama (e.g., `llama3`, `qwen2.5`) with optional standalone (forge-disabled) operation.
 
-* **[`docker-nats-stack.toml`](./docker-nats-stack.toml)**:
+- **[`docker-nats-stack.toml`](./docker-nats-stack.toml)**:
   Host-run `archied` orchestrating sandboxed `archie-agent` containers over the repository's Compose-managed NATS service. Copy to `~/.config/archie/config.toml`, start NATS with Compose, then start `archied` on the host.
 
-* **[`systemd-user-service.md`](./systemd-user-service.md)**:
+- **[`systemd-user-service.md`](./systemd-user-service.md)**:
   Operational runbook for running `archied` as a persistent 24/7 background service via systemd user units and `loginctl enable-linger`.
 
 ---

@@ -2,7 +2,13 @@
 import { useMediaQuery } from "@vueuse/core";
 import { computed, ref, watch } from "vue";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ago } from "@/lib/format";
 import { captureSignature } from "./capture-signature";
@@ -36,14 +42,22 @@ const pane = ref<HTMLElement | null>(null);
 // as CapturesPage, matched there in CSS and here in script.
 const stacked = useMediaQuery("(max-width: 1099px)");
 
-const cap = computed(() => (stacked.value || !props.maxHeight ? undefined : `${props.maxHeight}px`));
+const cap = computed(() =>
+  stacked.value || !props.maxHeight ? undefined : `${props.maxHeight}px`,
+);
 
-const signature = computed(() => (selected.value ? captureSignature(selected.value) : null));
+const signature = computed(() =>
+  selected.value ? captureSignature(selected.value) : null,
+);
 
 const meta = computed(() => {
   const capture = selected.value;
   if (!capture) return "";
-  return [ago(capture.received_at), capture.content_type || "no content type", capture.remote_addr]
+  return [
+    ago(capture.received_at),
+    capture.content_type || "no content type",
+    capture.remote_addr,
+  ]
     .filter(Boolean)
     .join(" · ");
 });
@@ -60,7 +74,9 @@ watch(selected, () => {
       <CardHeader>
         <CardTitle class="flex items-center gap-2 font-mono">
           {{ selected.source || "Unknown source" }}
-          <Badge v-if="signature" :variant="signature.kind">{{ signature.label }}</Badge>
+          <Badge v-if="signature" :variant="signature.kind">{{
+            signature.label
+          }}</Badge>
         </CardTitle>
         <CardDescription>{{ meta }}</CardDescription>
       </CardHeader>
@@ -68,7 +84,9 @@ watch(selected, () => {
            the way the task log does rather than letting one large payload
            become a ten-thousand-pixel page. Split, the page's cap is the bound
            and this one is lifted. -->
-      <CardContent class="min-h-0 max-h-[62vh] overflow-y-auto min-[1100px]:max-h-none">
+      <CardContent
+        class="min-h-0 max-h-[62vh] overflow-y-auto min-[1100px]:max-h-none"
+      >
         <div class="flex flex-col gap-5">
           <CapturePayload label="Payload" :raw="selected.body" />
           <CapturePayload label="Headers" :raw="selected.headers" />

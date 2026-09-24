@@ -9,7 +9,7 @@
 "Which workflow runs for which trigger" is hardcoded Go: a literal
 label vocabulary (`workintake.labelKinds`) and a literal label->workflow map
 (`workflow/routing.go`), extended only by adding a Go case or shipping a
-skill whose `metadata.archie.workflow` overrides one *named* built-in
+skill whose `metadata.archie.workflow` overrides one _named_ built-in
 workflow. Extending the system to a new trigger, a new action, or a new
 event source means a feature branch, a code change in a hardcoded
 path, and new Go tests -- for every addition. That is the barrier this
@@ -50,10 +50,10 @@ long as it's implemented behind one of the typed engine families below.
 - Yaegi is already a proven in-process extension mechanism
   (`internal/plugin`, `internal/domain/workflow/wfeval/yaegi.go`,
   `internal/gate/gateeval/yaegi.go`, `internal/skill/plugin.go`) -- this
-  design generalizes its existing role, it does not introduce a new
+  design generalises its existing role, it does not introduce a new
   execution mechanism.
 - `internal/domain/workflow/skillbuild.BuildRegistry` already composes a
-  `workflow.Registry` from a skills catalog, plugin-defined overriding
+  `workflow.Registry` from a skills catalogue, plugin-defined overriding
   built-in. The playbook loader described here supersedes label routing
   specifically; it does not replace `skillbuild`'s workflow-composition role,
   it becomes an additional input the daemon composes at startup.
@@ -142,7 +142,7 @@ A playbook declares no embedded logic -- only:
 
 Playbooks live in a configured directory (repo/directory-scoped, per Sam's
 "define repos, directories, playbooks" framing) and are loaded at archied
-startup, alongside the existing skills-catalog composition.
+startup, alongside the existing skills-catalogue composition.
 
 ## Dedup: detect and log, no arbitration mechanism
 
@@ -159,7 +159,7 @@ a case that should just be visible and fixed by a human. Instead:
   only. The schema is the definition; a schema conflict is a reported
   failure, not something the daemon silently arbitrates.
 - **Linter**: a CI/dev-time tool, reading the same generated schemas, that
-  flags duplicate or conflicting trigger definitions *within* a single
+  flags duplicate or conflicting trigger definitions _within_ a single
   maintained tree before merge.
 
   **Resolved** (`archie-core-t2db.12`). A standalone
@@ -173,8 +173,9 @@ a case that should just be visible and fixed by a human. Instead:
   lints an `eda_playbook_dir` the same way, through `playbook.Load` with its
   CEL, action-id and args checks.
   Discoverable via `task lint:playbooks` or direct `go run
-  ./cmd/archie-playbooks lint -dir ...`. The LSP/serve mode is a later
+./cmd/archie-playbooks lint -dir ...`. The LSP/serve mode is a later
   entrypoint of the SAME binary, per the shared-package decision above.
+
 - **LSP**: same schema source again, feeding author-time hover/completion/
   inline errors while someone edits a playbook YAML in an editor. Kept
   explicitly in scope per Sam (not deferred), because it's the same schema
@@ -199,6 +200,7 @@ The validation logic (`LoadKindWorkflowsYAML`, `LoadLabelWorkflowsYAML`, the
 directory-merge from t2db.11) lives in `internal/domain/workflow`, a plain
 Go package with no knowledge of which binary calls it. This makes "should
 the linter/LSP be bundled into archied or a separate tool" a non-question:
+
 - `archied` already imports the package directly and validates in-process
   at startup -- no subprocess, no external tool call.
 - An agent that needs to validate a playbook in-process can import the same
@@ -216,8 +218,8 @@ narrow capability families.
 
 ## Execution-time gaps (both resolved)
 
-Everything above covers *loading* a playbook. Nothing above covers what
-happens while one *runs*. Two gaps, both load-bearing enough to resolve
+Everything above covers _loading_ a playbook. Nothing above covers what
+happens while one _runs_. Two gaps, both load-bearing enough to resolve
 before implementation, not defer:
 
 ### 1. Mid-playbook action failure
@@ -254,7 +256,7 @@ are the complete decision.
    against clever automatic recovery, and it is now a stated decision
    rather than a nobody-chose default.
 2. **Interruption** (the daemon is shutting down mid-dispatch, `ctx.Err()
-   != nil`) is explicitly **not** a failure. `Run` already treats this
+!= nil`) is explicitly **not** a failure. `Run` already treats this
    case specially -- "Daemon shutdown is not a workflow failure. Leave
    the task running ...; parking here would publish a false failure and
    require manual intervention" (`workflow.go`) -- and the same
@@ -263,7 +265,7 @@ are the complete decision.
    alone for restart" means for a playbook run (there is no `store.Task`
    row a playbook run inherently owns the way a workflow stage does) is
    an open implementation detail for whoever builds the coordinator, not
-   decided here -- but the *semantic* (interruption ≠ failure) is decided.
+   decided here -- but the _semantic_ (interruption ≠ failure) is decided.
 3. **A run that produces no outcome at all** (every action ran without
    error, but nothing was assigned to happen) is itself an error
    condition, matching `Run`'s own "a workflow must end with an explicit
@@ -276,7 +278,7 @@ are the complete decision.
 gap's own description named -- a posted forge comment is not revocable.
 This is not a limitation to work around later; it is the correct
 semantic. An operator who needs a corrective action after a failure
-writes a *new* playbook/action for that, they do not get automatic
+writes a _new_ playbook/action for that, they do not get automatic
 undo.
 
 **This stays inside the producer-only rule.** Stop-on-first-failure is the
@@ -322,11 +324,11 @@ than assumed, because it changes what the answer must be:
 **`PublishUnique`'s dedup is not a consumer-redelivery guard at all.**
 `PublishUnique` only sets the JetStream `Nats-Msg-Id` header on the
 outgoing message (`internal/infrastructure/eventbus/nats/publisher.go`;
-key constant `message.go`); JetStream suppresses *republished*
+key constant `message.go`); JetStream suppresses _republished_
 messages carrying a repeated key inside `Config.DedupWindow`
 (`client.go`, `Duplicates: cfg.DedupWindow`), default 2 minutes
 (`config.go`, `DefaultDedupWindow = 2 * time.Minute`). A consumer
-redelivery is the same *stored* message re-delivered on Nak or
+redelivery is the same _stored_ message re-delivered on Nak or
 acknowledge-timeout (`internal/eventbus/eventbus.go`: "a handler
 returning an error causes redelivery") -- not a republish; its
 `Nats-Msg-Id` is never re-firewalled, and even if it were, two minutes is
@@ -341,11 +343,11 @@ mechanism rather than designing a new one.
 **Granularity: per-action-per-event -- one dedup record per
 (action, event) pair, not per playbook run.** Whole-run keying, the
 obvious alternative, has two crash windows: the run row is written when the run starts, so a crash mid-run
-leaves the run "started" and a redelivery skips *every remaining
-action* (work silently lost); a crash before the row write re-runs
-*every already-fired action* (duplicate side effects -- the exact harm
+leaves the run "started" and a redelivery skips _every remaining
+action_ (work silently lost); a crash before the row write re-runs
+_every already-fired action_ (duplicate side effects -- the exact harm
 this gap exists to prevent). Per-action keys collapse both into one
-window and one behavior: an action's record is written immediately
+window and one behaviour: an action's record is written immediately
 before that action's side effect is invoked, so an action fires iff its
 own record is absent, no fired action ever re-fires, and a redelivered
 event resumes at the first unrecorded action. For the shipped
@@ -400,10 +402,10 @@ silently decay, which is exactly the property that disqualifies
 event, action) pairs and is accepted, the same tradeoff
 `binding_dispatches` already makes.
 
-**Redelivery behavior: skip the recorded action and continue the run.**
+**Redelivery behaviour: skip the recorded action and continue the run.**
 A detected duplicate is not re-invoked, is not reported to the caller as
 an error, and is logged at debug level rather than as a warning -- this
-is the expected, correct behavior of at-least-once delivery, not an
+is the expected, correct behaviour of at-least-once delivery, not an
 anomaly (same treatment as `ErrAlreadyDispatched` at
 `daemon.go`).
 The run continues with the next action (or ends, for a single-action
@@ -415,7 +417,7 @@ computed by the coordinator -- not a CEL expression.** The key is the
 `(playbook_id, playbook_version, event_id, action_id)` tuple above, where:
 
 - `playbook_id` is `Playbook.ID` -- the playbook file's path relative to
-  its configured directory root, slash-normalized, unique within the load
+  its configured directory root, slash-normalised, unique within the load
   composition by construction (`internal/domain/eda/playbook`).
 - `playbook_version` is `Playbook.Version` -- a SHA-256 of the loaded
   file, recomputed on every load (`internal/domain/eda/playbook`),
@@ -435,12 +437,12 @@ computed by the coordinator -- not a CEL expression.** The key is the
   issue identity rather than the delivery source is the load-bearing
   property the existing contract already established for `TaskEnvelope`
   (`event-sources-and-reactions.md` question 4: a webhook-sourced
-  envelope for the same issue produces the *same* idempotency key as a
+  envelope for the same issue produces the _same_ idempotency key as a
   poll-discovered one; `internal/forge/webhook/receiver.go` --
   "Idempotency is not this package's job"); this resolution inherits that
   property rather than re-deciding it. Consequence, stated explicitly:
   same-issue re-discoveries (a re-label that re-triggers the same kind)
-  are the *same event* by design -- the workintake trigger vocabulary is
+  are the _same event_ by design -- the workintake trigger vocabulary is
   issue-granular, exactly as `TaskEnvelope`'s own key is. A future
   capture/binding-originated trigger type keys on `captured_events.id`
   instead; derivation is per-trigger-type, not one formula for all
@@ -472,7 +474,7 @@ fragment the ledger. The key is therefore structural by construction:
 every component above is an immutable identity of the run's inputs, so
 two deliveries of the same event derive the same key with no evaluation.
 The exercise's actual outcome is the derivation rule above; CEL remains
-a *condition* surface (`when`), never a key surface. An action kind that
+a _condition_ surface (`when`), never a key surface. An action kind that
 genuinely needs finer granularity than (action, event), such as "per
 comment, not per issue", arrives with its own trigger type and its own
 event identity, per the per-trigger-type rule.
@@ -506,7 +508,7 @@ for a playbook run" to whoever builds the coordinator). One consequence
 of record-before: an action that FAILED (gap 1's real-action-error case)
 has a ledger row, so a later redelivery of the same event skips it --
 consistent with gap 1's "no automatic retry" resolve (a corrective
-action is a *new* playbook/action, per gap 1's rollback paragraph). A
+action is a _new_ playbook/action, per gap 1's rollback paragraph). A
 failed action is never re-attempted by the bus; if a run must be
 recovered, an operator edits the playbook -- new version, new key --
 rather than fighting ledger state.
@@ -516,7 +518,7 @@ contradiction.** Keyed to that document's sections:
 
 1. Its decision 2 commits reactions to at-least-once delivery via
    `PublishUnique`'s "without duplicate enqueue" guarantee -- which, with
-   the code facts above, is accurate for the *publish* path only:
+   the code facts above, is accurate for the _publish_ path only:
    `PublishUnique` absorbs duplicate publishes of the same event (poll
    vs. webhook), which is what that decision was actually about. This
    document's own problem statement, taken literally, overstates it
@@ -564,7 +566,7 @@ the side-effecting positions are gated.
    **Resolved** (`archie-core-t2db.14`). CEL (`cel.dev/cel-go`, pinned) is
    the one mechanism for both an action's `when` condition and its `args`
    values. The trust boundary, evaluation context, load-time validation and
-   the five judgment calls are in
+   the five judgement calls are in
    `docs/prds/playbook-expression-syntax.md`.
 
 2. **Playbook directory config field.** Where this lives in
@@ -604,6 +606,7 @@ the side-effecting positions are gated.
      to the label layer.
    - Precedence in `Route()`: explicit `t.Workflow` → arbitrary-label
      binding → kind binding → triage → implement → default.
+
 3. **Trust boundary for Module Yaegi code.** The plugin engine rule's
    invariant 6 draws a line between operator-trusted in-process code and
    repository-supplied code that must run in a container.
@@ -612,6 +615,7 @@ the side-effecting positions are gated.
    Module is operator-installed, in-process and daemon-privileged, the same
    tier as `PluginDir` and `SecretEngineDir`, never repository-supplied
    task code.
+
 4. **First implementation slice.** Recommend: Module position + the
    playbook loader + trigger-to-workflow dispatch only (subsuming the existing
    label routing) first, proving the schema-gen -> Yaegi -> playbook path
@@ -636,7 +640,7 @@ the side-effecting positions are gated.
    that parks the task rather than a silent fall-through to the binding's
    choice.
 
-   `Store.Dispatch` returns the selected workflow *name* and the matching
+   `Store.Dispatch` returns the selected workflow _name_ and the matching
    playbook's id and version, not a compiled `workflow.Workflow`: the
    production caller decides against the active definition collection, and
    the id and version are the first two components of the gap-2 idempotency
@@ -650,9 +654,10 @@ the side-effecting positions are gated.
    The single-action hard boundary is superseded by
    `docs/prds/multi-action-playbooks.md` (two-shape rule); Module, Channel,
    and Forge positions still have no production dispatch path.
+
 ## Standing constraint
 
-This may be commercialized, and is to be discernible from other open-source
+This may be commercialised, and is to be discernible from other open-source
 event-driven-automation tooling. No design decision follows from that yet;
 it bears on licensing or feature-gating questions about playbook authoring
 and the LSP when they arise.

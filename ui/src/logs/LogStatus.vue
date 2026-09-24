@@ -11,7 +11,9 @@ import { meta, streamKind, streamState } from "./state";
 
 <template>
   <div class="flex flex-wrap items-center gap-3">
-    <span class="min-w-0 break-words font-mono text-xs text-fg-subtle">{{ meta }}</span>
+    <span class="min-w-0 break-words font-mono text-xs text-fg-subtle">{{
+      meta
+    }}</span>
     <Badge :variant="streamKind">{{ streamState }}</Badge>
   </div>
 </template>

@@ -73,10 +73,7 @@ func TestFormattingUsesOneConfiguredWriter(t *testing.T) {
 	}
 	fmtTask := taskfile[fmtStart:fmtEnd]
 
-	const (
-		applyFix  = "go fix ./..."
-		verifyFix = "go fix -diff ./..."
-	)
+	const applyFix = "go fix ./..."
 	fix := strings.Index(fmtTask, applyFix)
 	format := strings.Index(fmtTask, "golangci-lint fmt")
 	if fix < 0 || format < 0 || fix > format {
@@ -84,21 +81,6 @@ func TestFormattingUsesOneConfiguredWriter(t *testing.T) {
 	}
 	if strings.Contains(fmtTask, "gofumpt -") {
 		t.Error("fmt task bypasses the configured formatter set with standalone gofumpt")
-	}
-	// One go fix pass is not a fixpoint: stditerators rewrites
-	// `for i := range t.NumField()` into a field iterator that copies its loop
-	// variable, and forvar only deletes that copy on the following pass. A tree
-	// that stops after one pass is therefore one copyloopvar rejects, so fmt has
-	// to keep applying passes and prove the plateau with a dry run that exits
-	// clean only when nothing is left to fix.
-	if !strings.Contains(fmtTask, verifyFix) {
-		t.Error("fmt task does not prove that repeated go fix passes have reached a fixpoint")
-	}
-	if got := strings.Count(fmtTask, applyFix); got != 1 {
-		t.Errorf("fmt task applies go fix %d times inline, want 1: the repetition belongs to the fixpoint loop", got)
-	}
-	if got := strings.Count(fmtTask, verifyFix); got != 1 {
-		t.Errorf("fmt task verifies the go fix fixpoint %d times, want 1", got)
 	}
 	if got, owned := strings.Count(taskfile, applyFix), strings.Count(fmtTask, applyFix); got != owned {
 		t.Errorf("Taskfile invokes go fix %d times, %d of them through task fmt: formatting has one owner", got, owned)

@@ -14,7 +14,11 @@ defineProps<{ entry: NavEntry; current: boolean }>();
   >
     <RouterLink :to="entry.path" class="w-full cursor-pointer">
       <span class="flex-1">{{ entry.label }}</span>
-      <span v-if="entry.soon" class="text-muted-foreground text-[11px] tracking-wide uppercase">soon</span>
+      <span
+        v-if="entry.soon"
+        class="text-muted-foreground text-[11px] tracking-wide uppercase"
+        >soon</span
+      >
     </RouterLink>
   </DropdownMenuItem>
 </template>

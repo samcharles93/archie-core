@@ -50,9 +50,13 @@ export function useSources() {
     busy,
     load,
     create: (path: string) => run(() => api.sourceCreate<Source>(path.trim())),
-    newSecret: (source: Source) => run(() => api.sourceSecret<Source>(source.path)),
-    requestUnsigned: (source: Source) => run(() => api.sourceSigning<Source>(source.path, false)),
-    requireSigning: (source: Source) => run(() => api.sourceSigning<Source>(source.path, true)),
-    approveUnsigned: (source: Source) => run(() => api.sourceApproveUnsigned<Source>(source.path)),
+    newSecret: (source: Source) =>
+      run(() => api.sourceSecret<Source>(source.path)),
+    requestUnsigned: (source: Source) =>
+      run(() => api.sourceSigning<Source>(source.path, false)),
+    requireSigning: (source: Source) =>
+      run(() => api.sourceSigning<Source>(source.path, true)),
+    approveUnsigned: (source: Source) =>
+      run(() => api.sourceApproveUnsigned<Source>(source.path)),
   };
 }

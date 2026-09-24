@@ -68,7 +68,10 @@ export interface WebMcpTool {
 
 /** The part of the ModelContext interface these tools use. */
 interface ModelContextLike {
-  registerTool: (tool: WebMcpTool, options?: { signal?: AbortSignal }) => Promise<void>;
+  registerTool: (
+    tool: WebMcpTool,
+    options?: { signal?: AbortSignal },
+  ) => Promise<void>;
 }
 
 /** The outcome of registration: whether it took, and how to undo it. */
@@ -79,7 +82,8 @@ export interface WebMcpRegistration {
 
 function modelContext(): ModelContextLike | undefined {
   if (typeof document === "undefined") return undefined;
-  const context = (document as Document & { modelContext?: ModelContextLike }).modelContext;
+  const context = (document as Document & { modelContext?: ModelContextLike })
+    .modelContext;
   return typeof context?.registerTool === "function" ? context : undefined;
 }
 
@@ -90,7 +94,9 @@ function modelContext(): ModelContextLike | undefined {
  * A host that rejects one tool does not lose the others; a host that is absent
  * is a no-op. Neither is worth failing the dashboard over.
  */
-export async function registerWebMcpTools(tools: WebMcpTool[]): Promise<WebMcpRegistration> {
+export async function registerWebMcpTools(
+  tools: WebMcpTool[],
+): Promise<WebMcpRegistration> {
   const context = modelContext();
   if (!context) return { registered: false, dispose: () => {} };
 
@@ -111,7 +117,9 @@ export async function registerWebMcpTools(tools: WebMcpTool[]): Promise<WebMcpRe
  * unregister tools: without this, a reload publishes a second copy of every
  * tool.
  */
-export function createWebMcpRegistrar(tools: WebMcpTool[]): () => Promise<WebMcpRegistration> {
+export function createWebMcpRegistrar(
+  tools: WebMcpTool[],
+): () => Promise<WebMcpRegistration> {
   let current: WebMcpRegistration | undefined;
   return async () => {
     current?.dispose();

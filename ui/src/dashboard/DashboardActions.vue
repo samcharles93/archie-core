@@ -20,7 +20,10 @@ const targets = computed(() => dashboardTaskTargets(tasks.value ?? []));
     <Button v-if="targets.attention.count > 0" variant="attention" as-child>
       <RouterLink :to="targets.attention.href">
         <ListChecks data-icon="inline-start" />
-        {{ targets.attention.count }} need{{ targets.attention.count === 1 ? "s" : "" }} you
+        {{ targets.attention.count }} need{{
+          targets.attention.count === 1 ? "s" : ""
+        }}
+        you
       </RouterLink>
     </Button>
     <Button v-if="targets.running.count > 0" variant="outline" as-child>

@@ -18,14 +18,19 @@ import { selected, type Capture } from "./state";
  */
 const props = defineProps<{ capture: Capture }>();
 
-const identity = computed(() => captureIdentity(props.capture, eventTypes.value));
+const identity = computed(() =>
+  captureIdentity(props.capture, eventTypes.value),
+);
 
 const signature = computed(() => captureSignature(props.capture));
 const isSelected = computed(() => selected.value?.id === props.capture.id);
 
 // The name is set here because role="button" makes the cells presentational:
 // what a screen reader reads is this, not five unrelated columns.
-const label = computed(() => `Show the payload received from ${props.capture.source || "an unknown source"}`);
+const label = computed(
+  () =>
+    `Show the payload received from ${props.capture.source || "an unknown source"}`,
+);
 
 function open(): void {
   selected.value = props.capture;
@@ -44,8 +49,12 @@ function open(): void {
     @keydown.enter.prevent="open"
     @keydown.space.prevent="open"
   >
-    <TableCell class="font-mono">{{ props.capture.source || "(unknown)" }}</TableCell>
-    <TableCell :title="props.capture.received_at || ''">{{ ago(props.capture.received_at) }}</TableCell>
+    <TableCell class="font-mono">{{
+      props.capture.source || "(unknown)"
+    }}</TableCell>
+    <TableCell :title="props.capture.received_at || ''">{{
+      ago(props.capture.received_at)
+    }}</TableCell>
     <!-- An unidentified capture is never dispatched. -->
     <TableCell>
       <div class="flex items-center gap-1">
@@ -55,7 +64,9 @@ function open(): void {
         <Badge :variant="signature.kind">{{ signature.label }}</Badge>
       </div>
     </TableCell>
-    <TableCell class="font-mono">{{ props.capture.content_type || "—" }}</TableCell>
+    <TableCell class="font-mono">{{
+      props.capture.content_type || "—"
+    }}</TableCell>
     <TableCell class="text-right">
       <ChevronRight class="size-4 text-fg-subtle" />
     </TableCell>

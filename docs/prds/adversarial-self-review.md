@@ -37,7 +37,7 @@ host executor, no second `Pool.Acquire`, and no nested container lifecycle.
 
 **Two isolations are needed, and Subagent only provides one of them.**
 
-*Conversation isolation is structural, and free.* `Subagent.Run`
+_Conversation isolation is structural, and free._ `Subagent.Run`
 (`agent/subagent.go`) calls `GenerateText` with `Prompt` set and
 `Messages` never populated. The implementer's history has no code path into
 the nested run; only the prompt string crosses, and only text comes back.
@@ -46,7 +46,7 @@ the reviewer is not told to ignore the implementer's reasoning, because
 nothing hands it any. `h019.3`'s required test asserts this as a construction
 fact.
 
-*Workspace isolation is still ours to build.* A sub-agent shares the parent's
+_Workspace isolation is still ours to build._ A sub-agent shares the parent's
 process, working directory and credentials. So the `.git`-free snapshot from
 the original decision survives unchanged and is load-bearing: export the
 reviewed commit (`git archive <commit> | tar -x`) into a fresh scratch
@@ -63,7 +63,7 @@ publication grant, so a reviewer holding it could push the branch it exists to
 block.
 
 **Call `Run()`, not `Tool()`.** `Tool()` would register delegation as a tool
-the *implementer's* model may choose to invoke -- self-certification by the
+the _implementer's_ model may choose to invoke -- self-certification by the
 implementer, which is the exact failure this feature exists to prevent. The
 stage calls `Run()` unconditionally. That also sidesteps both of `Tool()`'s
 documented footguns: the parent's two-step minimum and the recursion risk of

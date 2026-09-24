@@ -56,16 +56,16 @@ against a real need, not now against a speculative one.
 `captured_events` table (`internal/store/captures.go`, mirrors
 `internal/store/events.go`'s pattern):
 
-| column          | type    | notes                                          |
-|-----------------|---------|-------------------------------------------------|
-| id              | INTEGER | primary key, autoincrement                      |
-| received_at     | TEXT    | RFC3339Nano                                     |
-| source          | TEXT    | opaque path segment chosen by the sender's operator |
-| remote_addr     | TEXT    | `RemoteAddr` at capture time                    |
-| content_type    | TEXT    | `Content-Type` header                           |
-| headers         | TEXT    | JSON, redacted                                  |
-| body            | TEXT    | JSON, redacted (`webhookguard.RedactPayload`)   |
-| authenticated   | INTEGER | 0/1; always 0 until a source registers a secret (future: `t2db.4`) |
+| column        | type    | notes                                                              |
+| ------------- | ------- | ------------------------------------------------------------------ |
+| id            | INTEGER | primary key, autoincrement                                         |
+| received_at   | TEXT    | RFC3339Nano                                                        |
+| source        | TEXT    | opaque path segment chosen by the sender's operator                |
+| remote_addr   | TEXT    | `RemoteAddr` at capture time                                       |
+| content_type  | TEXT    | `Content-Type` header                                              |
+| headers       | TEXT    | JSON, redacted                                                     |
+| body          | TEXT    | JSON, redacted (`webhookguard.RedactPayload`)                      |
+| authenticated | INTEGER | 0/1; always 0 until a source registers a secret (future: `t2db.4`) |
 
 Indexed on `(source, id)` for per-source listing and pruning, and `id` alone
 for the global cap.
@@ -80,7 +80,7 @@ and this bead's own "capture cannot exhaust disk" criterion:
    POST is rejected (413) before redaction or storage sees it.
 2. **Per-remote-address rate limit.** `webhookguard.RateLimiter`, keyed by
    the request's remote address, applied before the body is even read.
-   *Not* keyed by the `source` path segment: `RateLimiter`'s own doc comment
+   _Not_ keyed by the `source` path segment: `RateLimiter`'s own doc comment
    states its bucket map assumes a bounded, operator-registered key space,
    never evicted. `source` is exactly the opposite here -- an unregistered,
    attacker-chosen URL segment, since capturing senders with no registration

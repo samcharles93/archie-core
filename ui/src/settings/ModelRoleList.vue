@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import ConfigList from "./ConfigList.vue";
 import ConfigRow from "./ConfigRow.vue";
 import { config } from "./state";
@@ -19,14 +24,24 @@ function roleLabel(role: string): string {
 </script>
 
 <template>
-  <h3 class="mt-5 mb-2 text-sm font-semibold text-fg-muted first:mt-0">Model roles</h3>
+  <h3 class="mt-5 mb-2 text-sm font-semibold text-fg-muted first:mt-0">
+    Model roles
+  </h3>
   <Empty v-if="!entries.length">
     <EmptyHeader>
       <EmptyTitle>No model roles configured</EmptyTitle>
-      <EmptyDescription>Assign a model to at least one role (e.g. "builder") in [models].</EmptyDescription>
+      <EmptyDescription
+        >Assign a model to at least one role (e.g. "builder") in
+        [models].</EmptyDescription
+      >
     </EmptyHeader>
   </Empty>
   <ConfigList v-else>
-    <ConfigRow v-for="[role, model] in entries" :key="role" :label="roleLabel(role)" :value="model" />
+    <ConfigRow
+      v-for="[role, model] in entries"
+      :key="role"
+      :label="roleLabel(role)"
+      :value="model"
+    />
   </ConfigList>
 </template>

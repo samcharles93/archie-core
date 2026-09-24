@@ -16,7 +16,9 @@ const requested = computed(() => spec.value.trim().length > 0);
 
 <template>
   <Field orientation="horizontal">
-    <FieldLabel class="sr-only" for="danger-stop">Process name or id</FieldLabel>
+    <FieldLabel class="sr-only" for="danger-stop"
+      >Process name or id</FieldLabel
+    >
     <Input
       id="danger-stop"
       v-model="spec"
@@ -24,6 +26,11 @@ const requested = computed(() => spec.value.trim().length > 0);
       autocomplete="off"
       class="w-full min-[701px]:max-w-80"
     />
-    <Button variant="outline" :disabled="!requested" @click="requestDangerous('stop', spec)">Request stop</Button>
+    <Button
+      variant="outline"
+      :disabled="!requested"
+      @click="requestDangerous('stop', spec)"
+      >Request stop</Button
+    >
   </Field>
 </template>

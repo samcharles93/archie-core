@@ -10,11 +10,11 @@ as `templates/repo/actions/list.tmpl`.
 
 ## Files → destinations
 
-| file | destination on gitea container | role |
-| --- | --- | --- |
-| `extra_tabs.tmpl` | `$GITEA_CUSTOM/templates/custom/extra_tabs.tmpl` | adds the "Agent Run" repo tab |
-| `body_inner_post.tmpl` | `$GITEA_CUSTOM/templates/custom/body_inner_post.tmpl` | loads the CDN CSS/JS + agent-monitor.js, gated on the sentinel |
-| `agent-monitor.js` | `$GITEA_CUSTOM/public/assets/agent-monitor.js` | swaps the runs-list segment's content for the terminal, opens the SSE connection |
+| file                   | destination on gitea container                        | role                                                                             |
+| ---------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `extra_tabs.tmpl`      | `$GITEA_CUSTOM/templates/custom/extra_tabs.tmpl`      | adds the "Agent Run" repo tab                                                    |
+| `body_inner_post.tmpl` | `$GITEA_CUSTOM/templates/custom/body_inner_post.tmpl` | loads the CDN CSS/JS + agent-monitor.js, gated on the sentinel                   |
+| `agent-monitor.js`     | `$GITEA_CUSTOM/public/assets/agent-monitor.js`        | swaps the runs-list segment's content for the terminal, opens the SSE connection |
 
 `$GITEA_CUSTOM` is usually `/data/gitea` in the container — confirm via
 Site Administration > Configuration, or `gitea help`.
@@ -44,7 +44,7 @@ then fires on that same page, sees the sentinel, and loads
 The sidebar is deliberately left alone — it's real, always-current Gitea
 markup (actual workflow files, actual routes). An earlier version tried
 hiding it and hardcoding a lookalike sidebar instead; that goes stale the
-moment a workflow is added/renamed, so it was dropped in favor of this.
+moment a workflow is added/renamed, so it was dropped in favour of this.
 Nesting the terminal inside other stock wrapper classes (e.g.
 `.ui.top.attached.header`, meant for the slim counter bar) also produced
 a tiny clipped box in testing — reason `.ui.attached.segment` specifically
@@ -82,7 +82,7 @@ events over the wire — fine at current volume, revisit if that stream
 gets busy.
 
 Note: the `[cors]` section in Gitea's own `app.ini` does NOT help here —
-it controls CORS headers Gitea sends to let *other* origins call Gitea's
+it controls CORS headers Gitea sends to let _other_ origins call Gitea's
 API, not the reverse (the browser, loaded from Gitea's origin, fetching
 archie-core's separate `internal/webui` server). The CORS header needs
 to live on that webui response, or use the reverse-proxy route instead.

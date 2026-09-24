@@ -1,15 +1,40 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { pct, workflowLabel } from "./labels";
 import WorkflowBar from "./WorkflowBar.vue";
-import { workflowRows, type WorkflowDefinition, type WorkflowStats } from "./workflow-rows";
+import {
+  workflowRows,
+  type WorkflowDefinition,
+  type WorkflowStats,
+} from "./workflow-rows";
 
 /** Run outcomes per workflow, definitions merged with whatever stats exist. */
-const props = defineProps<{ workflows: WorkflowStats[]; definitions: WorkflowDefinition[] }>();
+const props = defineProps<{
+  workflows: WorkflowStats[];
+  definitions: WorkflowDefinition[];
+}>();
 
 const rows = computed(() => workflowRows(props.workflows, props.definitions));
 </script>
@@ -18,13 +43,18 @@ const rows = computed(() => workflowRows(props.workflows, props.definitions));
   <Card>
     <CardHeader>
       <CardTitle>Per workflow</CardTitle>
-      <CardDescription v-if="rows.length">Success rate is merged tasks over all runs</CardDescription>
+      <CardDescription v-if="rows.length"
+        >Success rate is merged tasks over all runs</CardDescription
+      >
     </CardHeader>
     <CardContent>
       <Empty v-if="!rows.length">
         <EmptyHeader>
           <EmptyTitle>No workflow runs yet</EmptyTitle>
-          <EmptyDescription>Stats appear here once a task has run through a workflow.</EmptyDescription>
+          <EmptyDescription
+            >Stats appear here once a task has run through a
+            workflow.</EmptyDescription
+          >
         </EmptyHeader>
       </Empty>
       <Table v-else>
@@ -40,18 +70,33 @@ const rows = computed(() => workflowRows(props.workflows, props.definitions));
         </TableHeader>
         <TableBody>
           <TableRow v-for="w in rows" :key="w.workflow">
-            <TableCell class="font-medium">{{ workflowLabel(w.workflow) }}</TableCell>
-            <TableCell class="font-mono">{{ w.origin || "registry" }}</TableCell>
-            <TableCell>{{ `${w.runs} run${w.runs === 1 ? "" : "s"}` }}</TableCell>
+            <TableCell class="font-medium">{{
+              workflowLabel(w.workflow)
+            }}</TableCell>
+            <TableCell class="font-mono">{{
+              w.origin || "registry"
+            }}</TableCell>
+            <TableCell>{{
+              `${w.runs} run${w.runs === 1 ? "" : "s"}`
+            }}</TableCell>
             <TableCell>
               <div class="flex items-baseline gap-2 text-sm">
                 {{ pct(w.merged, w.runs) }}%
-                <span class="text-xs text-fg-subtle">{{ w.merged }} of {{ w.runs }} merged</span>
+                <span class="text-xs text-fg-subtle"
+                  >{{ w.merged }} of {{ w.runs }} merged</span
+                >
               </div>
-              <WorkflowBar :fraction="pct(w.merged, w.runs)" :kind="pct(w.merged, w.runs) >= 50 ? 'ok' : 'warn'" />
+              <WorkflowBar
+                :fraction="pct(w.merged, w.runs)"
+                :kind="pct(w.merged, w.runs) >= 50 ? 'ok' : 'warn'"
+              />
             </TableCell>
-            <TableCell class="font-mono">{{ w.avg_tokens ? w.avg_tokens.toLocaleString() : "—" }}</TableCell>
-            <TableCell class="font-mono">{{ w.avg_steps ? w.avg_steps.toFixed(1) : "—" }}</TableCell>
+            <TableCell class="font-mono">{{
+              w.avg_tokens ? w.avg_tokens.toLocaleString() : "—"
+            }}</TableCell>
+            <TableCell class="font-mono">{{
+              w.avg_steps ? w.avg_steps.toFixed(1) : "—"
+            }}</TableCell>
           </TableRow>
         </TableBody>
       </Table>

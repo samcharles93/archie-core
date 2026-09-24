@@ -12,7 +12,11 @@ export type Motion = "system" | "reduced";
 
 type ResolvedTheme = Exclude<Theme, "system">;
 
-function storedChoice<T extends string>(key: string, choices: readonly T[], fallback: T): T {
+function storedChoice<T extends string>(
+  key: string,
+  choices: readonly T[],
+  fallback: T,
+): T {
   try {
     const value = localStorage.getItem(key);
     return choices.includes(value as T) ? (value as T) : fallback;
@@ -32,17 +36,27 @@ function persist(key: string, value: string): void {
 function resolveTheme(preference: Theme): ResolvedTheme {
   if (preference !== "system") return preference;
   try {
-    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   } catch {
     return "dark";
   }
 }
 
 export const useAppearanceStore = defineStore("appearance", () => {
-  const theme = ref<Theme>(storedChoice(THEME_KEY, ["system", "dark", "light"], "dark"));
-  const density = ref<Density>(storedChoice(DENSITY_KEY, ["comfortable", "compact"], "comfortable"));
-  const motion = ref<Motion>(storedChoice(MOTION_KEY, ["system", "reduced"], "system"));
-  const tooltipsEnabled = ref(storedChoice(TOOLTIPS_KEY, ["on", "off"], "on") === "on");
+  const theme = ref<Theme>(
+    storedChoice(THEME_KEY, ["system", "dark", "light"], "dark"),
+  );
+  const density = ref<Density>(
+    storedChoice(DENSITY_KEY, ["comfortable", "compact"], "comfortable"),
+  );
+  const motion = ref<Motion>(
+    storedChoice(MOTION_KEY, ["system", "reduced"], "system"),
+  );
+  const tooltipsEnabled = ref(
+    storedChoice(TOOLTIPS_KEY, ["on", "off"], "on") === "on",
+  );
   let initialized = false;
 
   function applyTheme(): void {
@@ -79,9 +93,12 @@ export const useAppearanceStore = defineStore("appearance", () => {
     document.documentElement.dataset.density = density.value;
     document.documentElement.dataset.motion = motion.value;
     try {
-      matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-        if (theme.value === "system") applyTheme();
-      });
+      matchMedia("(prefers-color-scheme: dark)").addEventListener(
+        "change",
+        () => {
+          if (theme.value === "system") applyTheme();
+        },
+      );
     } catch {
       // matchMedia is absent in older embedded views. The dark fallback stands.
     }

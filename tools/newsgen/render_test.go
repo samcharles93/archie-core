@@ -49,15 +49,12 @@ func TestRenderJSONKeepsHTMLCharactersReadable(t *testing.T) {
 	}
 }
 
-func TestRenderWritesOnePagePerVersion(t *testing.T) {
+func TestRenderWritesCanonicalArtifactsOnly(t *testing.T) {
 	files, err := render(sampleReleases())
 	if err != nil {
 		t.Fatalf("render error = %v", err)
 	}
 	for _, path := range []string{
-		"docs/news/index.md",
-		"docs/news/1.31.0.md",
-		"docs/news/1.30.0.md",
 		"docs/news/releases.json",
 		"docs/news/redirects.json",
 	} {
@@ -65,8 +62,8 @@ func TestRenderWritesOnePagePerVersion(t *testing.T) {
 			t.Fatalf("render did not produce %s (files: %v)", path, keys(files))
 		}
 	}
-	if len(files) != 5 {
-		t.Fatalf("render produced %d files, want 5: %v", len(files), keys(files))
+	if len(files) != 2 {
+		t.Fatalf("render produced %d files, want 2: %v", len(files), keys(files))
 	}
 }
 
@@ -87,50 +84,6 @@ func TestRenderRedirectsEveryRetiredComponentURL(t *testing.T) {
 	}
 	if !reflect.DeepEqual(table, want) {
 		t.Fatalf("redirect table = %v, want %v", table, want)
-	}
-}
-
-func TestRenderIndexGroupsByDate(t *testing.T) {
-	files, err := render(sampleReleases())
-	if err != nil {
-		t.Fatalf("render error = %v", err)
-	}
-	want := `# News
-
-Release notes, newest first.
-
-## 2026-09-22
-
-- [1.31.0](1.31.0.md)
-
-## 2026-09-20
-
-- [1.30.0](1.30.0.md)
-`
-	if got := string(files["docs/news/index.md"]); got != want {
-		t.Fatalf("index markdown =\n%s\nwant\n%s", got, want)
-	}
-}
-
-func TestRenderReleasePageKeepsTheBodyVerbatim(t *testing.T) {
-	files, err := render(sampleReleases())
-	if err != nil {
-		t.Fatalf("render error = %v", err)
-	}
-	want := `# 1.31.0
-
-Released 2026-09-22. [All news](index.md)
-
-### archied — Gateway
-
-- a bullet
-
-### archie-agent
-
-- a runtime bullet
-`
-	if got := string(files["docs/news/1.31.0.md"]); got != want {
-		t.Fatalf("release page =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -158,9 +111,6 @@ func TestRenderHandlesNoReleases(t *testing.T) {
 	}
 	if got := string(files[redirectsJSONPath]); got != "{}\n" {
 		t.Fatalf("empty redirect table = %q, want %q", got, "{}\n")
-	}
-	if got := string(files["docs/news/index.md"]); got != "# News\n\nRelease notes, newest first.\n" {
-		t.Fatalf("empty index = %q", got)
 	}
 }
 

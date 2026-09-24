@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 import CapturesList from "./CapturesList.vue";
 
@@ -15,7 +21,10 @@ import CapturesList from "./CapturesList.vue";
   <Card>
     <CardHeader>
       <CardTitle>Recent captures</CardTitle>
-      <CardDescription>Headers and payloads are redacted before they are stored.</CardDescription>
+      <CardDescription
+        >Headers and payloads are redacted before they are
+        stored.</CardDescription
+      >
     </CardHeader>
     <CardContent>
       <CapturesList />

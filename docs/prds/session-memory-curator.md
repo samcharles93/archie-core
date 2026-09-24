@@ -110,7 +110,7 @@ copied logic, not shared code, since the source type
 5. Each extracted string becomes one `Write` through
    `Registrar.MemoryEngines.Get("builtin")`
    (`Observation{Identity: sessionID, Kind: "note", Content: text}`).
-   One `Action` per session summarizes the count and lists the session
+   One `Action` per session summarises the count and lists the session
    ID; a session with nothing extracted gets no `Action`, matching the
    skill curator's "a pass with nothing to report is not an error, and
    not every subject needs an entry every time."
@@ -138,7 +138,7 @@ honestly rather than always returning true.
   these observations, not this curator's job to solve by inventing a
   dedup index.
 - **No `Forget`.** Nothing here decides a memory is stale; that is a
-  different, harder judgment call than "is this worth keeping," and nothing
+  different, harder judgement call than "is this worth keeping," and nothing
   reads these observations back into a chat turn to notice if
   one turned out wrong.
 - **No tool declarations.** `Manifest.Tools` is empty; the model call is

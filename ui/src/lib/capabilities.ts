@@ -43,9 +43,18 @@ export const sections = ref<CapabilitySections | null>(null);
 // serve. An unreported section stays visible: a page that says "unavailable"
 // is recoverable, a navigation entry that silently vanished is not, so an
 // older server or a failed capabilities read shows everything.
-export function hiddenRoutes(sections: CapabilitySections | null | undefined, table: SectionedRoute[]): string[] {
+export function hiddenRoutes(
+  sections: CapabilitySections | null | undefined,
+  table: SectionedRoute[],
+): string[] {
   if (!sections) return [];
-  return table.filter((r) => typeof r.meta?.section === "string" && sections[r.meta.section] === false).map((r) => r.path);
+  return table
+    .filter(
+      (r) =>
+        typeof r.meta?.section === "string" &&
+        sections[r.meta.section] === false,
+    )
+    .map((r) => r.path);
 }
 
 /**
@@ -55,7 +64,9 @@ export function hiddenRoutes(sections: CapabilitySections | null | undefined, ta
  */
 export async function loadCapabilities(): Promise<void> {
   try {
-    const body = await api.capabilities<{ sections?: CapabilitySections } | null>();
+    const body = await api.capabilities<{
+      sections?: CapabilitySections;
+    } | null>();
     sections.value = body?.sections ?? null;
     hidden.value = hiddenRoutes(body?.sections, routes as SectionedRoute[]);
   } catch {

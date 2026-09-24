@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const { eventTypeLabel } = await import("../src/captures/event-types.ts");
-const { bindingPayload, draftFromBinding, emptyDraft, mappingsForEventType } = await import("../src/bindings/binding-draft.ts");
+const { bindingPayload, draftFromBinding, emptyDraft, mappingsForEventType } =
+  await import("../src/bindings/binding-draft.ts");
 const { matchCountLabel } = await import("../src/mappings/match-count.ts");
 
 const types = [
   { id: "et1", source: "gh", name: "push", rule: { headers: [], payload: [] } },
-  { id: "et2", source: "fw", name: "blocked", rule: { headers: [], payload: [] } },
+  {
+    id: "et2",
+    source: "fw",
+    name: "blocked",
+    rule: { headers: [], payload: [] },
+  },
 ];
 const mappings = [
   { id: "m1", name: "push fields", event_type_id: "et1" },
@@ -32,7 +38,13 @@ test("the mapping picker offers only the chosen event type's mappings", () => {
 
 test("an edited binding opens on its mapping's event type and keeps its filter", () => {
   const draft = draftFromBinding(
-    { id: "b1", name: "n", matcher: { source: "fw" }, mapping_id: "m2", filter: 'severity == "high"' },
+    {
+      id: "b1",
+      name: "n",
+      matcher: { source: "fw" },
+      mapping_id: "m2",
+      filter: 'severity == "high"',
+    },
     mappings,
   );
   assert.equal(draft.eventTypeId, "et2");
@@ -40,7 +52,14 @@ test("an edited binding opens on its mapping's event type and keeps its filter",
 });
 
 test("a binding is sent with the source of its event type and its filter", () => {
-  const draft = { ...emptyDraft(), name: "n", eventTypeId: "et2", mappingId: "m2", workflow: "w", filter: " severity == 'high' " };
+  const draft = {
+    ...emptyDraft(),
+    name: "n",
+    eventTypeId: "et2",
+    mappingId: "m2",
+    workflow: "w",
+    filter: " severity == 'high' ",
+  };
   const body = bindingPayload(draft, types);
   assert.deepEqual(body.matcher, { source: "fw" });
   assert.equal(body.mapping_id, "m2");
@@ -56,12 +75,17 @@ test("a mapping's match count reads as a number of events or as never matched", 
 });
 
 test("a binding's inputs go out typed, and a no-repository workflow names no repo", async () => {
-  const { constantValue, paramsForType, takesRepository } = await import("../src/bindings/binding-draft.ts");
+  const { constantValue, paramsForType, takesRepository } =
+    await import("../src/bindings/binding-draft.ts");
   const workflow = {
     id: "investigate",
     name: "investigate",
     repository: "none",
-    inputs: { src_ip: { type: "string", required: true }, severity: { type: "number" }, note: { type: "string" } },
+    inputs: {
+      src_ip: { type: "string", required: true },
+      severity: { type: "number" },
+      note: { type: "string" },
+    },
   };
   const draft = {
     ...emptyDraft(),
@@ -69,10 +93,17 @@ test("a binding's inputs go out typed, and a no-repository workflow names no rep
     workflow: "investigate",
     owner: "acme",
     repo: "api",
-    inputs: { src_ip: { param: "ip", value: "" }, severity: { param: "", value: "3" }, note: { param: "", value: "" } },
+    inputs: {
+      src_ip: { param: "ip", value: "" },
+      severity: { param: "", value: "3" },
+      note: { param: "", value: "" },
+    },
   };
   const payload = bindingPayload(draft, types, workflow);
-  assert.deepEqual(payload.inputs, { src_ip: { param: "ip" }, severity: { value: 3 } });
+  assert.deepEqual(payload.inputs, {
+    src_ip: { param: "ip" },
+    severity: { value: 3 },
+  });
   assert.equal(payload.owner, "");
   assert.equal(payload.repo_param, "");
   assert.equal(takesRepository(workflow), false);
@@ -82,16 +113,33 @@ test("a binding's inputs go out typed, and a no-repository workflow names no rep
   assert.equal(constantValue("high", "number"), "high");
   assert.deepEqual(constantValue('{"a":1}', "object"), { a: 1 });
   assert.deepEqual(
-    paramsForType([{ name: "ip", type: "string" }, { name: "n", type: "number" }, { name: "x", type: "any" }], "string").map((f) => f.name),
+    paramsForType(
+      [
+        { name: "ip", type: "string" },
+        { name: "n", type: "number" },
+        { name: "x", type: "any" },
+      ],
+      "string",
+    ).map((f) => f.name),
     ["ip", "x"],
   );
 });
 
 test("an edited binding's assignments come back into the draft", () => {
   const draft = draftFromBinding(
-    { id: "b", name: "b", mapping_id: "m2", repo_param: "full", inputs: { a: { param: "ip" }, b: { value: 3 }, c: { value: "x" } } },
+    {
+      id: "b",
+      name: "b",
+      mapping_id: "m2",
+      repo_param: "full",
+      inputs: { a: { param: "ip" }, b: { value: 3 }, c: { value: "x" } },
+    },
     mappings,
   );
   assert.equal(draft.repoParam, "full");
-  assert.deepEqual(draft.inputs, { a: { param: "ip", value: "" }, b: { param: "", value: "3" }, c: { param: "", value: "x" } });
+  assert.deepEqual(draft.inputs, {
+    a: { param: "ip", value: "" },
+    b: { param: "", value: "3" },
+    c: { param: "", value: "x" },
+  });
 });

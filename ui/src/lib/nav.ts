@@ -39,11 +39,20 @@ const table = routes as Array<{ path: string; meta?: RouteMeta }>;
 // that says nothing.
 type NavSpec =
   | { kind: "link"; path: string }
-  | { kind: "group"; label: string; paths: string[]; dividerBefore?: { path: string; label: string } };
+  | {
+      kind: "group";
+      label: string;
+      paths: string[];
+      dividerBefore?: { path: string; label: string };
+    };
 
 const specs: NavSpec[] = [
   { kind: "link", path: "/" },
-  { kind: "group", label: "Work", paths: ["/tasks", "/workflows", "/channels", "/logs"] },
+  {
+    kind: "group",
+    label: "Work",
+    paths: ["/tasks", "/workflows", "/channels", "/logs"],
+  },
   { kind: "group", label: "Agent", paths: ["/skills", "/curators"] },
   { kind: "link", path: "/events" },
   {
@@ -91,16 +100,22 @@ export function navTree(hidden: string[] = []): NavNode[] {
     const items = spec.paths.map(entryFor).filter(visible);
     const divided = items.map((item) => ({
       ...item,
-      dividerBefore: item.path === spec.dividerBefore?.path ? spec.dividerBefore.label : undefined,
+      dividerBefore:
+        item.path === spec.dividerBefore?.path
+          ? spec.dividerBefore.label
+          : undefined,
     }));
-    if (divided.length > 0) nodes.push({ kind: "group", label: spec.label, items: divided });
+    if (divided.length > 0)
+      nodes.push({ kind: "group", label: spec.label, items: divided });
   }
   return nodes;
 }
 
 /** navEntries flattens the tree to the destinations it can reach. */
 export function navEntries(hidden: string[] = []): NavEntry[] {
-  return navTree(hidden).flatMap((node) => (node.kind === "link" ? [node.entry] : node.items));
+  return navTree(hidden).flatMap((node) =>
+    node.kind === "link" ? [node.entry] : node.items,
+  );
 }
 
 /**

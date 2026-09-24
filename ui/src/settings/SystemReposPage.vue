@@ -8,7 +8,9 @@ import StructuredResourceCard from "./StructuredResourceCard.vue";
 
 const controlPlane = useControlPlaneStore();
 const { catalog, catalogError } = storeToRefs(controlPlane);
-const resources = computed(() => resourcesForPage(catalog.value, "repositories"));
+const resources = computed(() =>
+  resourcesForPage(catalog.value, "repositories"),
+);
 onMounted(controlPlane.load);
 </script>
 
@@ -16,7 +18,14 @@ onMounted(controlPlane.load);
   <div>
     <PageHeader title="Repositories" />
 
-    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
-    <StructuredResourceCard v-for="descriptor in resources" :key="descriptor.kind" :descriptor="descriptor" root-path="repositories" />
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">
+      {{ catalogError }}
+    </p>
+    <StructuredResourceCard
+      v-for="descriptor in resources"
+      :key="descriptor.kind"
+      :descriptor="descriptor"
+      root-path="repositories"
+    />
   </div>
 </template>

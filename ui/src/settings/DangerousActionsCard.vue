@@ -43,9 +43,15 @@ const error = computed(() => dangerous.value?.error ?? "");
         <DangerRollbackRequest :checkpoints="checkpoints" />
         <DangerStopRequest />
       </div>
-      <p v-if="!pending.length" class="mt-3 text-sm text-fg-muted">No pending dangerous actions.</p>
+      <p v-if="!pending.length" class="mt-3 text-sm text-fg-muted">
+        No pending dangerous actions.
+      </p>
       <div v-else class="mt-3">
-        <DangerousActionRow v-for="action in pending" :key="action.id" :action="action" />
+        <DangerousActionRow
+          v-for="action in pending"
+          :key="action.id"
+          :action="action"
+        />
       </div>
     </template>
   </ConfigCard>

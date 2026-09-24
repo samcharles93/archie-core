@@ -4,10 +4,20 @@ import test from "node:test";
 
 import { computed, ref } from "vue";
 
-import { boardStatus, initialTaskFilter, taskMatchesStatus, taskStatuses } from "../src/tasks/task-filter.ts";
+import {
+  boardStatus,
+  initialTaskFilter,
+  taskMatchesStatus,
+  taskStatuses,
+} from "../src/tasks/task-filter.ts";
 
 const QUEUED = { id: "queued", label: "Queued", kind: "idle" };
-const WAITING = { id: "waiting_human", label: "Waiting for you", kind: "warn", needs_you: true };
+const WAITING = {
+  id: "waiting_human",
+  label: "Waiting for you",
+  kind: "warn",
+  needs_you: true,
+};
 const TRIAGING = { id: "triaging", label: "Triaging", kind: "info" };
 
 test("only a status the served catalog knows becomes a filter", () => {
@@ -23,13 +33,20 @@ test("only a status the served catalog knows becomes a filter", () => {
     [undefined, ""],
   ];
   for (const [requested, expected] of cases) {
-    assert.equal(initialTaskFilter(requested, catalog), expected, JSON.stringify(requested));
+    assert.equal(
+      initialTaskFilter(requested, catalog),
+      expected,
+      JSON.stringify(requested),
+    );
   }
 });
 
 test("needs_you groups exactly the statuses the catalog marks for a human", () => {
   const catalog = [QUEUED, WAITING, TRIAGING];
-  assert.deepEqual([...taskStatuses(catalog)], ["needs_you", "queued", "waiting_human", "triaging"]);
+  assert.deepEqual(
+    [...taskStatuses(catalog)],
+    ["needs_you", "queued", "waiting_human", "triaging"],
+  );
 
   const cases: Array<[{ status?: string }, string, boolean]> = [
     [{ status: "waiting_human" }, "needs_you", true],
@@ -40,7 +57,11 @@ test("needs_you groups exactly the statuses the catalog marks for a human", () =
     [{}, "queued", false],
   ];
   for (const [task, status, expected] of cases) {
-    assert.equal(taskMatchesStatus(task, status, catalog), expected, `${task.status} against ${status}`);
+    assert.equal(
+      taskMatchesStatus(task, status, catalog),
+      expected,
+      `${task.status} against ${status}`,
+    );
   }
 });
 
@@ -58,9 +79,17 @@ test("a filter is re-derived when the served catalog lands", () => {
 
   assert.equal(status.value, "", "an id no catalog has held yet is dropped");
   catalog.value = [...catalog.value, TRIAGING];
-  assert.equal(status.value, "triaging", "the served id becomes the filter once it arrives");
+  assert.equal(
+    status.value,
+    "triaging",
+    "the served id becomes the filter once it arrives",
+  );
   query.value = "queued";
-  assert.equal(status.value, "queued", "a back-button step still moves the filter");
+  assert.equal(
+    status.value,
+    "queued",
+    "a back-button step still moves the filter",
+  );
   query.value = "";
   assert.equal(status.value, "", "clearing the query clears the filter");
 });
@@ -74,7 +103,17 @@ test("a filter is re-derived when the served catalog lands", () => {
 // here and never executable, which is why the derivation itself is a function
 // in task-filter.ts with its own behavioural coverage above.
 test("the task board reads the served catalog when the filter re-derives", async () => {
-  const page = await readFile(new URL("../src/tasks/TasksPage.vue", import.meta.url), "utf8");
-  const wiring = /const status = computed\(\(\) => boardStatus\((.+?)\)\);/.exec(page.replace(/\s+/g, " "));
-  assert.equal(wiring?.[1], "statusQuery.value, statusList()", "the filter must be derived, not captured");
+  const page = await readFile(
+    new URL("../src/tasks/TasksPage.vue", import.meta.url),
+    "utf8",
+  );
+  const wiring =
+    /const status = computed\(\(\) => boardStatus\((.+?)\)\);/.exec(
+      page.replace(/\s+/g, " "),
+    );
+  assert.equal(
+    wiring?.[1],
+    "statusQuery.value, statusList()",
+    "the filter must be derived, not captured",
+  );
 });

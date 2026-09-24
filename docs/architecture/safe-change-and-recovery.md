@@ -110,10 +110,10 @@ posture is the opposite: **the daemon fails closed.**
 
 ### Degrade paths
 
-| Failure | Boot behaviour | Where the operator sees it |
-| --- | --- | --- |
-| State Store unreachable | `boot.loadRuntimeConfig` returns the dial error and `archied` exits non-zero | stderr: `runtime settings unavailable` |
-| A stored resource fails validation | Same: `validate database settings` wraps the error and the daemon exits | Same |
+| Failure                                                               | Boot behaviour                                                                                                                                                                              | Where the operator sees it                             |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| State Store unreachable                                               | `boot.loadRuntimeConfig` returns the dial error and `archied` exits non-zero                                                                                                                | stderr: `runtime settings unavailable`                 |
+| A stored resource fails validation                                    | Same: `validate database settings` wraps the error and the daemon exits                                                                                                                     | Same                                                   |
 | SIGHUP reload with a bad file, or a control plane that cannot be read | Running config is kept; the reload records `last_error` / `last_error_at`. The reload re-applies the database layer, so it never publishes file values over the running database-owned ones | `/api/config` → `reload.last_error` → dashboard banner |
 
 Failing closed is deliberate for settings the database owns: falling back to the
@@ -144,12 +144,12 @@ nor the Web UI running: `validate` reads the configuration file the daemon
 boots with, which is what makes its verdict the daemon's verdict. One database
 backs every service, so the scope is always the whole database.
 
-| Command | What it does | Serving processes |
-| --- | --- | --- |
-| `backup -out F` | runs `pg_dump --format=custom`, reads the archive back with `pg_restore --list` and only then replaces `F` | may be running |
-| `restore -from F` | drops tables the snapshot does not hold and runs `pg_restore --clean --single-transaction`; every write made after the snapshot is lost | every one must be stopped |
-| `validate [-config C]` | refuses a schema newer than the binary's highest migration; every stored resource decodes under the definition that owns it; and `configuration.Validate` accepts the settings the daemon would read -- the stored ones, or the seed the State Store writes for a kind the database does not hold yet -- layered onto `C`, the check the daemon reports as `validate database settings` | may be running |
-| `rollback -kind K [-revision N]` | replays an earlier revision of a stored resource through the ordinary replace, recording the rollback as a new revision | the State Store must be stopped |
+| Command                          | What it does                                                                                                                                                                                                                                                                                                                                                                            | Serving processes               |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `backup -out F`                  | runs `pg_dump --format=custom`, reads the archive back with `pg_restore --list` and only then replaces `F`                                                                                                                                                                                                                                                                              | may be running                  |
+| `restore -from F`                | drops tables the snapshot does not hold and runs `pg_restore --clean --single-transaction`; every write made after the snapshot is lost                                                                                                                                                                                                                                                 | every one must be stopped       |
+| `validate [-config C]`           | refuses a schema newer than the binary's highest migration; every stored resource decodes under the definition that owns it; and `configuration.Validate` accepts the settings the daemon would read -- the stored ones, or the seed the State Store writes for a kind the database does not hold yet -- layered onto `C`, the check the daemon reports as `validate database settings` | may be running                  |
+| `rollback -kind K [-revision N]` | replays an earlier revision of a stored resource through the ordinary replace, recording the rollback as a new revision                                                                                                                                                                                                                                                                 | the State Store must be stopped |
 
 The two validation layers `validate` reports are not the same check, and it
 reports both rather than merging them: the write path's own decode is stricter
@@ -189,7 +189,7 @@ Telegram `/restart` (`internal/channels/telegram/restart.go` plus the `Start`
 supervisor loop). Recovered 2026-08-09 from the pre-migration issue tracker.
 Both constraints must survive any refactor.
 
-**1. Deadlock.** The `/restart` handler runs *on* the bot instance the supervisor
+**1. Deadlock.** The `/restart` handler runs _on_ the bot instance the supervisor
 is about to stop. Tearing down inline from the handler deadlocks the restart it
 just asked for. So the handler sends on a **buffered** channel (`restartCh`,
 capacity 1) and returns immediately; the supervisor loop in `Start` does the

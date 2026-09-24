@@ -27,31 +27,31 @@ This is a **distribution decision**, not a rewrite of Archie's domain
 model. The six-domain split already approved in
 `docs/architecture/index.md` and `docs/architecture/organisation.md`
 (Identity, Agent, Messaging, Workflow, Work Intake, Plugin) is unchanged;
-this PRD is about how the *processes* running that domain logic get
+this PRD is about how the _processes_ running that domain logic get
 packaged, contracted, and discovered -- not about redrawing domain
 boundaries.
 
 ### Target services
 
-| Service | Contract it owns | Existing code it replaces/wraps |
-|---|---|---|
-| UI Service | thin client only; talks to Gateway and State Store contracts | `internal/webui` (SPA hosting stays; API surface becomes typed contract clients, not a peer with direct access) |
-| Gateway Service | routing / turn / session contract | `internal/gateway` |
-| Messaging Service | channel-plugin contract (Telegram, email, Discord, Teams, ...) | `internal/channels` |
-| Curator Service | curator contract; **optional**, installs as a Gateway plugin | `internal/domain/curator` |
-| Scheduler Service | cron/ticker contract | `internal/domain/scheduling` |
-| Execution Environment | execution-dispatch contract | `internal/domain/workflow`, task dispatch paths |
-| Runner | isolated worktree/container execution | `internal/container`, `internal/agentexec`, `internal/worktree` |
-| State Store | state-access contract | `internal/infrastructure/postgres` |
+| Service               | Contract it owns                                               | Existing code it replaces/wraps                                                                                 |
+| --------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| UI Service            | thin client only; talks to Gateway and State Store contracts   | `internal/webui` (SPA hosting stays; API surface becomes typed contract clients, not a peer with direct access) |
+| Gateway Service       | routing / turn / session contract                              | `internal/gateway`                                                                                              |
+| Messaging Service     | channel-plugin contract (Telegram, email, Discord, Teams, ...) | `internal/channels`                                                                                             |
+| Curator Service       | curator contract; **optional**, installs as a Gateway plugin   | `internal/domain/curator`                                                                                       |
+| Scheduler Service     | cron/ticker contract                                           | `internal/domain/scheduling`                                                                                    |
+| Execution Environment | execution-dispatch contract                                    | `internal/domain/workflow`, task dispatch paths                                                                 |
+| Runner                | isolated worktree/container execution                          | `internal/container`, `internal/agentexec`, `internal/worktree`                                                 |
+| State Store           | state-access contract                                          | `internal/infrastructure/postgres`                                                                              |
 
 ### Discovery
 
 Per `docs/inspiration/service-discovery-research-2026-09-05.md`:
 
 - **Primary:** Kubernetes-native discovery (Service + headless-Service/DNS
-  + EndpointSlice, served by CoreDNS), delivered as a Helm chart + Operator,
-  on k3s for single-host installs and a real cluster for multi-host or a
-  hosted offering.
+  - EndpointSlice, served by CoreDNS), delivered as a Helm chart + Operator,
+    on k3s for single-host installs and a real cluster for multi-host or a
+    hosted offering.
 - **Fallback:** NATS-based discovery (micro `$SRV` announce + JetStream KV
   registry) for no-K8s single-host installs, with a custom gRPC resolver
   reading `host:port` from the KV bucket.
@@ -135,9 +135,10 @@ historical record rather than an outstanding gate.
    monolith) phase. Confirms the hypothesis and strengthens it: the
    Gateway is already store-decoupled (it uses narrow contract adapters,
    not `internal/store`) and already owns an isolated session SQLite, so it
-   is both the stickiest capability *and* the one with a ready seam and
+   is both the stickiest capability _and_ the one with a ready seam and
    isolated data — extractable alone, first. Full phase list and reasoning:
    `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#1`.
+
 2. **Contract definition mechanism.** Protobuf/gRPC service definitions
    need a home (a new `proto/` or `contracts/` tree, versioning scheme,
    codegen wiring into `Taskfile.yml`). Not yet designed.
@@ -154,6 +155,7 @@ historical record rather than an outstanding gate.
    rationale, and scratch-verified `buf`/`buf breaking`/`connect-go`
    results:
    `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#2`.
+
 3. **In-process vs. out-of-process during migration.** Whether services
    can run multiplexed inside one binary behind the same `ServiceRegistry`
    interface during a transition period (so extraction is incremental and
@@ -186,6 +188,7 @@ historical record rather than an outstanding gate.
    `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#3`
    (the State Store's concrete ratified config shape is
    `docs/prds/state-store-contract.md` §10).
+
 4. **State Store's contract shape.** Whether every service gets its own
    storage (true microservice isolation) or several services share the
    State Store service's contract (less isolation, less migration risk).
@@ -194,10 +197,10 @@ historical record rather than an outstanding gate.
    **RESOLVED.** One State Store service owns the task data
    (now PostgreSQL, see `docs/prds/state-store-contract.md`) behind narrow typed contracts (`TaskStore`,
    `CaptureStore`, `MappingStore`, `BindingStore`, `WorkflowStore`) over
-   gRPC. *(Ratified 2026-09-06: the workflow contract is now the
+   gRPC. _(Ratified 2026-09-06: the workflow contract is now the
    domain-owned `workflow.Store`, which supersedes
    `internal/store`'s `WorkflowStore`. See note below and
-   `docs/prds/state-store-contract.md`.)*
+   `docs/prds/state-store-contract.md`.)_
    No physical database-per-service: the solo-maintainer / team-
    topology rule of thumb plus the low value of per-service autonomy for
    one person rule it out, and one store means no distributed-transactions
@@ -215,15 +218,16 @@ historical record rather than an outstanding gate.
    #2/#7), producer-owned daemon/webui store surfaces in `internal/domain/storecontract`;
    the `Task`/`Status`/`Source` + interface relocation is a Phase 2
    prerequisite pulled from migration-decisions §4 (`store.Task →
-   WorkflowExecution`); `RecordDispatch` drops `*sql.Tx`; `Close` off-wire;
+WorkflowExecution`); `RecordDispatch` drops `*sql.Tx`; `Close` off-wire;
    structured gRPC error codes with sanitised details; explicit agent State
    Store gRPC handoff (`STATE_STORE_URL`/`STATE_STORE_TOKEN`); loopback+bearer
    transport-security boundary; presence-based `[services.state].target`
    defaulting local; migration order `workflow.Store -> archie-state-store ->
-   Capture -> Mapping -> Binding -> TaskStore`. `.4.2` and `.4.3` implement
+Capture -> Mapping -> Binding -> TaskStore`. `.4.2` and `.4.3` implement
    against that doc.
+
 5. **Helm chart / Operator ownership.** Net-new work with no existing
-   analog in this repository (`deployments/` holds TOML profiles
+   analogue in this repository (`deployments/` holds TOML profiles
    and a `docker-compose.yml`, not Kubernetes manifests). Scoping not yet
    started.
 
@@ -243,7 +247,7 @@ historical record rather than an outstanding gate.
 ## Completion criteria
 
 Not applicable yet -- this PRD records the target shape and the discovery
-decision. It does not authorize implementation. Before work begins: file
+decision. It does not authorise implementation. Before work begins: file
 a beads epic, resolve the open questions above (at minimum #1-#3), and
 get explicit go-ahead given the scale of this change relative to
 `AGENTS.md`'s "smallest workable change" default for this solo project.

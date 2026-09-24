@@ -17,12 +17,18 @@ const MAX_MATCHES = 8;
  * caret, matched on the command and its description together so a word from
  * either finds it.
  */
-export function matchesFor(specs: ChatCommandSpec[], value: string, caret: number): ChatCommandSpec[] {
+export function matchesFor(
+  specs: ChatCommandSpec[],
+  value: string,
+  caret: number,
+): ChatCommandSpec[] {
   const match = value.slice(0, caret).match(OPEN_TOKEN);
   if (!match) return [];
   const query = match[1].toLowerCase();
   return specs
-    .filter((spec) => `${spec.command} ${spec.description ?? ""}`.toLowerCase().includes(query))
+    .filter((spec) =>
+      `${spec.command} ${spec.description ?? ""}`.toLowerCase().includes(query),
+    )
     .slice(0, MAX_MATCHES);
 }
 
@@ -30,11 +36,16 @@ export function matchesFor(specs: ChatCommandSpec[], value: string, caret: numbe
  * applyCommand replaces the token being completed with the chosen command and
  * returns the cursor position just after it, ready for the next word.
  */
-export function applyCommand(value: string, caret: number, command: string): { text: string; cursor: number } {
+export function applyCommand(
+  value: string,
+  caret: number,
+  command: string,
+): { text: string; cursor: number } {
   const before = value.slice(0, caret);
   const after = value.slice(caret);
   const start = before.search(ANY_TOKEN);
-  const tokenStart = start < 0 ? before.length : start + (before[start] === " " ? 1 : 0);
+  const tokenStart =
+    start < 0 ? before.length : start + (before[start] === " " ? 1 : 0);
   return {
     text: `${before.slice(0, tokenStart)}${command} ${after}`,
     cursor: tokenStart + command.length + 1,
@@ -46,7 +57,10 @@ export function applyCommand(value: string, caret: number, command: string): { t
  * nothing else. Enter then sends it rather than completing it, so a command
  * typed in full is never re-entered by the palette that was offering it.
  */
-export function isExactCommand(specs: ChatCommandSpec[], value: string): boolean {
+export function isExactCommand(
+  specs: ChatCommandSpec[],
+  value: string,
+): boolean {
   const trimmed = value.trim();
   return specs.some((spec) => spec.command === trimmed);
 }

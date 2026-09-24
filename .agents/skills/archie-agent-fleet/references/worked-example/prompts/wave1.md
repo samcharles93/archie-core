@@ -1,19 +1,20 @@
 # Wave 1 sub-prompt: shape first
 
-**One child. fwmp alone.** Nothing else runs until it merges, and Wave 2 branches
-from the merged shape.
+**One child. fwmp alone.** Nothing else runs until it merges, and Wave 2
+branches from the merged shape.
 
 xrux is no longer a Wave 1 probe. Its verdict is already measured with evidence
-(Wave 0R claims audit c6) and the answer is **ZEROES**. Re-measuring buys nothing,
-so the characterization test is folded into the `config` lane's red stage, where
-it is committed and the evidence lives in the tree rather than in a transcript.
-See the `config` brief in `lanes.json`.
+(Wave 0R claims audit c6) and the answer is **ZEROES**. Re-measuring buys
+nothing, so the characterisation test is folded into the `config` lane's red
+stage, where it is committed and the evidence lives in the tree rather than in a
+transcript. See the `config` brief in `lanes.json`.
 
 ---
 
 ## fwmp: the shared shape (cp-writer, worktree `/work/apps/cp-shape`, branch `cp/shape`)
 
-Gate: `go test ./internal/domain/workflow/... ./internal/app/controlplane/... ./internal/app/agentworker/... -count=1`
+Gate:
+`go test ./internal/domain/workflow/... ./internal/app/controlplane/... ./internal/app/agentworker/... -count=1`
 
 ```text
 Bead archie-core-fwmp. Run `bd show archie-core-fwmp` first.

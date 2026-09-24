@@ -2,8 +2,20 @@
 import { computed } from "vue";
 
 import { Badge } from "@/components/ui/badge";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { config } from "./state";
 
 /**
@@ -20,7 +32,10 @@ const providers = computed(() => Object.entries(config.value?.providers ?? {}));
   <Empty v-if="!providers.length">
     <EmptyHeader>
       <EmptyTitle>No providers configured</EmptyTitle>
-      <EmptyDescription>Add a [providers.&lt;name&gt;] entry so a model role above has something to run on.</EmptyDescription>
+      <EmptyDescription
+        >Add a [providers.&lt;name&gt;] entry so a model role above has
+        something to run on.</EmptyDescription
+      >
     </EmptyHeader>
   </Empty>
   <Table v-else>
@@ -37,8 +52,12 @@ const providers = computed(() => Object.entries(config.value?.providers ?? {}));
       <TableRow v-for="[name, provider] in providers" :key="name">
         <TableCell class="font-medium">{{ name }}</TableCell>
         <TableCell>{{ provider.class }}</TableCell>
-        <TableCell class="font-mono">{{ provider.base_url || "default" }}</TableCell>
-        <TableCell class="font-mono">{{ provider.api_key_env || "—" }}</TableCell>
+        <TableCell class="font-mono">{{
+          provider.base_url || "default"
+        }}</TableCell>
+        <TableCell class="font-mono">{{
+          provider.api_key_env || "—"
+        }}</TableCell>
         <TableCell>
           <Badge v-if="provider.configured" variant="ok">configured</Badge>
           <Badge v-else variant="warn">missing credentials</Badge>

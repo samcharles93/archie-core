@@ -16,10 +16,10 @@ not)
 There are **two live memory stores for one assistant**, split by which component
 writes them, and the chat turn reads neither.
 
-| Family | Written by | Root | Format |
-|---|---|---|---|
-| `internal/memory` (`Manager`, `builtin.Provider`) | the chat agent's `memory_edit` tool via `memorytoolprovider` (`bootstrap.go`) | `<workDir>/memory` | `MEMORY.md` / `USER.md` |
-| `internal/domain/memory` + `internal/infrastructure/memory` | the session curator (`sessioncurator.go`) | `<workDir>/memory-engine` | identity-keyed blocks |
+| Family                                                      | Written by                                                                    | Root                      | Format                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------- | ----------------------- |
+| `internal/memory` (`Manager`, `builtin.Provider`)           | the chat agent's `memory_edit` tool via `memorytoolprovider` (`bootstrap.go`) | `<workDir>/memory`        | `MEMORY.md` / `USER.md` |
+| `internal/domain/memory` + `internal/infrastructure/memory` | the session curator (`sessioncurator.go`)                                     | `<workDir>/memory-engine` | identity-keyed blocks   |
 
 They share no code, no format and no scope vocabulary. Neither reaches a prompt:
 `Manager.SystemPromptBlock` (`internal/memory/manager.go`) has no production
@@ -30,10 +30,10 @@ Three further defects fall out of the same split:
 
 1. **The engine's contract is not CRUD.** `Store` is `Write`/`Query`/`List`/
    `Forget` — create, read, delete, and **no Update**. The retired file provider
-   *does* have `handleAdd`/`handleReplace`/`handleRemove`, so the family being
+   _does_ have `handleAdd`/`handleReplace`/`handleRemove`, so the family being
    deleted is operationally richer than its replacement.
 2. **There is no scope model.** The contract carries one opaque `Identity
-   string`, and the curator fills it with a **session id** (`sessioncurator.go`)
+string`, and the curator fills it with a **session id** (`sessioncurator.go`)
    — which is none of the four scopes `docs/architecture/agent-system.md`
    requires, and stops meaning anything when the session ends.
 3. **The chat turn has no user identity on half the channels.** Telegram and
@@ -201,12 +201,12 @@ memory step reads what those later steps produce.
 The memory tool is built **per turn**, not registered once at boot, because it
 must write into a scope derived from the turn's resolved subject:
 
-| action | engine call |
-|---|---|
-| `create` | `Create` |
+| action   | engine call      |
+| -------- | ---------------- |
+| `create` | `Create`         |
 | `update` | `Update` (by id) |
 | `delete` | `Forget` (by id) |
-| `list` | `List` |
+| `list`   | `List`           |
 
 **The model chooses the scope kind; it never chooses the ids.** Agent and user
 ids come from the turn's resolution and there is no schema field to put anything
@@ -326,26 +326,26 @@ Each step is independently verifiable and lands green on its own.
 2. **Scope, CRUD and revisions.** The `internal/domain/memory` contract, the
    builtin engine with `HISTORY.md`, the store relocation, the scanner move, and
    the curator rewritten onto agent-user scope (it is the engine's only live
-   consumer, so it belongs in this slice). *Depends on 1 for the curator half.*
+   consumer, so it belongs in this slice). _Depends on 1 for the curator half._
 3. **Chat read path.** The `Memory` seam, the template block, subject resolution,
-   and the composition-ordering fix. *Depends on 2.*
+   and the composition-ordering fix. _Depends on 2._
 4. **Chat write path.** The tool adapter onto CRUD and the turn's subject on the
-   context. *Depends on 3, because a write is only observable through the read.*
+   context. _Depends on 3, because a write is only observable through the read._
 5. **Delete `internal/memory` and the dead config/dashboard surface**, and
    rewrite the "Memory engine family" section of
    `docs/architecture/plugins-and-extensions.md` to describe the
-   engine family rather than a manager it deleted. *Depends on 3 and 4.*
+   engine family rather than a manager it deleted. _Depends on 3 and 4._
 
 Steps 3 and 4 are separable from each other; step 1 is separable from everything.
 
 ## Settles these open items in `migration-decisions.md` §5
 
-| §5 open item | Settled by |
-|---|---|
+| §5 open item                                   | Settled by                                                                                                                                                |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | authoritative memory record and revision model | §1, §2 — the live marker becomes JSON, since the ratified `<!--mem:<ulid>-->` cannot carry provenance; superseded states live in a per-scope `HISTORY.md` |
-| provider and infrastructure boundaries | §2 — contract in `internal/domain/memory`, builtin format in `internal/infrastructure/memory/builtin` |
-| retrieval and access enforcement | §1 — caller-named scope sets, no engine-side policy |
-| provenance representation | §2 |
+| provider and infrastructure boundaries         | §2 — contract in `internal/domain/memory`, builtin format in `internal/infrastructure/memory/builtin`                                                     |
+| retrieval and access enforcement               | §1 — caller-named scope sets, no engine-side policy                                                                                                       |
+| provenance representation                      | §2                                                                                                                                                        |
 
 ## Not determined
 

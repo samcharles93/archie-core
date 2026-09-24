@@ -48,24 +48,38 @@ const props = withDefaults(
 
 defineEmits<{ filter: [next: LogFilters] }>();
 
-const resolvedAttempt = computed(() => Number(props.attempt) || Number(props.state?.attempt) || 0);
+const resolvedAttempt = computed(
+  () => Number(props.attempt) || Number(props.state?.attempt) || 0,
+);
 
 /** The pane's state, decided once so the announcement and the body can never
  * disagree about which case is on screen. */
 const view = computed(() => {
   const state = props.state;
-  if (state === undefined) return { kind: "loading" as const, status: "Loading this attempt's log" };
-  if (state === null) return { kind: "failed" as const, status: "This attempt's log could not be loaded" };
+  if (state === undefined)
+    return { kind: "loading" as const, status: "Loading this attempt's log" };
+  if (state === null)
+    return {
+      kind: "failed" as const,
+      status: "This attempt's log could not be loaded",
+    };
   // A reader exists in this process but the attempt has no log file. That is a
   // fact about the attempt, and saying "logging was not enabled" here (which
   // this panel used to do) told the operator to go and change a setting that
   // was already correct.
   if (state.found === false && !state.disabled) {
-    return { kind: "nolog" as const, status: "No log recorded for this attempt" };
+    return {
+      kind: "nolog" as const,
+      status: "No log recorded for this attempt",
+    };
   }
   // This process cannot read task logs at all. That IS about the deployment,
   // and it is the only case where the pane may say so.
-  if (state.disabled) return { kind: "disabled" as const, status: "This dashboard cannot read task logs" };
+  if (state.disabled)
+    return {
+      kind: "disabled" as const,
+      status: "This dashboard cannot read task logs",
+    };
   const entries = state.entries || [];
   if (!entries.length) {
     return {
@@ -82,7 +96,12 @@ const view = computed(() => {
 });
 
 const download = computed(() =>
-  props.taskId != null ? api.taskLogDownloadURL(String(props.taskId), resolvedAttempt.value || null) : null,
+  props.taskId != null
+    ? api.taskLogDownloadURL(
+        String(props.taskId),
+        resolvedAttempt.value || null,
+      )
+    : null,
 );
 </script>
 
@@ -101,27 +120,39 @@ const download = computed(() =>
          for the log's lines: putting aria-live on the list itself would read
          every entry aloud on every load, which for a 500-entry pane is
          unusable. -->
-    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ view.status }}</p>
+    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {{ view.status }}
+    </p>
 
     <PanelLoading v-if="view.kind === 'loading'" label="Loading attempt log…" />
 
-    <div v-else-if="view.kind === 'failed'" class="flex flex-col items-start gap-2 py-3">
+    <div
+      v-else-if="view.kind === 'failed'"
+      class="flex flex-col items-start gap-2 py-3"
+    >
       <p class="text-sm text-fg-muted">
-        Could not load this attempt's log. Live updates will try again when the daemon reconnects.
+        Could not load this attempt's log. Live updates will try again when the
+        daemon reconnects.
       </p>
     </div>
 
     <Empty v-else-if="view.kind === 'nolog'">
       <EmptyHeader>
         <EmptyTitle>No log recorded for this attempt</EmptyTitle>
-        <EmptyDescription>This attempt produced no output, or it has not started writing yet.</EmptyDescription>
+        <EmptyDescription
+          >This attempt produced no output, or it has not started writing
+          yet.</EmptyDescription
+        >
       </EmptyHeader>
     </Empty>
 
     <Empty v-else-if="view.kind === 'disabled'">
       <EmptyHeader>
         <EmptyTitle>No persisted log for this attempt</EmptyTitle>
-        <EmptyDescription>The log service is not reporting a reader, so the file cannot be read.</EmptyDescription>
+        <EmptyDescription
+          >The log service is not reporting a reader, so the file cannot be
+          read.</EmptyDescription
+        >
       </EmptyHeader>
     </Empty>
 
@@ -134,7 +165,9 @@ const download = computed(() =>
     <template v-else>
       <!-- The detail page's log is the primary content, so it takes a framed
            read surface of its own and the tallest one on the page. -->
-      <div class="max-h-[62vh] overflow-y-auto rounded-sm border border-border bg-card px-2">
+      <div
+        class="max-h-[62vh] overflow-y-auto rounded-sm border border-border bg-card px-2"
+      >
         <LogRow v-for="(entry, i) in view.entries" :key="i" :entry="entry" />
       </div>
       <Button v-if="download" variant="outline" size="sm" class="mt-3" as-child>

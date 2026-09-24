@@ -25,8 +25,12 @@ const props = defineProps<{
 const captures = computed(() => props.state?.captures || []);
 
 // A capture event WAS recorded but its payload could not be read.
-const undecodable = computed(() => props.state?.found === true && !captures.value.length);
-const nothingRecorded = computed(() => !props.state?.found || !captures.value.length);
+const undecodable = computed(
+  () => props.state?.found === true && !captures.value.length,
+);
+const nothingRecorded = computed(
+  () => !props.state?.found || !captures.value.length,
+);
 </script>
 
 <template>
@@ -39,7 +43,9 @@ const nothingRecorded = computed(() => !props.state?.found || !captures.value.le
 
   <Empty v-else-if="undecodable">
     <EmptyHeader>
-      <EmptyTitle>A change capture was recorded but could not be read</EmptyTitle>
+      <EmptyTitle
+        >A change capture was recorded but could not be read</EmptyTitle
+      >
     </EmptyHeader>
   </Empty>
 

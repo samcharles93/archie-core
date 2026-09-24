@@ -9,7 +9,7 @@
 
 This document is the authority for Phase 3 UI Service implementation. It fixes
 the process boundary, configuration ownership, client contracts, security
-posture, readiness behavior, and migration evidence required by
+posture, readiness behaviour, and migration evidence required by
 `archie-core-8cda.5.2` and later UI extraction work.
 
 ## Decision
@@ -35,13 +35,13 @@ change; a dual-live UI authority is not permitted.
 
 ## Boundary and ownership
 
-| Concern | UI Service owns | UI Service may consume | UI Service must not own or receive |
-|---|---|---|---|
-| HTTP and SPA | routes, auth middleware, UI DTOs, assets, HTTP lifecycle | contract results and health snapshots | domain entities or infrastructure handles |
-| Chat | request validation and response projection | Gateway `ChatContract` | `gateway.Router`, `SessionStore`, turn runner, model/provider runtime |
-| Task dashboard | query/action DTOs and HTTP status mapping | State Store narrow contracts and explicitly ratified task-action contract | `*store.Store`, SQL connections, workflow registry, daemon pointer |
-| Configuration page | secret-free view and update request validation | a UI configuration contract owned by the configuration/application boundary | `config.Config`, `config.Holder`, secret registry, reload implementation |
-| Readiness | UI process liveness and dependency readiness aggregation | bounded health results from Gateway and State Store | direct probing of private databases or providers |
+| Concern            | UI Service owns                                          | UI Service may consume                                                      | UI Service must not own or receive                                       |
+| ------------------ | -------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| HTTP and SPA       | routes, auth middleware, UI DTOs, assets, HTTP lifecycle | contract results and health snapshots                                       | domain entities or infrastructure handles                                |
+| Chat               | request validation and response projection               | Gateway `ChatContract`                                                      | `gateway.Router`, `SessionStore`, turn runner, model/provider runtime    |
+| Task dashboard     | query/action DTOs and HTTP status mapping                | State Store narrow contracts and explicitly ratified task-action contract   | `*store.Store`, SQL connections, workflow registry, daemon pointer       |
+| Configuration page | secret-free view and update request validation           | a UI configuration contract owned by the configuration/application boundary | `config.Config`, `config.Holder`, secret registry, reload implementation |
+| Readiness          | UI process liveness and dependency readiness aggregation | bounded health results from Gateway and State Store                         | direct probing of private databases or providers                         |
 
 Every value crossing the process boundary is a versioned DTO or scalar contract
 value. `internal/webui` may retain temporary Go-side adapters while the
@@ -50,7 +50,7 @@ UI-owned response types at the HTTP edge. A constructor accepting a concrete
 Gateway, State Store, daemon, or `config.Holder` is not an approved final
 boundary.
 
-The existing UI routes remain behaviorally compatible during extraction,
+The existing UI routes remain behaviourally compatible during extraction,
 including task actions, SSE event delivery, config views, chat streaming,
 capture intake, mappings, bindings, update reporting, and health endpoints.
 Compatibility preserves status codes, authentication requirements, redaction,
@@ -61,18 +61,18 @@ The route families have these target owners. This is the required inventory for
 the implementation children; a route without an owner is not eligible for
 cutover.
 
-| Route family | Target owner consumed by UI | Migration status |
-|---|---|---|
-| `/api/chat/*` | Gateway `ChatContract` and its versioned client | contract seam exists; DTO and stream parity remain |
-| `/api/tasks/*`, `/api/workflows`, `/api/setup` | State Store read/action contracts plus an explicit execution/admin action contract | State Store adapter exists; UI-facing narrow surface remains |
-| `/events` | State Store `EventsSince`, polled by one UI-process pump feeding `Server.Broadcast` | RESOLVED (`archie-core-za9f`): see migration-decisions, "Dashboard live event delivery". No new RPC; replay cursor and drop-recovery are the existing `since` watermark in `sse.go` |
-| `/api/logs`, `/api/logs/stream` | daemon diagnostic feed, host-local | unresolved: `logging.Feed` is in-process on the daemon host and has no contract. The per-task log routes moved off this row: see `/api/tasks/*` above |
-| `/api/tasks/{id}/logs`, `/api/tasks/{id}/logs/download` | State Store task-log read contract (`TaskLogStore`: `ReadTaskLog` + `StreamTaskLogContent`), read by the UI process from the service that owns the state directory | RESOLVED (`archie-core-iaqx`): the UI process composes `TaskLogStore` from its own State Store client and serves the attempt log as JSON (`found` distinguishes "no log for this attempt" from "this process cannot read logs") and as a `Content-Disposition` attachment named `task-<id>-attempt-<n>.log`. The daemon's in-process registry is wired as the server-side reader in `internal/app/archied/state_store.go` only (`staterpc.Deps.TaskLogs`), so no process opens another process's log files |
-| `/api/captures`, `/api/mappings`, `/api/bindings` | State Store contracts, with webhook verification owned by Work Intake/Messaging | RESOLVED (cutover, `archie-core-8cda.5.4`): the UI process composes CaptureStore/MappingStore/BindingStore and mounts the `captureintake.Receiver` from its own State Store client; the daemon's binding-dispatch loop keeps consuming captures from the same store |
-| `/api/config` (read) | daemon-published `ConfigView` snapshot, read over the State Store contract | RESOLVED (`archie-core-ymut`): see migration-decisions, "Dashboard configuration page" |
-| `/api/config` (write), `/api/config/reset`, `/api/config/repos/*` | a configuration write contract; the daemon stays the policy owner | DESCOPED for Phase 3 (`archie-core-ymut`), NOT abandoned: 503 in the UI process, SPA hides the controls, editing is config.toml plus reload. Dashboard editing is a tracked feature (`archie-core-1786637498420-327`) and its transport is `archie-core-j28m`; the handlers and their func-field seams on `webui.Server` are kept for it |
-| `/api/channels`, reload, curators, memory, skills, version/update | owning capability contract or an explicitly removed route | owner and failure semantics remain to define |
-| `/`, `/healthz`, `/health`, `/health/detailed` | UI HTTP process; readiness consumes per-service health contracts | current HTTP behavior is the compatibility baseline |
+| Route family                                                      | Target owner consumed by UI                                                                                                                                        | Migration status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/chat/*`                                                     | Gateway `ChatContract` and its versioned client                                                                                                                    | contract seam exists; DTO and stream parity remain                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `/api/tasks/*`, `/api/workflows`, `/api/setup`                    | State Store read/action contracts plus an explicit execution/admin action contract                                                                                 | State Store adapter exists; UI-facing narrow surface remains                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/events`                                                         | State Store `EventsSince`, polled by one UI-process pump feeding `Server.Broadcast`                                                                                | RESOLVED (`archie-core-za9f`): see migration-decisions, "Dashboard live event delivery". No new RPC; replay cursor and drop-recovery are the existing `since` watermark in `sse.go`                                                                                                                                                                                                                                                                                                                        |
+| `/api/logs`, `/api/logs/stream`                                   | daemon diagnostic feed, host-local                                                                                                                                 | unresolved: `logging.Feed` is in-process on the daemon host and has no contract. The per-task log routes moved off this row: see `/api/tasks/*` above                                                                                                                                                                                                                                                                                                                                                      |
+| `/api/tasks/{id}/logs`, `/api/tasks/{id}/logs/download`           | State Store task-log read contract (`TaskLogStore`: `ReadTaskLog` + `StreamTaskLogContent`), read by the UI process from the service that owns the state directory | RESOLVED (`archie-core-iaqx`): the UI process composes `TaskLogStore` from its own State Store client and serves the attempt log as JSON (`found` distinguishes "no log for this attempt" from "this process cannot read logs") and as a `Content-Disposition` attachment named `task-<id>-attempt-<n>.log`. The daemon's in-process registry is wired as the server-side reader in `internal/app/archied/state_store.go` only (`staterpc.Deps.TaskLogs`), so no process opens another process's log files |
+| `/api/captures`, `/api/mappings`, `/api/bindings`                 | State Store contracts, with webhook verification owned by Work Intake/Messaging                                                                                    | RESOLVED (cutover, `archie-core-8cda.5.4`): the UI process composes CaptureStore/MappingStore/BindingStore and mounts the `captureintake.Receiver` from its own State Store client; the daemon's binding-dispatch loop keeps consuming captures from the same store                                                                                                                                                                                                                                        |
+| `/api/config` (read)                                              | daemon-published `ConfigView` snapshot, read over the State Store contract                                                                                         | RESOLVED (`archie-core-ymut`): see migration-decisions, "Dashboard configuration page"                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `/api/config` (write), `/api/config/reset`, `/api/config/repos/*` | a configuration write contract; the daemon stays the policy owner                                                                                                  | DESCOPED for Phase 3 (`archie-core-ymut`), NOT abandoned: 503 in the UI process, SPA hides the controls, editing is config.toml plus reload. Dashboard editing is a tracked feature (`archie-core-1786637498420-327`) and its transport is `archie-core-j28m`; the handlers and their func-field seams on `webui.Server` are kept for it                                                                                                                                                                   |
+| `/api/channels`, reload, curators, memory, skills, version/update | owning capability contract or an explicitly removed route                                                                                                          | owner and failure semantics remain to define                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/`, `/healthz`, `/health`, `/health/detailed`                    | UI HTTP process; readiness consumes per-service health contracts                                                                                                   | current HTTP behaviour is the compatibility baseline                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Configuration ownership
 
@@ -89,7 +89,7 @@ These settings are decoded into a UI-owned input DTO by the UI composition root.
 The DTO contains endpoint references and secret references, never resolved
 secret values or complete daemon configuration. The UI process resolves its
 own credentials and builds its own clients. It does not read or mutate the
-daemon's configuration file, runtime overlay, forge credentials, model catalog,
+daemon's configuration file, runtime overlay, forge credentials, model catalogue,
 workflow routing, NATS settings, filesystem jail, or agent/container settings.
 
 The dashboard configuration API is a separate capability. Its secret-free,
@@ -107,7 +107,7 @@ For Phase 3, configuration ownership is split deliberately. The UI process
 owns its listener, browser-auth, asset, dependency-target, and readiness
 settings. The daemon/application configuration owner remains authoritative for
 the dashboard's `/api/config` read, validation, persistence, overlay, reload,
-and audit behavior. The UI does not become the writer merely because it
+and audit behaviour. The UI does not become the writer merely because it
 renders the configuration page.
 
 Amended 2026-09-11 by `archie-core-ml30`: the daemon's `config.Holder` sharing
@@ -142,7 +142,7 @@ contract has passed its bounded readiness check. Each dependency must expose a
 versioned health result or health endpoint that the UI can consume; the UI must
 not inspect another service's concrete manager, registry, or database. Optional
 dashboard sections may remain degraded with the current explicit
-`503`/unavailable behavior. A successful liveness response must never imply
+`503`/unavailable behaviour. A successful liveness response must never imply
 dependency readiness.
 
 ## Migration sequence and evidence
@@ -154,7 +154,7 @@ The implementation must complete these gates in order:
    tests. No handler may depend on a concrete remote implementation.
 2. Make the current in-process web UI consume the same narrow adapters and
    preserve the current route, auth, redaction, stream, SSE, and degradation
-   behavior. Add a composition test proving the selected adapter is the one
+   behaviour. Add a composition test proving the selected adapter is the one
    used by production wiring.
 3. Remove direct `internal/gateway` session/router/runtime access from web UI
    handlers. Remove direct store implementation access, SQL access,
@@ -214,12 +214,12 @@ implementation child must prove each migration gate before claiming Phase 3.
 
 Every gate below is proven by test, not by inspection:
 
-| Gate | Evidence |
-| --- | --- |
-| Deletion | `cmd/archie-ui/architecture_test.go` re-runs `go list -deps` on every `task check` and fails on any banned package, checked in both directions against its two exceptions |
-| Composition | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a concrete `*store.Store` or a Gateway that is not the gRPC client. The holder clause it also carried is enforced by the type: `webui.Server` has no `config.Holder` field (`archie-core-ml30`) |
-| End-to-end | `cmd/archie-ui/main_test.go` builds the binary and drives it over HTTP against a live Gateway and State Store |
-| No dual authority | The dashboard HTTP listener is `internal/app/archieui/run.go` only; the daemon's two `http.Server`s are its own health endpoint and the forge webhook receiver |
+| Gate              | Evidence                                                                                                                                                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deletion          | `cmd/archie-ui/architecture_test.go` re-runs `go list -deps` on every `task check` and fails on any banned package, checked in both directions against its two exceptions                                                                                              |
+| Composition       | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a concrete `*store.Store` or a Gateway that is not the gRPC client. The holder clause it also carried is enforced by the type: `webui.Server` has no `config.Holder` field (`archie-core-ml30`) |
+| End-to-end        | `cmd/archie-ui/main_test.go` builds the binary and drives it over HTTP against a live Gateway and State Store                                                                                                                                                          |
+| No dual authority | The dashboard HTTP listener is `internal/app/archieui/run.go` only; the daemon's two `http.Server`s are its own health endpoint and the forge webhook receiver                                                                                                         |
 
 Acceptance criterion 1 was amended at the close of Phase 3 to name the UI
 process rather than the `internal/webui` package, because the daemon still held
@@ -331,7 +331,7 @@ row's issue link is built from the forge that owns it.
 
 This ratification does not define a new domain model, move the dashboard's
 allowlisted configuration schema, redesign Gateway or State Store RPCs, choose
-Kubernetes versus local discovery, or authorize unrelated package migration.
+Kubernetes versus local discovery, or authorise unrelated package migration.
 Those decisions remain in their existing authority documents. Any new UI
 capability that requires a wider Gateway or State Store surface must amend that
 service's contract before implementation.

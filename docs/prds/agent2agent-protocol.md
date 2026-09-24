@@ -64,7 +64,7 @@ states do not carry:
   completed A2A task cannot express the outcome that matters most to the caller.
 - **Handing work to a reviewer.** archie's `pr_open` means the work left
   archie's hands for human review. A2A's `input-required` is the nearest state,
-  but it means the *client* must send more input, and a reviewer is not the
+  but it means the _client_ must send more input, and a reviewer is not the
   client.
 - **Operator decisions.** `declined`, `parked` and `dead` are outcomes of
   archie's own policy and operator actions. A2A has no state for "the operator
@@ -105,7 +105,7 @@ The daemon is not an A2A agent: it is the process that serves the identity.
 served through the binding archie runs and needs no HTTP listener.
 
 **The card is derived, never hand-written.** Its skills come from the skill
-catalog, its identity from the configured Identity, and its capabilities from
+catalogue, its identity from the configured Identity, and its capabilities from
 what the process already advertises about itself. A card that restated
 capabilities independently would be a second inventory of the same facts, which
 is the class of drift the existing capability reporting exists to prevent.
@@ -123,14 +123,14 @@ archie, and archie already serves its own contracts over gRPC to the Messaging
 Service, the dashboard and the State Store. Acting as an A2A client to remote
 agents is a later capability, and one that consumes the same contract.
 
-## Authentication and authorization
+## Authentication and authorisation
 
 **An inbound A2A call is authenticated at the transport, by the same bearer-token
 interceptor the Gateway applies to its other contracts.** A2A carries no identity
 in its payload by design: identity is established where the connection is, so the
 transport token is the identity and no field in a Message or Task names a caller.
 
-**Authorization is per skill**, which is A2A's own model: the card advertises
+**Authorisation is per skill**, which is A2A's own model: the card advertises
 skills, and a caller may invoke the skills its credential is scoped to.
 
 **Task-scoped grants are not A2A credentials.** They scope a worker's access to

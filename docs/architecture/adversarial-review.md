@@ -70,8 +70,8 @@ Effort is the per-stage `MaxSteps` budget, mapped onto `Subagent.MaxSteps`
 
 ## Operator-triggered review
 
-The same reviewer runs against an *existing* PR via the channel-neutral
+The same reviewer runs against an _existing_ PR via the channel-neutral
 `review_pr` chat command: fetch the PR's head, snapshot it, run the isolated
-reviewer, and return the structured findings. Authorization is identity-scoped
+reviewer, and return the structured findings. Authorisation is identity-scoped
 to the operator's configured repositories; duplicate or concurrent reviews of
 the same PR are deduplicated.

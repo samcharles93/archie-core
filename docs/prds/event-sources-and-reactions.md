@@ -38,7 +38,7 @@ causes redelivery." Do not design new delivery semantics; use this contract.
 **Do not reuse the existing `nats.Client` as-is.** `Config.StreamName` and
 `Config.Subjects` are already composition-supplied ("the bus must not know
 which subjects belong to which domain," `config.go`), but the
-retention policy is not parameterized: `New` hardcodes
+retention policy is not parameterised: `New` hardcodes
 `Retention: jetstream.WorkQueuePolicy` (`client.go`), the competing-consumer
 policy correct for `ARCHIE_TASKS` task distribution -- one message, claimed by
 exactly one consumer -- and wrong for reactions. Two independent reactions
@@ -76,7 +76,7 @@ else:
   and produces a `workintake.TaskEnvelope`. A webhook source is a second
   producer into the same path, not a new capability -- see question 4.
 
-A reaction that can veto or mutate an *in-flight* task (block a PR from
+A reaction that can veto or mutate an _in-flight_ task (block a PR from
 opening, alter a running stage) is a different, harder problem with its own
 ordering and failure semantics, and belongs to `archie-core-h019` (adversarial
 self-review) if and when that epic needs one -- not here. Do not build a
@@ -99,22 +99,23 @@ limiting, capture/audit, and the draft/pending_approval/armed gate. This
 package owns none of forge, chat, or workintake's vocabulary.
 
 **What stays domain-owned, per existing convention:**
+
 - Forge-issue intake needs no new type. `internal/domain/workintake.TaskEnvelope`
   already is the typed contract -- `Subject()`, `IdempotencyKey()` (keyed on
   `owner/repo/number`, not on delivery source), `Encode()`. A webhook-sourced
-  envelope for the same issue produces the *same* idempotency key as a
+  envelope for the same issue produces the _same_ idempotency key as a
   poll-discovered one, so `PublishUnique` dedups the two paths for free. This
   is `7d5u.5`'s answer, not a new mechanism: reuse `TaskEnvelope` and
   `publishTask`, don't invent a second envelope shape.
 - Chat-webhook intake stays exactly what it is:
   `internal/channels/webhook`'s `RouteConfig` routes into `gateway.Router`,
   documented as chat-scoped ("External services push messages into
-  archie-core's gateway for LLM processing"). Do not generalize this package
+  archie-core's gateway for LLM processing"). Do not generalise this package
   into a multi-domain receiver -- it already does one thing per "a package
   owns its own format end to end."
 - A forge webhook receiver (`7d5u.4`) is new: it builds on the shared
-  mechanics above, decodes a GitHub payload into the *same*
-  `workintake.TaskEnvelope`, and calls the *same* `publishTask` the poller
+  mechanics above, decodes a GitHub payload into the _same_
+  `workintake.TaskEnvelope`, and calls the _same_ `publishTask` the poller
   calls. It does not get its own dispatch predicate -- `7d5u.4`'s bead
   already requires reusing the poller's label/assignee predicate rather than
   reimplementing it, and this decision extends that to the envelope and

@@ -3,7 +3,12 @@ import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
 import { useControlPlaneStore } from "@/stores/control-plane";
@@ -39,7 +44,9 @@ async function load() {
 }
 
 useLiveResource("tasks", () => void load(), 500);
-onMounted(async () => { await Promise.all([load(), controlPlane.load()]); });
+onMounted(async () => {
+  await Promise.all([load(), controlPlane.load()]);
+});
 </script>
 
 <template>

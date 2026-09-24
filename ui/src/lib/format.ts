@@ -28,5 +28,8 @@ export function ago(value: string | number | Date | null | undefined): string {
 /** Compact number: 2_400_000 -> "2.4M". Long digit strings do not scan. */
 export function compact(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n);
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
 }

@@ -2,7 +2,14 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { LOG_LEVELS } from "@/lib/log";
 import { componentOptions, filters } from "./state";
 
@@ -22,7 +29,10 @@ const ALL = "__all__";
 
 // LOG_LEVELS' values are a wire contract: the server matches that CSV
 // server-side, so the labels are paired with them here and never rewritten.
-const levelOptions = LOG_LEVELS.map((option) => ({ value: option.value || ALL, label: option.label }));
+const levelOptions = LOG_LEVELS.map((option) => ({
+  value: option.value || ALL,
+  label: option.label,
+}));
 const componentSelectOptions = computed(() => [
   { value: ALL, label: "All components" },
   ...componentOptions.value.map((name) => ({ value: name, label: name })),
@@ -63,7 +73,11 @@ onUnmounted(() => clearTimeout(searchTimer));
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem v-for="option in levelOptions" :key="option.value" :value="option.value">
+          <SelectItem
+            v-for="option in levelOptions"
+            :key="option.value"
+            :value="option.value"
+          >
             {{ option.label }}
           </SelectItem>
         </SelectGroup>
@@ -76,7 +90,11 @@ onUnmounted(() => clearTimeout(searchTimer));
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem v-for="option in componentSelectOptions" :key="option.value" :value="option.value">
+          <SelectItem
+            v-for="option in componentSelectOptions"
+            :key="option.value"
+            :value="option.value"
+          >
             {{ option.label }}
           </SelectItem>
         </SelectGroup>

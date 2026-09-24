@@ -29,11 +29,14 @@ export interface SchemaProperty {
  * or carries one this reader cannot parse, reports null: an unreadable schema
  * costs a placeholder, never a field.
  */
-export function parseSchema(json: string | null | undefined): SchemaProperty | null {
+export function parseSchema(
+  json: string | null | undefined,
+): SchemaProperty | null {
   if (!json) return null;
   try {
     const parsed: unknown = JSON.parse(json);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+      return null;
     return parsed as SchemaProperty;
   } catch {
     return null;
@@ -41,7 +44,11 @@ export function parseSchema(json: string | null | undefined): SchemaProperty | n
 }
 
 function isKeyed(property: SchemaProperty): boolean {
-  return property.type === "object" && !property.properties && typeof property.additionalProperties === "object";
+  return (
+    property.type === "object" &&
+    !property.properties &&
+    typeof property.additionalProperties === "object"
+  );
 }
 
 /**
@@ -60,7 +67,10 @@ export function schemaAt(
   if (!schema) return null;
   const root = rootPath.split(".").filter(Boolean);
   let segments = path.split(".").filter(Boolean);
-  if (root.length && root.every((segment, index) => segments[index] === segment)) {
+  if (
+    root.length &&
+    root.every((segment, index) => segments[index] === segment)
+  ) {
     segments = segments.slice(root.length);
   }
 
@@ -78,16 +88,24 @@ export function schemaAt(
     }
     // A keyed collection's keys belong to the operator, so the value's
     // schema describes whatever key they typed.
-    current = typeof current.additionalProperties === "object" ? current.additionalProperties : null;
+    current =
+      typeof current.additionalProperties === "object"
+        ? current.additionalProperties
+        : null;
   }
   return current;
 }
 
 /** fieldTitle is the schema's own label for a key, or the dashed-key fallback
  * the editor has always used. */
-export function fieldTitle(key: string, property: SchemaProperty | null | undefined): string {
+export function fieldTitle(
+  key: string,
+  property: SchemaProperty | null | undefined,
+): string {
   if (property?.title) return property.title;
-  return key.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
+  return key
+    .replaceAll("_", " ")
+    .replace(/^./, (character) => character.toUpperCase());
 }
 
 /**
@@ -95,7 +113,9 @@ export function fieldTitle(key: string, property: SchemaProperty | null | undefi
  * the field's value must match. A duration column is a string to the document
  * and a duration to the operator, and the example is what says so.
  */
-export function fieldPlaceholder(property: SchemaProperty | null | undefined): string | undefined {
+export function fieldPlaceholder(
+  property: SchemaProperty | null | undefined,
+): string | undefined {
   if (property?.format === "duration") return "1m0s";
   if (property?.format === "date-time") return "2026-01-01T00:00:00Z";
   return undefined;
@@ -108,7 +128,9 @@ export function fieldHint(property: SchemaProperty | null | undefined): string {
 
 /** isKeyedCollection reports a document whose keys are the operator's: a map
  * with no fixed properties, which the schema marks with additionalProperties. */
-export function isKeyedCollection(property: SchemaProperty | null | undefined): boolean {
+export function isKeyedCollection(
+  property: SchemaProperty | null | undefined,
+): boolean {
   return Boolean(property) && isKeyed(property as SchemaProperty);
 }
 
@@ -124,7 +146,9 @@ export function isKeyedCollection(property: SchemaProperty | null | undefined): 
  * a schema that wants those emits a default, which is the same single source of
  * truth this reader exists to honour.
  */
-export function blankFromSchema(property: SchemaProperty | null | undefined): unknown {
+export function blankFromSchema(
+  property: SchemaProperty | null | undefined,
+): unknown {
   if (!property) return "";
   if (property.type === "object") {
     const blank: Record<string, unknown> = {};

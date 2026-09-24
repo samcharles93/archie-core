@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 /**
  * The list's nothing-to-show state: a title that names the situation and a

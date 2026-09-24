@@ -30,7 +30,10 @@ export function taskStatuses(catalog: StatusMeta[]): Set<string> {
  * operator input, and an unknown status would filter the whole board away with
  * no control showing why.
  */
-export function initialTaskFilter(requested: string | null | undefined, catalog: StatusMeta[]): string {
+export function initialTaskFilter(
+  requested: string | null | undefined,
+  catalog: StatusMeta[],
+): string {
   return requested && taskStatuses(catalog).has(requested) ? requested : "";
 }
 
@@ -55,6 +58,9 @@ export function taskMatchesStatus(
   catalog: StatusMeta[],
 ): boolean {
   if (!status) return true;
-  if (status === "needs_you") return catalog.some((entry) => entry.needs_you && entry.id === (task.status ?? ""));
+  if (status === "needs_you")
+    return catalog.some(
+      (entry) => entry.needs_you && entry.id === (task.status ?? ""),
+    );
   return task.status === status;
 }

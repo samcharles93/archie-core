@@ -34,7 +34,7 @@ these invariants:
    resolving a secret, delivering a message, or running an agent. A plugin that
    only exposes `Name` and `Version` is metadata, not an engine.
 2. **Owning family manager.** The capability package owns a `Registry` or
-   `Manager` that controls provider registration and discovery, initialization,
+   `Manager` that controls provider registration and discovery, initialisation,
    or access. Providers do not register arbitrary callbacks directly on the
    daemon.
 3. **Lifecycle and health.** When an implementation owns resources or background
@@ -59,7 +59,7 @@ these invariants:
 
 `internal/plugin/architecture_test.go` enforces the mechanically testable parts
 of this rule: the generic plugin method set, the shared agent-instruction
-source, and the requirement that engine interfaces have domain behavior plus an
+source, and the requirement that engine interfaces have domain behaviour plus an
 owning registry or manager.
 
 ### Memory engine family
@@ -178,7 +178,7 @@ so it can be picked up without re-deriving the design:
 - A `Sampler` implementation behind the same interface as the cheap
   strategies; selection deterministic given fixed inputs.
 - Algorithm: sample up to a candidate cap; build a k-NN graph over embedding
-  vectors; row-normalize the adjacency with self-loops; power-iterate to the
+  vectors; row-normalise the adjacency with self-loops; power-iterate to the
   stationary distribution; surprisal = −log(stationary probability of the
   nearest point); select the highest-surprisal items.
 - Degradation: content without an embedding is skipped; an embedding failure

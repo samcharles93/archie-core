@@ -13,7 +13,7 @@ The shipped contract (`internal/domain/workflow/review_findings.go`, h019.2)
 already makes only a **confirmed** error-level finding block
 (`Blocking() == Verdict == confirmed && Level == error`), and a zero-finding
 review is already distinguishable from one that never ran (`ReviewStatus`).
-What is missing is the other half: a reviewer can report *nothing*
+What is missing is the other half: a reviewer can report _nothing_
 and say only "I found nothing" in free text. The operator cannot tell "I
 checked the five things that matter and they are clean" from "I did not look."
 That is the failure the epic names -- a findings surface that consumes attention

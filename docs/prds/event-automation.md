@@ -97,7 +97,7 @@ id: firewall-investigate
 inputs:
   src_ip: { type: string, required: true }
   severity: { type: string }
-repository: none        # none | optional | required
+repository: none # none | optional | required
 profile: network-investigator
 steps: ...
 ```
@@ -125,7 +125,7 @@ steps:
   - type: workflow.call
     workflow: firewall-contain
     inputs: { src_ip: inputs.src_ip }
-    wait: true          # false starts the callee and continues
+    wait: true # false starts the callee and continues
 ```
 
 - With `wait: true` the caller receives the callee's outputs and fails if the

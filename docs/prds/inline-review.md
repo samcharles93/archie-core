@@ -7,8 +7,8 @@
 ## Problem
 
 Findings reach the operator only as a flat list in the PR body
-(`renderPRReviewSection`, h019.6): `` - `file.go` (confirmed, error): <defect>
-— <scenario> ``. That is a report *about* the code, not a review *of* it. A real
+(`renderPRReviewSection`, h019.6): ``- `file.go` (confirmed, error): <defect>
+— <scenario>``. That is a report _about_ the code, not a review _of_ it. A real
 reviewer anchors each finding to the line it is about, so the author sees it in
 context — and, when the fix is mechanical, attaches the replacement so it can be
 applied in one click.
@@ -16,7 +16,7 @@ applied in one click.
 Both halves are missing:
 
 - **No line-anchored comment.** `forge.Forge.Comment` posts to the PR
-  *conversation* (`Issues.CreateComment`); nothing creates a review comment at
+  _conversation_ (`Issues.CreateComment`); nothing creates a review comment at
   `path` + `line`.
 - **No suggested fix.** `ReviewFinding` carries `File`/`Line`/`Defect`/
   `FailureScenario`/`Verdict`/`Level`/`Category` — no replacement code, so even
@@ -107,7 +107,7 @@ New `StagePostReviewComments`, after `StageOpenPR`:
    `tc.ReviewedHeadSHA` alongside them.
 
 Nothing in the run pushes between `StageReview` and this stage, so at that
-moment the pull request's head *is* the revision the review read. That was an
+moment the pull request's head _is_ the revision the review read. That was an
 assumption, and a collaborator can falsify it by pushing to the branch between
 the review and the posting. A line number is not validated against a revision:
 both forges anchor it to whatever now occupies that line, so a stale anchor

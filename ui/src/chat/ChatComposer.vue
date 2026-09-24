@@ -69,7 +69,11 @@ function choose(index: number): void {
   if (!spec || !input) return;
   // Completing the command replaces the token the caret sits in, which is
   // decided by the same rule that found the matches.
-  const { text, cursor } = applyCommand(input.value, input.selectionStart ?? input.value.length, spec.command);
+  const { text, cursor } = applyCommand(
+    input.value,
+    input.selectionStart ?? input.value.length,
+    spec.command,
+  );
   composerText.value = text;
   closeCommandMenu();
   void nextTick(() => {
@@ -83,7 +87,11 @@ function onKeydown(event: KeyboardEvent): void {
   if (isCommandMenuOpen.value && commandMatches.value.length) {
     // A command typed in full is sent rather than completed, so Enter never
     // re-enters the command the palette was offering.
-    if (event.key === "Enter" && plain && isExactCommand(commandSpecs.value, composerText.value)) {
+    if (
+      event.key === "Enter" &&
+      plain &&
+      isExactCommand(commandSpecs.value, composerText.value)
+    ) {
       event.preventDefault();
       closeCommandMenu();
       void sendMessage();
@@ -120,7 +128,9 @@ function onKeydown(event: KeyboardEvent): void {
 
 <template>
   <div class="border-t p-3">
-    <div class="relative flex items-end gap-2 rounded-xl border border-border-strong bg-muted px-3 py-2.5">
+    <div
+      class="relative flex items-end gap-2 rounded-xl border border-border-strong bg-muted px-3 py-2.5"
+    >
       <Textarea
         ref="field"
         :model-value="composerText"
@@ -142,8 +152,15 @@ function onKeydown(event: KeyboardEvent): void {
       <div class="flex flex-none items-center gap-2">
         <!-- Only while a turn is arriving: a Stop with nothing to stop is a
              button that lies about what the panel is doing. -->
-        <Button v-if="isSending" variant="outline" size="sm" @click="stopTurn">Stop</Button>
-        <Button size="sm" :disabled="isSending || !composerText.trim()" @click="sendMessage()">Send</Button>
+        <Button v-if="isSending" variant="outline" size="sm" @click="stopTurn"
+          >Stop</Button
+        >
+        <Button
+          size="sm"
+          :disabled="isSending || !composerText.trim()"
+          @click="sendMessage()"
+          >Send</Button
+        >
       </div>
     </div>
   </div>

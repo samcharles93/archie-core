@@ -4,13 +4,20 @@ import { computed, ref, watch } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { cloneControlPlaneValue, useControlPlaneStore, type ResourceDescriptor } from "@/stores/control-plane";
+import {
+  cloneControlPlaneValue,
+  useControlPlaneStore,
+  type ResourceDescriptor,
+} from "@/stores/control-plane";
 import ConfigCard from "./ConfigCard.vue";
 import ResourceHistory from "./ResourceHistory.vue";
 import StructuredValueEditor from "./StructuredValueEditor.vue";
 import { parseSchema } from "./resource-schema";
 
-const props = defineProps<{ descriptor: ResourceDescriptor; rootPath?: string }>();
+const props = defineProps<{
+  descriptor: ResourceDescriptor;
+  rootPath?: string;
+}>();
 const store = useControlPlaneStore();
 const state = computed(() => store.stateFor(props.descriptor.kind));
 const draft = ref<unknown>({});
@@ -21,12 +28,19 @@ const draft = ref<unknown>({});
 // rendering the value alone.
 const schema = computed(() => parseSchema(props.descriptor.schema_json));
 
-watch(() => state.value.resource, (resource) => {
-  if (resource) draft.value = cloneControlPlaneValue(resource.value);
-}, { immediate: true });
+watch(
+  () => state.value.resource,
+  (resource) => {
+    if (resource) draft.value = cloneControlPlaneValue(resource.value);
+  },
+  { immediate: true },
+);
 
 async function save(): Promise<void> {
-  await store.replace(props.descriptor.kind, cloneControlPlaneValue(draft.value));
+  await store.replace(
+    props.descriptor.kind,
+    cloneControlPlaneValue(draft.value),
+  );
 }
 </script>
 
@@ -39,12 +53,22 @@ async function save(): Promise<void> {
         :root-path="rootPath ?? descriptor.kind"
         :schema="schema"
       />
-      <p v-if="state.error" class="text-sm text-destructive" role="alert">{{ state.error }}</p>
+      <p v-if="state.error" class="text-sm text-destructive" role="alert">
+        {{ state.error }}
+      </p>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
-          <Badge :variant="state.stream === 'live' ? 'ok' : 'warn'">{{ state.stream === 'live' ? 'Live' : 'Connecting' }}</Badge>
-          <Badge v-if="descriptor.apply_mode === 'restart-required'" variant="warn">Restart required</Badge>
-          <span v-if="state.resource" class="text-xs text-muted-foreground">Version {{ state.resource.version }}</span>
+          <Badge :variant="state.stream === 'live' ? 'ok' : 'warn'">{{
+            state.stream === "live" ? "Live" : "Connecting"
+          }}</Badge>
+          <Badge
+            v-if="descriptor.apply_mode === 'restart-required'"
+            variant="warn"
+            >Restart required</Badge
+          >
+          <span v-if="state.resource" class="text-xs text-muted-foreground"
+            >Version {{ state.resource.version }}</span
+          >
         </div>
         <Button type="submit" :disabled="state.saving || state.loading">
           <Spinner v-if="state.saving" data-icon="inline-start" /> Save changes

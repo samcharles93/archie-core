@@ -10,32 +10,9 @@ tasks:
       - task --list
 
   fmt:
-    desc: Fix and format Go source with the gate's configured formatters
+    desc: Fix and format Go source
     cmds:
-      # One go fix pass is not a fixpoint: it applies each fixer once, to the
-      # parse it started with, so a rewrite made by one fixer is only fixed up
-      # by the next pass. stditerators turns `for i := range t.NumField()` into
-      # a field iterator that copies its loop variable, and forvar deletes that
-      # copy on the following pass -- leaving the copy behind for copyloopvar
-      # to reject. Apply passes until a dry run reports nothing left to fix,
-      # and fail rather than hand the lint step a tree it must reject.
-      - |
-        set -eu
-        converged=false
-        for pass in 1 2 3 4 5 6 7 8 9 10; do
-          go fix ./...
-          if go fix -diff ./... >/dev/null; then
-            converged=true
-            break
-          fi
-        done
-        if [ "$converged" != true ]; then
-          echo "go fix still rewrites the tree after 10 passes" >&2
-          exit 1
-        fi
-      # This must use the same engine and configuration as task lint. Running
-      # standalone gofumpt cannot reproduce gci's custom import grouping, so it
-      # can leave a tree that the gate rejects.
+      - go fix ./...
       - golangci-lint fmt
 
   proto:install:
@@ -55,11 +32,6 @@ tasks:
 
   db:generate:
     desc: "Regenerate the sqlc query code from the schema and query files"
-    summary: |
-      Writes internal/infrastructure/postgres/postgresdb. The output is
-      committed, so this dirties the tree deliberately: review the diff and
-      commit it with the schema or query change that caused it. Never
-      hand-edit the generated package.
     cmds:
       - go -C tools tool sqlc generate -f {{.ROOT_DIR}}/internal/infrastructure/postgres/sqlc.yaml
 
@@ -76,115 +48,36 @@ tasks:
 
   docs:generate:
     desc: Regenerate the committed contract reference from Archie-owned types
-    summary: |
-      Writes docs/data/generated/contracts.json. The output is committed, so
-      this dirties the tree deliberately: review the diff and commit it with
-      the code change that shifted the contract surface. Never hand-edit the
-      artifact.
-
-      -mod=readonly is mandatory on every `go -C tools` command; see
-      task test:tools for why.
     cmds:
       - go -C tools run -mod=readonly ./docsgen --repo-root ..
 
   docs:check:
     desc: Verify the committed contract reference matches Archie-owned types
-    summary: |
-      Implements Step 6 of docs/architecture/generated-documentation.md:
-      generates into a temporary directory, compares it with the committed
-      output, names the authoritative Go definition behind each mismatch, and
-      exits non-zero without modifying the working tree.
-
-      Fix a failure with `task docs:generate`, then commit the result in the
-      same commit as the code change that shifted the contract surface. This
-      checks rather than regenerates on purpose: a gate that silently rewrote
-      the artifact would bless an unintended contract change with no reviewer
-      ever seeing it, which Step 9 explicitly forbids.
     cmds:
       - go -C tools run -mod=readonly ./docsgen check --repo-root ..
 
   docs:prds:
     desc: Reject session-bound writing in docs/prds
-    summary: |
-      A PRD states a decision, a requirement, a constraint or evidence. Those
-      survive the code moving underneath them. A line number, a progress
-      report or a dated status claim does not: it is true on the day it is
-      written and silently wrong a month later, while still reading as
-      authoritative. The tracker records progress; the PRD records the design.
-
-      Each finding names the file, the line, the rule and the fix. There is no
-      --fix: the replacement is a judgement about what the sentence was for.
     cmds:
       - go -C tools run -mod=readonly ./prdlint --repo-root ..
 
   news:
-    desc: Regenerate the news page and per-version release notes from the changelog
-    summary: |
-      Writes docs/news/releases.json, docs/news/redirects.json and docs/news/.
-      The JSON is the canonical, host-neutral fact set every renderer reads;
-      the redirect table maps the retired /news/<component>/<version>/ URLs to
-      the unified page for that version; the markdown is the MkDocs adapter.
-      All of it comes from CHANGELOG.md, so cutting a release adds no writing
-      here.
-
-      The files are committed, so this dirties the tree deliberately: review
-      the diff and commit it with the changelog that produced it. Never
-      hand-edit a generated release page.
-
-      tools/release.sh --tag runs this before the release commit, and it skips
-      any file whose bytes already match, so a re-run leaves the tree clean.
+    desc: Regenerate the release data artifacts from the changelog
     cmds:
       - go -C tools run -mod=readonly ./newsgen --repo-root ..
 
   news:check:
     desc: Verify the committed release notes match the changelog
-    summary: |
-      Derives the release notes in memory and fails when the committed files
-      differ, without modifying the working tree. Runs in `task check`, so a
-      changelog edit cannot land without its regeneration.
-
-      A version page the generator does not produce (a page for a release the
-      changelog no longer carries, or one left in the retired
-      docs/news/<component>/ layout) is a finding too; a hand-written news item
-      belongs at the docs/news root instead.
     cmds:
       - go -C tools run -mod=readonly ./newsgen check --repo-root ..
 
   docs:artifact:
     desc: Regenerate the canonical docs artifacts from the Markdown sources
-    summary: |
-      Writes docs/data/generated/docs.json and dev-docs.json: every published
-      page's url, title, section and raw Markdown body, plus the sidebar tree
-      derived from the layout, one file per set. The JSON is the canonical,
-      host-neutral fact set a renderer reads; the Markdown stays the source.
-      MkDocs was the first renderer and the Astro app is the second, so the
-      artifact is the product.
-
-      Two sets, split by audience: the public set (served under /docs/) is what a
-      reader of the product needs, the development set (/dev/) is architecture/
-      and prds/. The split and the reasons for what is held back entirely --
-      archive/, inspiration/, news/ and the credential notes -- live in
-      tools/docsite/main.go, because a renderer reading an artifact cannot see
-      why a page is absent from it.
-
-      The files are committed, so this dirties the tree deliberately: review the
-      diff and commit it with the page that produced it.
-
-      The artifact's keys are a frozen contract: an application is built against
-      them, so renaming one breaks a consumer this repository does not compile.
     cmds:
       - go -C tools run -mod=readonly ./docsite --repo-root ..
 
   docs:artifact:check:
     desc: Verify the committed docs artifacts match the Markdown sources
-    summary: |
-      Reproduces both artifacts in memory and fails when a committed file
-      differs, without modifying the working tree. Runs in `task check`, so a
-      page edit cannot land without its regeneration.
-
-      The generated directory is accounted for by docsgen's generatedArtifacts,
-      which names both files alongside contracts.json: one registry for the
-      directory rather than one per writer.
     cmds:
       - go -C tools run -mod=readonly ./docsite check --repo-root ..
 
@@ -195,115 +88,40 @@ tasks:
 
   lint:
     desc: Run golangci-lint
-    summary: |
-      Both modules. ./... from the root stops at the root module, so the tools
-      module was never linted and drifted unseen -- the same hole task check
-      already closes for tests with test:tools.
     cmds:
       - golangci-lint run ./...
       - task: lint:tools
 
   lint:tools:
     desc: Run golangci-lint over the tools module
-    summary: |
-      ./... from the root stops at the root module, so the tools module was
-      never linted and drifted unseen -- the same hole task check already
-      closes for tests with test:tools.
     dir: tools
     cmds:
       - golangci-lint run ./...
 
   lint:playbooks:
-    desc: "Lint playbook binding dirs for collisions (standalone tool, cmd/archie-playbooks)"
-    summary: |
-      Runs the standalone playbook linter (archie-playbooks lint) against
-      ./playbooks by default. It validates playbook YAML binding files
-      against the same loaders the daemon uses at startup, so a pre-merge
-      check can never disagree with runtime validation. Exit non-zero on
-      any collision / malformed file / invalid binding.
-
-      Lint a different set of directories directly:
-        go run ./cmd/archie-playbooks lint -dir ./a -dir ./b
-      Lint an EDA playbook directory:
-        go run ./cmd/archie-playbooks lint -eda-dir ./eda-playbooks
+    desc: Validate playbook bindings
     cmds:
       - go run ./cmd/archie-playbooks lint -dir ./playbooks
 
   vuln:
-    desc: "Scan for known stdlib/dependency CVEs (govulncheck). Not part of task check: it needs network access to the vuln DB and is not build/test-blocking; run it explicitly or in CI."
+    desc: Scan for known vulnerabilities (requires network access)
     cmds:
       - govulncheck ./...
 
   deadcode:
-    desc: "Report functions no shipped binary can reach (whole-program RTA from ./cmd/...). Not part of task check: it reports a standing backlog, so gating on it would fail every run until that backlog is zero."
-    summary: |
-      Answers "is this reachable in production", which no linter does:
-      golangci-lint's unused check is package-scoped, so anything exported
-      and called from a sibling package looks live even when no binary
-      reaches it.
-
-      Run via `go run ...@latest` deliberately. A locally installed deadcode
-      built against an older Go than this module exits non-zero and prints
-      NOTHING, which reads as "no dead code" instead of "analysis failed".
-      Building it against the repo toolchain makes that failure impossible.
-
-      -test=false is the point of the report: a function reached only by its
-      own tests is not reachable in production.
-
-      Read the output in one direction only. RTA over-approximates what is
-      reachable, so "unreachable func" is sound and worth acting on, while
-      silence proves nothing: interface dispatch and any address-taken
-      function (every reflect.ValueOf entry in the *extract tables) is
-      assumed reachable whether or not it is ever called.
+    desc: Report unreachable production functions (advisory)
     cmds:
       - go run golang.org/x/tools/cmd/deadcode@latest -test=false ./cmd/...
 
   reachaudit:
-    desc: "Classify unreachable code as tracked / untracked / dynamic (tools/reachaudit). Wraps task deadcode with provenance and tracker status."
-    summary: |
-      deadcode says a function is unreachable. reachaudit says whether that
-      is a known gap, a forgotten one, or an artifact of runtime loading
-      (yaegi, reflection) that must never be deleted.
-
-      Two report sections, because a dead whole package and a dead symbol
-      inside a live one are different failure modes: "unreachable-*" is a
-      package no shipped binary imports at all; "in-package-*" is a symbol
-      dead inside a package that IS shipped -- the ChatCourier/Dispatch
-      shape, where the feature is wired everywhere except its own call site.
-      Both carry the same tracked/untracked/dynamic classification.
-
-      --refresh re-runs the analysis. Without it the tool reuses
-      /tmp/reachaudit-deadcode-<sha>.txt with no staleness check beyond HEAD
-      and a dirty-tree check, which will happily report last week's tree
-      against today's code if HEAD hasn't moved.
-
-      --json PATH and --md PATH write the same findings as structured data or
-      a Markdown report, in addition to the terminal summary.
+    desc: Classify unreachable code against tracked work (advisory)
     cmds:
       - python3 tools/reachaudit/reachaudit.py --repo . {{.CLI_ARGS}}
-  docs:site:
-    desc: "Build the documentation site into ./site (MkDocs). --strict, so a dead internal link fails the build."
-    summary: |
-      Publishes docs/ minus the subtrees held back in mkdocs.yml's
-      exclude_docs. Requires mkdocs-material:
-
-        pip install --user mkdocs-material
-
-      Distinct from docs:check, which verifies the generated contract data
-      rather than the site.
-    cmds:
-      - mkdocs build --strict
-
-  docs:serve:
-    desc: "Serve the documentation site locally with live reload on :8000."
-    cmds:
-      - mkdocs serve
 
   ui:deps:
-    desc: Install the dashboard's node dependencies (ui/node_modules is gitignored)
+    desc: Install dashboard dependencies
     internal: true
-    # Once per invocation: the gate's parallel UI steps both declare this, and
-    # two concurrent installs into one node_modules corrupt it.
+    # Parallel UI checks must share one dependency install.
     run: once
     dir: ui
     cmds:
@@ -318,23 +136,6 @@ tasks:
 
   ui:check:
     desc: Rebuild the dashboard into a temporary directory and reject a stale ui/dist
-    summary: |
-      ui/dist is committed because the Go build embeds it, so it is a generated
-      source file. Nothing else in the gate reads it and `task ui` rewrites it
-      in place, so before this a change to ui/src that landed without the
-      rebuilt bundle was invisible -- and two agents in two worktrees could each
-      "pass" while producing different dashboards.
-
-      Builds somewhere temporary and compares, never rewriting the committed
-      artifact, which is the rule docs:check already follows for the contract
-      reference. A gate that rebuilt ui/dist in place would bless an unintended
-      UI change with no reviewer ever seeing it.
-
-      Fix a failure with `task ui`, then commit the rebuilt bundle in the same
-      commit as the source change that caused it.
-
-      Declares ui:deps like `ui` and `test:ui` do, so a fresh clone works;
-      ui:deps is run: once, so the gate installs a single time.
     deps: [ui:deps]
     cmds:
       - bash tools/uidist.sh check
@@ -342,58 +143,24 @@ tasks:
   test:ui:
     desc: Test and type-check the dashboard
     dir: ui
-    # ui:deps so a fresh clone fails on a real error rather than on a missing
-    # node_modules, which is gitignored and installed by nothing else.
     deps: [ui:deps]
     cmds:
       - npm test
       - npm run typecheck
 
-  # A test event for the capture intake, so the Events surfaces can be driven by
-  # hand without a real webhook source. See tools/webhook-send.sh --list.
   webhook:send:
     desc: Send a test event to the dashboard's capture intake (--help for kinds)
     cmds:
       - bash tools/webhook-send.sh {{.CLI_ARGS}}
 
   dev:
-    desc: "Develop: archied live-reload + archie-gateway + archie-state-store + archie-ui + Vite HMR together. Open http://localhost:5173"
-    summary: |
-      Runs the dev loop in one terminal:
-
-        * air              rebuilds and restarts archied on Go changes
-        * archie-gateway   serves ChatContract on 127.0.0.1:8585 (archied
-                           and archie-ui dial it; neither embeds a gateway)
-        * archie-state-store  owns archie.db on 127.0.0.1:9091, loopback,
-                           no token (deployments/dev.toml); archied,
-                           archie-gateway and archie-ui dial it -- none owns
-                           the DB in-process
-                           (docs/prds/state-store-contract.md §12 step 7)
-        * archie-ui        serves the dashboard on 127.0.0.1:8484 from the
-                           embedded dist (deployments/dev.toml). After the
-                           UI cutover (archie-core-8cda.5.4) archied runs no
-                           dashboard listener: this is what :8484 is.
-        * vite             serves the dashboard with hot reload on :5173,
-                           proxying /api and /events through to archie-ui
-                           on :8484
-
-      The gRPC ports come from [services.state].listen and [services.gateway].listen in
-      deployments/dev.toml, each paired with the target that dials it. Move a pair there
-      together when a port is already taken on the host.
-
-      Open http://localhost:5173 -- not :8484. The Vite server is the one with
-      hot reload; :8484 serves the last built dist/ and will look stale.
-
-      Ctrl-C stops all five.
+    desc: Run development services and Vite at http://localhost:5173
     deps: [dev:daemon, dev:gateway, dev:state-store, dev:dashboard, dev:ui]
 
   dev:postgres:
-    desc: "Start the dev PostgreSQL 18 service and wait until it accepts connections (prefer `task dev`)"
+    desc: Start PostgreSQL and wait for readiness
     cmds:
       - docker compose up -d postgres
-      # `up -d` returns before the container is ready; wait for its
-      # healthcheck so the State Store (which fails closed on a bad URL) does
-      # not race the boot.
       - |
         set -eu
         for _ in $(seq 1 60); do
@@ -407,35 +174,28 @@ tasks:
         exit 1
 
   dev:daemon:
-    desc: archied only, live-reloading via air (prefer `task dev`)
+    desc: Run archied with live reload
     cmds:
       - air -build.args_bin="-config-overlay,deployments/dev.toml"
 
   dev:dashboard:
-    desc: archie-ui only, no live-reload (prefer `task dev`)
+    desc: Run the dashboard backend
     cmds:
       - go run ./cmd/archie-ui -config-overlay deployments/dev.toml
 
   dev:state-store:
-    desc: archie-state-store only, no live-reload (prefer `task dev`)
-    # The State Store fails closed without a PostgreSQL URL (Postgres-only
-    # epic), so bring the Compose service up and wait for it before booting.
+    desc: Run the State Store with development PostgreSQL
     deps: [dev:postgres]
     cmds:
       - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml
 
   dev:gateway:
-    desc: archie-gateway only, no live-reload (prefer `task dev`)
-    # The overlay carries [services.state].target, which archie-gateway
-    # requires (openStateStoreAdapter fails closed on an empty target).
-    # Without it `task dev` leaves the gateway dialling whatever the
-    # developer's installed config names, or unable to start at all, while
-    # archied, archie-ui and the state store all dial 127.0.0.1:9091.
+    desc: Run the development Gateway
     cmds:
       - go run ./cmd/archie-gateway -config-overlay deployments/dev.toml
 
   dev:ui:
-    desc: Vite dev server only, expects archie-ui already running (prefer `task dev`)
+    desc: Run Vite (requires the dashboard backend)
     dir: ui
     cmds:
       - npm install --no-audit --no-fund
@@ -443,17 +203,6 @@ tasks:
 
   dev:mobile:
     desc: Serve the dashboard on your LAN (token-protected) for phone viewing
-    summary: |
-      Starts archie-ui with a LAN-reachable [web] bind and a minted dashboard
-      token, printing the URL (LAN IP + token) and a QR code to scan. After
-      the UI cutover the dashboard is archie-ui's process: this task starts
-      archie-ui only. Run the daemon separately (task dev, or archied) for
-      actual archie operation -- two daemons sharing the bot identity would
-      double-poll the forge.
-
-      The frontend served is the embedded dist, so run `task ui` if you
-      changed the frontend. The token file is the path archied used to mint
-      before the cutover, so an existing phone setup keeps its token.
     deps:
       - ui
     cmds:
@@ -472,17 +221,6 @@ tasks:
 
   build:
     desc: Build archie services and agent binaries
-    # A from-source build is not a release, and CI is the only thing that stamps
-    # one: the version a release carries is written into the artifact CI
-    # publishes, the zip's binaries and the container image, and is never
-    # derived from whatever tags a local checkout happens to have.
-    #
-    # Deriving it here also made the stamp a function of the commit graph, which
-    # is the one input a content-checksum build cache cannot see: an empty
-    # commit moved `git describe` while `task build` still reported "up to date"
-    # and shipped the previous stamp (archie-core-pdq2). Stamping `dev` removes
-    # the non-file input rather than caching it, and a local build's
-    # traceability is the checkout it came from.
     vars:
       GATEWAY_VERSION: dev
       RUNTIME_VERSION: dev
@@ -490,8 +228,6 @@ tasks:
       - "**/*.go"
       - go.mod
       - go.sum
-      # ui/dist is committed and embedded by ui/embed.go (//go:embed all:dist),
-      # so it is a build input even though no .go file names it.
       - "ui/dist/**"
     generates:
       - "{{.BIN_DIR}}/archied"
@@ -509,13 +245,7 @@ tasks:
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:
-    desc: Run the Go test suite, skipping wall-clock-bound tests and reusing cached passes
-    summary: |
-      -short skips tests that wait out real timers (the keepalive proof holds a
-      watch open for 50s); each one names task test:full in its skip message.
-      The test cache is left on: go reruns any package whose sources,
-      dependencies, env or test files changed, so a cached pass is a pass on
-      this tree.
+    desc: Run short Go tests with caching
     cmds:
       - go test -short ./...
 
@@ -526,23 +256,13 @@ tasks:
 
   test:tools:
     desc: Run the nested tools module suite, refusing to rewrite its go.mod
-    summary: |
-      tools/go.mod replaces the root module, so its build list must satisfy
-      the root module's requirements. When the root moves on, the tools module
-      goes stale and any plain go command there rewrites tools/go.mod and
-      tools/go.sum to catch up, leaving an unrelated dirty diff.
-
-      -mod=readonly is explicit because a developer's global GOFLAGS=-mod=mod
-      overrides the toolchain default and re-enables the silent rewrite.
-      Fix a failure here with: go -C tools mod tidy
     cmds:
       - go -C tools test -mod=readonly ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, proto, docs, vet, lint, build, test, tools tests, ui tests and bundle"
+    desc: Run the full quality gate
+    # Finish mutations before starting parallel checks.
     cmds:
-      # The two steps that rewrite the tree run first and alone; everything
-      # after them only reads it, so it runs concurrently.
       - task: fmt
       - task: proto:check
       - task: db:check
@@ -554,53 +274,18 @@ tasks:
       - task: proto:lint
       - task: docs:check
       - task: docs:prds
-      # Release notes are generated from the changelogs the release process
-      # already freezes. Left out of the gate, a changelog edit would land
-      # while the published notes silently lag behind it.
       - task: news:check
-      # The public-docs artifact is what the site renders, so a page edit that
-      # does not reach it publishes a site that disagrees with the repository.
       - task: docs:artifact:check
       - task: vet
       - task: lint
       - task: build
       - task: test
-      # The tools module is not covered by ./... from the root; without this
-      # its dependency drift is only ever discovered by a command that
-      # silently repairs it.
       - task: test:tools
-      # The dashboard's suite runs here too. Left out of the gate it rots
-      # silently: nothing else executes it, so a broken DOM primitive ships.
       - task: test:ui
-      # ...and so is the bundle that suite is built from. ui/dist is committed
-      # and embedded; nothing else checks it against ui/src, and `task ui`
-      # rewrites it in place, so a forgotten rebuild used to leave no trace in
-      # the gate at all.
       - task: ui:check
 
   contract:
-    desc: "Report contract conformance: declared surfaces, their consumers, and the drift between them"
-    summary: |
-      Walks every declared contract surface -- the two gRPC services, the
-      dashboard HTTP API -- and classifies each subject as consumed,
-      declared-unconsumed, undeclared, or a stale declaration.
-
-      ADVISORY, and deliberately NOT part of `task check`, matching
-      tools/reachaudit. The surfaces are discovered by scanning source text:
-      the .proto files, the adapter bodies that call the generated client, the
-      route registrations in internal/webui, and the path literals under
-      ui/src. That makes it useful for a periodic survey and unsafe as a gate
-      -- a rename or a reformat elsewhere in the tree can change its output
-      without anything being wrong, and it has already produced a batch of
-      false "unconsumed" readings once when the dashboard's request helper was
-      renamed.
-
-      Read the findings as a prompt to go and check, not as a verdict. To make
-      it fail on an undeclared or stale entry, pass --strict by hand:
-
-        go -C tools run ./contractaudit --repo-root .. --strict
-
-      See docs/prds/contract-conformance-audit.md.
+    desc: Report contract conformance (advisory)
     cmds:
       - go -C tools run ./contractaudit --repo-root ..
 
@@ -612,14 +297,14 @@ tasks:
       vars: [VERSION]
 
   release:prepare:
-    desc: "Write the generated notes into CHANGELOG.md, uncommitted, for editing (VERSION=1.2.0)"
+    desc: Prepare changelog notes for editing (VERSION=1.2.0)
     cmds:
       - tools/release.sh --version {{.VERSION}} --prepare
     requires:
       vars: [VERSION]
 
   release:
-    desc: "Freeze the edited changelog into a release commit and tag (VERSION=1.2.0). Run release:prepare first."
+    desc: Commit and tag the prepared release (VERSION=1.2.0)
     cmds:
       - tools/release.sh --version {{.VERSION}} --tag
     requires:

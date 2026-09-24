@@ -14,7 +14,13 @@ export interface Curator {
 
 <script setup lang="ts">
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { ago } from "@/lib/format";
 import CuratorAction from "./CuratorAction.vue";
 
@@ -50,11 +56,21 @@ function healthKind(status: string | undefined): StatusKind {
       </Badge>
     </CardHeader>
     <CardContent>
-      <p v-if="props.curator.health?.message" class="mb-3 text-sm text-fg-muted">
+      <p
+        v-if="props.curator.health?.message"
+        class="mb-3 text-sm text-fg-muted"
+      >
         {{ props.curator.health.message }}
       </p>
-      <ul v-if="props.curator.recent_actions?.length" class="flex flex-col gap-2">
-        <CuratorAction v-for="(a, i) in props.curator.recent_actions" :key="i" :action="a" />
+      <ul
+        v-if="props.curator.recent_actions?.length"
+        class="flex flex-col gap-2"
+      >
+        <CuratorAction
+          v-for="(a, i) in props.curator.recent_actions"
+          :key="i"
+          :action="a"
+        />
       </ul>
       <p v-else class="text-sm text-fg-subtle">No recorded activity yet.</p>
     </CardContent>

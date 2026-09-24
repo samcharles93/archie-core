@@ -11,6 +11,7 @@ metadata:
     engine: any
     workflow: tdd
 ---
+
 # TDD Bugfix Workflow
 
 ## When this runs
@@ -21,15 +22,17 @@ The workflow has five stages: analyse → repro-tests → capture-proof → fix 
 ## Stage 1: Analyse (read-only planner)
 
 The planner agent explores the codebase read-only and produces:
+
 - Root cause: the exact file, function, and condition
 - The expected vs actual behaviour
 - Which test cases would prove the bug exists
 
-No code is written. The plan is stored but not posted  --  the repro proof speaks louder.
+No code is written. The plan is stored but not posted -- the repro proof speaks louder.
 
 ## Stage 2: Repro Tests (write failing tests only)
 
 The agent writes tests that PROVE the bug. Critical constraints:
+
 - **Do not touch non-test files.** Only `*_test.go` (or the ecosystem's test glob).
 - **The gate is inverted.** The test command (last in `[[repos.gate]]`) must FAIL.
   If it passes, the repro didn't capture the bug and the stage parks.
@@ -44,6 +47,7 @@ the output. This is deterministic proof that the tests fail before the fix.
 ## Stage 4: Fix (code only)
 
 The agent fixes the bug. Critical constraints:
+
 - **Test files are write-protected.** The agent CANNOT modify `*_test.go`.
   This is an environmental constraint, not a prompt rule.
 - **The full gate runs normally.** All quality commands plus the test suite must pass.
@@ -52,6 +56,7 @@ The agent fixes the bug. Critical constraints:
 ## Stage 5: Deliver
 
 arcie-core:
+
 1. Commits both the repro and the fix as separate commits (telling the PR story)
 2. Pushes the branch
 3. Opens a PR with the builder's summary
@@ -60,15 +65,19 @@ arcie-core:
 ## Common pitfalls
 
 ### The repro tests pass unexpectedly
+
 This means the test doesn't actually capture the bug. Check:
+
 - Is the test calling the right function with the right inputs?
 - Is the assertion checking the correct behaviour (not the buggy behaviour)?
 - Are there test setup issues (missing imports, wrong package)?
 
 ### The fix stage modifies test files
-This shouldn't happen  --  test files are write-protected. If it does, the agent is
+
+This shouldn't happen -- test files are write-protected. If it does, the agent is
 bypassing the constraint. The worktree should be inspected.
 
 ### The gate is misconfigured
-If the repo has no `[[repos.gate]]` entries, TDD cannot run  --  it needs at least
+
+If the repo has no `[[repos.gate]]` entries, TDD cannot run -- it needs at least
 one gate command, with the test runner last.

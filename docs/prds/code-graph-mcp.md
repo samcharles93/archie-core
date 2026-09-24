@@ -22,11 +22,11 @@ summaries, and retrieve semantically. That design exists because they must
 serve any language. This repository is one Go module, and Go's type checker is
 ground truth:
 
-| Question | Source of truth |
-| --- | --- |
+| Question                    | Source of truth                                  |
+| --------------------------- | ------------------------------------------------ |
 | Who references this symbol? | `go/packages` + `go/types`, resolved by identity |
-| What calls what? | `callgraph` RTA over SSA |
-| What imports what? | `go list -deps` |
+| What calls what?            | `callgraph` RTA over SSA                         |
+| What imports what?          | `go list -deps`                                  |
 
 No vector database, no embedding cost, no edges invented by a summary that
 drifted from the code. For a single-language repository this is both cheaper

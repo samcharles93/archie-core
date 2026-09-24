@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Retry limits, authorization, gates, commands, protected paths, tool
+Retry limits, authorisation, gates, commands, protected paths, tool
 availability, and similar rules define or constrain what Archie may do. They
 need consistent consumption, composition, evidence, and audit without erasing
 their different domain meanings.
@@ -34,7 +34,7 @@ Each consuming domain owns:
 - its evaluators;
 - the meaning and consequence of an evaluation.
 
-Access therefore owns principals, resources, actions, and authorization
+Access therefore owns principals, resources, actions, and authorisation
 consequences. Task lifecycle owns retry eligibility and exhaustion. Task
 execution owns gate requirements. Workspace mutation owns protected-path
 effects. Tool execution owns tool and command constraints.

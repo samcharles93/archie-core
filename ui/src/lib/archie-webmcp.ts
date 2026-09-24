@@ -8,4 +8,6 @@ import { createWebMcpRegistrar } from "./webmcp";
 import { archieWebMcpTools } from "./webmcp-tools";
 
 /** Registers the dashboard's tools, replacing any earlier registration. */
-export const registerArchieWebMcpTools = createWebMcpRegistrar(archieWebMcpTools(api));
+export const registerArchieWebMcpTools = createWebMcpRegistrar(
+  archieWebMcpTools(api),
+);

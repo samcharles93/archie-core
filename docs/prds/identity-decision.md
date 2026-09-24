@@ -20,7 +20,7 @@ hand-rolls either fails this document.
 
 **Authelia is the only identity provider**, because the estate already runs it in
 front of the dashboard and it issues credentials for both kinds of caller: humans
-use the authorization code flow, and machines use the `client_credentials` grant,
+use the authorisation code flow, and machines use the `client_credentials` grant,
 which yields a token whose subject is the client's own identifier.
 
 **Each agent is its own provider client.** A shared client would make two agents
@@ -69,7 +69,7 @@ answer when agents run on infrastructure the operator does not control.
 ## What archie never owns
 
 A credential, a password, a session, a token, a signing key, a second-factor
-enrollment, or a permission rule.
+enrolment, or a permission rule.
 
 ## How an agent proves who it is
 

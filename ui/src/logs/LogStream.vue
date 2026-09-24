@@ -12,7 +12,9 @@ import LogStatus from "./LogStatus.vue";
   <!-- gap-0 so the header's rule sits on the list rather than a card gap above
        it; the rows carry their own separators. -->
   <Card class="gap-0">
-    <CardHeader class="flex flex-wrap items-center justify-between gap-3 border-b">
+    <CardHeader
+      class="flex flex-wrap items-center justify-between gap-3 border-b"
+    >
       <LogFilters />
       <LogStatus />
     </CardHeader>

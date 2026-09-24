@@ -28,7 +28,9 @@ export const EVENTS_TABS: EventsTabSpec[] = [
  * after this build -- stays visible, because a tab that says "unavailable" is
  * recoverable and one that silently vanished is not.
  */
-export function availableTabs(sections: Record<string, boolean> | null | undefined): EventsTabSpec[] {
+export function availableTabs(
+  sections: Record<string, boolean> | null | undefined,
+): EventsTabSpec[] {
   if (!sections) return [...EVENTS_TABS];
   return EVENTS_TABS.filter((tab) => sections[tab.section] !== false);
 }
@@ -38,7 +40,10 @@ export function availableTabs(sections: Record<string, boolean> | null | undefin
  * first one that does. An empty result means this composition backs none of
  * them, which the page renders as an empty state rather than a broken tab.
  */
-export function activeTab(requested: string, available: EventsTabSpec[]): string {
+export function activeTab(
+  requested: string,
+  available: EventsTabSpec[],
+): string {
   if (available.some((tab) => tab.id === requested)) return requested;
   return available[0]?.id ?? "";
 }

@@ -96,7 +96,9 @@ watch(selected, (capture) => {
   <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
     <CaptureStatus />
   </div>
-  <div class="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+  <div
+    class="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+  >
     <div ref="listColumn" class="min-w-0">
       <CapturesCard />
     </div>

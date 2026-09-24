@@ -16,12 +16,16 @@ onMounted(controlPlane.load);
   <div>
     <PageHeader title="Models" />
 
-    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">
+      {{ catalogError }}
+    </p>
     <StructuredResourceCard
       v-for="descriptor in resources"
       :key="descriptor.kind"
       :descriptor="descriptor"
-      :root-path="descriptor.kind === 'provider-settings' ? 'providers' : 'roles'"
+      :root-path="
+        descriptor.kind === 'provider-settings' ? 'providers' : 'roles'
+      "
     />
   </div>
 </template>

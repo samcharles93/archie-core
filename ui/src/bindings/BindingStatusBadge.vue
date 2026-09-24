@@ -9,5 +9,7 @@ const props = defineProps<{ status?: string }>();
 </script>
 
 <template>
-  <Badge :variant="statusKind(props.status)">{{ statusLabel(props.status) }}</Badge>
+  <Badge :variant="statusKind(props.status)">{{
+    statusLabel(props.status)
+  }}</Badge>
 </template>

@@ -60,7 +60,10 @@ export function captureIdentity(
 }
 
 /** eventTypeLabel names an event type by id as "source / name". */
-export function eventTypeLabel(id: string | undefined, types: EventType[]): string {
+export function eventTypeLabel(
+  id: string | undefined,
+  types: EventType[],
+): string {
   if (!id) return "No event type";
   const found = types.find((t) => t.id === id);
   return found ? `${found.source} / ${found.name}` : "Deleted type";
@@ -70,7 +73,9 @@ export function eventTypeLabel(id: string | undefined, types: EventType[]): stri
 export function ruleSummary(rule: Rule): string {
   const parts = [
     ...(rule.headers || []).map((h) => `${h.name} = ${h.value}`),
-    ...(rule.payload || []).map((p) => (p.op === "present" ? `${p.path} present` : `${p.path} = ${p.value ?? ""}`)),
+    ...(rule.payload || []).map((p) =>
+      p.op === "present" ? `${p.path} present` : `${p.path} = ${p.value ?? ""}`,
+    ),
   ];
   return parts.length ? parts.join(" · ") : "any event";
 }
@@ -78,9 +83,15 @@ export function ruleSummary(rule: Rule): string {
 /** cleanRule drops the editor's blank rows, and a present condition's value. */
 export function cleanRule(rule: Rule): Rule {
   return {
-    headers: (rule.headers || []).filter((h) => h.name.trim() !== "").map((h) => ({ name: h.name.trim(), value: h.value })),
+    headers: (rule.headers || [])
+      .filter((h) => h.name.trim() !== "")
+      .map((h) => ({ name: h.name.trim(), value: h.value })),
     payload: (rule.payload || [])
       .filter((p) => p.path.trim() !== "")
-      .map((p) => (p.op === "present" ? { path: p.path.trim(), op: p.op } : { path: p.path.trim(), op: p.op, value: p.value ?? "" })),
+      .map((p) =>
+        p.op === "present"
+          ? { path: p.path.trim(), op: p.op }
+          : { path: p.path.trim(), op: p.op, value: p.value ?? "" },
+      ),
   };
 }

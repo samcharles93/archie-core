@@ -17,7 +17,9 @@ onMounted(controlPlane.load);
   <div>
     <PageHeader title="Task settings" />
 
-    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">
+      {{ catalogError }}
+    </p>
     <StructuredResourceCard
       v-for="descriptor in resources"
       :key="descriptor.kind"

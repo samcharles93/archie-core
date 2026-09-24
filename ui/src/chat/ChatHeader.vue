@@ -17,8 +17,17 @@ import { currentSession, newChat, sessions } from "./state";
 
 <template>
   <div class="flex items-center justify-between gap-2 border-b px-4 py-3">
-    <strong class="truncate text-sm font-semibold">{{ panelTitle(sessions, currentSession) }}</strong>
-    <Button variant="ghost" size="icon-sm" class="flex-none" title="New chat" aria-label="New chat" @click="newChat">
+    <strong class="truncate text-sm font-semibold">{{
+      panelTitle(sessions, currentSession)
+    }}</strong>
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      class="flex-none"
+      title="New chat"
+      aria-label="New chat"
+      @click="newChat"
+    >
       <MessageCirclePlus />
     </Button>
   </div>

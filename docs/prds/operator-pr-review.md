@@ -6,7 +6,7 @@
 This PRD reuses the adversarial-self-review contract
 (`docs/prds/adversarial-self-review.md`) and the `workflow.Reviewer` /
 `workflow.ReviewReport` types from `internal/domain/workflow`. It decides
-only what is new: how an operator asks for a review of an *existing* PR, and
+only what is new: how an operator asks for a review of an _existing_ PR, and
 how that PR's content reaches the reviewer.
 
 ## Problem
@@ -29,14 +29,14 @@ planner/builder.
 
 1. **Forge read.** `GetPullRequest(owner, repo, number)` returns a
    forge-neutral `PullRequest{Number, Title, Body, HeadRef, BaseRef, HeadSHA,
-   BaseSHA, State}`. Declared as a narrow `PullRequestReader` interface,
+BaseSHA, State}`. Declared as a narrow `PullRequestReader` interface,
    implemented by GitHub and Gitea; the noop forge does not implement it, so
    the composition root type-asserts and refuses review with "forge does not support PR
    review". Adding to the fat `Forge` interface would churn every test fake for
    a capability the noop forge cannot honestly provide.
 
 2. **Materialisation.** `worktree.Manager.CheckoutPR(owner, repo, headRef,
-   baseRef)` clones the repository fully and checks out `origin/<headRef>`.
+baseRef)` clones the repository fully and checks out `origin/<headRef>`.
    `Diff(dir, baseRef)` and `Snapshot(dir, destDir)` then work unchanged:
    `Diff` resolves `origin/<baseRef>` via the existing `resolveBase`, and
    `Snapshot` strips `.git` exactly as the workflow stage does. The head must
@@ -57,7 +57,7 @@ planner/builder.
    shape (gateway states what it needs, the composition root adapts — the
    `ChatTaskActor` pattern).
 
-5. **Authorization.** Identity-scoped repository allow-list, the
+5. **Authorisation.** Identity-scoped repository allow-list, the
    `task_spawn` rule: a chat identity may only review a repo in its
    `TaskProfile.Repos`. `identity == nil` denotes an authenticated dashboard
    operator who may review any configured repository.

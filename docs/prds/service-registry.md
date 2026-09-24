@@ -13,10 +13,10 @@ that branch: `RegisterService`'s `listen` argument has nothing to carry without 
 A service is already one Go type, `config.ServiceConnection`. What is duplicated is its
 **name**, in three layers:
 
-| Layer | Location | What is hard-coded |
-|---|---|---|
-| Declaration | `internal/config/services.go` | `Gateway` and `State` as struct fields |
-| Defaulting | `internal/infrastructure/configuration/defaults.go` | three `if cfg.Services.X.Y == ""` branches |
+| Layer       | Location                                                                                           | What is hard-coded                                         |
+| ----------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Declaration | `internal/config/services.go`                                                                      | `Gateway` and `State` as struct fields                     |
+| Defaulting  | `internal/infrastructure/configuration/defaults.go`                                                | three `if cfg.Services.X.Y == ""` branches                 |
 | Consumption | `internal/app/archied/{bootstrap.go,state_store.go,gateway.go}`, `internal/app/archieui/config.go` | `cfg.Services.State` / `cfg.Services.Gateway` field access |
 
 Adding a service means editing all three. The drift this permits is already visible:
@@ -93,7 +93,7 @@ states in prose or in a branch:
 - `state-store-contract.md` §10 must be revised in the same change, or the tree contradicts
   its own ratified authority. Its summary (`:7`) already says `[services.<name>]`.
 - A typo'd `[services.gatway]` is **reported** (`UnknownKeys = [services.gatway,
-  services.gatway.target]`), because the struct form leaves it in `toml.MetaData.Undecoded()`.
+services.gatway.target]`), because the struct form leaves it in `toml.MetaData.Undecoded()`.
   A map decodes any section, so preserving that is a requirement, not an optional extra:
   `unregisteredServiceKeys` asks the registry which names exist. This costs nothing in
   extensibility, because the answer comes from registration data rather than a fixed list.

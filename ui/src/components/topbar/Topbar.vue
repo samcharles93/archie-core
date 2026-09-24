@@ -9,7 +9,9 @@ defineProps<{ hidden: string[] }>();
 </script>
 
 <template>
-  <header class="bg-background/80 sticky top-0 z-40 flex h-14 items-center gap-3 border-b px-3 backdrop-blur-xl sm:px-4">
+  <header
+    class="bg-background/80 sticky top-0 z-40 flex h-14 items-center gap-3 border-b px-3 backdrop-blur-xl sm:px-4"
+  >
     <Brand />
     <Nav :hidden="hidden" />
     <div class="flex shrink-0 items-center gap-1">

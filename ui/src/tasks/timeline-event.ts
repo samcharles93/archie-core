@@ -25,7 +25,8 @@ export function duration(milliseconds: unknown): string {
   const roundedSeconds = Math.round(seconds);
   const minutes = Math.floor(roundedSeconds / 60);
   const remSec = roundedSeconds % 60;
-  if (minutes < 60) return remSec === 0 ? `${minutes} min` : `${minutes} min ${remSec} s`;
+  if (minutes < 60)
+    return remSec === 0 ? `${minutes} min` : `${minutes} min ${remSec} s`;
   const hours = Math.floor(minutes / 60);
   const remMin = minutes - hours * 60;
   return remMin === 0 ? `${hours} h` : `${hours} h ${remMin} min`;
@@ -62,7 +63,9 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
   }
   if (ev.kind === "stage_finish") {
     const elapsed = duration(data.duration_ms);
-    const context = [workflow, elapsed && `ran for ${elapsed}`].filter(Boolean).join(" · ");
+    const context = [workflow, elapsed && `ran for ${elapsed}`]
+      .filter(Boolean)
+      .join(" · ");
     return {
       title: data.interrupted
         ? `Stage interrupted: ${stage}`
@@ -74,8 +77,14 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
   }
   if (ev.kind === "task_retried") {
     const retryCount = Number(data.retry_count);
-    const attempt = Number.isFinite(retryCount) && retryCount > 0 ? `Retry ${retryCount}` : "Retry requested";
-    const previous = [text(data.previous_stage) && `after ${text(data.previous_stage)}`, text(data.previous_reason)]
+    const attempt =
+      Number.isFinite(retryCount) && retryCount > 0
+        ? `Retry ${retryCount}`
+        : "Retry requested";
+    const previous = [
+      text(data.previous_stage) && `after ${text(data.previous_stage)}`,
+      text(data.previous_reason),
+    ]
       .filter(Boolean)
       .join(": ");
     return { title: attempt, detail: previous || ev.detail || "" };
@@ -116,15 +125,26 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
   }
   if (ev.kind === "unsigned_event") {
     const source = text(data.source);
-    return { title: "Started by an unsigned event", detail: source ? `source ${source}` : "", tone: "warn" };
+    return {
+      title: "Started by an unsigned event",
+      detail: source ? `source ${source}` : "",
+      tone: "warn",
+    };
   }
   if (ev.kind === "changes_captured") {
     const totals = (data.totals ?? {}) as { files?: unknown };
     const fileCount = Number(totals.files);
     const files =
-      Number.isFinite(fileCount) && fileCount > 0 ? `${fileCount} file${fileCount === 1 ? "" : "s"} changed` : "";
-    const after = data.captured_after ? `captured after ${text(data.captured_after)}` : "";
-    return { title: "Change capture recorded", detail: [files, after].filter(Boolean).join(" · ") };
+      Number.isFinite(fileCount) && fileCount > 0
+        ? `${fileCount} file${fileCount === 1 ? "" : "s"} changed`
+        : "";
+    const after = data.captured_after
+      ? `captured after ${text(data.captured_after)}`
+      : "";
+    return {
+      title: "Change capture recorded",
+      detail: [files, after].filter(Boolean).join(" · "),
+    };
   }
 
   return { title: words(ev.kind || ev.type), detail: ev.detail || "" };

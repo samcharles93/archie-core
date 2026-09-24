@@ -7,7 +7,7 @@
 
 ## Decision
 
-`task_logs` becomes a *cursor-paginated, filterable* bounded read, not a
+`task_logs` becomes a _cursor-paginated, filterable_ bounded read, not a
 one-shot head-of-file window. The reader in `internal/logging` gains a
 second entry point (`Page`) that walks the file forward from a byte
 offset; the tool schema in `internal/gateway/task_tools.go` surfaces
@@ -132,7 +132,7 @@ one attempt.
   pass; neither earns its cost given `Tail` already handles "show me
   the end."
 - **No bumping `MaxTailLines` past 2000.** A single response must not be
-  able to exhaust the model's context. Paging makes the cap *reachable*
+  able to exhaust the model's context. Paging makes the cap _reachable_
   but does not relax it.
 - **No raising `maxScanBytes`, and no walking rotated generations.** See
   the ceiling below; lifting it is a separate decision with its own cost.
@@ -141,7 +141,7 @@ one attempt.
 
 `maxScanBytes` (8 MiB) bounds the tail of the file any single call will
 examine. Paging does **not** lift that bound: every call re-derives the
-window from the file's *current* size and clamps the incoming cursor up
+window from the file's _current_ size and clamps the incoming cursor up
 into it, so a paging loop walks the window exhaustively and then stops.
 For a log larger than 8 MiB the oldest bytes are unreachable through
 `task_logs` at any cursor, and rotated generations (`attempt-N.jsonl.1`,
@@ -153,7 +153,7 @@ honest contract is:
 
 - Within the window: paging reaches every matching entry, in order,
   exactly once.
-- Beyond it: `Truncated` is true, and that is the *only* correct thing
+- Beyond it: `Truncated` is true, and that is the _only_ correct thing
   to report. An agent that pages to `more_available == false` while
   `truncated` is true has read the window, not the log, and must say so.
 

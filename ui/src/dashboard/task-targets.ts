@@ -19,7 +19,9 @@ export interface TaskTargets {
 // History routing means a hash is not a route any more, so one that survived
 // here would navigate nowhere.
 export function dashboardTaskTargets(tasks: TaskTarget[] = []): TaskTargets {
-  const attention = tasks.filter((task) => ATTENTION_STATUSES.has(task.status ?? ""));
+  const attention = tasks.filter((task) =>
+    ATTENTION_STATUSES.has(task.status ?? ""),
+  );
   const running = tasks.filter((task) => task.status === "running");
   return {
     attention: {

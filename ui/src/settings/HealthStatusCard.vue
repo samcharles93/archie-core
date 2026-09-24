@@ -25,8 +25,10 @@ const error = ref<string | null>(null);
 const { streamState } = storeToRefs(useLiveUpdatesStore());
 
 const liveState = computed(() => {
-  if (streamState.value === "live") return { label: "Connected", kind: "ok" as const };
-  if (streamState.value === "unavailable") return { label: "Unavailable", kind: "danger" as const };
+  if (streamState.value === "live")
+    return { label: "Connected", kind: "ok" as const };
+  if (streamState.value === "unavailable")
+    return { label: "Unavailable", kind: "danger" as const };
   return { label: "Connecting", kind: "warn" as const };
 });
 
@@ -37,7 +39,10 @@ const names: Record<string, string> = {
 };
 
 function componentName(name: string): string {
-  return names[name] ?? name.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+  return (
+    names[name] ??
+    name.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())
+  );
 }
 
 async function load(): Promise<void> {
@@ -68,10 +73,19 @@ onMounted(load);
               <Badge :variant="liveState.kind">{{ liveState.label }}</Badge>
             </TableCell>
           </TableRow>
-          <TableRow v-for="component in report?.components ?? []" :key="component.name">
+          <TableRow
+            v-for="component in report?.components ?? []"
+            :key="component.name"
+          >
             <TableCell>
-              <span class="font-medium">{{ componentName(component.name) }}</span>
-              <span v-if="component.detail" class="ml-2 text-sm text-fg-muted">{{ component.detail }}</span>
+              <span class="font-medium">{{
+                componentName(component.name)
+              }}</span>
+              <span
+                v-if="component.detail"
+                class="ml-2 text-sm text-fg-muted"
+                >{{ component.detail }}</span
+              >
             </TableCell>
             <TableCell class="w-px text-right">
               <Badge :variant="component.ready ? 'ok' : 'danger'">

@@ -6,7 +6,12 @@ import { computed } from "vue";
  * number carries the precision.
  */
 const props = withDefaults(
-  defineProps<{ series: number[]; stroke?: string; width?: number; height?: number }>(),
+  defineProps<{
+    series: number[];
+    stroke?: string;
+    width?: number;
+    height?: number;
+  }>(),
   { stroke: "var(--ok)", width: 220, height: 34 },
 );
 
@@ -14,7 +19,10 @@ const points = computed(() => {
   const max = Math.max(...props.series, 1);
   const min = Math.min(...props.series, 0);
   const span = max - min || 1;
-  const step = props.series.length > 1 ? props.width / (props.series.length - 1) : props.width;
+  const step =
+    props.series.length > 1
+      ? props.width / (props.series.length - 1)
+      : props.width;
 
   return props.series
     .map(

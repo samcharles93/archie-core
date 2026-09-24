@@ -53,7 +53,10 @@ export interface MappingOption {
 
 /** The mappings that belong to one event type, which are the ones a binding
  * on that type can use. */
-export function mappingsForEventType(mappings: MappingOption[], eventTypeId: string): MappingOption[] {
+export function mappingsForEventType(
+  mappings: MappingOption[],
+  eventTypeId: string,
+): MappingOption[] {
   if (!eventTypeId) return [];
   return mappings.filter((m) => m.event_type_id === eventTypeId);
 }
@@ -75,8 +78,13 @@ export function takesRepository(workflow?: WorkflowOption): boolean {
 }
 
 /** A mapping's parameters a workflow input of this type can read. */
-export function paramsForType(fields: MappingField[], type: string): MappingField[] {
-  return fields.filter((f) => type === "any" || f.type === "any" || f.type === type);
+export function paramsForType(
+  fields: MappingField[],
+  type: string,
+): MappingField[] {
+  return fields.filter(
+    (f) => type === "any" || f.type === "any" || f.type === type,
+  );
 }
 
 /** One input's assignment as the editor holds it: a parameter name, or the
@@ -96,7 +104,9 @@ export function constantValue(text: string, type: string): unknown {
     case "string":
       return text;
     case "number":
-      return text.trim() !== "" && !Number.isNaN(Number(text)) ? Number(text) : text;
+      return text.trim() !== "" && !Number.isNaN(Number(text))
+        ? Number(text)
+        : text;
     case "bool":
       return text === "true" ? true : text === "false" ? false : text;
     default:
@@ -164,7 +174,10 @@ export function emptyDraft(): BindingDraft {
   };
 }
 
-export function draftFromBinding(binding: Binding, mappings: MappingOption[]): BindingDraft {
+export function draftFromBinding(
+  binding: Binding,
+  mappings: MappingOption[],
+): BindingDraft {
   const mapping = mappings.find((m) => m.id === binding.mapping_id);
   return {
     id: binding.id,
@@ -179,7 +192,14 @@ export function draftFromBinding(binding: Binding, mappings: MappingOption[]): B
     inputs: Object.fromEntries(
       Object.entries(binding.inputs ?? {}).map(([name, src]) => [
         name,
-        { param: src.param ?? "", value: src.param ? "" : typeof src.value === "string" ? src.value : JSON.stringify(src.value) },
+        {
+          param: src.param ?? "",
+          value: src.param
+            ? ""
+            : typeof src.value === "string"
+              ? src.value
+              : JSON.stringify(src.value),
+        },
       ]),
     ),
   };
@@ -197,7 +217,8 @@ export function bindingPayload(
   for (const [name, spec] of Object.entries(declared)) {
     const src = draft.inputs[name];
     if (src?.param) inputs[name] = { param: src.param };
-    else if (src && src.value !== "") inputs[name] = { value: constantValue(src.value, spec.type) };
+    else if (src && src.value !== "")
+      inputs[name] = { value: constantValue(src.value, spec.type) };
   }
   const repository = takesRepository(workflow);
   return {
@@ -217,10 +238,15 @@ export function bindingPayload(
  * single-configured-repo default. */
 export function repoPin(binding: Binding): string {
   if (binding.repo_param) return `from ${binding.repo_param}`;
-  return binding.owner && binding.repo ? `${binding.owner}/${binding.repo}` : "—";
+  return binding.owner && binding.repo
+    ? `${binding.owner}/${binding.repo}`
+    : "—";
 }
 
 /** The event type a row shows: its mapping's. */
-export function bindingEventType(binding: Binding, mappings: MappingOption[]): string | undefined {
+export function bindingEventType(
+  binding: Binding,
+  mappings: MappingOption[],
+): string | undefined {
   return mappings.find((m) => m.id === binding.mapping_id)?.event_type_id;
 }

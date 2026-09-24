@@ -3,8 +3,8 @@
 One lane, one `cp-writer`, against merged `main`. This is the only bead that
 proves the feature rather than adding to it, so it runs last and alone.
 
-Gate: `cd <worktree> && go test ./internal/app/controlplane/... -count=1`,
-then `task check` through the merge train as usual.
+Gate: `cd <worktree> && go test ./internal/app/controlplane/... -count=1`, then
+`task check` through the merge train as usual.
 
 ```text
 Bead archie-core-eju6. Run `bd show archie-core-eju6` first.

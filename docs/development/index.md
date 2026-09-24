@@ -7,16 +7,16 @@ begins in, which points to the others. The pages point at the documents that
 own the design (`docs/architecture/`, the PRDs, `CLAUDE.md`) rather than
 restating them.
 
-| Area | Covers |
-| --- | --- |
-| [Frontend UI](frontend-ui.md) | Anything under `ui/`, and the dashboard's API routes |
-| [Agent](agent.md) | The agent container, its image, profiles, tools and workspace |
-| [Workflows](workflows.md) | Workflow definitions and step types |
-| [Daemon](daemon.md) | Task statuses, fields and the brief; sources, event types, mappings and bindings |
-| [State Store](state-store.md) | Stored fields, tables, RPCs and errors |
-| [Control plane and settings](control-plane.md) | Settings in `config.toml` or the dashboard |
-| [Processes and wiring](wiring.md) | Where code goes, processes, plugin engines, channels, NATS subjects |
-| [Merging work](merging-work.md) | Merging a lane or a branch |
+| Area                                           | Covers                                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------------------- |
+| [Frontend UI](frontend-ui.md)                  | Anything under `ui/`, and the dashboard's API routes                             |
+| [Agent](agent.md)                              | The agent container, its image, profiles, tools and workspace                    |
+| [Workflows](workflows.md)                      | Workflow definitions and step types                                              |
+| [Daemon](daemon.md)                            | Task statuses, fields and the brief; sources, event types, mappings and bindings |
+| [State Store](state-store.md)                  | Stored fields, tables, RPCs and errors                                           |
+| [Control plane and settings](control-plane.md) | Settings in `config.toml` or the dashboard                                       |
+| [Processes and wiring](wiring.md)              | Where code goes, processes, plugin engines, channels, NATS subjects              |
+| [Merging work](merging-work.md)                | Merging a lane or a branch                                                       |
 
 ## Every change
 

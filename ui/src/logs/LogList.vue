@@ -17,7 +17,16 @@ import { emptyDetail, emptyTitle, entries, loading, readError } from "./state";
 
 // Varied widths, so the placeholder reads as lines of a log rather than a
 // table waiting to be filled.
-const SKELETON_ROWS = ["w-11/12", "w-3/4", "w-5/6", "w-2/3", "w-11/12", "w-1/2", "w-5/6", "w-3/4"];
+const SKELETON_ROWS = [
+  "w-11/12",
+  "w-3/4",
+  "w-5/6",
+  "w-2/3",
+  "w-11/12",
+  "w-1/2",
+  "w-5/6",
+  "w-3/4",
+];
 
 const scroller = ref<HTMLElement | null>(null);
 
@@ -39,10 +48,22 @@ watch(
     <!-- A failed read is about this page's request, not about the log, so it
          says what the server said rather than borrowing an empty state. -->
     <LogsEmpty v-if="readError" title="Cannot read logs" :detail="readError" />
-    <div v-else-if="loading && !entries.length" class="flex flex-col gap-3 px-3 py-4">
-      <Skeleton v-for="(width, i) in SKELETON_ROWS" :key="i" class="h-3" :class="width" />
+    <div
+      v-else-if="loading && !entries.length"
+      class="flex flex-col gap-3 px-3 py-4"
+    >
+      <Skeleton
+        v-for="(width, i) in SKELETON_ROWS"
+        :key="i"
+        class="h-3"
+        :class="width"
+      />
     </div>
-    <LogsEmpty v-else-if="!entries.length" :title="emptyTitle" :detail="emptyDetail" />
+    <LogsEmpty
+      v-else-if="!entries.length"
+      :title="emptyTitle"
+      :detail="emptyDetail"
+    />
     <template v-else>
       <LogRow v-for="entry in entries" :key="entryKey(entry)" :entry="entry" />
     </template>

@@ -14,7 +14,7 @@ request/reply**: direct subject + reply inbox. **JetStream**: persisted stream
 `ARCHIE_TASKS`. **State Store**: gRPC (`internal/infrastructure/staterpc`), not
 NATS.
 **Environment failure**: test/process cannot use host resource (listener, tmp,
-Docker). **Code regression**: behavior fails where prerequisites available.
+Docker). **Code regression**: behaviour fails where prerequisites available.
 
 ## Run the first-ten-minutes protocol
 
@@ -26,27 +26,28 @@ GIT_CONFIG_GLOBAL=/dev/null go test ./PATH/TO/PACKAGE -run '^TestName$' -count=1
 ```
 
 Classify: compile-only, listener failure, read-only tmp, code regression.
-   - Behavioral assertion with the prerequisite available: code regression.
+
+- Behavioural assertion with the prerequisite available: code regression.
 
 Use this symptom index:
 
-| Symptom | First boundary | Go to |
-|---|---|---|
-| `Run() = "\n"` in `TestRunWrapsExternalCommand` | Skill-script test command shape | Fixed history — passes since 2026-09-16 |
-| Embedded NATS panics before a test assertion | Listener permission | Test environment |
-| `nats: no responders available for request` | Core NATS subscription | NATS request/reply |
-| Agent reply timeout | JetStream request, inbox, or worker | NATS request/reply |
-| Queue looks empty while NATS reports an error | `Client.Fetch` batch error | NATS request/reply |
-| Config test passes but daemon ignores the field | Composition/wiring | Configuration |
-| Daemon has an env var but container does not | Compose or `containerEnv` | Configuration |
-| Telegram reply hangs on the first token | Stream consumer | Streaming |
-| MCP unit tests pass but a real server hangs | Framing mirror | MCP |
-| Telegram shows old commands | Token-scoped Telegram state | Telegram |
-| Transition succeeds from the wrong state | Store semantics | Database/state |
-| Dashboard skips events but task state is correct | Bounded event buffers | Events |
-| Search works but never becomes indexed | Missing production wiring | Optional features |
-| Agent container cannot resolve `nats` | Docker network | Containers |
-| `agent.mode = "subprocess"` fails at protocol startup | Worker binary mismatch | Subprocess mode |
+| Symptom                                               | First boundary                      | Go to                                   |
+| ----------------------------------------------------- | ----------------------------------- | --------------------------------------- |
+| `Run() = "\n"` in `TestRunWrapsExternalCommand`       | Skill-script test command shape     | Fixed history — passes since 2026-09-16 |
+| Embedded NATS panics before a test assertion          | Listener permission                 | Test environment                        |
+| `nats: no responders available for request`           | Core NATS subscription              | NATS request/reply                      |
+| Agent reply timeout                                   | JetStream request, inbox, or worker | NATS request/reply                      |
+| Queue looks empty while NATS reports an error         | `Client.Fetch` batch error          | NATS request/reply                      |
+| Config test passes but daemon ignores the field       | Composition/wiring                  | Configuration                           |
+| Daemon has an env var but container does not          | Compose or `containerEnv`           | Configuration                           |
+| Telegram reply hangs on the first token               | Stream consumer                     | Streaming                               |
+| MCP unit tests pass but a real server hangs           | Framing mirror                      | MCP                                     |
+| Telegram shows old commands                           | Token-scoped Telegram state         | Telegram                                |
+| Transition succeeds from the wrong state              | Store semantics                     | Database/state                          |
+| Dashboard skips events but task state is correct      | Bounded event buffers               | Events                                  |
+| Search works but never becomes indexed                | Missing production wiring           | Optional features                       |
+| Agent container cannot resolve `nats`                 | Docker network                      | Containers                              |
+| `agent.mode = "subprocess"` fails at protocol startup | Worker binary mismatch              | Subprocess mode                         |
 
 ## Separate test-environment failures from regressions
 
@@ -87,15 +88,15 @@ env GOTMPDIR=/tmp GOCACHE=/tmp/archie-skillscript-gocache \
 
 ## Triage NATS request/reply and JetStream
 
-| Surface | Subject or resource | Bound/current behavior |
-|---|---|---|
-| Task discovery | `archie.task.>` in `ARCHIE_TASKS` | Work-queue retention; daemon durable `archie-daemon`; max deliver 3 |
-| Per-stage agent request | `archie.agent.<task>.request` | Reply inbox in `X-Archie-Reply`; wall-clock budget or 30m |
-| Full task handoff | `archie.taskrun.<task-id>` | Core request/reply; no-responder retry 20s every 250ms |
-| Store RPC | gRPC State Store (`internal/infrastructure/staterpc`) | Client timeout 60s (`rpcTimeout` in `internal/app/agentworker/worker.go`); task-scoped grants for Update/Transition/InsertEvent only |
-| Forge RPC | `archie.forge.*` | Error travels in a JSON envelope |
-| Worktree RPC | `archie.worktree.prepare`, `.push` | Server default handler bound 15m |
-| Discovery dedup | `Nats-Msg-Id: archie:<owner>/<repo>/<issue>` | JetStream duplicate window 2m |
+| Surface                 | Subject or resource                                   | Bound/current behaviour                                                                                                              |
+| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Task discovery          | `archie.task.>` in `ARCHIE_TASKS`                     | Work-queue retention; daemon durable `archie-daemon`; max deliver 3                                                                  |
+| Per-stage agent request | `archie.agent.<task>.request`                         | Reply inbox in `X-Archie-Reply`; wall-clock budget or 30m                                                                            |
+| Full task handoff       | `archie.taskrun.<task-id>`                            | Core request/reply; no-responder retry 20s every 250ms                                                                               |
+| Store RPC               | gRPC State Store (`internal/infrastructure/staterpc`) | Client timeout 60s (`rpcTimeout` in `internal/app/agentworker/worker.go`); task-scoped grants for Update/Transition/InsertEvent only |
+| Forge RPC               | `archie.forge.*`                                      | Error travels in a JSON envelope                                                                                                     |
+| Worktree RPC            | `archie.worktree.prepare`, `.push`                    | Server default handler bound 15m                                                                                                     |
+| Discovery dedup         | `Nats-Msg-Id: archie:<owner>/<repo>/<issue>`          | JetStream duplicate window 2m                                                                                                        |
 
 ```bash
 docker compose ps
@@ -122,7 +123,7 @@ env GOTMPDIR=/tmp GOCACHE=/tmp/archie-agent-unit-gocache \
   go test ./internal/agentexec -run '^TestToolSetHandler' -count=1 -v
 ```
 
-## Trace configuration from source to behavior
+## Trace configuration from source to behaviour
 
 Trace: `cmd/archied` (`internal/app/archied/bootstrap.go`) reads
 `-config`/`-config-overlay` → `configuration.New(log)` + `Loader.Resolve`
@@ -141,6 +142,7 @@ The `config.Load`/`config.LoadDir` helpers are gone; decoding is
 is a wiring gap, not a parser bug.
 
 For environment failures:
+
 - The host supervisor supplies the daemon environment; inspect its unit or
   launch environment rather than Compose.
 - `containerEnv` translates configured NATS token name into `NATS_TOKEN` and
@@ -151,11 +153,13 @@ Do not print secret values.
 ## Diagnose streaming, MCP, and Telegram
 
 ### Streaming
+
 Must drain `stream.FullStream`, collect `core.StreamPartTextDelta`, check
 `FinishReason`. `TextStream` is best-effort. **Fixed history:** consuming
 `TextStream` while `FullStream` unread deadlocked every reply.
 
 ### MCP
+
 Stdio framing is one compact JSON-RPC object per line. Stale
 `internal/tools/mcp/types.go` comment mentions `Content-Length` — not the
 implemented contract.
@@ -180,6 +184,7 @@ Gate: non-empty discovery with `start_process`, `interact_with_process`,
 `read_process_output`.
 
 ### Telegram
+
 Three command scopes in `internal/channels/telegram/commands.go`: default, all
 private chats, all group chats. Narrower scope shadows default; state keyed by
 bot token. Empty `allowed_user_ids` denies everyone.
@@ -196,6 +201,7 @@ env GOTMPDIR=/tmp GOCACHE=/tmp/archie-telegram-gocache \
 ## Diagnose state, events, containers, and optional features
 
 ### Database and transitions
+
 `internal/infrastructure/postgres.Store.Transition` owns task state changes and
 transition history: it guards on `from`, returning
 `storecontract.ErrStaleTransition`, and writes status plus history in one transaction.
@@ -208,20 +214,22 @@ env GOTMPDIR=/tmp GOCACHE=/tmp/archie-state-gocache go test ./internal/infrastru
 ```
 
 ### Events
+
 DB sink buffer 256; SSE client buffers 64. Drop counter not read in production.
 Dashboard gap can coexist with correct task state.
 
 ### Containers, worktrees, and subprocess mode
+
 Container-mode: clones on host, mounts `/data/worktree`, writes `.git/task.json`,
 dedicated `archie.taskrun.<id>` subscription. **Open:** container RPC is
 root-identity-bound; `SubprocessRunner` expects stdin JSON protocol.
 
 ### Optional feature degradation
 
-| Feature | Current failure behavior |
-|---|---|
-| Daemon plugins | Warn and skip |
-| Invalid MCP config | Warn and continue |
-| Skill catalog | Warn, continue without tool |
-| Worktree augmentation | Log error, use startup registry |
-| Workspace indexing | **Open:** `indexing.NewManager` exists but has no production caller in `internal/app/archied` |
+| Feature               | Current failure behaviour                                                                     |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| Daemon plugins        | Warn and skip                                                                                 |
+| Invalid MCP config    | Warn and continue                                                                             |
+| Skill catalogue       | Warn, continue without tool                                                                   |
+| Worktree augmentation | Log error, use startup registry                                                               |
+| Workspace indexing    | **Open:** `indexing.NewManager` exists but has no production caller in `internal/app/archied` |

@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { valueText } from "./config-field";
 import type { ConfigField } from "./types";
@@ -46,9 +50,16 @@ const lockedReason = computed(() => props.field?.locked_reason ?? "");
           the tooltip content itself is out of the accessibility tree when the
           trigger is not hovered or focused.
         -->
-        <span tabindex="0" :aria-label="`${label}: ${field.description}`" class="text-sm text-fg-muted">{{ label }}</span>
+        <span
+          tabindex="0"
+          :aria-label="`${label}: ${field.description}`"
+          class="text-sm text-fg-muted"
+          >{{ label }}</span
+        >
       </TooltipTrigger>
-      <TooltipContent :side-offset="8" class="max-w-80">{{ field.description }}</TooltipContent>
+      <TooltipContent :side-offset="8" class="max-w-80">{{
+        field.description
+      }}</TooltipContent>
     </Tooltip>
     <span v-else class="text-sm text-fg-muted">{{ label }}</span>
 
@@ -57,11 +68,22 @@ const lockedReason = computed(() => props.field?.locked_reason ?? "");
          column and truncated them against the buttons. -->
     <slot name="value">
       <span
-        :class="cn('min-w-0 break-words font-mono text-sm min-[701px]:truncate', text === '—' ? 'text-fg-subtle' : 'text-foreground', lockedReason && 'text-fg-muted')"
+        :class="
+          cn(
+            'min-w-0 break-words font-mono text-sm min-[701px]:truncate',
+            text === '—' ? 'text-fg-subtle' : 'text-foreground',
+            lockedReason && 'text-fg-muted',
+          )
+        "
         :title="text"
-      >{{ text }}</span>
+        >{{ text }}</span
+      >
     </slot>
 
-    <span v-if="lockedReason" class="col-span-full text-xs text-fg-subtle min-[701px]:col-span-2 min-[701px]:col-start-2">{{ lockedReason }}</span>
+    <span
+      v-if="lockedReason"
+      class="col-span-full text-xs text-fg-subtle min-[701px]:col-span-2 min-[701px]:col-start-2"
+      >{{ lockedReason }}</span
+    >
   </div>
 </template>

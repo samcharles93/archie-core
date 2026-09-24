@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Badge } from "@/components/ui/badge";
 
 import PanelError from "./PanelError.vue";
@@ -30,7 +35,9 @@ const run = useTaskRun();
 
 const attempts = computed(() => props.state?.attempts || []);
 
-const attempt = computed(() => attempts.value.find((a) => Number(a.attempt) === Number(run.attemptNumber)));
+const attempt = computed(() =>
+  attempts.value.find((a) => Number(a.attempt) === Number(run.attemptNumber)),
+);
 
 const meta = computed(() => stageStatusMeta(attempt.value?.status));
 const stages = computed(() => attempt.value?.stages || []);
@@ -44,12 +51,17 @@ const stages = computed(() => attempt.value?.stages || []);
  * nothing to filter on and is not selectable.
  */
 function selectedStage(stage: Stage): boolean {
-  return run.tab === "log" && Boolean(stage.name) && run.filters.stage === stage.name;
+  return (
+    run.tab === "log" && Boolean(stage.name) && run.filters.stage === stage.name
+  );
 }
 
 function selectStage(stage: Stage): void {
   if (!stage.name) return;
-  run.setFilters({ stage: selectedStage(stage) ? "" : stage.name, level: run.filters.level });
+  run.setFilters({
+    stage: selectedStage(stage) ? "" : stage.name,
+    level: run.filters.level,
+  });
   run.setTab("log");
 }
 
@@ -66,7 +78,10 @@ const startedAt = computed(() => {
 </script>
 
 <template>
-  <PanelLoading v-if="state === undefined" label="Loading this task's attempts…" />
+  <PanelLoading
+    v-if="state === undefined"
+    label="Loading this task's attempts…"
+  />
   <PanelError
     v-else-if="state === null"
     title="Could not load this task's attempts"
@@ -82,7 +97,10 @@ const startedAt = computed(() => {
     <Empty v-else-if="!attempt">
       <EmptyHeader>
         <EmptyTitle>Attempt {{ run.attemptNumber }} is not recorded</EmptyTitle>
-        <EmptyDescription>This task recorded attempt {{ attempts.map((a) => a.attempt).join(", ") }}.</EmptyDescription>
+        <EmptyDescription
+          >This task recorded attempt
+          {{ attempts.map((a) => a.attempt).join(", ") }}.</EmptyDescription
+        >
       </EmptyHeader>
     </Empty>
 
@@ -92,7 +110,10 @@ const startedAt = computed(() => {
         <Badge :variant="meta.kind">{{ meta.label }}</Badge>
         <span class="text-xs text-fg-muted">{{ startedAt }}</span>
       </div>
-      <ol v-if="stages.length" :aria-label="`Stages recorded in attempt ${attempt.attempt}`">
+      <ol
+        v-if="stages.length"
+        :aria-label="`Stages recorded in attempt ${attempt.attempt}`"
+      >
         <StageRow
           v-for="(stage, i) in stages"
           :key="`${stage.seq ?? i}:${stage.name}`"
@@ -109,8 +130,9 @@ const startedAt = computed(() => {
         </EmptyHeader>
       </Empty>
       <p class="mt-3 max-w-[70ch] text-xs text-fg-muted">
-        <strong>ok</strong> means the stage returned without error. Archie records no exit code and does not verify
-        that the work was correct, so this is a progress status, not a check result.
+        <strong>ok</strong> means the stage returned without error. Archie
+        records no exit code and does not verify that the work was correct, so
+        this is a progress status, not a check result.
       </p>
     </div>
 
@@ -118,9 +140,14 @@ const startedAt = computed(() => {
          where every event predates the attempt column answers with no attempts
          at all, and reporting "No attempts recorded" there without the count
          would present unattributable history as nothing having happened. -->
-    <p v-if="Number(state.unattributed_events) > 0" class="mt-3 max-w-[70ch] text-xs text-fg-muted">
-      {{ Number(state.unattributed_events) }} event{{ Number(state.unattributed_events) === 1 ? "" : "s" }} on this
-      task predate attempt attribution and cannot be assigned to a run.
+    <p
+      v-if="Number(state.unattributed_events) > 0"
+      class="mt-3 max-w-[70ch] text-xs text-fg-muted"
+    >
+      {{ Number(state.unattributed_events) }} event{{
+        Number(state.unattributed_events) === 1 ? "" : "s"
+      }}
+      on this task predate attempt attribution and cannot be assigned to a run.
     </p>
   </template>
 </template>

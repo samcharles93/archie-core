@@ -1,7 +1,7 @@
 # Generated Documentation
 
-**Status:** Generator scaffold in place; renderer and publishing removed
-**Date:** 2026-07-28 (revised 2026-09-12)
+**Status:** Data generation lives here; rendering and publishing live in the external Astro website
+**Date:** 2026-07-28 (revised 2026-09-25)
 **Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Purpose
@@ -10,11 +10,10 @@ Archie's documentation-generation approach is:
 
 - production Go code, registries, configuration, and CLI behaviour remain the
   source of truth for published contracts;
-- a repository-local Go generator extracts and normalizes documentation data;
+- a repository-local Go generator extracts and normalises documentation data;
 - the generator writes deterministic JSON/data files and protocol schemas;
-- the rendering and publishing surface is an **open decision** — the VitePress
-  site and its Pages deployment were removed on 2026-09-12 as an unnecessary
-  build step (see "Rendering and publishing" below).
+- the external Astro website consumes generated data and serves the public
+  documentation at `offloaded.dev/docs/`.
 
 Hugo is not part of the target architecture.
 
@@ -32,7 +31,7 @@ docs/
   *.md
 ```
 
-### Rendering and publishing — OPEN
+### Rendering and publishing — external Astro website
 
 Superseded 2026-09-12. The repository previously carried a VitePress site
 (`docs/.vitepress/config.mts`, `docs/package.json`, a 1620-line
@@ -41,24 +40,23 @@ Pages by `.github/workflows/docs.yml`. It was removed as an unnecessary build
 step: the published site was never stood up, and the Pages target is not
 configured.
 
-`docs/` is now repository documentation only — markdown read in the repository,
-an editor, or a forge's file view. Nothing in the repository builds, renders, or
-publishes it.
+The Astro website is maintained outside this repository. This repository owns
+the Markdown source and generated JSON artifacts; it does not build, preview, or
+deploy the site. The external site owns page rendering, navigation, and
+publishing.
 
-The renderer for the generated `data/generated/*.json` is therefore **undecided**.
-Consequences that follow, and their current state:
+The current boundaries are:
 
-| Concern | State after removal |
-| --- | --- |
-| Reference-page rendering | Undecided; `data/generated/contracts.json` is committed but unrendered |
-| Internal link validation | Not enforced by any build; links are repository-relative (`../architecture/...`) and resolve on the filesystem |
-| Generated-data drift detection | Unchanged — `docsgen check` compares committed output, independent of any renderer |
-| Navigation/sidebar | The authoritative index is `docs/prds/01-project-management.md` |
-| Local authoring server | None; read markdown directly |
+| Concern                                 | Owner                                                                |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| Reference-page rendering and publishing | External Astro website                                               |
+| Documentation source and generated data | This repository                                                      |
+| Generated-data drift detection          | `task docs:check`, `task docs:artifact:check`, and `task news:check` |
+| Navigation data                         | `docs/data/generated/docs.json` and `dev-docs.json`                  |
 
-A future renderer MUST NOT reintroduce a dead-link-blind build: VitePress
-previously validated internal links during its production build, and no
-replacement currently does.
+Changes to an artifact contract must be coordinated with the external Astro
+consumer. This repository does not validate the website's rendered links or
+routes.
 
 ## Single source of truth
 
@@ -107,7 +105,7 @@ load registries and types
   -> compare or write output
 ```
 
-The normalized documentation model prevents each output renderer from
+The normalised documentation model prevents each output renderer from
 independently interpreting Go types. It contains stable documentation IDs,
 owners, names, descriptions, source references, versions, deprecations, fields,
 defaults, validation, secret classifications, and relationships.
@@ -121,13 +119,13 @@ docsgen all
 docsgen check
 ```
 
-- `data` writes the normalized JSON reference data.
+- `data` writes the normalised JSON reference data.
 - `asyncapi` writes protocol schemas and envelopes.
 - `all` generates every committed artifact.
 - `check` generates into a temporary directory and fails on drift.
 
 The command may use subcommands or an equivalent explicit `--target` flag. It
-MUST retain one normalization and validation path.
+MUST retain one normalisation and validation path.
 
 ## Target output
 
@@ -197,7 +195,7 @@ Keep generator-only dependencies such as `invopop/jsonschema` and any future
 protocol-schema serializer in the nested tools module. They MUST NOT enter the
 root module.
 
-`docsgen` imports Archie-owned contracts and writes normalized Archie data and
+`docsgen` imports Archie-owned contracts and writes normalised Archie data and
 protocol artifacts.
 
 ### Step 2: establish authoritative registries
@@ -280,26 +278,24 @@ Each category extractor contributes:
 - version and deprecation information;
 - relationships to commands, events, policies, and contracts.
 
-The first vertical slice proves the normalized model and deterministic JSON
-serialization. Later categories reuse it rather than introducing
+The first vertical slice proves the normalised model and deterministic JSON
+serialisation. Later categories reuse it rather than introducing
 category-specific ad hoc output formats.
 
-### Step 5: render data (pending renderer decision)
+### Step 5: external Astro renderer
 
-Blocks on "Rendering and publishing" above. Once a renderer is chosen, it reads
-`data/generated/*.json`, validates it, and renders reference views.
+The Astro website reads `data/generated/*.json`, validates it, and renders
+reference views. Build and deployment remain owned by the website repository.
 
 Navigation and routes derive from `catalog.json`; they MUST NOT be duplicated by
 hand in renderer configuration.
-
-No renderer is chosen, so this step is unstarted.
 
 ### Step 6: implement deterministic drift checking
 
 `docsgen check`:
 
 1. generates all artifacts into a temporary directory;
-2. normalizes line endings and file modes;
+2. normalises line endings and file modes;
 3. compares the complete expected data and schema trees with committed outputs;
 4. reports missing, changed, and obsolete files;
 5. identifies the authoritative definition associated with each mismatch;
@@ -315,11 +311,11 @@ Generation MUST exclude:
 
 Two consecutive `docsgen all` runs MUST be byte-identical.
 
-### Step 7: renderer adaptation — blocked
+### Step 7: Astro renderer — external consumer
 
-Was "adapt the VitePress site". No renderer is chosen; this step is unstarted.
-
-When a renderer is selected it MUST:
+The external Astro website consumes the committed generated JSON artifacts and
+serves the documentation under `/docs/` and `/dev/`. Its build and deployment
+are owned by that repository. The consumer MUST:
 
 - read `data/generated/*.json` rather than re-deriving from source;
 - validate internal links, with dead-link failures enabled (no blanket
@@ -353,30 +349,15 @@ contract types (`docsgen`) and, from the Markdown sources, `docs.json` and
 reader of the product gets, and the development set of architecture and design
 records) -- see `task docs:artifact`.
 
-### Step 9: CI
+### Step 9: validation and CI
 
-The original documentation workflow was deleted on 2026-09-12. `deploy.yml` still
-does not reference `docs/**`.
+`task check` validates generated contracts and Markdown-derived documentation
+artifacts. The Astro site's rendered routes and deployment are validated in its
+own repository.
 
-`.github/workflows/docs.yml` (added 2026-09-18) builds the MkDocs site with
-`mkdocs build --strict` on changes to `docs/**` or `mkdocs.yml`, so a dead
-internal link fails before it reaches a deploy. It deliberately does no more
-than that: it does not run `docsgen`, does not regenerate `contracts.json`, and
-does not publish. Deployment is a separate path, run from the Ansible control
-node by the `vectislabs.automation` `docs_site` role.
+### Step 10: content migration
 
-Generated-artifact drift is therefore still gated locally, by `task check`
-running `docs:check`, and not in CI. That split is the point. A CI job that
-regenerated output would be able to paper over uncommitted differences instead
-of failing on them, which is the failure this section exists to prevent, so any
-future documentation workflow MUST check generated output rather than produce
-it.
-
-### Step 10: cutover — done, in reverse
-
-The site cutover is moot: the site was removed rather than published. The
-generator's outputs (`docs/data/generated/`, `docs/public/schemas/`) remain
-committed and are the durable artifacts.
+The Astro site consumes generated artifacts. Remaining content work is to:
 
 Still standing from the original cutover list:
 

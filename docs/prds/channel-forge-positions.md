@@ -135,7 +135,7 @@ one inbound message (`internal/infrastructure/gatewayrpc/server.go:Stream`).
 
 Giving playbook-originated sends the session and approval scoping the
 interactive channels use. Configured destinations carry the address, so there is
-no conversation to anchor to and no scoping mechanism to generalize.
+no conversation to anchor to and no scoping mechanism to generalise.
 
 ## Packages this touches
 

@@ -57,7 +57,10 @@ const controls = computed<Control[]>(() =>
   (props.task.actions ?? [])
     .map((id) => actionFor(id))
     .filter((meta): meta is ActionMeta => meta !== null)
-    .map((meta) => ({ ...meta, href: meta.kind === "link" ? forgeLink(meta.id) : "" })),
+    .map((meta) => ({
+      ...meta,
+      href: meta.kind === "link" ? forgeLink(meta.id) : "",
+    })),
 );
 
 //
@@ -67,17 +70,30 @@ const controls = computed<Control[]>(() =>
 // of its own; every other non-link control folds behind a '···' menu that runs
 // the identical request path, and the forge links stay inline after the
 // primary because they navigate rather than act.
-const nonLinkControls = computed<Control[]>(() => controls.value.filter((c) => c.kind !== "link"));
-const primaryControl = computed<Control | null>(() => nonLinkControls.value[0] ?? null);
-const overflowControls = computed<Control[]>(() => nonLinkControls.value.slice(1));
-const linkControls = computed<Control[]>(() => controls.value.filter((c) => c.kind === "link"));
+const nonLinkControls = computed<Control[]>(() =>
+  controls.value.filter((c) => c.kind !== "link"),
+);
+const primaryControl = computed<Control | null>(
+  () => nonLinkControls.value[0] ?? null,
+);
+const overflowControls = computed<Control[]>(() =>
+  nonLinkControls.value.slice(1),
+);
+const linkControls = computed<Control[]>(() =>
+  controls.value.filter((c) => c.kind === "link"),
+);
 
 const menuOpen = ref(false);
 
-const confirmingMeta = computed(() => (confirmingId.value ? actionFor(confirmingId.value) : null));
+const confirmingMeta = computed(() =>
+  confirmingId.value ? actionFor(confirmingId.value) : null,
+);
 const confirmText = computed(() =>
   confirmingMeta.value?.confirm
-    ? confirmingMeta.value.confirm.replaceAll("{title}", props.task.title || "this task")
+    ? confirmingMeta.value.confirm.replaceAll(
+        "{title}",
+        props.task.title || "this task",
+      )
     : "",
 );
 const confirmLabel = computed(() => confirmingMeta.value?.label || "Confirm");
@@ -88,8 +104,10 @@ const confirmLabel = computed(() => confirmingMeta.value?.label || "Confirm");
 // shell because they affect every request, not only this row.
 const errorText = computed(() => {
   if (!error.value) return "";
-  if (error.value.kind === "session-expired") return "Dashboard authentication is required.";
-  if (error.value.kind === "refused") return `${error.value.message} — you can't do that.`;
+  if (error.value.kind === "session-expired")
+    return "Dashboard authentication is required.";
+  if (error.value.kind === "refused")
+    return `${error.value.message} — you can't do that.`;
   return `${error.value.message} — try again, or check the daemon.`;
 });
 
@@ -152,7 +170,6 @@ function requestFromMenu(id: string) {
   menuOpen.value = false;
   request(id);
 }
-
 </script>
 
 <template>
@@ -162,7 +179,9 @@ function requestFromMenu(id: string) {
       variant="destructive"
       class="w-56 gap-0.5 px-2 py-1.5 text-xs whitespace-normal"
     >
-      <AlertTitle v-if="error.kind === 'session-expired'" class="text-xs">Authentication required</AlertTitle>
+      <AlertTitle v-if="error.kind === 'session-expired'" class="text-xs"
+        >Authentication required</AlertTitle
+      >
       <AlertDescription class="text-xs">{{ errorText }}</AlertDescription>
     </Alert>
 
@@ -186,16 +205,34 @@ function requestFromMenu(id: string) {
 
       <template v-for="control in linkControls" :key="control.id">
         <Button v-if="control.href" as-child variant="ghost" size="sm">
-          <a :href="control.href" target="_blank" rel="noreferrer" @click.stop>{{ control.label }}</a>
+          <a
+            :href="control.href"
+            target="_blank"
+            rel="noreferrer"
+            @click.stop
+            >{{ control.label }}</a
+          >
         </Button>
-        <Button v-else variant="ghost" size="sm" disabled :title="`${control.label} is unavailable`">
+        <Button
+          v-else
+          variant="ghost"
+          size="sm"
+          disabled
+          :title="`${control.label} is unavailable`"
+        >
           {{ control.label }}
         </Button>
       </template>
 
       <DropdownMenu v-if="overflowControls.length" v-model:open="menuOpen">
         <DropdownMenuTrigger as-child>
-          <Button variant="ghost" size="icon-sm" aria-label="More actions" :disabled="inFlight" @click.stop>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="More actions"
+            :disabled="inFlight"
+            @click.stop
+          >
             <Ellipsis :size="14" />
           </Button>
         </DropdownMenuTrigger>

@@ -2,7 +2,12 @@
 import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
 import CuratorCard, { type Curator } from "./CuratorCard.vue";
@@ -35,7 +40,9 @@ onMounted(load);
   <div>
     <PageHeader title="Curators" />
 
-    <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
+    <div
+      class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
+    >
       <Empty v-if="loadError">
         <EmptyHeader>
           <EmptyTitle>Cannot reach archied</EmptyTitle>

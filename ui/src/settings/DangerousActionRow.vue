@@ -43,11 +43,17 @@ function onConfirmationOpen(open: boolean): void {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center justify-between gap-3 border-t border-hairline py-3">
+  <div
+    class="flex flex-wrap items-center justify-between gap-3 border-t border-hairline py-3"
+  >
     <span class="text-sm">{{ props.action.description }}</span>
     <div class="flex flex-wrap gap-2">
-      <Button variant="destructive" @click="confirming = 'approve'">Approve</Button>
-      <Button variant="destructive" @click="confirming = 'permanent'">Approve for 24h</Button>
+      <Button variant="destructive" @click="confirming = 'approve'"
+        >Approve</Button
+      >
+      <Button variant="destructive" @click="confirming = 'permanent'"
+        >Approve for 24h</Button
+      >
       <Button variant="default" @click="decide('deny')">Deny</Button>
     </div>
   </div>
@@ -56,16 +62,19 @@ function onConfirmationOpen(open: boolean): void {
     <AlertDialogContent>
       <AlertDialogHeader>
         <AlertDialogTitle>
-          {{ confirming === 'permanent' ? 'Approve for 24 hours?' : 'Approve this action?' }}
+          {{
+            confirming === "permanent"
+              ? "Approve for 24 hours?"
+              : "Approve this action?"
+          }}
         </AlertDialogTitle>
         <AlertDialogDescription>
           <template v-if="confirming === 'permanent'">
-            This runs "{{ description }}" now, and approves its action family for 24 hours — further
-            requests of the same kind run without asking again.
+            This runs "{{ description }}" now, and approves its action family
+            for 24 hours — further requests of the same kind run without asking
+            again.
           </template>
-          <template v-else>
-            This runs "{{ description }}" once, now.
-          </template>
+          <template v-else> This runs "{{ description }}" once, now. </template>
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
@@ -74,7 +83,7 @@ function onConfirmationOpen(open: boolean): void {
           variant="destructive"
           @click="confirming && decide(confirming)"
         >
-          {{ confirming === 'permanent' ? 'Approve for 24h' : 'Approve' }}
+          {{ confirming === "permanent" ? "Approve for 24h" : "Approve" }}
         </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>

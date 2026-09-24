@@ -3,10 +3,24 @@ import { computed } from "vue";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ago } from "@/lib/format";
 import { eventTypeLabel } from "@/captures/event-types";
-import { captures, capturesEnabled, draft, eventTypes, selectCapture, type Capture } from "./state";
+import {
+  captures,
+  capturesEnabled,
+  draft,
+  eventTypes,
+  selectCapture,
+  type Capture,
+} from "./state";
 
 /**
  * The mapping's own fields: the name it is saved under, the organisational
@@ -24,7 +38,9 @@ import { captures, capturesEnabled, draft, eventTypes, selectCapture, type Captu
  * item value outright. */
 const NO_CAPTURE = "none";
 
-const captureValue = computed(() => (draft.value.captureId === null ? NO_CAPTURE : String(draft.value.captureId)));
+const captureValue = computed(() =>
+  draft.value.captureId === null ? NO_CAPTURE : String(draft.value.captureId),
+);
 
 function onCaptureChange(value: unknown): void {
   selectCapture(String(value));
@@ -58,7 +74,11 @@ const captureHint = computed(() => {
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            <SelectItem v-for="type in eventTypes" :key="type.id" :value="type.id">
+            <SelectItem
+              v-for="type in eventTypes"
+              :key="type.id"
+              :value="type.id"
+            >
               {{ eventTypeLabel(type.id, eventTypes) }}
             </SelectItem>
           </SelectGroup>
@@ -79,8 +99,14 @@ const captureHint = computed(() => {
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            <SelectItem :value="NO_CAPTURE">— pick a captured event —</SelectItem>
-            <SelectItem v-for="capture in captures" :key="capture.id" :value="String(capture.id)">
+            <SelectItem :value="NO_CAPTURE"
+              >— pick a captured event —</SelectItem
+            >
+            <SelectItem
+              v-for="capture in captures"
+              :key="capture.id"
+              :value="String(capture.id)"
+            >
               {{ captureLabel(capture) }}
             </SelectItem>
           </SelectGroup>

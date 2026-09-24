@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { setupPanelState } = await import("../src/dashboard/setup-preference.ts");
+const { setupPanelState } =
+  await import("../src/dashboard/setup-preference.ts");
 
 import type { Setup } from "../src/dashboard/setup-preference.ts";
 

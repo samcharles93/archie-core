@@ -49,7 +49,7 @@ edits to an old version.
 
 The API has four operations:
 
-1. **Catalog** tells clients what can be viewed or changed and how to edit it.
+1. **Catalogue** tells clients what can be viewed or changed and how to edit it.
 2. **Query** reads data and versions without exposing secrets.
 3. **Command** asks the owning feature to make a change.
 4. **Watch** streams changes and errors to clients.
@@ -95,7 +95,7 @@ A workflow is a list of steps. Each step has a known type and its own settings.
 Plugins can add step types. Each run keeps the workflow version it started with.
 
 Yaegi, `.archie/stages/*.go`, and `.archie/gate.go` will be removed. Their useful
-behavior must first be available as normal workflow steps.
+behaviour must first be available as normal workflow steps.
 
 ## First implementation
 

@@ -48,8 +48,15 @@ const pct = computed(() => {
             <Check v-if="step.done" class="size-3" />
           </span>
           <div>
-            <div class="text-sm" :class="step.done ? 'text-fg-muted line-through' : ''">{{ step.title }}</div>
-            <div v-if="step.detail" class="mt-0.5 text-xs text-fg-subtle">{{ step.detail }}</div>
+            <div
+              class="text-sm"
+              :class="step.done ? 'text-fg-muted line-through' : ''"
+            >
+              {{ step.title }}
+            </div>
+            <div v-if="step.detail" class="mt-0.5 text-xs text-fg-subtle">
+              {{ step.detail }}
+            </div>
           </div>
         </li>
       </ul>

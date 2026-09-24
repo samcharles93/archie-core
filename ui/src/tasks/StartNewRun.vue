@@ -38,19 +38,24 @@ const props = defineProps<{ id?: string; compact?: boolean; class?: string }>();
 const run = useTaskRun();
 
 const confirmText = computed(
-  () => `Start a new run for "${run.task?.title || `task ${props.id}`}"? The previous attempt's commits are discarded.`,
+  () =>
+    `Start a new run for "${run.task?.title || `task ${props.id}`}"? The previous attempt's commits are discarded.`,
 );
 
 const unavailable = computed(() => {
   if (run.canRetry || run.taskList === undefined) return "";
-  return run.task ? `New runs start from a parked task. This task is ${statusLabel(run.task.status ?? "")}.` : "";
+  return run.task
+    ? `New runs start from a parked task. This task is ${statusLabel(run.task.status ?? "")}.`
+    : "";
 });
 
 const errorText = computed(() => {
   const err = run.retryError;
   if (!err) return "";
-  if (err.kind === "session-expired") return "Dashboard authentication is required.";
-  if (err.kind === "refused") return `${err.message} — this run cannot be restarted from here.`;
+  if (err.kind === "session-expired")
+    return "Dashboard authentication is required.";
+  if (err.kind === "refused")
+    return `${err.message} — this run cannot be restarted from here.`;
   return `${err.message} — try again, or check the daemon.`;
 });
 </script>

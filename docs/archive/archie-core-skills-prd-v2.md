@@ -1,4 +1,4 @@
-# archie-core Skills System  --  PRD
+# archie-core Skills System -- PRD
 
 **Author:** Archie
 **Date:** 2026-07-18
@@ -41,15 +41,15 @@ project:
 # How archie-core connects to this project
 connection:
   interfaces:
-    - github            # respond to assigned issues
-    - linear            # respond to labelled tickets
-    - webhook           # respond to HTTP POSTs
+    - github # respond to assigned issues
+    - linear # respond to labelled tickets
+    - webhook # respond to HTTP POSTs
   github:
     repo: sam/my-go-service
     issue_labels:
-      ready: "archie:ready"      # issues with this label get claimed
-      claimed: "archie:claimed"  # archie sets this when working
-      done: "archie:done"        # archie sets this after PR
+      ready: "archie:ready" # issues with this label get claimed
+      claimed: "archie:claimed" # archie sets this when working
+      done: "archie:done" # archie sets this after PR
     pr:
       base: main
       draft: false
@@ -57,10 +57,10 @@ connection:
 # Skills  --  playbooks archie-core loads to know how to work
 skills:
   paths:
-    - .archie/skills/              # project-local skills
-    - ~/.archie/skills/            # per-user skills
+    - .archie/skills/ # project-local skills
+    - ~/.archie/skills/ # per-user skills
   remotes:
-    - github.com/sam/archie-skills@v1   # shared skill library
+    - github.com/sam/archie-skills@v1 # shared skill library
 
 # Sandbox  --  what's available in the container
 sandbox:
@@ -155,9 +155,11 @@ metadata:
 # Go Quality Gate
 
 ## When to use
+
 Before committing any Go change. After implementing a feature or fix.
 
 ## Procedure
+
 Run in this exact order. If any step fails, fix the issue before continuing.
 
 1. `gofumpt -w .`
@@ -167,28 +169,30 @@ Run in this exact order. If any step fails, fix the issue before continuing.
 5. `task deadcode`
 
 ## Verification
+
 All five steps must exit 0. If `task deadcode` fails on unrelated packages,
 scope it to only changed packages: `golangci-lint run --tests=false --enable-only=unused,staticcheck ./changed/pkg/...`
 
 ## Common failures
-- `golangci-lint`: unused function  --  remove it or add `//nolint:unused` comment
-- `go test -race`: data race  --  protect with mutex or channel
-- `task deadcode`: pre-existing dead code in unrelated package  --  scope to changed packages
+
+- `golangci-lint`: unused function -- remove it or add `//nolint:unused` comment
+- `go test -race`: data race -- protect with mutex or channel
+- `task deadcode`: pre-existing dead code in unrelated package -- scope to changed packages
 ```
 
 ### 2.3 Skill metadata (arcie-specific)
 
 Skills carry archie-specific metadata under `metadata.archie`:
 
-| Field | Purpose |
-|---|---|
-| `gates` | Which gates from `archie.yaml` this skill covers |
-| `tools` | Sandbox tools this skill needs |
-| `engine` | Preferred execution engine |
-| `model` | Preferred model for this skill |
-| `budget_usd` | Max spend ceiling |
-| `timeout` | Max seconds |
-| `worktree` | Whether to create isolated worktree |
+| Field        | Purpose                                          |
+| ------------ | ------------------------------------------------ |
+| `gates`      | Which gates from `archie.yaml` this skill covers |
+| `tools`      | Sandbox tools this skill needs                   |
+| `engine`     | Preferred execution engine                       |
+| `model`      | Preferred model for this skill                   |
+| `budget_usd` | Max spend ceiling                                |
+| `timeout`    | Max seconds                                      |
+| `worktree`   | Whether to create isolated worktree              |
 
 ### 2.4 Progressive disclosure
 
@@ -245,6 +249,7 @@ This is the core loop. When an issue lands with the configured label:
 ### 3.6 On failure
 
 If any gate fails irrecoverably:
+
 1. Leave issue as `archie:claimed`
 2. Comment with exact blocker, failed command, and worktree path
 3. Preserve worktree for inspection
@@ -258,12 +263,12 @@ arcie-core can delegate implementation to different LLM engines. The workflow fi
 
 ```yaml
 engines:
-  - type: claude            # Claude Code CLI  --  full agent loop
+  - type: claude # Claude Code CLI  --  full agent loop
     model: sonnet
     budget_usd: 5.00
-  - type: codex             # OpenAI Codex CLI
+  - type: codex # OpenAI Codex CLI
     model: gpt-5.1-codex-max
-  - type: raw               # Direct LLM  --  no agent loop, single prompt
+  - type: raw # Direct LLM  --  no agent loop, single prompt
     model: gpt-4o-mini
 ```
 
@@ -281,7 +286,7 @@ For skills that need a specific engine, the skill metadata overrides:
 ```yaml
 metadata:
   archie:
-    engine: claude           # this skill only works with Claude
+    engine: claude # this skill only works with Claude
 ```
 
 ---
@@ -312,7 +317,6 @@ metadata:
     tools: [docker, trivy]
     engine: any
 ---
-
 ## Procedure
 1. `trivy image --severity HIGH,CRITICAL <image>`
 2. If findings exist, report each CVE with package, version, and fixed version
@@ -323,34 +327,37 @@ metadata:
 
 ## 6. Comparison: archie-core vs existing systems
 
-| | archie-core | Claude Code | Codex CLI | GitHub Actions | External Agent |
-|---|---|---|---|---|---|
-| **How it receives work** | GitHub issue assignment, Linear label, webhook | Chat, slash commands | Chat, slash commands | YAML triggers (push, PR, schedule) | Chat, cron, webhooks |
-| **What it does** | Analyse → implement → gate → PR | Analyse → implement → gate → PR | Analyse → implement → gate → PR | Run arbitrary shell commands | Analyse → implement → gate → PR |
-| **Skills** | SKILL.md (agentskills.io) | SKILL.md (native) | SKILL.md (agentskills.io) | Composite actions | SKILL.md (native) |
-| **Gates** | Named checkpoints in archie.yaml | Ad-hoc (CLAUDE.md + lint) | Ad-hoc | Steps in jobs | Skills with gates |
-| **Engine pluggable** | Yes | No (fixed to Claude) | No (fixed to Codex) | No (fixed to GitHub) | Yes (provider config) |
-| **Worktree isolation** | Yes | Yes (`--worktree`) | No | No (ephemeral runner) | No |
-| **Blueprint/cron** | Export externally | No | No | Schedule trigger | Native |
-| **Where it runs** | Docker sandbox | Host | Host or sandbox | GitHub runner | Host, Docker, Modal, SSH |
+|                          | archie-core                                    | Claude Code                     | Codex CLI                       | GitHub Actions                     | External Agent                  |
+| ------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------- |
+| **How it receives work** | GitHub issue assignment, Linear label, webhook | Chat, slash commands            | Chat, slash commands            | YAML triggers (push, PR, schedule) | Chat, cron, webhooks            |
+| **What it does**         | Analyse → implement → gate → PR                | Analyse → implement → gate → PR | Analyse → implement → gate → PR | Run arbitrary shell commands       | Analyse → implement → gate → PR |
+| **Skills**               | SKILL.md (agentskills.io)                      | SKILL.md (native)               | SKILL.md (agentskills.io)       | Composite actions                  | SKILL.md (native)               |
+| **Gates**                | Named checkpoints in archie.yaml               | Ad-hoc (CLAUDE.md + lint)       | Ad-hoc                          | Steps in jobs                      | Skills with gates               |
+| **Engine pluggable**     | Yes                                            | No (fixed to Claude)            | No (fixed to Codex)             | No (fixed to GitHub)               | Yes (provider config)           |
+| **Worktree isolation**   | Yes                                            | Yes (`--worktree`)              | No                              | No (ephemeral runner)              | No                              |
+| **Blueprint/cron**       | Export externally                              | No                              | No                              | Schedule trigger                   | Native                          |
+| **Where it runs**        | Docker sandbox                                 | Host                            | Host or sandbox                 | GitHub runner                      | Host, Docker, Modal, SSH        |
 
 ---
 
 ## 7. Implementation phases
 
 ### Phase 1: Workflow file and gates (current MVP)
+
 - `archie.yaml` parser
 - Gate runner executing shell commands and checking exit codes
 - Skill discovery from project and user paths
 - GitHub interface: claim issues, create worktrees, open PRs
 
 ### Phase 2: Skills
+
 - SKILL.md progressive disclosure (advertise → activate → resources)
 - archie-specific metadata parsing
 - Skill chaining: skills that depend on other skills
 - `archie skills list/install` CLI
 
 ### Phase 3: Engine abstraction
+
 - Engine interface definition
 - Claude Code adapter
 - Raw LLM adapter
@@ -358,12 +365,14 @@ metadata:
 - Per-skill engine preferences
 
 ### Phase 4: Advanced features
+
 - Gate overrides per skill
 - Skill templates for project scaffolding (`archie init --skill go-service`)
 - Remote skill libraries (git repos as skill sources)
 - Blueprint export to an external scheduler
 
 ### Phase 5: Additional interfaces
+
 - Linear webhook integration
 - Generic webhook interface for arbitrary sources
 - CLI command interface (`archie run <command>`)

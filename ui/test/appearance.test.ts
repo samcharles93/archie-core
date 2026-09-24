@@ -18,7 +18,10 @@ class MemoryStorage {
 
 function browser(matchesDark = false): MemoryStorage {
   const storage = new MemoryStorage();
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: storage });
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: storage,
+  });
   Object.defineProperty(globalThis, "document", {
     configurable: true,
     value: { documentElement: { dataset: {} as Record<string, string> } },
@@ -30,18 +33,30 @@ function browser(matchesDark = false): MemoryStorage {
   return storage;
 }
 
-Object.defineProperty(globalThis, "localStorage", { configurable: true, value: new MemoryStorage() });
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: new MemoryStorage(),
+});
 const appearance = await import("../src/stores/appearance.ts");
 
-function freshStore(matchesDark = false): { storage: MemoryStorage; store: ReturnType<typeof appearance.useAppearanceStore> } {
+function freshStore(matchesDark = false): {
+  storage: MemoryStorage;
+  store: ReturnType<typeof appearance.useAppearanceStore>;
+} {
   const storage = browser(matchesDark);
   setActivePinia(createPinia());
   return { storage, store: appearance.useAppearanceStore() };
 }
 
 test("appearance preferences are owned by Pinia and stay close to their labels", async () => {
-  const page = await readFile(new URL("../src/settings/SystemAppearancePage.vue", import.meta.url), "utf8");
-  const tooltip = await readFile(new URL("../src/components/ui/tooltip/Tooltip.vue", import.meta.url), "utf8");
+  const page = await readFile(
+    new URL("../src/settings/SystemAppearancePage.vue", import.meta.url),
+    "utf8",
+  );
+  const tooltip = await readFile(
+    new URL("../src/components/ui/tooltip/Tooltip.vue", import.meta.url),
+    "utf8",
+  );
 
   assert.match(page, /useAppearanceStore/);
   assert.match(tooltip, /useAppearanceStore/);

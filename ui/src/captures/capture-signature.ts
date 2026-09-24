@@ -8,7 +8,10 @@ export interface CaptureSignature {
   kind: "ok" | "warn" | "idle";
 }
 
-export function captureSignature(capture: { authenticated?: boolean; unsigned?: boolean }): CaptureSignature {
+export function captureSignature(capture: {
+  authenticated?: boolean;
+  unsigned?: boolean;
+}): CaptureSignature {
   if (capture.unsigned) return { label: "Unsigned", kind: "warn" };
   if (capture.authenticated) return { label: "Signed", kind: "ok" };
   return { label: "Unverified", kind: "idle" };

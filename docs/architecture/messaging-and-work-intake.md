@@ -51,7 +51,7 @@ conversation or memory context is loaded. Sharing an Agent MUST NOT implicitly
 share one user's private memory with another user.
 
 An interaction may assemble memory from four scopes: global shared, the selected
-Agent's agent-wide memory, the initiating user's authorized user-wide memory,
+Agent's agent-wide memory, the initiating user's authorised user-wide memory,
 and the private Agent-user relationship memory addressed by both IDs.
 
 ## Conversation identity

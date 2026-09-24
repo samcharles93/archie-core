@@ -110,6 +110,10 @@ async function handleDelete(binding: Binding): Promise<void> {
       @save="handleSave"
     />
 
-    <DeleteBindingDialog :binding="deleting" @confirm="handleDelete" @cancel="deleting = null" />
+    <DeleteBindingDialog
+      :binding="deleting"
+      @confirm="handleDelete"
+      @cancel="deleting = null"
+    />
   </div>
 </template>

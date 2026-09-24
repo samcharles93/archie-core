@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +21,16 @@ import MappingActionError from "./MappingActionError.vue";
 import MappingFieldsTable from "./MappingFieldsTable.vue";
 import MappingForm from "./MappingForm.vue";
 import PayloadTree from "./PayloadTree.vue";
-import { actionError, addField, closeEditor, draft, editorOpen, runPreview, saveMapping, saving } from "./state";
+import {
+  actionError,
+  addField,
+  closeEditor,
+  draft,
+  editorOpen,
+  runPreview,
+  saveMapping,
+  saving,
+} from "./state";
 
 /**
  * One editing session, in an overlay: the mapping's own fields, the fields
@@ -34,9 +49,12 @@ function onOpenChange(open: boolean) {
   <Dialog :open="editorOpen" @update:open="onOpenChange">
     <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
       <DialogHeader>
-        <DialogTitle>{{ draft.id === null ? "New mapping" : "Edit mapping" }}</DialogTitle>
+        <DialogTitle>{{
+          draft.id === null ? "New mapping" : "Edit mapping"
+        }}</DialogTitle>
         <DialogDescription>
-          Bind named fields to JSON paths from a real captured event, ready for a playbook binding.
+          Bind named fields to JSON paths from a real captured event, ready for
+          a playbook binding.
         </DialogDescription>
       </DialogHeader>
 
@@ -66,8 +84,14 @@ function onOpenChange(open: boolean) {
           <Alert v-if="draft.payloadError" variant="destructive">
             <AlertDescription>{{ draft.payloadError }}</AlertDescription>
           </Alert>
-          <PayloadTree v-else-if="draft.payload !== null" :value="draft.payload" @pick="addField" />
-          <p v-else class="text-sm text-fg-muted">Pick a captured event above to see its payload.</p>
+          <PayloadTree
+            v-else-if="draft.payload !== null"
+            :value="draft.payload"
+            @pick="addField"
+          />
+          <p v-else class="text-sm text-fg-muted">
+            Pick a captured event above to see its payload.
+          </p>
         </CardContent>
       </Card>
 

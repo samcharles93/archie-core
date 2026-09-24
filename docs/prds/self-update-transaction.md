@@ -5,7 +5,7 @@
 Epic: `archie-core-hj1t` / GitHub `#804` ("[EPIC] Self-update: artifact
 install, topology migration, journaled transaction").
 
-The update *contract* (`internal/releaseupdate`: `Catalog.Check`,
+The update _contract_ (`internal/releaseupdate`: `Catalog.Check`,
 `Installer.Install`, plus defer/watchdog/verify) is settled and unchanged by
 this document — it stays a thin Go interface shelling out to
 `CommandCatalog`/`CommandInstaller`. This document decides what the reference
@@ -41,7 +41,7 @@ daemon fails at `bootstrap.go`'s `[services.state].target` check with no
 prior diagnosis. The self-refresh trap is confirmed at
 `scripts/archie-update-install:195-199`: new adapter copies land on disk but
 bash keeps executing the in-memory copy, so a pre-flight check added to the
-script only protects the *next* update.
+script only protects the _next_ update.
 
 ## Design
 
@@ -75,7 +75,7 @@ not `task check`.
 
 ### Topology migration (`#804` item 2)
 
-**Decision.** Add a topology *observer* to the daemon, not the shell
+**Decision.** Add a topology _observer_ to the daemon, not the shell
 adapter — CLAUDE.md's own "known trap" note says the shell copy is defence
 in depth only, and the daemon is what "knows the deployment and holds the
 approved snapshot." The observer inspects which systemd user units exist
@@ -107,11 +107,11 @@ declared topology matches the units `install.sh` would create for it.
 
 **Failure mapping.**
 
-| condition | contract error |
-|---|---|
+| condition                                                                        | contract error                                                           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | observed topology cannot be determined (systemctl unavailable, non-systemd host) | refuse with "topology unknown" plan naming the manual steps, never guess |
-| required units missing, migration plan derivable | apply plan before binary install, in dependency order |
-| required units missing, no derivable plan (e.g. conflicting existing unit) | refuse, print the plan, do not proceed |
+| required units missing, migration plan derivable                                 | apply plan before binary install, in dependency order                    |
+| required units missing, no derivable plan (e.g. conflicting existing unit)       | refuse, print the plan, do not proceed                                   |
 
 **Testing.** `ObservedTopology`/`MigrationPlan` comparison logic is pure —
 table-driven unit tests belong in `task check`. Actual `systemctl` inspection
@@ -130,7 +130,7 @@ atomically rename over the live path (`rename(2)` is atomic on the same
 filesystem — this replaces whatever non-atomic copy the current script uses)
 rather than overwriting in place; (4) run each replaced binary's existing
 health/ready check (the same checks `internal/domain/health` already exposes
-per the health registry pattern, not a new one) against the *candidate*, not
+per the health registry pattern, not a new one) against the _candidate_, not
 a hardcoded default port/binary; (5) hold the process open for a bounded
 observation window (e.g. 120s) watching for crash-loop before declaring
 success; (6) on any failure at any stage, roll back using the journal:
@@ -150,11 +150,11 @@ existing bootstrap sequencing).
 
 **Failure mapping.**
 
-| condition | contract error |
-|---|---|
-| lock held by another update | refuse immediately, name the holder's PID/journal |
-| health check fails post-switch | automatic rollback within the observation window, journal records the failure reason |
-| crash mid-transaction, journal present at boot | daemon completes rollback before normal startup, logs it |
+| condition                                      | contract error                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------ |
+| lock held by another update                    | refuse immediately, name the holder's PID/journal                                    |
+| health check fails post-switch                 | automatic rollback within the observation window, journal records the failure reason |
+| crash mid-transaction, journal present at boot | daemon completes rollback before normal startup, logs it                             |
 
 **Testing.** Stage-then-rename and rollback logic against a fixture
 directory tree is fully fakeable — `task check`. Real systemd unit
@@ -163,7 +163,7 @@ start/stop as part of rollback needs a real host; manual smoke command.
 ### Channel, pinning, automation (`#804` item 4)
 
 **Decision.** Add `channel = "stable" | "next" | "<exact-version-pin>"`
-to whatever config section already governs update behavior (next to
+to whatever config section already governs update behaviour (next to
 `ARCHIE_UPDATE_CHANNEL`'s existing chat-channel field in
 `internal/releaseupdate/command.go` — name this new field distinctly,
 e.g. `ReleaseChannel`, to avoid colliding with the existing chat-notification
@@ -190,27 +190,27 @@ is a shell-script unit test against a fixture profile.
 
 ## Call site inventory
 
-| concern | file | change |
-|---|---|---|
-| Update contract (Catalog/Installer interfaces) | `internal/releaseupdate/service.go` | none — already handles this |
-| Command adapters | `internal/releaseupdate/command.go` | new `ReleaseChannel` field distinct from existing chat-channel field |
-| Install script body | `scripts/archie-update-install:139-160,170,195-199` | replace clone+compile default with download+verify; add journal, lock, stage-then-rename, digest check |
-| CI release publishing | `.github/workflows/deploy.yml` | none — already handles this |
-| Deployment profiles | `deployments/*.toml` | none — already digest-pinned |
-| First-install unit creation | `install.sh:414-445` | change — consume shared topology declaration |
-| Topology assertions | `deployment_contract_test.go` | new assertion: profile topology matches install.sh output |
-| Topology observation | `internal/app/archied/bootstrap.go` (new sibling code) | new |
-| Resume-on-boot rollback | `internal/app/archied` startup | new |
-| Health check reuse for candidate verification | `internal/domain/health` | reuse — confirm exact symbol before implementing |
+| concern                                          | file                                                   | change                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Update contract (Catalogue/Installer interfaces) | `internal/releaseupdate/service.go`                    | none — already handles this                                                                            |
+| Command adapters                                 | `internal/releaseupdate/command.go`                    | new `ReleaseChannel` field distinct from existing chat-channel field                                   |
+| Install script body                              | `scripts/archie-update-install:139-160,170,195-199`    | replace clone+compile default with download+verify; add journal, lock, stage-then-rename, digest check |
+| CI release publishing                            | `.github/workflows/deploy.yml`                         | none — already handles this                                                                            |
+| Deployment profiles                              | `deployments/*.toml`                                   | none — already digest-pinned                                                                           |
+| First-install unit creation                      | `install.sh:414-445`                                   | change — consume shared topology declaration                                                           |
+| Topology assertions                              | `deployment_contract_test.go`                          | new assertion: profile topology matches install.sh output                                              |
+| Topology observation                             | `internal/app/archied/bootstrap.go` (new sibling code) | new                                                                                                    |
+| Resume-on-boot rollback                          | `internal/app/archied` startup                         | new                                                                                                    |
+| Health check reuse for candidate verification    | `internal/domain/health`                               | reuse — confirm exact symbol before implementing                                                       |
 
 ## Execution: multi-agent team breakdown
 
-| sub-feature | issue | implementer scope | suggested council lenses | why |
-|---|---|---|---|---|
-| Artifact install | item 1 (file if unfiled) | `archie-update-install` download+verify, opt-in source-build flag | `lens-deletionist` | must not leave the clone+compile path as silent default cruft |
-| Topology migration | item 2 (file if unfiled) | daemon-side observer, `release.json` schema, `install.sh` consumption, contract test | `lens-boundary`, `lens-operator` | boundary: observation belongs in daemon not shell; operator: refusal-with-plan is the whole safety property |
-| Journaled transaction | item 3 (file if unfiled) | journal format, stage-then-rename, lock, resume-on-boot | `lens-operator`, `lens-maintainer` | operator: crash-mid-update is the core failure mode; maintainer: someone must be able to read a journal file during an incident |
-| Channel/pinning/automation | item 4 (file if unfiled) | config field, catalog filtering, digest refusal, in-flight guard | `lens-contract` | digest-refusal changes what a config value is allowed to resolve to |
+| sub-feature                | issue                    | implementer scope                                                                    | suggested council lenses           | why                                                                                                                             |
+| -------------------------- | ------------------------ | ------------------------------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Artifact install           | item 1 (file if unfiled) | `archie-update-install` download+verify, opt-in source-build flag                    | `lens-deletionist`                 | must not leave the clone+compile path as silent default cruft                                                                   |
+| Topology migration         | item 2 (file if unfiled) | daemon-side observer, `release.json` schema, `install.sh` consumption, contract test | `lens-boundary`, `lens-operator`   | boundary: observation belongs in daemon not shell; operator: refusal-with-plan is the whole safety property                     |
+| Journaled transaction      | item 3 (file if unfiled) | journal format, stage-then-rename, lock, resume-on-boot                              | `lens-operator`, `lens-maintainer` | operator: crash-mid-update is the core failure mode; maintainer: someone must be able to read a journal file during an incident |
+| Channel/pinning/automation | item 4 (file if unfiled) | config field, catalogue filtering, digest refusal, in-flight guard                   | `lens-contract`                    | digest-refusal changes what a config value is allowed to resolve to                                                             |
 
 ## File and link the beads
 

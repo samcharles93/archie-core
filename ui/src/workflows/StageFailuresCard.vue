@@ -1,9 +1,27 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { pct, workflowLabel } from "./labels";
 import { failingStages, type StageStats } from "./stages";
 import WorkflowBar from "./WorkflowBar.vue";
@@ -24,7 +42,9 @@ const rows = computed(() => failingStages(props.stages));
       <Empty v-if="!rows.length">
         <EmptyHeader>
           <EmptyTitle>No failures recorded</EmptyTitle>
-          <EmptyDescription>Every stage has completed cleanly so far.</EmptyDescription>
+          <EmptyDescription
+            >Every stage has completed cleanly so far.</EmptyDescription
+          >
         </EmptyHeader>
       </Empty>
       <Table v-else>

@@ -74,7 +74,7 @@ A binding is created `pending_approval`, so the operator who creates one can
 approve it immediately. Bindings stored as `draft` by an earlier version are
 moved to `pending_approval` when the EDA store opens.
 
-Modeled directly on Telegram's existing `dangerousAction`/`pendingApproval`
+Modelled directly on Telegram's existing `dangerousAction`/`pendingApproval`
 flow (`internal/channels/telegram/dangerous.go`, `approval.go`) -- not a new
 approval mechanism invented for this feature. **Only `armed` evaluates
 against incoming events** (`binding.Matches`, `internal/domain/binding/

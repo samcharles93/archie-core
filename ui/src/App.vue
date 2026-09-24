@@ -5,7 +5,12 @@ import { onMounted, ref } from "vue";
 import ChatLauncher from "@/chat/ChatLauncher.vue";
 import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
@@ -66,10 +71,16 @@ onMounted(() => {
         <Alert v-if="authenticationRequired" variant="destructive" class="mb-4">
           <AlertTitle>Dashboard authentication required</AlertTitle>
           <AlertDescription>
-            Open the dashboard URL Archie logged at startup to establish a new authenticated session.
+            Open the dashboard URL Archie logged at startup to establish a new
+            authenticated session.
           </AlertDescription>
           <AlertAction>
-            <Button variant="outline" size="sm" :disabled="retrying" @click="retryAuthentication">
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="retrying"
+              @click="retryAuthentication"
+            >
               {{ retrying ? "Retrying…" : "Retry" }}
             </Button>
           </AlertAction>

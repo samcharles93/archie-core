@@ -13,8 +13,8 @@ be resolved by hardening the regexes.
 Does every declared contract surface have a consumer, or an explicit declaration
 that it has none?
 
-Reachability (`tools/reachaudit`) asks the complementary question — *is this code
-in a shipped binary?* — and cannot see a capability that is **reachable and
+Reachability (`tools/reachaudit`) asks the complementary question — _is this code
+in a shipped binary?_ — and cannot see a capability that is **reachable and
 unconsumed**. `ratelimit` was in the binary closure and called by nothing
 (`archie-core-6wxb`); reachability would not have found that.
 
@@ -23,12 +23,12 @@ unconsumed**. `ratelimit` was in the binary closure and called by nothing
 Yes, as an advisory survey. `tools/contractaudit` classifies each subject of each
 surface:
 
-| Classification | Meaning | Fails `--strict`? |
-| --- | --- | --- |
-| `CONSUMED` | a call site exercises it | no |
-| `DECLARED-UNCONSUMED` | allowlisted in `docs/contract-declarations.json`, with a reason and a tracker | no |
-| `UNDECLARED-UNCONSUMED` | nobody reaches it, nobody declared it | **yes** |
-| `STALE-DECLARATION` | an allowlist entry that is no longer true | **yes** |
+| Classification          | Meaning                                                                       | Fails `--strict`? |
+| ----------------------- | ----------------------------------------------------------------------------- | ----------------- |
+| `CONSUMED`              | a call site exercises it                                                      | no                |
+| `DECLARED-UNCONSUMED`   | allowlisted in `docs/contract-declarations.json`, with a reason and a tracker | no                |
+| `UNDECLARED-UNCONSUMED` | nobody reaches it, nobody declared it                                         | **yes**           |
+| `STALE-DECLARATION`     | an allowlist entry that is no longer true                                     | **yes**           |
 
 There are **four** classes and **two** of them fail. The allowlist must match
 reality exactly, and it fails in both directions: a missing entry is a finding,
@@ -44,11 +44,11 @@ unrelated to what it measures must not be able to break a build.
 
 ## Surfaces actually built — three, not five
 
-| Surface | Subjects | "Consumed" means |
-| --- | --- | --- |
-| `proto/state/v1` `StateStoreService` | **45 RPCs** | an adapter body calls `client.<Rpc>(...)` |
-| `proto/gateway/v1` `ChatService` | **21 RPCs** | same |
-| `internal/webui` dashboard routes | **49 routes** | a path literal appears as a call argument under `ui/src` |
+| Surface                              | Subjects      | "Consumed" means                                         |
+| ------------------------------------ | ------------- | -------------------------------------------------------- |
+| `proto/state/v1` `StateStoreService` | **45 RPCs**   | an adapter body calls `client.<Rpc>(...)`                |
+| `proto/gateway/v1` `ChatService`     | **21 RPCs**   | same                                                     |
+| `internal/webui` dashboard routes    | **49 routes** | a path literal appears as a call argument under `ui/src` |
 
 Consumption for the gRPC surfaces is established by **scanning adapter source
 text** for calls through the generated client, not by reflection. See the errata
