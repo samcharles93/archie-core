@@ -46,23 +46,18 @@ const stages = computed(() => attempt.value?.stages || []);
 /**
  * Master-detail selection (docs/prds/task-run-master-detail.md): clicking a
  * stage commands the inspector to the log tab with this stage's filter set.
- * Clicking the selected stage clears the filter back to all stages. The
- * selection is a command, not a binding: the operator can change the filter
- * afterwards and the rail does not fight them. A stage with no name has
- * nothing to filter on and is not selectable.
+ * The selection is the log's stage filter, so it survives a tab switch.
+ * Clicking the selected stage on the log tab clears it; from another tab it
+ * returns to that stage's log. A stage with no name is not selectable.
  */
 function selectedStage(stage: Stage): boolean {
-  return (
-    run.tab === "log" && Boolean(stage.name) && run.filters.stage === stage.name
-  );
+  return Boolean(stage.name) && run.filters.stage === stage.name;
 }
 
 function selectStage(stage: Stage): void {
   if (!stage.name) return;
-  run.setFilters({
-    stage: selectedStage(stage) ? "" : stage.name,
-    level: run.filters.level,
-  });
+  const clear = selectedStage(stage) && run.tab === "log";
+  run.setFilters({ stage: clear ? "" : stage.name, level: run.filters.level });
   run.setTab("log");
 }
 
