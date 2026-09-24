@@ -12,11 +12,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func TestStateStoreServerOptsLoopbackIsInsecure(t *testing.T) {
@@ -60,11 +59,7 @@ func TestStateStoreServerOptsMalformedListen(t *testing.T) {
 // in-process, now extracted into its own process. A read-only StatusCounts
 // call proves the service is registered and wired to the opened store.
 func TestServeStateStoreServesContract(t *testing.T) {
-	dir := t.TempDir()
-	st, err := store.Open(t.Context(), filepath.Join(dir, "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open temp store: %v", err)
-	}
+	st := pgstore.Open(t)
 	defer st.Close()
 
 	b := newBootstrap()
@@ -132,32 +127,21 @@ func TestStateStoreDepsServeTaskLogs(t *testing.T) {
 }
 
 // TestStateStoreDepsServePlaybookDispatcher verifies stateStoreDeps lifts the
-// opened *store.Store's PlaybookDispatcher surface onto Deps, so the
+// opened *pgstore.TaskDB's PlaybookDispatcher surface onto Deps, so the
 // standalone State Store has a server for the two playbook RPCs. It does not
 // dial those RPCs here -- it inspects the assembled Deps only. The nil check
 // is the load-bearing part: a boot without a store must leave
 // PlaybookDispatcher nil (the server then answers codes.Unavailable) rather
 // than fabricating a dispatcher.
 func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open temp store: %v", err)
-	}
+	st := pgstore.Open(t)
 	defer st.Close()
 
 	b := newBootstrap()
 	b.st = st
 	// The playbook ledger, sources and event types are served by the
 	// event-capture store; the task store no longer serves them.
-	pool, err := postgres.Open(t.Context(), pgtest.URL(t))
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	defer pool.Close()
-	if err := postgres.Migrate(t.Context(), pool, postgres.Migrations()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	eda := postgres.NewEDA(pool, nil)
+	eda := pgstore.EDA(t, nil)
 	b.eda = eda
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
 	if deps.PlaybookDispatcher == nil {

@@ -213,7 +213,7 @@ func (b *boot) openStateStore(ctx context.Context) error {
 }
 
 // stateStoreDeps assembles the store surfaces the StateStore service fronts.
-// b.st is the narrow storecontract.TaskStore; the wide *store.Store also implements
+// b.st is the narrow storecontract.TaskStore; the concrete store also implements
 // the capture/mapping/binding surfaces, so each is asserted here (the same
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.
@@ -232,9 +232,7 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	// Task logs live in the state directory, which this process owns, and the
 	// dashboard process owns no such directory -- so this is where a task-log
 	// read is served from (docs/prds/ui-service-boundary.md). The reader is
-	// the daemon's own registry, built over the same state-directory
-	// derivation this process uses for its SQLite file; both resolve from the
-	// same configured DBPath, so they agree on where archie keeps its state.
+	// the daemon's own registry over the configured state_dir.
 	//
 	// The nil check is on the registry, not on the interface it is assigned
 	// to: a nil *logging.TaskRegistry stored in this field produces a non-nil

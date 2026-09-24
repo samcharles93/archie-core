@@ -8,7 +8,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // runRecorder is a playbook set that matches no workflow playbook and records
@@ -50,7 +50,7 @@ func TestPinWorkflowDefinitionRunsActionPlaybooks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resources := store.OpenTest(t)
+			resources := pgstore.Open(t)
 			defer resources.Close()
 			task := forgeTask(t, resources, "bug")
 			task.Workflow = tt.workflow

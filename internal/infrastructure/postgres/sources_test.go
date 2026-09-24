@@ -10,7 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 )
 
 func readRawSourceSecret(t *testing.T, pool *pgxpool.Pool, path string) string {
@@ -25,7 +25,7 @@ func readRawSourceSecret(t *testing.T, pool *pgxpool.Pool, path string) string {
 // A new source keeps its generated path, is signed, stores its secret as a
 // cipher envelope and reads it back as plaintext.
 func TestSourceRoundTripEncryptsSecret(t *testing.T) {
-	cipher, err := edastore.NewBindingCipher(edaTestKey, nil)
+	cipher, err := bindingcipher.NewBindingCipher(edaTestKey, nil)
 	if err != nil {
 		t.Fatalf("NewBindingCipher() error = %v", err)
 	}
@@ -50,6 +50,50 @@ func TestSourceRoundTripEncryptsSecret(t *testing.T) {
 	list, err := s.ListSources(t.Context())
 	if err != nil || len(list) != 1 || list[0].Secret != in.Secret {
 		t.Fatalf("ListSources() = %+v, %v", list, err)
+	}
+}
+
+// sourceUnder inserts a new source through a store sealing with cipher.
+func sourceUnder(t *testing.T, cipher bindingcipher.BindingCipher) (*pgxpool.Pool, source.Source) {
+	t.Helper()
+	pool, s := edaWithCipher(t, cipher)
+	in, err := source.New("")
+	if err != nil {
+		t.Fatalf("source.New() error = %v", err)
+	}
+	if err := s.InsertSource(t.Context(), in); err != nil {
+		t.Fatalf("InsertSource() error = %v", err)
+	}
+	return pool, in
+}
+
+// A deployment with no configured key stores plaintext.
+func TestSourceNoCipherKeepsPlaintext(t *testing.T) {
+	pool, in := sourceUnder(t, nil)
+	if raw := readRawSourceSecret(t, pool, in.Path); raw != in.Secret {
+		t.Errorf("stored secret = %q, want the plaintext with no cipher configured", raw)
+	}
+}
+
+// A secret written under the previous key stays readable once a new active
+// key is installed; otherwise rotation bricks every signed source.
+func TestSourceRotatedKeyStillReadsOldRows(t *testing.T) {
+	const oldKey = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	oldCipher, err := bindingcipher.NewBindingCipher(oldKey, nil)
+	if err != nil {
+		t.Fatalf("NewBindingCipher(old) error = %v", err)
+	}
+	pool, in := sourceUnder(t, oldCipher)
+	rotated, err := bindingcipher.NewBindingCipher(edaTestKey, []string{oldKey})
+	if err != nil {
+		t.Fatalf("NewBindingCipher(rotated) error = %v", err)
+	}
+	got, err := NewEDA(pool, rotated).GetSource(t.Context(), in.Path)
+	if err != nil || got == nil {
+		t.Fatalf("GetSource() after rotation = %v, %v", got, err)
+	}
+	if got.Secret != in.Secret {
+		t.Errorf("Secret after rotation = %q: the previous key must still decrypt", got.Secret)
 	}
 }
 

@@ -15,8 +15,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // scriptedWatchClient is the rpc end of a Watch call whose stream is scripted
@@ -222,7 +223,7 @@ func TestWatchClientsDeliverNothingForAStreamThatDidNotFail(t *testing.T) {
 func TestWatchServesOnlyVersionsAfterTheRequestedOne(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	version, err := server.ImportWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{MaxModelToolSteps: 10, MaxRuntime: time.Minute, MaxConsecutiveGateFailures: 2})
@@ -280,7 +281,7 @@ func TestWatchServesOnlyVersionsAfterTheRequestedOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.PutResource(ctx, store.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, ExpectedVersion: version, Actor: "test", Source: "test", RequestID: "watch-next"}); err != nil {
+	if _, err := resources.PutResource(ctx, storecontract.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, ExpectedVersion: version, Actor: "test", Source: "test", RequestID: "watch-next"}); err != nil {
 		t.Fatal(err)
 	}
 	select {

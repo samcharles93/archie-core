@@ -21,7 +21,7 @@ func runPostgresRecovery(ctx context.Context, options StateStoreRecoveryOptions)
 	}
 	url := cfg.DatabaseURL
 	if url == "" {
-		return "", errors.New("database_url is required: the configuration names no PostgreSQL database (pass -db for a legacy SQLite task file)")
+		return "", errors.New("database_url is required: the configuration names no PostgreSQL database")
 	}
 	switch options.Operation {
 	case RecoveryBackup:
@@ -70,7 +70,8 @@ func openRecoveryPool(ctx context.Context, url string) (*pgxpool.Pool, int64, er
 	return pool, version, nil
 }
 
-// validatePostgres is validateStore for the PostgreSQL database. An
+// validatePostgres answers whether archied would start against the database:
+// the stored resources pass the writer's validation and boot's gate. An
 // unmigrated database holds nothing to check; the State Store migrates and
 // seeds it on its next start, so only boot's config gate applies.
 func validatePostgres(ctx context.Context, url string, options StateStoreRecoveryOptions) (string, error) {

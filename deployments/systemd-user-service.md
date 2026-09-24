@@ -16,11 +16,10 @@ here, where it would drift from what is written.
 The Gateway unit is `archie-gateway.service`, written by `install.sh` beside
 `archied.service`.
 
-The State Store unit is `archie-state-store.service`. It owns the single `archie.db` SQLite
-file and serves the `StateStore` gRPC contract. After the in-process store path
-was deleted, BOTH `archied` and `archie-gateway` dial it via
-`[services.state].target` (see the `archied` config below) and never open
-`archie.db` themselves (`docs/prds/state-store-contract.md` §12 step 7). A
+The State Store unit is `archie-state-store.service`. It owns the task data in
+PostgreSQL and serves the `StateStore` gRPC contract. BOTH `archied` and
+`archie-gateway` dial it via `[services.state].target` (see the `archied`
+config below) and never open the task tables themselves (`docs/prds/state-store-contract.md` §12 step 7). A
 host-only agent uses the loopback bind with no token below; a container-mode
 agent needs the Docker bridge gateway address plus a bearer token via
 `--token`/`STATE_STORE_TOKEN` or `[services.state].target_token`, and a
@@ -254,6 +253,6 @@ with the operator's Docker credentials and retain `pull_policy = "missing"`:
 docker compose pull agent
 ```
 
-`db_path` and other paths are native host paths. Point them at the intended
-state directory; changing from an old containerized daemon path can otherwise
-start Archie against empty state files.
+`state_dir` and other paths are native host paths. Point `state_dir` at the
+intended state directory (embedded NATS store, task logs); `db_path` only
+locates pre-PostgreSQL files for `archie-state-store import`.

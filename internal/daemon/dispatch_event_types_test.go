@@ -3,14 +3,13 @@ package daemon
 import (
 	"context"
 	"log/slog"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // fakeEDA serves bindings, mappings and one capture from memory, and records
@@ -125,11 +124,7 @@ func TestDispatchPerBindingByEventTypeAndFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "dispatch.db"))
-			if err != nil {
-				t.Fatalf("store.Open: %v", err)
-			}
-			t.Cleanup(func() { _ = st.Close() })
+			st := pgstore.Open(t)
 			eda := &fakeEDA{
 				bindings: tt.bindings, mappings: map[string]mapping.Mapping{},
 				captures:   []storecontract.CapturedEvent{capture},

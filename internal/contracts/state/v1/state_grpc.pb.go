@@ -102,12 +102,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// StateStore is the single gRPC service fronting archie.db (one store, one
-// file). See docs/prds/state-store-contract.md for the ownership split: the
+// StateStore is the single gRPC service fronting archie's PostgreSQL database.
+// See docs/prds/state-store-contract.md for the ownership split: the
 // workflow-domain Store view (Update/Transition/InsertEvent) is consumer-owned
-// in internal/domain/workflow, while the rest of this surface stays
-// producer-owned in internal/store. Both are served by the same service and
-// the same *store.Store implementation; the proto bypasses the Go
+// in internal/domain/workflow, while the rest of this surface is
+// producer-owned in internal/domain/storecontract. Both are served by the same
+// service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceClient interface {
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
@@ -1059,12 +1059,12 @@ func (c *stateStoreServiceClient) EnqueueBindingTask(ctx context.Context, in *En
 // All implementations must embed UnimplementedStateStoreServiceServer
 // for forward compatibility.
 //
-// StateStore is the single gRPC service fronting archie.db (one store, one
-// file). See docs/prds/state-store-contract.md for the ownership split: the
+// StateStore is the single gRPC service fronting archie's PostgreSQL database.
+// See docs/prds/state-store-contract.md for the ownership split: the
 // workflow-domain Store view (Update/Transition/InsertEvent) is consumer-owned
-// in internal/domain/workflow, while the rest of this surface stays
-// producer-owned in internal/store. Both are served by the same service and
-// the same *store.Store implementation; the proto bypasses the Go
+// in internal/domain/workflow, while the rest of this surface is
+// producer-owned in internal/domain/storecontract. Both are served by the same
+// service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceServer interface {
 	// Administrative task credential lifecycle. Worker credentials cannot call these.

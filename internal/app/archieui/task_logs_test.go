@@ -13,10 +13,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -154,10 +153,7 @@ func TestUIProcessReportsMissingTaskLogsHonestly(t *testing.T) {
 // file, so the dashboard's read has to cross the wire to see anything.
 func composeUIProcessWithLog(t *testing.T) (*webui.Server, int64, int) {
 	t.Helper()
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	task, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "a task", "body", "implement", "")
@@ -179,7 +175,7 @@ func composeUIProcessWithLog(t *testing.T) (*webui.Server, int64, int) {
 	}
 
 	target, stop := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		eda := edastore.OpenTest(t)
+		eda := pgstore.EDA(t, nil)
 		staterpc.RegisterServer(r, staterpc.Deps{
 			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			TaskLogs: logs, Log: slog.New(slog.DiscardHandler),

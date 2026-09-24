@@ -53,7 +53,7 @@ type ChatTaskSummary struct {
 // ChatTaskLister is the read surface the task tools need. It mirrors the
 // existing chatTaskWriter/chatTaskController pattern: gateway states what it
 // needs and the daemon supplies an adapter over the store, so this package
-// keeps its independence from internal/store.
+// keeps its independence from the task store.
 type ChatTaskLister interface {
 	ListChatTasks(ctx context.Context, identity string, limit int) ([]ChatTaskSummary, error)
 }
@@ -72,7 +72,7 @@ type TaskSpawnResult struct {
 // ChatTaskActor is the mutation surface task_action needs. It mirrors the
 // ChatTaskLister pattern: gateway states what it needs and the daemon
 // supplies an adapter over the store and runtime, so this package keeps its
-// independence from internal/store.
+// independence from the task store.
 type ChatTaskActor interface {
 	// ApplyChatTaskAction executes action on taskID, scoped to identity's own
 	// tasks. A nil identity is an authenticated dashboard operator, who acts
@@ -85,7 +85,7 @@ type ChatTaskActor interface {
 // ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
 // internal/logging.Entry's shape without importing that package: gateway
 // keeps its independence from internal/logging the same way it already does
-// from internal/store, with the daemon adapting between them.
+// from the task store, with the daemon adapting between them.
 type ChatTaskLogEntry struct {
 	Time    time.Time      `json:"time"`
 	Level   string         `json:"level"`
@@ -144,7 +144,7 @@ type ChatTaskLogResult struct {
 // ChatTaskLogReader is the read surface task_logs needs. It mirrors the
 // ChatTaskLister pattern: gateway states what it needs and the daemon
 // supplies an adapter, so this package keeps its independence from
-// internal/store and internal/logging.
+// the task store and internal/logging.
 type ChatTaskLogReader interface {
 	// ReadChatTaskLogs returns taskID's log entries for attempt (0 selects
 	// the task's current/latest attempt), scoped to identity's own tasks.

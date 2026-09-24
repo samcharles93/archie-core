@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // TestEventAttributionSurvivesTheStateStoreBoundary runs the same insert through
@@ -28,7 +28,7 @@ func TestEventAttributionSurvivesTheStateStoreBoundary(t *testing.T) {
 	for _, mode := range []string{"local", "grpc"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := t.Context()
-			local := store.OpenTest(t)
+			local := pgstore.Open(t)
 			var c contract = local
 			if mode == "grpc" {
 				c = remoteTaskStore(t, local, nil, nil)

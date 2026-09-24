@@ -23,7 +23,14 @@ func TestMain(m *testing.M) {
 // applied and registers pool cleanup.
 func newPostgresPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool, err := postgres.Open(t.Context(), pgtest.URL(t))
+	return openPostgresPoolAt(t, pgtest.URL(t))
+}
+
+// openPostgresPoolAt opens a migrated pool on url, so a test can reopen the
+// same database through a second pool.
+func openPostgresPoolAt(t *testing.T, url string) *pgxpool.Pool {
+	t.Helper()
+	pool, err := postgres.Open(t.Context(), url)
 	if err != nil {
 		t.Fatalf("postgres.Open: %v", err)
 	}
@@ -40,6 +47,18 @@ func newPostgresPool(t *testing.T) *pgxpool.Pool {
 func newPostgresStore(t *testing.T) SessionStore {
 	t.Helper()
 	return NewPostgresSessionStore(newPostgresPool(t))
+}
+
+// openPostgresStoreAt returns a SessionStore over its own pool on url.
+func openPostgresStoreAt(t *testing.T, url string) SessionStore {
+	t.Helper()
+	return NewPostgresSessionStore(openPostgresPoolAt(t, url))
+}
+
+// TestSessionStoreConformanceMemory runs the shared SessionStore contract
+// against the in-memory implementation.
+func TestSessionStoreConformanceMemory(t *testing.T) {
+	runSessionStoreSuite(t, func(*testing.T) SessionStore { return NewSessionStoreMemory() })
 }
 
 // TestSessionStoreConformancePostgres runs the shared SessionStore contract

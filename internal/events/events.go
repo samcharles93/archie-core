@@ -106,7 +106,7 @@ const (
 	KindTurnCompleted = "turn_completed"
 
 	// EDA edit activity (bindings and mappings on the captures store). Each
-	// successful write on the State Store's PocketBase tables emits one
+	// successful write on the State Store's binding and mapping tables emits one
 	// event through the same task-DB path capture arrival uses, so a
 	// dashboard edit is visible on the activity stream without a manual
 	// refresh. data: id (the edited record), action (create, update,

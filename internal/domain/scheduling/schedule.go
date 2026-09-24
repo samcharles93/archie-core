@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/pocketbase/pocketbase/tools/cron"
 )
 
 // Duration is a schedule interval as the document writes it: the human string
@@ -91,9 +89,8 @@ const (
 
 	// ScheduleCron fires at the next moment matching a 5-field cron
 	// expression (or one of the @ macros) after the last successful
-	// run, computed in the zone of that run time. Expressions are parsed
-	// with pocketbase tools/cron, which ANDs day-of-month with day-of-week
-	// instead of Vixie cron's OR: "0 0 1 * 1" means only Monday the 1st,
+	// run, computed in the zone of that run time. The dialect (cron.go)
+	// ANDs day-of-month with day-of-week instead of Vixie cron's OR: "0 0 1 * 1" means only Monday the 1st,
 	// not "the 1st or any Monday".
 	ScheduleCron = "cron"
 
@@ -168,18 +165,6 @@ func (s Schedule) firstRun(now time.Time) (time.Time, error) {
 	}
 }
 
-// parseCronSpec parses expr with pocketbase tools/cron — the project's
-// chosen cron dialect: standard 5-field expressions plus the @yearly,
-// @monthly, @weekly, @daily and @hourly macros — and wraps any parse
-// failure in ErrInvalidSpec so callers need only the one sentinel.
-func parseCronSpec(expr string) (*cron.Schedule, error) {
-	sched, err := cron.NewSchedule(expr)
-	if err != nil {
-		return nil, fmt.Errorf("%w: cron expression %q: %w", ErrInvalidSpec, expr, err)
-	}
-	return sched, nil
-}
-
 // cronHorizon bounds the next-run scan. A satisfiable expression always
 // fires well within it (the sparsest realistic case, Feb 29, recurs every
 // four years); only a spec that can never fire — e.g. "0 0 30 2 *", which
@@ -191,17 +176,17 @@ const cronHorizon = 5 * 365 * 24 * time.Hour
 // minute that just fired is never its own successor. Whole months and
 // hours that cannot match are skipped, so even a sparse expression costs
 // a handful of iterations per year scanned.
-func nextCronRun(sched *cron.Schedule, from time.Time) (time.Time, error) {
+func nextCronRun(sched *cronSpec, from time.Time) (time.Time, error) {
 	t := from.Truncate(time.Minute).Add(time.Minute)
 	for limit := from.Add(cronHorizon); t.Before(limit); {
-		if sched.IsDue(cron.NewMoment(t)) {
+		if sched.due(t) {
 			return t, nil
 		}
-		if _, ok := sched.Months[int(t.Month())]; !ok {
+		if !sched.months.has(int(t.Month())) {
 			t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, 1, 0)
 			continue
 		}
-		if _, ok := sched.Hours[t.Hour()]; !ok {
+		if !sched.hours.has(t.Hour()) {
 			t = t.Add(time.Hour).Truncate(time.Hour)
 			continue
 		}

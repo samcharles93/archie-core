@@ -10,7 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // playbookStore loads a single playbook document from a temp directory, so
@@ -42,7 +42,7 @@ func routableDefinitions() *workflowDefinitionsStub {
 }
 
 // forgeTask enqueues a labelled forge-sourced task and returns its row.
-func forgeTask(t *testing.T, resources *store.Store, labels string) *workflow.Task {
+func forgeTask(t *testing.T, resources *pgstore.TaskDB, labels string) *workflow.Task {
 	t.Helper()
 	if _, err := resources.EnqueueIssue(t.Context(), "acme", "widget", 7, "title", "body", labels, ""); err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func forgeTask(t *testing.T, resources *store.Store, labels string) *workflow.Ta
 // chosen for the same labels. Bypassing the coordinator pins "tdd" (the
 // default binding for kind bug) and fails this test.
 func TestPinWorkflowDefinitionPrefersMatchingPlaybook(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	task := forgeTask(t, resources, "bug")
 
@@ -95,7 +95,7 @@ actions:
 // an additional routing source, not a replacement. A non-matching playbook
 // set leaves the existing kind/label bindings in charge.
 func TestPinWorkflowDefinitionFallsBackWhenNoPlaybookMatches(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	task := forgeTask(t, resources, "bug")
 
@@ -125,7 +125,7 @@ actions:
 // Silently running the kind binding's choice instead would run the wrong
 // workflow under a rule the operator wrote.
 func TestPinWorkflowDefinitionPlaybookWorkflowMustExist(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	task := forgeTask(t, resources, "bug")
 
@@ -155,7 +155,7 @@ actions:
 // assignment is a decision already made about this task and must not be
 // re-routed by a playbook trigger that still matches its labels.
 func TestPinWorkflowDefinitionPreAssignedWorkflowBeatsPlaybook(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	task := forgeTask(t, resources, "bug")
 	task.Workflow = "tdd"
@@ -203,7 +203,7 @@ actions:
 		{name: "condition false leaves the kind binding in charge", labels: "bug", want: "tdd"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resources := store.OpenTest(t)
+			resources := pgstore.Open(t)
 			defer resources.Close()
 			task := forgeTask(t, resources, tc.labels)
 			d := &Daemon{
@@ -228,7 +228,7 @@ actions:
 // recognises still triggers a playbook, which is the only way an operator can
 // bind a workflow to their own taxonomy without a code change.
 func TestPinWorkflowDefinitionTriggersOnInstanceDefinedLabel(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	task := forgeTask(t, resources, "ops::security-review,needs-triage")
 

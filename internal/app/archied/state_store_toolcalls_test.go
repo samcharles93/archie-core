@@ -10,11 +10,9 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func toolCallEvent(taskID int64, attempt int) events.Event {
@@ -35,8 +33,8 @@ func toolCallEvent(taskID int64, attempt int) events.Event {
 // tool_calls row, with the row's fields taken from the event -- the tool name
 // from data, the output summary in result for a succeeded call.
 func TestInsertEventProjectsToolCall(t *testing.T) {
-	st := store.OpenTest(t)
-	eda := edastore.OpenTest(t)
+	st := pgstore.Open(t)
+	eda := pgstore.EDA(t, nil)
 	ts := newToolCallProjectingTaskStore(st, eda, slog.Default())
 
 	id, err := ts.InsertEvent(t.Context(), toolCallEvent(42, 2))
@@ -76,8 +74,8 @@ func TestInsertEventProjectsToolCall(t *testing.T) {
 // event whose call failed stores its detail under error, not result, so the
 // transcript can distinguish the two without re-parsing text.
 func TestInsertEventProjectsFailedToolCall(t *testing.T) {
-	st := store.OpenTest(t)
-	eda := edastore.OpenTest(t)
+	st := pgstore.Open(t)
+	eda := pgstore.EDA(t, nil)
 	ts := newToolCallProjectingTaskStore(st, eda, slog.Default())
 
 	e := toolCallEvent(42, 2)
@@ -106,8 +104,8 @@ func TestInsertEventProjectsFailedToolCall(t *testing.T) {
 // tool_call events reach the collection; the task timeline's other kinds must
 // not grow tool_calls rows.
 func TestInsertEventLeavesOtherKindsUnprojected(t *testing.T) {
-	st := store.OpenTest(t)
-	eda := edastore.OpenTest(t)
+	st := pgstore.Open(t)
+	eda := pgstore.EDA(t, nil)
 	ts := newToolCallProjectingTaskStore(st, eda, slog.Default())
 
 	if _, err := ts.InsertEvent(t.Context(), events.Event{
@@ -126,12 +124,12 @@ func TestInsertEventLeavesOtherKindsUnprojected(t *testing.T) {
 	}
 }
 
-// failingToolCallWriter stands in for a broken PocketBase side, so the
+// failingToolCallWriter stands in for a broken event-capture store, so the
 // never-returned-failure contract can be tested without sabotaging the real
 // store.
 type failingToolCallWriter struct{ err error }
 
-func (f failingToolCallWriter) InsertToolCall(context.Context, edastore.ToolCall) error {
+func (f failingToolCallWriter) InsertToolCall(context.Context, postgres.ToolCall) error {
 	return f.err
 }
 
@@ -140,7 +138,7 @@ func (f failingToolCallWriter) InsertToolCall(context.Context, edastore.ToolCall
 // event persistence is the contract, the projection is observability -- and
 // the failure is recorded, not swallowed silently.
 func TestInsertEventSucceedsWhenProjectionFails(t *testing.T) {
-	st := store.OpenTest(t)
+	st := pgstore.Open(t)
 	var buf bytes.Buffer
 	ts := newToolCallProjectingTaskStore(st, failingToolCallWriter{
 		err: errors.New("disk on fire"),
@@ -174,16 +172,11 @@ func TestInsertEventSucceedsWhenProjectionFails(t *testing.T) {
 // event-capture store, Tasks is passed through untouched rather than wrapped
 // around a nil writer.
 func TestStateStoreDepsProjectToolCalls(t *testing.T) {
-	st := store.OpenTest(t)
-	pool, err := postgres.Open(t.Context(), pgtest.URL(t))
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	defer pool.Close()
+	st := pgstore.Open(t)
 
 	b := newBootstrap()
 	b.st = st
-	b.eda = postgres.NewEDA(pool, nil)
+	b.eda = pgstore.EDA(t, nil)
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
 	if _, ok := deps.Tasks.(*toolCallProjectingTaskStore); !ok {
 		t.Fatalf("deps.Tasks = %T, want the tool_call projecting decorator", deps.Tasks)

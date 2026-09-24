@@ -5,10 +5,10 @@
 //
 // This is the .4.7 end-to-end verification for
 // docs/prds/state-store-contract.md (rev. 2c): it proves the process owns the
-// single archie.db task SQLite, serves the combined task/event/capture
+// task store, serves the combined task/event/capture
 // surface over one gRPC service, preserves error-sentinel fidelity across the
 // wire, honours a per-call deadline, survives a restart/recovery cycle, and
-// is the sole owner of the SQLite file. See §5 (binary layout), §6 (handoff),
+// is the sole owner of the store. See §5 (binary layout), §6 (handoff),
 // §7 (error semantics), §11 (remote adapter) and §12 step 7/8 (single owner).
 
 package main
@@ -37,10 +37,10 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // repoRoot walks up from the test's source directory to find the module root
@@ -93,6 +93,12 @@ func buildBinary(t *testing.T, dir string) string {
 // forge token resolves from an env var, so no real credential is needed.
 func writeMinimalConfig(t *testing.T, dir string) string {
 	t.Helper()
+	return writeConfigFor(t, dir, pgtest.URL(t))
+}
+
+// writeConfigFor is writeMinimalConfig naming the database at url.
+func writeConfigFor(t *testing.T, dir, url string) string {
+	t.Helper()
 	cfg := filepath.Join(dir, "config.toml")
 	content := fmt.Sprintf(`bot_user = "archie-bot"
 db_path = %q
@@ -104,7 +110,7 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 [[repos]]
 owner = "acme"
 name = "widget"
-`, filepath.Join(dir, "archie.db"), pgtest.URL(t))
+`, filepath.Join(dir, "archie.db"), url)
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -287,13 +293,13 @@ func (p *stateStoreProcess) stop(t *testing.T) {
 }
 
 // contract is the combined consumer surface a daemon/gateway/agent mixes: the
-// task lifecycle + events surface (store.TaskStore) and the capture surface.
+// task lifecycle + events surface (storecontract.TaskStore) and the capture surface.
 // Mapping/binding/dispatch is exercised separately in
 // TestStateStoreRealProcessRemoteSurfaces via the concrete Client, which
 // asserts against each narrow interface at compile time.
 type contract interface {
-	store.TaskStore
-	store.CaptureStore
+	storecontract.TaskStore
+	storecontract.CaptureStore
 }
 
 // dial opens a gRPC connection to the state store process and wraps it in the
@@ -311,8 +317,8 @@ func dial(t *testing.T, addr string) contract {
 
 // capture builds a CapturedEvent without pulling the whole store field set
 // into every call site.
-func capture(source, body string) store.CapturedEvent {
-	return store.CapturedEvent{Source: source, Body: body, Authenticated: true}
+func capture(source, body string) storecontract.CapturedEvent {
+	return storecontract.CapturedEvent{Source: source, Body: body, Authenticated: true}
 }
 
 // TestStateStoreRealProcessSmoke exercises the actual archie-state-store
@@ -409,14 +415,14 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 	}
 
 	t.Run("error_sentinel_fidelity", func(t *testing.T) {
-		// A stale transition must rehydrate to store.ErrStaleTransition across
+		// A stale transition must rehydrate to storecontract.ErrStaleTransition across
 		// the wire (§7). Because the binary is up and we dialed it, a sentinel
 		// mismatch here would surface as a transport error, so a pass proves
 		// the gRPC mapError/unmapError round-trip, not just the in-process
 		// adapter.
 		err := cl.Transition(ctx, task.ID, "queued", "merged", "")
-		if !errors.Is(err, store.ErrStaleTransition) {
-			t.Fatalf("stale Transition = %v, want store.ErrStaleTransition", err)
+		if !errors.Is(err, storecontract.ErrStaleTransition) {
+			t.Fatalf("stale Transition = %v, want storecontract.ErrStaleTransition", err)
 		}
 	})
 
@@ -611,7 +617,7 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 	}
 	// Remote surfaces share error-sentinel fidelity on the wire too.
 	missing := mapping.Mapping{ID: "rabsent00000000", Name: "x", Fields: []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}}}
-	if err := cl.UpdateMapping(ctx, missing); !errors.Is(err, store.ErrMappingNotFound) {
+	if err := cl.UpdateMapping(ctx, missing); !errors.Is(err, storecontract.ErrMappingNotFound) {
 		t.Fatalf("UpdateMapping missing = %v, want ErrMappingNotFound", err)
 	}
 }

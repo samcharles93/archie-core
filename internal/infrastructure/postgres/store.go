@@ -35,14 +35,14 @@ func (s *Store) queries() *postgresdb.Queries {
 	return postgresdb.New(s.pool)
 }
 
-// Close is a no-op: unlike the SQLite store, this store owns no file handle
+// Close is a no-op: this store owns no file handle
 // or connection -- the pool belongs to the composition that opened it.
 func (s *Store) Close() error { return nil }
 
 // syntheticIssueNumberBase is the seed for a repo's first chat task. The
 // COALESCE allocator adds one to the passed fallback, so the fallback here is
-// base-1 and the first chat task lands on exactly base, matching the SQLite
-// store's reserved JSON-safe floor (see internal/store.EnqueueChatTask).
+// base-1 and the first chat task lands on exactly base: the reserved
+// JSON-safe floor that keeps synthetic issue numbers clear of real ones.
 const syntheticIssueNumberBase = 1_000_000_000_000_000
 
 // taskFromRow maps the generated task row to the workflow.Task the daemon and

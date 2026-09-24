@@ -22,8 +22,8 @@ import (
 	archiecontainer "github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -240,7 +240,7 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel() // cancel context before calling cleanup
 
-			st := store.OpenTest(t)
+			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
 			trees := &worktree.Manager{WorkDir: t.TempDir()}
@@ -409,7 +409,7 @@ func TestParkRunningTaskGuardedAndLogging(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := store.OpenTest(t)
+			s := pgstore.Open(t)
 			t.Cleanup(func() { _ = s.Close() })
 
 			var buf logBuffer
@@ -443,7 +443,7 @@ func TestParkRunningTaskGuardedAndLogging(t *testing.T) {
 			}
 
 			if tt.closeStore {
-				_ = s.Close()
+				s.Pool.Close()
 			}
 
 			d.parkRunningTask(callCtx, task.ID, "simulated park reason", taskstate.ParkTransient)
@@ -494,7 +494,7 @@ func TestAcquireTaskContainerFailureParksTaskOnCancelledContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := store.OpenTest(t)
+			s := pgstore.Open(t)
 			t.Cleanup(func() { _ = s.Close() })
 
 			d := &Daemon{

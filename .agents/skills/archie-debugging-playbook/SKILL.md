@@ -1,6 +1,6 @@
 ---
 name: archie-debugging-playbook
-description: Project-specific symptom-to-evidence triage for archie-core. Load this skill when Archied hangs, parks a task, loses or duplicates work, cannot reach NATS or an agent container, rejects configuration or secrets, shows stale Telegram or dashboard state, loses streamed text, fails MCP startup, reports SQLite state surprises, degrades an optional feature, or when Go tests disagree between a sandbox, editor, CI, and the host. Use it to separate environment failures from code regressions and to choose the next exact diagnostic.
+description: Project-specific symptom-to-evidence triage for archie-core. Load this skill when Archied hangs, parks a task, loses or duplicates work, cannot reach NATS or an agent container, rejects configuration or secrets, shows stale Telegram or dashboard state, loses streamed text, fails MCP startup, reports task-state surprises, degrades an optional feature, or when Go tests disagree between a sandbox, editor, CI, and the host. Use it to separate environment failures from code regressions and to choose the next exact diagnostic.
 ---
 
 # Debug Archie from evidence
@@ -42,7 +42,7 @@ Use this symptom index:
 | Telegram reply hangs on the first token | Stream consumer | Streaming |
 | MCP unit tests pass but a real server hangs | Framing mirror | MCP |
 | Telegram shows old commands | Token-scoped Telegram state | Telegram |
-| Transition succeeds from the wrong state | Store semantics | SQLite/state |
+| Transition succeeds from the wrong state | Store semantics | Database/state |
 | Dashboard skips events but task state is correct | Bounded event buffers | Events |
 | Search works but never becomes indexed | Missing production wiring | Optional features |
 | Agent container cannot resolve `nats` | Docker network | Containers |
@@ -199,16 +199,16 @@ env GOTMPDIR=/tmp GOCACHE=/tmp/archie-telegram-gocache \
 
 ## Diagnose state, events, containers, and optional features
 
-### SQLite and transitions
-`internal/store.Store.Transition` owns task state changes and transition
-history: it guards on `from` (`WHERE id=? AND status=?`, returning
-`store.ErrStaleTransition`) and writes status plus history in one transaction.
+### Database and transitions
+`internal/infrastructure/postgres.Store.Transition` owns task state changes and
+transition history: it guards on `from`, returning
+`storecontract.ErrStaleTransition`, and writes status plus history in one transaction.
 When state is surprising: read `TaskByID` before/after caller; trace every
 `Transition`, `Requeue`, `RecoverStale`, `Update` — and remember the daemon
 exposes these over the gRPC State Store, not NATS.
 
 ```bash
-env GOTMPDIR=/tmp GOCACHE=/tmp/archie-state-gocache go test ./internal/store -count=1
+env GOTMPDIR=/tmp GOCACHE=/tmp/archie-state-gocache go test ./internal/infrastructure/postgres -count=1  # needs Docker
 ```
 
 ### Events

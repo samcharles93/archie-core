@@ -15,8 +15,9 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // outageStore is the State Store's resource half with a switch that makes every
@@ -32,7 +33,7 @@ import (
 // lasted longer than the minimum retry interval, which is a failed attempt
 // whichever way the store failed it.
 type outageStore struct {
-	*store.Store
+	*pgstore.TaskDB
 
 	mu      sync.Mutex
 	failing bool
@@ -46,15 +47,15 @@ func (s *outageStore) down(stall time.Duration) {
 	s.failing, s.stall = true, stall
 }
 
-func (s *outageStore) Resource(ctx context.Context, kind string) (store.Resource, error) {
+func (s *outageStore) Resource(ctx context.Context, kind string) (storecontract.Resource, error) {
 	s.mu.Lock()
 	failing, stall := s.failing, s.stall
 	s.mu.Unlock()
 	if failing {
 		time.Sleep(stall)
-		return store.Resource{}, errors.New("state store unreachable")
+		return storecontract.Resource{}, errors.New("state store unreachable")
 	}
-	return s.Store.Resource(ctx, kind)
+	return s.TaskDB.Resource(ctx, kind)
 }
 
 // TestWatchRetryGrowsWhileTheStateStoreIsDown is the outage this reconnect
@@ -113,7 +114,7 @@ func TestWatchRetryGrowsWhileTheStateStoreIsDown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			database := &outageStore{Store: store.OpenTest(t)}
+			database := &outageStore{TaskDB: pgstore.Open(t)}
 			defer database.Close()
 			steps, err := workflowsteps.NewManager()
 			if err != nil {

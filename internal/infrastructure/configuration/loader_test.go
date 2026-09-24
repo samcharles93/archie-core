@@ -76,6 +76,7 @@ func TestLoadExpandsConfiguredHomePaths(t *testing.T) {
 bot_user = "widget"
 work_dir = "~/archie/work"
 db_path = "~/archie/archie.db"
+state_dir = "~/archie/state"
 
 [chat]
 workspace = "~/archie/workspace"
@@ -98,6 +99,7 @@ name = "app"
 	}{
 		"work_dir":       {got: cfg.WorkDir, want: filepath.Join(home, "archie", "work")},
 		"db_path":        {got: cfg.DBPath, want: filepath.Join(home, "archie", "archie.db")},
+		"state_dir":      {got: cfg.StateDir, want: filepath.Join(home, "archie", "state")},
 		"chat.workspace": {got: cfg.Chat.Workspace, want: filepath.Join(home, "archie", "workspace")},
 	}
 	for name, tt := range wants {
@@ -106,6 +108,32 @@ name = "app"
 				t.Errorf("got %q, want %q", tt.got, tt.want)
 			}
 		})
+	}
+}
+
+// state_dir defaults to archie's directory under the data home, independent
+// of db_path, which only locates legacy files for the one-time import.
+func TestStateDirDefaultsToTheDataHome(t *testing.T) {
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := `
+bot_user = "widget"
+db_path = "/elsewhere/archie.db"
+
+[[repos]]
+owner = "acme"
+name = "app"
+`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dataHome, "archie"); cfg.StateDir != want {
+		t.Fatalf("StateDir = %q, want %q", cfg.StateDir, want)
 	}
 }
 

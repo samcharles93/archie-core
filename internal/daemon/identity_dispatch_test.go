@@ -11,7 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -36,7 +36,7 @@ var _ eventbus.Message = (*fakeMessage)(nil)
 // not know must not be written to the store at all. Today it is enqueued and
 // only fails open later, when forgeFor/repoFor fall back to the root forge.
 func TestProcessNATSTaskRejectsUnresolvableIdentity(t *testing.T) {
-	s := store.OpenTest(t)
+	s := pgstore.Open(t)
 	d := &Daemon{
 		Store: s,
 		Cfg:   config.NewHolder(config.Config{}),
@@ -110,7 +110,7 @@ func TestProcessParksTaskWhoseIdentityNoLongerResolves(t *testing.T) {
 // still has a runner but has been retired may not act, so its tasks park
 // rather than running under a credential the control plane has retired.
 func TestProcessParksRetiredIdentity(t *testing.T) {
-	s := store.OpenTest(t)
+	s := pgstore.Open(t)
 	ctx := context.Background()
 	log := slog.New(slog.DiscardHandler)
 

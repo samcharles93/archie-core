@@ -327,11 +327,10 @@ func (b *boot) setupLogging() error {
 	}
 	logFeed := logging.NewFeed(1000)
 	b.logFeed = logFeed
-	// Task logs live alongside the store rather than under cfg.Log.File's
+	// Task logs live in the state directory rather than under cfg.Log.File's
 	// directory: cfg.Log.File is optional (file logging can be off), while
-	// DBPath is required for the daemon to run at all, so it is the more
-	// reliable anchor for "where archie keeps its state" on this host.
-	taskLogs := logging.NewTaskRegistry(filepath.Join(filepath.Dir(cfg.DBPath), "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
+	// state_dir always resolves.
+	taskLogs := logging.NewTaskRegistry(filepath.Join(cfg.StateDir, "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
 	b.taskLogs = taskLogs
 	fileLog, logCloser, logErr := logging.New(logging.Options{
 		File:      cfg.Log.File,
@@ -476,7 +475,7 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
 }
 
-// setupObservability builds the event bus and dashboard server. Every event is logged to SQLite (stamped with its row id) and
+// setupObservability builds the event bus and dashboard server. Every event is persisted (stamped with its row id) and
 // then fanned out to live dashboard connections.
 func (b *boot) setupObservability(ctx context.Context) {
 	cfg, log := b.cfg, b.log
@@ -519,7 +518,7 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 			return err
 		}
 	} else {
-		endpoint, readErr := readEmbeddedNATSEndpoint(cfg.DBPath)
+		endpoint, readErr := readEmbeddedNATSEndpoint(cfg.StateDir)
 		if readErr == nil {
 			url, natsToken = endpoint.URL, endpoint.Token
 			if probe, err := nats.Connect(ctx, nats.Config{URL: url, Token: natsToken, Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, log); err == nil {
@@ -603,7 +602,7 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	}
 	srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
 		Host:     host,
-		StoreDir: filepath.Join(filepath.Dir(cfg.DBPath), "nats"),
+		StoreDir: filepath.Join(cfg.StateDir, "nats"),
 	}, log)
 	if err != nil {
 		log.Error("embedded nats start failed", "err", err)
@@ -611,7 +610,7 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	}
 	b.addCleanup(func() { srv.Shutdown() })
 	log.Info("embedded nats started", "url", srv.ClientURL())
-	if err := writeEmbeddedNATSEndpoint(cfg.DBPath, srv.ClientURL(), srv.Token()); err != nil {
+	if err := writeEmbeddedNATSEndpoint(cfg.StateDir, srv.ClientURL(), srv.Token()); err != nil {
 		srv.Shutdown()
 		return "", "", err
 	}

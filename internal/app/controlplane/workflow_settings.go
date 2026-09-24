@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 const WorkflowExecutionSettingsKind = "workflow-execution-settings"
@@ -27,7 +27,7 @@ func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings w
 	if err == nil {
 		return resource.Version, nil
 	}
-	if !errors.Is(err, store.ErrResourceNotFound) {
+	if !errors.Is(err, storecontract.ErrResourceNotFound) {
 		return 0, err
 	}
 	value, err := encodeSettings(settings)
@@ -38,7 +38,7 @@ func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings w
 	if err != nil {
 		return 0, err
 	}
-	resource, err = s.store.PutResource(ctx, store.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + WorkflowExecutionSettingsKind, ExpectedVersion: 0, At: time.Now().UTC()})
+	resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + WorkflowExecutionSettingsKind, ExpectedVersion: 0, At: time.Now().UTC()})
 	return resource.Version, err
 }
 

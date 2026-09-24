@@ -12,7 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 )
 
 const edaTestKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -24,7 +24,7 @@ func edaFor(t *testing.T) *EDA {
 	return NewEDA(pool, nil)
 }
 
-func edaWithCipher(t *testing.T, cipher edastore.BindingCipher) (*pgxpool.Pool, *EDA) {
+func edaWithCipher(t *testing.T, cipher bindingcipher.BindingCipher) (*pgxpool.Pool, *EDA) {
 	t.Helper()
 	pool, _ := migrated(t)
 	return pool, NewEDA(pool, cipher)
@@ -185,13 +185,13 @@ func TestToolCallRoundTrip(t *testing.T) {
 	at := time.Date(2026, 9, 23, 1, 2, 3, 0, time.UTC)
 
 	for range 2 {
-		if err := s.InsertToolCall(t.Context(), edastore.ToolCall{
+		if err := s.InsertToolCall(t.Context(), ToolCall{
 			TaskID: 42, Attempt: 2, Tool: "shell", Result: "all checks passed", CalledAt: at,
 		}); err != nil {
 			t.Fatalf("InsertToolCall() error = %v", err)
 		}
 	}
-	if err := s.InsertToolCall(t.Context(), edastore.ToolCall{
+	if err := s.InsertToolCall(t.Context(), ToolCall{
 		TaskID: 7, Attempt: 1, Tool: "read_file", Error: "no such file", CalledAt: at.Add(time.Second),
 	}); err != nil {
 		t.Fatalf("InsertToolCall(other task) error = %v", err)

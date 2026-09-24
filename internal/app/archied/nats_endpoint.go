@@ -12,12 +12,12 @@ type embeddedNATSEndpoint struct {
 	Token string `json:"token"`
 }
 
-func embeddedNATSEndpointPath(dbPath string) string {
-	return filepath.Join(filepath.Dir(dbPath), "nats", "endpoint.json")
+func embeddedNATSEndpointPath(stateDir string) string {
+	return filepath.Join(stateDir, "nats", "endpoint.json")
 }
 
-func writeEmbeddedNATSEndpoint(dbPath, url, token string) error {
-	path := embeddedNATSEndpointPath(dbPath)
+func writeEmbeddedNATSEndpoint(stateDir, url, token string) error {
+	path := embeddedNATSEndpointPath(stateDir)
 	data, err := json.Marshal(embeddedNATSEndpoint{URL: url, Token: token})
 	if err != nil {
 		return fmt.Errorf("marshal embedded NATS endpoint: %w", err)
@@ -48,8 +48,8 @@ func writeEmbeddedNATSEndpoint(dbPath, url, token string) error {
 	return nil
 }
 
-func readEmbeddedNATSEndpoint(dbPath string) (embeddedNATSEndpoint, error) {
-	data, err := os.ReadFile(embeddedNATSEndpointPath(dbPath))
+func readEmbeddedNATSEndpoint(stateDir string) (embeddedNATSEndpoint, error) {
+	data, err := os.ReadFile(embeddedNATSEndpointPath(stateDir))
 	if err != nil {
 		return embeddedNATSEndpoint{}, err
 	}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -28,9 +27,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -528,10 +527,7 @@ func TestManualRequeueTaskUsesPersistedStatus(t *testing.T) {
 	tests := []string{workflow.StatusParked, workflow.StatusWaitingHuman}
 	for index, status := range tests {
 		t.Run(status, func(t *testing.T) {
-			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 			if _, err := st.EnqueueIssue(t.Context(), "acme", "widget", index+1, "task", "", "", ""); err != nil {
 				t.Fatal(err)
@@ -555,10 +551,7 @@ func TestManualRequeueTaskUsesPersistedStatus(t *testing.T) {
 }
 
 func TestManualRequeueTaskRejectsOtherStatuses(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 	if _, err := st.EnqueueIssue(t.Context(), "acme", "widget", 1, "task", "", "", ""); err != nil {
 		t.Fatal(err)
@@ -573,10 +566,7 @@ func TestManualRequeueTaskRejectsOtherStatuses(t *testing.T) {
 }
 
 func TestChatTaskListerAdapterReadsSQLiteIdentity(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 	want, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "identity task", "", "tdd", "reviewer")
 	if err != nil {
@@ -827,10 +817,7 @@ func TestChatTaskLogReaderAdapterRoundTrip(t *testing.T) {
 
 func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() {
 		if err := st.Close(); err != nil {
 			t.Errorf("close store: %v", err)

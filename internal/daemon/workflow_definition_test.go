@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 type workflowDefinitionsStub struct {
@@ -18,7 +18,7 @@ func (s *workflowDefinitionsStub) WorkflowDefinitions(context.Context) (workflow
 }
 
 func TestWorkflowDefinitionPinSurvivesActiveOverride(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	task, err := resources.EnqueueChatTask(t.Context(), "acme", "widget", "custom", "", "custom", "operator")
 	if err != nil {

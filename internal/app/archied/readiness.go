@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -73,12 +72,12 @@ func diskProbeTargets(cfg config.Config) []readiness.DiskTarget {
 	return targets
 }
 
-// diskProbePath preserves the database/work/cwd fallback used by the daemon's
-// disk target: the store database directory first, then work directory, then cwd.
+// diskProbePath is the daemon's data disk target: the state directory first,
+// then the work directory, then cwd.
 func diskProbePath(cfg config.Config) string {
 	switch {
-	case cfg.DBPath != "":
-		return filepath.Dir(cfg.DBPath)
+	case cfg.StateDir != "":
+		return cfg.StateDir
 	case cfg.WorkDir != "":
 		return cfg.WorkDir
 	default:

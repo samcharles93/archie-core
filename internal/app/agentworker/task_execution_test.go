@@ -30,11 +30,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/installtype"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -370,14 +369,14 @@ func connectTaskRPC(t *testing.T, url string) *natsio.Conn {
 // on gRPC for its store calls (docs/prds/state-store-contract.md §12 step 4),
 // so an agentworker test that drives executeTaskRequest needs a real State
 // Store server rather than the deleted NATS storerpc path.
-func startStateStoreGRPC(t *testing.T, local *store.Store) string {
+func startStateStoreGRPC(t *testing.T, local *pgstore.TaskDB) string {
 	t.Helper()
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	staterpc.RegisterServer(server, staterpc.Deps{
 		Tasks: local, Captures: eda, Mappings: eda, Bindings: eda,
 		BindingDispatcher: eda, BindingTaskCreator: local,
@@ -393,7 +392,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	}
 	ctx := t.Context()
 	host := newLocalRemote(t, "acme", "widget")
-	st := store.OpenTest(t)
+	st := pgstore.Open(t)
 	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "feat: bootstrap test", "", "bootstrap", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -594,7 +593,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	}
 	ctx := t.Context()
 	host := newLocalRemote(t, "acme", "rpc-widget")
-	st := store.OpenTest(t)
+	st := pgstore.Open(t)
 	if _, err := st.EnqueueIssue(ctx, "acme", "rpc-widget", 2, "feat: RPC bootstrap test", "", "bootstrap", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +685,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 	}
 	ctx := t.Context()
 	host := newLocalRemote(t, "acme", "events-widget")
-	st := store.OpenTest(t)
+	st := pgstore.Open(t)
 	if _, err := st.EnqueueIssue(ctx, "acme", "events-widget", 3, "feat: events bootstrap test", "", "bootstrap", ""); err != nil {
 		t.Fatal(err)
 	}

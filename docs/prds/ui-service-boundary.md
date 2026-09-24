@@ -157,7 +157,7 @@ The implementation must complete these gates in order:
    behavior. Add a composition test proving the selected adapter is the one
    used by production wiring.
 3. Remove direct `internal/gateway` session/router/runtime access from web UI
-   handlers. Remove direct `internal/store` implementation access, SQL access,
+   handlers. Remove direct store implementation access, SQL access,
    daemon pointers, and broad runtime callback bundles from the UI constructor.
 4. Replace the shared `config.Holder` with the UI-owned configuration DTO and
    narrow configuration application contract. Prove reload/update atomicity
@@ -177,7 +177,7 @@ The deletion gate is objective: `go list -deps` from the UI process shows no
 daemon, SQL/store implementation, workflow, forge, channel, model, or secret
 runtime package; production composition contains one UI HTTP listener; and
 architecture tests reject `config.Holder`, concrete `*store.Store`, concrete
-Gateway runtime types, and direct SQLite imports in the UI service.
+Gateway runtime types, and direct database drivers in the UI service.
 
 Rollback is a deployment composition change that points the operator at the
 last validated UI binary and restores the previous endpoint configuration. It
@@ -199,9 +199,9 @@ Current code proves the following migration inputs:
   Gateway-owned request/value types; handlers must finish the DTO projection.
 - `internal/webui/server.go:Handler` owns the route set, SPA fallback, health
   split, capture bypass, and token wrapper.
-- `internal/app/archied/state_store.go:RunStateStore` owns the task SQLite
-  file and serves the State Store gRPC contract; the UI must use that contract
-  rather than opening the file.
+- `internal/app/archied/state_store.go:RunStateStore` owns the task
+  database and serves the State Store gRPC contract; the UI must use that contract
+  rather than opening the database.
 - `internal/app/archied/gateway.go:RunGateway` serves Gateway gRPC and owns
   Gateway session persistence; the UI must use `ChatContract` rather than
   Gateway internals.
@@ -230,17 +230,17 @@ form again: `internal/webui` receives no holder in any process.
 ### Deletion gate: SATISFIED (archie-core-8cda.5.6, rev. 2)
 
 The objective gate now holds. `go list -deps ./cmd/archie-ui` links **zero**
-banned packages: no `modernc.org/sqlite`, no `internal/store`, `internal/gateway`,
+banned packages: no `modernc.org/sqlite`, no `github.com/jackc/pgx`, no `internal/infrastructure/postgres`, `internal/gateway`,
 `internal/channels`, `internal/memory`, `internal/secret`, `internal/agentexec`,
 `internal/tools`, `internal/skill`, `internal/yaegiutil`, `internal/domain/curator`,
 or the workflow engine (`internal/domain/workflow`). How the runtime handles were
 severed, each at the producer:
 
 - **Store contracts** moved to `internal/domain/storecontract` (producer-owned
-  read contracts, state-store-contract rev. 2d); `internal/store` keeps aliases.
+  read contracts, state-store-contract rev. 2d).
 - **Chat contracts** moved to `internal/domain/messaging`; `internal/gateway`
   keeps aliases. The UI process holds `ChatContract`, `SessionStore`, turn and
-  stream types without linking the gateway runtime or its SQLite session store.
+  stream types without linking the gateway runtime or its session store.
 - **Webui-owned views** replaced concrete runtime handles on `webui.Server`:
   channel lifecycle via `internal/channels/status`, memory via a `MemoryStatus`
   interface, curators via a `CuratorStatus` interface, and the skill catalogue

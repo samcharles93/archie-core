@@ -14,8 +14,7 @@ import (
 )
 
 // Resources is the PostgreSQL implementation of the State Store's
-// control-plane resource document operations. It is separate while the rest
-// of the transitional SQLite Store is still being ported.
+// control-plane resource document operations.
 type Resources struct {
 	pool *pgxpool.Pool
 }

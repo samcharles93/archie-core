@@ -68,7 +68,7 @@ func TestOpenStateStoreAdapterRequiresTarget(t *testing.T) {
 	b.secrets = &secret.Registry{}
 	// After .4.6 the daemon and gateway no longer own archie.db in-process, so
 	// an empty [services.state].target is a composition error, not the old
-	// local *store.Store default (docs/prds/state-store-contract.md §12 step 7).
+	// local task-store default (docs/prds/state-store-contract.md §12 step 7).
 	if err := b.openStateStoreAdapter(); err == nil {
 		t.Fatal("empty services.state.target should error: the in-process store path is deleted")
 	}
@@ -98,7 +98,7 @@ func TestStateStoreSingleOwnerComposition(t *testing.T) {
 	b := newBootstrap()
 	b.secrets = &secret.Registry{}
 
-	// The daemon openStores path must not construct a local *store.Store.
+	// The daemon openStores path must not construct a local task store.
 	// openStores only resolves secrets and the forge client, then opens chat
 	// sessions; the task store surface comes from the remote adapter, so no
 	// archie.db task file is touched. This asserts openStateStoreAdapter (the

@@ -13,8 +13,6 @@ AGENT_IMAGE_BACKUP="${ARCHIE_AGENT_IMAGE_BACKUP:-$BIN_DIR/archie-agent-image.pre
 AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
 AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
 AGENT_VERSION_PREVIOUS_EXISTS="${ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS:-0}"
-TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-}"
-TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 DB_SNAPSHOT="${ARCHIE_DB_SNAPSHOT:-$BIN_DIR/archie-db.pre-update.dump}"
 CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 # The daemon exports its own health address (releaseupdate.CommandInstaller);
@@ -206,20 +204,6 @@ rollback_agent_version() {
   fi
 }
 
-rollback_task_db() {
-  if [ -z "$TASK_DB_PATH" ]; then
-    echo "==> no task database path; cannot restore schema-compatible state" >&2
-    return 1
-  fi
-  if [ ! -f "$TASK_DB_BACKUP" ]; then
-    echo "==> no task database backup; cannot restore schema-compatible state" >&2
-    return 1
-  fi
-  sqlite3 "$TASK_DB_BACKUP" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
-  cp -f "$TASK_DB_BACKUP" "$TASK_DB_PATH"
-  rm -f "$TASK_DB_PATH-wal" "$TASK_DB_PATH-shm"
-}
-
 # explain_database_recovery states what a daemon rollback does not do. The
 # PostgreSQL database is never restored automatically: goose Down drops tables,
 # and a restore is destructive, loses every write after the snapshot and needs
@@ -240,15 +224,14 @@ fi
 
 echo "==> health check failed after ${HEALTH_TIMEOUT_SECONDS}s; rolling back changed components"
 rolled_back=false
-# Stop before touching either the executable or its database.  The service
-# uses Restart=on-failure in the supported unit, so copying rollback state
-# while a crash-loop child is alive can race with SQLite and execute the new
-# binary after its files have been replaced.
+# Stop before touching the executable. The service uses Restart=on-failure in
+# the supported unit, so copying rollback state while a crash-loop child is
+# alive can execute the new binary after its files have been replaced.
 if stop_units; then
   case "$COMPONENTS" in
     daemon)
-      if [ -f "$BIN_DIR/archied.prev" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
-        if { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_gateway; then
+      if [ -f "$BIN_DIR/archied.prev" ]; then
+        if rollback_gateway; then
           rolled_back=true
         fi
       else
@@ -267,8 +250,8 @@ if stop_units; then
     daemon,agent)
       # Preserve the old all-or-nothing rollback guarantee: never restore one
       # component and leave the other on the failed release.
-      if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
-        if rollback_agent_image && rollback_agent_version && { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_gateway; then
+      if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ]; then
+        if rollback_agent_image && rollback_agent_version && rollback_gateway; then
           rolled_back=true
         fi
       else

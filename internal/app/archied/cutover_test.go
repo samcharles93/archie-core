@@ -7,13 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/legacyimport/legacyfixture"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
@@ -23,18 +21,7 @@ import (
 // see legacy data.
 func seedLegacyConversation(t *testing.T, dbPath string) {
 	t.Helper()
-	legacy, err := gateway.OpenSQLiteSessionStore(conversationDBPath(dbPath))
-	if err != nil {
-		t.Fatalf("open legacy conversation store: %v", err)
-	}
-	defer legacy.Close()
-	if err := legacy.Save(t.Context(), messaging.SessionContext{
-		SessionID: "legacy",
-		Source:    messaging.SessionSource{Platform: "telegram", BotUser: "archie"},
-		CreatedAt: time.Now(),
-	}); err != nil {
-		t.Fatalf("seed legacy session: %v", err)
-	}
+	legacyfixture.Exec(t, conversationDBPath(dbPath), legacyfixture.GatewayDDL)
 }
 
 func testPool(t *testing.T, url string) *pgxpool.Pool {

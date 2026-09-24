@@ -24,8 +24,8 @@ import (
 	archiecontainer "github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -148,7 +148,7 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			st := store.OpenTest(t)
+			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
 			rootTrees := &worktree.Manager{WorkDir: t.TempDir()}

@@ -9,7 +9,7 @@
 // for "the pull request was closed without merging" -- no longer meant one
 // thing.
 //
-// internal/gateway deliberately does not import internal/store, so it kept a
+// internal/gateway deliberately does not import the task store, so it kept a
 // hand-synced copy of the status strings with a comment asking future editors
 // to keep them aligned. That is the same defect one level down. This package
 // has no dependencies, so both can import it and the copy can go.

@@ -1,4 +1,4 @@
-// Package staterpc adapts the State Store contract (internal/store's
+// Package staterpc adapts the State Store contract (internal/domain/storecontract's
 // producer-owned surfaces plus the consumer-owned workflow.Store) to gRPC.
 // See docs/prds/state-store-contract.md for the ratified contract this
 // package implements against.

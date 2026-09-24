@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // TestUnmapErrorPreservesContextIdentity pins the §6 deadline contract that
@@ -35,7 +34,7 @@ func TestUnmapErrorPreservesContextIdentity(t *testing.T) {
 			if !errors.Is(got, tt.want) {
 				t.Fatalf("unmapError(%q) = %v, want errors.Is(err, %v)", tt.err, got, tt.want)
 			}
-			if errors.Is(got, store.ErrStaleTransition) {
+			if errors.Is(got, storecontract.ErrStaleTransition) {
 				t.Fatalf("unmapError(%q) = %v, must not map to a store sentinel", tt.err, got)
 			}
 		})
@@ -68,7 +67,7 @@ func TestMapErrorPreservesContextIdentity(t *testing.T) {
 }
 
 // TestUnmapErrorSentinelFidelity pins the §7 sentinel rehydration round-trip
-// for each store error code, so a consumer's errors.Is(err, store.ErrX) keeps
+// for each store error code, so a consumer's errors.Is(err, storecontract.ErrX) keeps
 // working across the wire.
 func TestUnmapErrorSentinelFidelity(t *testing.T) {
 	tests := []struct {
@@ -76,12 +75,12 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 		store error
 		rehyd error
 	}{
-		{name: "stale transition", store: store.ErrStaleTransition, rehyd: store.ErrStaleTransition},
-		{name: "binding not found", store: store.ErrBindingNotFound, rehyd: store.ErrBindingNotFound},
-		{name: "mapping not found", store: store.ErrMappingNotFound, rehyd: store.ErrMappingNotFound},
-		{name: "binding overlap", store: store.ErrBindingOverlap, rehyd: store.ErrBindingOverlap},
-		{name: "binding transition", store: store.ErrBindingTransition, rehyd: store.ErrBindingTransition},
-		{name: "already dispatched", store: store.ErrAlreadyDispatched, rehyd: store.ErrAlreadyDispatched},
+		{name: "stale transition", store: storecontract.ErrStaleTransition, rehyd: storecontract.ErrStaleTransition},
+		{name: "binding not found", store: storecontract.ErrBindingNotFound, rehyd: storecontract.ErrBindingNotFound},
+		{name: "mapping not found", store: storecontract.ErrMappingNotFound, rehyd: storecontract.ErrMappingNotFound},
+		{name: "binding overlap", store: storecontract.ErrBindingOverlap, rehyd: storecontract.ErrBindingOverlap},
+		{name: "binding transition", store: storecontract.ErrBindingTransition, rehyd: storecontract.ErrBindingTransition},
+		{name: "already dispatched", store: storecontract.ErrAlreadyDispatched, rehyd: storecontract.ErrAlreadyDispatched},
 		{name: "source not found", store: storecontract.ErrSourceNotFound, rehyd: storecontract.ErrSourceNotFound},
 		{name: "source path taken", store: storecontract.ErrSourcePathTaken, rehyd: storecontract.ErrSourcePathTaken},
 		{name: "source signing stale", store: storecontract.ErrSourceSigningStale, rehyd: storecontract.ErrSourceSigningStale},
@@ -108,7 +107,7 @@ func TestUnmapErrorDoesNotLeakInternalDetail(t *testing.T) {
 	const detail = "sql: path=/var/lib/archie/archie.db secret=abcdef"
 	internal := mapError(errors.New(detail))
 	got := unmapError(internal)
-	if errors.Is(got, store.ErrStaleTransition) || errors.Is(got, store.ErrBindingNotFound) || errors.Is(got, store.ErrAlreadyDispatched) {
+	if errors.Is(got, storecontract.ErrStaleTransition) || errors.Is(got, storecontract.ErrBindingNotFound) || errors.Is(got, storecontract.ErrAlreadyDispatched) {
 		t.Fatalf("unmapError(internal) = %v, must not map to a store sentinel", got)
 	}
 	if st, ok := status.FromError(got); !ok || st.Code() != codes.Internal {
@@ -122,7 +121,7 @@ func TestUnmapErrorDoesNotLeakInternalDetail(t *testing.T) {
 	// status or a store sentinel).
 	raw := errors.New("transport failure")
 	got = unmapError(raw)
-	if errors.Is(got, store.ErrStaleTransition) {
+	if errors.Is(got, storecontract.ErrStaleTransition) {
 		t.Fatalf("unmapError(raw) = %v, must not map to a store sentinel", got)
 	}
 	if !errors.Is(got, raw) {

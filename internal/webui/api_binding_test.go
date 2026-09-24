@@ -4,27 +4,22 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
-// bindingTestServer wires a Server backed by a single *store.Store for all
+// bindingTestServer wires a Server backed by a single *pgstore.TaskDB for all
 // three dashboards surfaces (Captures, Mappings, Bindings) and seeds the
 // one workflow binding tests need to pass server-side validation.
 func bindingTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	return &Server{
 		Store:        s,
 		Log:          slog.New(slog.DiscardHandler),
