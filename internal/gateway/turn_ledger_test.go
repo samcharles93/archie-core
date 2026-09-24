@@ -3,9 +3,10 @@ package gateway
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
 
 func TestTurnLedgerClaimLifecycleIsIdempotent(t *testing.T) {
@@ -14,17 +15,17 @@ func TestTurnLedgerClaimLifecycleIsIdempotent(t *testing.T) {
 		open func(t *testing.T) (TurnLedger, func())
 	}{
 		{
-			name: "sqlite memory",
+			name: "memory",
 			open: func(t *testing.T) (TurnLedger, func()) {
-				store, err := NewSQLiteSessionStoreMemory()
-				if err != nil {
-					t.Fatal(err)
-				}
-				ledger, ok := store.(TurnLedger)
-				if !ok {
-					t.Fatalf("store is %T, want TurnLedger", store)
-				}
-				return ledger, func() { _ = store.Close() }
+				store := NewSessionStoreMemory()
+				return store.(TurnLedger), func() { _ = store.Close() }
+			},
+		},
+		{
+			name: "postgres",
+			open: func(t *testing.T) (TurnLedger, func()) {
+				store := newPostgresStore(t)
+				return store.(TurnLedger), func() { _ = store.Close() }
 			},
 		},
 	}
@@ -109,17 +110,17 @@ func TestTurnLedgerReclaimsAcrossProcessOwnersAndRejectsStaleWrites(t *testing.T
 		open func(t *testing.T) (TurnLedger, func())
 	}{
 		{
-			name: "sqlite memory",
+			name: "memory",
 			open: func(t *testing.T) (TurnLedger, func()) {
-				store, err := NewSQLiteSessionStoreMemory()
-				if err != nil {
-					t.Fatal(err)
-				}
-				ledger, ok := store.(TurnLedger)
-				if !ok {
-					t.Fatalf("store is %T, want TurnLedger", store)
-				}
-				return ledger, func() { _ = store.Close() }
+				store := NewSessionStoreMemory()
+				return store.(TurnLedger), func() { _ = store.Close() }
+			},
+		},
+		{
+			name: "postgres",
+			open: func(t *testing.T) (TurnLedger, func()) {
+				store := newPostgresStore(t)
+				return store.(TurnLedger), func() { _ = store.Close() }
 			},
 		},
 	}
@@ -171,15 +172,10 @@ func TestSessionDeleteRemovesTurns(t *testing.T) {
 		open func(t *testing.T) SessionStore
 	}{
 		{
-			name: "sqlite memory",
-			open: func(t *testing.T) SessionStore {
-				store, err := NewSQLiteSessionStoreMemory()
-				if err != nil {
-					t.Fatal(err)
-				}
-				return store
-			},
+			name: "memory",
+			open: func(*testing.T) SessionStore { return NewSessionStoreMemory() },
 		},
+		{name: "postgres", open: newPostgresStore},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -208,12 +204,9 @@ func TestSessionDeleteRemovesTurns(t *testing.T) {
 }
 
 func TestTurnLedgerPersistsToolCallsAcrossClaimAndReopen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sessions.db")
+	url := pgtest.URL(t)
 	ctx := context.Background()
-	store, err := OpenSQLiteSessionStore(path)
-	if err != nil {
-		t.Fatalf("OpenSQLiteSessionStore() error = %v", err)
-	}
+	store := openPostgresStoreAt(t, url)
 	ledger, ok := store.(TurnLedger)
 	if !ok {
 		t.Fatalf("store is %T, want TurnLedger", store)
@@ -251,10 +244,7 @@ func TestTurnLedgerPersistsToolCallsAcrossClaimAndReopen(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	reopened, err := OpenSQLiteSessionStore(path)
-	if err != nil {
-		t.Fatalf("reopen error = %v", err)
-	}
+	reopened := openPostgresStoreAt(t, url)
 	defer func() { _ = reopened.Close() }()
 	reopenedLedger, ok := reopened.(TurnLedger)
 	if !ok {
@@ -269,13 +259,10 @@ func TestTurnLedgerPersistsToolCallsAcrossClaimAndReopen(t *testing.T) {
 	}
 }
 
-func TestSQLiteTurnLedgerSurvivesReopen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sessions.db")
+func TestPostgresTurnLedgerSurvivesReopen(t *testing.T) {
+	url := pgtest.URL(t)
 	ctx := context.Background()
-	store, err := OpenSQLiteSessionStore(path)
-	if err != nil {
-		t.Fatalf("OpenSQLiteSessionStore() error = %v", err)
-	}
+	store := openPostgresStoreAt(t, url)
 	ledger, ok := store.(TurnLedger)
 	if !ok {
 		t.Fatalf("store is %T, want TurnLedger", store)
@@ -300,10 +287,7 @@ func TestSQLiteTurnLedgerSurvivesReopen(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	reopened, err := OpenSQLiteSessionStore(path)
-	if err != nil {
-		t.Fatalf("reopen error = %v", err)
-	}
+	reopened := openPostgresStoreAt(t, url)
 	defer func() { _ = reopened.Close() }()
 	reopenedLedger, ok := reopened.(TurnLedger)
 	if !ok {
@@ -347,7 +331,7 @@ func TestCanonicalTurnIDComponentsAreInjectivelyEncoded(t *testing.T) {
 func TestTurnRunnerCanonicalTurnIDPreservesMatchingLegacyRecord(t *testing.T) {
 	t.Parallel()
 
-	store := newTestSQLiteStore(t)
+	store := NewSessionStoreMemory()
 	ledger, ok := store.(TurnLedger)
 	if !ok {
 		t.Fatalf("store is %T, want TurnLedger", store)
@@ -378,7 +362,7 @@ func TestTurnRunnerCanonicalTurnIDPreservesMatchingLegacyRecord(t *testing.T) {
 func TestTurnRunnerCanonicalTurnIDRejectsCollidingLegacyRecord(t *testing.T) {
 	t.Parallel()
 
-	store := newTestSQLiteStore(t)
+	store := NewSessionStoreMemory()
 	ledger, ok := store.(TurnLedger)
 	if !ok {
 		t.Fatalf("store is %T, want TurnLedger", store)

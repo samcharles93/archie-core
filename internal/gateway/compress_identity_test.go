@@ -12,14 +12,8 @@ import (
 // compressBackends provides the persistent store used by compression tests.
 func compressBackends() map[string]func(t *testing.T) SessionStore {
 	return map[string]func(t *testing.T) SessionStore{
-		"sqlite": func(t *testing.T) SessionStore {
-			s, err := NewSQLiteSessionStoreMemory()
-			if err != nil {
-				t.Fatalf("NewSQLiteSessionStoreMemory: %v", err)
-			}
-			t.Cleanup(func() { _ = s.Close() })
-			return s
-		},
+		"memory":   func(*testing.T) SessionStore { return NewSessionStoreMemory() },
+		"postgres": func(t *testing.T) SessionStore { return newPostgresStore(t) },
 	}
 }
 

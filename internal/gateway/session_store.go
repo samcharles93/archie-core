@@ -10,15 +10,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// NewSessionStoreMemory returns an in-memory SQLite SessionStore for tests.
-func NewSessionStoreMemory() SessionStore {
-	store, err := NewSQLiteSessionStoreMemory()
-	if err != nil {
-		panic(err)
-	}
-	return store
-}
-
 // sessionRecency is the later of a session's creation and activity times.
 func sessionRecency(sc SessionContext) time.Time {
 	if sc.LastActiveAt.After(sc.CreatedAt) {
