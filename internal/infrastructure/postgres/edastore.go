@@ -301,7 +301,11 @@ func (s *EDA) RecordMappingMatch(ctx context.Context, mappingID, captureID strin
 
 // bindingValue takes GetBindingRow; the list queries' rows share its fields
 // and convert to it.
-func bindingValue(r postgresdb.GetBindingRow) binding.Binding {
+func bindingValue(r postgresdb.GetBindingRow) (binding.Binding, error) {
+	var inputs map[string]binding.InputSource
+	if err := json.Unmarshal([]byte(r.Inputs), &inputs); err != nil {
+		return binding.Binding{}, fmt.Errorf("edastore: decode binding %s inputs: %w", r.ID, err)
+	}
 	return binding.Binding{
 		ID:        r.ID,
 		Name:      r.Name,
@@ -311,27 +315,47 @@ func bindingValue(r postgresdb.GetBindingRow) binding.Binding {
 		Workflow:  r.Workflow,
 		Owner:     r.Owner,
 		Repo:      r.Repo,
+		RepoParam: r.RepoParam,
+		Inputs:    inputs,
 		Version:   int(r.Version),
 		Status:    binding.Status(r.Status),
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
+	}, nil
+}
+
+// bindingInputs encodes a binding's input assignments for storage.
+func bindingInputs(b binding.Binding) (string, error) {
+	if len(b.Inputs) == 0 {
+		return "{}", nil
 	}
+	data, err := json.Marshal(b.Inputs)
+	if err != nil {
+		return "", fmt.Errorf("edastore: encode binding inputs: %w", err)
+	}
+	return string(data), nil
 }
 
 // InsertBinding stores a new binding as pending_approval. Any number of
 // bindings may share a source.
 func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, error) {
 	id := newRecordID()
-	err := s.q.InsertBinding(ctx, postgresdb.InsertBindingParams{
-		ID:       id,
-		Name:     b.Name,
-		Source:   b.Matcher.Source,
-		Mapping:  b.MappingID,
-		Filter:   b.Filter,
-		Workflow: b.Workflow,
-		Owner:    b.Owner,
-		Repo:     b.Repo,
-		Status:   string(binding.StatusPendingApproval),
+	inputs, err := bindingInputs(b)
+	if err != nil {
+		return "", err
+	}
+	err = s.q.InsertBinding(ctx, postgresdb.InsertBindingParams{
+		ID:        id,
+		Name:      b.Name,
+		Source:    b.Matcher.Source,
+		Mapping:   b.MappingID,
+		Filter:    b.Filter,
+		Workflow:  b.Workflow,
+		Owner:     b.Owner,
+		Repo:      b.Repo,
+		Status:    string(binding.StatusPendingApproval),
+		Inputs:    inputs,
+		RepoParam: b.RepoParam,
 	})
 	if err != nil {
 		return "", fmt.Errorf("edastore: insert binding: %w", err)
@@ -350,7 +374,10 @@ func (s *EDA) GetBinding(ctx context.Context, id string) (*binding.Binding, erro
 	if err != nil {
 		return nil, err
 	}
-	b := bindingValue(r)
+	b, err := bindingValue(r)
+	if err != nil {
+		return nil, err
+	}
 	return &b, nil
 }
 
@@ -361,7 +388,11 @@ func (s *EDA) ListBindings(ctx context.Context) ([]binding.Binding, error) {
 	}
 	out := make([]binding.Binding, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, bindingValue(postgresdb.GetBindingRow(r)))
+		b, err := bindingValue(postgresdb.GetBindingRow(r))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
 	}
 	return out, nil
 }
@@ -374,7 +405,11 @@ func (s *EDA) ArmedBindingsForSource(ctx context.Context, source string) ([]bind
 	}
 	out := make([]binding.Binding, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, bindingValue(postgresdb.GetBindingRow(r)))
+		b, err := bindingValue(postgresdb.GetBindingRow(r))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
 	}
 	return out, nil
 }
@@ -382,16 +417,22 @@ func (s *EDA) ArmedBindingsForSource(ctx context.Context, source string) ([]bind
 // UpdateBinding rewrites a binding's editable fields, bumps its version and
 // drops it back to pending_approval.
 func (s *EDA) UpdateBinding(ctx context.Context, b binding.Binding) error {
+	inputs, err := bindingInputs(b)
+	if err != nil {
+		return err
+	}
 	n, err := s.q.UpdateBinding(ctx, postgresdb.UpdateBindingParams{
-		ID:       b.ID,
-		Name:     b.Name,
-		Source:   b.Matcher.Source,
-		Mapping:  b.MappingID,
-		Filter:   b.Filter,
-		Workflow: b.Workflow,
-		Owner:    b.Owner,
-		Repo:     b.Repo,
-		Status:   string(binding.StatusPendingApproval),
+		ID:        b.ID,
+		Name:      b.Name,
+		Source:    b.Matcher.Source,
+		Mapping:   b.MappingID,
+		Filter:    b.Filter,
+		Workflow:  b.Workflow,
+		Owner:     b.Owner,
+		Repo:      b.Repo,
+		Status:    string(binding.StatusPendingApproval),
+		Inputs:    inputs,
+		RepoParam: b.RepoParam,
 	})
 	if err != nil {
 		return err

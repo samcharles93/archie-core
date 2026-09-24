@@ -24,6 +24,7 @@ func TestActionRules(t *testing.T) {
 		{status: Rejected, terminal: true, actions: []Action{ActionArchive}},
 		{status: Dead, terminal: true, actions: []Action{ActionArchive}},
 		{status: Declined, terminal: true, actions: []Action{ActionArchive}},
+		{status: Completed, terminal: true, actions: []Action{ActionArchive}},
 	}
 
 	for _, tc := range tests {
@@ -103,7 +104,7 @@ func TestPresentationCatalog(t *testing.T) {
 		}
 	}
 	// Every lifecycle status must have presentation metadata.
-	for _, status := range []string{Queued, Running, WaitingHuman, PROpen, Merged, Parked, Dead, Rejected, Declined} {
+	for _, status := range []string{Queued, Running, WaitingHuman, PROpen, Merged, Parked, Dead, Rejected, Declined, Completed} {
 		if !seen[status] {
 			t.Errorf("status %q missing from Statuses()", status)
 		}
@@ -137,7 +138,7 @@ func TestPresentationCatalog(t *testing.T) {
 		}
 		return out
 	}
-	for _, status := range []string{Queued, Running, WaitingHuman, PROpen, Parked, Merged, Rejected, Dead, Declined} {
+	for _, status := range []string{Queued, Running, WaitingHuman, PROpen, Parked, Merged, Rejected, Dead, Declined, Completed} {
 		for a := range byID(status) {
 			if !actionSeen[string(a)] {
 				t.Errorf("action %q from status %q has no ActionCatalog entry", a, status)

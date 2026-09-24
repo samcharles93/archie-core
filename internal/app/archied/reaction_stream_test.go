@@ -2,7 +2,6 @@ package archied
 
 import (
 	"log/slog"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -29,8 +28,8 @@ import (
 func TestConnectNATSCreatesReactionStream(t *testing.T) {
 	b := &boot{
 		cfg: config.Config{
-			DBPath: filepath.Join(t.TempDir(), "archie.db"),
-			NATS:   config.NATSConfig{Mode: config.NATSModeEmbedded},
+			StateDir: t.TempDir(),
+			NATS:     config.NATSConfig{Mode: config.NATSModeEmbedded},
 		},
 		log: slog.New(slog.DiscardHandler),
 	}

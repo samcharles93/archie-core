@@ -30,6 +30,7 @@ const (
 	StatusDead         = task.StatusDead
 	StatusRejected     = task.StatusRejected
 	StatusClosedWontDo = task.StatusClosedWontDo
+	StatusCompleted    = task.StatusCompleted
 )
 
 // Task.Source values.

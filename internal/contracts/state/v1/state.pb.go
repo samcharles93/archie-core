@@ -1318,8 +1318,11 @@ type Task struct {
 	// separately from retry_count, so an operator's manual retries no
 	// longer draw down the review-remediation budget (and vice versa).
 	RemediationRounds int32 `protobuf:"varint,33,opt,name=remediation_rounds,json=remediationRounds,proto3" json:"remediation_rounds,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// inputs_json is the JSON object of workflow inputs a binding dispatch
+	// resolved (task.EncodeInputs); empty for a task no binding started.
+	InputsJson    string `protobuf:"bytes,34,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1581,6 +1584,13 @@ func (x *Task) GetRemediationRounds() int32 {
 		return x.RemediationRounds
 	}
 	return 0
+}
+
+func (x *Task) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -2320,10 +2330,15 @@ type Binding struct {
 	// Unused: signing moved to Source. Kept so the field number is never reused.
 	//
 	// Deprecated: Marked as deprecated in state/v1/state.proto.
-	Secret        string                 `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Filter        string                 `protobuf:"bytes,13,opt,name=filter,proto3" json:"filter,omitempty"`
+	Secret    string                 `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Filter    string                 `protobuf:"bytes,13,opt,name=filter,proto3" json:"filter,omitempty"`
+	// inputs_json assigns workflow inputs, a JSON object of
+	// {"param": name} or {"value": constant} per input.
+	InputsJson string `protobuf:"bytes,14,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	// repo_param names the mapped parameter holding "owner/name".
+	RepoParam     string `protobuf:"bytes,15,opt,name=repo_param,json=repoParam,proto3" json:"repo_param,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2446,6 +2461,20 @@ func (x *Binding) GetUpdatedAt() *timestamppb.Timestamp {
 func (x *Binding) GetFilter() string {
 	if x != nil {
 		return x.Filter
+	}
+	return ""
+}
+
+func (x *Binding) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
+func (x *Binding) GetRepoParam() string {
+	if x != nil {
+		return x.RepoParam
 	}
 	return ""
 }
@@ -9113,6 +9142,7 @@ type EnqueueBindingTaskRequest struct {
 	Identity       string                 `protobuf:"bytes,6,opt,name=identity,proto3" json:"identity,omitempty"`
 	BindingId      string                 `protobuf:"bytes,7,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,8,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
+	InputsJson     string                 `protobuf:"bytes,9,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -9201,6 +9231,13 @@ func (x *EnqueueBindingTaskRequest) GetBindingVersion() int64 {
 		return x.BindingVersion
 	}
 	return 0
+}
+
+func (x *EnqueueBindingTaskRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
 }
 
 type EnqueueBindingTaskResponse struct {
@@ -9327,7 +9364,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12-\n" +
 	"\x05audit\x18\x04 \x01(\v2\x17.state.v1.IdentityAuditR\x05audit\"M\n" +
 	"\x1bBindIdentitySubjectResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xd9\b\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xfa\b\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -9371,7 +9408,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\rreview_cursor\x18\x1f \x01(\x03R\freviewCursor\x12\x1d\n" +
 	"\n" +
 	"park_class\x18  \x01(\tR\tparkClass\x12-\n" +
-	"\x12remediation_rounds\x18! \x01(\x05R\x11remediationRounds\"\xf8\x02\n" +
+	"\x12remediation_rounds\x18! \x01(\x05R\x11remediationRounds\x12\x1f\n" +
+	"\vinputs_json\x18\" \x01(\tR\n" +
+	"inputsJson\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -9445,7 +9484,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"matchCount\x12B\n" +
 	"\x0flast_matched_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastMatchedAt\"(\n" +
 	"\x0eBindingMatcher\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\"\xa2\x03\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\"\xe2\x03\n" +
 	"\aBinding\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +
@@ -9463,7 +9502,11 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
-	"\x06filter\x18\r \x01(\tR\x06filter\"\xc4\x01\n" +
+	"\x06filter\x18\r \x01(\tR\x06filter\x12\x1f\n" +
+	"\vinputs_json\x18\x0e \x01(\tR\n" +
+	"inputsJson\x12\x1d\n" +
+	"\n" +
+	"repo_param\x18\x0f \x01(\tR\trepoParam\"\xc4\x01\n" +
 	"\x06Source\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\asigning\x18\x02 \x01(\tR\asigning\x12\x16\n" +
@@ -9831,7 +9874,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asources\x18\x01 \x03(\tR\asources\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x03R\x05limit\"W\n" +
 	"\"StreamUndispatchedCapturesResponse\x121\n" +
-	"\acapture\x18\x01 \x01(\v2\x17.state.v1.CapturedEventR\acapture\"\xef\x01\n" +
+	"\acapture\x18\x01 \x01(\v2\x17.state.v1.CapturedEventR\acapture\"\x90\x02\n" +
 	"\x19EnqueueBindingTaskRequest\x12\x14\n" +
 	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x14\n" +
@@ -9841,7 +9884,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bidentity\x18\x06 \x01(\tR\bidentity\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\a \x01(\tR\tbindingId\x12'\n" +
-	"\x0fbinding_version\x18\b \x01(\x03R\x0ebindingVersion\"@\n" +
+	"\x0fbinding_version\x18\b \x01(\x03R\x0ebindingVersion\x12\x1f\n" +
+	"\vinputs_json\x18\t \x01(\tR\n" +
+	"inputsJson\"@\n" +
 	"\x1aEnqueueBindingTaskResponse\x12\"\n" +
 	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task2\x903\n" +
 	"\x11StateStoreService\x12\\\n" +

@@ -283,6 +283,9 @@ message Task {
   // separately from retry_count, so an operator's manual retries no
   // longer draw down the review-remediation budget (and vice versa).
   int32 remediation_rounds = 33;
+  // inputs_json is the JSON object of workflow inputs a binding dispatch
+  // resolved (task.EncodeInputs); empty for a task no binding started.
+  string inputs_json = 34;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -402,6 +405,11 @@ message Binding {
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
   string filter = 13;
+  // inputs_json assigns workflow inputs, a JSON object of
+  // {"param": name} or {"value": constant} per input.
+  string inputs_json = 14;
+  // repo_param names the mapped parameter holding "owner/name".
+  string repo_param = 15;
 }
 
 // Source mirrors internal/domain/source.Source.
@@ -860,5 +868,6 @@ message EnqueueBindingTaskRequest {
   string identity = 6;
   string binding_id = 7;
   int64 binding_version = 8;
+  string inputs_json = 9;
 }
 message EnqueueBindingTaskResponse { Task task = 1; }

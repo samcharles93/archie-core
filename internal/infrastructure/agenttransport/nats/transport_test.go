@@ -152,7 +152,7 @@ func TestSubscribeTasksOwnsWireErrors(t *testing.T) {
 		{name: "missing task", payload: []byte(`{}`), want: "validate taskrun request: task is required"},
 		{name: "null task", payload: []byte(`{"task":null}`), want: "validate taskrun request: task is required"},
 		{name: "nonpositive task ID", payload: []byte(`{"task":{"id":0}}`), want: "validate taskrun request: task ID must be positive, got 0"},
-		{name: "missing worktree grant", payload: []byte(`{"task":{"id":9}}`), want: "validate taskrun request: worktree grant is required"},
+		{name: "missing worktree grant", payload: []byte(`{"task":{"id":9,"owner":"acme","repo":"api"}}`), want: "validate taskrun request: worktree grant is required"},
 		{name: "missing workflow definition", payload: []byte(`{"task":{"id":9},"worktree_grant":"grant"}`), want: "validate taskrun request: workflow definition is required"},
 		{name: "payload subject mismatch", payload: []byte(`{"task":{"id":8},"worktree_grant":"grant","workflow_definition":"id: implement\nsteps: []\n"}`), want: "validate taskrun request: task ID 8 does not match subject task ID 9"},
 		{name: "handler", payload: []byte(`{"task":{"id":9},"worktree_grant":"grant","workflow_definition":"id: implement\nsteps: []\n"}`), want: "run failed", wantHandlerCalls: 1},

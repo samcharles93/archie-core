@@ -56,12 +56,20 @@ type Binding struct {
 	// behaviour that predates this field. Setting only one is invalid
 	// (Validate rejects it): a pin is a complete owner/repo pair or not a
 	// pin at all, never a half-guess.
-	Owner     string    `json:"owner,omitempty"`
-	Repo      string    `json:"repo,omitempty"`
-	Version   int       `json:"version"`
-	Status    Status    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Owner string `json:"owner,omitempty"`
+	Repo  string `json:"repo,omitempty"`
+	// RepoParam names the mapped parameter holding "owner/name" when the
+	// repository comes from the event instead of a fixed Owner/Repo pin. The
+	// named repository must still be a configured one.
+	RepoParam string `json:"repo_param,omitempty"`
+	// Inputs assigns the workflow's declared inputs, each from a mapped
+	// parameter or a constant; CheckWorkflow checks them when the binding is
+	// saved.
+	Inputs    map[string]InputSource `json:"inputs,omitempty"`
+	Version   int                    `json:"version"`
+	Status    Status                 `json:"status"`
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
 }
 
 // Validate checks a binding is well-formed before it is persisted: a
@@ -83,6 +91,14 @@ func (b Binding) Validate() error {
 	}
 	if (b.Owner == "") != (b.Repo == "") {
 		return fmt.Errorf("binding: owner and repo must both be set or both be empty")
+	}
+	if b.Owner != "" && b.RepoParam != "" {
+		return fmt.Errorf("binding: a fixed owner/repo and a repository parameter cannot both be set")
+	}
+	for _, name := range sortedKeys(b.Inputs) {
+		if err := b.Inputs[name].validate(name); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -596,6 +596,12 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 // registers the client close, so the client closes first (cleanups run LIFO).
 func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	cfg, log := b.cfg, b.log
+	// An empty state_dir would put the store and its endpoint file in the
+	// process's working directory. Defaults always set it, so empty means a
+	// caller skipped them.
+	if cfg.StateDir == "" {
+		return "", "", errors.New("embedded nats: state_dir is required")
+	}
 	host := ""
 	if b.containerPool != nil {
 		host = b.containerPool.HostGateway()

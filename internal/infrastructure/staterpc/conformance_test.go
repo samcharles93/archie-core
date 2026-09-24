@@ -390,12 +390,17 @@ func TestStateStoreConformance(t *testing.T) {
 			if err != nil || bindingID == "" {
 				t.Fatalf("InsertBinding: %v %v", bindingID, err)
 			}
-			_, err = ec.InsertBinding(ctx, binding.Binding{
+			secondID, err := ec.InsertBinding(ctx, binding.Binding{
 				Name: "b2", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
-				Workflow: "implement",
+				Workflow: "implement", RepoParam: "full",
+				Inputs: map[string]binding.InputSource{"a": {Param: "p"}, "b": {Value: "x"}},
 			})
 			if err != nil {
 				t.Fatalf("second InsertBinding on a source = %v, want accepted", err)
+			}
+			second, err := ec.GetBinding(ctx, secondID)
+			if err != nil || second.RepoParam != "full" || second.Inputs["a"].Param != "p" || second.Inputs["b"].Value != "x" {
+				t.Fatalf("binding inputs and repo_param over the wire = %+v, %v", second, err)
 			}
 			missingBinding, err := ec.GetBinding(ctx, "rabsent00000000")
 			if err != nil || missingBinding != nil {
@@ -431,9 +436,12 @@ func TestStateStoreConformance(t *testing.T) {
 			if _, err := ec.ArmedBindingsForSource(ctx, "sentry"); err != nil {
 				t.Fatalf("ArmedBindingsForSource: %v", err)
 			}
-			bindingTask, err := c.EnqueueBindingTask(ctx, "acme", "widget", "t", "b", "implement", "", bindingID, 1)
+			bindingTask, err := c.EnqueueBindingTask(ctx, "acme", "widget", "t", "b", "implement", "", bindingID, 1, map[string]any{"src_ip": "10.0.0.1"})
 			if err != nil || bindingTask == nil {
 				t.Fatalf("EnqueueBindingTask: %+v %v", bindingTask, err)
+			}
+			if stored, err := c.TaskByID(ctx, bindingTask.ID); err != nil || stored.Inputs["src_ip"] != "10.0.0.1" {
+				t.Fatalf("binding task inputs over the wire = %+v, %v; want src_ip", stored, err)
 			}
 			if err := ec.RecordDispatch(ctx, bindingID, 1, captureID, bindingTask.ID); err != nil {
 				t.Fatalf("RecordDispatch: %v", err)

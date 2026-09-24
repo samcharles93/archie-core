@@ -77,7 +77,8 @@ export function useBindings() {
     saving.value = true;
     saveFailure.value = null;
     try {
-      const body = bindingPayload(draft, eventTypes.value);
+      const workflow = workflows.value.find((w) => w.id === draft.workflow);
+      const body = bindingPayload(draft, eventTypes.value, workflow);
       if (draft.id) {
         await api.bindingUpdate(String(draft.id), body);
       } else {

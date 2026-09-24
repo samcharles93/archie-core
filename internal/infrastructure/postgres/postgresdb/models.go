@@ -30,6 +30,8 @@ type Binding struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Filter    string
+	Inputs    string
+	RepoParam string
 }
 
 type BindingDispatch struct {
@@ -251,6 +253,7 @@ type Task struct {
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
 	ReviewCursor              int64
+	Inputs                    string
 }
 
 type ToolCall struct {

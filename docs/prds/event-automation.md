@@ -103,7 +103,12 @@ steps: ...
 ```
 
 - `repository: none` runs the agent in a scratch workspace with no clone.
-  `required` gives the agent a worktree of the task's repository.
+  `required`, the default, gives the agent a worktree of the task's
+  repository. `optional` gives it a worktree when the binding names a
+  repository and a scratch workspace when it does not.
+- A workflow whose `repository` is not `required` may use only steps that need
+  no repository. `agent.run` is one: it runs one agent mission and finishes
+  the task as done, with no pull request.
 - The declared inputs reach the agent as structured data in the task brief
   and in the agent's context. They are not body text.
 - A workflow may declare `outputs`, the structured result it returns when it
@@ -142,7 +147,8 @@ A binding connects an event type to one workflow:
   checked against the workflow's declared inputs when the binding is saved;
 - a repository, when the workflow's `repository` is not `none`: either fixed
   (`acme/api`) or taken from a parameter (the GitHub webhook's
-  `repository.full_name`).
+  `repository.full_name`). A repository taken from a parameter must be a
+  configured one, or the event does not dispatch.
 
 Any number of bindings may use one event type. Approval and re-approval after
 an edit are unchanged. A binding whose workflow input types no longer match is
@@ -153,14 +159,19 @@ refused at dispatch and reported on the binding.
 A profile is a named execution environment that a workflow selects:
 
 - the container image;
-- the tools the agent may call;
+- an allowlist over the tools Archie adds to the agent: MCP servers,
+  repository scripts and skill plugins. The agent's own file tools are always
+  present;
 - the secrets injected into it, by reference to the secret store, never
   inline (superseded by `docs/prds/orgs-and-access.md`: secrets are granted to
   identities, and a profile holds no secrets);
-- its network access and forge access.
+- its network access and forge access (superseded by
+  `docs/prds/orgs-and-access.md`: permissions are granted to identities).
 
-The global `[containers].image` becomes the default profile, so existing
-workflows are unchanged. A secret or permission is granted to an identity, never to a binding, so an
+Profiles are configured under `[containers.profiles.<name>]`. The global
+`[containers].image` becomes the default profile, so existing workflows are
+unchanged. A task whose workflow names an unconfigured profile is parked for
+an operator. A secret or permission is granted to an identity, never to a binding, so an
 event can never widen what an agent can do (`docs/prds/orgs-and-access.md`).
 
 ### Workflows belong to orgs
@@ -178,7 +189,7 @@ binding list.
 2. Mappings per event type, and multiple bindings per source.
 3. Workflow inputs, structured parameters in the task brief, and
    `repository: none | optional | required`.
-4. Agent profiles with image, tools, secret references and access.
+4. Agent profiles with image and tools.
 5. Signing as a source setting, with the unsigned option; UUIDv7 source paths
    with a custom-path override.
 6. Workflows calling workflows, with declared outputs.

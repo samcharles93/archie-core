@@ -906,6 +906,54 @@ type ContainerConfig struct {
 	// gateway; external deployments can set a Compose network explicitly when
 	// workers must resolve broker service names (e.g. "archie-core_default").
 	Network string `toml:"network" yaml:"network"`
+	// Profiles are the named agent profiles a workflow selects with
+	// `profile:`. A workflow that names none runs under the default profile:
+	// Image and every tool.
+	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles" json:"profiles,omitempty"`
+}
+
+// AgentProfile is a named execution environment for an agent. Secrets and
+// forge or network access are granted to identities, not profiles
+// (docs/prds/orgs-and-access.md).
+type AgentProfile struct {
+	// Image is the container image; empty means [containers].image.
+	Image string `toml:"image" yaml:"image" json:"image,omitempty"`
+	// Tools allowlists the tools archie adds to the agent (MCP servers,
+	// repository scripts and skill plugins) by name. Empty allows them all.
+	// The agent loop's own file tools are always present, read-only when a
+	// step asks for that.
+	Tools []string `toml:"tools" yaml:"tools" json:"tools,omitempty"`
+}
+
+// Profile resolves the profile a workflow names: "" is the default profile,
+// and an unconfigured name is an error.
+func (c ContainerConfig) Profile(name string) (AgentProfile, error) {
+	if name == "" {
+		return AgentProfile{Image: c.Image}, nil
+	}
+	p, ok := c.Profiles[name]
+	if !ok {
+		return AgentProfile{}, fmt.Errorf("agent profile %q is not configured", name)
+	}
+	if p.Image == "" {
+		p.Image = c.Image
+	}
+	return p, nil
+}
+
+// ValidateProfiles rejects a profile with an empty name or an empty tool name.
+func (c ContainerConfig) ValidateProfiles() error {
+	for name, p := range c.Profiles {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("containers.profiles: a profile name must not be empty")
+		}
+		for _, tool := range p.Tools {
+			if strings.TrimSpace(tool) == "" {
+				return fmt.Errorf("containers.profiles.%s.tools: a tool name must not be empty", name)
+			}
+		}
+	}
+	return nil
 }
 
 // Log configures where archied writes its logs.

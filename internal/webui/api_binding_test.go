@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -346,5 +347,36 @@ func TestHandleBindingMutationsRequireCSRFHeader(t *testing.T) {
 				t.Fatalf("status = %d, want %d without a CSRF header; body = %s", w.Code, http.StatusForbidden, w.Body.String())
 			}
 		})
+	}
+}
+
+// Saving a binding checks it against the workflow's declared inputs: an
+// unassigned required input is refused, and assigned inputs round-trip.
+func TestHandleBindingChecksWorkflowInputs(t *testing.T) {
+	srv := bindingTestServer(t)
+	srv.ControlPlane = workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{
+		ID:   "investigate",
+		YAML: "id: investigate\nrepository: none\ninputs:\n  subject: {type: string, required: true}\nsteps:\n  - type: agent.run\n    settings:\n      mission: look\n",
+	}}})
+	mappingID := seedMapping(t, srv, "m")
+
+	req := validBindingRequest("a", "sentry", mappingID)
+	req["workflow"] = "investigate"
+	w := doJSON(t, srv, http.MethodPost, "/api/bindings", req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), `requires input "subject"`) {
+		t.Fatalf("create without the required input = %d %s, want 400 naming the input", w.Code, w.Body.String())
+	}
+
+	req["inputs"] = map[string]any{"subject": map[string]any{"param": "title"}}
+	w = doJSON(t, srv, http.MethodPost, "/api/bindings", req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s, want 201", w.Code, w.Body.String())
+	}
+	var created binding.Binding
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Inputs["subject"].Param != "title" {
+		t.Fatalf("created inputs = %+v, want subject from title", created.Inputs)
 	}
 }

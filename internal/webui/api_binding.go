@@ -7,6 +7,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 // bindingRequest is the wire shape POST /api/bindings and
@@ -24,6 +25,9 @@ type bindingRequest struct {
 	// rejects setting only one.
 	Owner string `json:"owner"`
 	Repo  string `json:"repo"`
+	// RepoParam takes the repository from a mapped parameter instead.
+	RepoParam string                         `json:"repo_param"`
+	Inputs    map[string]binding.InputSource `json:"inputs"`
 }
 
 // bindingView is a listed binding with its source's signing state, so the
@@ -70,30 +74,8 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	available, err := s.hasWorkflow(r.Context(), req.Workflow)
-	if err != nil {
-		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	if !available {
-		http.Error(w, "binding: workflow not found: "+req.Workflow, http.StatusBadRequest)
-		return
-	}
-	b := binding.Binding{
-		Name:      req.Name,
-		Matcher:   req.Matcher,
-		MappingID: req.MappingID,
-		Filter:    req.Filter,
-		Workflow:  req.Workflow,
-		Owner:     req.Owner,
-		Repo:      req.Repo,
-		Status:    binding.StatusPendingApproval,
-	}
-	if err := b.Validate(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if !s.checkBindingFilter(w, r, b) {
+	b, ok := s.checkedBinding(w, r, "", req)
+	if !ok {
 		return
 	}
 	id, err := s.Bindings.InsertBinding(r.Context(), b)
@@ -153,30 +135,8 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	available, err := s.hasWorkflow(r.Context(), req.Workflow)
-	if err != nil {
-		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	if !available {
-		http.Error(w, "binding: workflow not found: "+req.Workflow, http.StatusBadRequest)
-		return
-	}
-	b := binding.Binding{
-		ID:        id,
-		Name:      req.Name,
-		Matcher:   req.Matcher,
-		MappingID: req.MappingID,
-		Filter:    req.Filter,
-		Workflow:  req.Workflow,
-		Owner:     req.Owner,
-		Repo:      req.Repo,
-	}
-	if err := b.Validate(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if !s.checkBindingFilter(w, r, b) {
+	b, ok := s.checkedBinding(w, r, id, req)
+	if !ok {
 		return
 	}
 	if err := s.Bindings.UpdateBinding(r.Context(), b); err != nil {
@@ -257,26 +217,63 @@ func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, updated)
 }
 
-// checkBindingFilter refuses a binding whose mapping does not exist or whose
-// filter does not compile against the mapping's parameters.
-func (s *Server) checkBindingFilter(w http.ResponseWriter, r *http.Request, b binding.Binding) bool {
+// checkedBinding builds the binding a create or update request describes and
+// refuses it, having written the error, unless it is well-formed, its mapping
+// exists, its filter compiles against the mapping's parameters, and its inputs
+// and repository satisfy the workflow it targets.
+func (s *Server) checkedBinding(w http.ResponseWriter, r *http.Request, id string, req bindingRequest) (binding.Binding, bool) {
+	b := binding.Binding{
+		ID:        id,
+		Name:      req.Name,
+		Matcher:   req.Matcher,
+		MappingID: req.MappingID,
+		Filter:    req.Filter,
+		Workflow:  req.Workflow,
+		Owner:     req.Owner,
+		Repo:      req.Repo,
+		RepoParam: req.RepoParam,
+		Inputs:    req.Inputs,
+		Status:    binding.StatusPendingApproval,
+	}
+	if err := b.Validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return binding.Binding{}, false
+	}
+	entry, found, err := s.workflowEntry(r.Context(), req.Workflow)
+	if err != nil {
+		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
+		return binding.Binding{}, false
+	}
+	if !found {
+		http.Error(w, "binding: workflow not found: "+req.Workflow, http.StatusBadRequest)
+		return binding.Binding{}, false
+	}
+	iface, err := task.ParseWorkflowInterface(entry.YAML)
+	if err != nil {
+		http.Error(w, "binding: workflow "+req.Workflow+": "+err.Error(), http.StatusBadRequest)
+		return binding.Binding{}, false
+	}
 	if s.Mappings == nil {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
-		return false
+		return binding.Binding{}, false
 	}
 	m, err := s.Mappings.GetMapping(r.Context(), b.MappingID)
 	if err != nil {
 		s.Log.Error("get mapping for binding", "err", err, "mapping", b.MappingID)
 		http.Error(w, "get mapping failed", http.StatusInternalServerError)
-		return false
+		return binding.Binding{}, false
 	}
 	if m == nil {
 		http.Error(w, "binding: mapping not found: "+b.MappingID, http.StatusBadRequest)
-		return false
+		return binding.Binding{}, false
 	}
 	if _, err := binding.CompileFilter(b.Filter, m.Fields); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return false
+		return binding.Binding{}, false
 	}
-	return true
+	if err := b.CheckWorkflow(iface, m.Fields); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return binding.Binding{}, false
+	}
+	return b, true
 }

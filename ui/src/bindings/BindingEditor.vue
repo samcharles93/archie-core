@@ -13,6 +13,8 @@ import {
   draftFromBinding,
   emptyDraft,
   mappingsForEventType,
+  paramsForType,
+  takesRepository,
   type Binding,
   type BindingDraft,
   type MappingOption,
@@ -21,8 +23,9 @@ import {
 
 /**
  * The binding editor: name, the event type it applies to, one of that type's
- * mappings, an optional filter over the mapping's parameters, the workflow and
- * an optional repo pin. Signing is the source's.
+ * mappings, an optional filter over the mapping's parameters, the workflow, its
+ * inputs, and the repository when the workflow takes one. Signing is the
+ * source's.
  */
 
 const props = defineProps<{
@@ -59,6 +62,36 @@ watch(
     if (!typeMappings.value.some((m) => m.id === draft.value.mappingId)) draft.value.mappingId = "";
   },
 );
+
+const workflow = computed(() => props.workflows.find((w) => w.id === draft.value.workflow));
+const declaredInputs = computed(() => Object.entries(workflow.value?.inputs ?? {}).sort(([a], [b]) => a.localeCompare(b)));
+const mappingFields = computed(() => props.mappings.find((m) => m.id === draft.value.mappingId)?.fields ?? []);
+const stringParams = computed(() => paramsForType(mappingFields.value, "string"));
+
+// The constant sentinel stands for "no parameter": Select items cannot carry
+// an empty value.
+const CONSTANT = "__constant__";
+
+function inputDraft(name: string) {
+  draft.value.inputs[name] ??= { param: "", value: "" };
+  return draft.value.inputs[name];
+}
+
+function inputSource(name: string): string {
+  return inputDraft(name).param || CONSTANT;
+}
+
+function setInputSource(name: string, source: unknown): void {
+  inputDraft(name).param = source === CONSTANT ? "" : String(source);
+}
+
+const NO_PARAM = "__none__";
+const repoSource = computed({
+  get: () => draft.value.repoParam || NO_PARAM,
+  set: (v: string) => {
+    draft.value.repoParam = v === NO_PARAM ? "" : v;
+  },
+});
 
 const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
 </script>
@@ -136,7 +169,48 @@ const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
             </Select>
           </Field>
 
-          <Field>
+          <Field v-for="[name, spec] in declaredInputs" :key="name">
+            <FieldLabel :for="`binding-input-${name}`">
+              Input <span class="font-mono">{{ name }}</span>
+              <span class="text-fg-muted">({{ spec.type }}{{ spec.required ? ", required" : "" }})</span>
+            </FieldLabel>
+            <div class="grid grid-cols-2 items-start gap-3">
+              <Select :model-value="inputSource(name)" @update:model-value="setInputSource(name, $event)">
+                <SelectTrigger :id="`binding-input-${name}`" class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem :value="CONSTANT">Constant</SelectItem>
+                    <SelectItem v-for="field in paramsForType(mappingFields, spec.type)" :key="field.name" :value="field.name">
+                      {{ field.name }}
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Input v-if="!inputDraft(name).param" v-model="inputDraft(name).value" class="font-mono text-xs" placeholder="value" />
+            </div>
+          </Field>
+
+          <Field v-if="takesRepository(workflow)">
+            <FieldLabel for="binding-repo-param">Repository from</FieldLabel>
+            <Select v-model="repoSource">
+              <SelectTrigger id="binding-repo-param" class="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem :value="NO_PARAM">A pinned or configured repo</SelectItem>
+                  <SelectItem v-for="field in stringParams" :key="field.name" :value="field.name">
+                    Parameter {{ field.name }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>A parameter must hold owner/name and name a configured repo.</FieldDescription>
+          </Field>
+
+          <Field v-if="takesRepository(workflow) && !draft.repoParam">
             <div class="grid grid-cols-2 items-start gap-3">
               <Field>
                 <FieldLabel for="binding-owner">Pinned owner</FieldLabel>

@@ -523,6 +523,9 @@ func validateContainers(cfg *config.Config) error {
 	if cfg.Containers.VolumeTTL < 0 {
 		return fmt.Errorf("%w: containers.volume_ttl must not be negative", ErrInvalidInput)
 	}
+	if err := cfg.Containers.ValidateProfiles(); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 	return nil
 }
 

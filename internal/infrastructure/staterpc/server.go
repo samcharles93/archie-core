@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/logging"
 )
 
@@ -812,7 +813,11 @@ func (s *server) EnqueueBindingTask(ctx context.Context, r *pb.EnqueueBindingTas
 	if s.deps.BindingTaskCreator == nil {
 		return nil, errBindingTaskCreatorUnavailable
 	}
-	t, err := s.deps.BindingTaskCreator.EnqueueBindingTask(ctx, r.Owner, r.Repo, r.Title, r.Body, r.Workflow, r.Identity, r.BindingId, int(r.BindingVersion))
+	inputs, err := task.DecodeInputs(r.InputsJson)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	t, err := s.deps.BindingTaskCreator.EnqueueBindingTask(ctx, r.Owner, r.Repo, r.Title, r.Body, r.Workflow, r.Identity, r.BindingId, int(r.BindingVersion), inputs)
 	if err != nil {
 		return nil, s.logErr("EnqueueBindingTask", err)
 	}

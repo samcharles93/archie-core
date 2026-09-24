@@ -554,8 +554,12 @@ func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string,
 
 // BindingTaskCreator
 
-func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*task.Task, error) {
-	r, err := c.client.EnqueueBindingTask(ctx, &pb.EnqueueBindingTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, BindingId: bindingID, BindingVersion: int64(bindingVersion)})
+func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*task.Task, error) {
+	encoded, err := task.EncodeInputs(inputs)
+	if err != nil {
+		return nil, err
+	}
+	r, err := c.client.EnqueueBindingTask(ctx, &pb.EnqueueBindingTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, BindingId: bindingID, BindingVersion: int64(bindingVersion), InputsJson: encoded})
 	if err != nil {
 		return nil, unmapError(err)
 	}

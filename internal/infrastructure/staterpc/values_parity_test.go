@@ -29,6 +29,8 @@ func TestTaskProtoCarriesEveryDomainField(t *testing.T) {
 			field.SetString(v.Type().Field(i).Name + "-value")
 		case field.CanInt():
 			field.SetInt(int64(i) + 1)
+		case field.Type() == reflect.TypeFor[map[string]any]():
+			field.Set(reflect.ValueOf(map[string]any{"key": v.Type().Field(i).Name + "-value"}))
 		default:
 			t.Fatalf("field %s has kind %s, which this test does not know how to fill; extend it alongside the field", v.Type().Field(i).Name, field.Kind())
 		}

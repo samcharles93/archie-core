@@ -63,25 +63,25 @@ ON CONFLICT DO NOTHING;
 DELETE FROM mappings WHERE id = $1;
 
 -- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9);
+INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, inputs, repo_param)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11);
 
 -- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
 FROM bindings WHERE id = $1;
 
 -- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
 FROM bindings ORDER BY created_at DESC;
 
 -- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC;
 
 -- name: UpdateBinding :execrows
 UPDATE bindings
 SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,
-    version = version + 1, status = $9, updated_at = now()
+    version = version + 1, status = $9, inputs = $10, repo_param = $11, updated_at = now()
 WHERE id = $1;
 
 -- name: SetBindingArmed :execrows

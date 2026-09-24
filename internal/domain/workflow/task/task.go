@@ -30,6 +30,7 @@ const (
 	StatusDead         = taskstate.Dead
 	StatusRejected     = taskstate.Rejected
 	StatusClosedWontDo = taskstate.Declined
+	StatusCompleted    = taskstate.Completed
 )
 
 // Task is the task-execution record the workflow domain operates on.
@@ -91,6 +92,10 @@ type Task struct {
 	// later edits to the binding cannot silently rewrite history.
 	BindingID      string `json:"binding_id"`
 	BindingVersion int    `json:"binding_version"`
+	// Inputs are the workflow inputs the binding assigned, checked against
+	// the workflow's declared inputs at dispatch. They reach the agent as
+	// structured data, never as body text.
+	Inputs map[string]any `json:"inputs,omitempty"`
 	// ReviewPayload is the JSON-encoded review unit (the forge review's
 	// actionable comments) the remediate workflow's current run must
 	// address. The daemon's reaction consumer injects it before queuing a
@@ -153,4 +158,16 @@ type Definition struct {
 	Name    string `json:"name"`
 	Origin  string `json:"origin"`
 	Enabled bool   `json:"enabled"`
+	// Inputs and Repository are what the workflow declares, so a binding
+	// editor can offer the inputs to assign and whether to name a repository.
+	Inputs     map[string]InputSpec `json:"inputs,omitempty"`
+	Repository RepositoryMode       `json:"repository,omitempty"`
+}
+
+// HasRepository reports whether the task works on a repository. A task a
+// binding started for a workflow with repository none (or optional, with no
+// repository named) has neither owner nor repo and runs in a scratch
+// workspace.
+func (t Task) HasRepository() bool {
+	return t.Owner != "" || t.Repo != ""
 }

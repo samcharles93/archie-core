@@ -180,7 +180,7 @@ func TestCancelledTaskTransitionsToParked(t *testing.T) {
 			d.TaskRunReadyTimeout = 100 * time.Millisecond
 			d.TaskRunRetryBackoff = 10 * time.Millisecond
 
-			d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+			runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 
 			got, err := s.TaskByID(context.Background(), task.ID)
 			if err != nil {
@@ -519,7 +519,7 @@ func TestAcquireTaskContainerFailureParksTaskOnCancelledContext(t *testing.T) {
 				d.Storage = &errStorage{setupErr: tt.setupErr}
 			}
 
-			ctr, revoke, ok := d.acquireTaskContainer(ctx, task, config.Repo{Owner: "acme", Name: "widget"}, workDir)
+			ctr, revoke, ok := d.acquireTaskContainer(ctx, task, config.Repo{Owner: "acme", Name: "widget"}, workDir, "")
 			if ok || ctr != nil || revoke != nil {
 				t.Fatalf("acquireTaskContainer ok = %v, ctr = %v, revoke==nil:%v; want false, nil, true", ok, ctr, revoke == nil)
 			}

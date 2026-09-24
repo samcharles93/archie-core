@@ -251,7 +251,7 @@ type BindingDispatcher interface {
 // keeps the lifecycle surface narrow (8 methods, the interfacebloat limit)
 // and keeps the binding-specific shape on the binding interfaces.
 type BindingTaskCreator interface {
-	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*task.Task, error)
+	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*task.Task, error)
 }
 
 // PlaybookDispatcher is the idempotency-ledger surface for side-effecting

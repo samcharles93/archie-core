@@ -458,6 +458,12 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # max_uptime = "60m"               # container lifetime cap
 # volume_ttl = "72h"               # max age for persistent repo volumes and Git clone caches
 # pull_policy = "missing"          # "missing" or "always"
+#
+# Agent profiles a workflow selects with `profile: <name>`. A workflow that
+# names none runs under [containers].image with every tool.
+# [containers.profiles.network-investigator]
+# image = "ghcr.io/samcharles93/archie-agent-net:latest"  # empty uses [containers].image
+# tools = ["whois", "dns_lookup"]  # allowlist over MCP, script and plugin tools; empty allows all
 
 # At least one [[repos]] entry is required before archied will poll
 # anything -- it is deliberately left commented rather than shipped active:

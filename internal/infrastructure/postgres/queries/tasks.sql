@@ -56,7 +56,7 @@ VALUES (
 RETURNING *;
 
 -- name: StampTaskBinding :exec
-UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1;
+UPDATE tasks SET binding_id = $2, binding_version = $3, inputs = $4 WHERE id = $1;
 
 -- name: UpdateTask :exec
 UPDATE tasks SET workflow = $2, stage = $3, branch = $4, plan = $5, notes = $6,

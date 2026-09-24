@@ -11,7 +11,7 @@ import (
 )
 
 const armedBindingsForSource = `-- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC
 `
 
@@ -28,6 +28,8 @@ type ArmedBindingsForSourceRow struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Filter    string
+	Inputs    string
+	RepoParam string
 }
 
 func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]ArmedBindingsForSourceRow, error) {
@@ -52,6 +54,8 @@ func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Filter,
+			&i.Inputs,
+			&i.RepoParam,
 		); err != nil {
 			return nil, err
 		}
@@ -171,7 +175,7 @@ func (q *Queries) EventTypesForSource(ctx context.Context, source string) ([]Eve
 }
 
 const getBinding = `-- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
 FROM bindings WHERE id = $1
 `
 
@@ -188,6 +192,8 @@ type GetBindingRow struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Filter    string
+	Inputs    string
+	RepoParam string
 }
 
 func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, error) {
@@ -206,6 +212,8 @@ func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Filter,
+		&i.Inputs,
+		&i.RepoParam,
 	)
 	return i, err
 }
@@ -278,20 +286,22 @@ func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
 }
 
 const insertBinding = `-- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9)
+INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, inputs, repo_param)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11)
 `
 
 type InsertBindingParams struct {
-	ID       string
-	Name     string
-	Source   string
-	Mapping  string
-	Filter   string
-	Workflow string
-	Owner    string
-	Repo     string
-	Status   string
+	ID        string
+	Name      string
+	Source    string
+	Mapping   string
+	Filter    string
+	Workflow  string
+	Owner     string
+	Repo      string
+	Status    string
+	Inputs    string
+	RepoParam string
 }
 
 func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) error {
@@ -305,6 +315,8 @@ func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) er
 		arg.Owner,
 		arg.Repo,
 		arg.Status,
+		arg.Inputs,
+		arg.RepoParam,
 	)
 	return err
 }
@@ -496,7 +508,7 @@ func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) 
 }
 
 const listBindings = `-- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
 FROM bindings ORDER BY created_at DESC
 `
 
@@ -513,6 +525,8 @@ type ListBindingsRow struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Filter    string
+	Inputs    string
+	RepoParam string
 }
 
 func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
@@ -537,6 +551,8 @@ func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Filter,
+			&i.Inputs,
+			&i.RepoParam,
 		); err != nil {
 			return nil, err
 		}
@@ -861,20 +877,22 @@ func (q *Queries) TaskToolCalls(ctx context.Context, taskID int64) ([]TaskToolCa
 const updateBinding = `-- name: UpdateBinding :execrows
 UPDATE bindings
 SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,
-    version = version + 1, status = $9, updated_at = now()
+    version = version + 1, status = $9, inputs = $10, repo_param = $11, updated_at = now()
 WHERE id = $1
 `
 
 type UpdateBindingParams struct {
-	ID       string
-	Name     string
-	Source   string
-	Mapping  string
-	Filter   string
-	Workflow string
-	Owner    string
-	Repo     string
-	Status   string
+	ID        string
+	Name      string
+	Source    string
+	Mapping   string
+	Filter    string
+	Workflow  string
+	Owner     string
+	Repo      string
+	Status    string
+	Inputs    string
+	RepoParam string
 }
 
 func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (int64, error) {
@@ -888,6 +906,8 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (i
 		arg.Owner,
 		arg.Repo,
 		arg.Status,
+		arg.Inputs,
+		arg.RepoParam,
 	)
 	if err != nil {
 		return 0, err

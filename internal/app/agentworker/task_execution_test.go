@@ -220,18 +220,21 @@ func TestApplyToolLimitsWiresConfiguredPolicyIntoLoopRunner(t *testing.T) {
 	runner := agentexec.NewLoopRunner(agentexec.NewRuntime(nil), slog.New(slog.DiscardHandler))
 	policy := config.ToolPolicy{MaxResultChars: 12345, SpillDir: "/var/tmp/archie-spill"}
 
-	applyToolLimits(runner, policy)
+	applyToolLimits(runner, policy, []string{"whois"})
 
 	want := agentexec.ToolLimits{MaxResultChars: 12345, SpillDir: "/var/tmp/archie-spill"}
 	if runner.Limits != want {
 		t.Fatalf("runner.Limits = %+v, want %+v", runner.Limits, want)
+	}
+	if len(runner.AllowTools) != 1 || runner.AllowTools[0] != "whois" {
+		t.Fatalf("runner.AllowTools = %v, want the profile's allowlist", runner.AllowTools)
 	}
 }
 
 // TestApplyToolLimitsIgnoresNonLoopRunner confirms a test-fake runner (which
 // is not a *agentexec.LoopRunner) is left untouched rather than panicking.
 func TestApplyToolLimitsIgnoresNonLoopRunner(t *testing.T) {
-	applyToolLimits(panicRunner{t}, config.ToolPolicy{MaxResultChars: 1})
+	applyToolLimits(panicRunner{t}, config.ToolPolicy{MaxResultChars: 1}, nil)
 }
 
 type panicRunner struct{ t *testing.T }

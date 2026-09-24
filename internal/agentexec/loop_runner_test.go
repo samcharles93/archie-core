@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -350,5 +351,42 @@ func main() {
 		t.Error("run_go_script ignores context cancellation: " +
 			"the handler discards its context parameter (declared as _) " +
 			"and calls skillscript.Run without forwarding it (issue #45)")
+	}
+}
+
+// A profile's allowlist removes the tools archie adds that it does not name,
+// but never a stage's capture tools, which carry its structured result.
+func TestLoopRunnerAppliesTheProfileAllowlist(t *testing.T) {
+	registry := tools.NewRegistry()
+	for _, name := range []string{"whois", "memory_search"} {
+		if err := registry.Register(tools.ToolEntry{
+			Name:    name,
+			Handler: func(context.Context, map[string]any) (any, error) { return "", nil },
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var extra []string
+	runner := &LoopRunner{
+		runtime:    runtime.NewRuntime(runtime.Config{}),
+		tools:      registry,
+		AllowTools: []string{"whois"},
+		run: func(_ context.Context, cfg agentloop.Config) (agentloop.Result, error) {
+			for name := range cfg.Extra {
+				extra = append(extra, name)
+			}
+			return agentloop.Result{Status: agentloop.StatusPassed}, nil
+		},
+	}
+	_, err := runner.Run(context.Background(), t.TempDir(), Request{
+		Version: ProtocolVersion, TaskID: 1, Attempt: 1, Stage: "build", Model: "provider/model", Mission: "mission",
+		CaptureTools: []CaptureTool{{Name: "report", Description: "d", Parameters: json.RawMessage(`{"type":"object"}`)}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(extra)
+	if !slices.Equal(extra, []string{"report", "whois"}) {
+		t.Fatalf("agent tools = %v, want the allowed whois and the capture tool", extra)
 	}
 }

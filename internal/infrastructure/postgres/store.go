@@ -11,6 +11,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -48,6 +49,9 @@ const syntheticIssueNumberBase = 1_000_000_000_000_000
 // taskFromRow maps the generated task row to the workflow.Task the daemon and
 // webui consume.
 func taskFromRow(t postgresdb.Task) *workflow.Task {
+	// The inputs column is only ever written by EncodeInputs, so a decode
+	// failure cannot arise from stored data this package produced.
+	inputs, _ := workflowtask.DecodeInputs(t.Inputs)
 	return &workflow.Task{
 		ID:                        t.ID,
 		Owner:                     t.Owner,
@@ -77,6 +81,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		Identity:                  t.Identity,
 		BindingID:                 t.BindingID,
 		BindingVersion:            int(t.BindingVersion),
+		Inputs:                    inputs,
 		ReviewPayload:             t.ReviewPayload,
 		ParkClass:                 t.ParkClass,
 		RemediationRounds:         int(t.RemediationRounds),
@@ -124,18 +129,23 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 
 // EnqueueBindingTask enqueues a binding-triggered task and stamps its binding
 // provenance in a second statement (best-effort, as in the SQLite store).
-func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*workflow.Task, error) {
+func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*workflow.Task, error) {
+	encoded, err := workflowtask.EncodeInputs(inputs)
+	if err != nil {
+		return nil, err
+	}
 	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.queries().StampTaskBinding(ctx, postgresdb.StampTaskBindingParams{
-		ID: t.ID, BindingID: bindingID, BindingVersion: int64(bindingVersion),
+		ID: t.ID, BindingID: bindingID, BindingVersion: int64(bindingVersion), Inputs: encoded,
 	}); err != nil {
 		return nil, fmt.Errorf("store: stamp binding provenance: %w", err)
 	}
 	t.BindingID = bindingID
 	t.BindingVersion = bindingVersion
+	t.Inputs = inputs
 	return t, nil
 }
 

@@ -39,6 +39,8 @@ type TaskPayload struct {
 	Workflow string   `json:"workflow"`
 	Branch   string   `json:"branch,omitempty"`
 	Plan     string   `json:"plan,omitempty"`
+	// Inputs are the workflow inputs a binding assigned, as structured data.
+	Inputs map[string]any `json:"inputs,omitempty"`
 }
 
 // WriteTaskJSON writes the task payload to <workspace>/.git/task.json.
@@ -88,6 +90,9 @@ type Pool struct {
 
 	mu     sync.Mutex
 	active int
+	// pulled records the images already made available, so a profile's image
+	// is pulled once rather than on every task. Guarded by mu.
+	pulled map[string]bool
 	// teardowns holds the one-shot teardown state for each live container,
 	// keyed by ID. See containerTeardown.
 	teardowns map[string]*containerTeardown
@@ -161,7 +166,7 @@ func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 
 	// Pull image if needed.
 	if cfg.PullPolicy == "always" || cfg.PullPolicy == "missing" {
-		if err := p.pullImage(ctx); err != nil {
+		if err := p.pullImage(ctx, cfg.Image); err != nil {
 			if err := cli.Close(); err != nil {
 				log.Warn("docker client close failed during pull error", "err", err)
 			}
@@ -175,12 +180,18 @@ func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 	return p, nil
 }
 
-// Acquire creates and starts a container with the given mounts and
-// environment variables. Mounts are provided by the caller (typically
-// from a storage.Backend). If MaxUptime is set, the pool schedules a hard
-// stop and remove of the container once that lifetime cap elapses,
-// regardless of task state.
-func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string) (*Container, error) {
+// Acquire creates and starts a container from image (empty means the
+// configured image) with the given mounts and environment variables. Mounts
+// are provided by the caller (typically from a storage.Backend). If MaxUptime
+// is set, the pool schedules a hard stop and remove of the container once
+// that lifetime cap elapses, regardless of task state.
+func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount, env []string) (*Container, error) {
+	if image == "" {
+		image = p.cfg.Image
+	}
+	if err := p.ensureImage(ctx, image); err != nil {
+		return nil, err
+	}
 	p.mu.Lock()
 	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
 		p.mu.Unlock()
@@ -206,7 +217,7 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 	resp, err := p.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
-			Image: p.cfg.Image,
+			Image: image,
 			Env:   env,
 			Labels: map[string]string{
 				"archie-daemon": "true",
@@ -466,11 +477,34 @@ func (p *Pool) Close() error {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-// pullImage pulls the configured image. On "missing" policy, skips if
-// the image already exists locally.
-func (p *Pool) pullImage(ctx context.Context) error {
-	ref := p.cfg.Image
+// ensureImage pulls an image other than the configured one the first time a
+// task asks for it, under the configured pull policy. The configured image
+// was already pulled by NewPool.
+func (p *Pool) ensureImage(ctx context.Context, ref string) error {
+	if ref == p.cfg.Image || (p.cfg.PullPolicy != "always" && p.cfg.PullPolicy != "missing") {
+		return nil
+	}
+	p.mu.Lock()
+	done := p.pulled[ref]
+	p.mu.Unlock()
+	if done {
+		return nil
+	}
+	if err := p.pullImage(ctx, ref); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	if p.pulled == nil {
+		p.pulled = map[string]bool{}
+	}
+	p.pulled[ref] = true
+	p.mu.Unlock()
+	return nil
+}
 
+// pullImage pulls ref. On "missing" policy, skips if the image already
+// exists locally.
+func (p *Pool) pullImage(ctx context.Context, ref string) error {
 	if p.cfg.PullPolicy == "missing" {
 		_, err := p.cli.ImageInspect(ctx, ref)
 		if err == nil {

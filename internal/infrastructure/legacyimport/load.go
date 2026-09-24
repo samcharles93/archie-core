@@ -28,12 +28,17 @@ var droppedColumns = map[string]bool{
 // imported capture has no event type, so it stays unidentified and never
 // dispatches, and no legacy source could take unsigned events. An imported
 // mapping has no event type, so no binding using it dispatches until it is
-// given one, and an imported binding has no filter.
+// given one, and an imported binding has no filter. Nor does an imported
+// binding assign workflow inputs or read its repository from a parameter,
+// and no legacy task carries inputs.
 var newColumns = map[string]bool{
 	"captures.event_type": true,
 	"mappings.event_type": true,
 	"bindings.filter":     true,
 	"captures.unsigned":   true,
+	"bindings.inputs":     true,
+	"bindings.repo_param": true,
+	"tasks.inputs":        true,
 }
 
 // targetKeys override a table's legacy key where the target has no column

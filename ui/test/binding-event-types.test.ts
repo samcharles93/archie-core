@@ -54,3 +54,44 @@ test("a mapping's match count reads as a number of events or as never matched", 
   assert.equal(matchCountLabel({ match_count: 1 }), "1 event");
   assert.equal(matchCountLabel({ match_count: 12 }), "12 events");
 });
+
+test("a binding's inputs go out typed, and a no-repository workflow names no repo", async () => {
+  const { constantValue, paramsForType, takesRepository } = await import("../src/bindings/binding-draft.ts");
+  const workflow = {
+    id: "investigate",
+    name: "investigate",
+    repository: "none",
+    inputs: { src_ip: { type: "string", required: true }, severity: { type: "number" }, note: { type: "string" } },
+  };
+  const draft = {
+    ...emptyDraft(),
+    eventTypeId: "et2",
+    workflow: "investigate",
+    owner: "acme",
+    repo: "api",
+    inputs: { src_ip: { param: "ip", value: "" }, severity: { param: "", value: "3" }, note: { param: "", value: "" } },
+  };
+  const payload = bindingPayload(draft, types, workflow);
+  assert.deepEqual(payload.inputs, { src_ip: { param: "ip" }, severity: { value: 3 } });
+  assert.equal(payload.owner, "");
+  assert.equal(payload.repo_param, "");
+  assert.equal(takesRepository(workflow), false);
+  assert.equal(takesRepository(undefined), true);
+
+  assert.equal(constantValue("true", "bool"), true);
+  assert.equal(constantValue("high", "number"), "high");
+  assert.deepEqual(constantValue('{"a":1}', "object"), { a: 1 });
+  assert.deepEqual(
+    paramsForType([{ name: "ip", type: "string" }, { name: "n", type: "number" }, { name: "x", type: "any" }], "string").map((f) => f.name),
+    ["ip", "x"],
+  );
+});
+
+test("an edited binding's assignments come back into the draft", () => {
+  const draft = draftFromBinding(
+    { id: "b", name: "b", mapping_id: "m2", repo_param: "full", inputs: { a: { param: "ip" }, b: { value: 3 }, c: { value: "x" } } },
+    mappings,
+  );
+  assert.equal(draft.repoParam, "full");
+  assert.deepEqual(draft.inputs, { a: { param: "ip", value: "" }, b: { param: "", value: "3" }, c: { param: "", value: "x" } });
+});

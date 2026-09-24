@@ -132,7 +132,7 @@ func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) agentexec.Req
 		Workflow:      tc.Task.Workflow,
 		Model:         modelRef,
 		ContextWindow: modelContextBudget(tc.Cfg, modelRef),
-		Mission:       missionWithSkill(tc, a.Mission(tc)),
+		Mission:       missionWithInputs(tc.Task, missionWithSkill(tc, a.Mission(tc))),
 		ExtraRules:    a.buildExtraRules(tc),
 		ReadOnly:      a.ReadOnly,
 		Budget:        budget,

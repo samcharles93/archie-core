@@ -68,7 +68,8 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		Attempt: int64(t.Attempt), ParkReason: t.ParkReason, RetryCount: int64(t.RetryCount),
 		WatchCommentId: t.WatchCommentID, Source: t.Source, Identity: t.Identity,
 		BindingId: t.BindingID, BindingVersion: int64(t.BindingVersion),
-		CreatedAt: timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
+		InputsJson: inputsJSON(t.Inputs),
+		CreatedAt:  timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
 		ReviewCursor:              t.ReviewCursor,
 		ParkClass:                 t.ParkClass,
@@ -91,6 +92,7 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		Attempt: int(t.Attempt), ParkReason: t.ParkReason, RetryCount: int(t.RetryCount),
 		WatchCommentID: t.WatchCommentId, Source: t.Source, Identity: t.Identity,
 		BindingID: t.BindingId, BindingVersion: int(t.BindingVersion),
+		Inputs:    inputsValue(t.InputsJson),
 		CreatedAt: timeValue(t.CreatedAt), UpdatedAt: timeValue(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
 		ReviewCursor:              t.ReviewCursor,
@@ -100,6 +102,19 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYAML:    t.WorkflowDefinitionYaml,
 	}
+}
+
+// inputsJSON and inputsValue carry task inputs in task.EncodeInputs form.
+// Both ends encode with EncodeInputs, so neither direction can fail on a
+// value this contract produced.
+func inputsJSON(inputs map[string]any) string {
+	s, _ := task.EncodeInputs(inputs)
+	return s
+}
+
+func inputsValue(s string) map[string]any {
+	inputs, _ := task.DecodeInputs(s)
+	return inputs
 }
 
 // eventDataJSON and eventDataValue convert events.Event.Data (map[string]any)
@@ -221,6 +236,7 @@ func bindingProto(b binding.Binding) *pb.Binding {
 	return &pb.Binding{
 		Id: b.ID, Name: b.Name, Matcher: &pb.BindingMatcher{Source: b.Matcher.Source},
 		MappingId: b.MappingID, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
+		RepoParam: b.RepoParam, InputsJson: bindingInputsJSON(b.Inputs),
 		Version: int64(b.Version), Status: string(b.Status),
 		CreatedAt: timestamp(b.CreatedAt), UpdatedAt: timestamp(b.UpdatedAt),
 	}
@@ -237,9 +253,30 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	return binding.Binding{
 		ID: b.Id, Name: b.Name, Matcher: binding.Matcher{Source: source},
 		MappingID: b.MappingId, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
+		RepoParam: b.RepoParam, Inputs: bindingInputsValue(b.InputsJson),
 		Version: int(b.Version), Status: binding.Status(b.Status),
 		CreatedAt: timeValue(b.CreatedAt), UpdatedAt: timeValue(b.UpdatedAt),
 	}
+}
+
+// bindingInputsJSON and bindingInputsValue carry a binding's input
+// assignments as JSON. The domain type always marshals, and the client only
+// decodes what the server marshalled.
+func bindingInputsJSON(inputs map[string]binding.InputSource) string {
+	if len(inputs) == 0 {
+		return ""
+	}
+	data, _ := json.Marshal(inputs)
+	return string(data)
+}
+
+func bindingInputsValue(s string) map[string]binding.InputSource {
+	if s == "" {
+		return nil
+	}
+	var inputs map[string]binding.InputSource
+	_ = json.Unmarshal([]byte(s), &inputs)
+	return inputs
 }
 
 func workflowStatProto(w storecontract.WorkflowStat) *pb.WorkflowStat {

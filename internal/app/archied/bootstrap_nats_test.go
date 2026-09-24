@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -118,8 +117,8 @@ func TestConnectEmbeddedNATSUsesManagedWorkerBridge(t *testing.T) {
 
 	b := &boot{
 		cfg: config.Config{
-			DBPath: filepath.Join(t.TempDir(), "archie.db"),
-			NATS:   config.NATSConfig{Mode: config.NATSModeEmbedded},
+			StateDir: t.TempDir(),
+			NATS:     config.NATSConfig{Mode: config.NATSModeEmbedded},
 		},
 		log:           slog.New(slog.DiscardHandler),
 		containerPool: pool,

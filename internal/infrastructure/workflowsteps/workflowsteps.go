@@ -56,6 +56,17 @@ func (repoHooks) StepTypes() []workflow.StepType {
 	return []workflow.StepType{workflow.DiffRulesStepType()}
 }
 
+// eventSteps is the provider for step types that event-started workflows
+// use: steps that need no repository, so a workflow declaring repository none
+// or optional has something to run.
+type eventSteps struct{}
+
+func (eventSteps) Name() string { return "event" }
+
+func (eventSteps) StepTypes() []workflow.StepType {
+	return []workflow.StepType{workflow.AgentRunStepType()}
+}
+
 // Providers returns the provider set the roots that resolve a workflow step
 // type register at their composition root, before the first resolution: it is
 // what NewManager registers, and what the roots' guards read to hold a
@@ -71,7 +82,7 @@ func (repoHooks) StepTypes() []workflow.StepType {
 // provider_secrets.go). Until one exists for step types, adding a step type
 // means adding a provider here.
 func Providers() []workflow.StepTypeProvider {
-	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}}
+	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}}
 }
 
 // NewManager builds this process's workflow step-type manager by registering
