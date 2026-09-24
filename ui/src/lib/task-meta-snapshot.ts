@@ -67,7 +67,7 @@ export const DEFAULT_ACTIONS: ActionMeta[] = [
     id: "abandon",
     label: "Abandon",
     kind: "quiet",
-    confirm: `Abandon "{title}"? This closes the forge issue.`,
+    confirm: `Abandon "{title}"? Archie stops working on it; the forge issue stays open.`,
   },
   {
     id: "archive",

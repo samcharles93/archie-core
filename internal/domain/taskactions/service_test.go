@@ -209,3 +209,32 @@ func TestActorForCarriesTheKindAndLeavesTheActionUnattributedWithoutAPrincipal(t
 		t.Fatal("the zero Actor reported itself as a human")
 	}
 }
+
+// TestOnlyRejectAndCancelCloseTheIssue: abandoning is archie giving up on its
+// own run, not a verdict on the issue, so the issue stays open for a human.
+func TestOnlyRejectAndCancelCloseTheIssue(t *testing.T) {
+	for _, tc := range []struct {
+		action taskstate.Action
+		status string
+		closes bool
+	}{
+		{taskstate.ActionReject, "waiting_human", true},
+		{taskstate.ActionCancel, "queued", true},
+		{taskstate.ActionAbandon, "parked", false},
+	} {
+		t.Run(string(tc.action), func(t *testing.T) {
+			store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: tc.status, ForgeBacked: true}}
+			closed := false
+			service := Service{Store: store, CloseIssue: func(context.Context, string, string, int, string) error {
+				closed = true
+				return nil
+			}}
+			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action); err != nil {
+				t.Fatalf("Apply(%s) error = %v", tc.action, err)
+			}
+			if closed != tc.closes {
+				t.Fatalf("Apply(%s) closed the issue = %v, want %v", tc.action, closed, tc.closes)
+			}
+		})
+	}
+}

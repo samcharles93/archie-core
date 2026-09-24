@@ -193,7 +193,7 @@ func ActionCatalog() []ActionMeta {
 		{ID: string(ActionApprove), Label: "Approve", Kind: "primary"},
 		{ID: string(ActionReject), Label: "Reject", Kind: "quiet", Confirm: `Reject "{title}"? This closes the forge issue.`},
 		{ID: string(ActionRetry), Label: "Retry", Kind: "primary"},
-		{ID: string(ActionAbandon), Label: "Abandon", Kind: "quiet", Confirm: `Abandon "{title}"? This closes the forge issue.`},
+		{ID: string(ActionAbandon), Label: "Abandon", Kind: "quiet", Confirm: `Abandon "{title}"? Archie stops working on it; the forge issue stays open.`},
 		{ID: string(ActionArchive), Label: "Archive", Kind: "quiet", Confirm: `Archive the local record for "{title}"?`},
 		{ID: string(ActionOpenPR), Label: "Open PR", Kind: "link"},
 		{ID: string(ActionOpenIssue), Label: "Open issue", Kind: "link"},

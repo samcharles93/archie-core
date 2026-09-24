@@ -601,7 +601,7 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 		{name: "cancel queued", from: workflow.StatusQueued, action: "cancel", want: workflow.StatusClosedWontDo, closesIssue: true},
 		{name: "stop running", from: workflow.StatusRunning, action: "stop", want: workflow.StatusParked, stopperResult: true},
 		{name: "park stale running row", from: workflow.StatusRunning, action: "stop", want: workflow.StatusParked},
-		{name: "abandon parked", from: workflow.StatusParked, action: "abandon", want: workflow.StatusClosedWontDo, closesIssue: true},
+		{name: "abandon parked", from: workflow.StatusParked, action: "abandon", want: workflow.StatusClosedWontDo, closesIssue: false},
 		// Reject is available from every non-terminal state and always lands in
 		// the terminal Declined state, closing the forge issue.
 		{name: "reject queued", from: workflow.StatusQueued, action: "reject", want: workflow.StatusClosedWontDo, closesIssue: true},

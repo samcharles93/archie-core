@@ -251,12 +251,14 @@ func (s Service) applyStop(ctx context.Context, task *Task, actor Actor, o outco
 }
 
 func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action taskstate.Action, actor Actor, o outcome) (outcome, error) {
-	from, kind, verb := "queued", events.KindTaskCancelled, "cancelled"
 	if action == taskstate.ActionAbandon {
-		from, kind, verb = "parked", events.KindTaskAbandoned, "abandoned"
+		// Abandoning ends archie's run, not the issue: no verb, so the issue
+		// stays open for a human.
+		o.event.Kind, o.event.Detail = events.KindTaskAbandoned, actor.describe("abandoned")
+		return o, s.Store.Transition(ctx, task.ID, "parked", "closed_wont_do", o.event.Detail)
 	}
-	o.event.Kind, o.event.Detail, o.verb = kind, actor.describe(verb), verb
-	return o, s.Store.Transition(ctx, task.ID, from, "closed_wont_do", o.event.Detail)
+	o.event.Kind, o.event.Detail, o.verb = events.KindTaskCancelled, actor.describe("cancelled"), "cancelled"
+	return o, s.Store.Transition(ctx, task.ID, "queued", "closed_wont_do", o.event.Detail)
 }
 
 func (s Service) applyArchive(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {

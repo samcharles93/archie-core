@@ -182,7 +182,7 @@ export function archieWebMcpTools(client: DashboardApi): WebMcpTool[] {
       client,
       "cancel_task",
       "cancel",
-      "End a task that should not continue; this closes the forge issue. Use only when the work is unwanted -- stop_task parks it recoverably instead.",
+      "End a parked task archie should not continue; the forge issue stays open. stop_task parks a running task recoverably instead.",
     ),
   ];
 }
