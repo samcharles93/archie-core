@@ -33,6 +33,9 @@ git, and agent execution functions as a strict data boundary. Before adding a ne
 plugin engine, satisfy
 `docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict`.
 
+Before changing a subsystem, read its checklist in `docs/development/`: each
+page names every layer that kind of change must reach.
+
 ## Scope Discipline
 
 `docs/architecture/` is authoritative for settled design.
