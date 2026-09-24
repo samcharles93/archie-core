@@ -181,7 +181,7 @@ if [[ ",$components," == *,daemon,* ]]; then
   gw_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archied/v$GW^{commit}")"
 fi
 if [[ ",$components," == *,agent,* ]]; then
-  rt_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archie/v$RT^{commit}")"
+  rt_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archied/v$RT^{commit}")"
 fi
 build_commit="$gw_commit"
 [ -n "$build_commit" ] || build_commit="$rt_commit"

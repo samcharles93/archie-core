@@ -81,32 +81,33 @@ func TestUpdateInstallBothComponentsBuildsDaemonAndManagedWorkerImage(t *testing
 // releases are the norm. Each changed component must be built from its own
 // approved tag; forcing both tags onto one commit refuses every update once
 // the two components' newest releases diverge.
-func TestUpdateInstallBuildsEachComponentFromItsOwnTag(t *testing.T) {
+// One version covers every component, so the managed worker image is built
+// from the release's own archied/v* tag -- never from a stale archie/v* tag.
+func TestUpdateInstallBuildsTheAgentImageFromTheReleaseTag(t *testing.T) {
 	result, calls := runUpdateInstallScript(t, map[string]string{
 		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.12.0",
 		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.13.0",
-		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.9.9",
-		"ARCHIE_UPDATE_AGENT_VERSION":   "1.10.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.12.0",
+		"ARCHIE_UPDATE_AGENT_VERSION":   "1.13.0",
 	})
 
-	if result.Installed[ComponentDaemon] != "1.13.0" || result.Installed[ComponentAgent] != "1.10.0" {
-		t.Fatalf("installed = %#v, want both release versions", result.Installed)
+	if result.Installed[ComponentDaemon] != "1.13.0" || result.Installed[ComponentAgent] != "1.13.0" {
+		t.Fatalf("installed = %#v, want the release version for both", result.Installed)
 	}
-	// The derived fake commits differ per tag, so these assertions fail if
-	// either component is built from the other's release.
-	daemonCheckout := indexOfCallContaining(t, calls, "checkout --quiet --detach archied-v1.13.0")
-	agentCheckout := indexOfCallContaining(t, calls, "checkout --quiet --detach archie-v1.10.0")
+	assertCallAbsent(t, calls, "archie-v1.13.0")
 	daemonBuild := indexOfCallContaining(t, calls, "go build", "./cmd/archied")
 	agentImageBuild := indexOfCallContaining(t, calls, "docker build")
-	if daemonCheckout < 0 || agentCheckout < 0 || daemonBuild < 0 || agentImageBuild < 0 {
-		t.Fatalf("missing expected step: daemon checkout %d, daemon build %d, agent checkout %d, agent image build %d",
-			daemonCheckout, daemonBuild, agentCheckout, agentImageBuild)
+	lastCheckout := -1
+	for i, call := range calls {
+		if strings.Contains(call, "checkout --quiet --detach") && i < agentImageBuild {
+			lastCheckout = i
+		}
 	}
-	if daemonCheckout > daemonBuild {
-		t.Errorf("daemon binaries must be built from the daemon tag's commit; calls = %#v", calls)
+	if daemonBuild < 0 || agentImageBuild < 0 || lastCheckout < 0 {
+		t.Fatalf("missing expected step: daemon build %d, agent image build %d, checkout %d", daemonBuild, agentImageBuild, lastCheckout)
 	}
-	if agentCheckout > agentImageBuild {
-		t.Errorf("the managed worker image must be built from the agent tag's commit; calls = %#v", calls)
+	if !strings.Contains(calls[lastCheckout], "archied-v1.13.0") {
+		t.Errorf("image built after checking out %q, want the archied/v1.13.0 release; calls = %#v", calls[lastCheckout], calls)
 	}
 }
 

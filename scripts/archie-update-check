@@ -136,15 +136,16 @@ else
   agent_installed="$(base "$(installed_for archie-agent || true)")"
 fi
 
+# One version covers every component (RELEASING.md): the runtime image a
+# release publishes carries the release's own version, tagged archied/v*.
 daemon_available="$(newest_tag_git archied || true)"
-agent_available="$(newest_tag_git archie || true)"
 tag_source="git-tags"
-if [ -z "$daemon_available" ] && [ -z "$agent_available" ]; then
+if [ -z "$daemon_available" ]; then
   daemon_available="$(newest_tag_api archied || true)"
-  agent_available="$(newest_tag_api archie || true)"
   tag_source="forge-api-tags"
 fi
-if [ -z "$daemon_available" ] && [ -z "$agent_available" ]; then
+agent_available="$daemon_available"
+if [ -z "$daemon_available" ]; then
   # Neither source answered. Report the failure; do not exit 0 with two empty
   # components, which the caller renders as "up to date".
   echo "archie-update-check: could not resolve any release tag from ${SOURCE_URL} or ${API_BASE}/repos/${REPO_SLUG}/tags" >&2
@@ -154,7 +155,7 @@ fi
 daemon_artifacts=""
 [ -n "$daemon_available" ] && daemon_artifacts="$(artifact_state "archied/v${daemon_available}")"
 agent_artifacts=""
-[ -n "$agent_available" ] && agent_artifacts="$(artifact_state "archie/v${agent_available}")"
+agent_artifacts="$daemon_artifacts"
 
 reference_for() {
   local component="$1" version="$2" artifacts="$3"

@@ -110,7 +110,9 @@ esac
 	if got, want := componentAvailable(snapshot, ComponentDaemon), "1.23.0"; got != want {
 		t.Errorf("daemon available = %q, want %q", got, want)
 	}
-	if got, want := componentAvailable(snapshot, ComponentAgent), "1.21.0"; got != want {
+	// One version covers every component; a stale archie/v* runtime tag must
+	// never be offered as an update.
+	if got, want := componentAvailable(snapshot, ComponentAgent), "1.23.0"; got != want {
 		t.Errorf("agent available = %q, want %q", got, want)
 	}
 }
@@ -154,7 +156,7 @@ esac
 	if got, want := componentAvailable(snapshot, ComponentDaemon), "1.24.0"; got != want {
 		t.Errorf("daemon available = %q, want %q", got, want)
 	}
-	if got, want := componentAvailable(snapshot, ComponentAgent), "1.23.0"; got != want {
+	if got, want := componentAvailable(snapshot, ComponentAgent), "1.24.0"; got != want {
 		t.Errorf("agent available = %q, want %q", got, want)
 	}
 	if ref := componentReference(snapshot, ComponentDaemon); !strings.Contains(ref, "forge-api-tags") {
