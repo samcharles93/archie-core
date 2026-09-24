@@ -1,4 +1,4 @@
-# State Store and persistence
+# State Store
 
 Authority: `docs/prds/state-store-contract.md` and the State Store section of
 `CLAUDE.md`. All persistence is PostgreSQL behind the standalone State Store

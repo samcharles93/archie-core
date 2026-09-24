@@ -26,7 +26,7 @@ rule).
    rather than stopping the process (MCP providers are the model).
 3. Every process that reaches the capability through the State Store gets it
    through a `storecontract` interface asserted on the client
-   ([State Store and persistence](state-store-and-persistence.md)).
+   ([State Store](state-store.md)).
 4. The architecture tests (`cmd/archie-ui/architecture_test.go`,
    `cmd/archie-messaging/architecture_test.go`, `TestOpenStoresNeverOwnsTaskDB`)
    pin what each binary may link. A failure there means the placement is wrong,

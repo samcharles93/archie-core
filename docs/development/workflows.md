@@ -1,4 +1,4 @@
-# Workflows and steps
+# Workflows
 
 Authority: `docs/architecture/agent-system.md` for the lifecycle,
 `docs/prds/event-automation.md` for inputs, repository modes and profiles.

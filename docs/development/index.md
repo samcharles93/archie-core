@@ -1,22 +1,22 @@
 # Development guides
 
-Checklists for changing Archie. Each page covers one kind of change and names
-every place that change must reach, so a feature that works in one layer does
-not silently stop at the next. The pages point at the documents that own the
-design (`docs/architecture/`, the PRDs, `CLAUDE.md`) rather than restating
-them.
+Checklists for changing Archie, one page per area. Each names every place a
+change must reach, so a feature that works in one layer does not silently stop
+at the next. A change that spans areas starts on the page for the area it
+begins in, which points to the others. The pages point at the documents that
+own the design (`docs/architecture/`, the PRDs, `CLAUDE.md`) rather than
+restating them.
 
-| Changing | Guide |
+| Area | Covers |
 | --- | --- |
-| A setting in `config.toml` or the dashboard | [Configuration settings](config-settings.md) |
-| A stored field, table, RPC or error | [State Store and persistence](state-store-and-persistence.md) |
-| Task statuses, fields or the task brief | [Task lifecycle](task-lifecycle.md) |
-| Workflow definitions or step types | [Workflows and steps](workflows-and-steps.md) |
-| Sources, event types, mappings or bindings | [Event automation](event-automation.md) |
-| Anything under `ui/` | [Dashboard](dashboard.md) |
-| The agent container, its image or its tools | [Agent execution and containers](agent-execution-and-containers.md) |
-| A process, plugin engine, channel or NATS subject | [Processes and wiring](processes-and-wiring.md) |
-| Merging a lane or a branch | [Merging work](merging-work.md) |
+| [Frontend UI](frontend-ui.md) | Anything under `ui/`, and the dashboard's API routes |
+| [Agent](agent.md) | The agent container, its image, profiles, tools and workspace |
+| [Workflows](workflows.md) | Workflow definitions and step types |
+| [Daemon](daemon.md) | Task statuses, fields and the brief; sources, event types, mappings and bindings |
+| [State Store](state-store.md) | Stored fields, tables, RPCs and errors |
+| [Control plane and settings](control-plane.md) | Settings in `config.toml` or the dashboard |
+| [Processes and wiring](wiring.md) | Where code goes, processes, plugin engines, channels, NATS subjects |
+| [Merging work](merging-work.md) | Merging a lane or a branch |
 
 ## Every change
 

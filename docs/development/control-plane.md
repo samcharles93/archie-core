@@ -1,4 +1,4 @@
-# Configuration settings
+# Control plane and settings
 
 Authority: `docs/architecture/configuration.md`. The wiring matrix, the
 decoded-but-unwired ledger and the three shapes an unwired field takes are in

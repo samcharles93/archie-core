@@ -1,4 +1,4 @@
-# Dashboard
+# Frontend UI
 
 Authority: `.agents/skills/archie-web-ui` (stack facts, design-system rules,
 tone and accessibility). This page covers what a change must reach, not how it

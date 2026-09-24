@@ -1,4 +1,4 @@
-# Agent execution and containers
+# Agent
 
 Authority: `docs/architecture/agent-system.md` (execution boundary, the model
 never runs git) and the Deployment Model section of `CLAUDE.md`.
