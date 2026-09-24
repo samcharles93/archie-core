@@ -129,11 +129,6 @@ const startedAt = computed(() => {
           <EmptyTitle>No stages recorded for this attempt</EmptyTitle>
         </EmptyHeader>
       </Empty>
-      <p class="mt-3 max-w-[70ch] text-xs text-fg-muted">
-        <strong>ok</strong> means the stage returned without error. Archie
-        records no exit code and does not verify that the work was correct, so
-        this is a progress status, not a check result.
-      </p>
     </div>
 
     <!-- Rendered in every loaded state, the empty ones included: a deployment

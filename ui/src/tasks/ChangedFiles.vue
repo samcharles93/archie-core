@@ -56,6 +56,10 @@ const nothingRecorded = computed(
   </Empty>
 
   <div v-else class="flex flex-col">
+    <p class="mb-3 text-xs text-fg-muted">
+      Captured when the attempt's work was committed, so this covers the whole
+      attempt, not one stage.
+    </p>
     <ChangeCapture
       v-for="(capture, i) in captures"
       :key="`${capture.captured_at || ''}:${i}`"

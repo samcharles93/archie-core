@@ -4,8 +4,8 @@
  * A stage fails when its Go function returned an error. There is NO exit code,
  * no pass/fail verdict, and no notion of "the work was correct" -- a stage that
  * returned nil after producing a poor diff is `ok`. So the rail never renders
- * a checkmark, a badge or an exit status; it renders the status word, the
- * duration and the error text, and says plainly what `ok` means. The agent's
+ * a checkmark or an exit status; `ok` is carried by the node colour alone and
+ * every other status by its word, with the duration and the error text. The agent's
  * own self-reported outcome (`agent_finish`) is shown separately, labelled as
  * the agent's report rather than as archie's verdict.
  */
