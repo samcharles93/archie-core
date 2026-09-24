@@ -29,6 +29,7 @@ type Binding struct {
 	Secret    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Filter    string
 }
 
 type BindingDispatch struct {
@@ -48,6 +49,8 @@ type Capture struct {
 	Body          string
 	Authenticated bool
 	ReceivedAt    time.Time
+	Unsigned      bool
+	EventType     string
 }
 
 type ChannelStatus struct {
@@ -82,6 +85,16 @@ type Event struct {
 	PrincipalID string
 	Detail      string
 	Data        string
+}
+
+type EventType struct {
+	ID        string
+	Source    string
+	Name      string
+	Rule      string
+	Schema    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Identity struct {
@@ -133,6 +146,13 @@ type Mapping struct {
 	Fields     string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	EventType  string
+}
+
+type MappingMatch struct {
+	Mapping   string
+	Capture   string
+	MatchedAt time.Time
 }
 
 type Message struct {
@@ -187,6 +207,14 @@ type Session struct {
 	BranchName      string
 	CreatedAt       int64
 	LastActiveAt    int64
+}
+
+type Source struct {
+	Path      string
+	Signing   string
+	Secret    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Task struct {

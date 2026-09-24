@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -10,9 +11,11 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
@@ -50,7 +53,7 @@ func TestDispatchBindingsCreatesTaskFromArmedCapture(t *testing.T) {
 		t.Errorf("task.Status = %q, want %q", got.Status, workflow.StatusQueued)
 	}
 
-	assertDispatchRecorded(t, s, bindingID, got.ID)
+	assertDispatchRecorded(t, s, bindingID)
 }
 
 // TestDispatchBindingsUsesBindingRepoPinWithMultipleConfiguredRepos is the
@@ -80,7 +83,7 @@ func TestDispatchBindingsUsesBindingRepoPinWithMultipleConfiguredRepos(t *testin
 	if tasks[0].Owner != "acme" || tasks[0].Repo != "widget" {
 		t.Fatalf("task owner/repo = %s/%s, want acme/widget (the binding's own pin, not a guess)", tasks[0].Owner, tasks[0].Repo)
 	}
-	assertDispatchRecorded(t, s, bindingID, tasks[0].ID)
+	assertDispatchRecorded(t, s, bindingID)
 }
 
 // TestDispatchBindingsRefusesUnpinnedBindingWithMultipleConfiguredRepos
@@ -150,6 +153,48 @@ func TestDispatchBindingsSkipsUnauthenticatedCaptures(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Fatalf("unauthenticated capture spawned %d task(s), want 0", len(tasks))
 	}
+}
+
+// markUnsigned reports every undispatched capture as taken on an approved
+// unsigned source, which the legacy capture store cannot persist.
+type markUnsigned struct {
+	storecontract.BindingDispatcher
+}
+
+func (m markUnsigned) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storecontract.CapturedEvent, error) {
+	cs, err := m.BindingDispatcher.ListUndispatchedCaptures(ctx, sources, limit)
+	for i := range cs {
+		cs[i].Unsigned = true
+	}
+	return cs, err
+}
+
+// An event on an approved unsigned source dispatches without a signature,
+// and the task it starts carries an unsigned_event on its timeline.
+func TestDispatchBindingsDispatchesUnsignedCaptureAndMarksTimeline(t *testing.T) {
+	s := openDispatchTestStore(t)
+	mappingID := seedMapping(t, s, "fw", mapping.Field{Name: "title", Path: "title", Type: mapping.TypeString})
+	seedArmedBinding(t, s, "fw", mappingID)
+	seedCapture(t, s, "fw", false, `{"title":"blocked"}`)
+
+	d := newDispatchDaemon(t, s)
+	d.BindingDispatcher = markUnsigned{d.BindingDispatcher}
+	d.dispatchBindings(t.Context())
+
+	tasks, err := s.Tasks(t.Context(), 10)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("Tasks = %d (err %v), want 1", len(tasks), err)
+	}
+	evs, err := s.TaskEvents(t.Context(), tasks[0].ID)
+	if err != nil {
+		t.Fatalf("TaskEvents: %v", err)
+	}
+	for _, e := range evs {
+		if e.Kind == events.KindUnsignedEvent {
+			return
+		}
+	}
+	t.Fatalf("task timeline has no %s event: %+v", events.KindUnsignedEvent, evs)
 }
 
 // Test 33: a required field whose path is missing in the capture body
@@ -253,8 +298,6 @@ type dispatchStores struct {
 	edaPool  *pgxpool.Pool
 }
 
-// openDispatchTestStore opens fresh migrated task and event-capture stores for
-// each dispatch test.
 func openDispatchTestStore(t *testing.T) *dispatchStores {
 	t.Helper()
 	s := pgstore.Open(t)
@@ -264,14 +307,20 @@ func openDispatchTestStore(t *testing.T) *dispatchStores {
 }
 
 // seedMapping inserts a mapping with the given fields and returns its id.
-// The Name field is "sentry-mapping" by default; callers pass fields
-// inline.
+// The mapping belongs to a catch-all event type on sourceHint, so every
+// capture later inserted on that source is identified as its type and
+// dispatches.
 func seedMapping(t *testing.T, s *dispatchStores, sourceHint string, fields ...mapping.Field) string {
 	t.Helper()
+	eventTypeID, err := s.EdaStore.InsertEventType(t.Context(), eventtype.EventType{Source: sourceHint, Name: "any"})
+	if err != nil {
+		t.Fatalf("InsertEventType: %v", err)
+	}
 	id, err := s.EdaStore.InsertMapping(t.Context(), mapping.Mapping{
-		Name:       sourceHint + "-mapping",
-		SourceHint: sourceHint,
-		Fields:     fields,
+		Name:        sourceHint + "-mapping",
+		SourceHint:  sourceHint,
+		EventTypeID: eventTypeID,
+		Fields:      fields,
 	})
 	if err != nil {
 		t.Fatalf("InsertMapping: %v", err)
@@ -300,7 +349,6 @@ func seedArmedBindingWithRepo(t *testing.T, s *dispatchStores, source, mappingID
 		Workflow:  "implement",
 		Owner:     owner,
 		Repo:      repo,
-		Secret:    "0123456789abcdef0123456789abcdef",
 	})
 	if err != nil {
 		t.Fatalf("InsertBinding: %v", err)
@@ -362,22 +410,15 @@ func newDispatchDaemonWithRepos(t *testing.T, s *dispatchStores, repos []config.
 	}
 }
 
-// assertDispatchRecorded reads the dedup ledger directly: the
-// (binding, capture) unique index is what guarantees no double
-// dispatch. Going through the SQL table rather than the public
-// BindingStore surface keeps the assertion focused on the contract
-// Phase E actually writes to, not on a ListDispatches helper that
-// may not exist.
-func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string, taskID int64) {
+// assertDispatchRecorded reads the dedup ledger directly: the (binding,
+// capture) unique index is what guarantees no double dispatch. The dispatch
+// is claimed before its task exists, so the row carries no task id.
+func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string) {
 	t.Helper()
 	var gotBindingID string
-	var gotTaskID int64
 	if err := s.edaPool.QueryRow(t.Context(),
-		"SELECT binding, task_id FROM binding_dispatches WHERE binding = $1", bindingID).
-		Scan(&gotBindingID, &gotTaskID); err != nil {
+		"SELECT binding FROM binding_dispatches WHERE binding = $1", bindingID).
+		Scan(&gotBindingID); err != nil {
 		t.Fatalf("binding_dispatches row missing: %v", err)
-	}
-	if gotBindingID != bindingID || gotTaskID != taskID {
-		t.Fatalf("binding_dispatches row = (%q, %d), want (%q, %d)", gotBindingID, gotTaskID, bindingID, taskID)
 	}
 }

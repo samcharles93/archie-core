@@ -252,6 +252,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.Bindings = b.eda
 		deps.BindingDispatcher = b.eda
 		deps.PlaybookDispatcher = b.eda
+		deps.EventTypes = b.eda
+		deps.Sources = b.eda
+		deps.MappingMatches = b.eda
 	}
 	// tool_call events project into the tool_calls collection on the same
 	// event-capture store: this process legitimately owns both, so the

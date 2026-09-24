@@ -4,6 +4,7 @@ import { onMounted, ref } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import SourcesPanel from "@/sources/SourcesPanel.vue";
 import { useLiveResource } from "@/stores/live-updates";
 import BindingEditor from "./BindingEditor.vue";
 import BindingsTable from "./BindingsTable.vue";
@@ -12,8 +13,8 @@ import type { Binding, BindingDraft } from "./binding-draft";
 import { useBindings } from "./use-bindings";
 
 /**
- * Playbook bindings (t2db.8): tie a matcher + payload mapping + workflow
- * together, with a draft -> pending_approval -> armed state machine so nothing
+ * Playbook bindings: tie an event type's mapping, an optional filter and a
+ * workflow together, with a draft -> pending_approval -> armed state machine so nothing
  * self-arms. See docs/architecture/bindings.md and
  * docs/prds/payload-field-mapping.md. Owner/Repo optionally pin a multi-repo
  * deployment's dispatch target (archie-core-t2db.8's backend fix, commit
@@ -23,6 +24,7 @@ import { useBindings } from "./use-bindings";
 const {
   bindings,
   mappings,
+  eventTypes,
   workflows,
   failure,
   actionFailure,
@@ -69,6 +71,8 @@ async function handleDelete(binding: Binding): Promise<void> {
 
 <template>
   <div>
+    <SourcesPanel />
+
     <!-- The tab owns the actions that belong to it. The page's header names the
          page, not this panel, so nothing here repeats "Events". -->
     <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
@@ -87,6 +91,8 @@ async function handleDelete(binding: Binding): Promise<void> {
 
     <BindingsTable
       :bindings="bindings"
+      :mappings="mappings"
+      :event-types="eventTypes"
       :failure="failure"
       @edit="startEdit"
       @approve="approve"
@@ -97,6 +103,7 @@ async function handleDelete(binding: Binding): Promise<void> {
       v-model:open="editorOpen"
       :binding="editing"
       :mappings="mappings"
+      :event-types="eventTypes"
       :workflows="workflows"
       :saving="saving"
       :error="saveFailure"

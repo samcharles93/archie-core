@@ -91,159 +91,6 @@ func TestPlaybookDispatchIsIdempotent(t *testing.T) {
 	}
 }
 
-// Hazard 3: "one binding per source" is a schema constraint, so concurrent
-// inserts for one source produce exactly one success and one ErrBindingOverlap
-// rather than two bindings that a single SQLite writer would have serialised.
-func TestConcurrentInsertBindingSameSource(t *testing.T) {
-	s := edaFor(t)
-	type result struct{ err error }
-	start := make(chan struct{})
-	results := make(chan result, 2)
-	for range 2 {
-		go func() {
-			<-start
-			_, err := s.InsertBinding(t.Context(), binding.Binding{
-				Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
-			})
-			results <- result{err: err}
-		}()
-	}
-	close(start)
-
-	var succeeded, overlapped int
-	for range 2 {
-		outcome := <-results
-		switch {
-		case outcome.err == nil:
-			succeeded++
-		case errors.Is(outcome.err, storecontract.ErrBindingOverlap):
-			overlapped++
-		default:
-			t.Fatalf("concurrent InsertBinding error = %v", outcome.err)
-		}
-	}
-	if succeeded != 1 || overlapped != 1 {
-		t.Fatalf("concurrent inserts = %d succeeded, %d overlapped; want 1 each", succeeded, overlapped)
-	}
-}
-
-// Hazard 1: UpdateBinding with an empty secret must leave the stored envelope
-// untouched, so an edit form that does not echo the secret cannot blank an
-// armed binding's HMAC key.
-func TestUpdateBindingEmptySecretPreservesStored(t *testing.T) {
-	cipher, err := bindingcipher.NewBindingCipher(edaTestKey, nil)
-	if err != nil {
-		t.Fatalf("NewBindingCipher() error = %v", err)
-	}
-	pool, s := edaWithCipher(t, cipher)
-
-	secretID, err := s.InsertBinding(t.Context(), binding.Binding{
-		Name: "n", Matcher: binding.Matcher{Source: "src-secret"}, Workflow: "implement",
-		Secret: "supersecretvalue0123",
-	})
-	if err != nil {
-		t.Fatalf("InsertBinding() error = %v", err)
-	}
-	before := readRawSecret(t, pool, secretID)
-
-	// Edit with an empty secret: the stored envelope must not change.
-	if err := s.UpdateBinding(t.Context(), binding.Binding{
-		ID: secretID, Name: "renamed", Matcher: binding.Matcher{Source: "src-secret"}, Workflow: "escalate",
-	}); err != nil {
-		t.Fatalf("UpdateBinding() error = %v", err)
-	}
-	after := readRawSecret(t, pool, secretID)
-	if after != before {
-		t.Fatalf("stored secret changed on empty-secret edit: %q -> %q", before, after)
-	}
-	if after == "" {
-		t.Fatal("stored secret is empty after an empty-secret edit; the binding was silently disarmed")
-	}
-}
-
-func readRawSecret(t *testing.T, pool *pgxpool.Pool, id string) string {
-	t.Helper()
-	var stored string
-	if err := pool.QueryRow(t.Context(), "SELECT secret FROM bindings WHERE id = $1", id).Scan(&stored); err != nil {
-		t.Fatalf("read raw secret: %v", err)
-	}
-	return stored
-}
-
-// The cipher path must keep decrypt-in-store: what is stored is an envelope,
-// what reads back is the plaintext HMAC key the intake verifies with.
-func TestBindingSecretEncryptedAtRestAndDecryptedOnRead(t *testing.T) {
-	cipher, err := bindingcipher.NewBindingCipher(edaTestKey, nil)
-	if err != nil {
-		t.Fatalf("NewBindingCipher() error = %v", err)
-	}
-	pool, s := edaWithCipher(t, cipher)
-
-	id, err := s.InsertBinding(t.Context(), binding.Binding{
-		Name: "n", Matcher: binding.Matcher{Source: "src-cipher"}, Workflow: "implement",
-		Secret: "supersecretvalue0123",
-	})
-	if err != nil {
-		t.Fatalf("InsertBinding() error = %v", err)
-	}
-	stored := readRawSecret(t, pool, id)
-	if stored == "supersecretvalue0123" {
-		t.Fatal("secret is stored plaintext; it must be encrypted at rest")
-	}
-
-	got, err := s.GetBinding(t.Context(), id)
-	if err != nil {
-		t.Fatalf("GetBinding() error = %v", err)
-	}
-	if got.Secret != "supersecretvalue0123" {
-		t.Errorf("Secret = %q, want the plaintext on read: the wire carries plaintext, so decrypt must happen in the store", got.Secret)
-	}
-}
-
-// A deployment with no configured key stores plaintext.
-func TestNoCipherKeepsPlaintext(t *testing.T) {
-	pool, s := edaWithCipher(t, nil)
-	id, err := s.InsertBinding(t.Context(), binding.Binding{
-		Name: "n", Matcher: binding.Matcher{Source: "src-plain"}, Workflow: "implement",
-		Secret: "supersecretvalue0123",
-	})
-	if err != nil {
-		t.Fatalf("InsertBinding() error = %v", err)
-	}
-	if stored := readRawSecret(t, pool, id); stored != "supersecretvalue0123" {
-		t.Errorf("stored secret = %q, want the plaintext with no cipher configured", stored)
-	}
-}
-
-// A secret written under the previous key stays readable once a new active
-// key is installed; otherwise rotation bricks every armed binding.
-func TestRotatedKeyStillReadsOldRows(t *testing.T) {
-	const oldKey = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
-	oldCipher, err := bindingcipher.NewBindingCipher(oldKey, nil)
-	if err != nil {
-		t.Fatalf("NewBindingCipher(old) error = %v", err)
-	}
-	pool, s := edaWithCipher(t, oldCipher)
-	id, err := s.InsertBinding(t.Context(), binding.Binding{
-		Name: "n", Matcher: binding.Matcher{Source: "src-rotate"}, Workflow: "implement",
-		Secret: "supersecretvalue0123",
-	})
-	if err != nil {
-		t.Fatalf("InsertBinding() error = %v", err)
-	}
-	rotated, err := bindingcipher.NewBindingCipher(edaTestKey, []string{oldKey})
-	if err != nil {
-		t.Fatalf("NewBindingCipher(rotated) error = %v", err)
-	}
-	got, err := NewEDA(pool, rotated).GetBinding(t.Context(), id)
-	if err != nil {
-		t.Fatalf("GetBinding() after rotation error = %v", err)
-	}
-	if got.Secret != "supersecretvalue0123" {
-		t.Errorf("Secret after rotation = %q: the previous key must still decrypt", got.Secret)
-	}
-}
-
 // The lifecycle gate survives the port: pending_approval -> armed, and only
 // from pending_approval.
 func TestBindingLifecycle(t *testing.T) {
@@ -262,9 +109,8 @@ func TestBindingLifecycle(t *testing.T) {
 	}
 }
 
-// A capture round-trips its payload verbatim, and a dispatched capture drops
-// out of the undispatched listing.
-func TestCaptureRoundTripAndUndispatched(t *testing.T) {
+// A capture round-trips its payload verbatim.
+func TestCaptureRoundTrip(t *testing.T) {
 	s := edaFor(t)
 	body := `{"action":"created"}`
 	if _, err := s.InsertCapture(t.Context(), storecontract.CapturedEvent{
@@ -278,19 +124,6 @@ func TestCaptureRoundTripAndUndispatched(t *testing.T) {
 	}
 	if list[0].Body != body {
 		t.Errorf("Body round-trip = %q, want %q", list[0].Body, body)
-	}
-
-	undispatched, err := s.ListUndispatchedCaptures(t.Context(), []string{"sentry"}, 10)
-	if err != nil || len(undispatched) != 1 {
-		t.Fatalf("ListUndispatchedCaptures() = %d (err %v), want 1", len(undispatched), err)
-	}
-	// Dispatch it; the capture must no longer be undispatched.
-	if err := s.RecordDispatch(t.Context(), "b1", 1, list[0].ID, 42); err != nil {
-		t.Fatalf("RecordDispatch() error = %v", err)
-	}
-	undispatched, err = s.ListUndispatchedCaptures(t.Context(), []string{"sentry"}, 10)
-	if err != nil || len(undispatched) != 0 {
-		t.Fatalf("ListUndispatchedCaptures() after dispatch = %d (err %v), want 0", len(undispatched), err)
 	}
 }
 

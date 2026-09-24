@@ -114,6 +114,11 @@ const (
 	KindBindingChanged = "binding_changed"
 	KindMappingChanged = "mapping_changed"
 
+	// KindUnsignedEvent marks a task started by an event from an approved
+	// unsigned source, so its timeline shows that nothing authenticated
+	// the sender. data: source, capture_id, binding_id.
+	KindUnsignedEvent = "unsigned_event"
+
 	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
 	// update -- whether the restarted daemon came back up healthy and on
 	// the version it claimed, relayed once on the boot that finds the

@@ -21,7 +21,11 @@ const line = computed(() => describeTimelineEvent(props.event));
 
 <template>
   <li class="flex items-start gap-3">
-    <span class="mt-[5px] size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+    <span
+      class="mt-[5px] size-2 shrink-0 rounded-full"
+      :class="line.tone === 'warn' ? 'bg-warn' : 'bg-primary'"
+      aria-hidden="true"
+    />
     <div>
       <div class="text-sm font-medium">{{ line.title }}</div>
       <div v-if="line.detail" class="mt-0.5 text-xs text-fg-muted">{{ line.detail }}</div>

@@ -34,19 +34,22 @@ type Matcher struct {
 // Binding is the runtime-editable entity that ties a matcher, a payload
 // mapping, and a workflow together. Bindings live in the store, not in
 // config.toml, so operators can author them from the dashboard while the
-// daemon runs.
+// daemon runs. Any number of bindings may share a source: each one applies to
+// the event type its mapping belongs to.
 //
 // Version is bumped on every UpdateBinding so a later edit cannot
 // silently rewrite the historical provenance of a task that already
-// fired. Secret is the HMAC-SHA256 shared secret a sender must sign with
-// for an event to be marked authenticated; it is never returned by
-// GET handlers.
+// fired. Signing belongs to the source the matcher names, not to the
+// binding (internal/domain/source).
 type Binding struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
 	Matcher   Matcher `json:"matcher"`
 	MappingID string  `json:"mapping_id"`
-	Workflow  string  `json:"workflow"`
+	// Filter is an optional CEL expression over the mapping's parameters
+	// (CompileFilter). An event it excludes is not dispatched.
+	Filter   string `json:"filter,omitempty"`
+	Workflow string `json:"workflow"`
 	// Owner and Repo pin a binding to a specific configured repo, so a
 	// multi-repo deployment can dispatch correctly. Both empty means "no
 	// pin" -- resolveBindingRepo falls back to the single-configured-repo
@@ -57,52 +60,15 @@ type Binding struct {
 	Repo      string    `json:"repo,omitempty"`
 	Version   int       `json:"version"`
 	Status    Status    `json:"status"`
-	Secret    string    `json:"secret,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// minSecretLen is the floor for an acceptable shared secret. A trivially
-// short secret makes accidental binding to a known HMAC trivial; the
-// floor is chosen so a one-character typo cannot arm.
-const minSecretLen = 16
-
-// Validate checks a binding is well-formed before it is newly persisted.
-// A non-empty Name, a non-empty Matcher.Source, a positive MappingID, a
-// non-empty Workflow, and a sufficiently long Secret are all required.
-// Workflow existence is checked at the API/store layer because the domain
-// package does not import the workflow registry. Use ValidateForUpdate
-// instead when editing an existing binding, where an empty Secret is a
-// meaningful "keep the current one," not a missing value.
+// Validate checks a binding is well-formed before it is persisted: a
+// non-empty Name, Matcher.Source, MappingID and Workflow, and a complete
+// owner/repo pin or none. Workflow existence is checked at the API/store
+// layer because the domain package does not import the workflow registry.
 func (b Binding) Validate() error {
-	if err := b.validateCommon(); err != nil {
-		return err
-	}
-	if len(b.Secret) < minSecretLen {
-		return fmt.Errorf("binding: secret must be at least %d bytes", minSecretLen)
-	}
-	return nil
-}
-
-// ValidateForUpdate is Validate for the edit path: every other field is
-// checked identically, but Secret is only length-checked when the caller
-// actually supplied one. UpdateBinding's own store-layer contract already
-// treats an empty Secret as "preserve the existing one" (COALESCE against
-// NULLIF) -- rejecting that here at the validation gate before the store
-// ever sees it would make the store's own documented behavior
-// unreachable. A non-empty Secret (a genuine change) is still held to the
-// same floor Validate enforces.
-func (b Binding) ValidateForUpdate() error {
-	if err := b.validateCommon(); err != nil {
-		return err
-	}
-	if b.Secret != "" && len(b.Secret) < minSecretLen {
-		return fmt.Errorf("binding: secret must be at least %d bytes", minSecretLen)
-	}
-	return nil
-}
-
-func (b Binding) validateCommon() error {
 	if strings.TrimSpace(b.Name) == "" {
 		return fmt.Errorf("binding: name is required")
 	}
@@ -121,18 +87,10 @@ func (b Binding) validateCommon() error {
 	return nil
 }
 
-// Matches reports whether the given captured event would match this
-// binding's matcher. The Authenticated clause encodes t2db.5 point 1 --
-// an unauthenticated event can never trigger a binding, no matter how
-// well it would otherwise match.
-//
-// Note: the caller is expected to be the dispatch loop or the capture
-// intake receiver, both of which receive a CapturedEvent with the
-// Authenticated flag already set by HMAC verification. Matches is pure
-// and has no I/O.
-func (m Matcher) Matches(source string, authenticated bool) bool {
-	if !authenticated {
-		return false
-	}
-	return m.Source == source
+// Matches reports whether a captured event would trigger this binding. An
+// event that is not dispatchable (no valid signature, and not from an
+// approved unsigned source) never matches, however well it would otherwise.
+// Matches is pure and has no I/O.
+func (m Matcher) Matches(source string, dispatchable bool) bool {
+	return dispatchable && m.Source == source
 }

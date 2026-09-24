@@ -73,12 +73,22 @@ const (
 	StateStoreService_ListMappings_FullMethodName               = "/state.v1.StateStoreService/ListMappings"
 	StateStoreService_UpdateMapping_FullMethodName              = "/state.v1.StateStoreService/UpdateMapping"
 	StateStoreService_DeleteMapping_FullMethodName              = "/state.v1.StateStoreService/DeleteMapping"
+	StateStoreService_RecordMappingMatch_FullMethodName         = "/state.v1.StateStoreService/RecordMappingMatch"
+	StateStoreService_InsertEventType_FullMethodName            = "/state.v1.StateStoreService/InsertEventType"
+	StateStoreService_UpdateEventType_FullMethodName            = "/state.v1.StateStoreService/UpdateEventType"
+	StateStoreService_DeleteEventType_FullMethodName            = "/state.v1.StateStoreService/DeleteEventType"
+	StateStoreService_ListEventTypes_FullMethodName             = "/state.v1.StateStoreService/ListEventTypes"
 	StateStoreService_InsertBinding_FullMethodName              = "/state.v1.StateStoreService/InsertBinding"
 	StateStoreService_GetBinding_FullMethodName                 = "/state.v1.StateStoreService/GetBinding"
 	StateStoreService_ListBindings_FullMethodName               = "/state.v1.StateStoreService/ListBindings"
 	StateStoreService_UpdateBinding_FullMethodName              = "/state.v1.StateStoreService/UpdateBinding"
 	StateStoreService_DeleteBinding_FullMethodName              = "/state.v1.StateStoreService/DeleteBinding"
 	StateStoreService_ApproveBinding_FullMethodName             = "/state.v1.StateStoreService/ApproveBinding"
+	StateStoreService_InsertSource_FullMethodName               = "/state.v1.StateStoreService/InsertSource"
+	StateStoreService_GetSource_FullMethodName                  = "/state.v1.StateStoreService/GetSource"
+	StateStoreService_ListSources_FullMethodName                = "/state.v1.StateStoreService/ListSources"
+	StateStoreService_SetSourceSigning_FullMethodName           = "/state.v1.StateStoreService/SetSourceSigning"
+	StateStoreService_SetSourceSecret_FullMethodName            = "/state.v1.StateStoreService/SetSourceSecret"
 	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
 	StateStoreService_RecordPlaybookDispatch_FullMethodName     = "/state.v1.StateStoreService/RecordPlaybookDispatch"
@@ -197,6 +207,15 @@ type StateStoreServiceClient interface {
 	ListMappings(ctx context.Context, in *ListMappingsRequest, opts ...grpc.CallOption) (*ListMappingsResponse, error)
 	UpdateMapping(ctx context.Context, in *UpdateMappingRequest, opts ...grpc.CallOption) (*UpdateMappingResponse, error)
 	DeleteMapping(ctx context.Context, in *DeleteMappingRequest, opts ...grpc.CallOption) (*DeleteMappingResponse, error)
+	// RecordMappingMatch counts one event a mapping resolved; the same
+	// (mapping, capture) twice counts once.
+	RecordMappingMatch(ctx context.Context, in *RecordMappingMatchRequest, opts ...grpc.CallOption) (*RecordMappingMatchResponse, error)
+	// EventType (docs/prds/event-automation.md, "Event types"). Insert and
+	// Update refuse an overlapping or malformed type.
+	InsertEventType(ctx context.Context, in *InsertEventTypeRequest, opts ...grpc.CallOption) (*InsertEventTypeResponse, error)
+	UpdateEventType(ctx context.Context, in *UpdateEventTypeRequest, opts ...grpc.CallOption) (*UpdateEventTypeResponse, error)
+	DeleteEventType(ctx context.Context, in *DeleteEventTypeRequest, opts ...grpc.CallOption) (*DeleteEventTypeResponse, error)
+	ListEventTypes(ctx context.Context, in *ListEventTypesRequest, opts ...grpc.CallOption) (*ListEventTypesResponse, error)
 	// Binding
 	InsertBinding(ctx context.Context, in *InsertBindingRequest, opts ...grpc.CallOption) (*InsertBindingResponse, error)
 	GetBinding(ctx context.Context, in *GetBindingRequest, opts ...grpc.CallOption) (*GetBindingResponse, error)
@@ -204,6 +223,13 @@ type StateStoreServiceClient interface {
 	UpdateBinding(ctx context.Context, in *UpdateBindingRequest, opts ...grpc.CallOption) (*UpdateBindingResponse, error)
 	DeleteBinding(ctx context.Context, in *DeleteBindingRequest, opts ...grpc.CallOption) (*DeleteBindingResponse, error)
 	ApproveBinding(ctx context.Context, in *ApproveBindingRequest, opts ...grpc.CallOption) (*ApproveBindingResponse, error)
+	// Source (event-automation.md "Sources"): the capture endpoint and its
+	// signing setting. Secrets travel in plaintext; the store encrypts at rest.
+	InsertSource(ctx context.Context, in *InsertSourceRequest, opts ...grpc.CallOption) (*InsertSourceResponse, error)
+	GetSource(ctx context.Context, in *GetSourceRequest, opts ...grpc.CallOption) (*GetSourceResponse, error)
+	ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error)
+	SetSourceSigning(ctx context.Context, in *SetSourceSigningRequest, opts ...grpc.CallOption) (*SetSourceSigningResponse, error)
+	SetSourceSecret(ctx context.Context, in *SetSourceSecretRequest, opts ...grpc.CallOption) (*SetSourceSecretResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(ctx context.Context, in *RecordDispatchRequest, opts ...grpc.CallOption) (*RecordDispatchResponse, error)
@@ -789,6 +815,56 @@ func (c *stateStoreServiceClient) DeleteMapping(ctx context.Context, in *DeleteM
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) RecordMappingMatch(ctx context.Context, in *RecordMappingMatchRequest, opts ...grpc.CallOption) (*RecordMappingMatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordMappingMatchResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecordMappingMatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) InsertEventType(ctx context.Context, in *InsertEventTypeRequest, opts ...grpc.CallOption) (*InsertEventTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InsertEventTypeResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_InsertEventType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) UpdateEventType(ctx context.Context, in *UpdateEventTypeRequest, opts ...grpc.CallOption) (*UpdateEventTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateEventTypeResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_UpdateEventType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) DeleteEventType(ctx context.Context, in *DeleteEventTypeRequest, opts ...grpc.CallOption) (*DeleteEventTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEventTypeResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_DeleteEventType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListEventTypes(ctx context.Context, in *ListEventTypesRequest, opts ...grpc.CallOption) (*ListEventTypesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEventTypesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListEventTypes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) InsertBinding(ctx context.Context, in *InsertBindingRequest, opts ...grpc.CallOption) (*InsertBindingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InsertBindingResponse)
@@ -843,6 +919,56 @@ func (c *stateStoreServiceClient) ApproveBinding(ctx context.Context, in *Approv
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ApproveBindingResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_ApproveBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) InsertSource(ctx context.Context, in *InsertSourceRequest, opts ...grpc.CallOption) (*InsertSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InsertSourceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_InsertSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetSource(ctx context.Context, in *GetSourceRequest, opts ...grpc.CallOption) (*GetSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSourceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSourcesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListSources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetSourceSigning(ctx context.Context, in *SetSourceSigningRequest, opts ...grpc.CallOption) (*SetSourceSigningResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSourceSigningResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetSourceSigning_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetSourceSecret(ctx context.Context, in *SetSourceSecretRequest, opts ...grpc.CallOption) (*SetSourceSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSourceSecretResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetSourceSecret_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1038,6 +1164,15 @@ type StateStoreServiceServer interface {
 	ListMappings(context.Context, *ListMappingsRequest) (*ListMappingsResponse, error)
 	UpdateMapping(context.Context, *UpdateMappingRequest) (*UpdateMappingResponse, error)
 	DeleteMapping(context.Context, *DeleteMappingRequest) (*DeleteMappingResponse, error)
+	// RecordMappingMatch counts one event a mapping resolved; the same
+	// (mapping, capture) twice counts once.
+	RecordMappingMatch(context.Context, *RecordMappingMatchRequest) (*RecordMappingMatchResponse, error)
+	// EventType (docs/prds/event-automation.md, "Event types"). Insert and
+	// Update refuse an overlapping or malformed type.
+	InsertEventType(context.Context, *InsertEventTypeRequest) (*InsertEventTypeResponse, error)
+	UpdateEventType(context.Context, *UpdateEventTypeRequest) (*UpdateEventTypeResponse, error)
+	DeleteEventType(context.Context, *DeleteEventTypeRequest) (*DeleteEventTypeResponse, error)
+	ListEventTypes(context.Context, *ListEventTypesRequest) (*ListEventTypesResponse, error)
 	// Binding
 	InsertBinding(context.Context, *InsertBindingRequest) (*InsertBindingResponse, error)
 	GetBinding(context.Context, *GetBindingRequest) (*GetBindingResponse, error)
@@ -1045,6 +1180,13 @@ type StateStoreServiceServer interface {
 	UpdateBinding(context.Context, *UpdateBindingRequest) (*UpdateBindingResponse, error)
 	DeleteBinding(context.Context, *DeleteBindingRequest) (*DeleteBindingResponse, error)
 	ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error)
+	// Source (event-automation.md "Sources"): the capture endpoint and its
+	// signing setting. Secrets travel in plaintext; the store encrypts at rest.
+	InsertSource(context.Context, *InsertSourceRequest) (*InsertSourceResponse, error)
+	GetSource(context.Context, *GetSourceRequest) (*GetSourceResponse, error)
+	ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error)
+	SetSourceSigning(context.Context, *SetSourceSigningRequest) (*SetSourceSigningResponse, error)
+	SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error)
@@ -1233,6 +1375,21 @@ func (UnimplementedStateStoreServiceServer) UpdateMapping(context.Context, *Upda
 func (UnimplementedStateStoreServiceServer) DeleteMapping(context.Context, *DeleteMappingRequest) (*DeleteMappingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteMapping not implemented")
 }
+func (UnimplementedStateStoreServiceServer) RecordMappingMatch(context.Context, *RecordMappingMatchRequest) (*RecordMappingMatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordMappingMatch not implemented")
+}
+func (UnimplementedStateStoreServiceServer) InsertEventType(context.Context, *InsertEventTypeRequest) (*InsertEventTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InsertEventType not implemented")
+}
+func (UnimplementedStateStoreServiceServer) UpdateEventType(context.Context, *UpdateEventTypeRequest) (*UpdateEventTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateEventType not implemented")
+}
+func (UnimplementedStateStoreServiceServer) DeleteEventType(context.Context, *DeleteEventTypeRequest) (*DeleteEventTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteEventType not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListEventTypes(context.Context, *ListEventTypesRequest) (*ListEventTypesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEventTypes not implemented")
+}
 func (UnimplementedStateStoreServiceServer) InsertBinding(context.Context, *InsertBindingRequest) (*InsertBindingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertBinding not implemented")
 }
@@ -1250,6 +1407,21 @@ func (UnimplementedStateStoreServiceServer) DeleteBinding(context.Context, *Dele
 }
 func (UnimplementedStateStoreServiceServer) ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApproveBinding not implemented")
+}
+func (UnimplementedStateStoreServiceServer) InsertSource(context.Context, *InsertSourceRequest) (*InsertSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InsertSource not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetSource(context.Context, *GetSourceRequest) (*GetSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSource not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSources not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetSourceSigning(context.Context, *SetSourceSigningRequest) (*SetSourceSigningResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSourceSigning not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSourceSecret not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ArmedBindingsForSource not implemented")
@@ -2251,6 +2423,96 @@ func _StateStoreService_DeleteMapping_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_RecordMappingMatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordMappingMatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecordMappingMatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecordMappingMatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecordMappingMatch(ctx, req.(*RecordMappingMatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_InsertEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InsertEventTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).InsertEventType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_InsertEventType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).InsertEventType(ctx, req.(*InsertEventTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_UpdateEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateEventTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).UpdateEventType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_UpdateEventType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).UpdateEventType(ctx, req.(*UpdateEventTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_DeleteEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEventTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).DeleteEventType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_DeleteEventType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).DeleteEventType(ctx, req.(*DeleteEventTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListEventTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEventTypesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListEventTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListEventTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListEventTypes(ctx, req.(*ListEventTypesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_InsertBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertBindingRequest)
 	if err := dec(in); err != nil {
@@ -2355,6 +2617,96 @@ func _StateStoreService_ApproveBinding_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).ApproveBinding(ctx, req.(*ApproveBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_InsertSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InsertSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).InsertSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_InsertSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).InsertSource(ctx, req.(*InsertSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetSource(ctx, req.(*GetSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListSources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListSources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListSources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListSources(ctx, req.(*ListSourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetSourceSigning_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSourceSigningRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetSourceSigning(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetSourceSigning_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetSourceSigning(ctx, req.(*SetSourceSigningRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetSourceSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSourceSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetSourceSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetSourceSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetSourceSecret(ctx, req.(*SetSourceSecretRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2694,6 +3046,26 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StateStoreService_DeleteMapping_Handler,
 		},
 		{
+			MethodName: "RecordMappingMatch",
+			Handler:    _StateStoreService_RecordMappingMatch_Handler,
+		},
+		{
+			MethodName: "InsertEventType",
+			Handler:    _StateStoreService_InsertEventType_Handler,
+		},
+		{
+			MethodName: "UpdateEventType",
+			Handler:    _StateStoreService_UpdateEventType_Handler,
+		},
+		{
+			MethodName: "DeleteEventType",
+			Handler:    _StateStoreService_DeleteEventType_Handler,
+		},
+		{
+			MethodName: "ListEventTypes",
+			Handler:    _StateStoreService_ListEventTypes_Handler,
+		},
+		{
 			MethodName: "InsertBinding",
 			Handler:    _StateStoreService_InsertBinding_Handler,
 		},
@@ -2716,6 +3088,26 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApproveBinding",
 			Handler:    _StateStoreService_ApproveBinding_Handler,
+		},
+		{
+			MethodName: "InsertSource",
+			Handler:    _StateStoreService_InsertSource_Handler,
+		},
+		{
+			MethodName: "GetSource",
+			Handler:    _StateStoreService_GetSource_Handler,
+		},
+		{
+			MethodName: "ListSources",
+			Handler:    _StateStoreService_ListSources_Handler,
+		},
+		{
+			MethodName: "SetSourceSigning",
+			Handler:    _StateStoreService_SetSourceSigning_Handler,
+		},
+		{
+			MethodName: "SetSourceSecret",
+			Handler:    _StateStoreService_SetSourceSecret_Handler,
 		},
 		{
 			MethodName: "ArmedBindingsForSource",

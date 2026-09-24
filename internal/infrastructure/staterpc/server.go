@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/logging"
 )
@@ -35,6 +36,7 @@ var (
 	errApplyStatusUnavailable        = status.Error(codes.Unavailable, "apply status store unavailable")
 	errMappingUnavailable            = status.Error(codes.Unavailable, "mapping store unavailable")
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
+	errSourceUnavailable             = status.Error(codes.Unavailable, "source store unavailable")
 	errBindingDispatchUnavailable    = status.Error(codes.Unavailable, "binding dispatcher unavailable")
 	errBindingTaskCreatorUnavailable = status.Error(codes.Unavailable, "binding task creator unavailable")
 	errPlaybookDispatcherUnavailable = status.Error(codes.Unavailable, "playbook dispatcher unavailable")
@@ -73,10 +75,15 @@ type Deps struct {
 	// ChannelStatus is the channel runtime state the process hosting the channels
 	// reports. Optional: nil disables the pair with codes.Unavailable, which is
 	// the honest answer for a store service no messaging process is writing to.
-	ChannelStatus      storecontract.ChannelStatusStore
-	ApplyStatus        storecontract.ApplyStatusStore
-	Mappings           storecontract.MappingStore
+	ChannelStatus storecontract.ChannelStatusStore
+	ApplyStatus   storecontract.ApplyStatusStore
+	Mappings      storecontract.MappingStore
+	EventTypes    storecontract.EventTypeStore
+	// MappingMatches counts the events each mapping resolved. Optional: nil
+	// answers RecordMappingMatch with codes.Unavailable.
+	MappingMatches     storecontract.MappingMatchRecorder
 	Bindings           storecontract.BindingStore
+	Sources            storecontract.SourceStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator
 	// PlaybookDispatcher is the side-effecting-action idempotency ledger
@@ -568,6 +575,16 @@ func (s *server) DeleteMapping(ctx context.Context, r *pb.DeleteMappingRequest) 
 	return &pb.DeleteMappingResponse{}, nil
 }
 
+func (s *server) RecordMappingMatch(ctx context.Context, r *pb.RecordMappingMatchRequest) (*pb.RecordMappingMatchResponse, error) {
+	if s.deps.MappingMatches == nil {
+		return nil, status.Error(codes.Unavailable, "mapping match recorder unavailable")
+	}
+	if err := s.deps.MappingMatches.RecordMappingMatch(ctx, r.MappingId, r.CaptureId); err != nil {
+		return nil, s.logErr("RecordMappingMatch", err)
+	}
+	return &pb.RecordMappingMatchResponse{}, nil
+}
+
 // Binding
 
 func (s *server) binding() (storecontract.BindingStore, error) {
@@ -644,6 +661,75 @@ func (s *server) ApproveBinding(ctx context.Context, r *pb.ApproveBindingRequest
 		return nil, s.logErr("ApproveBinding", err)
 	}
 	return &pb.ApproveBindingResponse{}, nil
+}
+
+// Source
+
+func (s *server) sources() (storecontract.SourceStore, error) {
+	if s.deps.Sources == nil {
+		return nil, errSourceUnavailable
+	}
+	return s.deps.Sources, nil
+}
+
+func (s *server) InsertSource(ctx context.Context, r *pb.InsertSourceRequest) (*pb.InsertSourceResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	if err := ss.InsertSource(ctx, sourceValue(r.Source)); err != nil {
+		return nil, s.logErr("InsertSource", err)
+	}
+	return &pb.InsertSourceResponse{}, nil
+}
+
+func (s *server) GetSource(ctx context.Context, r *pb.GetSourceRequest) (*pb.GetSourceResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	src, err := ss.GetSource(ctx, r.Path)
+	if err != nil {
+		return nil, s.logErr("GetSource", err)
+	}
+	if src == nil {
+		return &pb.GetSourceResponse{}, nil
+	}
+	return &pb.GetSourceResponse{Source: sourceProto(*src), Found: true}, nil
+}
+
+func (s *server) ListSources(ctx context.Context, _ *pb.ListSourcesRequest) (*pb.ListSourcesResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	list, err := ss.ListSources(ctx)
+	if err != nil {
+		return nil, s.logErr("ListSources", err)
+	}
+	return &pb.ListSourcesResponse{Sources: mapValues(list, sourceProto)}, nil
+}
+
+func (s *server) SetSourceSigning(ctx context.Context, r *pb.SetSourceSigningRequest) (*pb.SetSourceSigningResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	if err := ss.SetSourceSigning(ctx, r.Path, source.Signing(r.From), source.Signing(r.To)); err != nil {
+		return nil, s.logErr("SetSourceSigning", err)
+	}
+	return &pb.SetSourceSigningResponse{}, nil
+}
+
+func (s *server) SetSourceSecret(ctx context.Context, r *pb.SetSourceSecretRequest) (*pb.SetSourceSecretResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	if err := ss.SetSourceSecret(ctx, r.Path, r.Secret); err != nil {
+		return nil, s.logErr("SetSourceSecret", err)
+	}
+	return &pb.SetSourceSecretResponse{}, nil
 }
 
 // Dispatch

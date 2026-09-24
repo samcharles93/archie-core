@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { Check, Pencil, Trash2 } from "@lucide/vue";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import BindingStatusBadge from "./BindingStatusBadge.vue";
-import { matcherSource, repoPin, type Binding } from "./binding-draft";
+import { eventTypeLabel, type EventType } from "@/captures/event-types";
+import { bindingEventType, repoPin, type Binding, type MappingOption } from "./binding-draft";
 
 /** One saved binding's summary row. */
-const props = defineProps<{ binding: Binding }>();
+const props = defineProps<{ binding: Binding; mappings: MappingOption[]; eventTypes: EventType[] }>();
 const emit = defineEmits<{
   edit: [binding: Binding];
   approve: [binding: Binding];
@@ -18,7 +20,15 @@ const emit = defineEmits<{
 <template>
   <TableRow>
     <TableCell class="font-medium">{{ props.binding.name }}</TableCell>
-    <TableCell class="font-mono text-fg-muted">{{ matcherSource(props.binding) }}</TableCell>
+    <TableCell class="font-mono text-fg-muted">
+      <div class="flex items-center gap-2">
+        {{ eventTypeLabel(bindingEventType(props.binding, props.mappings), props.eventTypes) }}
+        <Badge v-if="props.binding.unsigned" variant="warn">Unsigned</Badge>
+      </div>
+    </TableCell>
+    <TableCell class="max-w-56 truncate font-mono text-xs text-fg-muted" :title="props.binding.filter">
+      {{ props.binding.filter || "—" }}
+    </TableCell>
     <TableCell>{{ props.binding.workflow || "—" }}</TableCell>
     <TableCell class="font-mono text-fg-muted">{{ repoPin(props.binding) }}</TableCell>
     <TableCell><BindingStatusBadge :status="props.binding.status" /></TableCell>

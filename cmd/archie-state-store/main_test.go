@@ -595,7 +595,7 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 	}
 	bindingID, err := cl.InsertBinding(ctx, binding.Binding{
 		Name: "b1", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
-		Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		Workflow: "implement",
 	})
 	if err != nil || bindingID == "" {
 		t.Fatalf("InsertBinding = (%q, %v)", bindingID, err)
@@ -606,7 +606,6 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 	if err := cl.UpdateBinding(ctx, binding.Binding{
 		ID: bindingID, Name: "b1", Matcher: binding.Matcher{Source: "sentry"},
 		MappingID: mappingID, Workflow: "implement", Owner: "acme", Repo: "widget",
-		Secret: "0123456789abcdef0123456789abcdef",
 	}); err != nil {
 		t.Fatalf("UpdateBinding: %v", err)
 	}

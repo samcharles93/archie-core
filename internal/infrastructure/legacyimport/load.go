@@ -23,6 +23,19 @@ var droppedColumns = map[string]bool{
 	"playbook_dispatches.id": true,
 }
 
+// newColumns are target columns added after the legacy stores, with no
+// legacy value to carry; an imported row takes the column default. An
+// imported capture has no event type, so it stays unidentified and never
+// dispatches, and no legacy source could take unsigned events. An imported
+// mapping has no event type, so no binding using it dispatches until it is
+// given one, and an imported binding has no filter.
+var newColumns = map[string]bool{
+	"captures.event_type": true,
+	"mappings.event_type": true,
+	"bindings.filter":     true,
+	"captures.unsigned":   true,
+}
+
 // targetKeys override a table's legacy key where the target has no column
 // for it.
 var targetKeys = map[string][]string{
@@ -171,6 +184,7 @@ func plan(ctx context.Context, tx pgx.Tx, t legacyread.Table, problems *refusal)
 		problems.add("%s: no target table", t.Name)
 	}
 	targetNames := map[string]bool{}
+	cols = slices.DeleteFunc(cols, func(c column) bool { return newColumns[t.Name+"."+c.name] })
 	for i := range cols {
 		targetNames[cols[i].name] = true
 		cols[i].source = slices.Index(t.Columns, cols[i].name)

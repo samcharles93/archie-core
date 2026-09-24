@@ -146,11 +146,20 @@ type Server struct {
 	// the dashboard failing to start.
 	Mappings storecontract.MappingStore
 
+	// EventTypes persists event types (docs/prds/event-automation.md). Optional:
+	// nil reports the inspector's event types as disabled.
+	EventTypes storecontract.EventTypeStore
+
 	// Bindings persists playbook bindings: matcher + mapping + workflow
 	// triples that turn a captured webhook into an archie task
 	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
 	// /api/bindings route answer 503 rather than the dashboard failing to start.
 	Bindings storecontract.BindingStore
+
+	// Sources persists capture sources and their signing setting
+	// (docs/prds/event-automation.md "Sources"). Optional: nil makes every
+	// /api/sources route answer 503 and marks no binding unsigned.
+	Sources storecontract.SourceStore
 
 	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
 	// initiated update use the same post-restart notification route as a
@@ -254,6 +263,10 @@ func (s *Server) registerTaskRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/event-types", s.handleEventTypes)
+	mux.HandleFunc("POST /api/event-types", s.handleEventTypeCreate)
+	mux.HandleFunc("PUT /api/event-types/{id}", s.handleEventTypeUpdate)
+	mux.HandleFunc("DELETE /api/event-types/{id}", s.handleEventTypeDelete)
 	mux.HandleFunc("GET /api/mappings", s.handleMappingsList)
 	mux.HandleFunc("POST /api/mappings", s.handleMappingCreate)
 	mux.HandleFunc("GET /api/mappings/{id}", s.handleMappingGet)
@@ -266,6 +279,11 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/bindings/{id}", s.handleBindingUpdate)
 	mux.HandleFunc("DELETE /api/bindings/{id}", s.handleBindingDelete)
 	mux.HandleFunc("POST /api/bindings/{id}/approve", s.handleBindingApprove)
+	mux.HandleFunc("GET /api/sources", s.handleSourcesList)
+	mux.HandleFunc("POST /api/sources", s.handleSourceCreate)
+	mux.HandleFunc("POST /api/sources/{path}/signing", s.handleSourceSigning)
+	mux.HandleFunc("POST /api/sources/{path}/approve-unsigned", s.handleSourceApproveUnsigned)
+	mux.HandleFunc("POST /api/sources/{path}/secret", s.handleSourceSecret)
 }
 
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {

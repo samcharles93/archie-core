@@ -139,8 +139,8 @@ func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
 
 	b := newBootstrap()
 	b.st = st
-	// The playbook ledger moved to the event-capture store with the rest of
-	// the dispatch tables; the task store no longer serves it.
+	// The playbook ledger, sources and event types are served by the
+	// event-capture store; the task store no longer serves them.
 	eda := pgstore.EDA(t, nil)
 	b.eda = eda
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
@@ -148,7 +148,10 @@ func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
 		t.Fatal("stateStoreDeps leaves PlaybookDispatcher nil; the standalone State Store is the only production server for the playbook dispatch ledger")
 	}
 	if deps.PlaybookDispatcher != storecontract.PlaybookDispatcher(eda) {
-		t.Fatalf("PlaybookDispatcher = %T, want the opened *postgres.EDA", deps.PlaybookDispatcher)
+		t.Fatalf("PlaybookDispatcher = %T, want the opened event-capture store", deps.PlaybookDispatcher)
+	}
+	if deps.Sources == nil || deps.EventTypes == nil {
+		t.Fatalf("stateStoreDeps Sources = %v, EventTypes = %v; want both served, or intake verifies nothing and nothing dispatches", deps.Sources, deps.EventTypes)
 	}
 	// A boot without a store must not fabricate one: nil keeps the RPCs honest
 	// as unavailable rather than depending on a nil receiver.

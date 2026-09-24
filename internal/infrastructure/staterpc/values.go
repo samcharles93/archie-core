@@ -13,7 +13,9 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -149,7 +151,8 @@ func capturedEventProto(c storecontract.CapturedEvent) *pb.CapturedEvent {
 	return &pb.CapturedEvent{
 		Id: c.ID, ReceivedAt: timestamp(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
-		Body: c.Body, Authenticated: c.Authenticated,
+		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
+		Unsigned: c.Unsigned,
 	}
 }
 
@@ -160,7 +163,25 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 	return storecontract.CapturedEvent{
 		ID: c.Id, ReceivedAt: timeValue(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
-		Body: c.Body, Authenticated: c.Authenticated,
+		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
+		Unsigned: c.Unsigned,
+	}
+}
+
+func sourceProto(s source.Source) *pb.Source {
+	return &pb.Source{
+		Path: s.Path, Signing: string(s.Signing), Secret: s.Secret,
+		CreatedAt: timestamp(s.CreatedAt), UpdatedAt: timestamp(s.UpdatedAt),
+	}
+}
+
+func sourceValue(s *pb.Source) source.Source {
+	if s == nil {
+		return source.Source{}
+	}
+	return source.Source{
+		Path: s.Path, Signing: source.Signing(s.Signing), Secret: s.Secret,
+		CreatedAt: timeValue(s.CreatedAt), UpdatedAt: timeValue(s.UpdatedAt),
 	}
 }
 
@@ -177,8 +198,9 @@ func mappingFieldValue(f *pb.MappingField) mapping.Field {
 
 func mappingProto(m mapping.Mapping) *pb.Mapping {
 	return &pb.Mapping{
-		Id: m.ID, Name: m.Name, SourceHint: m.SourceHint,
-		Fields:    mapValues(m.Fields, mappingFieldProto),
+		Id: m.ID, Name: m.Name, SourceHint: m.SourceHint, EventTypeId: m.EventTypeID,
+		Fields:     mapValues(m.Fields, mappingFieldProto),
+		MatchCount: m.MatchCount, LastMatchedAt: timestamp(m.LastMatchedAt),
 		CreatedAt: timestamp(m.CreatedAt), UpdatedAt: timestamp(m.UpdatedAt),
 	}
 }
@@ -188,8 +210,9 @@ func mappingValue(m *pb.Mapping) mapping.Mapping {
 		return mapping.Mapping{}
 	}
 	return mapping.Mapping{
-		ID: m.Id, Name: m.Name, SourceHint: m.SourceHint,
-		Fields:    mapValues(m.Fields, mappingFieldValue),
+		ID: m.Id, Name: m.Name, SourceHint: m.SourceHint, EventTypeID: m.EventTypeId,
+		Fields:     mapValues(m.Fields, mappingFieldValue),
+		MatchCount: m.MatchCount, LastMatchedAt: timeValue(m.LastMatchedAt),
 		CreatedAt: timeValue(m.CreatedAt), UpdatedAt: timeValue(m.UpdatedAt),
 	}
 }
@@ -197,8 +220,8 @@ func mappingValue(m *pb.Mapping) mapping.Mapping {
 func bindingProto(b binding.Binding) *pb.Binding {
 	return &pb.Binding{
 		Id: b.ID, Name: b.Name, Matcher: &pb.BindingMatcher{Source: b.Matcher.Source},
-		MappingId: b.MappingID, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		Version: int64(b.Version), Status: string(b.Status), Secret: b.Secret,
+		MappingId: b.MappingID, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
+		Version: int64(b.Version), Status: string(b.Status),
 		CreatedAt: timestamp(b.CreatedAt), UpdatedAt: timestamp(b.UpdatedAt),
 	}
 }
@@ -213,8 +236,8 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	}
 	return binding.Binding{
 		ID: b.Id, Name: b.Name, Matcher: binding.Matcher{Source: source},
-		MappingID: b.MappingId, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		Version: int(b.Version), Status: binding.Status(b.Status), Secret: b.Secret,
+		MappingID: b.MappingId, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
+		Version: int(b.Version), Status: binding.Status(b.Status),
 		CreatedAt: timeValue(b.CreatedAt), UpdatedAt: timeValue(b.UpdatedAt),
 	}
 }
@@ -267,9 +290,15 @@ const (
 	msgStaleTransition   = "stale transition"
 	msgBindingNotFound   = "binding not found"
 	msgMappingNotFound   = "mapping not found"
+	msgEventTypeNotFound = "event type not found"
+	msgEventTypeOverlap  = "event type overlap"
+	msgEventTypeInvalid  = "event type invalid"
 	msgBindingOverlap    = "binding overlap"
 	msgBindingTransition = "binding transition rejected"
 	msgAlreadyDispatched = "already dispatched"
+	msgSourceNotFound    = "source not found"
+	msgSourcePathTaken   = "source path taken"
+	msgSourceSigning     = "source signing stale"
 	msgInternal          = "state store: internal error"
 	// msgTaskLogsUnavailable is the public phrase for "this service has no
 	// task-log reader". It is a wire contract like the sentinels above: the
@@ -302,22 +331,12 @@ func mapError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 	}
-	switch {
-	case errors.Is(err, storecontract.ErrStaleTransition):
-		return status.Error(codes.FailedPrecondition, msgStaleTransition)
-	case errors.Is(err, storecontract.ErrBindingNotFound):
-		return status.Error(codes.NotFound, msgBindingNotFound)
-	case errors.Is(err, storecontract.ErrMappingNotFound):
-		return status.Error(codes.NotFound, msgMappingNotFound)
-	case errors.Is(err, storecontract.ErrBindingOverlap):
-		return status.Error(codes.FailedPrecondition, msgBindingOverlap)
-	case errors.Is(err, storecontract.ErrBindingTransition):
-		return status.Error(codes.FailedPrecondition, msgBindingTransition)
-	case errors.Is(err, storecontract.ErrAlreadyDispatched):
-		return status.Error(codes.AlreadyExists, msgAlreadyDispatched)
-	default:
-		return status.Error(codes.Internal, msgInternal)
+	for _, w := range wireErrors {
+		if errors.Is(err, w.sentinel) {
+			return status.Error(w.code, w.message)
+		}
 	}
+	return status.Error(codes.Internal, msgInternal)
 }
 
 // unmapError rehydrates a gRPC status error back to the store sentinel it
@@ -364,34 +383,45 @@ func unmapError(err error) error {
 // are part of the wire contract (§4). A code whose message is not one this
 // package defines returns nil, so the caller falls back to the wrapped form.
 func sentinelForStatus(st *status.Status) error {
-	switch st.Code() {
-	case codes.FailedPrecondition:
-		switch st.Message() {
-		case msgStaleTransition:
-			return storecontract.ErrStaleTransition
-		case msgBindingOverlap:
-			return storecontract.ErrBindingOverlap
-		case msgBindingTransition:
-			return storecontract.ErrBindingTransition
-		}
-	case codes.NotFound:
-		switch st.Message() {
-		case msgBindingNotFound:
-			return storecontract.ErrBindingNotFound
-		case msgMappingNotFound:
-			return storecontract.ErrMappingNotFound
-		}
-	case codes.AlreadyExists:
-		if st.Message() == msgAlreadyDispatched {
-			return storecontract.ErrAlreadyDispatched
-		}
-	case codes.Unavailable:
-		if st.Message() == msgTaskLogsUnavailable {
-			return logging.ErrTaskLogsUnavailable
-		}
-	}
-	return nil
+	return wireSentinels[wireStatus{st.Code(), st.Message()}]
 }
+
+type wireStatus struct {
+	code    codes.Code
+	message string
+}
+
+// wireErrors pairs each sentinel with its canonical (code, message). mapError
+// reads it forward and sentinelForStatus backward, so the two directions
+// cannot drift.
+var wireErrors = []struct {
+	sentinel error
+	code     codes.Code
+	message  string
+}{
+	{storecontract.ErrStaleTransition, codes.FailedPrecondition, msgStaleTransition},
+	{storecontract.ErrBindingOverlap, codes.FailedPrecondition, msgBindingOverlap},
+	{storecontract.ErrBindingTransition, codes.FailedPrecondition, msgBindingTransition},
+	{storecontract.ErrSourceSigningStale, codes.FailedPrecondition, msgSourceSigning},
+	{eventtype.ErrOverlap, codes.FailedPrecondition, msgEventTypeOverlap},
+	{eventtype.ErrInvalid, codes.InvalidArgument, msgEventTypeInvalid},
+	{storecontract.ErrBindingNotFound, codes.NotFound, msgBindingNotFound},
+	{storecontract.ErrMappingNotFound, codes.NotFound, msgMappingNotFound},
+	{storecontract.ErrEventTypeNotFound, codes.NotFound, msgEventTypeNotFound},
+	{storecontract.ErrSourceNotFound, codes.NotFound, msgSourceNotFound},
+	{storecontract.ErrAlreadyDispatched, codes.AlreadyExists, msgAlreadyDispatched},
+	{storecontract.ErrSourcePathTaken, codes.AlreadyExists, msgSourcePathTaken},
+	{logging.ErrTaskLogsUnavailable, codes.Unavailable, msgTaskLogsUnavailable},
+}
+
+// wireSentinels indexes wireErrors by (code, canonical message).
+var wireSentinels = func() map[wireStatus]error {
+	m := make(map[wireStatus]error, len(wireErrors))
+	for _, w := range wireErrors {
+		m[wireStatus{w.code, w.message}] = w.sentinel
+	}
+	return m
+}()
 
 // configSnapshotProto and configSnapshotValue carry the dashboard's
 // configuration projection. document crosses as bytes, unread by either side

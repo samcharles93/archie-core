@@ -380,22 +380,22 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("DeleteMapping missing = %v, want ErrMappingNotFound", err)
 			}
 
-			// Binding: found=false, ErrBindingNotFound, ErrBindingOverlap,
-			// ErrBindingTransition, and the dispatch surface incl.
+			// Binding: found=false, ErrBindingNotFound, several bindings per
+			// source, ErrBindingTransition, and the dispatch surface incl.
 			// ErrAlreadyDispatched.
 			bindingID, err := ec.InsertBinding(ctx, binding.Binding{
 				Name: "b1", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
-				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+				Workflow: "implement",
 			})
 			if err != nil || bindingID == "" {
 				t.Fatalf("InsertBinding: %v %v", bindingID, err)
 			}
 			_, err = ec.InsertBinding(ctx, binding.Binding{
 				Name: "b2", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
-				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+				Workflow: "implement",
 			})
-			if !errors.Is(err, storecontract.ErrBindingOverlap) {
-				t.Fatalf("InsertBinding overlap = %v, want ErrBindingOverlap", err)
+			if err != nil {
+				t.Fatalf("second InsertBinding on a source = %v, want accepted", err)
 			}
 			missingBinding, err := ec.GetBinding(ctx, "rabsent00000000")
 			if err != nil || missingBinding != nil {

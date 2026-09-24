@@ -8,10 +8,13 @@ package mapping
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 )
 
 // FieldType is the expected JSON shape of a mapped field, checked at
@@ -46,16 +49,20 @@ type Field struct {
 	Required bool      `json:"required"`
 }
 
-// Mapping is a named, reusable set of field bindings, authored by clicking
-// through one example captured event but not pinned to that event or its
-// source -- t2db.4's matcher decides which events a binding applies to.
+// Mapping is a named set of field bindings belonging to one event type and
+// checked against its schema (CheckSchema). Any number of bindings may reuse
+// it. MatchCount and LastMatchedAt are read-only: the store counts each
+// capture the mapping resolved at dispatch.
 type Mapping struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	SourceHint string    `json:"source_hint"`
-	Fields     []Field   `json:"fields"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	SourceHint    string    `json:"source_hint"`
+	EventTypeID   string    `json:"event_type_id"`
+	Fields        []Field   `json:"fields"`
+	MatchCount    int64     `json:"match_count"`
+	LastMatchedAt time.Time `json:"last_matched_at"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // validTypes is the set of FieldType values Validate accepts.
@@ -229,6 +236,46 @@ func walk(node any, path []pathSegment) (value any, found bool) {
 		cur = v
 	}
 	return cur, true
+}
+
+// ErrSchema marks a mapping whose field paths or types disagree with its
+// event type's inferred schema.
+var ErrSchema = errors.New("mapping: field does not fit the event type's schema")
+
+// CheckSchema refuses fields whose path the event type's schema lacks, or
+// whose declared type differs from the schema's. Array indices match the
+// schema's "[]" segment, and a path the example held as null accepts any type.
+func CheckSchema(fields []Field, schema map[string]eventtype.ValueType) error {
+	for _, f := range fields {
+		got, ok := schema[schemaPath(f.Path)]
+		if !ok {
+			return fmt.Errorf("%w: %s: path %q is not in the event type", ErrSchema, f.Name, f.Path)
+		}
+		if f.Type != TypeAny && got != eventtype.TypeNull && string(got) != string(f.Type) {
+			return fmt.Errorf("%w: %s: path %q is %s, not %s", ErrSchema, f.Name, f.Path, got, f.Type)
+		}
+	}
+	return nil
+}
+
+// schemaPath rewrites a resolve path ("items[0].id") into the schema's form
+// ("items[].id"). A malformed path has no schema form.
+func schemaPath(path string) string {
+	var b strings.Builder
+	for _, seg := range parsePath(path) {
+		switch {
+		case seg.Invalid:
+			return ""
+		case seg.Index >= 0:
+			b.WriteString("[]")
+		default:
+			if b.Len() > 0 {
+				b.WriteByte('.')
+			}
+			b.WriteString(seg.Key)
+		}
+	}
+	return b.String()
 }
 
 func typeMatches(v any, want FieldType) bool {

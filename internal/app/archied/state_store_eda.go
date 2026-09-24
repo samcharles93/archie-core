@@ -8,12 +8,15 @@ import (
 
 // eventCaptureStore is every surface the State Store serves from the
 // event-capture tables, plus the tool_call projection it writes through.
-type eventCaptureStore interface {
+type eventCaptureStore interface { //nolint:interfacebloat // composite of the store contracts the event-capture tables serve
 	storecontract.CaptureStore
 	storecontract.MappingStore
 	storecontract.BindingStore
 	storecontract.BindingDispatcher
+	storecontract.MappingMatchRecorder
 	storecontract.PlaybookDispatcher
+	storecontract.EventTypeStore
+	storecontract.SourceStore
 	toolCallWriter
 }
 

@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -39,7 +40,7 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 	RegisterServer(server, Deps{
 		Tasks: local, ConfigSnapshots: local, ApplyStatus: local,
 		Captures: eda, Mappings: eda, Bindings: eda,
-		BindingDispatcher: eda, PlaybookDispatcher: eda,
+		BindingDispatcher: eda, PlaybookDispatcher: eda, EventTypes: eda,
 		Grants: grants,
 	})
 	go func() { _ = server.Serve(listener) }()
@@ -77,6 +78,12 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
+	// Only an identified capture is listed for dispatch; a catch-all type
+	// identifies every event on the source as it arrives.
+	eventTypeID, etErr := admin.InsertEventType(ctx, eventtype.EventType{Source: "large", Name: "any"})
+	if etErr != nil {
+		t.Fatal(etErr)
+	}
 	body := strings.Repeat("x", 256<<10)
 	for range 20 {
 		if _, err := admin.InsertCapture(ctx, storecontract.CapturedEvent{Source: "large", Body: body, Authenticated: true}, 0, 0); err != nil {
@@ -87,8 +94,9 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 	// A binding's mapping is a real relation now, so it must point at a
 	// mapping that exists; the store refuses a dangling id.
 	mappingID, mapErr := admin.InsertMapping(t.Context(), mapping.Mapping{
-		Name:   "m",
-		Fields: []mapping.Field{{Name: "title", Path: "title", Type: mapping.TypeString}},
+		Name:        "m",
+		EventTypeID: eventTypeID,
+		Fields:      []mapping.Field{{Name: "title", Path: "title", Type: mapping.TypeString}},
 	})
 	if mapErr != nil {
 		t.Fatal(mapErr)
@@ -97,14 +105,14 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 	// public draft -> pending_approval -> armed lifecycle.
 	id, err := admin.InsertBinding(ctx, binding.Binding{
 		Name: "large binding", Matcher: binding.Matcher{Source: "large"},
-		MappingID: mappingID, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		MappingID: mappingID, Workflow: "implement",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := admin.UpdateBinding(ctx, binding.Binding{
 		ID: id, Name: "large binding", Matcher: binding.Matcher{Source: "large"},
-		MappingID: mappingID, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		MappingID: mappingID, Workflow: "implement",
 	}); err != nil {
 		t.Fatal(err)
 	}

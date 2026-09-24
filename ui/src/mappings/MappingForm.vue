@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ago } from "@/lib/format";
-import { captures, capturesEnabled, draft, selectCapture, type Capture } from "./state";
+import { eventTypeLabel } from "@/captures/event-types";
+import { captures, capturesEnabled, draft, eventTypes, selectCapture, type Capture } from "./state";
 
 /**
  * The mapping's own fields: the name it is saved under, the organisational
@@ -47,6 +48,22 @@ const captureHint = computed(() => {
     <div class="flex flex-col gap-2">
       <Label for="mapping-name">Name</Label>
       <Input id="mapping-name" v-model="draft.name" />
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <Label for="mapping-event-type">Event type</Label>
+      <Select v-model="draft.eventTypeId">
+        <SelectTrigger id="mapping-event-type" class="w-full">
+          <SelectValue placeholder="Pick an event type" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem v-for="type in eventTypes" :key="type.id" :value="type.id">
+              {{ eventTypeLabel(type.id, eventTypes) }}
+            </SelectItem>
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
 
     <div class="flex flex-col gap-2">

@@ -173,11 +173,10 @@ func TestInsertEventSucceedsWhenProjectionFails(t *testing.T) {
 // around a nil writer.
 func TestStateStoreDepsProjectToolCalls(t *testing.T) {
 	st := pgstore.Open(t)
-	eda := pgstore.EDA(t, nil)
 
 	b := newBootstrap()
 	b.st = st
-	b.eda = eda
+	b.eda = pgstore.EDA(t, nil)
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
 	if _, ok := deps.Tasks.(*toolCallProjectingTaskStore); !ok {
 		t.Fatalf("deps.Tasks = %T, want the tool_call projecting decorator", deps.Tasks)

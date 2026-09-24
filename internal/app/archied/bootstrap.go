@@ -1348,6 +1348,9 @@ func (b *boot) buildDaemon() {
 	if bd, ok := b.stateStore.(storecontract.BindingDispatcher); ok {
 		b.d.BindingDispatcher = bd
 	}
+	if mm, ok := b.stateStore.(storecontract.MappingMatchRecorder); ok {
+		b.d.MappingMatches = mm
+	}
 	if btc, ok := b.stateStore.(storecontract.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}

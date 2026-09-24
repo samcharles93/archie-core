@@ -67,7 +67,7 @@ func TestMapErrorPreservesContextIdentity(t *testing.T) {
 }
 
 // TestUnmapErrorSentinelFidelity pins the §7 sentinel rehydration round-trip
-// for each store error code, so a consumer's errors.Is(err, store.ErrX) keeps
+// for each store error code, so a consumer's errors.Is(err, storecontract.ErrX) keeps
 // working across the wire.
 func TestUnmapErrorSentinelFidelity(t *testing.T) {
 	tests := []struct {
@@ -81,6 +81,9 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 		{name: "binding overlap", store: storecontract.ErrBindingOverlap, rehyd: storecontract.ErrBindingOverlap},
 		{name: "binding transition", store: storecontract.ErrBindingTransition, rehyd: storecontract.ErrBindingTransition},
 		{name: "already dispatched", store: storecontract.ErrAlreadyDispatched, rehyd: storecontract.ErrAlreadyDispatched},
+		{name: "source not found", store: storecontract.ErrSourceNotFound, rehyd: storecontract.ErrSourceNotFound},
+		{name: "source path taken", store: storecontract.ErrSourcePathTaken, rehyd: storecontract.ErrSourcePathTaken},
+		{name: "source signing stale", store: storecontract.ErrSourceSigningStale, rehyd: storecontract.ErrSourceSigningStale},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
