@@ -40,9 +40,6 @@ const routes = [
   // link, a bookmark or an agent that learned these URLs still lands somewhere
   // that works. `nav: false` is what the page registry's test reads to skip
   // them -- they are addressed by URL, not offered as destinations.
-  { path: "/captures", name: "captures", redirect: "/events?tab=inspector", meta: { label: "Inspector", nav: false } },
-  { path: "/mappings", name: "mappings", redirect: "/events?tab=mappings", meta: { label: "Mappings", nav: false } },
-  { path: "/bindings", name: "bindings", redirect: "/events?tab=bindings", meta: { label: "Bindings", nav: false } },
   { path: "/system/status", name: "system-status", component: SystemStatusPage, meta: { label: "Status", description: "Update state, configuration sources, and the listen address.", section: "settings" } },
   { path: "/logs", name: "logs", component: LogsPage, meta: { label: "Logs", description: "The daemon log stream, filterable by level and component.", section: "logs" } },
   { path: "/system/appearance", name: "system-appearance", component: SystemAppearancePage, meta: { label: "Appearance", description: "Theme and display preferences." } },

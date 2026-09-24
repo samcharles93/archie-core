@@ -1,5 +1,3 @@
-import "./legacy-hash-redirect";
-
 import { createPinia } from "pinia";
 import { createApp } from "vue";
 

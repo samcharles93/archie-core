@@ -13,19 +13,15 @@ const nav = await readFile(new URL("../src/lib/nav.ts", import.meta.url), "utf8"
 const page = await readFile(new URL("../src/events/EventsPage.vue", import.meta.url), "utf8");
 const registry = await readFile(new URL("../../internal/gateway/dashboard_tools.go", import.meta.url), "utf8");
 
-test("the Events page is the tab host, and the old paths only redirect", () => {
+test("the Events page is the tab host, and the old paths are gone", () => {
   assert.match(page, /Tabs/, "the page composes tabs");
   assert.match(page, /CapturesPage/, "the Inspector tab is the captures surface");
   assert.match(page, /BindingsPage/, "the Bindings tab is the bindings surface");
   assert.match(page, /MappingsPage/, "the Mappings tab is the mappings surface");
 
-  // Each former destination survives as a bookmark, never as a nav entry: the
-  // registry test parses this table and skips exactly the lines marked so.
+
   for (const path of ["/captures", "/mappings", "/bindings"]) {
-    const line = router.split("\n").find((l) => l.includes(`path: "${path}"`));
-    assert.ok(line, `${path} is no longer routed at all, so its bookmarks break`);
-    assert.match(line, /nav: false/, `${path} is still a navigation entry`);
-    assert.match(line, /redirect/, `${path} does not redirect to the tab that replaced it`);
+    assert.ok(!router.includes(`path: "${path}"`), `${path} is routed again; the Events tabs replaced it`);
   }
 });
 
