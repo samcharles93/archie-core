@@ -25,6 +25,7 @@ export interface Capture {
   headers?: string;
   body?: string;
   authenticated?: boolean;
+  unsigned?: boolean;
 }
 
 interface CapturesResponse {

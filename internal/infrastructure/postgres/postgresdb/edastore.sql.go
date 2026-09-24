@@ -11,19 +11,33 @@ import (
 )
 
 const armedBindingsForSource = `-- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC
 `
 
-func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]Binding, error) {
+type ArmedBindingsForSourceRow struct {
+	ID        string
+	Name      string
+	Source    string
+	Mapping   string
+	Workflow  string
+	Owner     string
+	Repo      string
+	Version   int64
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]ArmedBindingsForSourceRow, error) {
 	rows, err := q.db.Query(ctx, armedBindingsForSource, source)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Binding
+	var items []ArmedBindingsForSourceRow
 	for rows.Next() {
-		var i Binding
+		var i ArmedBindingsForSourceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -34,7 +48,6 @@ func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]
 			&i.Repo,
 			&i.Version,
 			&i.Status,
-			&i.Secret,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -101,14 +114,37 @@ func (q *Queries) DeletePlaybookDispatches(ctx context.Context, playbookID strin
 	return err
 }
 
+const deriveSources = `-- name: DeriveSources :exec
+SELECT derive_sources()
+`
+
+func (q *Queries) DeriveSources(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deriveSources)
+	return err
+}
+
 const getBinding = `-- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at
 FROM bindings WHERE id = $1
 `
 
-func (q *Queries) GetBinding(ctx context.Context, id string) (Binding, error) {
+type GetBindingRow struct {
+	ID        string
+	Name      string
+	Source    string
+	Mapping   string
+	Workflow  string
+	Owner     string
+	Repo      string
+	Version   int64
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, error) {
 	row := q.db.QueryRow(ctx, getBinding, id)
-	var i Binding
+	var i GetBindingRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -119,7 +155,6 @@ func (q *Queries) GetBinding(ctx context.Context, id string) (Binding, error) {
 		&i.Repo,
 		&i.Version,
 		&i.Status,
-		&i.Secret,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -145,9 +180,26 @@ func (q *Queries) GetMapping(ctx context.Context, id string) (Mapping, error) {
 	return i, err
 }
 
+const getSource = `-- name: GetSource :one
+SELECT path, signing, secret, created_at, updated_at FROM sources WHERE path = $1
+`
+
+func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
+	row := q.db.QueryRow(ctx, getSource, path)
+	var i Source
+	err := row.Scan(
+		&i.Path,
+		&i.Signing,
+		&i.Secret,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const insertBinding = `-- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, workflow, owner, repo, version, status, secret)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)
+INSERT INTO bindings (id, name, source, mapping, workflow, owner, repo, version, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8)
 `
 
 type InsertBindingParams struct {
@@ -159,7 +211,6 @@ type InsertBindingParams struct {
 	Owner    string
 	Repo     string
 	Status   string
-	Secret   string
 }
 
 func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) error {
@@ -172,7 +223,6 @@ func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) er
 		arg.Owner,
 		arg.Repo,
 		arg.Status,
-		arg.Secret,
 	)
 	return err
 }
@@ -201,8 +251,8 @@ func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDi
 
 const insertCapture = `-- name: InsertCapture :exec
 
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertCaptureParams struct {
@@ -214,6 +264,7 @@ type InsertCaptureParams struct {
 	Body          string
 	Authenticated bool
 	ReceivedAt    time.Time
+	Unsigned      bool
 }
 
 // EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
@@ -227,6 +278,7 @@ func (q *Queries) InsertCapture(ctx context.Context, arg InsertCaptureParams) er
 		arg.Body,
 		arg.Authenticated,
 		arg.ReceivedAt,
+		arg.Unsigned,
 	)
 	return err
 }
@@ -275,6 +327,21 @@ func (q *Queries) InsertPlaybookDispatch(ctx context.Context, arg InsertPlaybook
 	return err
 }
 
+const insertSource = `-- name: InsertSource :exec
+INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3)
+`
+
+type InsertSourceParams struct {
+	Path    string
+	Signing string
+	Secret  string
+}
+
+func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) error {
+	_, err := q.db.Exec(ctx, insertSource, arg.Path, arg.Signing, arg.Secret)
+	return err
+}
+
 const insertToolCall = `-- name: InsertToolCall :exec
 INSERT INTO tool_calls (id, task_id, attempt, tool, result, error, called_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -304,19 +371,33 @@ func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) 
 }
 
 const listBindings = `-- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at
 FROM bindings ORDER BY created_at DESC
 `
 
-func (q *Queries) ListBindings(ctx context.Context) ([]Binding, error) {
+type ListBindingsRow struct {
+	ID        string
+	Name      string
+	Source    string
+	Mapping   string
+	Workflow  string
+	Owner     string
+	Repo      string
+	Version   int64
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
 	rows, err := q.db.Query(ctx, listBindings)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Binding
+	var items []ListBindingsRow
 	for rows.Next() {
-		var i Binding
+		var i ListBindingsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -327,7 +408,6 @@ func (q *Queries) ListBindings(ctx context.Context) ([]Binding, error) {
 			&i.Repo,
 			&i.Version,
 			&i.Status,
-			&i.Secret,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -342,7 +422,7 @@ func (q *Queries) ListBindings(ctx context.Context) ([]Binding, error) {
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1
@@ -366,6 +446,7 @@ func (q *Queries) ListCaptures(ctx context.Context, limit int32) ([]Capture, err
 			&i.Body,
 			&i.Authenticated,
 			&i.ReceivedAt,
+			&i.Unsigned,
 		); err != nil {
 			return nil, err
 		}
@@ -409,8 +490,38 @@ func (q *Queries) ListMappings(ctx context.Context) ([]Mapping, error) {
 	return items, nil
 }
 
+const listSources = `-- name: ListSources :many
+SELECT path, signing, secret, created_at, updated_at FROM sources ORDER BY created_at DESC, path
+`
+
+func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
+	rows, err := q.db.Query(ctx, listSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Source
+	for rows.Next() {
+		var i Source
+		if err := rows.Scan(
+			&i.Path,
+			&i.Signing,
+			&i.Secret,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUndispatchedCaptures = `-- name: ListUndispatchedCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned
 FROM captures
 WHERE source = ANY($1::text[])
   AND id NOT IN (SELECT capture FROM binding_dispatches)
@@ -441,6 +552,7 @@ func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispat
 			&i.Body,
 			&i.Authenticated,
 			&i.ReceivedAt,
+			&i.Unsigned,
 		); err != nil {
 			return nil, err
 		}
@@ -462,6 +574,53 @@ func (q *Queries) SetBindingArmed(ctx context.Context, id string) (int64, error)
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setSourceSecret = `-- name: SetSourceSecret :execrows
+UPDATE sources SET secret = $2, updated_at = now() WHERE path = $1
+`
+
+type SetSourceSecretParams struct {
+	Path   string
+	Secret string
+}
+
+func (q *Queries) SetSourceSecret(ctx context.Context, arg SetSourceSecretParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSourceSecret, arg.Path, arg.Secret)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setSourceSigning = `-- name: SetSourceSigning :execrows
+UPDATE sources SET signing = $1, updated_at = now()
+WHERE path = $2 AND signing = $3
+`
+
+type SetSourceSigningParams struct {
+	ToSigning   string
+	Path        string
+	FromSigning string
+}
+
+func (q *Queries) SetSourceSigning(ctx context.Context, arg SetSourceSigningParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSourceSigning, arg.ToSigning, arg.Path, arg.FromSigning)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const sourceExists = `-- name: SourceExists :one
+SELECT EXISTS (SELECT 1 FROM sources WHERE path = $1)
+`
+
+func (q *Queries) SourceExists(ctx context.Context, path string) (bool, error) {
+	row := q.db.QueryRow(ctx, sourceExists, path)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const taskToolCalls = `-- name: TaskToolCalls :many
@@ -510,9 +669,7 @@ func (q *Queries) TaskToolCalls(ctx context.Context, taskID int64) ([]TaskToolCa
 const updateBinding = `-- name: UpdateBinding :execrows
 UPDATE bindings
 SET name = $2, source = $3, mapping = $4, workflow = $5, owner = $6, repo = $7,
-    version = version + 1, status = $8,
-    secret = CASE WHEN $9::text = '' THEN secret ELSE $9 END,
-    updated_at = now()
+    version = version + 1, status = $8, updated_at = now()
 WHERE id = $1
 `
 
@@ -525,12 +682,8 @@ type UpdateBindingParams struct {
 	Owner    string
 	Repo     string
 	Status   string
-	Secret   string
 }
 
-// An empty secret means "keep the stored one": the CASE leaves the column
-// untouched so an edit form that does not echo the secret cannot blank an
-// armed binding's HMAC key.
 func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateBinding,
 		arg.ID,
@@ -541,7 +694,6 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (i
 		arg.Owner,
 		arg.Repo,
 		arg.Status,
-		arg.Secret,
 	)
 	if err != nil {
 		return 0, err

@@ -13,6 +13,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -47,6 +48,7 @@ var (
 	_ storecontract.CaptureStore        = (*Client)(nil)
 	_ storecontract.MappingStore        = (*Client)(nil)
 	_ storecontract.BindingStore        = (*Client)(nil)
+	_ storecontract.SourceStore         = (*Client)(nil)
 	_ storecontract.BindingDispatcher   = (*Client)(nil)
 	_ storecontract.BindingTaskCreator  = (*Client)(nil)
 	_ storecontract.PlaybookDispatcher  = (*Client)(nil)
@@ -457,6 +459,43 @@ func (c *Client) DeleteBinding(ctx context.Context, id string) error {
 
 func (c *Client) ApproveBinding(ctx context.Context, id string) error {
 	_, err := c.client.ApproveBinding(ctx, &pb.ApproveBindingRequest{Id: id})
+	return unmapError(err)
+}
+
+// Source
+
+func (c *Client) InsertSource(ctx context.Context, s source.Source) error {
+	_, err := c.client.InsertSource(ctx, &pb.InsertSourceRequest{Source: sourceProto(s)})
+	return unmapError(err)
+}
+
+func (c *Client) GetSource(ctx context.Context, path string) (*source.Source, error) {
+	r, err := c.client.GetSource(ctx, &pb.GetSourceRequest{Path: path})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	if !r.Found {
+		return nil, nil
+	}
+	v := sourceValue(r.Source)
+	return &v, nil
+}
+
+func (c *Client) ListSources(ctx context.Context) ([]source.Source, error) {
+	r, err := c.client.ListSources(ctx, &pb.ListSourcesRequest{})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	return mapValues(r.Sources, sourceValue), nil
+}
+
+func (c *Client) SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error {
+	_, err := c.client.SetSourceSigning(ctx, &pb.SetSourceSigningRequest{Path: path, From: string(from), To: string(to)})
+	return unmapError(err)
+}
+
+func (c *Client) SetSourceSecret(ctx context.Context, path, secret string) error {
+	_, err := c.client.SetSourceSecret(ctx, &pb.SetSourceSecretRequest{Path: path, Secret: secret})
 	return unmapError(err)
 }
 

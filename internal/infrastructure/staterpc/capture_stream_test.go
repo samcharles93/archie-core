@@ -33,14 +33,14 @@ func TestCaptureListsExceedUnaryMessageLimit(t *testing.T) {
 	// public draft -> pending_approval -> armed lifecycle.
 	id, err := eda.InsertBinding(t.Context(), binding.Binding{
 		Name: "large binding", Matcher: binding.Matcher{Source: "large"},
-		MappingID: mappingID, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		MappingID: mappingID, Workflow: "implement",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := eda.UpdateBinding(t.Context(), binding.Binding{
 		ID: id, Name: "large binding", Matcher: binding.Matcher{Source: "large"},
-		MappingID: mappingID, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+		MappingID: mappingID, Workflow: "implement",
 	}); err != nil {
 		t.Fatal(err)
 	}

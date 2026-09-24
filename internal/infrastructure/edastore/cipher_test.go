@@ -2,7 +2,6 @@ package edastore
 
 import (
 	"encoding/base64"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -122,111 +121,6 @@ func TestBindingCipherDerivesDistinctKeys(t *testing.T) {
 }
 
 // openWithCipher builds a store whose binding secrets are encrypted at rest.
-func openWithCipher(t *testing.T, cipher BindingCipher) *Store {
-	t.Helper()
-	dir := t.TempDir()
-	s, err := Open(Config{
-		DBPath:  filepath.Join(dir, "eda.sqlite"),
-		DataDir: filepath.Join(dir, "pb_data"),
-		Cipher:  cipher,
-	})
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
-}
-
-func sampleBinding() bindingInput {
-	return bindingInput{Name: "n", Source: "sentry", Workflow: "implement", Secret: "supersecretvalue0123"}
-}
-
-// TestBindingSecretIsEncryptedAtRest pins that the plaintext secret never
-// reaches the database file. Reading the column directly is the point: a
-// round-trip through the store would decrypt and prove nothing.
-func TestBindingSecretIsEncryptedAtRest(t *testing.T) {
-	cipher, err := NewBindingCipher(testBindingKey, nil)
-	if err != nil {
-		t.Fatalf("NewBindingCipher() error = %v", err)
-	}
-	s := openWithCipher(t, cipher)
-	in := sampleBinding()
-	id := insertBinding(t, s, in)
-
-	var stored string
-	if err := s.App().DB().NewQuery("SELECT secret FROM " + CollBindings + " WHERE id = {:id}").
-		Bind(map[string]any{"id": id}).Row(&stored); err != nil {
-		t.Fatalf("read raw secret: %v", err)
-	}
-	if stored == in.Secret {
-		t.Fatal("secret is stored as plaintext; it must be encrypted at rest")
-	}
-	if !strings.Contains(stored, ":") {
-		t.Errorf("stored secret %q does not look like a cipher envelope", stored)
-	}
-}
-
-// TestBindingSecretDecryptsOnRead pins the other half: what was encrypted
-// comes back as the original plaintext.
-func TestBindingSecretDecryptsOnRead(t *testing.T) {
-	cipher, _ := NewBindingCipher(testBindingKey, nil)
-	s := openWithCipher(t, cipher)
-	in := sampleBinding()
-	id := insertBinding(t, s, in)
-
-	got, err := s.GetBinding(t.Context(), id)
-	if err != nil {
-		t.Fatalf("GetBinding() error = %v", err)
-	}
-	if got.Secret != in.Secret {
-		t.Errorf("Secret = %q, want %q", got.Secret, in.Secret)
-	}
-}
-
-// TestNoCipherKeepsPlaintext pins the behaviour that predates encryption: a
-// deployment with no configured key still works, storing plaintext.
-func TestNoCipherKeepsPlaintext(t *testing.T) {
-	s := openWithCipher(t, nil)
-	in := sampleBinding()
-	id := insertBinding(t, s, in)
-
-	var stored string
-	if err := s.App().DB().NewQuery("SELECT secret FROM " + CollBindings + " WHERE id = {:id}").
-		Bind(map[string]any{"id": id}).Row(&stored); err != nil {
-		t.Fatalf("read raw secret: %v", err)
-	}
-	if stored != in.Secret {
-		t.Errorf("stored secret = %q, want the plaintext %q with no cipher configured", stored, in.Secret)
-	}
-}
-
-// TestRotatedKeyStillReadsOldRows pins key rotation: a secret written under
-// the previous key must stay readable once a new active key is installed,
-// otherwise a rotation silently bricks every armed binding.
-func TestRotatedKeyStillReadsOldRows(t *testing.T) {
-	const oldKey = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
-	oldCipher, _ := NewBindingCipher(oldKey, nil)
-	s := openWithCipher(t, oldCipher)
-	in := sampleBinding()
-	id := insertBinding(t, s, in)
-
-	rotated, err := NewBindingCipher(testBindingKey, []string{oldKey})
-	if err != nil {
-		t.Fatalf("NewBindingCipher(rotated) error = %v", err)
-	}
-	s.cipher = rotated
-
-	got, err := s.GetBinding(t.Context(), id)
-	if err != nil {
-		t.Fatalf("GetBinding() after rotation error = %v", err)
-	}
-	if got.Secret != in.Secret {
-		t.Errorf("Secret after rotation = %q, want %q: the previous key must still decrypt", got.Secret, in.Secret)
-	}
-}
-
-// tamperEnvelope flips one byte inside the ciphertext region so Decrypt must
-// fail authentication rather than return altered plaintext.
 func tamperEnvelope(t *testing.T, envelope string) string {
 	t.Helper()
 	parts := strings.SplitN(envelope, ":", 4)

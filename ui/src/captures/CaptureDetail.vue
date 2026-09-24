@@ -3,7 +3,9 @@ import { useMediaQuery } from "@vueuse/core";
 import { computed, ref, watch } from "vue";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ago } from "@/lib/format";
+import { captureSignature } from "./capture-signature";
 import CapturePayload from "./CapturePayload.vue";
 import { selected } from "./state";
 
@@ -36,6 +38,8 @@ const stacked = useMediaQuery("(max-width: 1099px)");
 
 const cap = computed(() => (stacked.value || !props.maxHeight ? undefined : `${props.maxHeight}px`));
 
+const signature = computed(() => (selected.value ? captureSignature(selected.value) : null));
+
 const meta = computed(() => {
   const capture = selected.value;
   if (!capture) return "";
@@ -54,7 +58,10 @@ watch(selected, () => {
   <div v-if="selected" ref="pane" class="min-w-0">
     <Card class="flex flex-col" :style="cap ? { maxHeight: cap } : undefined">
       <CardHeader>
-        <CardTitle class="font-mono">{{ selected.source || "Unknown source" }}</CardTitle>
+        <CardTitle class="flex items-center gap-2 font-mono">
+          {{ selected.source || "Unknown source" }}
+          <Badge v-if="signature" :variant="signature.kind">{{ signature.label }}</Badge>
+        </CardTitle>
         <CardDescription>{{ meta }}</CardDescription>
       </CardHeader>
       <!-- Stacked there is no sibling to be bound by, so the panel caps itself

@@ -384,14 +384,14 @@ func TestStateStoreConformance(t *testing.T) {
 			// ErrAlreadyDispatched.
 			bindingID, err := ec.InsertBinding(ctx, binding.Binding{
 				Name: "b1", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
-				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+				Workflow: "implement",
 			})
 			if err != nil || bindingID == "" {
 				t.Fatalf("InsertBinding: %v %v", bindingID, err)
 			}
 			_, err = ec.InsertBinding(ctx, binding.Binding{
 				Name: "b2", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
-				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+				Workflow: "implement",
 			})
 			if !errors.Is(err, store.ErrBindingOverlap) {
 				t.Fatalf("InsertBinding overlap = %v, want ErrBindingOverlap", err)

@@ -1,17 +1,17 @@
 -- EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
 
 -- name: InsertCapture :exec
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1;
 
 -- name: ListUndispatchedCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned
 FROM captures
 WHERE source = ANY(@sources::text[])
   AND id NOT IN (SELECT capture FROM binding_dispatches)
@@ -47,30 +47,25 @@ WHERE id = $1;
 DELETE FROM mappings WHERE id = $1;
 
 -- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, workflow, owner, repo, version, status, secret)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9);
+INSERT INTO bindings (id, name, source, mapping, workflow, owner, repo, version, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8);
 
 -- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at
 FROM bindings WHERE id = $1;
 
 -- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at
 FROM bindings ORDER BY created_at DESC;
 
 -- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC;
 
 -- name: UpdateBinding :execrows
--- An empty secret means "keep the stored one": the CASE leaves the column
--- untouched so an edit form that does not echo the secret cannot blank an
--- armed binding's HMAC key.
 UPDATE bindings
 SET name = $2, source = $3, mapping = $4, workflow = $5, owner = $6, repo = $7,
-    version = version + 1, status = $8,
-    secret = CASE WHEN sqlc.arg(secret)::text = '' THEN secret ELSE sqlc.arg(secret) END,
-    updated_at = now()
+    version = version + 1, status = $8, updated_at = now()
 WHERE id = $1;
 
 -- name: SetBindingArmed :execrows
@@ -97,3 +92,25 @@ VALUES ($1, $2, $3, $4, $5, $6, $7);
 -- name: TaskToolCalls :many
 SELECT id, task_id, attempt, tool, result, error, called_at
 FROM tool_calls WHERE task_id = $1 ORDER BY called_at ASC;
+
+-- name: InsertSource :exec
+INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3);
+
+-- name: GetSource :one
+SELECT path, signing, secret, created_at, updated_at FROM sources WHERE path = $1;
+
+-- name: ListSources :many
+SELECT path, signing, secret, created_at, updated_at FROM sources ORDER BY created_at DESC, path;
+
+-- name: SetSourceSigning :execrows
+UPDATE sources SET signing = sqlc.arg(to_signing), updated_at = now()
+WHERE path = sqlc.arg(path) AND signing = sqlc.arg(from_signing);
+
+-- name: SetSourceSecret :execrows
+UPDATE sources SET secret = $2, updated_at = now() WHERE path = $1;
+
+-- name: SourceExists :one
+SELECT EXISTS (SELECT 1 FROM sources WHERE path = $1);
+
+-- name: DeriveSources :exec
+SELECT derive_sources();

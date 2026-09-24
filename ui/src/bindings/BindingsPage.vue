@@ -4,6 +4,7 @@ import { onMounted, ref } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import SourcesPanel from "@/sources/SourcesPanel.vue";
 import { useLiveResource } from "@/stores/live-updates";
 import BindingEditor from "./BindingEditor.vue";
 import BindingsTable from "./BindingsTable.vue";
@@ -69,6 +70,8 @@ async function handleDelete(binding: Binding): Promise<void> {
 
 <template>
   <div>
+    <SourcesPanel />
+
     <!-- The tab owns the actions that belong to it. The page's header names the
          page, not this panel, so nothing here repeats "Events". -->
     <div class="mb-4 flex flex-wrap items-center justify-end gap-2">

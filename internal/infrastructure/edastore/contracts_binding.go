@@ -133,16 +133,8 @@ func (s *Store) bindingValue(r *core.Record) (binding.Binding, error) {
 		Repo:      r.GetString("repo"),
 		Version:   r.GetInt("version"),
 		Status:    binding.Status(r.GetString("status")),
-		Secret:    r.GetString("secret"),
 		CreatedAt: r.GetDateTime("created_at").Time(),
 		UpdatedAt: r.GetDateTime("updated_at").Time(),
-	}
-	if s.cipher != nil && b.Secret != "" {
-		plain, err := s.cipher.Decrypt(b.Secret)
-		if err != nil {
-			return binding.Binding{}, fmt.Errorf("edastore: decrypt binding secret: %w", err)
-		}
-		b.Secret = plain
 	}
 	return b, nil
 }
@@ -154,20 +146,6 @@ func (s *Store) applyBinding(r *core.Record, b binding.Binding) error {
 	r.Set("workflow", b.Workflow)
 	r.Set("owner", b.Owner)
 	r.Set("repo", b.Repo)
-	// An empty secret means "keep the stored one". An edit form that does not
-	// echo the secret back must not silently disarm the binding by erasing it.
-	if b.Secret == "" {
-		return nil
-	}
-	secret := b.Secret
-	if s.cipher != nil {
-		encrypted, err := s.cipher.Encrypt(secret)
-		if err != nil {
-			return fmt.Errorf("edastore: encrypt binding secret: %w", err)
-		}
-		secret = encrypted
-	}
-	r.Set("secret", secret)
 	return nil
 }
 

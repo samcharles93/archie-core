@@ -14,6 +14,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -149,7 +150,7 @@ func capturedEventProto(c storecontract.CapturedEvent) *pb.CapturedEvent {
 	return &pb.CapturedEvent{
 		Id: c.ID, ReceivedAt: timestamp(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
-		Body: c.Body, Authenticated: c.Authenticated,
+		Body: c.Body, Authenticated: c.Authenticated, Unsigned: c.Unsigned,
 	}
 }
 
@@ -160,7 +161,24 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 	return storecontract.CapturedEvent{
 		ID: c.Id, ReceivedAt: timeValue(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
-		Body: c.Body, Authenticated: c.Authenticated,
+		Body: c.Body, Authenticated: c.Authenticated, Unsigned: c.Unsigned,
+	}
+}
+
+func sourceProto(s source.Source) *pb.Source {
+	return &pb.Source{
+		Path: s.Path, Signing: string(s.Signing), Secret: s.Secret,
+		CreatedAt: timestamp(s.CreatedAt), UpdatedAt: timestamp(s.UpdatedAt),
+	}
+}
+
+func sourceValue(s *pb.Source) source.Source {
+	if s == nil {
+		return source.Source{}
+	}
+	return source.Source{
+		Path: s.Path, Signing: source.Signing(s.Signing), Secret: s.Secret,
+		CreatedAt: timeValue(s.CreatedAt), UpdatedAt: timeValue(s.UpdatedAt),
 	}
 }
 
@@ -198,7 +216,7 @@ func bindingProto(b binding.Binding) *pb.Binding {
 	return &pb.Binding{
 		Id: b.ID, Name: b.Name, Matcher: &pb.BindingMatcher{Source: b.Matcher.Source},
 		MappingId: b.MappingID, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		Version: int64(b.Version), Status: string(b.Status), Secret: b.Secret,
+		Version: int64(b.Version), Status: string(b.Status),
 		CreatedAt: timestamp(b.CreatedAt), UpdatedAt: timestamp(b.UpdatedAt),
 	}
 }
@@ -214,7 +232,7 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	return binding.Binding{
 		ID: b.Id, Name: b.Name, Matcher: binding.Matcher{Source: source},
 		MappingID: b.MappingId, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		Version: int(b.Version), Status: binding.Status(b.Status), Secret: b.Secret,
+		Version: int(b.Version), Status: binding.Status(b.Status),
 		CreatedAt: timeValue(b.CreatedAt), UpdatedAt: timeValue(b.UpdatedAt),
 	}
 }
@@ -270,6 +288,9 @@ const (
 	msgBindingOverlap    = "binding overlap"
 	msgBindingTransition = "binding transition rejected"
 	msgAlreadyDispatched = "already dispatched"
+	msgSourceNotFound    = "source not found"
+	msgSourcePathTaken   = "source path taken"
+	msgSourceSigning     = "source signing stale"
 	msgInternal          = "state store: internal error"
 	// msgTaskLogsUnavailable is the public phrase for "this service has no
 	// task-log reader". It is a wire contract like the sentinels above: the
@@ -315,6 +336,12 @@ func mapError(err error) error {
 		return status.Error(codes.FailedPrecondition, msgBindingTransition)
 	case errors.Is(err, storecontract.ErrAlreadyDispatched):
 		return status.Error(codes.AlreadyExists, msgAlreadyDispatched)
+	case errors.Is(err, storecontract.ErrSourceNotFound):
+		return status.Error(codes.NotFound, msgSourceNotFound)
+	case errors.Is(err, storecontract.ErrSourcePathTaken):
+		return status.Error(codes.AlreadyExists, msgSourcePathTaken)
+	case errors.Is(err, storecontract.ErrSourceSigningStale):
+		return status.Error(codes.FailedPrecondition, msgSourceSigning)
 	default:
 		return status.Error(codes.Internal, msgInternal)
 	}
@@ -373,6 +400,8 @@ func sentinelForStatus(st *status.Status) error {
 			return storecontract.ErrBindingOverlap
 		case msgBindingTransition:
 			return storecontract.ErrBindingTransition
+		case msgSourceSigning:
+			return storecontract.ErrSourceSigningStale
 		}
 	case codes.NotFound:
 		switch st.Message() {
@@ -380,10 +409,15 @@ func sentinelForStatus(st *status.Status) error {
 			return storecontract.ErrBindingNotFound
 		case msgMappingNotFound:
 			return storecontract.ErrMappingNotFound
+		case msgSourceNotFound:
+			return storecontract.ErrSourceNotFound
 		}
 	case codes.AlreadyExists:
-		if st.Message() == msgAlreadyDispatched {
+		switch st.Message() {
+		case msgAlreadyDispatched:
 			return storecontract.ErrAlreadyDispatched
+		case msgSourcePathTaken:
+			return storecontract.ErrSourcePathTaken
 		}
 	case codes.Unavailable:
 		if st.Message() == msgTaskLogsUnavailable {

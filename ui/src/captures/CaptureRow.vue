@@ -5,6 +5,7 @@ import { computed } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { ago } from "@/lib/format";
+import { captureSignature } from "./capture-signature";
 import { selected, type Capture } from "./state";
 
 /**
@@ -15,6 +16,7 @@ import { selected, type Capture } from "./state";
  */
 const props = defineProps<{ capture: Capture }>();
 
+const signature = computed(() => captureSignature(props.capture));
 const isSelected = computed(() => selected.value?.id === props.capture.id);
 
 // The name is set here because role="button" makes the cells presentational:
@@ -43,7 +45,12 @@ function open(): void {
     <!-- A stored capture carries no claim from a binding, so this reads Unbound
          for every row: the column is where a claim would appear, not a state a
          reader can act on today. -->
-    <TableCell><Badge variant="idle">Unbound</Badge></TableCell>
+    <TableCell>
+      <div class="flex items-center gap-1">
+        <Badge variant="idle">Unbound</Badge>
+        <Badge :variant="signature.kind">{{ signature.label }}</Badge>
+      </div>
+    </TableCell>
     <TableCell class="font-mono">{{ props.capture.content_type || "—" }}</TableCell>
     <TableCell class="text-right">
       <ChevronRight class="size-4 text-fg-subtle" />

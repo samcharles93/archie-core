@@ -23,6 +23,13 @@ var droppedColumns = map[string]bool{
 	"playbook_dispatches.id": true,
 }
 
+// addedColumns are target columns with no legacy column by design; an
+// imported row takes the column default. captures.unsigned: no legacy source
+// could take unsigned events.
+var addedColumns = map[string]bool{
+	"captures.unsigned": true,
+}
+
 // targetKeys override a table's legacy key where the target has no column
 // for it.
 var targetKeys = map[string][]string{
@@ -166,6 +173,7 @@ func plan(ctx context.Context, tx pgx.Tx, t legacyread.Table, problems *refusal)
 	if err != nil {
 		return nil, fmt.Errorf("legacy import: %s columns: %w", t.Name, err)
 	}
+	cols = slices.DeleteFunc(cols, func(c column) bool { return addedColumns[t.Name+"."+c.name] })
 	gap := len(cols) == 0
 	if gap {
 		problems.add("%s: no target table", t.Name)
