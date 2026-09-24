@@ -18,7 +18,7 @@ function words(value: unknown): string {
 export function duration(milliseconds: unknown): string {
   const ms = Number(milliseconds);
   if (!Number.isFinite(ms) || ms < 0) return "";
-  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 1000) return "under 1 s";
   const seconds = ms / 1000;
   // Under 60s: 1 dp when seconds < 10, 0 dp otherwise (40.6 s, but 41 s).
   if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)} s`;
