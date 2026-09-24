@@ -5,9 +5,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
-
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 

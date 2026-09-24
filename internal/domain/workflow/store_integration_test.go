@@ -7,11 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
-
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // storeIntegrationRunner is a minimal agentexec.Runner stub, duplicated
@@ -19,7 +18,7 @@ import (
 // lives in the external workflow_test package: it needs the real
 // *pgstore.TaskDB as a workflow.Store, and the package under test now owns
 // workflow.Task/Status/Source, which would otherwise cycle back through
-// internal/store's dependency on internal/domain/workflow.
+// the store's dependency on internal/domain/workflow.
 type storeIntegrationRunner struct {
 	result agentexec.Result
 }

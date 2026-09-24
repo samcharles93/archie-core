@@ -13,7 +13,7 @@ import (
 func compressBackends() map[string]func(t *testing.T) SessionStore {
 	return map[string]func(t *testing.T) SessionStore{
 		"memory":   func(*testing.T) SessionStore { return NewSessionStoreMemory() },
-		"postgres": func(t *testing.T) SessionStore { return newPostgresStore(t) },
+		"postgres": newPostgresStore,
 	}
 }
 

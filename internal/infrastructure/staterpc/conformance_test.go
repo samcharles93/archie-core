@@ -31,7 +31,7 @@ type contract interface {
 	storecontract.ApplyStatusStore
 }
 
-// edaContract is the event-capture half, which the PocketBase store serves.
+// edaContract is the event-capture half, which the PostgreSQL EDA store serves.
 // It is a separate interface because no single type implements both halves
 // any more: that split is the point of the migration, not an accident.
 type edaContract interface {

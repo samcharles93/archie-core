@@ -138,7 +138,7 @@ func toolLimits(cfg config.Config) agentexec.ToolLimits {
 const taskListOverRead = 5
 
 // chatTaskListerAdapter gives the gateway a read view of one identity's tasks.
-// gateway deliberately does not import internal/store, so the projection
+// gateway deliberately does not import the task store, so the projection
 // happens here, as it does for the writer and controller adapters below.
 type chatTaskListerAdapter struct {
 	tasks func(context.Context, int) ([]workflow.Task, error)
@@ -608,7 +608,7 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 }
 
 // chatTaskLogReaderAdapter gives the gateway a read view of a task's
-// persisted log history without importing internal/logging or internal/store
+// persisted log history without importing internal/logging or the task store
 // into the gateway package. Each identity's reader is scoped to its own
 // tasks: the identity bound at construction is used for authorization, so a
 // model cannot read another identity's task logs by passing a different
@@ -803,7 +803,7 @@ func subscribeSystemLogs(nc *natsio.Conn, taskLogs *logging.TaskRegistry, log *s
 // progress, outcome, parking) here because that worker's own *events.Bus is
 // in-process and invisible to the daemon; this is the other half of the
 // bridge, landing them on bus so persistAndBroadcastEvents -- the single
-// choke point that inserts into the SQLite events table and fans out over
+// choke point that inserts into the events table and fans out over
 // SSE -- treats them exactly like every other daemon-observed event. Mirrors
 // subscribeSystemLogs's demux-by-taskID shape.
 func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (unsubscribe func(), err error) {

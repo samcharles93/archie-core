@@ -21,7 +21,7 @@ import (
 //
 // It is a named function so that step_vocabulary_test.go can fail if a root
 // stops resolving the shipped stages, or hands a constructor a manager other
-// than the one this returns; the roots themselves own a SQLite file and dial
+// than the one this returns; the roots themselves open a database and dial
 // gRPC, so the test asserts their wiring by parsing their bodies.
 //
 // Agreement is within one build: the State Store and archie-agent are

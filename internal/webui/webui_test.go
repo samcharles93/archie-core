@@ -25,11 +25,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
-
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 func newTestServer(t *testing.T) *Server {

@@ -475,7 +475,7 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
 }
 
-// setupObservability builds the event bus and dashboard server. Every event is logged to SQLite (stamped with its row id) and
+// setupObservability builds the event bus and dashboard server. Every event is persisted (stamped with its row id) and
 // then fanned out to live dashboard connections.
 func (b *boot) setupObservability(ctx context.Context) {
 	cfg, log := b.cfg, b.log

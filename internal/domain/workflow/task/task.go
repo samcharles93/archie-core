@@ -33,7 +33,7 @@ const (
 )
 
 // Task is the task-execution record the workflow domain operates on.
-// internal/store persists this type (persistence -> domain).
+// internal/infrastructure/postgres persists this type (persistence -> domain).
 type Task struct {
 	ID          int64  `json:"id"`
 	Owner       string `json:"owner"`
@@ -134,7 +134,7 @@ func (t Task) IsForgeBacked() bool {
 }
 
 // Store is the narrow, consumer-owned subset of the State Store contract
-// that workflow stages call mid-run. *store.Store and staterpc.Client
+// that workflow stages call mid-run. The PostgreSQL store and staterpc.Client
 // satisfy it; this is the interface archie-agent uses over the gRPC State
 // Store contract. It supersedes store.WorkflowStore.
 type Store interface {

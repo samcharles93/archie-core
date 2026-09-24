@@ -4,9 +4,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
-
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 )

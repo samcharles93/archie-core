@@ -835,7 +835,7 @@ func (d *Daemon) botUserForTask(task *workflowtask.Task) string {
 	return d.Cfg.Get().BotUser
 }
 
-// drainNATS processes tasks from NATS, falling back to SQLite ClaimNext for
+// drainNATS processes tasks from NATS, falling back to the task store's ClaimNext for
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {

@@ -14,10 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
-
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // notifyRecorder captures every record at every level. The other recording

@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
-
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
@@ -29,6 +27,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/tools"

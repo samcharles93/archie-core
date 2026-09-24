@@ -82,28 +82,37 @@ func parseCronSegment(segment string, lo, hi int) (cronSlots, error) {
 			}
 			step = n
 		}
-		first, last := lo, hi
-		if base != "*" {
-			from, to, ranged := strings.Cut(base, "-")
-			if !ranged && stepped {
-				return 0, fmt.Errorf("step in %q needs a wildcard or a range", part)
-			}
-			var err error
-			if first, err = cronValue(from, lo, hi); err != nil {
-				return 0, err
-			}
-			last = first
-			if ranged {
-				if last, err = cronValue(to, first, hi); err != nil {
-					return 0, err
-				}
-			}
+		first, last, err := cronRange(base, part, stepped, lo, hi)
+		if err != nil {
+			return 0, err
 		}
 		for v := first; v <= last; v += step {
 			slots |= 1 << v
 		}
 	}
 	return slots, nil
+}
+
+// cronRange returns the values base names: every value for "*", else a
+// single value or a from-to range.
+func cronRange(base, part string, stepped bool, lo, hi int) (first, last int, err error) {
+	if base == "*" {
+		return lo, hi, nil
+	}
+	from, to, ranged := strings.Cut(base, "-")
+	if !ranged && stepped {
+		return 0, 0, fmt.Errorf("step in %q needs a wildcard or a range", part)
+	}
+	if first, err = cronValue(from, lo, hi); err != nil {
+		return 0, 0, err
+	}
+	if !ranged {
+		return first, first, nil
+	}
+	if last, err = cronValue(to, first, hi); err != nil {
+		return 0, 0, err
+	}
+	return first, last, nil
 }
 
 func cronValue(text string, lo, hi int) (int, error) {

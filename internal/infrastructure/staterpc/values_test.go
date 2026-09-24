@@ -94,7 +94,7 @@ func TestTaskLogStageFilterSurvivesTheWire(t *testing.T) {
 }
 
 // TestEventDataJSONPreservesMarshalErrorMarker pins §11's conformance
-// invariant: the local store (internal/store/events.go) records a
+// invariant: the store records a
 // {"marshal_error":%q} marker when json.Marshal of event Data fails, so the
 // remote wire must carry the same marker rather than silently emptying the
 // Data on the hop.

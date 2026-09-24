@@ -18,14 +18,14 @@ func TestTurnLedgerClaimLifecycleIsIdempotent(t *testing.T) {
 			name: "memory",
 			open: func(t *testing.T) (TurnLedger, func()) {
 				store := NewSessionStoreMemory()
-				return store.(TurnLedger), func() { _ = store.Close() }
+				return asTurnLedger(t, store), func() { _ = store.Close() }
 			},
 		},
 		{
 			name: "postgres",
 			open: func(t *testing.T) (TurnLedger, func()) {
 				store := newPostgresStore(t)
-				return store.(TurnLedger), func() { _ = store.Close() }
+				return asTurnLedger(t, store), func() { _ = store.Close() }
 			},
 		},
 	}
@@ -113,14 +113,14 @@ func TestTurnLedgerReclaimsAcrossProcessOwnersAndRejectsStaleWrites(t *testing.T
 			name: "memory",
 			open: func(t *testing.T) (TurnLedger, func()) {
 				store := NewSessionStoreMemory()
-				return store.(TurnLedger), func() { _ = store.Close() }
+				return asTurnLedger(t, store), func() { _ = store.Close() }
 			},
 		},
 		{
 			name: "postgres",
 			open: func(t *testing.T) (TurnLedger, func()) {
 				store := newPostgresStore(t)
-				return store.(TurnLedger), func() { _ = store.Close() }
+				return asTurnLedger(t, store), func() { _ = store.Close() }
 			},
 		},
 	}
@@ -392,4 +392,13 @@ func TestTurnRunnerCanonicalTurnIDRejectsCollidingLegacyRecord(t *testing.T) {
 		t.Fatalf("canonicalTurnID = %q, want isolated ID %q (legacy collision %q)",
 			got, want, collidingLegacyID)
 	}
+}
+
+func asTurnLedger(t *testing.T, store SessionStore) TurnLedger {
+	t.Helper()
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("%T does not implement TurnLedger", store)
+	}
+	return ledger
 }

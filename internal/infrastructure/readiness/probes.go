@@ -26,7 +26,7 @@ import (
 // --- state_db ---
 
 // statusCounter is the read-only store surface the state_db probe needs.
-// The daemon's *store.Store satisfies it; the probe never depends on the
+// The task store satisfies it; the probe never depends on the
 // full task-lifecycle interface.
 type statusCounter interface {
 	StatusCounts(ctx context.Context) (map[string]int, error)

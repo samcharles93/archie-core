@@ -93,7 +93,7 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 	if mapErr != nil {
 		t.Fatal(mapErr)
 	}
-	// (edastore.ArmedBindingsForSource), so "large" needs one taken through the
+	// (ArmedBindingsForSource), so "large" needs one taken through the
 	// public draft -> pending_approval -> armed lifecycle.
 	id, err := admin.InsertBinding(ctx, binding.Binding{
 		Name: "large binding", Matcher: binding.Matcher{Source: "large"},

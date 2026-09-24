@@ -4,11 +4,10 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
-
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // TestBuildDaemonCarriesWorkflowRoutingBindings pins the composition hop in the

@@ -5,10 +5,10 @@
 //
 // This is the .4.7 end-to-end verification for
 // docs/prds/state-store-contract.md (rev. 2c): it proves the process owns the
-// single archie.db task SQLite, serves the combined task/event/capture
+// task store, serves the combined task/event/capture
 // surface over one gRPC service, preserves error-sentinel fidelity across the
 // wire, honours a per-call deadline, survives a restart/recovery cycle, and
-// is the sole owner of the SQLite file. See §5 (binary layout), §6 (handoff),
+// is the sole owner of the store. See §5 (binary layout), §6 (handoff),
 // §7 (error semantics), §11 (remote adapter) and §12 step 7/8 (single owner).
 
 package main

@@ -29,7 +29,7 @@ func TestCaptureListsExceedUnaryMessageLimit(t *testing.T) {
 		t.Fatal(mapErr)
 	}
 	// ListUndispatchedCaptures only returns sources with an armed binding
-	// (edastore.ArmedBindingsForSource), so "large" needs one taken through the
+	// (ArmedBindingsForSource), so "large" needs one taken through the
 	// public draft -> pending_approval -> armed lifecycle.
 	id, err := eda.InsertBinding(t.Context(), binding.Binding{
 		Name: "large binding", Matcher: binding.Matcher{Source: "large"},

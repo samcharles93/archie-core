@@ -245,12 +245,6 @@ func TestDispatchBindingsNilDispatcherIsNoOp(t *testing.T) {
 
 // ── helpers ──────────────────────────────────────────────────────
 
-// openDispatchTestStore creates a fresh in-memory SQLite store for
-// each dispatch test. The TempDir anchor matches store.OpenTest's
-// own convention; tests rely on the same schema-migration path
-// production uses (CREATE TABLE + ALTER TABLE migrations), so
-// binding_id / binding_version / binding_dispatches all exist on the
-// store by the time a test runs.
 // dispatchStores pairs the two stores the dispatcher spans: the task store and
 // the event-capture store, so a seed helper reads as one handle.
 type dispatchStores struct {
@@ -259,6 +253,8 @@ type dispatchStores struct {
 	edaPool  *pgxpool.Pool
 }
 
+// openDispatchTestStore opens fresh migrated task and event-capture stores for
+// each dispatch test.
 func openDispatchTestStore(t *testing.T) *dispatchStores {
 	t.Helper()
 	s := pgstore.Open(t)

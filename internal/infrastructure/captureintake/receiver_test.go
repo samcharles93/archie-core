@@ -212,7 +212,7 @@ func TestHandleCaptureStoresRedactedBody(t *testing.T) {
 // host process's pipeline (the daemon's bus drain), already tested there.
 //
 // The published event is deliberately LIGHTWEIGHT (id + source only, no
-// body/headers): the events table this feeds (internal/store/events.go) has
+// body/headers): the events table this feeds (the State Store events table) has
 // no retention or row-count prune, unlike captured_events, so embedding the
 // full (up to CaptureMaxBodyBytes) payload here would duplicate it into an
 // unbounded table and defeat the disk-bound guarantee InsertCapture's own

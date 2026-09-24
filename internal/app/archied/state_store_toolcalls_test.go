@@ -124,7 +124,7 @@ func TestInsertEventLeavesOtherKindsUnprojected(t *testing.T) {
 	}
 }
 
-// failingToolCallWriter stands in for a broken PocketBase side, so the
+// failingToolCallWriter stands in for a broken event-capture store, so the
 // never-returned-failure contract can be tested without sabotaging the real
 // store.
 type failingToolCallWriter struct{ err error }

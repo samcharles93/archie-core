@@ -41,7 +41,7 @@ type taskProfile struct {
 
 // chatTaskWriter is the write surface StoreTaskCreator needs. It
 // returns the created task's real database ID, not a *workflow.Task  --
-// gateway deliberately has no dependency on internal/store or
+// gateway deliberately has no dependency on the task store or
 // internal/domain/workflow; the daemon supplies an adapter closure over
 // the store.TaskStore method of the same name.
 type chatTaskWriter interface {
@@ -116,7 +116,7 @@ func splitOwnerRepo(s string) (owner, repo string, ok bool) {
 }
 
 // Task lifecycle statuses come from internal/taskstate, a leaf package with
-// no dependencies, so gateway stays decoupled from internal/store without
+// no dependencies, so gateway stays decoupled from the task store without
 // keeping a hand-synced copy of the strings. The copy that used to live here
 // is how the dashboard and chat ended up recording different states for the
 // same operator decision.

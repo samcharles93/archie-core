@@ -213,7 +213,7 @@ func (b *boot) openStateStore(ctx context.Context) error {
 }
 
 // stateStoreDeps assembles the store surfaces the StateStore service fronts.
-// b.st is the narrow storecontract.TaskStore; the wide *store.Store also implements
+// b.st is the narrow storecontract.TaskStore; the concrete store also implements
 // the capture/mapping/binding surfaces, so each is asserted here (the same
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.

@@ -1,11 +1,6 @@
-// Command archie-state-store hosts the State Store's gRPC contract and owns
-// the single archie.db SQLite file. It is the .4.3 companion to the daemon's
-// in-process State Store server: the same StateStoreService .4.2 serves, but
-// extracted into its own process with its own store lifecycle.
-//
-// The gateway's session SQLite is owned by the separate archie-gateway process
-// and is untouched here. See docs/prds/state-store-contract.md (rev. 2c) §5,
-// §9 and §11.
+// Command archie-state-store hosts the State Store's gRPC contract and is the
+// only process that owns the PostgreSQL stores behind it. See
+// docs/prds/state-store-contract.md §5, §9 and §11.
 package main
 
 import (
