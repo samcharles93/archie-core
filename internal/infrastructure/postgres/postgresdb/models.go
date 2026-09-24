@@ -48,6 +48,7 @@ type Capture struct {
 	Body          string
 	Authenticated bool
 	ReceivedAt    time.Time
+	EventType     string
 }
 
 type ChannelStatus struct {
@@ -82,6 +83,16 @@ type Event struct {
 	PrincipalID string
 	Detail      string
 	Data        string
+}
+
+type EventType struct {
+	ID        string
+	Source    string
+	Name      string
+	Rule      string
+	Schema    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Identity struct {

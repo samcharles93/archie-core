@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -177,6 +178,18 @@ type MappingStore interface {
 	DeleteMapping(ctx context.Context, id string) error
 }
 
+// EventTypeStore persists event types (docs/prds/event-automation.md, "Event
+// types"). Insert and Update refuse a type whose rule overlaps another on the
+// same source with eventtype.ErrOverlap, and a malformed one with
+// eventtype.ErrInvalid. Update rewrites the name and rule; the schema is the
+// one the type was created with.
+type EventTypeStore interface {
+	InsertEventType(ctx context.Context, t eventtype.EventType) (string, error)
+	UpdateEventType(ctx context.Context, t eventtype.EventType) error
+	DeleteEventType(ctx context.Context, id string) error
+	ListEventTypes(ctx context.Context) ([]eventtype.EventType, error)
+}
+
 // BindingStore persists playbook bindings (t2db.4 Phase B): CRUD and the
 // draft -> pending_approval -> armed state machine. Split off from
 // TaskStore and MappingStore so the webui binding editor does not acquire
@@ -271,6 +284,10 @@ type CapturedEvent struct {
 	Headers       string `json:"headers"`
 	Body          string `json:"body"`
 	Authenticated bool   `json:"authenticated"`
+	// EventType is the ID of the event type the capture was identified as
+	// when it arrived, or empty when it matched none. An unidentified capture
+	// is never dispatched.
+	EventType string `json:"event_type"`
 }
 
 // ConfigSnapshot is the running configuration as the dashboard renders it,
@@ -370,6 +387,8 @@ var (
 	ErrAlreadyDispatched = errors.New("store: binding already dispatched for capture")
 	// ErrMappingNotFound is returned when a mapping ID does not exist.
 	ErrMappingNotFound = errors.New("store: mapping not found")
+	// ErrEventTypeNotFound is returned when an event type ID does not exist.
+	ErrEventTypeNotFound = errors.New("store: event type not found")
 
 	// ErrResourceNotFound is returned when a control-plane resource kind has
 	// no stored document. It is in-process only (not on the gRPC wire): the

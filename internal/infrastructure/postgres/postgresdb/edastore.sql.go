@@ -80,6 +80,18 @@ func (q *Queries) DeleteCapturesOlderThan(ctx context.Context, receivedAt time.T
 	return err
 }
 
+const deleteEventType = `-- name: DeleteEventType :execrows
+DELETE FROM event_types WHERE id = $1
+`
+
+func (q *Queries) DeleteEventType(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEventType, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteMapping = `-- name: DeleteMapping :execrows
 DELETE FROM mappings WHERE id = $1
 `
@@ -101,6 +113,39 @@ func (q *Queries) DeletePlaybookDispatches(ctx context.Context, playbookID strin
 	return err
 }
 
+const eventTypesForSource = `-- name: EventTypesForSource :many
+SELECT id, source, name, rule, schema, created_at, updated_at
+FROM event_types WHERE source = $1 ORDER BY name
+`
+
+func (q *Queries) EventTypesForSource(ctx context.Context, source string) ([]EventType, error) {
+	rows, err := q.db.Query(ctx, eventTypesForSource, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EventType
+	for rows.Next() {
+		var i EventType
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Name,
+			&i.Rule,
+			&i.Schema,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBinding = `-- name: GetBinding :one
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
 FROM bindings WHERE id = $1
@@ -120,6 +165,26 @@ func (q *Queries) GetBinding(ctx context.Context, id string) (Binding, error) {
 		&i.Version,
 		&i.Status,
 		&i.Secret,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getEventType = `-- name: GetEventType :one
+SELECT id, source, name, rule, schema, created_at, updated_at
+FROM event_types WHERE id = $1
+`
+
+func (q *Queries) GetEventType(ctx context.Context, id string) (EventType, error) {
+	row := q.db.QueryRow(ctx, getEventType, id)
+	var i EventType
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Name,
+		&i.Rule,
+		&i.Schema,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -201,8 +266,8 @@ func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDi
 
 const insertCapture = `-- name: InsertCapture :exec
 
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertCaptureParams struct {
@@ -214,6 +279,7 @@ type InsertCaptureParams struct {
 	Body          string
 	Authenticated bool
 	ReceivedAt    time.Time
+	EventType     string
 }
 
 // EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
@@ -227,6 +293,31 @@ func (q *Queries) InsertCapture(ctx context.Context, arg InsertCaptureParams) er
 		arg.Body,
 		arg.Authenticated,
 		arg.ReceivedAt,
+		arg.EventType,
+	)
+	return err
+}
+
+const insertEventType = `-- name: InsertEventType :exec
+INSERT INTO event_types (id, source, name, rule, schema)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type InsertEventTypeParams struct {
+	ID     string
+	Source string
+	Name   string
+	Rule   string
+	Schema string
+}
+
+func (q *Queries) InsertEventType(ctx context.Context, arg InsertEventTypeParams) error {
+	_, err := q.db.Exec(ctx, insertEventType,
+		arg.ID,
+		arg.Source,
+		arg.Name,
+		arg.Rule,
+		arg.Schema,
 	)
 	return err
 }
@@ -342,7 +433,7 @@ func (q *Queries) ListBindings(ctx context.Context) ([]Binding, error) {
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1
@@ -366,6 +457,40 @@ func (q *Queries) ListCaptures(ctx context.Context, limit int32) ([]Capture, err
 			&i.Body,
 			&i.Authenticated,
 			&i.ReceivedAt,
+			&i.EventType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventTypes = `-- name: ListEventTypes :many
+SELECT id, source, name, rule, schema, created_at, updated_at
+FROM event_types ORDER BY source, name
+`
+
+func (q *Queries) ListEventTypes(ctx context.Context) ([]EventType, error) {
+	rows, err := q.db.Query(ctx, listEventTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EventType
+	for rows.Next() {
+		var i EventType
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Name,
+			&i.Rule,
+			&i.Schema,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -410,9 +535,11 @@ func (q *Queries) ListMappings(ctx context.Context) ([]Mapping, error) {
 }
 
 const listUndispatchedCaptures = `-- name: ListUndispatchedCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type
 FROM captures
 WHERE source = ANY($1::text[])
+  -- An unidentified capture is never dispatched.
+  AND event_type <> ''
   AND id NOT IN (SELECT capture FROM binding_dispatches)
 ORDER BY received_at DESC
 LIMIT $2
@@ -441,6 +568,7 @@ func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispat
 			&i.Body,
 			&i.Authenticated,
 			&i.ReceivedAt,
+			&i.EventType,
 		); err != nil {
 			return nil, err
 		}
@@ -450,6 +578,17 @@ func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispat
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockEventTypeSource = `-- name: LockEventTypeSource :exec
+SELECT pg_advisory_xact_lock(hashtext('event_types:' || $1::text))
+`
+
+// Serialises saves per source so two concurrent saves cannot each pass the
+// overlap check against a set that excludes the other.
+func (q *Queries) LockEventTypeSource(ctx context.Context, source string) error {
+	_, err := q.db.Exec(ctx, lockEventTypeSource, source)
+	return err
 }
 
 const setBindingArmed = `-- name: SetBindingArmed :execrows
@@ -543,6 +682,24 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (i
 		arg.Status,
 		arg.Secret,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateEventType = `-- name: UpdateEventType :execrows
+UPDATE event_types SET name = $2, rule = $3, updated_at = now() WHERE id = $1
+`
+
+type UpdateEventTypeParams struct {
+	ID   string
+	Name string
+	Rule string
+}
+
+func (q *Queries) UpdateEventType(ctx context.Context, arg UpdateEventTypeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateEventType, arg.ID, arg.Name, arg.Rule)
 	if err != nil {
 		return 0, err
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -222,6 +223,9 @@ func TestBindingLifecycle(t *testing.T) {
 // out of the undispatched listing.
 func TestCaptureRoundTripAndUndispatched(t *testing.T) {
 	s := edaFor(t)
+	if _, err := s.InsertEventType(t.Context(), eventtype.EventType{Source: "sentry", Name: "any"}); err != nil {
+		t.Fatalf("InsertEventType() error = %v", err)
+	}
 	body := `{"action":"created"}`
 	if _, err := s.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		Source: "sentry", Body: body, Headers: `{"X-Hook":"1"}`, ContentType: "application/json",

@@ -76,13 +76,18 @@ func newRecordID() string { return uuid.NewString() }
 
 // --- captures ---
 
-// InsertCapture stores one inbound event verbatim. retention and maxEvents are
+// InsertCapture stores one inbound event verbatim, tagged with the event type
+// it is identified as on arrival (empty when unidentified). retention and maxEvents are
 // accepted for contract compatibility and applied as a prune after the insert,
 // exactly as the PocketBase store does.
 func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, retention time.Duration, maxEvents int) (string, error) {
 	received := c.ReceivedAt
 	if received.IsZero() {
 		received = time.Now()
+	}
+	eventType, err := s.identifyCapture(ctx, c)
+	if err != nil {
+		return "", err
 	}
 	id := newRecordID()
 	if err := s.q.InsertCapture(ctx, postgresdb.InsertCaptureParams{
@@ -94,6 +99,7 @@ func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, 
 		Body:          c.Body,
 		Authenticated: c.Authenticated,
 		ReceivedAt:    received.UTC(),
+		EventType:     eventType,
 	}); err != nil {
 		return "", fmt.Errorf("edastore: insert capture: %w", err)
 	}
@@ -127,6 +133,7 @@ func captureValue(r postgresdb.Capture) storecontract.CapturedEvent {
 		Headers:       r.Headers,
 		Body:          r.Body,
 		Authenticated: r.Authenticated,
+		EventType:     r.EventType,
 	}
 }
 
@@ -143,8 +150,9 @@ func (s *EDA) ListCaptures(ctx context.Context, limit int) ([]storecontract.Capt
 	return out, nil
 }
 
-// ListUndispatchedCaptures returns recent captures for the given sources that
-// no binding has dispatched yet.
+// ListUndispatchedCaptures returns recent identified captures for the given
+// sources that no binding has dispatched yet. An unidentified capture is
+// never returned, so it never dispatches.
 func (s *EDA) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storecontract.CapturedEvent, error) {
 	if len(sources) == 0 || limit <= 0 {
 		return nil, nil
