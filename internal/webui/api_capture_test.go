@@ -105,7 +105,7 @@ func TestHandleCapturesDefaultsLimitWhenMissingOrInvalid(t *testing.T) {
 		seedCapture(t, srv, "src")
 	}
 
-	for _, limit := range []string{"", "not-a-number", "-5", "0"} {
+	for _, limit := range []string{"", "not-a-number", "-5", "0", "4294967297"} {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/captures?limit="+limit, nil)
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)

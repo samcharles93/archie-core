@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -350,6 +351,9 @@ func (s *postgresSessionStore) RecentMessages(ctx context.Context, sessionID str
 	if n <= 0 {
 		return nil, nil
 	}
+	if n > math.MaxInt32 {
+		return nil, fmt.Errorf("sessionstore: recent messages: limit exceeds max int32")
+	}
 	q := postgresdb.New(s.pool)
 	rows, err := q.RecentMessages(ctx, postgresdb.RecentMessagesParams{
 		SessionID: sessionID, Limit: int32(n),
@@ -363,6 +367,9 @@ func (s *postgresSessionStore) RecentMessages(ctx context.Context, sessionID str
 func (s *postgresSessionStore) DeleteRecentMessages(ctx context.Context, sessionID string, n int) (int, error) {
 	if n <= 0 {
 		return 0, nil
+	}
+	if n > math.MaxInt32 {
+		return 0, fmt.Errorf("sessionstore: delete recent messages: limit exceeds max int32")
 	}
 	q := postgresdb.New(s.pool)
 	deleted, err := q.DeleteRecentMessages(ctx, postgresdb.DeleteRecentMessagesParams{

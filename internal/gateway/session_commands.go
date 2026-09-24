@@ -251,10 +251,12 @@ func (t *sessionTracker) getActive(channelID, threadID string) string {
 }
 
 // parsePositiveInt is a nilerr-safe wrapper: it returns (n, true) on
-// success or (0, false) when the string is not a positive integer.
+// success or (0, false) when the string is not a positive integer. It parses
+// at 32 bits because the value reaches int32 SQL LIMIT parameters; anything
+// larger is rejected here rather than wrapping at the conversion.
 func parsePositiveInt(s string) (int, bool) {
-	n, err := strconv.Atoi(s)
-	return n, err == nil && n > 0
+	n, err := strconv.ParseInt(s, 10, 32)
+	return int(n), err == nil && n > 0
 }
 
 func sessionTrackerKey(channelID, threadID string) string {
