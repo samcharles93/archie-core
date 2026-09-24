@@ -461,9 +461,11 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 #
 # Agent profiles a workflow selects with `profile: <name>`. A workflow that
 # names none runs under [containers].image with every tool.
+# Once the State Store holds container policies, edit profiles in the
+# dashboard (Settings, Advanced); a stored set replaces the file's.
 # [containers.profiles.network-investigator]
-# image = "ghcr.io/samcharles93/archie-agent-net:latest"  # empty uses [containers].image
-# tools = ["whois", "dns_lookup"]  # allowlist over MCP, script and plugin tools; empty allows all
+# image = "archie-agent-net:local"  # docker compose build agent-net; empty uses [containers].image
+# tools = []                        # allowlist over MCP, script and plugin tools; empty allows all
 
 # At least one [[repos]] entry is required before archied will poll
 # anything -- it is deliberately left commented rather than shipped active:

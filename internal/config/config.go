@@ -909,7 +909,7 @@ type ContainerConfig struct {
 	// Profiles are the named agent profiles a workflow selects with
 	// `profile:`. A workflow that names none runs under the default profile:
 	// Image and every tool.
-	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles" json:"profiles,omitempty"`
+	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles"`
 }
 
 // AgentProfile is a named execution environment for an agent. Secrets and
@@ -919,12 +919,12 @@ type ContainerConfig struct {
 // an operator when it is dispatched (daemon pinTaskProfile).
 type AgentProfile struct {
 	// Image is the container image; empty means [containers].image.
-	Image string `toml:"image" yaml:"image" json:"image,omitempty"`
+	Image string `toml:"image" yaml:"image"`
 	// Tools allowlists the tools archie adds to the agent (MCP servers,
 	// repository scripts and skill plugins) by name. Empty allows them all.
 	// The agent loop's own file tools are always present, read-only when a
 	// step asks for that.
-	Tools []string `toml:"tools" yaml:"tools" json:"tools,omitempty"`
+	Tools []string `toml:"tools" yaml:"tools"`
 }
 
 // Profile resolves the profile a workflow names: "" is the default profile,

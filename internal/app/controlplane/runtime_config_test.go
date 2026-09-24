@@ -333,3 +333,40 @@ func TestSchedulingPolicySeedCarriesTheLabel(t *testing.T) {
 		t.Fatalf("seed label = %q, want the file document's label", label)
 	}
 }
+
+// Stored container policies that carry profiles replace the file's outright;
+// ones stored before profiles existed inherit the file's.
+func TestRuntimeConfigLayersStoredProfiles(t *testing.T) {
+	base := config.Config{Containers: config.ContainerConfig{Image: "agent:1", Profiles: map[string]config.AgentProfile{
+		"file-only": {Image: "file:1"},
+	}}}
+	for _, tt := range []struct {
+		name   string
+		stored map[string]any
+		want   []string
+	}{
+		{name: "stored profiles replace the file's", stored: map[string]any{"Image": "agent:2", "Profiles": map[string]any{"net": map[string]any{"Tools": []string{"whois"}}}}, want: []string{"net"}},
+		{name: "a document without profiles inherits the file's", stored: map[string]any{"Image": "agent:2"}, want: []string{"file-only"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
+				SchedulingPolicyKind:         map[string]any{"poll_interval": "2m", "dispatch": map[string]any{"trigger": "assignee"}},
+				ContainerRuntimePoliciesKind: tt.stored,
+			}})
+			got, _, err := client.RuntimeConfig(t.Context(), base)
+			if err != nil {
+				t.Fatalf("RuntimeConfig: %v", err)
+			}
+			var names []string
+			for name := range got.Containers.Profiles {
+				names = append(names, name)
+			}
+			if !reflect.DeepEqual(names, tt.want) {
+				t.Fatalf("profiles = %v, want %v", names, tt.want)
+			}
+		})
+	}
+	if got := base.Containers.Profiles; len(got) != 1 {
+		t.Fatalf("layering mutated the file document's profiles: %v", got)
+	}
+}

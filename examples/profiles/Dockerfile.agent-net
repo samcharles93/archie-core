@@ -1,0 +1,11 @@
+# An agent profile image: the archie-agent image plus network lookup tools,
+# for a workflow that investigates addresses rather than code. Select it with
+# [containers.profiles.network-investigator] image = "archie-agent-net:local".
+#
+# Build: docker compose build agent-net
+ARG AGENT_IMAGE=ghcr.io/samcharles93/archie-agent:latest
+FROM ${AGENT_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      whois dnsutils iputils-ping traceroute && \
+    rm -rf /var/lib/apt/lists/*

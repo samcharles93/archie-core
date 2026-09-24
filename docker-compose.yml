@@ -1,12 +1,15 @@
-# Optional external NATS, plus the agent image the daemon spawns per task.
+# PostgreSQL for the State Store, optional external NATS, and the agent images
+# the daemon spawns per task.
 #
 # archied itself runs on the host under systemd, not here -- its chat tools
 # operate on host files, which a container cannot reach. See
 # deployments/systemd-user-service.md.
 #
 # Embedded NATS is the normal deployment and needs no Compose service.
+# State Store DB:  docker compose up -d postgres
 # External broker: docker compose up -d nats
 # Build worker:    docker compose build agent
+# Profile image:   docker compose build agent-net
 # Stop external:   docker compose down
 # Logs:   journalctl --user -u archied -f   (the daemon)
 #         docker compose logs -f nats       (the bus)
@@ -79,6 +82,18 @@ services:
     # tag yet (CI only pushes :latest). See
     # deployments/systemd-user-service.md#pinning-the-archie-agent-image.
     image: ghcr.io/samcharles93/archie-agent@sha256:870f1b1357979cfea23fccacb24166ebeb9ab321708ef2c2b218a763ed99b090
+
+  # ── example agent profile image ─────────────────────────────────────
+  # The agent image plus network lookup tools, for a workflow that names
+  # `profile: network-investigator` (examples/workflows/firewall-investigate.yaml).
+  # Build-only for the same reason as agent. It is local, so leave
+  # containers.pull_policy at "missing": "always" would try to pull it.
+  agent-net:
+    profiles: ["build"]
+    build:
+      context: examples/profiles
+      dockerfile: Dockerfile.agent-net
+    image: archie-agent-net:local
 
 volumes:
   nats_data:
