@@ -23,8 +23,14 @@ import (
 
 // Container wraps a running Docker container.
 type Container struct {
-	ID string
+	ID     string
+	exited <-chan struct{}
 }
+
+// Exited closes when the container stops running for any reason: the
+// max-uptime reaper, an OOM kill, a crash or Release. A Container the pool did
+// not start returns nil, which never closes.
+func (c *Container) Exited() <-chan struct{} { return c.exited }
 
 // TaskPayload is the boot-time brief written to /data/worktree/.git/task.json
 // before the container starts, per PRD section 3.
@@ -248,7 +254,23 @@ func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount
 	}
 
 	p.log.Info("container started", "id", resp.ID[:12], "name", name)
-	return &Container{ID: resp.ID}, nil
+	return &Container{ID: resp.ID, exited: p.watchExit(ctx, resp.ID)}, nil
+}
+
+// watchExit returns a channel closed once Docker reports the container is no
+// longer running. A failed wait says nothing about the container, so it never
+// closes the channel: a Docker API error must not abort a live run.
+func (p *Pool) watchExit(ctx context.Context, id string) <-chan struct{} {
+	exited := make(chan struct{})
+	wait := p.cli.ContainerWait(context.WithoutCancel(ctx), id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	go func() {
+		select {
+		case <-wait.Result:
+			close(exited)
+		case <-wait.Error:
+		}
+	}()
+	return exited
 }
 
 // containerTeardown is the one-shot teardown state for a live container: its

@@ -1276,7 +1276,9 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	// worktreerpc clients to that identity, and the daemon registered one
 	// server pair per identity (plus the root pair), so a container-mode
 	// task is always served by its own forge client and worktree manager.
-	d.runViaAgent(ctx, task, repo, profile)
+	runCtx, stopWatch := withContainerExit(ctx, ctr.Exited())
+	d.runViaAgent(runCtx, task, repo, profile)
+	stopWatch()
 
 	// Teardown storage after workflow completes. The Docker backend is a
 	// no-op; future backends (temp volumes, NFS leases) use this hook.
@@ -1573,6 +1575,9 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	}
 
 	reply, err := d.requestTaskRun(ctx, task.ID, data)
+	if err != nil && errors.Is(context.Cause(ctx), errContainerExited) {
+		err = errContainerExited
+	}
 	if err != nil {
 		d.Log.Error("taskrun request failed", "task", task.ID, "err", err)
 		d.parkRunningTask(ctx, task.ID, "taskrun request failed: "+err.Error(), taskstate.ParkTransient)
@@ -2074,4 +2079,23 @@ func (d *Daemon) LastPollAt() time.Time {
 // successful pass's time in place, so a wedged poller would look healthy.
 func (d *Daemon) markPoll() {
 	d.lastPollAt.Store(time.Now().UnixNano())
+}
+
+// errContainerExited is the cancellation cause when a task's agent container
+// stops before answering its taskrun request.
+var errContainerExited = errors.New("agent container exited before the task finished")
+
+// withContainerExit derives a context cancelled when exited closes. A dead
+// container never answers its taskrun request, so without this the request
+// blocks forever and the task row stays running.
+func withContainerExit(ctx context.Context, exited <-chan struct{}) (context.Context, func()) {
+	runCtx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case <-exited:
+			cancel(errContainerExited)
+		case <-runCtx.Done():
+		}
+	}()
+	return runCtx, func() { cancel(nil) }
 }

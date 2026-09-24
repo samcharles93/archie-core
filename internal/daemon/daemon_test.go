@@ -2349,3 +2349,53 @@ func TestRunViaAgentCarriesTheWorkflowProfile(t *testing.T) {
 		t.Fatalf("task = %+v, %v; want parked naming the profile", got, err)
 	}
 }
+
+// A container that dies mid-run (max-uptime reaper, OOM, crash) never answers
+// the taskrun request. The run must end with the task parked, not left
+// running with the worker blocked on a reply that cannot come.
+func TestRunViaAgentParksWhenTheContainerExits(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	ctx := context.Background()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 21, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	received := make(chan struct{}, 1)
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(*natsio.Msg) {
+		received <- struct{}{}
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	exited := make(chan struct{})
+	runCtx, stop := withContainerExit(ctx, exited)
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		d.runViaAgent(runCtx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, config.AgentProfile{})
+		close(done)
+	}()
+
+	select {
+	case <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatal("archied did not publish a taskrun request")
+	}
+	close(exited)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runViaAgent still blocked after its container exited")
+	}
+
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got.Status != workflow.StatusParked || !strings.Contains(got.ParkReason, "agent container exited") {
+		t.Fatalf("task = %+v, %v; want parked naming the container exit", got, err)
+	}
+}
