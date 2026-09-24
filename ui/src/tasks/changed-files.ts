@@ -9,22 +9,9 @@
  */
 import type { Capture, CaptureTotals, TaskRecord } from "./task-run";
 
-// The change-status ids are a wire vocabulary owned by the daemon
-// (internal/domain/workflow/task/changes.go). Only the words are the
-// dashboard's: an id added on the server renders as its raw id rather than
-// breaking the row. The old test suite pinned the id set on both sides so a
-// one-sided rename failed instead of drifting.
-const FILE_STATUS: Record<string, string> = {
-  added: "Added",
-  modified: "Modified",
-  deleted: "Deleted",
-  renamed: "Renamed",
-  typechange: "Type changed",
-};
-
-export function fileStatusLabel(status: string | undefined): string {
-  return (status && FILE_STATUS[status]) || status || "unknown";
-}
+// The change-status labels are served with the rest of the task vocabulary
+// (/api/task-meta), keyed by the daemon's own Change* constants.
+export { changeStatusLabel as fileStatusLabel } from "@/lib/task-meta";
 
 /**
  * The forge links come from the same projection the task list uses: the task's
