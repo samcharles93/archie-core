@@ -82,7 +82,7 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 		nc, err = natsio.Connect(url, natsio.Token(token))
 	} else {
 		var endpoint embeddedNATSEndpoint
-		endpoint, err = readEmbeddedNATSEndpoint(b.cfg.DBPath)
+		endpoint, err = readEmbeddedNATSEndpoint(b.cfg.StateDir)
 		if err == nil {
 			url, token = endpoint.URL, endpoint.Token
 			nc, err = natsio.Connect(url, natsio.Token(token))

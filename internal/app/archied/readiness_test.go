@@ -12,15 +12,15 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-func TestDiskProbePath_PrefersDBPath(t *testing.T) {
-	cfg := config.Config{DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
-	if got := diskProbePath(cfg); got != "/data/archie" {
-		t.Fatalf("diskProbePath = %q, want /data/archie", got)
+func TestDiskProbePath_PrefersStateDir(t *testing.T) {
+	cfg := config.Config{StateDir: "/var/lib/archie", DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
+	if got := diskProbePath(cfg); got != "/var/lib/archie" {
+		t.Fatalf("diskProbePath = %q, want /var/lib/archie", got)
 	}
 }
 
 func TestDiskProbePath_FallsBackToWorkDir(t *testing.T) {
-	cfg := config.Config{WorkDir: "/srv/archie"}
+	cfg := config.Config{DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
 	if got := diskProbePath(cfg); got != "/srv/archie" {
 		t.Fatalf("diskProbePath = %q, want /srv/archie", got)
 	}
