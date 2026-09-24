@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"path/filepath"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -19,10 +19,7 @@ import (
 // from its own state rather than from a webui.Server it never serves
 // (archie-core-ml30).
 func TestPublishConfigSnapshotRendersTheDaemonsConfiguration(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	cfg := config.Config{
@@ -83,10 +80,7 @@ func TestPublishConfigSnapshotRendersTheDaemonsConfiguration(t *testing.T) {
 }
 
 func TestPublishedSnapshotCarriesPerIdentityForges(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	b := &boot{
@@ -133,10 +127,7 @@ func TestPublishedSnapshotCarriesPerIdentityForges(t *testing.T) {
 // TestPublishConfigSnapshotWithoutConfiguration: called before the daemon has
 // a configuration Holder, publishing is a no-op rather than a panic.
 func TestPublishConfigSnapshotWithoutConfiguration(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	b := &boot{log: slog.New(slog.DiscardHandler), stateStore: st}

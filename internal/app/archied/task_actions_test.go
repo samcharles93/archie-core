@@ -6,14 +6,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -44,10 +45,7 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
 			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "decide on me", "", "", "reviewer")
@@ -78,7 +76,7 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 
 // runChatAction performs the approve/cancel action through the chat
 // controller path and fails the test on error.
-func runChatAction(t *testing.T, ctx context.Context, st store.TaskStore, action string, taskID int64) {
+func runChatAction(t *testing.T, ctx context.Context, st storecontract.TaskStore, action string, taskID int64) {
 	t.Helper()
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
 		taskByID:   st.TaskByID,
@@ -99,7 +97,7 @@ func runChatAction(t *testing.T, ctx context.Context, st store.TaskStore, action
 // runDashboardAction performs the approve/cancel action through the
 // dashboard's HTTP handler and fails the test when the request is
 // rejected.
-func runDashboardAction(t *testing.T, ctx context.Context, st store.TaskStore, action string, taskID int64) {
+func runDashboardAction(t *testing.T, ctx context.Context, st storecontract.TaskStore, action string, taskID int64) {
 	t.Helper()
 	// The dashboard reaches task actions through the Gateway contract, which
 	// in production carries them back to this daemon's own service. Wiring

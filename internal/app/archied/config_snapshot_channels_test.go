@@ -3,11 +3,11 @@ package archied
 import (
 	"encoding/json"
 	"log/slog"
-	"path/filepath"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -49,10 +49,7 @@ func TestPublishedProjectionAgreesWithFrontEndsOnConfiguredChannels(t *testing.T
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
 			b := &boot{

@@ -43,7 +43,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
@@ -282,10 +281,6 @@ func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) 
 		return forge.NewNoop(log), ""
 	}
 	return client, token
-}
-
-func openProductionTaskStore(ctx context.Context, path string, opts ...store.OpenOption) (storecontract.TaskStore, error) {
-	return store.Open(ctx, path, opts...)
 }
 
 func taskDBPath(configuredPath string) string {

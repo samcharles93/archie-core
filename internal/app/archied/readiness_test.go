@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -49,10 +50,7 @@ func TestPingChat_ReportsUnwiredChat(t *testing.T) {
 // on the store, config, disk, model and gateway in the running daemon -- only
 // that every subsystem the epic names is actually wired.
 func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	cfg := config.Config{

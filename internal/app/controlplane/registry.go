@@ -10,7 +10,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
 type Definition struct {
@@ -96,7 +96,7 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 			versions[definition.Kind] = resource.Version
 			continue
 		}
-		if !errors.Is(err, store.ErrResourceNotFound) {
+		if !errors.Is(err, storecontract.ErrResourceNotFound) {
 			return nil, nil, err
 		}
 		value, err := definition.seededValue(cfg)
@@ -111,7 +111,7 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 			skipped = append(skipped, SeedSkip{Kind: definition.Kind, Err: err})
 			continue
 		}
-		resource, err = s.store.PutResource(ctx, store.ResourceWrite{Kind: definition.Kind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + definition.Kind, ExpectedVersion: 0, At: time.Now().UTC()})
+		resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: definition.Kind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + definition.Kind, ExpectedVersion: 0, At: time.Now().UTC()})
 		if err != nil {
 			return nil, nil, fmt.Errorf("seed %s: %w", definition.Kind, err)
 		}
@@ -176,7 +176,7 @@ func (s *Server) ValidateStored(ctx context.Context) (int, error) {
 	var failures []error
 	for _, definition := range s.ordered {
 		resource, err := s.store.Resource(ctx, definition.Kind)
-		if errors.Is(err, store.ErrResourceNotFound) {
+		if errors.Is(err, storecontract.ErrResourceNotFound) {
 			continue
 		}
 		if err != nil {

@@ -6,16 +6,16 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 func TestCaptureListsExceedUnaryMessageLimit(t *testing.T) {
-	local := store.OpenTest(t)
-	eda := edastore.OpenTest(t)
+	local := pgstore.Open(t)
+	eda := pgstore.EDA(t, nil)
 	body := strings.Repeat("x", 256<<10)
 	for range 20 {
-		if _, err := eda.InsertCapture(t.Context(), store.CapturedEvent{Source: "large", Body: body, Authenticated: true}, 0, 0); err != nil {
+		if _, err := eda.InsertCapture(t.Context(), storecontract.CapturedEvent{Source: "large", Body: body, Authenticated: true}, 0, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -49,7 +49,7 @@ func TestCaptureListsExceedUnaryMessageLimit(t *testing.T) {
 	}
 	remote := remoteEDA(t, local, eda)
 	for _, undispatched := range []bool{false, true} {
-		var captures []store.CapturedEvent
+		var captures []storecontract.CapturedEvent
 		var err error
 		if undispatched {
 			captures, err = remote.ListUndispatchedCaptures(t.Context(), []string{"large"}, 20)

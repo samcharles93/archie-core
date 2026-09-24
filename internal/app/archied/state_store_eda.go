@@ -2,7 +2,7 @@ package archied
 
 import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 )
 
@@ -19,6 +19,6 @@ type eventCaptureStore interface {
 
 // openEDAStore serves the event-capture store from the State Store's Postgres
 // pool, sealing binding secrets with cipher.
-func (b *boot) openEDAStore(cipher edastore.BindingCipher) {
+func (b *boot) openEDAStore(cipher bindingcipher.BindingCipher) {
 	b.eda = postgres.NewEDA(b.pg, cipher)
 }

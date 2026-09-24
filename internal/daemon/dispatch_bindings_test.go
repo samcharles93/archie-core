@@ -3,16 +3,18 @@ package daemon
 import (
 	"log/slog"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // Test 30: an armed binding + an authenticated capture creates a task
@@ -249,23 +251,20 @@ func TestDispatchBindingsNilDispatcherIsNoOp(t *testing.T) {
 // production uses (CREATE TABLE + ALTER TABLE migrations), so
 // binding_id / binding_version / binding_dispatches all exist on the
 // store by the time a test runs.
-// dispatchStores pairs the two stores the dispatcher spans: tasks stay on
-// SQLite, event capture is the PocketBase store. They are embedded so a seed
-// helper still reads as one handle; the method sets no longer overlap, which
-// is exactly what the split bought.
+// dispatchStores pairs the two stores the dispatcher spans: the task store and
+// the event-capture store, so a seed helper reads as one handle.
 type dispatchStores struct {
-	*store.Store
-	EdaStore *edastore.Store
+	*pgstore.TaskDB
+	EdaStore *postgres.EDA
+	edaPool  *pgxpool.Pool
 }
 
 func openDispatchTestStore(t *testing.T) *dispatchStores {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "dispatch.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
-	return &dispatchStores{Store: s, EdaStore: edastore.OpenTest(t)}
+	pool := pgstore.Pool(t)
+	return &dispatchStores{TaskDB: s, EdaStore: postgres.NewEDA(pool, nil), edaPool: pool}
 }
 
 // seedMapping inserts a mapping with the given fields and returns its id.
@@ -327,7 +326,7 @@ func seedArmedBindingWithRepo(t *testing.T, s *dispatchStores, source, mappingID
 // maxEvents=0's "no cap" reading.
 func seedCapture(t *testing.T, s *dispatchStores, source string, authenticated bool, body string) {
 	t.Helper()
-	_, err := s.EdaStore.InsertCapture(t.Context(), store.CapturedEvent{
+	_, err := s.EdaStore.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		Source:        source,
 		Body:          body,
 		Authenticated: authenticated,
@@ -339,7 +338,7 @@ func seedCapture(t *testing.T, s *dispatchStores, source string, authenticated b
 }
 
 // newDispatchDaemon builds a Daemon whose store-related handles all
-// point at the same *store.Store so dispatchBindings can resolve
+// point at the same *pgstore.TaskDB so dispatchBindings can resolve
 // captures through the dispatcher handles and mappings through
 // d.Mappings. Exactly one repo is configured so resolveBindingRepo's
 // single-repo fallback accepts the dispatch; with zero or many
@@ -377,10 +376,9 @@ func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string, t
 	t.Helper()
 	var gotBindingID string
 	var gotTaskID int64
-	if err := s.EdaStore.App().DB().NewQuery(
-		"SELECT binding, task_id FROM binding_dispatches WHERE binding = {:binding}").
-		Bind(map[string]any{"binding": bindingID}).
-		Row(&gotBindingID, &gotTaskID); err != nil {
+	if err := s.edaPool.QueryRow(t.Context(),
+		"SELECT binding, task_id FROM binding_dispatches WHERE binding = $1", bindingID).
+		Scan(&gotBindingID, &gotTaskID); err != nil {
 		t.Fatalf("binding_dispatches row missing: %v", err)
 	}
 	if gotBindingID != bindingID || gotTaskID != taskID {

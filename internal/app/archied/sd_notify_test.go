@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // notifyRecorder captures every record at every level. The other recording
@@ -126,10 +127,7 @@ func newNotifyTestBoot(t *testing.T, cadence time.Duration) (*boot, *daemon.Daem
 	t.Helper()
 	cfg := config.Config{PollInterval: config.Duration(cadence)}
 	holder := config.NewHolder(cfg)
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatalf("open task store: %v", err)
-	}
+	st := pgstore.Open(t)
 	log := slog.New(slog.DiscardHandler)
 	d := &daemon.Daemon{Cfg: holder, Store: st, Log: log}
 	return &boot{cfg: cfg, cfgHolder: holder, d: d, log: log}, d

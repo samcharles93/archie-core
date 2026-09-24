@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
 
@@ -39,7 +40,7 @@ type testReceiver struct {
 	*Receiver
 	// store is the event-capture store the receiver writes through, kept so a
 	// test asserts on persisted rows rather than on a mock's recollection.
-	store *edastore.Store
+	store *postgres.EDA
 }
 
 // Handler serves the receiver's route the way its host process mounts it,
@@ -60,7 +61,7 @@ func captureTestServerWithoutStore(t *testing.T) testReceiver {
 
 func captureTestServer(t *testing.T) testReceiver {
 	t.Helper()
-	s := edastore.OpenTest(t)
+	s := pgstore.EDA(t, nil)
 	return testReceiver{
 		Receiver: &Receiver{
 			Log:          slog.New(slog.DiscardHandler),
@@ -131,7 +132,7 @@ func (s *stubBindingStore) RecordDispatch(
 	return nil
 }
 
-func (s *stubBindingStore) ListUndispatchedCaptures(_ context.Context, _ []string, _ int) ([]store.CapturedEvent, error) {
+func (s *stubBindingStore) ListUndispatchedCaptures(_ context.Context, _ []string, _ int) ([]storecontract.CapturedEvent, error) {
 	return nil, nil
 }
 
@@ -420,10 +421,10 @@ func TestHandleCaptureWithoutCapturesConfiguredIs503(t *testing.T) {
 // captureInsertErrorStore forces InsertCapture to fail so the handler's
 // error path is exercised without relying on a real storage failure.
 type captureInsertErrorStore struct {
-	store.CaptureStore
+	storecontract.CaptureStore
 }
 
-func (captureInsertErrorStore) InsertCapture(context.Context, store.CapturedEvent, time.Duration, int) (string, error) {
+func (captureInsertErrorStore) InsertCapture(context.Context, storecontract.CapturedEvent, time.Duration, int) (string, error) {
 	return "", errors.New("boom")
 }
 

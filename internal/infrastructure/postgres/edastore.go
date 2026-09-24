@@ -1,8 +1,7 @@
 // Package postgres opens archie's PostgreSQL database and applies its schema
 // migrations. This file is the PostgreSQL implementation of the EDA
 // persistence contracts (captures, mappings, bindings and the two dispatch
-// ledgers) plus the tool_calls transcript, mirroring the PocketBase-backed
-// internal/infrastructure/edastore.Store it will replace in the cutover wave.
+// ledgers) plus the tool_calls transcript.
 package postgres
 
 import (
@@ -20,14 +19,12 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 )
 
 // EDA is the PostgreSQL implementation of every event-capture contract, plus
-// the tool_calls transcript the composition projection writes through. It
-// satisfies the same surface as *edastore.Store, so the cutover wave can swap
-// one for the other behind storecontract without touching the consumers.
+// the tool_calls transcript the composition projection writes through.
 var (
 	_ storecontract.CaptureStore       = (*EDA)(nil)
 	_ storecontract.MappingStore       = (*EDA)(nil)
@@ -40,26 +37,23 @@ var (
 type EDA struct {
 	pool   *pgxpool.Pool
 	q      *postgresdb.Queries
-	cipher edastore.BindingCipher
+	cipher bindingcipher.BindingCipher
 	notify func(events.Event)
 }
 
 // NewEDA builds an EDA store over pool. A nil cipher keeps binding secrets in
-// plaintext (the behaviour that predates the option); the caller resolves the
-// keyring through edastore.NewBindingCipher, exactly as the PocketBase store
-// does. The pool is owned by the caller, not this store.
-func NewEDA(pool *pgxpool.Pool, cipher edastore.BindingCipher) *EDA {
+// plaintext; the caller resolves the keyring through
+// bindingcipher.NewBindingCipher. The pool is owned by the caller, not this store.
+func NewEDA(pool *pgxpool.Pool, cipher bindingcipher.BindingCipher) *EDA {
 	return &EDA{pool: pool, q: postgresdb.New(pool), cipher: cipher}
 }
 
-// SetNotify wires the change-event callback that the PocketBase store's
-// Config.Notify provides. It is the same injection point: nil is a silent
-// no-op, which is what every production construction gets today.
+// SetNotify wires the change-event callback. nil is a silent no-op, which is
+// what every production construction gets today.
 func (s *EDA) SetNotify(fn func(events.Event)) { s.notify = fn }
 
 // notifyWrite announces one successful write on the bindings or mappings
-// tables. It mirrors edastore.(*Store).notifyWrite byte-for-byte: the data
-// carries the record id and action, and consumers refetch the row themselves.
+// tables. The data carries the record id and action, and consumers refetch the row themselves.
 func (s *EDA) notifyWrite(kind, subject, action, id string) {
 	if s.notify == nil {
 		return
@@ -77,8 +71,7 @@ func newRecordID() string { return uuid.NewString() }
 // --- captures ---
 
 // InsertCapture stores one inbound event verbatim. retention and maxEvents are
-// accepted for contract compatibility and applied as a prune after the insert,
-// exactly as the PocketBase store does.
+// applied as a prune after the insert.
 func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, retention time.Duration, maxEvents int) (string, error) {
 	received := c.ReceivedAt
 	if received.IsZero() {
@@ -208,8 +201,8 @@ func (s *EDA) InsertMapping(ctx context.Context, m mapping.Mapping) (string, err
 	return id, nil
 }
 
-// GetMapping returns (nil, nil) for an absent mapping, matching the
-// PocketBase store's found=false convention the gRPC layer translates.
+// GetMapping returns (nil, nil) for an absent mapping, the found=false
+// convention the gRPC layer translates.
 func (s *EDA) GetMapping(ctx context.Context, id string) (*mapping.Mapping, error) {
 	r, err := s.q.GetMapping(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -347,8 +340,8 @@ func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, err
 	return id, nil
 }
 
-// GetBinding returns (nil, nil) for an absent binding, matching the
-// PocketBase store's found=false convention the gRPC layer translates.
+// GetBinding returns (nil, nil) for an absent binding, the found=false
+// convention the gRPC layer translates.
 func (s *EDA) GetBinding(ctx context.Context, id string) (*binding.Binding, error) {
 	r, err := s.q.GetBinding(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -522,8 +515,21 @@ func ledgerWrite(err error, what string) error {
 
 // --- tool calls ---
 
+// ToolCall is one completed tool invocation during an agent stage run, as the
+// tool_call event projection stores it: a tool's output summary in Result, a
+// failure's detail in Error.
+type ToolCall struct {
+	ID       string
+	TaskID   int64
+	Attempt  int
+	Tool     string
+	Result   string
+	Error    string
+	CalledAt time.Time
+}
+
 // InsertToolCall appends one row to the tool_calls transcript.
-func (s *EDA) InsertToolCall(ctx context.Context, tc edastore.ToolCall) error {
+func (s *EDA) InsertToolCall(ctx context.Context, tc ToolCall) error {
 	calledAt := tc.CalledAt
 	if calledAt.IsZero() {
 		calledAt = time.Now()
@@ -543,14 +549,14 @@ func (s *EDA) InsertToolCall(ctx context.Context, tc edastore.ToolCall) error {
 }
 
 // TaskToolCalls returns one task's tool calls in call order.
-func (s *EDA) TaskToolCalls(ctx context.Context, taskID int64) ([]edastore.ToolCall, error) {
+func (s *EDA) TaskToolCalls(ctx context.Context, taskID int64) ([]ToolCall, error) {
 	rows, err := s.q.TaskToolCalls(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list tool calls: %w", err)
 	}
-	out := make([]edastore.ToolCall, 0, len(rows))
+	out := make([]ToolCall, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, edastore.ToolCall{
+		out = append(out, ToolCall{
 			ID:       r.ID,
 			TaskID:   r.TaskID,
 			Attempt:  int(r.Attempt),

@@ -1,4 +1,6 @@
-package edastore
+// Package bindingcipher seals binding secrets at rest with AES-256-GCM under
+// a rotatable keyring.
+package bindingcipher
 
 import (
 	"crypto/aes"

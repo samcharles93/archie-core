@@ -11,9 +11,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // The control-plane wire sentinels cross gRPC matched on (code, canonical
@@ -31,9 +31,9 @@ var (
 // root asserts the State Store against it, so this is the single definition of
 // what a control-plane backing store must offer.
 type ResourceStore interface {
-	Resource(context.Context, string) (store.Resource, error)
-	ResourceHistory(context.Context, string, int) ([]store.Resource, error)
-	PutResource(context.Context, store.ResourceWrite) (store.Resource, error)
+	Resource(context.Context, string) (storecontract.Resource, error)
+	ResourceHistory(context.Context, string, int) ([]storecontract.Resource, error)
+	PutResource(context.Context, storecontract.ResourceWrite) (storecontract.Resource, error)
 }
 
 // defaultHistoryLimit caps an unbounded request. A settings resource edited
@@ -121,7 +121,7 @@ func (s *Server) Command(ctx context.Context, request *pb.CommandRequest) (*pb.C
 	if err != nil {
 		return nil, mapError(err)
 	}
-	resource, err := s.store.PutResource(ctx, store.ResourceWrite{Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
+	resource, err := s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -142,7 +142,7 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 				return err
 			}
 			version = resource.Version
-		} else if err != nil && !errors.Is(err, store.ErrResourceNotFound) {
+		} else if err != nil && !errors.Is(err, storecontract.ErrResourceNotFound) {
 			return mapError(err)
 		}
 		select {
@@ -153,7 +153,7 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 	}
 }
 
-func resourceProto(resource store.Resource) *pb.Resource {
+func resourceProto(resource storecontract.Resource) *pb.Resource {
 	return &pb.Resource{Kind: resource.Kind, Version: resource.Version, ValueJson: resource.Value, UpdatedAt: timestamp(resource.At)}
 }
 
@@ -168,9 +168,9 @@ func mapError(err error) error {
 	switch {
 	case errors.Is(err, ErrValidation):
 		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.Is(err, store.ErrResourceNotFound):
+	case errors.Is(err, storecontract.ErrResourceNotFound):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, store.ErrResourceVersionConflict):
+	case errors.Is(err, storecontract.ErrResourceVersionConflict):
 		return status.Error(codes.Aborted, err.Error())
 	default:
 		return status.Error(codes.Unavailable, err.Error())

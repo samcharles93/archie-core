@@ -27,10 +27,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -558,7 +558,7 @@ func startEmbeddedNATSForDaemon(t *testing.T) *server.Server {
 // daemonWithNATS returns the daemon, its store, and the concrete bus
 // client -- tests that drive core-NATS subscriptions directly need the
 // connection, which the TaskBus contract deliberately does not expose.
-func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
+func daemonWithNATS(t *testing.T) (*Daemon, *pgstore.TaskDB, *arnats.Client) {
 	t.Helper()
 	srv := startEmbeddedNATSForDaemon(t)
 	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL(), Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, slog.New(slog.DiscardHandler))
@@ -567,7 +567,7 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 	}
 	t.Cleanup(client.Close)
 
-	s := store.OpenTest(t)
+	s := pgstore.Open(t)
 	d := &Daemon{
 		Cfg: config.NewHolder(config.Config{
 			Dispatch: config.Dispatch{Labels: map[string]string{
@@ -1115,10 +1115,10 @@ func (f *testForge) React(context.Context, string, string, int, string) error   
 func (f *testForge) VerifyPush(context.Context, string, string) error              { return nil }
 func (f *testForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
-func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *store.Store, *testForge) {
+func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *pgstore.TaskDB, *testForge) {
 	t.Helper()
 
-	s := store.OpenTest(t)
+	s := pgstore.Open(t)
 	fg := &testForge{}
 
 	cfg := config.Config{
@@ -1256,9 +1256,9 @@ func TestDaemonStoresIdentityRunners(t *testing.T) {
 // only ever be acted on through that identity's own forge client and
 // worktree manager; it must never fall back to the root d.Forge/d.Trees
 // or leak into the other identity's client.
-func twoIdentityDaemon(t *testing.T) (d *Daemon, s *store.Store, rootFg, archieFg, winterFg *testForge) {
+func twoIdentityDaemon(t *testing.T) (d *Daemon, s *pgstore.TaskDB, rootFg, archieFg, winterFg *testForge) {
 	t.Helper()
-	s = store.OpenTest(t)
+	s = pgstore.Open(t)
 	rootFg = &testForge{}
 	archieFg = &testForge{}
 	winterFg = &testForge{}
@@ -1439,7 +1439,7 @@ func TestStartupSweepsEveryConfiguredForge(t *testing.T) {
 
 			d := &Daemon{
 				Cfg:        config.NewHolder(config.Config{Repos: tc.rootRepos}),
-				Store:      store.OpenTest(t),
+				Store:      pgstore.Open(t),
 				Forge:      rootFg,
 				Log:        slog.New(slog.DiscardHandler),
 				Identities: runners,
@@ -1499,7 +1499,7 @@ func TestStartupSweepIsolatesAStalledForge(t *testing.T) {
 	siblingFg := &sweepForge{}
 	d := &Daemon{
 		Cfg:        config.NewHolder(config.Config{}),
-		Store:      store.OpenTest(t),
+		Store:      pgstore.Open(t),
 		Forge:      rootFg,
 		Log:        slog.New(slog.DiscardHandler),
 		Identities: []*IdentityRunner{{Name: "sibling", Forge: siblingFg}},
@@ -2139,7 +2139,7 @@ func TestDispatchCapturesTheAttemptsEffectiveConfig(t *testing.T) {
 // always fails, so the fail-open policy of the capture can be observed without
 // breaking everything else the dispatch needs.
 type failingEventStore struct {
-	*store.Store
+	*pgstore.TaskDB
 }
 
 func (f failingEventStore) InsertEvent(context.Context, events.Event) (int64, error) {
@@ -2151,7 +2151,7 @@ func (f failingEventStore) InsertEvent(context.Context, events.Event) (int64, er
 // go out anyway, and nothing may park.
 func TestCaptureAttemptConfigFailureDoesNotStopTheDispatch(t *testing.T) {
 	d, s, busClient := daemonWithNATS(t)
-	d.Store = failingEventStore{Store: s}
+	d.Store = failingEventStore{TaskDB: s}
 	ctx := context.Background()
 
 	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 6, "t", "b", "", ""); err != nil {

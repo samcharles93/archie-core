@@ -20,10 +20,9 @@ const recoveryUsage = `usage: archie-state-store <command> [flags]
 With no command, archie-state-store serves the State Store gRPC contract.
 
 The recovery commands are how an operator recovers a database the control
-plane will not start on. Without -db they operate on the PostgreSQL database
-the configuration's database_url names, through pg_dump and pg_restore (which
-must be on PATH); with -db, on a legacy SQLite task file (the configured
-db_path with "-tasks.sqlite" appended).
+plane will not start on. They operate on the PostgreSQL database the
+configuration's database_url names, through pg_dump and pg_restore (which
+must be on PATH).
 
 backup takes a consistent snapshot of a serving database. restore is
 destructive and offline: stop every archie service first, since it refuses
@@ -32,11 +31,11 @@ snapshot is lost. rollback refuses while the State Store serves. There is no
 automatic schema rollback: the way back from a migration is restoring the
 snapshot taken before it.
 
-  backup   [-db FILE] -out FILE     write a snapshot of the database
-  restore  [-db FILE] -from FILE    replace the database with a snapshot
-  validate [-db FILE]               check the database, its stored settings and
+  backup   -out FILE                write a snapshot of the database
+  restore  -from FILE               replace the database with a snapshot
+  validate                          check the database, its stored settings and
                                     the configuration the daemon would boot with
-  rollback [-db FILE] -kind KIND    replay an earlier revision of a stored
+  rollback -kind KIND               replay an earlier revision of a stored
            [-revision N]            resource through the ordinary replace
   import   [-db-path PATH]          copy the legacy SQLite stores named from
            [-database-url URL]      db_path into an empty Postgres database,
@@ -68,7 +67,6 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("archie-state-store "+command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() { fmt.Fprint(stderr, recoveryUsage) }
-	flags.StringVar(&options.DB, "db", "", "legacy SQLite task file (<db_path>-tasks.sqlite); omit to use the configured database_url")
 	flags.StringVar(&options.Out, "out", "", "snapshot file backup writes")
 	flags.StringVar(&options.From, "from", "", "snapshot file restore reads")
 	flags.StringVar(&options.Kind, "kind", "", "control-plane resource kind rollback replays")

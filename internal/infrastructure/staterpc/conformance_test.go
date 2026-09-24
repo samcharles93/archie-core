@@ -13,56 +13,57 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // contract is the union of every store surface staterpc fronts (minus the
 // playbook-dispatch ledger, split out below to keep the interface under the
 // repo's 8-method cap), so the same test battery drives both the local
-// *store.Store and the remote *Client through one interface value, per
+// *pgstore.TaskDB and the remote *Client through one interface value, per
 // docs/prds/state-store-contract.md §11's conformance requirement.
 type contract interface {
-	store.TaskStore
-	store.BindingTaskCreator
-	store.ConfigSnapshotStore
-	store.ApplyStatusStore
+	storecontract.TaskStore
+	storecontract.BindingTaskCreator
+	storecontract.ConfigSnapshotStore
+	storecontract.ApplyStatusStore
 }
 
 // edaContract is the event-capture half, which the PocketBase store serves.
 // It is a separate interface because no single type implements both halves
 // any more: that split is the point of the migration, not an accident.
 type edaContract interface {
-	store.CaptureStore
-	store.MappingStore
-	store.BindingStore
-	store.BindingDispatcher
+	storecontract.CaptureStore
+	storecontract.MappingStore
+	storecontract.BindingStore
+	storecontract.BindingDispatcher
 }
 
 // playbookContract is the playbook-dispatch idempotency-ledger surface, split
 // out from contract so each aggregate stays under the repo's interfacebloat
 // cap without weakening what the conformance battery proves.
 type playbookContract interface {
-	store.PlaybookDispatcher
+	storecontract.PlaybookDispatcher
 }
 
 // taskLogContract is the task-log read group, driven separately because it is
-// not a *store.Store surface: the reader is internal/logging's own registry,
+// not a *pgstore.TaskDB surface: the reader is internal/logging's own registry,
 // which owns the log format, so the local side of this contract is a registry
 // rather than a store.
 type taskLogContract interface {
-	store.TaskLogStore
+	storecontract.TaskLogStore
 }
 
 // remoteEDA fronts both stores for a battery that exercises event-capture
 // surfaces over the wire.
-func remoteEDA(t *testing.T, local *store.Store, eda *edastore.Store) *Client {
+func remoteEDA(t *testing.T, local *pgstore.TaskDB, eda *postgres.EDA) *Client {
 	t.Helper()
 	return remoteTaskStore(t, local, nil, eda)
 }
 
-func remoteContract(t *testing.T, local *store.Store) contract {
+func remoteContract(t *testing.T, local *pgstore.TaskDB) contract {
 	t.Helper()
 	return remoteTaskStore(t, local, nil, nil)
 }
@@ -75,7 +76,7 @@ func remoteContract(t *testing.T, local *store.Store) contract {
 // task store for the task surfaces, the event-capture store for captures,
 // mappings, bindings and the dispatch ledgers. eda may be nil for a battery
 // that exercises only task surfaces.
-func remoteTaskStore(t *testing.T, local *store.Store, logs store.TaskLogStore, eda *edastore.Store) *Client {
+func remoteTaskStore(t *testing.T, local *pgstore.TaskDB, logs storecontract.TaskLogStore, eda *postgres.EDA) *Client {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
@@ -112,8 +113,8 @@ func TestStateStoreConformance(t *testing.T) {
 	for _, mode := range []string{"local", "grpc"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := t.Context()
-			local := store.OpenTest(t)
-			eda := edastore.OpenTest(t)
+			local := pgstore.Open(t)
+			eda := pgstore.EDA(t, nil)
 			var c contract = local
 			var ec edaContract = eda
 			var pc playbookContract = eda
@@ -168,7 +169,7 @@ func TestStateStoreConformance(t *testing.T) {
 
 			// Stale transition: from no longer matches current status.
 			err = c.Transition(ctx, task.ID, "queued", "merged", "")
-			if !errors.Is(err, store.ErrStaleTransition) {
+			if !errors.Is(err, storecontract.ErrStaleTransition) {
 				t.Fatalf("Transition stale = %v, want ErrStaleTransition", err)
 			}
 
@@ -181,7 +182,7 @@ func TestStateStoreConformance(t *testing.T) {
 			if err := c.BeginRemediation(ctx, task.ID, `{"review_id":7}`); err != nil {
 				t.Fatalf("BeginRemediation: %v", err)
 			}
-			if err := c.BeginRemediation(ctx, task.ID, `{"review_id":7}`); !errors.Is(err, store.ErrStaleTransition) {
+			if err := c.BeginRemediation(ctx, task.ID, `{"review_id":7}`); !errors.Is(err, storecontract.ErrStaleTransition) {
 				t.Fatalf("BeginRemediation stale = %v, want ErrStaleTransition", err)
 			}
 			remediated, err := c.TaskByID(ctx, task.ID)
@@ -197,7 +198,7 @@ func TestStateStoreConformance(t *testing.T) {
 			if err := c.Transition(ctx, task.ID, "queued", "running", "claimed"); err != nil {
 				t.Fatalf("claim: %v", err)
 			}
-			if err := c.UpdateReviewPayload(ctx, task.ID, `{}`); !errors.Is(err, store.ErrStaleTransition) {
+			if err := c.UpdateReviewPayload(ctx, task.ID, `{}`); !errors.Is(err, storecontract.ErrStaleTransition) {
 				t.Fatalf("UpdateReviewPayload stale = %v, want ErrStaleTransition", err)
 			}
 
@@ -309,7 +310,7 @@ func TestStateStoreConformance(t *testing.T) {
 			if parked.Status != "parked" || parked.ParkClass != "transient" || parked.ParkReason != "container pool unavailable" {
 				t.Fatalf("ParkTask row = status:%q class:%q reason:%q", parked.Status, parked.ParkClass, parked.ParkReason)
 			}
-			if err := c.ParkTask(ctx, claimed.ID, "running", "late park", "transient"); !errors.Is(err, store.ErrStaleTransition) {
+			if err := c.ParkTask(ctx, claimed.ID, "running", "late park", "transient"); !errors.Is(err, storecontract.ErrStaleTransition) {
 				t.Fatalf("ParkTask stale = %v, want ErrStaleTransition", err)
 			}
 			// An unclassified park normalizes to needs_human store-side rather
@@ -371,11 +372,11 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("UpdateMapping: %v", err)
 			}
 			err = ec.UpdateMapping(ctx, mapping.Mapping{ID: "rabsent00000000", Name: "x", Fields: gotMapping.Fields})
-			if !errors.Is(err, store.ErrMappingNotFound) {
+			if !errors.Is(err, storecontract.ErrMappingNotFound) {
 				t.Fatalf("UpdateMapping missing = %v, want ErrMappingNotFound", err)
 			}
 			err = ec.DeleteMapping(ctx, "rabsent00000000")
-			if !errors.Is(err, store.ErrMappingNotFound) {
+			if !errors.Is(err, storecontract.ErrMappingNotFound) {
 				t.Fatalf("DeleteMapping missing = %v, want ErrMappingNotFound", err)
 			}
 
@@ -393,7 +394,7 @@ func TestStateStoreConformance(t *testing.T) {
 				Name: "b2", Matcher: binding.Matcher{Source: "sentry"}, MappingID: mappingID,
 				Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
 			})
-			if !errors.Is(err, store.ErrBindingOverlap) {
+			if !errors.Is(err, storecontract.ErrBindingOverlap) {
 				t.Fatalf("InsertBinding overlap = %v, want ErrBindingOverlap", err)
 			}
 			missingBinding, err := ec.GetBinding(ctx, "rabsent00000000")
@@ -411,16 +412,16 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("ApproveBinding from pending_approval = %v", err)
 			}
 			err = ec.ApproveBinding(ctx, bindingID)
-			if !errors.Is(err, store.ErrBindingTransition) {
+			if !errors.Is(err, storecontract.ErrBindingTransition) {
 				t.Fatalf("ApproveBinding when armed = %v, want ErrBindingTransition", err)
 			}
 			err = ec.DeleteBinding(ctx, "rabsent00000000")
-			if !errors.Is(err, store.ErrBindingNotFound) {
+			if !errors.Is(err, storecontract.ErrBindingNotFound) {
 				t.Fatalf("DeleteBinding missing = %v, want ErrBindingNotFound", err)
 			}
 
 			// Capture + dispatch.
-			captureID, err := ec.InsertCapture(ctx, store.CapturedEvent{Source: "sentry", Body: `{"id":1}`, Authenticated: true}, 0, 0)
+			captureID, err := ec.InsertCapture(ctx, storecontract.CapturedEvent{Source: "sentry", Body: `{"id":1}`, Authenticated: true}, 0, 0)
 			if err != nil || captureID == "" {
 				t.Fatalf("InsertCapture: %v %v", captureID, err)
 			}
@@ -438,7 +439,7 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("RecordDispatch: %v", err)
 			}
 			err = ec.RecordDispatch(ctx, bindingID, 1, captureID, bindingTask.ID)
-			if !errors.Is(err, store.ErrAlreadyDispatched) {
+			if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 				t.Fatalf("RecordDispatch dup = %v, want ErrAlreadyDispatched", err)
 			}
 			if _, err := ec.ListUndispatchedCaptures(ctx, []string{"sentry"}, 10); err != nil {
@@ -466,7 +467,7 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("RecordPlaybookDispatch (distinct action_id) = %v, want success", err)
 			}
 			err = pc.RecordPlaybookDispatch(ctx, "pb.yaml", "v1", "archie:acme/widget/7", "notify")
-			if !errors.Is(err, store.ErrAlreadyDispatched) {
+			if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 				t.Fatalf("RecordPlaybookDispatch dup = %v, want ErrAlreadyDispatched", err)
 			}
 			if err := pc.DeletePlaybookDispatches(ctx, "pb.yaml"); err != nil {
@@ -487,7 +488,7 @@ func TestStateStoreConformance(t *testing.T) {
 func TestConfigSnapshotContract(t *testing.T) {
 	for _, mode := range []string{"local", "grpc"} {
 		t.Run(mode, func(t *testing.T) {
-			local := store.OpenTest(t)
+			local := pgstore.Open(t)
 			var st contract = local
 			if mode == "grpc" {
 				st = remoteContract(t, local)
@@ -498,7 +499,7 @@ func TestConfigSnapshotContract(t *testing.T) {
 				t.Fatalf("unpublished snapshot = (found %v, %v), want (false, nil)", found, err)
 			}
 
-			published := store.ConfigSnapshot{
+			published := storecontract.ConfigSnapshot{
 				Schema:      "webui.ConfigView/1",
 				Document:    []byte(`{"identity":{"bot_user":"archie"},"providers":{"openai":{"api_key_env":"OPENAI_API_KEY","configured":true}}}`),
 				PublishedAt: time.Date(2026, 9, 9, 12, 30, 0, 0, time.UTC),

@@ -23,7 +23,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // TestProviderOutcomeRecorderRecordsTheLastCallOnly pins the producer behind
@@ -356,7 +356,7 @@ func TestRouterWithHealthAnswersStatus(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 
-	st := store.OpenTest(t)
+	st := pgstore.Open(t)
 	router := gateway.NewRouter(st, nil, "web")
 	router.InitSessions(sessions)
 	router.Health = statusHealth{broker: func() (bool, bool) { return true, true }}

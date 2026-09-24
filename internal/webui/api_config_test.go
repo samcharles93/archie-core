@@ -10,9 +10,9 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // fakeSecrets are recognisable strings that must never appear anywhere in
@@ -553,7 +553,7 @@ func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := RemoteConfigView(stubSnapshots{snapshot: store.ConfigSnapshot{
+	source := RemoteConfigView(stubSnapshots{snapshot: storecontract.ConfigSnapshot{
 		Schema:   ConfigViewSchema,
 		Document: document,
 	}, found: true})
@@ -573,7 +573,7 @@ func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
 // TestRemoteConfigViewRefusesAnUnknownSchema: a document whose shape this
 // build does not know is not something to render half of.
 func TestRemoteConfigViewRefusesAnUnknownSchema(t *testing.T) {
-	source := RemoteConfigView(stubSnapshots{snapshot: store.ConfigSnapshot{
+	source := RemoteConfigView(stubSnapshots{snapshot: storecontract.ConfigSnapshot{
 		Schema:   "webui.ConfigView/99",
 		Document: []byte(`{}`),
 	}, found: true})
@@ -600,14 +600,16 @@ func TestConfigWithNoPublishedSnapshotIsEmpty(t *testing.T) {
 }
 
 type stubSnapshots struct {
-	snapshot store.ConfigSnapshot
+	snapshot storecontract.ConfigSnapshot
 	found    bool
 	err      error
 }
 
-func (s stubSnapshots) PutConfigSnapshot(context.Context, store.ConfigSnapshot) error { return s.err }
+func (s stubSnapshots) PutConfigSnapshot(context.Context, storecontract.ConfigSnapshot) error {
+	return s.err
+}
 
-func (s stubSnapshots) ConfigSnapshot(context.Context) (store.ConfigSnapshot, bool, error) {
+func (s stubSnapshots) ConfigSnapshot(context.Context) (storecontract.ConfigSnapshot, bool, error) {
 	return s.snapshot, s.found, s.err
 }
 

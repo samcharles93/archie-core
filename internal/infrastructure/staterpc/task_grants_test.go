@@ -14,10 +14,10 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // grantsServer wires TaskGrants' Unary/Stream interceptors -- the same
@@ -28,14 +28,14 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 	t.Helper()
 	grants = &TaskGrants{}
 	listener := bufconn.Listen(1 << 20)
-	local := store.OpenTest(t)
+	local := pgstore.Open(t)
 	server := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
 	)
 	// One event-capture store serves every EDA surface, as the real
 	// composition does: separate instances would not share a database.
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	RegisterServer(server, Deps{
 		Tasks: local, ConfigSnapshots: local, ApplyStatus: local,
 		Captures: eda, Mappings: eda, Bindings: eda,
@@ -79,7 +79,7 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 
 	body := strings.Repeat("x", 256<<10)
 	for range 20 {
-		if _, err := admin.InsertCapture(ctx, store.CapturedEvent{Source: "large", Body: body, Authenticated: true}, 0, 0); err != nil {
+		if _, err := admin.InsertCapture(ctx, storecontract.CapturedEvent{Source: "large", Body: body, Authenticated: true}, 0, 0); err != nil {
 			t.Fatalf("InsertCapture: %v", err)
 		}
 	}
@@ -114,10 +114,10 @@ func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		list func(context.Context) ([]store.CapturedEvent, error)
+		list func(context.Context) ([]storecontract.CapturedEvent, error)
 	}{
-		{"ListCaptures", func(ctx context.Context) ([]store.CapturedEvent, error) { return admin.ListCaptures(ctx, 20) }},
-		{"ListUndispatchedCaptures", func(ctx context.Context) ([]store.CapturedEvent, error) {
+		{"ListCaptures", func(ctx context.Context) ([]storecontract.CapturedEvent, error) { return admin.ListCaptures(ctx, 20) }},
+		{"ListUndispatchedCaptures", func(ctx context.Context) ([]storecontract.CapturedEvent, error) {
 			return admin.ListUndispatchedCaptures(ctx, []string{"large"}, 20)
 		}},
 	} {
@@ -263,7 +263,7 @@ func TestOnlyAdminPublishesTheConfigSnapshot(t *testing.T) {
 	}
 	worker := dial(t, workerToken)
 
-	snapshot := store.ConfigSnapshot{Schema: "webui.ConfigView/1", Document: []byte(`{}`)}
+	snapshot := storecontract.ConfigSnapshot{Schema: "webui.ConfigView/1", Document: []byte(`{}`)}
 	if err := admin.PutConfigSnapshot(ctx, snapshot); err != nil {
 		t.Fatalf("admin PutConfigSnapshot: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestOnlyAdminReportsApplyStatus(t *testing.T) {
 	}
 	worker := dial(t, workerToken)
 
-	status := store.ApplyStatus{Process: "archied", Kind: "tool-settings", AppliedVersion: 2}
+	status := storecontract.ApplyStatus{Process: "archied", Kind: "tool-settings", AppliedVersion: 2}
 	if err := admin.PutApplyStatus(ctx, status); err != nil {
 		t.Fatalf("admin PutApplyStatus: %v", err)
 	}

@@ -13,10 +13,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -153,10 +152,7 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 // all -- the shape every route below has to survive.
 func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 	t.Helper()
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	// The task-log reader lives on the state-directory side of the boundary:
@@ -166,7 +162,7 @@ func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 	logs := logging.NewTaskRegistry(filepath.Join(t.TempDir(), "logs", "tasks"), logging.NewFeed(10), logging.TaskSinkOptions{})
 
 	target, stop := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		eda := edastore.OpenTest(t)
+		eda := pgstore.EDA(t, nil)
 		staterpc.RegisterServer(r, staterpc.Deps{
 			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			TaskLogs: logs, Log: slog.New(slog.DiscardHandler),

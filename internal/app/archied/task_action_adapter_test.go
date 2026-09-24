@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -35,7 +36,7 @@ func (a testTaskActor) ApplyChatTaskAction(
 	}, nil
 }
 
-func newChatTaskActorForTest(t *testing.T, st store.TaskStore, cfg config.Config) chatTaskActorAdapter {
+func newChatTaskActorForTest(t *testing.T, st storecontract.TaskStore, cfg config.Config) chatTaskActorAdapter {
 	t.Helper()
 	b := &boot{
 		st:         st,
@@ -48,10 +49,7 @@ func newChatTaskActorForTest(t *testing.T, st store.TaskStore, cfg config.Config
 
 func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	task, err := st.EnqueueChatTask(ctx, "acme", "widget", "parked job", "", "", "identity-owner")
@@ -111,10 +109,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 
 func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	adapter := newChatTaskActorForTest(t, st, config.Config{})
@@ -188,15 +183,12 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 
 func TestChatTaskActorAdapterTaskNotFound(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
-	_, err = adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, 999999, taskstate.ActionAbandon)
+	_, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, 999999, taskstate.ActionAbandon)
 	if err == nil {
 		t.Fatal("expected error for non-existent task, got nil")
 	}
@@ -260,10 +252,7 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
 			adapter := newChatTaskActorForTest(t, st, config.Config{MaxRetries: 3})

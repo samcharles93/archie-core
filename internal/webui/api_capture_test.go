@@ -5,32 +5,28 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // captureTestServer builds a Server whose Captures field points at the same
-// concrete *store.Store as Store, so tests can assert on persisted rows
+// concrete *pgstore.TaskDB as Store, so tests can assert on persisted rows
 // through the narrower CaptureStore interface -- Server.Store's static type
-// (store.TaskStore) does not expose ListCaptures.
+// (storecontract.TaskStore) does not expose ListCaptures.
 func captureTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
 	return &Server{
 		Store: s,
 		Log:   slog.New(slog.DiscardHandler),
 		// Captures come from the event-capture store; the task store no
 		// longer holds them.
-		Captures: edastore.OpenTest(t),
+		Captures: pgstore.EDA(t, nil),
 	}
 }
 
@@ -39,7 +35,7 @@ func captureTestServer(t *testing.T) *Server {
 // internal/infrastructure/captureintake and is tested there.
 func seedCapture(t *testing.T, srv *Server, source string) string {
 	t.Helper()
-	id, err := srv.Captures.InsertCapture(t.Context(), store.CapturedEvent{
+	id, err := srv.Captures.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		ReceivedAt: time.Now().UTC(),
 		Source:     source,
 		Body:       `{"n":1}`,

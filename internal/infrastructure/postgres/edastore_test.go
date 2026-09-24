@@ -12,7 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 )
 
 const edaTestKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -24,7 +24,7 @@ func edaFor(t *testing.T) *EDA {
 	return NewEDA(pool, nil)
 }
 
-func edaWithCipher(t *testing.T, cipher edastore.BindingCipher) (*pgxpool.Pool, *EDA) {
+func edaWithCipher(t *testing.T, cipher bindingcipher.BindingCipher) (*pgxpool.Pool, *EDA) {
 	t.Helper()
 	pool, _ := migrated(t)
 	return pool, NewEDA(pool, cipher)
@@ -131,7 +131,7 @@ func TestConcurrentInsertBindingSameSource(t *testing.T) {
 // untouched, so an edit form that does not echo the secret cannot blank an
 // armed binding's HMAC key.
 func TestUpdateBindingEmptySecretPreservesStored(t *testing.T) {
-	cipher, err := edastore.NewBindingCipher(edaTestKey, nil)
+	cipher, err := bindingcipher.NewBindingCipher(edaTestKey, nil)
 	if err != nil {
 		t.Fatalf("NewBindingCipher() error = %v", err)
 	}
@@ -173,7 +173,7 @@ func readRawSecret(t *testing.T, pool *pgxpool.Pool, id string) string {
 // The cipher path must keep decrypt-in-store: what is stored is an envelope,
 // what reads back is the plaintext HMAC key the intake verifies with.
 func TestBindingSecretEncryptedAtRestAndDecryptedOnRead(t *testing.T) {
-	cipher, err := edastore.NewBindingCipher(edaTestKey, nil)
+	cipher, err := bindingcipher.NewBindingCipher(edaTestKey, nil)
 	if err != nil {
 		t.Fatalf("NewBindingCipher() error = %v", err)
 	}
@@ -197,6 +197,50 @@ func TestBindingSecretEncryptedAtRestAndDecryptedOnRead(t *testing.T) {
 	}
 	if got.Secret != "supersecretvalue0123" {
 		t.Errorf("Secret = %q, want the plaintext on read: the wire carries plaintext, so decrypt must happen in the store", got.Secret)
+	}
+}
+
+// A deployment with no configured key stores plaintext.
+func TestNoCipherKeepsPlaintext(t *testing.T) {
+	pool, s := edaWithCipher(t, nil)
+	id, err := s.InsertBinding(t.Context(), binding.Binding{
+		Name: "n", Matcher: binding.Matcher{Source: "src-plain"}, Workflow: "implement",
+		Secret: "supersecretvalue0123",
+	})
+	if err != nil {
+		t.Fatalf("InsertBinding() error = %v", err)
+	}
+	if stored := readRawSecret(t, pool, id); stored != "supersecretvalue0123" {
+		t.Errorf("stored secret = %q, want the plaintext with no cipher configured", stored)
+	}
+}
+
+// A secret written under the previous key stays readable once a new active
+// key is installed; otherwise rotation bricks every armed binding.
+func TestRotatedKeyStillReadsOldRows(t *testing.T) {
+	const oldKey = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	oldCipher, err := bindingcipher.NewBindingCipher(oldKey, nil)
+	if err != nil {
+		t.Fatalf("NewBindingCipher(old) error = %v", err)
+	}
+	pool, s := edaWithCipher(t, oldCipher)
+	id, err := s.InsertBinding(t.Context(), binding.Binding{
+		Name: "n", Matcher: binding.Matcher{Source: "src-rotate"}, Workflow: "implement",
+		Secret: "supersecretvalue0123",
+	})
+	if err != nil {
+		t.Fatalf("InsertBinding() error = %v", err)
+	}
+	rotated, err := bindingcipher.NewBindingCipher(edaTestKey, []string{oldKey})
+	if err != nil {
+		t.Fatalf("NewBindingCipher(rotated) error = %v", err)
+	}
+	got, err := NewEDA(pool, rotated).GetBinding(t.Context(), id)
+	if err != nil {
+		t.Fatalf("GetBinding() after rotation error = %v", err)
+	}
+	if got.Secret != "supersecretvalue0123" {
+		t.Errorf("Secret after rotation = %q: the previous key must still decrypt", got.Secret)
 	}
 }
 
@@ -308,13 +352,13 @@ func TestToolCallRoundTrip(t *testing.T) {
 	at := time.Date(2026, 9, 23, 1, 2, 3, 0, time.UTC)
 
 	for range 2 {
-		if err := s.InsertToolCall(t.Context(), edastore.ToolCall{
+		if err := s.InsertToolCall(t.Context(), ToolCall{
 			TaskID: 42, Attempt: 2, Tool: "shell", Result: "all checks passed", CalledAt: at,
 		}); err != nil {
 			t.Fatalf("InsertToolCall() error = %v", err)
 		}
 	}
-	if err := s.InsertToolCall(t.Context(), edastore.ToolCall{
+	if err := s.InsertToolCall(t.Context(), ToolCall{
 		TaskID: 7, Attempt: 1, Tool: "read_file", Error: "no such file", CalledAt: at.Add(time.Second),
 	}); err != nil {
 		t.Fatalf("InsertToolCall(other task) error = %v", err)

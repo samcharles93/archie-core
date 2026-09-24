@@ -6,25 +6,21 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // mappingTestServer builds a Server with both Mappings and Captures backed
-// by the same concrete *store.Store, so preview tests can insert a real
+// by the same concrete *pgstore.TaskDB, so preview tests can insert a real
 // capture and resolve a mapping against it end to end.
 func mappingTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	return &Server{
 		Store:    s,
 		Log:      slog.New(slog.DiscardHandler),
@@ -200,7 +196,7 @@ func TestHandleMappingDelete(t *testing.T) {
 
 func TestHandleMappingPreviewResolvesAgainstARealCapture(t *testing.T) {
 	srv := mappingTestServer(t)
-	capID, err := srv.Captures.InsertCapture(t.Context(), store.CapturedEvent{
+	capID, err := srv.Captures.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		Source: "sentry",
 		Body:   `{"issue":{"title":"bug found"},"count":3}`,
 	}, 0, 0)

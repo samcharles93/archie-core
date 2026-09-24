@@ -23,8 +23,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -68,7 +68,7 @@ type controlPlaneRestartFixture struct {
 // reading apply status back.
 func newControlPlaneRestartFixture(t *testing.T) *controlPlaneRestartFixture {
 	t.Helper()
-	local := store.OpenTest(t)
+	local := pgstore.Open(t)
 	t.Cleanup(func() { _ = local.Close() })
 
 	steps, err := stepVocabulary()

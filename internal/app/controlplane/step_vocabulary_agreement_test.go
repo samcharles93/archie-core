@@ -35,8 +35,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/agentworker"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 )
 
@@ -191,7 +191,7 @@ func TestEveryProductionResolutionSiteResolvesTheRegisteredStepType(t *testing.T
 // than dereference it: a nil-pointer panic is the same failure with no clue in
 // it.
 func TestNilStepVocabularyFailsClosedAtEveryResolutionSite(t *testing.T) {
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	t.Cleanup(func() {
 		if err := resources.Close(); err != nil {
 			t.Errorf("close test store: %v", err)
@@ -256,7 +256,7 @@ func requireRefusal(t *testing.T, side, stepType string, err error) {
 func admitThroughStateStore(t *testing.T, steps *workflow.Manager, stepType string) (before, after int64, err error) {
 	t.Helper()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	t.Cleanup(func() {
 		if closeErr := resources.Close(); closeErr != nil {
 			t.Errorf("close test store: %v", closeErr)
