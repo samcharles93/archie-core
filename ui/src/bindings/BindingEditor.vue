@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { eventTypeLabel, type EventType } from "@/captures/event-types";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import {
   draftFromBinding,
   emptyDraft,
+  mappingsForEventType,
   type Binding,
   type BindingDraft,
   type MappingOption,
@@ -18,14 +20,16 @@ import {
 } from "./binding-draft";
 
 /**
- * The binding editor: name, the matcher source senders POST to, the field
- * mapping, the workflow and an optional repo pin. Signing is the source's.
+ * The binding editor: name, the event type it applies to, one of that type's
+ * mappings, an optional filter over the mapping's parameters, the workflow and
+ * an optional repo pin. Signing is the source's.
  */
 
 const props = defineProps<{
   /** null is a new binding; a binding is an edit. */
   binding: Binding | null;
   mappings: MappingOption[];
+  eventTypes: EventType[];
   workflows: WorkflowOption[];
   saving: boolean;
   error: string | null;
@@ -40,9 +44,20 @@ const draft = ref<BindingDraft>(emptyDraft());
 watch(
   open,
   (isOpen) => {
-    if (isOpen) draft.value = props.binding ? draftFromBinding(props.binding) : emptyDraft();
+    if (isOpen) draft.value = props.binding ? draftFromBinding(props.binding, props.mappings) : emptyDraft();
   },
   { immediate: true },
+);
+
+const typeMappings = computed(() => mappingsForEventType(props.mappings, draft.value.eventTypeId));
+
+// A mapping belongs to one event type, so changing the type clears a mapping
+// that no longer fits it.
+watch(
+  () => draft.value.eventTypeId,
+  () => {
+    if (!typeMappings.value.some((m) => m.id === draft.value.mappingId)) draft.value.mappingId = "";
+  },
 );
 
 const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
@@ -68,25 +83,41 @@ const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
           </Field>
 
           <Field>
-            <FieldLabel for="binding-source">Source</FieldLabel>
-            <Input id="binding-source" v-model="draft.source" />
-            <FieldDescription>The path of a source, from the sources list above.</FieldDescription>
+            <FieldLabel for="binding-event-type">Event type</FieldLabel>
+            <Select v-model="draft.eventTypeId">
+              <SelectTrigger id="binding-event-type" class="w-full">
+                <SelectValue placeholder="Pick an event type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem v-for="type in props.eventTypes" :key="type.id" :value="type.id">
+                    {{ eventTypeLabel(type.id, props.eventTypes) }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field>
             <FieldLabel for="binding-mapping">Field mapping</FieldLabel>
-            <Select v-model="draft.mappingId">
+            <Select v-model="draft.mappingId" :disabled="!typeMappings.length">
               <SelectTrigger id="binding-mapping" class="w-full">
-                <SelectValue placeholder="Pick a saved mapping" />
+                <SelectValue :placeholder="draft.eventTypeId && !typeMappings.length ? 'No mappings for this event type' : 'Pick a mapping'" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem v-for="mapping in props.mappings" :key="mapping.id" :value="String(mapping.id)">
+                  <SelectItem v-for="mapping in typeMappings" :key="mapping.id" :value="String(mapping.id)">
                     {{ mapping.name }}
                   </SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
+          </Field>
+
+          <Field>
+            <FieldLabel for="binding-filter">Filter</FieldLabel>
+            <Input id="binding-filter" v-model="draft.filter" class="font-mono text-xs" placeholder='severity in ["high", "critical"]' />
+            <FieldDescription>Optional CEL over the mapping's parameters.</FieldDescription>
           </Field>
 
           <Field>

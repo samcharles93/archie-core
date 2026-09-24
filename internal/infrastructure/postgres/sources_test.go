@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
+	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
@@ -104,11 +105,17 @@ func TestSourceSigningAndSecretWrites(t *testing.T) {
 
 func TestCaptureUnsignedRoundTrip(t *testing.T) {
 	s := edaFor(t)
-	// Only an identified capture is listed for dispatch; a catch-all type
-	// identifies every event on the source.
-	if _, err := s.InsertEventType(t.Context(), eventtype.EventType{Source: "fw", Name: "any"}); err != nil {
+	// Only an identified capture with an armed binding for its type is listed
+	// for dispatch; a catch-all type identifies every event on the source.
+	etID, err := s.InsertEventType(t.Context(), eventtype.EventType{Source: "fw", Name: "any"})
+	if err != nil {
 		t.Fatalf("InsertEventType() error = %v", err)
 	}
+	mid, err := s.InsertMapping(t.Context(), mapping.Mapping{Name: "m", EventTypeID: etID})
+	if err != nil {
+		t.Fatalf("InsertMapping() error = %v", err)
+	}
+	armedBinding(t, s, "fw", mid)
 	if _, err := s.InsertCapture(t.Context(), storecontract.CapturedEvent{Source: "fw", Unsigned: true}, 0, 0); err != nil {
 		t.Fatalf("InsertCapture() error = %v", err)
 	}

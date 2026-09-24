@@ -42,20 +42,21 @@ func (c *Client) ControlPlane() controlpb.ControlPlaneServiceClient { return c.c
 func (c *Client) Close() error { return nil }
 
 var (
-	_ task.Store                        = (*Client)(nil)
-	_ storecontract.TaskStore           = (*Client)(nil)
-	_ storecontract.TaskLogStore        = (*Client)(nil)
-	_ storecontract.CaptureStore        = (*Client)(nil)
-	_ storecontract.MappingStore        = (*Client)(nil)
-	_ storecontract.BindingStore        = (*Client)(nil)
-	_ storecontract.SourceStore         = (*Client)(nil)
-	_ storecontract.BindingDispatcher   = (*Client)(nil)
-	_ storecontract.BindingTaskCreator  = (*Client)(nil)
-	_ storecontract.PlaybookDispatcher  = (*Client)(nil)
-	_ storecontract.ConfigSnapshotStore = (*Client)(nil)
-	_ storecontract.ChannelStatusStore  = (*Client)(nil)
-	_ storecontract.ApplyStatusStore    = (*Client)(nil)
-	_ identity.Repository               = (*Client)(nil)
+	_ task.Store                         = (*Client)(nil)
+	_ storecontract.TaskStore            = (*Client)(nil)
+	_ storecontract.TaskLogStore         = (*Client)(nil)
+	_ storecontract.CaptureStore         = (*Client)(nil)
+	_ storecontract.MappingStore         = (*Client)(nil)
+	_ storecontract.BindingStore         = (*Client)(nil)
+	_ storecontract.SourceStore          = (*Client)(nil)
+	_ storecontract.BindingDispatcher    = (*Client)(nil)
+	_ storecontract.MappingMatchRecorder = (*Client)(nil)
+	_ storecontract.BindingTaskCreator   = (*Client)(nil)
+	_ storecontract.PlaybookDispatcher   = (*Client)(nil)
+	_ storecontract.ConfigSnapshotStore  = (*Client)(nil)
+	_ storecontract.ChannelStatusStore   = (*Client)(nil)
+	_ storecontract.ApplyStatusStore     = (*Client)(nil)
+	_ identity.Repository                = (*Client)(nil)
 )
 
 // Lifecycle
@@ -414,6 +415,11 @@ func (c *Client) UpdateMapping(ctx context.Context, m mapping.Mapping) error {
 
 func (c *Client) DeleteMapping(ctx context.Context, id string) error {
 	_, err := c.client.DeleteMapping(ctx, &pb.DeleteMappingRequest{Id: id})
+	return unmapError(err)
+}
+
+func (c *Client) RecordMappingMatch(ctx context.Context, mappingID, captureID string) error {
+	_, err := c.client.RecordMappingMatch(ctx, &pb.RecordMappingMatchRequest{MappingId: mappingID, CaptureId: captureID})
 	return unmapError(err)
 }
 

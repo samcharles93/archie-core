@@ -40,8 +40,10 @@ import { listLoading, loadError, mappings, requestDelete, startEdit } from "./st
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Source hint</TableHead>
+            <TableHead>Event type</TableHead>
             <TableHead>Fields</TableHead>
+            <TableHead>Matched</TableHead>
+            <TableHead>Last match</TableHead>
             <TableHead><span class="sr-only">Actions</span></TableHead>
           </TableRow>
         </TableHeader>

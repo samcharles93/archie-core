@@ -26,9 +26,13 @@ var droppedColumns = map[string]bool{
 // newColumns are target columns added after the legacy stores, with no
 // legacy value to carry; an imported row takes the column default. An
 // imported capture has no event type, so it stays unidentified and never
-// dispatches, and no legacy source could take unsigned events.
+// dispatches, and no legacy source could take unsigned events. An imported
+// mapping has no event type, so no binding using it dispatches until it is
+// given one, and an imported binding has no filter.
 var newColumns = map[string]bool{
 	"captures.event_type": true,
+	"mappings.event_type": true,
+	"bindings.filter":     true,
 	"captures.unsigned":   true,
 }
 

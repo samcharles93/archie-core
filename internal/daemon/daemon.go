@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"strings"
 	"sync"
@@ -120,6 +121,9 @@ type Daemon struct {
 	// BindingStore to keep the CRUD interface under the interfacebloat
 	// limit. Optional: nil disables the dispatch loop.
 	BindingDispatcher storecontract.BindingDispatcher
+	// MappingMatches counts each event a mapping resolved at dispatch.
+	// Optional: nil leaves match counts unrecorded.
+	MappingMatches storecontract.MappingMatchRecorder
 	// BindingTaskCreator enqueues a task triggered by a binding. Split
 	// off TaskLifecycle so the lifecycle surface stays narrow and the
 	// dispatch loop does not acquire the full task-creation contract.
@@ -611,30 +615,18 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 // single cycle's worst-case latency on a backlog.
 const bindingDispatchBatchLimit = 100
 
-// dispatchBindings walks dispatchable captures whose source has at
-// least one armed binding, evaluates each binding's matcher against
-// the capture, resolves fields through the binding's mapping, and
-// enqueues a task per matched (binding, capture) pair.
+// dispatchBindings walks identified captures on sources with an armed
+// binding and offers each capture to every armed binding on its source.
+// Each binding dispatches it at most once (dispatchOneBinding).
 //
-// The binding_dispatches ledger is the at-most-once guarantee across
-// cycles and daemon restarts: RecordDispatch returns
-// storecontract.ErrAlreadyDispatched on a duplicate (binding_id, capture_id)
-// pair, and dispatchOneBinding treats that as a normal "another cycle
-// raced us" outcome rather than an error.
-//
-// Nil Bindings, BindingDispatcher or BindingTaskCreator disables the
-// loop (legacy behaviour: daemons built before t2db.4 Phase E had no
-// playbook bindings, and each field's own doc comment promises this
-// degrade-not-panic contract independently).
+// Nil Bindings, BindingDispatcher or BindingTaskCreator disables the loop.
 func (d *Daemon) dispatchBindings(ctx context.Context) {
 	if d.Bindings == nil || d.BindingDispatcher == nil || d.BindingTaskCreator == nil {
 		return
 	}
 
 	// Gather armed sources first so the captures query filters down to
-	// only relevant rows -- the table-level view over captured_events
-	// is otherwise unbounded, and a backlog of unrelated sources
-	// should never be scanned on a cycle.
+	// only relevant rows.
 	bindings, err := d.Bindings.ListBindings(ctx)
 	if err != nil {
 		d.Log.Warn("list bindings failed", "error", err)
@@ -670,45 +662,54 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 	}
 }
 
-// dispatchOneBinding handles a single (binding, capture) match: resolve
-// fields through the binding's mapping, enqueue a task, and record the
-// dispatch in the dedup ledger. Each step degrades independently --
-// a mapping lookup failure logs and returns, a required-field
-// resolution failure records a binding_dispatch_failure event and
-// returns without enqueueing, an enqueue failure logs and returns, and
-// a RecordDispatch returning ErrAlreadyDispatched is treated as a
-// benign race winner (another cycle already created the task).
-//
-// Owner/repo resolution currently falls back to the single configured
-// repo (when exactly one is configured); binding.Owner/Repo is a
-// follow-up so multi-repo deployments don't have to live with the
-// ambiguity.
-func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent) {
+// bindingMapping returns b's mapping, or nil after logging why it is
+// unavailable.
+func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping.Mapping {
 	if d.Mappings == nil {
 		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
-		return
+		return nil
 	}
 	m, err := d.Mappings.GetMapping(ctx, b.MappingID)
 	if err != nil {
 		d.Log.Warn("binding dispatch: get mapping", "binding", b.ID, "mapping", b.MappingID, "error", err)
-		return
+		return nil
 	}
 	if m == nil {
 		d.Log.Warn("binding dispatch: mapping missing", "binding", b.ID, "mapping", b.MappingID)
+	}
+	return m
+}
+
+// dispatchOneBinding offers one capture to one binding. The binding applies
+// when its mapping belongs to the capture's event type. The mapping resolves
+// the payload (a required-field failure records binding_dispatch_failure and
+// stops), counts the match, and the binding's filter must admit the resolved
+// parameters. The dispatch is then claimed in the binding_dispatches ledger
+// before the task is enqueued: a capture stays listed until every binding for
+// its event type has dispatched it, so the claim is what stops a binding that
+// already fired from firing again on a later cycle. A failed enqueue after the
+// claim loses that dispatch, which is the at-most-once side of the trade.
+func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent) {
+	m := d.bindingMapping(ctx, b)
+	if m == nil || m.EventTypeID != c.EventType {
 		return
 	}
 	values, failures := mapping.Resolve(m.Fields, []byte(c.Body))
 	if hasBlockingFailure(m.Fields, failures) {
-		_, _ = d.Store.InsertEvent(ctx, events.Event{
-			Kind:   "binding_dispatch_failure",
-			Detail: fmt.Sprintf("binding %q (capture %q): required field failed", b.ID, c.ID),
-			Data: map[string]any{
-				"binding_id":      b.ID,
-				"binding_version": b.Version,
-				"capture_id":      c.ID,
-				"failures":        failures,
-			},
-		})
+		d.recordDispatchFailure(ctx, b, c, "required field failed", map[string]any{"failures": failures})
+		return
+	}
+	if d.MappingMatches != nil {
+		if err := d.MappingMatches.RecordMappingMatch(ctx, m.ID, c.ID); err != nil {
+			d.Log.Warn("binding dispatch: record mapping match", "mapping", m.ID, "capture", c.ID, "error", err)
+		}
+	}
+	filter, err := binding.CompileFilter(b.Filter, m.Fields)
+	if err != nil {
+		d.recordDispatchFailure(ctx, b, c, "filter does not compile", map[string]any{"error": err.Error()})
+		return
+	}
+	if admitted, _ := filter.Admits(values); !admitted {
 		return
 	}
 
@@ -716,25 +717,17 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	if !ok {
 		return // resolveBindingRepo already logged a warning
 	}
+	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0); err != nil {
+		if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
+			d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
+		}
+		return
+	}
 	title := fmt.Sprintf("binding %s/%d from %s", b.Name, b.Version, c.Source)
 	body := renderBindingBody(values, c)
-
 	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, owner, repo, title, body, b.Workflow, "", b.ID, b.Version)
 	if err != nil {
 		d.Log.Warn("binding dispatch: enqueue", "binding", b.ID, "capture", c.ID, "error", err)
-		return
-	}
-
-	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, task.ID); err != nil {
-		if errors.Is(err, storecontract.ErrAlreadyDispatched) {
-			// Another cycle or daemon instance raced us and already
-			// recorded the dispatch. The duplicate task remains
-			// queued (delete-on-races is its own can of worms),
-			// but the ledger prevents the same (binding, capture)
-			// pair from ever being dispatched again.
-			return
-		}
-		d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
 		return
 	}
 	if c.Unsigned {
@@ -747,6 +740,21 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 			d.Log.Warn("binding dispatch: unsigned marker", "task", task.ID, "error", err)
 		}
 	}
+}
+
+// recordDispatchFailure records why a binding did not dispatch a capture.
+func (d *Daemon) recordDispatchFailure(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, reason string, extra map[string]any) {
+	data := map[string]any{
+		"binding_id":      b.ID,
+		"binding_version": b.Version,
+		"capture_id":      c.ID,
+	}
+	maps.Copy(data, extra)
+	_, _ = d.Store.InsertEvent(ctx, events.Event{
+		Kind:   "binding_dispatch_failure",
+		Detail: fmt.Sprintf("binding %q (capture %q): %s", b.ID, c.ID, reason),
+		Data:   data,
+	})
 }
 
 // hasBlockingFailure reports whether any of the failures belongs to a

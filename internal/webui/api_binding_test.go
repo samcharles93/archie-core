@@ -149,23 +149,6 @@ func TestHandleBindingCreateRejectsPartialOwnerRepo(t *testing.T) {
 	}
 }
 
-func TestHandleBindingCreateRejectsOverlap(t *testing.T) {
-	srv := bindingTestServer(t)
-	mappingID := seedMapping(t, srv, "m")
-
-	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("first", "sentry", mappingID))
-	if w.Code != http.StatusCreated {
-		t.Fatalf("first create status = %d, want %d; body = %s", w.Code, http.StatusCreated, w.Body.String())
-	}
-
-	// Overlap because Per bead t2db.4, two bindings may not own the same
-	// source; the second insert must surface ErrBindingOverlap -> 409.
-	w = doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("second", "sentry", mappingID))
-	if w.Code != http.StatusConflict {
-		t.Fatalf("second create status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
-	}
-}
-
 func TestHandleBindingCreateRejectsMissingWorkflow(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")

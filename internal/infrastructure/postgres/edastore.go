@@ -29,11 +29,12 @@ import (
 // satisfies the same surface as *edastore.Store, so the cutover wave can swap
 // one for the other behind storecontract without touching the consumers.
 var (
-	_ storecontract.CaptureStore       = (*EDA)(nil)
-	_ storecontract.MappingStore       = (*EDA)(nil)
-	_ storecontract.BindingStore       = (*EDA)(nil)
-	_ storecontract.BindingDispatcher  = (*EDA)(nil)
-	_ storecontract.PlaybookDispatcher = (*EDA)(nil)
+	_ storecontract.CaptureStore         = (*EDA)(nil)
+	_ storecontract.MappingStore         = (*EDA)(nil)
+	_ storecontract.BindingStore         = (*EDA)(nil)
+	_ storecontract.BindingDispatcher    = (*EDA)(nil)
+	_ storecontract.MappingMatchRecorder = (*EDA)(nil)
+	_ storecontract.PlaybookDispatcher   = (*EDA)(nil)
 )
 
 // EDA is the PostgreSQL-backed EDA persistence.
@@ -153,8 +154,8 @@ func (s *EDA) ListCaptures(ctx context.Context, limit int) ([]storecontract.Capt
 }
 
 // ListUndispatchedCaptures returns recent identified captures for the given
-// sources that no binding has dispatched yet. An unidentified capture is
-// never returned, so it never dispatches.
+// sources that some armed binding for their event type has not dispatched yet.
+// An unidentified capture is never returned, so it never dispatches.
 func (s *EDA) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storecontract.CapturedEvent, error) {
 	if len(sources) == 0 || limit <= 0 {
 		return nil, nil
@@ -183,20 +184,27 @@ func marshalMappingFields(fields []mapping.Field) (string, error) {
 	return string(encoded), nil
 }
 
-func mappingValue(r postgresdb.Mapping) (mapping.Mapping, error) {
+func mappingValue(r postgresdb.Mapping, matches int64, lastMatched time.Time) (mapping.Mapping, error) {
 	var fields []mapping.Field
 	if raw := r.Fields; raw != "" {
 		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 			return mapping.Mapping{}, fmt.Errorf("edastore: decode mapping fields: %w", err)
 		}
 	}
+	// The query reports the epoch for a mapping that never matched.
+	if matches == 0 {
+		lastMatched = time.Time{}
+	}
 	return mapping.Mapping{
-		ID:         r.ID,
-		Name:       r.Name,
-		SourceHint: r.SourceHint,
-		Fields:     fields,
-		CreatedAt:  r.CreatedAt,
-		UpdatedAt:  r.UpdatedAt,
+		ID:            r.ID,
+		Name:          r.Name,
+		SourceHint:    r.SourceHint,
+		EventTypeID:   r.EventType,
+		Fields:        fields,
+		MatchCount:    matches,
+		LastMatchedAt: lastMatched,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
 	}, nil
 }
 
@@ -210,6 +218,7 @@ func (s *EDA) InsertMapping(ctx context.Context, m mapping.Mapping) (string, err
 		ID:         id,
 		Name:       m.Name,
 		SourceHint: m.SourceHint,
+		EventType:  m.EventTypeID,
 		Fields:     encoded,
 	}); err != nil {
 		return "", fmt.Errorf("edastore: insert mapping: %w", err)
@@ -228,7 +237,7 @@ func (s *EDA) GetMapping(ctx context.Context, id string) (*mapping.Mapping, erro
 	if err != nil {
 		return nil, err
 	}
-	m, err := mappingValue(r)
+	m, err := mappingValue(r.Mapping, r.MatchCount, r.LastMatchedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +251,7 @@ func (s *EDA) ListMappings(ctx context.Context) ([]mapping.Mapping, error) {
 	}
 	out := make([]mapping.Mapping, 0, len(rows))
 	for _, r := range rows {
-		m, err := mappingValue(r)
+		m, err := mappingValue(r.Mapping, r.MatchCount, r.LastMatchedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -260,6 +269,7 @@ func (s *EDA) UpdateMapping(ctx context.Context, m mapping.Mapping) error {
 		ID:         m.ID,
 		Name:       m.Name,
 		SourceHint: m.SourceHint,
+		EventType:  m.EventTypeID,
 		Fields:     encoded,
 	})
 	if err != nil {
@@ -284,6 +294,16 @@ func (s *EDA) DeleteMapping(ctx context.Context, id string) error {
 	return nil
 }
 
+// RecordMappingMatch counts one event a mapping resolved. Recording the same
+// (mapping, capture) again is a no-op, so the count rises once per event no
+// matter how many bindings share the mapping.
+func (s *EDA) RecordMappingMatch(ctx context.Context, mappingID, captureID string) error {
+	if err := s.q.InsertMappingMatch(ctx, postgresdb.InsertMappingMatchParams{Mapping: mappingID, Capture: captureID}); err != nil {
+		return fmt.Errorf("edastore: record mapping match: %w", err)
+	}
+	return nil
+}
+
 // --- bindings ---
 
 // bindingValue takes GetBindingRow; the list queries' rows share its fields
@@ -294,6 +314,7 @@ func bindingValue(r postgresdb.GetBindingRow) binding.Binding {
 		Name:      r.Name,
 		Matcher:   binding.Matcher{Source: r.Source},
 		MappingID: r.Mapping,
+		Filter:    r.Filter,
 		Workflow:  r.Workflow,
 		Owner:     r.Owner,
 		Repo:      r.Repo,
@@ -304,10 +325,8 @@ func bindingValue(r postgresdb.GetBindingRow) binding.Binding {
 	}
 }
 
-// InsertBinding stores a new binding as pending_approval. "One binding per
-// source" is a schema constraint (idx_bindings_source), so a concurrent
-// second insert for the same source is refused by the database and surfaced
-// here as ErrBindingOverlap.
+// InsertBinding stores a new binding as pending_approval. Any number of
+// bindings may share a source.
 func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, error) {
 	id := newRecordID()
 	err := s.q.InsertBinding(ctx, postgresdb.InsertBindingParams{
@@ -315,14 +334,12 @@ func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, err
 		Name:     b.Name,
 		Source:   b.Matcher.Source,
 		Mapping:  b.MappingID,
+		Filter:   b.Filter,
 		Workflow: b.Workflow,
 		Owner:    b.Owner,
 		Repo:     b.Repo,
 		Status:   string(binding.StatusPendingApproval),
 	})
-	if isUniqueViolation(err) {
-		return "", storecontract.ErrBindingOverlap
-	}
 	if err != nil {
 		return "", fmt.Errorf("edastore: insert binding: %w", err)
 	}
@@ -377,14 +394,12 @@ func (s *EDA) UpdateBinding(ctx context.Context, b binding.Binding) error {
 		Name:     b.Name,
 		Source:   b.Matcher.Source,
 		Mapping:  b.MappingID,
+		Filter:   b.Filter,
 		Workflow: b.Workflow,
 		Owner:    b.Owner,
 		Repo:     b.Repo,
 		Status:   string(binding.StatusPendingApproval),
 	})
-	if isUniqueViolation(err) {
-		return storecontract.ErrBindingOverlap
-	}
 	if err != nil {
 		return err
 	}
@@ -407,10 +422,7 @@ func (s *EDA) DeleteBinding(ctx context.Context, id string) error {
 	return nil
 }
 
-// ApproveBinding is the only transition that arms a binding. "One armed
-// binding per source" is a partial unique constraint (idx_bindings_armed_source),
-// so a concurrent approval of a sibling binding on the same source is refused
-// by the database and surfaced here as ErrBindingOverlap.
+// ApproveBinding is the only transition that arms a binding.
 func (s *EDA) ApproveBinding(ctx context.Context, id string) error {
 	r, err := s.q.GetBinding(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -423,9 +435,6 @@ func (s *EDA) ApproveBinding(ctx context.Context, id string) error {
 		return storecontract.ErrBindingTransition
 	}
 	n, err := s.q.SetBindingArmed(ctx, id)
-	if isUniqueViolation(err) {
-		return storecontract.ErrBindingOverlap
-	}
 	if err != nil {
 		return err
 	}

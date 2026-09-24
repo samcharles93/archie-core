@@ -198,8 +198,9 @@ func mappingFieldValue(f *pb.MappingField) mapping.Field {
 
 func mappingProto(m mapping.Mapping) *pb.Mapping {
 	return &pb.Mapping{
-		Id: m.ID, Name: m.Name, SourceHint: m.SourceHint,
-		Fields:    mapValues(m.Fields, mappingFieldProto),
+		Id: m.ID, Name: m.Name, SourceHint: m.SourceHint, EventTypeId: m.EventTypeID,
+		Fields:     mapValues(m.Fields, mappingFieldProto),
+		MatchCount: m.MatchCount, LastMatchedAt: timestamp(m.LastMatchedAt),
 		CreatedAt: timestamp(m.CreatedAt), UpdatedAt: timestamp(m.UpdatedAt),
 	}
 }
@@ -209,8 +210,9 @@ func mappingValue(m *pb.Mapping) mapping.Mapping {
 		return mapping.Mapping{}
 	}
 	return mapping.Mapping{
-		ID: m.Id, Name: m.Name, SourceHint: m.SourceHint,
-		Fields:    mapValues(m.Fields, mappingFieldValue),
+		ID: m.Id, Name: m.Name, SourceHint: m.SourceHint, EventTypeID: m.EventTypeId,
+		Fields:     mapValues(m.Fields, mappingFieldValue),
+		MatchCount: m.MatchCount, LastMatchedAt: timeValue(m.LastMatchedAt),
 		CreatedAt: timeValue(m.CreatedAt), UpdatedAt: timeValue(m.UpdatedAt),
 	}
 }
@@ -218,7 +220,7 @@ func mappingValue(m *pb.Mapping) mapping.Mapping {
 func bindingProto(b binding.Binding) *pb.Binding {
 	return &pb.Binding{
 		Id: b.ID, Name: b.Name, Matcher: &pb.BindingMatcher{Source: b.Matcher.Source},
-		MappingId: b.MappingID, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
+		MappingId: b.MappingID, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
 		Version: int64(b.Version), Status: string(b.Status),
 		CreatedAt: timestamp(b.CreatedAt), UpdatedAt: timestamp(b.UpdatedAt),
 	}
@@ -234,7 +236,7 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	}
 	return binding.Binding{
 		ID: b.Id, Name: b.Name, Matcher: binding.Matcher{Source: source},
-		MappingID: b.MappingId, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
+		MappingID: b.MappingId, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
 		Version: int(b.Version), Status: binding.Status(b.Status),
 		CreatedAt: timeValue(b.CreatedAt), UpdatedAt: timeValue(b.UpdatedAt),
 	}

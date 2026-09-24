@@ -119,6 +119,9 @@ service StateStoreService {
   rpc ListMappings(ListMappingsRequest) returns (ListMappingsResponse);
   rpc UpdateMapping(UpdateMappingRequest) returns (UpdateMappingResponse);
   rpc DeleteMapping(DeleteMappingRequest) returns (DeleteMappingResponse);
+  // RecordMappingMatch counts one event a mapping resolved; the same
+  // (mapping, capture) twice counts once.
+  rpc RecordMappingMatch(RecordMappingMatchRequest) returns (RecordMappingMatchResponse);
 
   // EventType (docs/prds/event-automation.md, "Event types"). Insert and
   // Update refuse an overlapping or malformed type.
@@ -372,6 +375,10 @@ message Mapping {
   repeated MappingField fields = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
+  string event_type_id = 7;
+  // match_count and last_matched_at are read-only: the store counts them.
+  int64 match_count = 8;
+  google.protobuf.Timestamp last_matched_at = 9;
 }
 
 // BindingMatcher mirrors internal/domain/binding.Matcher.
@@ -394,6 +401,7 @@ message Binding {
   string secret = 10 [deprecated = true];
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
+  string filter = 13;
 }
 
 // Source mirrors internal/domain/source.Source.
@@ -743,6 +751,12 @@ message UpdateMappingResponse {}
 
 message DeleteMappingRequest { string id = 1; }
 message DeleteMappingResponse {}
+
+message RecordMappingMatchRequest {
+  string mapping_id = 1;
+  string capture_id = 2;
+}
+message RecordMappingMatchResponse {}
 
 message InsertEventTypeRequest { EventType event_type = 1; }
 message InsertEventTypeResponse { string id = 1; }

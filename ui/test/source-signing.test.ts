@@ -47,6 +47,6 @@ test("a task started by an unsigned event says so on its timeline", () => {
 });
 
 test("a binding no longer carries a signing secret", () => {
-  const payload = bindingPayload(emptyDraft());
+  const payload = bindingPayload(emptyDraft(), []);
   assert.equal("secret" in payload, false);
 });

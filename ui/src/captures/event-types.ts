@@ -59,6 +59,13 @@ export function captureIdentity(
   return { label: found ? found.name : "Deleted type", identified: true };
 }
 
+/** eventTypeLabel names an event type by id as "source / name". */
+export function eventTypeLabel(id: string | undefined, types: EventType[]): string {
+  if (!id) return "No event type";
+  const found = types.find((t) => t.id === id);
+  return found ? `${found.source} / ${found.name}` : "Deleted type";
+}
+
 /** ruleSummary renders a rule as one line of its conditions. */
 export function ruleSummary(rule: Rule): string {
   const parts = [

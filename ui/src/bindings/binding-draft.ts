@@ -5,6 +5,8 @@
  * binding-editor.jsx had from bindings.jsx in the Preact build.
  */
 
+import type { EventType } from "../captures/event-types";
+
 /**
  * A binding as GET /api/bindings returns it. Signing belongs to the source the
  * matcher names; unsigned is set when that source takes unsigned events.
@@ -14,6 +16,8 @@ export interface Binding {
   name: string;
   matcher?: { source?: string };
   mapping_id?: string;
+  /** Optional CEL over the mapping's parameters; an excluded event is not dispatched. */
+  filter?: string;
   workflow?: string;
   /** A pin is a complete owner/repo pair or not a pin at all. */
   owner?: string;
@@ -27,6 +31,14 @@ export interface Binding {
 export interface MappingOption {
   id: string;
   name: string;
+  event_type_id?: string;
+}
+
+/** The mappings that belong to one event type, which are the ones a binding
+ * on that type can use. */
+export function mappingsForEventType(mappings: MappingOption[], eventTypeId: string): MappingOption[] {
+  if (!eventTypeId) return [];
+  return mappings.filter((m) => m.event_type_id === eventTypeId);
 }
 
 /** One entry of GET /api/workflows' `definitions`. */
@@ -66,8 +78,10 @@ export function statusKind(status?: string): StatusKind {
 export interface BindingDraft {
   id: string | null;
   name: string;
-  source: string;
+  /** The event type the binding applies to; its source is the binding's. */
+  eventTypeId: string;
   mappingId: string;
+  filter: string;
   workflow: string;
   owner: string;
   repo: string;
@@ -77,20 +91,23 @@ export function emptyDraft(): BindingDraft {
   return {
     id: null,
     name: "",
-    source: "",
+    eventTypeId: "",
     mappingId: "",
+    filter: "",
     workflow: "",
     owner: "",
     repo: "",
   };
 }
 
-export function draftFromBinding(binding: Binding): BindingDraft {
+export function draftFromBinding(binding: Binding, mappings: MappingOption[]): BindingDraft {
+  const mapping = mappings.find((m) => m.id === binding.mapping_id);
   return {
     id: binding.id,
     name: binding.name,
-    source: binding.matcher?.source || "",
+    eventTypeId: mapping?.event_type_id || "",
     mappingId: binding.mapping_id || "",
+    filter: binding.filter || "",
     workflow: binding.workflow || "",
     owner: binding.owner || "",
     repo: binding.repo || "",
@@ -98,11 +115,13 @@ export function draftFromBinding(binding: Binding): BindingDraft {
 }
 
 /** The body POST /api/bindings and PATCH /api/bindings/{id} both accept. */
-export function bindingPayload(draft: BindingDraft): Record<string, unknown> {
+export function bindingPayload(draft: BindingDraft, eventTypes: EventType[]): Record<string, unknown> {
+  const eventType = eventTypes.find((t) => t.id === draft.eventTypeId);
   return {
     name: draft.name,
-    matcher: { source: draft.source },
+    matcher: { source: eventType?.source || "" },
     mapping_id: draft.mappingId,
+    filter: draft.filter.trim(),
     workflow: draft.workflow,
     owner: draft.owner,
     repo: draft.repo,
@@ -115,7 +134,7 @@ export function repoPin(binding: Binding): string {
   return binding.owner && binding.repo ? `${binding.owner}/${binding.repo}` : "—";
 }
 
-/** The matcher source a row shows: the path segment senders POST to. */
-export function matcherSource(binding: Binding): string {
-  return binding.matcher?.source || "—";
+/** The event type a row shows: its mapping's. */
+export function bindingEventType(binding: Binding, mappings: MappingOption[]): string | undefined {
+  return mappings.find((m) => m.id === binding.mapping_id)?.event_type_id;
 }
