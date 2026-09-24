@@ -1,6 +1,7 @@
 import { ref } from "vue";
 
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
+import type { EventType } from "@/captures/event-types";
 import { uniqueFieldName, type FieldPick, type FieldType } from "./mapping-fields";
 
 /**
@@ -21,16 +22,18 @@ export interface MappingField {
 }
 
 /**
- * A named, reusable set of bindings (mapping.Mapping). The source hint is
- * organisational only: a mapping is authored by clicking through one example
- * captured event but is not pinned to that event or its source, because
- * t2db.4's matcher decides which events a mapping applies to.
+ * A named set of bound fields belonging to one event type (mapping.Mapping).
+ * The daemon checks the fields against the type's schema on save, and counts
+ * each event the mapping resolves.
  */
 export interface Mapping {
   id: number;
   name: string;
   source_hint?: string;
+  event_type_id?: string;
   fields?: MappingField[];
+  match_count?: number;
+  last_matched_at?: string;
 }
 
 /** A captured inbound event. Its body is redacted before it is stored, and is
@@ -63,6 +66,8 @@ export interface MappingDraft {
   id: number | null;
   name: string;
   sourceHint: string;
+  /** The event type the mapping belongs to; its schema checks the fields. */
+  eventTypeId: string;
   fields: MappingField[];
   /** The capture the payload and the preview resolve against, or null. */
   captureId: number | null;
@@ -82,6 +87,7 @@ export interface ActionFailure {
 }
 
 export const mappings = ref<Mapping[]>([]);
+export const eventTypes = ref<EventType[]>([]);
 export const captures = ref<Capture[]>([]);
 /** Whether this deployment has capture storage at all. GET /api/captures
  * answers {"enabled": false} rather than failing, which is what lets an empty
@@ -112,6 +118,7 @@ function blankDraft(): MappingDraft {
     id: null,
     name: "",
     sourceHint: "",
+    eventTypeId: "",
     fields: [],
     captureId: null,
     payload: null,
@@ -126,11 +133,13 @@ export async function loadMappings(): Promise<void> {
     // Capture storage is optional infrastructure -- a deployment can serve
     // mappings without it -- so a failing capture leg degrades to an empty
     // picker instead of taking the mappings list down with it.
-    const [listed, captured] = await Promise.all([
+    const [listed, captured, types] = await Promise.all([
       api.mappings<{ mappings?: Mapping[] }>(),
       api.captures<{ captures?: Capture[]; enabled?: boolean }>(100).catch(() => null),
+      api.eventTypes<{ event_types?: EventType[] }>().catch(() => null),
     ]);
     mappings.value = listed.mappings || [];
+    eventTypes.value = types?.event_types || [];
     captures.value = captured?.captures || [];
     capturesEnabled.value = captured?.enabled !== false;
     loadError.value = null;
@@ -153,6 +162,7 @@ export function startEdit(mapping: Mapping): void {
     id: mapping.id,
     name: mapping.name,
     sourceHint: mapping.source_hint || "",
+    eventTypeId: mapping.event_type_id || "",
     // Copied, not aliased: the editor must not write through to the loaded list.
     fields: (mapping.fields || []).map((field) => ({ ...field })),
   };
@@ -229,7 +239,12 @@ export async function runPreview(): Promise<void> {
 export async function saveMapping(): Promise<void> {
   if (saving.value) return;
   const current = draft.value;
-  const body = { name: current.name, source_hint: current.sourceHint, fields: current.fields };
+  const body = {
+    name: current.name,
+    source_hint: current.sourceHint,
+    event_type_id: current.eventTypeId,
+    fields: current.fields,
+  };
   saving.value = true;
   try {
     if (current.id !== null) await api.mappingUpdate(String(current.id), body);

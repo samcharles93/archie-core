@@ -6,12 +6,15 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import BindingRow from "./BindingRow.vue";
-import type { Binding } from "./binding-draft";
+import type { EventType } from "@/captures/event-types";
+import type { Binding, MappingOption } from "./binding-draft";
 import type { LoadFailure } from "./use-bindings";
 
 const props = defineProps<{
   /** null means loading, [] means loaded and empty. */
   bindings: Binding[] | null;
+  mappings: MappingOption[];
+  eventTypes: EventType[];
   failure: LoadFailure | null;
 }>();
 
@@ -56,7 +59,8 @@ const failureTitle = computed(() =>
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Source</TableHead>
+            <TableHead>Event type</TableHead>
+            <TableHead>Filter</TableHead>
             <TableHead>Workflow</TableHead>
             <TableHead>Repo pin</TableHead>
             <TableHead>Status</TableHead>
@@ -66,7 +70,7 @@ const failureTitle = computed(() =>
         <TableBody>
           <template v-if="loading">
             <TableRow v-for="row in 3" :key="row">
-              <TableCell v-for="col in 6" :key="col"><Skeleton class="h-4 w-full" /></TableCell>
+              <TableCell v-for="col in 7" :key="col"><Skeleton class="h-4 w-full" /></TableCell>
             </TableRow>
           </template>
           <template v-else>
@@ -74,6 +78,8 @@ const failureTitle = computed(() =>
               v-for="binding in rows"
               :key="binding.id"
               :binding="binding"
+              :mappings="props.mappings"
+              :event-types="props.eventTypes"
               @edit="emit('edit', $event)"
               @approve="emit('approve', $event)"
               @delete="emit('delete', $event)"
