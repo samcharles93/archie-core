@@ -101,13 +101,6 @@ service StateStoreService {
 
   // Capture
   rpc InsertCapture(InsertCaptureRequest) returns (InsertCaptureResponse);
-  // ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
-  // in-flight rolling deploy's old client/server pairing keeps working --
-  // buf breaking forbids removing or reshaping an existing RPC). Every
-  // in-repo caller uses StreamCaptures.
-  rpc ListCaptures(ListCapturesRequest) returns (ListCapturesResponse) {
-    option deprecated = true;
-  }
   // StreamCaptures returns one capture per message: a batch of large capture
   // bodies can exceed gRPC's 4MiB unary message cap
   // (docs/prds/state-store-contract.md).
@@ -155,11 +148,6 @@ service StateStoreService {
   // task-scoped grant cannot reach either (see TaskGrants).
   rpc RecordPlaybookDispatch(RecordPlaybookDispatchRequest) returns (RecordPlaybookDispatchResponse);
   rpc DeletePlaybookDispatches(DeletePlaybookDispatchesRequest) returns (DeletePlaybookDispatchesResponse);
-  // ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
-  // ListCaptures above.
-  rpc ListUndispatchedCaptures(ListUndispatchedCapturesRequest) returns (ListUndispatchedCapturesResponse) {
-    option deprecated = true;
-  }
   rpc StreamUndispatchedCaptures(StreamUndispatchedCapturesRequest) returns (stream StreamUndispatchedCapturesResponse);
 
   // BindingTaskCreator
@@ -400,8 +388,8 @@ message Binding {
   string repo = 7;
   int64 version = 8;
   string status = 9;
-  // Unused: signing moved to Source. Kept so the field number is never reused.
-  string secret = 10 [deprecated = true];
+  reserved 10;
+  reserved "secret";
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
   string filter = 13;
@@ -736,8 +724,6 @@ message InsertCaptureRequest {
 }
 message InsertCaptureResponse { string id = 1; }
 
-message ListCapturesRequest { int64 limit = 1; }
-message ListCapturesResponse { repeated CapturedEvent captures = 1; }
 message StreamCapturesRequest { int64 limit = 1; }
 // Streamed one capture per message; see StreamCaptures above.
 message StreamCapturesResponse { CapturedEvent capture = 1; }
@@ -847,11 +833,6 @@ message RecordPlaybookDispatchResponse {}
 message DeletePlaybookDispatchesRequest { string playbook_id = 1; }
 message DeletePlaybookDispatchesResponse {}
 
-message ListUndispatchedCapturesRequest {
-  repeated string sources = 1;
-  int64 limit = 2;
-}
-message ListUndispatchedCapturesResponse { repeated CapturedEvent captures = 1; }
 message StreamUndispatchedCapturesRequest {
   repeated string sources = 1;
   int64 limit = 2;

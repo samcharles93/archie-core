@@ -66,7 +66,6 @@ const (
 	StateStoreService_ReadTaskLog_FullMethodName                = "/state.v1.StateStoreService/ReadTaskLog"
 	StateStoreService_StreamTaskLogContent_FullMethodName       = "/state.v1.StateStoreService/StreamTaskLogContent"
 	StateStoreService_InsertCapture_FullMethodName              = "/state.v1.StateStoreService/InsertCapture"
-	StateStoreService_ListCaptures_FullMethodName               = "/state.v1.StateStoreService/ListCaptures"
 	StateStoreService_StreamCaptures_FullMethodName             = "/state.v1.StateStoreService/StreamCaptures"
 	StateStoreService_InsertMapping_FullMethodName              = "/state.v1.StateStoreService/InsertMapping"
 	StateStoreService_GetMapping_FullMethodName                 = "/state.v1.StateStoreService/GetMapping"
@@ -93,7 +92,6 @@ const (
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
 	StateStoreService_RecordPlaybookDispatch_FullMethodName     = "/state.v1.StateStoreService/RecordPlaybookDispatch"
 	StateStoreService_DeletePlaybookDispatches_FullMethodName   = "/state.v1.StateStoreService/DeletePlaybookDispatches"
-	StateStoreService_ListUndispatchedCaptures_FullMethodName   = "/state.v1.StateStoreService/ListUndispatchedCaptures"
 	StateStoreService_StreamUndispatchedCaptures_FullMethodName = "/state.v1.StateStoreService/StreamUndispatchedCaptures"
 	StateStoreService_EnqueueBindingTask_FullMethodName         = "/state.v1.StateStoreService/EnqueueBindingTask"
 )
@@ -191,12 +189,6 @@ type StateStoreServiceClient interface {
 	StreamTaskLogContent(ctx context.Context, in *StreamTaskLogContentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTaskLogContentResponse], error)
 	// Capture
 	InsertCapture(ctx context.Context, in *InsertCaptureRequest, opts ...grpc.CallOption) (*InsertCaptureResponse, error)
-	// Deprecated: Do not use.
-	// ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
-	// in-flight rolling deploy's old client/server pairing keeps working --
-	// buf breaking forbids removing or reshaping an existing RPC). Every
-	// in-repo caller uses StreamCaptures.
-	ListCaptures(ctx context.Context, in *ListCapturesRequest, opts ...grpc.CallOption) (*ListCapturesResponse, error)
 	// StreamCaptures returns one capture per message: a batch of large capture
 	// bodies can exceed gRPC's 4MiB unary message cap
 	// (docs/prds/state-store-contract.md).
@@ -239,10 +231,6 @@ type StateStoreServiceClient interface {
 	// task-scoped grant cannot reach either (see TaskGrants).
 	RecordPlaybookDispatch(ctx context.Context, in *RecordPlaybookDispatchRequest, opts ...grpc.CallOption) (*RecordPlaybookDispatchResponse, error)
 	DeletePlaybookDispatches(ctx context.Context, in *DeletePlaybookDispatchesRequest, opts ...grpc.CallOption) (*DeletePlaybookDispatchesResponse, error)
-	// Deprecated: Do not use.
-	// ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
-	// ListCaptures above.
-	ListUndispatchedCaptures(ctx context.Context, in *ListUndispatchedCapturesRequest, opts ...grpc.CallOption) (*ListUndispatchedCapturesResponse, error)
 	StreamUndispatchedCaptures(ctx context.Context, in *StreamUndispatchedCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse], error)
 	// BindingTaskCreator
 	EnqueueBindingTask(ctx context.Context, in *EnqueueBindingTaskRequest, opts ...grpc.CallOption) (*EnqueueBindingTaskResponse, error)
@@ -735,17 +723,6 @@ func (c *stateStoreServiceClient) InsertCapture(ctx context.Context, in *InsertC
 	return out, nil
 }
 
-// Deprecated: Do not use.
-func (c *stateStoreServiceClient) ListCaptures(ctx context.Context, in *ListCapturesRequest, opts ...grpc.CallOption) (*ListCapturesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListCapturesResponse)
-	err := c.cc.Invoke(ctx, StateStoreService_ListCaptures_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *stateStoreServiceClient) StreamCaptures(ctx context.Context, in *StreamCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamCapturesResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[1], StateStoreService_StreamCaptures_FullMethodName, cOpts...)
@@ -1015,17 +992,6 @@ func (c *stateStoreServiceClient) DeletePlaybookDispatches(ctx context.Context, 
 	return out, nil
 }
 
-// Deprecated: Do not use.
-func (c *stateStoreServiceClient) ListUndispatchedCaptures(ctx context.Context, in *ListUndispatchedCapturesRequest, opts ...grpc.CallOption) (*ListUndispatchedCapturesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListUndispatchedCapturesResponse)
-	err := c.cc.Invoke(ctx, StateStoreService_ListUndispatchedCaptures_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *stateStoreServiceClient) StreamUndispatchedCaptures(ctx context.Context, in *StreamUndispatchedCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[2], StateStoreService_StreamUndispatchedCaptures_FullMethodName, cOpts...)
@@ -1148,12 +1114,6 @@ type StateStoreServiceServer interface {
 	StreamTaskLogContent(*StreamTaskLogContentRequest, grpc.ServerStreamingServer[StreamTaskLogContentResponse]) error
 	// Capture
 	InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error)
-	// Deprecated: Do not use.
-	// ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
-	// in-flight rolling deploy's old client/server pairing keeps working --
-	// buf breaking forbids removing or reshaping an existing RPC). Every
-	// in-repo caller uses StreamCaptures.
-	ListCaptures(context.Context, *ListCapturesRequest) (*ListCapturesResponse, error)
 	// StreamCaptures returns one capture per message: a batch of large capture
 	// bodies can exceed gRPC's 4MiB unary message cap
 	// (docs/prds/state-store-contract.md).
@@ -1196,10 +1156,6 @@ type StateStoreServiceServer interface {
 	// task-scoped grant cannot reach either (see TaskGrants).
 	RecordPlaybookDispatch(context.Context, *RecordPlaybookDispatchRequest) (*RecordPlaybookDispatchResponse, error)
 	DeletePlaybookDispatches(context.Context, *DeletePlaybookDispatchesRequest) (*DeletePlaybookDispatchesResponse, error)
-	// Deprecated: Do not use.
-	// ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
-	// ListCaptures above.
-	ListUndispatchedCaptures(context.Context, *ListUndispatchedCapturesRequest) (*ListUndispatchedCapturesResponse, error)
 	StreamUndispatchedCaptures(*StreamUndispatchedCapturesRequest, grpc.ServerStreamingServer[StreamUndispatchedCapturesResponse]) error
 	// BindingTaskCreator
 	EnqueueBindingTask(context.Context, *EnqueueBindingTaskRequest) (*EnqueueBindingTaskResponse, error)
@@ -1354,9 +1310,6 @@ func (UnimplementedStateStoreServiceServer) StreamTaskLogContent(*StreamTaskLogC
 func (UnimplementedStateStoreServiceServer) InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertCapture not implemented")
 }
-func (UnimplementedStateStoreServiceServer) ListCaptures(context.Context, *ListCapturesRequest) (*ListCapturesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListCaptures not implemented")
-}
 func (UnimplementedStateStoreServiceServer) StreamCaptures(*StreamCapturesRequest, grpc.ServerStreamingServer[StreamCapturesResponse]) error {
 	return status.Error(codes.Unimplemented, "method StreamCaptures not implemented")
 }
@@ -1434,9 +1387,6 @@ func (UnimplementedStateStoreServiceServer) RecordPlaybookDispatch(context.Conte
 }
 func (UnimplementedStateStoreServiceServer) DeletePlaybookDispatches(context.Context, *DeletePlaybookDispatchesRequest) (*DeletePlaybookDispatchesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeletePlaybookDispatches not implemented")
-}
-func (UnimplementedStateStoreServiceServer) ListUndispatchedCaptures(context.Context, *ListUndispatchedCapturesRequest) (*ListUndispatchedCapturesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListUndispatchedCaptures not implemented")
 }
 func (UnimplementedStateStoreServiceServer) StreamUndispatchedCaptures(*StreamUndispatchedCapturesRequest, grpc.ServerStreamingServer[StreamUndispatchedCapturesResponse]) error {
 	return status.Error(codes.Unimplemented, "method StreamUndispatchedCaptures not implemented")
@@ -2304,24 +2254,6 @@ func _StateStoreService_InsertCapture_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _StateStoreService_ListCaptures_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListCapturesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StateStoreServiceServer).ListCaptures(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StateStoreService_ListCaptures_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StateStoreServiceServer).ListCaptures(ctx, req.(*ListCapturesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _StateStoreService_StreamCaptures_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamCapturesRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2783,24 +2715,6 @@ func _StateStoreService_DeletePlaybookDispatches_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _StateStoreService_ListUndispatchedCaptures_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListUndispatchedCapturesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StateStoreServiceServer).ListUndispatchedCaptures(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StateStoreService_ListUndispatchedCaptures_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StateStoreServiceServer).ListUndispatchedCaptures(ctx, req.(*ListUndispatchedCapturesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _StateStoreService_StreamUndispatchedCaptures_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamUndispatchedCapturesRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -3022,10 +2936,6 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StateStoreService_InsertCapture_Handler,
 		},
 		{
-			MethodName: "ListCaptures",
-			Handler:    _StateStoreService_ListCaptures_Handler,
-		},
-		{
 			MethodName: "InsertMapping",
 			Handler:    _StateStoreService_InsertMapping_Handler,
 		},
@@ -3124,10 +3034,6 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePlaybookDispatches",
 			Handler:    _StateStoreService_DeletePlaybookDispatches_Handler,
-		},
-		{
-			MethodName: "ListUndispatchedCaptures",
-			Handler:    _StateStoreService_ListUndispatchedCaptures_Handler,
 		},
 		{
 			MethodName: "EnqueueBindingTask",
