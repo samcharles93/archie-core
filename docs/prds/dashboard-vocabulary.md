@@ -29,11 +29,6 @@ its id.
 
 ## Verification
 
-- `TestTaskMetaPayloadMatchesFixture` requires the handler to serve
-  `internal/webui/testdata/task_meta.json` byte for byte. Regenerate it with
-  `go test ./internal/webui -run TestTaskMetaPayloadMatchesFixture -update`.
-- `ui/test/task-meta-snapshot.test.ts` requires the snapshot to equal that
-  fixture.
 - `TestTaskMetaChangeStatusesAreDeliberate` fails when a `Change*` constant is
   added without a label.
 

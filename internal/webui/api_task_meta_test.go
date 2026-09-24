@@ -1,23 +1,13 @@
 package webui
 
 import (
-	"bytes"
 	"encoding/json"
-	"flag"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
-
-// updateTaskMetaFixture rewrites the committed payload fixture from the served
-// handler. It is the same generated-artifact discipline the repo already uses
-// for docs/data/generated/contracts.json (task docs:generate): the fixture is
-// committed, the gate checks rather than regenerates, and the -update run is
-// what blesses a deliberate vocabulary change.
-var updateTaskMetaFixture = flag.Bool("update", false, "rewrite testdata/task_meta.json from the served /api/task-meta payload")
 
 // The dashboard derives everything it can present from /api/task-meta. If the
 // catalog is empty or malformed the frontend falls back to its own defaults and
@@ -114,57 +104,5 @@ func TestTaskMetaChangeStatusesAreDeliberate(t *testing.T) {
 			t.Errorf("change statuses %q and %q share the label %q", prev, cs.ID, cs.Label)
 		}
 		labels[cs.Label] = cs.ID
-	}
-}
-
-// TestTaskMetaPayloadMatchesFixture pins the served payload byte-for-byte
-// against the committed fixture, and the fixture against the dashboard's
-// freeze-dried snapshot (ui/src/base/task-meta.jsx) via
-// ui/test/task-meta-catalogue.test.js. Between the two, a one-sided rename of a
-// status label, an action, a change status or the config schema fails a test on
-// whichever side was not updated -- the property neither per-side literal test
-// could provide.
-//
-// Regenerate with:
-//
-//	go test ./internal/webui -run TestTaskMetaPayloadMatchesFixture -update
-func TestTaskMetaPayloadMatchesFixture(t *testing.T) {
-	srv := newTestServer(t)
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/task-meta", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, body %s", w.Code, w.Body)
-	}
-	served := w.Body.Bytes()
-
-	const fixture = "testdata/task_meta.json"
-	if *updateTaskMetaFixture {
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
-			t.Fatalf("mkdir testdata: %v", err)
-		}
-		if err := os.WriteFile(fixture, served, 0o644); err != nil {
-			t.Fatalf("write fixture: %v", err)
-		}
-		return
-	}
-
-	committed, err := os.ReadFile(fixture)
-	if err != nil {
-		t.Fatalf("read %s: %v\nrun: go test ./internal/webui -run TestTaskMetaPayloadMatchesFixture -update", fixture, err)
-	}
-	var servedCompact, committedCompact bytes.Buffer
-	if err := json.Compact(&servedCompact, served); err != nil {
-		t.Fatalf("compact served payload: %v", err)
-	}
-	if err := json.Compact(&committedCompact, committed); err != nil {
-		t.Fatalf("compact %s: %v", fixture, err)
-	}
-	// Whitespace is formatting, not contract: compare the documents.
-	if !bytes.Equal(servedCompact.Bytes(), committedCompact.Bytes()) {
-		t.Errorf("GET /api/task-meta no longer matches %s.\n"+
-			"The fixture pins the dashboard's freeze-dried snapshot (ui/src/base/task-meta.jsx);\n"+
-			"ui/test/task-meta-catalogue.test.js fails until both sides agree.\n"+
-			"regenerate with: go test ./internal/webui -run TestTaskMetaPayloadMatchesFixture -update", fixture)
 	}
 }

@@ -1,8 +1,6 @@
 // The freeze-dried /api/task-meta catalog the dashboard renders before the
-// served one arrives, or when archied is unreachable. It has no imports so the
-// node test runner can compare it against the Go handler's committed fixture
-// (internal/webui/testdata/task_meta.json); task-meta.ts replaces it with the
-// live catalog.
+// served one arrives, or when archied is unreachable; task-meta.ts replaces it
+// with the live catalog.
 
 /** A lifecycle status as the server describes it. */
 export interface StatusMeta {

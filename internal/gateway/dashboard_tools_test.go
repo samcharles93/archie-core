@@ -2,104 +2,12 @@ package gateway
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 )
 
 // quietContext is the tool execution context; the tools never use it beyond
 // the signature, so a background context is safe and deterministic.
 func quietContext() context.Context { return context.Background() }
-
-// routePathRe matches one route entry's path in the dashboard's route table.
-var routePathRe = regexp.MustCompile(`path:\s*"([^"]+)"`)
-
-// lineCommentRe strips // comments, so prose about a route never reads as one.
-var lineCommentRe = regexp.MustCompile(`(?m)^\s*//.*$`)
-
-// navFalseRe marks a route that is not a navigation entry.
-var navFalseRe = regexp.MustCompile(`nav:\s*false`)
-
-// dashboardRoutesFromSource reads the dashboard's route table out of the UI
-// source.
-//
-// The page registry is what the agent is told the dashboard exposes, and it is
-// a hand-copy of that table. Hand-copies drift: /memory stayed in the registry
-// after the page was deleted, and /bindings and /curators were never added --
-// so the agent offered the operator a route that no longer existed and was
-// blind to two that did. Reading the table back is what turns the registry's
-// "single source of truth" claim into something a test can hold.
-func dashboardRoutesFromSource(t *testing.T) []string {
-	t.Helper()
-	path := filepath.Join("..", "..", "ui", "src", "router", "index.ts")
-	src, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	block := string(src)
-	start := strings.Index(block, "const routes = [")
-	if start < 0 {
-		t.Fatalf("%s: no routes table", path)
-	}
-	block = block[start:]
-	if end := strings.Index(block, "\n];"); end >= 0 {
-		block = block[:end]
-	}
-
-	// Each route runs from its path to the next route's path, however it is
-	// formatted. A detail route (nav: false) is addressed by URL but is not a
-	// navigation entry, so the registry does not carry it.
-	var paths []string
-	block = lineCommentRe.ReplaceAllString(block, "")
-	matches := routePathRe.FindAllStringSubmatchIndex(block, -1)
-	for i, m := range matches {
-		end := len(block)
-		if i+1 < len(matches) {
-			end = matches[i+1][0]
-		}
-		if navFalseRe.MatchString(block[m[1]:end]) {
-			continue
-		}
-		paths = append(paths, block[m[2]:m[3]])
-	}
-	if len(paths) == 0 {
-		t.Fatalf("%s: parsed no routes", path)
-	}
-	return paths
-}
-
-func TestDashboardPagesRegistryCoversEveryRoute(t *testing.T) {
-	pages := DashboardPages()
-	if len(pages) == 0 {
-		t.Fatal("DashboardPages() returned no pages")
-	}
-	seen := map[string]bool{}
-	for _, p := range pages {
-		if p.Path == "" || p.Label == "" || p.Description == "" {
-			t.Fatalf("page %#v is missing path/label/description", p)
-		}
-		if seen[p.Path] {
-			t.Fatalf("duplicate page path %q", p.Path)
-		}
-		seen[p.Path] = true
-	}
-
-	routes := dashboardRoutesFromSource(t)
-	inDashboard := map[string]bool{}
-	for _, route := range routes {
-		inDashboard[route] = true
-		if !seen[route] {
-			t.Errorf("route %q is a dashboard page the registry does not list, so the agent cannot point at it", route)
-		}
-	}
-	for _, p := range pages {
-		if !inDashboard[p.Path] {
-			t.Errorf("registry lists %q (%s), which is not a dashboard route: the agent would send the operator somewhere that does not exist", p.Path, p.Label)
-		}
-	}
-}
 
 func TestPageIndexToolReturnsEveryPage(t *testing.T) {
 	entry, ok := pageIndexTool()

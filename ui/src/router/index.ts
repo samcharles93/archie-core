@@ -17,8 +17,7 @@ import TaskDetailPage from "@/tasks/TaskDetailPage.vue";
 import TasksPage from "@/tasks/TasksPage.vue";
 import WorkflowsPage from "@/workflows/WorkflowsPage.vue";
 
-// internal/gateway/dashboard_tools.go mirrors this table; its test parses this
-// file, so mark any entry the registry should skip with `nav: false`.
+// internal/gateway/dashboard_tools.go mirrors this table.
 //
 // meta:
 //   label       the navigation label, short because its group carries the context
