@@ -157,6 +157,11 @@ export const api = {
   updateInstall: <T = unknown>(snapshot: unknown) =>
     request<T>("/api/chat/update/install", { method: "POST", body: { snapshot }, timeoutMs: 15 * 60_000 }),
   captures: <T = unknown>(limit?: number) => request<T>("/api/captures" + qs({ limit })),
+  eventTypes: <T = unknown>() => request<T>("/api/event-types"),
+  eventTypeCreate: <T = unknown>(eventType: Payload) => request<T>("/api/event-types", { method: "POST", body: eventType }),
+  eventTypeUpdate: <T = unknown>(id: string, eventType: Payload) =>
+    request<T>(`/api/event-types/${encodeURIComponent(id)}`, { method: "PUT", body: eventType }),
+  eventTypeDelete: (id: string) => request<void>(`/api/event-types/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
   mappings: <T = unknown>() => request<T>("/api/mappings"),
   mappingCreate: <T = unknown>(mapping: Payload) => request<T>("/api/mappings", { method: "POST", body: mapping }),
   mappingUpdate: <T = unknown>(id: string, mapping: Payload) =>

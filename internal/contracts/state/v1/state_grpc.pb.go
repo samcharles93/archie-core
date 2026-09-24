@@ -73,6 +73,10 @@ const (
 	StateStoreService_ListMappings_FullMethodName               = "/state.v1.StateStoreService/ListMappings"
 	StateStoreService_UpdateMapping_FullMethodName              = "/state.v1.StateStoreService/UpdateMapping"
 	StateStoreService_DeleteMapping_FullMethodName              = "/state.v1.StateStoreService/DeleteMapping"
+	StateStoreService_InsertEventType_FullMethodName            = "/state.v1.StateStoreService/InsertEventType"
+	StateStoreService_UpdateEventType_FullMethodName            = "/state.v1.StateStoreService/UpdateEventType"
+	StateStoreService_DeleteEventType_FullMethodName            = "/state.v1.StateStoreService/DeleteEventType"
+	StateStoreService_ListEventTypes_FullMethodName             = "/state.v1.StateStoreService/ListEventTypes"
 	StateStoreService_InsertBinding_FullMethodName              = "/state.v1.StateStoreService/InsertBinding"
 	StateStoreService_GetBinding_FullMethodName                 = "/state.v1.StateStoreService/GetBinding"
 	StateStoreService_ListBindings_FullMethodName               = "/state.v1.StateStoreService/ListBindings"
@@ -197,6 +201,12 @@ type StateStoreServiceClient interface {
 	ListMappings(ctx context.Context, in *ListMappingsRequest, opts ...grpc.CallOption) (*ListMappingsResponse, error)
 	UpdateMapping(ctx context.Context, in *UpdateMappingRequest, opts ...grpc.CallOption) (*UpdateMappingResponse, error)
 	DeleteMapping(ctx context.Context, in *DeleteMappingRequest, opts ...grpc.CallOption) (*DeleteMappingResponse, error)
+	// EventType (docs/prds/event-automation.md, "Event types"). Insert and
+	// Update refuse an overlapping or malformed type.
+	InsertEventType(ctx context.Context, in *InsertEventTypeRequest, opts ...grpc.CallOption) (*InsertEventTypeResponse, error)
+	UpdateEventType(ctx context.Context, in *UpdateEventTypeRequest, opts ...grpc.CallOption) (*UpdateEventTypeResponse, error)
+	DeleteEventType(ctx context.Context, in *DeleteEventTypeRequest, opts ...grpc.CallOption) (*DeleteEventTypeResponse, error)
+	ListEventTypes(ctx context.Context, in *ListEventTypesRequest, opts ...grpc.CallOption) (*ListEventTypesResponse, error)
 	// Binding
 	InsertBinding(ctx context.Context, in *InsertBindingRequest, opts ...grpc.CallOption) (*InsertBindingResponse, error)
 	GetBinding(ctx context.Context, in *GetBindingRequest, opts ...grpc.CallOption) (*GetBindingResponse, error)
@@ -789,6 +799,46 @@ func (c *stateStoreServiceClient) DeleteMapping(ctx context.Context, in *DeleteM
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) InsertEventType(ctx context.Context, in *InsertEventTypeRequest, opts ...grpc.CallOption) (*InsertEventTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InsertEventTypeResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_InsertEventType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) UpdateEventType(ctx context.Context, in *UpdateEventTypeRequest, opts ...grpc.CallOption) (*UpdateEventTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateEventTypeResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_UpdateEventType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) DeleteEventType(ctx context.Context, in *DeleteEventTypeRequest, opts ...grpc.CallOption) (*DeleteEventTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEventTypeResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_DeleteEventType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListEventTypes(ctx context.Context, in *ListEventTypesRequest, opts ...grpc.CallOption) (*ListEventTypesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEventTypesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListEventTypes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) InsertBinding(ctx context.Context, in *InsertBindingRequest, opts ...grpc.CallOption) (*InsertBindingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InsertBindingResponse)
@@ -1038,6 +1088,12 @@ type StateStoreServiceServer interface {
 	ListMappings(context.Context, *ListMappingsRequest) (*ListMappingsResponse, error)
 	UpdateMapping(context.Context, *UpdateMappingRequest) (*UpdateMappingResponse, error)
 	DeleteMapping(context.Context, *DeleteMappingRequest) (*DeleteMappingResponse, error)
+	// EventType (docs/prds/event-automation.md, "Event types"). Insert and
+	// Update refuse an overlapping or malformed type.
+	InsertEventType(context.Context, *InsertEventTypeRequest) (*InsertEventTypeResponse, error)
+	UpdateEventType(context.Context, *UpdateEventTypeRequest) (*UpdateEventTypeResponse, error)
+	DeleteEventType(context.Context, *DeleteEventTypeRequest) (*DeleteEventTypeResponse, error)
+	ListEventTypes(context.Context, *ListEventTypesRequest) (*ListEventTypesResponse, error)
 	// Binding
 	InsertBinding(context.Context, *InsertBindingRequest) (*InsertBindingResponse, error)
 	GetBinding(context.Context, *GetBindingRequest) (*GetBindingResponse, error)
@@ -1232,6 +1288,18 @@ func (UnimplementedStateStoreServiceServer) UpdateMapping(context.Context, *Upda
 }
 func (UnimplementedStateStoreServiceServer) DeleteMapping(context.Context, *DeleteMappingRequest) (*DeleteMappingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteMapping not implemented")
+}
+func (UnimplementedStateStoreServiceServer) InsertEventType(context.Context, *InsertEventTypeRequest) (*InsertEventTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InsertEventType not implemented")
+}
+func (UnimplementedStateStoreServiceServer) UpdateEventType(context.Context, *UpdateEventTypeRequest) (*UpdateEventTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateEventType not implemented")
+}
+func (UnimplementedStateStoreServiceServer) DeleteEventType(context.Context, *DeleteEventTypeRequest) (*DeleteEventTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteEventType not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListEventTypes(context.Context, *ListEventTypesRequest) (*ListEventTypesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEventTypes not implemented")
 }
 func (UnimplementedStateStoreServiceServer) InsertBinding(context.Context, *InsertBindingRequest) (*InsertBindingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertBinding not implemented")
@@ -2251,6 +2319,78 @@ func _StateStoreService_DeleteMapping_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_InsertEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InsertEventTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).InsertEventType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_InsertEventType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).InsertEventType(ctx, req.(*InsertEventTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_UpdateEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateEventTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).UpdateEventType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_UpdateEventType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).UpdateEventType(ctx, req.(*UpdateEventTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_DeleteEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEventTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).DeleteEventType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_DeleteEventType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).DeleteEventType(ctx, req.(*DeleteEventTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListEventTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEventTypesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListEventTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListEventTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListEventTypes(ctx, req.(*ListEventTypesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_InsertBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertBindingRequest)
 	if err := dec(in); err != nil {
@@ -2692,6 +2832,22 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteMapping",
 			Handler:    _StateStoreService_DeleteMapping_Handler,
+		},
+		{
+			MethodName: "InsertEventType",
+			Handler:    _StateStoreService_InsertEventType_Handler,
+		},
+		{
+			MethodName: "UpdateEventType",
+			Handler:    _StateStoreService_UpdateEventType_Handler,
+		},
+		{
+			MethodName: "DeleteEventType",
+			Handler:    _StateStoreService_DeleteEventType_Handler,
+		},
+		{
+			MethodName: "ListEventTypes",
+			Handler:    _StateStoreService_ListEventTypes_Handler,
 		},
 		{
 			MethodName: "InsertBinding",

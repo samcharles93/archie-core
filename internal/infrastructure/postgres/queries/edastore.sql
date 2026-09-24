@@ -1,19 +1,21 @@
 -- EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
 
 -- name: InsertCapture :exec
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1;
 
 -- name: ListUndispatchedCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type
 FROM captures
 WHERE source = ANY(@sources::text[])
+  -- An unidentified capture is never dispatched.
+  AND event_type <> ''
   AND id NOT IN (SELECT capture FROM binding_dispatches)
 ORDER BY received_at DESC
 LIMIT @entry_limit;
@@ -97,3 +99,30 @@ VALUES ($1, $2, $3, $4, $5, $6, $7);
 -- name: TaskToolCalls :many
 SELECT id, task_id, attempt, tool, result, error, called_at
 FROM tool_calls WHERE task_id = $1 ORDER BY called_at ASC;
+
+-- name: InsertEventType :exec
+INSERT INTO event_types (id, source, name, rule, schema)
+VALUES ($1, $2, $3, $4, $5);
+
+-- name: GetEventType :one
+SELECT id, source, name, rule, schema, created_at, updated_at
+FROM event_types WHERE id = $1;
+
+-- name: ListEventTypes :many
+SELECT id, source, name, rule, schema, created_at, updated_at
+FROM event_types ORDER BY source, name;
+
+-- name: EventTypesForSource :many
+SELECT id, source, name, rule, schema, created_at, updated_at
+FROM event_types WHERE source = $1 ORDER BY name;
+
+-- name: UpdateEventType :execrows
+UPDATE event_types SET name = $2, rule = $3, updated_at = now() WHERE id = $1;
+
+-- name: DeleteEventType :execrows
+DELETE FROM event_types WHERE id = $1;
+
+-- name: LockEventTypeSource :exec
+-- Serialises saves per source so two concurrent saves cannot each pass the
+-- overlap check against a set that excludes the other.
+SELECT pg_advisory_xact_lock(hashtext('event_types:' || sqlc.arg(source)::text));

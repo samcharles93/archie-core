@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -149,7 +150,7 @@ func capturedEventProto(c storecontract.CapturedEvent) *pb.CapturedEvent {
 	return &pb.CapturedEvent{
 		Id: c.ID, ReceivedAt: timestamp(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
-		Body: c.Body, Authenticated: c.Authenticated,
+		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
 	}
 }
 
@@ -160,7 +161,7 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 	return storecontract.CapturedEvent{
 		ID: c.Id, ReceivedAt: timeValue(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
-		Body: c.Body, Authenticated: c.Authenticated,
+		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
 	}
 }
 
@@ -267,6 +268,9 @@ const (
 	msgStaleTransition   = "stale transition"
 	msgBindingNotFound   = "binding not found"
 	msgMappingNotFound   = "mapping not found"
+	msgEventTypeNotFound = "event type not found"
+	msgEventTypeOverlap  = "event type overlap"
+	msgEventTypeInvalid  = "event type invalid"
 	msgBindingOverlap    = "binding overlap"
 	msgBindingTransition = "binding transition rejected"
 	msgAlreadyDispatched = "already dispatched"
@@ -309,6 +313,12 @@ func mapError(err error) error {
 		return status.Error(codes.NotFound, msgBindingNotFound)
 	case errors.Is(err, storecontract.ErrMappingNotFound):
 		return status.Error(codes.NotFound, msgMappingNotFound)
+	case errors.Is(err, storecontract.ErrEventTypeNotFound):
+		return status.Error(codes.NotFound, msgEventTypeNotFound)
+	case errors.Is(err, eventtype.ErrOverlap):
+		return status.Error(codes.FailedPrecondition, msgEventTypeOverlap)
+	case errors.Is(err, eventtype.ErrInvalid):
+		return status.Error(codes.InvalidArgument, msgEventTypeInvalid)
 	case errors.Is(err, storecontract.ErrBindingOverlap):
 		return status.Error(codes.FailedPrecondition, msgBindingOverlap)
 	case errors.Is(err, storecontract.ErrBindingTransition):
@@ -364,33 +374,27 @@ func unmapError(err error) error {
 // are part of the wire contract (§4). A code whose message is not one this
 // package defines returns nil, so the caller falls back to the wrapped form.
 func sentinelForStatus(st *status.Status) error {
-	switch st.Code() {
-	case codes.FailedPrecondition:
-		switch st.Message() {
-		case msgStaleTransition:
-			return storecontract.ErrStaleTransition
-		case msgBindingOverlap:
-			return storecontract.ErrBindingOverlap
-		case msgBindingTransition:
-			return storecontract.ErrBindingTransition
-		}
-	case codes.NotFound:
-		switch st.Message() {
-		case msgBindingNotFound:
-			return storecontract.ErrBindingNotFound
-		case msgMappingNotFound:
-			return storecontract.ErrMappingNotFound
-		}
-	case codes.AlreadyExists:
-		if st.Message() == msgAlreadyDispatched {
-			return storecontract.ErrAlreadyDispatched
-		}
-	case codes.Unavailable:
-		if st.Message() == msgTaskLogsUnavailable {
-			return logging.ErrTaskLogsUnavailable
-		}
-	}
-	return nil
+	return wireSentinels[wireStatus{st.Code(), st.Message()}]
+}
+
+type wireStatus struct {
+	code    codes.Code
+	message string
+}
+
+// wireSentinels is the (code, canonical message) to sentinel table
+// sentinelForStatus reads.
+var wireSentinels = map[wireStatus]error{
+	{codes.FailedPrecondition, msgStaleTransition}:   storecontract.ErrStaleTransition,
+	{codes.FailedPrecondition, msgBindingOverlap}:    storecontract.ErrBindingOverlap,
+	{codes.FailedPrecondition, msgBindingTransition}: storecontract.ErrBindingTransition,
+	{codes.FailedPrecondition, msgEventTypeOverlap}:  eventtype.ErrOverlap,
+	{codes.InvalidArgument, msgEventTypeInvalid}:     eventtype.ErrInvalid,
+	{codes.NotFound, msgBindingNotFound}:             storecontract.ErrBindingNotFound,
+	{codes.NotFound, msgMappingNotFound}:             storecontract.ErrMappingNotFound,
+	{codes.NotFound, msgEventTypeNotFound}:           storecontract.ErrEventTypeNotFound,
+	{codes.AlreadyExists, msgAlreadyDispatched}:      storecontract.ErrAlreadyDispatched,
+	{codes.Unavailable, msgTaskLogsUnavailable}:      logging.ErrTaskLogsUnavailable,
 }
 
 // configSnapshotProto and configSnapshotValue carry the dashboard's

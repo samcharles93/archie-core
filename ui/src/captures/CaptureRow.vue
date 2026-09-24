@@ -5,6 +5,8 @@ import { computed } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { ago } from "@/lib/format";
+import { eventTypes } from "./event-type-state";
+import { captureIdentity } from "./event-types";
 import { selected, type Capture } from "./state";
 
 /**
@@ -14,6 +16,8 @@ import { selected, type Capture } from "./state";
  * select it.
  */
 const props = defineProps<{ capture: Capture }>();
+
+const identity = computed(() => captureIdentity(props.capture, eventTypes.value));
 
 const isSelected = computed(() => selected.value?.id === props.capture.id);
 
@@ -40,10 +44,12 @@ function open(): void {
   >
     <TableCell class="font-mono">{{ props.capture.source || "(unknown)" }}</TableCell>
     <TableCell :title="props.capture.received_at || ''">{{ ago(props.capture.received_at) }}</TableCell>
-    <!-- A stored capture carries no claim from a binding, so this reads Unbound
-         for every row: the column is where a claim would appear, not a state a
-         reader can act on today. -->
-    <TableCell><Badge variant="idle">Unbound</Badge></TableCell>
+    <!-- An unidentified capture is never dispatched. -->
+    <TableCell>
+      <Badge :variant="identity.identified ? 'ok' : 'warn'" class="max-w-40">
+        <span class="truncate">{{ identity.label }}</span>
+      </Badge>
+    </TableCell>
     <TableCell class="font-mono">{{ props.capture.content_type || "—" }}</TableCell>
     <TableCell class="text-right">
       <ChevronRight class="size-4 text-fg-subtle" />

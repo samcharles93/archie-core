@@ -120,6 +120,13 @@ service StateStoreService {
   rpc UpdateMapping(UpdateMappingRequest) returns (UpdateMappingResponse);
   rpc DeleteMapping(DeleteMappingRequest) returns (DeleteMappingResponse);
 
+  // EventType (docs/prds/event-automation.md, "Event types"). Insert and
+  // Update refuse an overlapping or malformed type.
+  rpc InsertEventType(InsertEventTypeRequest) returns (InsertEventTypeResponse);
+  rpc UpdateEventType(UpdateEventTypeRequest) returns (UpdateEventTypeResponse);
+  rpc DeleteEventType(DeleteEventTypeRequest) returns (DeleteEventTypeResponse);
+  rpc ListEventTypes(ListEventTypesRequest) returns (ListEventTypesResponse);
+
   // Binding
   rpc InsertBinding(InsertBindingRequest) returns (InsertBindingResponse);
   rpc GetBinding(GetBindingRequest) returns (GetBindingResponse);
@@ -308,6 +315,35 @@ message CapturedEvent {
   string headers = 6;
   string body = 7;
   bool authenticated = 8;
+  // event_type is the ID of the event type the capture was identified as on
+  // arrival; empty is unidentified.
+  string event_type = 9;
+}
+
+// EventTypeHeaderCondition mirrors internal/domain/eventtype.HeaderCondition.
+message EventTypeHeaderCondition {
+  string name = 1;
+  string value = 2;
+}
+
+// EventTypePayloadCondition mirrors internal/domain/eventtype.PayloadCondition.
+message EventTypePayloadCondition {
+  string path = 1;
+  string op = 2;
+  string value = 3;
+}
+
+// EventType mirrors internal/domain/eventtype.EventType. header_conditions and
+// payload_conditions are its rule; schema maps each payload path to its type.
+message EventType {
+  string id = 1;
+  string source = 2;
+  string name = 3;
+  repeated EventTypeHeaderCondition header_conditions = 4;
+  repeated EventTypePayloadCondition payload_conditions = 5;
+  map<string, string> schema = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
 }
 
 // MappingField mirrors internal/domain/mapping.Field.
@@ -687,6 +723,18 @@ message UpdateMappingResponse {}
 
 message DeleteMappingRequest { string id = 1; }
 message DeleteMappingResponse {}
+
+message InsertEventTypeRequest { EventType event_type = 1; }
+message InsertEventTypeResponse { string id = 1; }
+
+message UpdateEventTypeRequest { EventType event_type = 1; }
+message UpdateEventTypeResponse {}
+
+message DeleteEventTypeRequest { string id = 1; }
+message DeleteEventTypeResponse {}
+
+message ListEventTypesRequest {}
+message ListEventTypesResponse { repeated EventType event_types = 1; }
 
 message InsertBindingRequest { Binding binding = 1; }
 message InsertBindingResponse { string id = 1; }

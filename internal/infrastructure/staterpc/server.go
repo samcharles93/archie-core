@@ -76,6 +76,7 @@ type Deps struct {
 	ChannelStatus      storecontract.ChannelStatusStore
 	ApplyStatus        storecontract.ApplyStatusStore
 	Mappings           storecontract.MappingStore
+	EventTypes         storecontract.EventTypeStore
 	Bindings           storecontract.BindingStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator

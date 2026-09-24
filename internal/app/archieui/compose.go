@@ -103,6 +103,9 @@ func compose(d deps) *webui.Server {
 	if bindings, ok := d.Store.(storecontract.BindingStore); ok {
 		srv.Bindings = bindings
 	}
+	if eventTypes, ok := d.Store.(storecontract.EventTypeStore); ok {
+		srv.EventTypes = eventTypes
+	}
 	if d.Chat != nil {
 		srv.Chat = &webui.ChatService{Contract: d.Chat}
 	}
