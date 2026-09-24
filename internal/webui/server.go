@@ -146,6 +146,10 @@ type Server struct {
 	// the dashboard failing to start.
 	Mappings storecontract.MappingStore
 
+	// EventTypes persists event types (docs/prds/event-automation.md). Optional:
+	// nil reports the inspector's event types as disabled.
+	EventTypes storecontract.EventTypeStore
+
 	// Bindings persists playbook bindings: matcher + mapping + workflow
 	// triples that turn a captured webhook into an archie task
 	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
@@ -254,6 +258,10 @@ func (s *Server) registerTaskRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/event-types", s.handleEventTypes)
+	mux.HandleFunc("POST /api/event-types", s.handleEventTypeCreate)
+	mux.HandleFunc("PUT /api/event-types/{id}", s.handleEventTypeUpdate)
+	mux.HandleFunc("DELETE /api/event-types/{id}", s.handleEventTypeDelete)
 	mux.HandleFunc("GET /api/mappings", s.handleMappingsList)
 	mux.HandleFunc("POST /api/mappings", s.handleMappingCreate)
 	mux.HandleFunc("GET /api/mappings/{id}", s.handleMappingGet)

@@ -53,7 +53,7 @@ const webhookHint = "Point a webhook at /webhooks/capture/<source> and it will s
       <TableRow>
         <TableHead>Source</TableHead>
         <TableHead>Received</TableHead>
-        <TableHead>Binding</TableHead>
+        <TableHead>Event type</TableHead>
         <TableHead>Content type</TableHead>
         <TableHead class="w-10"><span class="sr-only">Payload</span></TableHead>
       </TableRow>

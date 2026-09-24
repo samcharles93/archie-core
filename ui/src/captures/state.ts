@@ -2,6 +2,7 @@ import { ref } from "vue";
 
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
+import { loadEventTypes } from "./event-type-state";
 
 /**
  * The event inspector's shared state.
@@ -25,6 +26,8 @@ export interface Capture {
   headers?: string;
   body?: string;
   authenticated?: boolean;
+  /** The event type it was identified as on arrival; empty is unidentified. */
+  event_type?: string;
 }
 
 interface CapturesResponse {
@@ -92,5 +95,8 @@ export function selectNewest(): void {
  * The initial read belongs to the page, which has to await it before it can
  * restore a selection from the address bar. */
 export function useCaptures(): void {
-  useLiveResource("captures", () => void load());
+  useLiveResource("captures", () => {
+    void load();
+    void loadEventTypes();
+  });
 }
