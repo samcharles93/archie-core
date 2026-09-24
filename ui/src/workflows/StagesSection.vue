@@ -15,7 +15,7 @@ const props = defineProps<{ stages: StageStats[] }>();
 <template>
   <div
     v-if="props.stages.length"
-    class="mt-4 grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
+    class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
   >
     <SlowestStagesCard :stages="props.stages" />
     <StageFailuresCard :stages="props.stages" />

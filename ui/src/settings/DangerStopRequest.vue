@@ -24,7 +24,7 @@ const requested = computed(() => spec.value.trim().length > 0);
       v-model="spec"
       placeholder="Process name or id"
       autocomplete="off"
-      class="w-full min-[701px]:max-w-80"
+      class="w-full md:max-w-80"
     />
     <Button
       variant="outline"

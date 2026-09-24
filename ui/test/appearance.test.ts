@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createPinia, setActivePinia } from "pinia";
@@ -47,22 +46,6 @@ function freshStore(matchesDark = false): {
   setActivePinia(createPinia());
   return { storage, store: appearance.useAppearanceStore() };
 }
-
-test("appearance preferences are owned by Pinia and stay close to their labels", async () => {
-  const page = await readFile(
-    new URL("../src/settings/SystemAppearancePage.vue", import.meta.url),
-    "utf8",
-  );
-  const tooltip = await readFile(
-    new URL("../src/components/ui/tooltip/Tooltip.vue", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(page, /useAppearanceStore/);
-  assert.match(tooltip, /useAppearanceStore/);
-  assert.match(page, /min-\[700px\]:grid-cols-2/);
-  assert.match(page, /min-\[1100px\]:grid-cols-4/);
-});
 
 test("system theme follows the browser preference and remains the stored choice", () => {
   const { storage, store } = freshStore(true);

@@ -55,7 +55,7 @@ const run = provideTaskRun(taskId);
     <TaskNotes :id="rawId" />
 
     <div
-      class="grid items-start gap-4 min-[900px]:grid-cols-[20rem_minmax(0,1fr)]"
+      class="grid items-start gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]"
     >
       <!--
         The master pane: the attempt's stage rail, always on screen. It owns

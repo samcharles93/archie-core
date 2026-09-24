@@ -59,7 +59,7 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 
 <template>
   <div
-    class="fixed right-6 bottom-6 z-40 max-[720px]:right-4 max-[720px]:bottom-4"
+    class="fixed right-6 bottom-6 z-40 max-md:right-4 max-md:bottom-4"
   >
     <ChatPanel :open="open" />
     <ChatFab ref="fab" :open="open" @toggle="toggle" />

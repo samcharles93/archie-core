@@ -275,7 +275,7 @@
   /* The frame is a desktop affordance: below this width the workspace goes
        edge to edge, because a rounded card inset on a phone wastes the only
        axis that matters. */
-  @media (max-width: 900px) {
+  @media (width < 64rem) {
     body {
       padding: 0;
     }

@@ -35,7 +35,7 @@ const setupIncomplete = computed(
       class="grid items-start gap-4"
       :class="
         setupIncomplete
-          ? 'grid-cols-1 min-[1080px]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]'
+          ? 'grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]'
           : 'grid-cols-1'
       "
     >
@@ -54,7 +54,7 @@ const setupIncomplete = computed(
 
   <DashboardSection v-if="summary" title="Right now">
     <div
-      class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]"
+      class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]"
     >
       <TokenOutlookCard />
       <LiveActivityCard />

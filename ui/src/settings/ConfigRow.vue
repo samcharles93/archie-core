@@ -35,7 +35,7 @@ const lockedReason = computed(() => props.field?.locked_reason ?? "");
 
 <template>
   <div
-    class="grid grid-cols-1 items-center gap-x-4 gap-y-1 border-t border-border py-2 first:border-t-0 hover:bg-muted/40 min-[701px]:grid-cols-[minmax(8rem,16rem)_minmax(0,1fr)_auto] min-[701px]:supports-[grid-template-columns:subgrid]:col-span-full min-[701px]:supports-[grid-template-columns:subgrid]:grid-cols-subgrid"
+    class="grid grid-cols-1 items-center gap-x-4 gap-y-1 border-t border-border py-2 first:border-t-0 hover:bg-muted/40 md:grid-cols-[minmax(8rem,16rem)_minmax(0,1fr)_auto] md:supports-[grid-template-columns:subgrid]:col-span-full md:supports-[grid-template-columns:subgrid]:grid-cols-subgrid"
   >
     <!-- The field's own description is the row's tooltip: the line that
          explains a setting is the one place that explanation fits without
@@ -70,7 +70,7 @@ const lockedReason = computed(() => props.field?.locked_reason ?? "");
       <span
         :class="
           cn(
-            'min-w-0 break-words font-mono text-sm min-[701px]:truncate',
+            'min-w-0 break-words font-mono text-sm md:truncate',
             text === '—' ? 'text-fg-subtle' : 'text-foreground',
             lockedReason && 'text-fg-muted',
           )
@@ -82,7 +82,7 @@ const lockedReason = computed(() => props.field?.locked_reason ?? "");
 
     <span
       v-if="lockedReason"
-      class="col-span-full text-xs text-fg-subtle min-[701px]:col-span-2 min-[701px]:col-start-2"
+      class="col-span-full text-xs text-fg-subtle md:col-span-2 md:col-start-2"
       >{{ lockedReason }}</span
     >
   </div>

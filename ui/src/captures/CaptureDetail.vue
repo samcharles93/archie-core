@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
+import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
 import { computed, ref, watch } from "vue";
 
 import {
@@ -40,7 +40,7 @@ const pane = ref<HTMLElement | null>(null);
 
 // The pane is in its stacked layout exactly when the grid is: same breakpoint
 // as CapturesPage, matched there in CSS and here in script.
-const stacked = useMediaQuery("(max-width: 1099px)");
+const stacked = useBreakpoints(breakpointsTailwind).smaller("lg");
 
 const cap = computed(() =>
   stacked.value || !props.maxHeight ? undefined : `${props.maxHeight}px`,
@@ -85,7 +85,7 @@ watch(selected, () => {
            become a ten-thousand-pixel page. Split, the page's cap is the bound
            and this one is lifted. -->
       <CardContent
-        class="min-h-0 max-h-[62vh] overflow-y-auto min-[1100px]:max-h-none"
+        class="min-h-0 max-h-[62vh] overflow-y-auto lg:max-h-none"
       >
         <div class="flex flex-col gap-5">
           <CapturePayload label="Payload" :raw="selected.body" />

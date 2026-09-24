@@ -46,13 +46,13 @@ function selectStatus(value: unknown) {
       :model-value="props.search"
       aria-label="Search tasks by title or repository"
       placeholder="Search by title or repo…"
-      class="w-55 max-[480px]:w-full"
+      class="w-55 max-sm:w-full"
       @update:model-value="emit('update:search', String($event))"
     />
     <Select :model-value="selected" @update:model-value="selectStatus">
       <SelectTrigger
         aria-label="Filter by status"
-        class="w-45 max-[480px]:w-full"
+        class="w-45 max-sm:w-full"
       >
         <SelectValue />
       </SelectTrigger>

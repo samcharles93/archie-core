@@ -42,7 +42,7 @@ onMounted(() => Promise.all([load(), controlPlane.load()]));
     <PageHeader title="Channels" />
 
     <div
-      class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
+      class="grid grid-cols-1 gap-4 lg:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
     >
       <Empty v-if="error">
         <EmptyHeader>

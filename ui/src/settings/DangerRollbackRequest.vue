@@ -35,7 +35,7 @@ const label = (cp: DangerCheckpoint): string =>
   <Field orientation="horizontal">
     <FieldLabel class="sr-only" for="danger-checkpoint">Checkpoint</FieldLabel>
     <Select v-model="checkpoint">
-      <SelectTrigger id="danger-checkpoint" class="w-full min-[701px]:max-w-80">
+      <SelectTrigger id="danger-checkpoint" class="w-full md:max-w-80">
         <SelectValue placeholder="Select checkpoint" />
       </SelectTrigger>
       <SelectContent>

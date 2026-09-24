@@ -41,7 +41,7 @@ const composer = ref<InstanceType<typeof ChatComposer> | null>(null);
 const panelShape = computed(() =>
   props.open
     ? "pointer-events-auto rounded-lg opacity-100 [transform:none] [transition:opacity_160ms_cubic-bezier(0.4,0,0.2,1),transform_260ms_cubic-bezier(0.22,1,0.36,1),border-radius_260ms_cubic-bezier(0.22,1,0.36,1)]"
-    : "pointer-events-none rounded-full opacity-0 [transform:translateX(calc(56px_+_0.75rem))_scale(0.16)] max-[720px]:[transform:translateY(calc(56px_+_0.75rem))_scale(0.16)] [transition:opacity_140ms_cubic-bezier(0.4,0,0.2,1),transform_200ms_cubic-bezier(0.4,0,1,1),border-radius_200ms_cubic-bezier(0.4,0,1,1)]",
+    : "pointer-events-none rounded-full opacity-0 [transform:translateX(calc(56px_+_0.75rem))_scale(0.16)] max-md:[transform:translateY(calc(56px_+_0.75rem))_scale(0.16)] [transition:opacity_140ms_cubic-bezier(0.4,0,0.2,1),transform_200ms_cubic-bezier(0.4,0,1,1),border-radius_200ms_cubic-bezier(0.4,0,1,1)]",
 );
 
 // The contents follow the shape rather than stretching with it: they fade in
@@ -64,7 +64,7 @@ function usePrompt(text: string): void {
     :id="CHAT_PANEL_ID"
     aria-label="Chat with Archie"
     :aria-hidden="open ? undefined : 'true'"
-    class="pointer-events-none absolute bottom-0 right-[calc(56px_+_0.75rem)] h-[min(640px,calc(100vh_-_3rem))] w-[min(440px,calc(100vw_-_56px_-_0.75rem_-_3rem))] max-[720px]:fixed max-[720px]:bottom-[calc(1rem_+_56px_+_0.75rem)] max-[720px]:left-4 max-[720px]:right-4 max-[720px]:h-[min(72vh,calc(100vh_-_2rem_-_56px_-_0.75rem))] max-[720px]:w-auto"
+    class="pointer-events-none absolute bottom-0 right-[calc(56px_+_0.75rem)] h-[min(640px,calc(100vh_-_3rem))] w-[min(440px,calc(100vw_-_56px_-_0.75rem_-_3rem))] max-md:fixed max-md:bottom-[calc(1rem_+_56px_+_0.75rem)] max-md:left-4 max-md:right-4 max-md:h-[min(72vh,calc(100vh_-_2rem_-_56px_-_0.75rem))] max-md:w-auto"
   >
     <div
       :class="

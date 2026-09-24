@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
+import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -37,7 +37,7 @@ const paneCap = ref<number | null>(null);
 
 // The same breakpoint the grid states in its classes: one layout decision,
 // expressed twice because CSS cannot hand it to script.
-const stacked = useMediaQuery("(max-width: 1099px)");
+const stacked = useBreakpoints(breakpointsTailwind).smaller("lg");
 
 // Below the frame: the room left under the pane's own top edge. A margin
 // rather than a measured padding on purpose -- being a few pixels out costs a
@@ -97,7 +97,7 @@ watch(selected, (capture) => {
     <CaptureStatus />
   </div>
   <div
-    class="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+    class="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
   >
     <div ref="listColumn" class="min-w-0">
       <CapturesCard />

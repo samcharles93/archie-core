@@ -42,7 +42,7 @@ const pct = computed(() => {
           the statuses themselves.
         -->
         <div
-          class="grid grid-cols-1 gap-6 min-[720px]:grid-cols-[auto_minmax(0,1fr)]"
+          class="grid grid-cols-1 gap-6 md:grid-cols-[auto_minmax(0,1fr)]"
         >
           <div class="flex flex-col justify-center">
             <span class="text-3xl font-semibold">{{ pct }}%</span>

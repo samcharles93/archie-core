@@ -51,14 +51,14 @@ const nodeClass = computed(() =>
 
 <template>
   <li
-    class="relative grid grid-cols-[1.75rem_1fr] gap-2 pb-4 before:absolute before:top-4 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-border-strong last:before:hidden max-[700px]:grid-cols-1 max-[700px]:border-b max-[700px]:border-border max-[700px]:pb-3 max-[700px]:before:hidden"
+    class="relative grid grid-cols-[1.75rem_1fr] gap-2 pb-4 before:absolute before:top-4 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-border-strong last:before:hidden max-md:grid-cols-1 max-md:border-b max-md:border-border max-md:pb-3 max-md:before:hidden"
     :class="props.selected ? 'rounded-md bg-primary-soft' : ''"
   >
     <span
       :class="nodeClass"
       :title="meta.label"
       aria-hidden="true"
-      class="max-[700px]:hidden"
+      class="max-md:hidden"
     />
     <div class="min-w-0" :class="props.selected ? '-my-2 rounded-md py-2' : ''">
       <!--

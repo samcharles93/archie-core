@@ -46,7 +46,7 @@ function chooseMotion(value: unknown): void {
       title="Dashboard preferences"
       description="Saved only in this browser and applied immediately."
     >
-      <div class="grid gap-8 min-[700px]:grid-cols-2 min-[1100px]:grid-cols-4">
+      <div class="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
         <section class="flex min-w-0 flex-col items-start">
           <div>
             <h2 id="appearance-theme" class="text-sm font-medium">Theme</h2>

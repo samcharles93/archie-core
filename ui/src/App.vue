@@ -64,10 +64,10 @@ onMounted(() => {
       so the chat launcher has to render outside this element.
     -->
     <div
-      class="flex min-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--workspace)] shadow-[var(--shadow-workspace)] backdrop-blur-[28px] backdrop-saturate-[1.2] max-[900px]:min-h-screen max-[900px]:rounded-none max-[900px]:border-0 max-[900px]:shadow-none"
+      class="flex min-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--workspace)] shadow-[var(--shadow-workspace)] backdrop-blur-[28px] backdrop-saturate-[1.2] max-lg:min-h-screen max-lg:rounded-none max-lg:border-0 max-lg:shadow-none"
     >
       <Topbar :hidden="hidden" />
-      <main class="w-full flex-1 overflow-x-hidden p-8 max-[900px]:p-4">
+      <main class="w-full flex-1 overflow-x-hidden p-8 max-lg:p-4">
         <Alert v-if="authenticationRequired" variant="destructive" class="mb-4">
           <AlertTitle>Dashboard authentication required</AlertTitle>
           <AlertDescription>
