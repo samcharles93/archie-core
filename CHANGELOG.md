@@ -5,6 +5,18 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.41.2] - 2026-09-25
+
+### archied
+
+- **`/update` no longer offers an old runtime.** The runtime has shipped under
+  the release version since the version streams merged, but the update check
+  still read the retired runtime tags, so a current host was offered runtime
+  1.35.0 as an update. Do not approve that offer on 1.41.1; update to 1.41.2
+  instead.
+- **`/version` reports the runtime version.** Binaries from the release zip
+  showed `Runtime: dev`.
+
 ## [1.41.1] - 2026-09-25
 
 ### archied

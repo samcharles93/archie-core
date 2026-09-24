@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.41.2",
+    "date": "2026-09-25",
+    "body": "### archied\n\n- **`/update` no longer offers an old runtime.** The runtime has shipped under\n  the release version since the version streams merged, but the update check\n  still read the retired runtime tags, so a current host was offered runtime\n  1.35.0 as an update. Do not approve that offer on 1.41.1; update to 1.41.2\n  instead.\n- **`/version` reports the runtime version.** Binaries from the release zip\n  showed `Runtime: dev`."
+  },
+  {
     "version": "1.41.1",
     "date": "2026-09-25",
     "body": "### archied\n\n- **First published build of 1.41.0.** The 1.41.0 tag produced no release\n  artifacts; 1.41.1 carries everything listed under 1.41.0 below, including\n  the PostgreSQL 18 requirement and the removed config keys."
