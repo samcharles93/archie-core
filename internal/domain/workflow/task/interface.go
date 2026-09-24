@@ -39,7 +39,9 @@ type InputSpec struct {
 type WorkflowInterface struct {
 	Inputs     map[string]InputSpec `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 	Repository RepositoryMode       `yaml:"repository,omitempty" json:"repository,omitempty"`
-	Profile    string               `yaml:"profile,omitempty" json:"profile,omitempty"`
+	// Profile names a [containers.profiles] entry. It is resolved when a task
+	// is dispatched, not when the workflow is saved.
+	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
 }
 
 var (

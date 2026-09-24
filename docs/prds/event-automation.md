@@ -23,8 +23,8 @@ able to start an agent built for that job. The shape this replaces cannot:
 
 ```
 source ─▶ event type ─▶ mapping ─▶ binding ─▶ workflow ─▶ agent profile
-          (identified)  (params)   (+ filter,  (inputs,     (image, tools,
-                                    repo)       profile)     secrets, access)
+          (identified)  (params)   (+ filter,  (inputs,     (image, tools)
+                                    repo)       profile)
 ```
 
 ### Sources

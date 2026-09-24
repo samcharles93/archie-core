@@ -88,7 +88,7 @@ WHERE id = $1 AND status = $4;
 
 -- name: ClearTerminalTasks :execrows
 DELETE FROM tasks
-WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do');
+WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed');
 
 -- name: RecoverStaleTasks :execrows
 UPDATE tasks SET status = 'queued', updated_at = now() WHERE status = 'running';

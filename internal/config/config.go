@@ -914,7 +914,9 @@ type ContainerConfig struct {
 
 // AgentProfile is a named execution environment for an agent. Secrets and
 // forge or network access are granted to identities, not profiles
-// (docs/prds/orgs-and-access.md).
+// (docs/prds/orgs-and-access.md). A workflow's profile name is not checked
+// when the workflow is saved: a name with no profile here parks the task for
+// an operator when it is dispatched (daemon pinTaskProfile).
 type AgentProfile struct {
 	// Image is the container image; empty means [containers].image.
 	Image string `toml:"image" yaml:"image" json:"image,omitempty"`

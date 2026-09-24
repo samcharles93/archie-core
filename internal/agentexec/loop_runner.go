@@ -43,7 +43,10 @@ type LoopRunner struct {
 	// AllowTools is the agent profile's allowlist over the tools archie adds
 	// (central/MCP, repository scripts and skill plugins). Empty allows them
 	// all. A stage's capture tools are how it returns structured results, so
-	// they are never filtered.
+	// they are never filtered. The agent loop's built-in file tools are not
+	// covered either: ai-sdk agentloop registers them itself with no filter
+	// hook, so they are always present (read-only when the stage asks), and
+	// restricting them needs an ai-sdk change.
 	AllowTools []string
 }
 
@@ -393,8 +396,6 @@ func scriptToolSet(workspace string) core.ToolSet {
 	}
 }
 
-// mergeToolSets combines tool sets into one; later sets win on name
-// collisions.
 // allowedTools keeps the tools allow names; an empty allow keeps them all.
 func allowedTools(set core.ToolSet, allow []string) core.ToolSet {
 	if len(allow) == 0 {
@@ -409,6 +410,8 @@ func allowedTools(set core.ToolSet, allow []string) core.ToolSet {
 	return kept
 }
 
+// mergeToolSets combines tool sets into one; later sets win on name
+// collisions.
 func mergeToolSets(sets ...core.ToolSet) core.ToolSet {
 	merged := core.ToolSet{}
 	for _, set := range sets {

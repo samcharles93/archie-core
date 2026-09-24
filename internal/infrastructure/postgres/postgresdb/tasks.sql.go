@@ -159,7 +159,7 @@ func (q *Queries) ClaimNextTask(ctx context.Context) (Task, error) {
 
 const clearTerminalTasks = `-- name: ClearTerminalTasks :execrows
 DELETE FROM tasks
-WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do')
+WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed')
 `
 
 func (q *Queries) ClearTerminalTasks(ctx context.Context) (int64, error) {
