@@ -1,33 +1,24 @@
 package archied
 
 import (
-	"path/filepath"
-
-	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 )
 
-// openEDAStore opens the event-capture store (PocketBase today, Postgres when
-// L2 ports it) beside the task database. It is a separate composition file
-// from openTaskStore so L2 can replace edastore.Open here without colliding
-// with L1's replacement of openProductionTaskStore -- the two lanes write
-// different files.
-func (b *boot) openEDAStore(cfg config.Config, cipher edastore.BindingCipher) error {
-	path := taskDBPath(cfg.DBPath)
-	eda, err := edastore.Open(edastore.Config{
-		DBPath:  edaDBPath(cfg.DBPath),
-		DataDir: filepath.Join(filepath.Dir(path), "eda"),
-		Cipher:  cipher,
-	})
-	if err != nil {
-		b.log.Error("open event-capture store", "err", err)
-		return err
-	}
-	b.eda = eda
-	b.addCleanup(func() {
-		if err := eda.Close(); err != nil {
-			b.log.Error("close event-capture store", "err", err)
-		}
-	})
-	return nil
+// eventCaptureStore is every surface the State Store serves from the
+// event-capture tables, plus the tool_call projection it writes through.
+type eventCaptureStore interface {
+	storecontract.CaptureStore
+	storecontract.MappingStore
+	storecontract.BindingStore
+	storecontract.BindingDispatcher
+	storecontract.PlaybookDispatcher
+	toolCallWriter
+}
+
+// openEDAStore serves the event-capture store from the State Store's Postgres
+// pool, sealing binding secrets with cipher.
+func (b *boot) openEDAStore(cipher edastore.BindingCipher) {
+	b.eda = postgres.NewEDA(b.pg, cipher)
 }
