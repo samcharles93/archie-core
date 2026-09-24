@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -81,6 +82,9 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 		{name: "binding overlap", store: store.ErrBindingOverlap, rehyd: store.ErrBindingOverlap},
 		{name: "binding transition", store: store.ErrBindingTransition, rehyd: store.ErrBindingTransition},
 		{name: "already dispatched", store: store.ErrAlreadyDispatched, rehyd: store.ErrAlreadyDispatched},
+		{name: "source not found", store: storecontract.ErrSourceNotFound, rehyd: storecontract.ErrSourceNotFound},
+		{name: "source path taken", store: storecontract.ErrSourcePathTaken, rehyd: storecontract.ErrSourcePathTaken},
+		{name: "source signing stale", store: storecontract.ErrSourceSigningStale, rehyd: storecontract.ErrSourceSigningStale},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

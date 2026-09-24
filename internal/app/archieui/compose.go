@@ -134,21 +134,25 @@ func wireTaskLogs(d deps, srv *webui.Server) {
 	srv.TaskLogs = logs
 }
 
-// wireCaptureSurfaces attaches the capture read and the intake receiver.
-// Both resolve from d.Store's contracts: CaptureStore backs the inspector's
-// list and the mapping preview's scan window, BindingDispatcher resolves the
-// armed binding whose secret HMAC-verifies a source. A store that does not
-// implement one degrades that half with a warning rather than aborting the
-// process, mirroring the daemon's own adapter selection.
+// wireCaptureSurfaces attaches the capture read, the source editor and the
+// intake receiver. All resolve from d.Store's contracts: CaptureStore backs
+// the inspector's list and the mapping preview's scan window, SourceStore
+// resolves the source whose signing setting verifies an event. A store that
+// does not implement one degrades that half with a warning rather than
+// aborting the process, mirroring the daemon's own adapter selection.
 func wireCaptureSurfaces(d deps, srv *webui.Server) {
 	captures, hasCaptures := d.Store.(storecontract.CaptureStore)
-	bindings, hasBindings := d.Store.(storecontract.BindingDispatcher)
+	sources, hasSources := d.Store.(storecontract.SourceStore)
 	if !hasCaptures {
 		d.Log.Warn("capture storage unavailable: state store does not implement CaptureStore")
 		return
 	}
-	if !hasBindings {
-		d.Log.Warn("binding dispatcher unavailable: state store does not implement BindingDispatcher")
+	var resolver captureintake.SourceResolver
+	if hasSources {
+		srv.Sources = sources
+		resolver = sources
+	} else {
+		d.Log.Warn("source store unavailable: state store does not implement SourceStore; no capture will dispatch")
 	}
 
 	capture := d.Options.Capture.withDefaults()
@@ -157,7 +161,7 @@ func wireCaptureSurfaces(d deps, srv *webui.Server) {
 	srv.CaptureIntake = &captureintake.Receiver{
 		Captures:     captures,
 		Limiter:      webhookguard.NewRateLimiter(capture.RatePerSecond, capture.RateBurst, time.Now),
-		Bindings:     bindings,
+		Sources:      resolver,
 		Retention:    capture.Retention,
 		MaxEvents:    capture.MaxEvents,
 		MaxBodyBytes: int64(capture.MaxBodyBytes),

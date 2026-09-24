@@ -281,7 +281,7 @@ func TestImportCopiesEverySourceAndLeavesThemUntouched(t *testing.T) {
 	}{
 		{"SELECT review_cursor FROM tasks WHERE id = 1", &reviewCursor},
 		{"SELECT value FROM resource_history WHERE id = 1", &value},
-		{"SELECT secret FROM bindings WHERE id = 'rbind1'", &gotSecret},
+		{"SELECT secret FROM sources WHERE path = 'gh'", &gotSecret},
 		{"SELECT headers FROM captures WHERE id = 'rcap2'", &headers},
 		{"SELECT result FROM tool_calls WHERE id = 'rtool1'", &result},
 		{"SELECT configured FROM channel_status WHERE id = 'tg'", &configured},

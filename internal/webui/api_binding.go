@@ -22,9 +22,15 @@ type bindingRequest struct {
 	// for multi-repo deployments. Both empty is valid (falls back to the
 	// daemon's single-configured-repo behaviour); binding.Validate
 	// rejects setting only one.
-	Owner  string `json:"owner"`
-	Repo   string `json:"repo"`
-	Secret string `json:"secret"`
+	Owner string `json:"owner"`
+	Repo  string `json:"repo"`
+}
+
+// bindingView is a listed binding with its source's signing state, so the
+// list can flag a binding that dispatches unsigned events.
+type bindingView struct {
+	binding.Binding
+	Unsigned bool `json:"unsigned"`
 }
 
 func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
@@ -38,8 +44,17 @@ func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "list bindings failed", http.StatusInternalServerError)
 		return
 	}
-	stripBindingSecrets(bindings)
-	writeJSON(w, map[string]any{"bindings": bindings})
+	unsigned, err := s.unsignedSources(r.Context())
+	if err != nil {
+		s.Log.Error("list sources", "err", err)
+		http.Error(w, "list bindings failed", http.StatusInternalServerError)
+		return
+	}
+	views := make([]bindingView, 0, len(bindings))
+	for _, b := range bindings {
+		views = append(views, bindingView{Binding: b, Unsigned: unsigned[b.Matcher.Source]})
+	}
+	writeJSON(w, map[string]any{"bindings": views})
 }
 
 func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +87,6 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		Workflow:  req.Workflow,
 		Owner:     req.Owner,
 		Repo:      req.Repo,
-		Secret:    req.Secret,
 		Status:    binding.StatusPendingApproval,
 	}
 	if err := b.Validate(); err != nil {
@@ -94,7 +108,6 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create binding failed", http.StatusInternalServerError)
 		return
 	}
-	created.Secret = ""
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, created)
 }
@@ -119,7 +132,6 @@ func (s *Server) handleBindingGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "binding not found", http.StatusNotFound)
 		return
 	}
-	b.Secret = ""
 	writeJSON(w, b)
 }
 
@@ -159,9 +171,8 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		Workflow:  req.Workflow,
 		Owner:     req.Owner,
 		Repo:      req.Repo,
-		Secret:    req.Secret,
 	}
-	if err := b.ValidateForUpdate(); err != nil {
+	if err := b.Validate(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -184,7 +195,6 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "update binding failed", http.StatusInternalServerError)
 		return
 	}
-	updated.Secret = ""
 	writeJSON(w, updated)
 }
 
@@ -244,7 +254,6 @@ func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "approve binding failed", http.StatusInternalServerError)
 		return
 	}
-	updated.Secret = ""
 	writeJSON(w, updated)
 }
 
@@ -270,13 +279,4 @@ func (s *Server) checkBindingFilter(w http.ResponseWriter, r *http.Request, b bi
 		return false
 	}
 	return true
-}
-
-// stripBindingSecrets zeroes the Secret field on every binding in the slice
-// so the list handler never leaks a shared HMAC secret through /api/bindings.
-// Single-binding reads do the same inline; this covers the list path.
-func stripBindingSecrets(bs []binding.Binding) {
-	for i := range bs {
-		bs[i].Secret = ""
-	}
 }

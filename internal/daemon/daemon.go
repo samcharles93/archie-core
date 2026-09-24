@@ -654,12 +654,30 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 			continue
 		}
 		for _, b := range armed {
-			if !b.Matcher.Matches(c.Source, c.Authenticated) {
+			if !b.Matcher.Matches(c.Source, c.Dispatchable()) {
 				continue
 			}
 			d.dispatchOneBinding(ctx, b, c)
 		}
 	}
+}
+
+// bindingMapping returns b's mapping, or nil after logging why it is
+// unavailable.
+func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping.Mapping {
+	if d.Mappings == nil {
+		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
+		return nil
+	}
+	m, err := d.Mappings.GetMapping(ctx, b.MappingID)
+	if err != nil {
+		d.Log.Warn("binding dispatch: get mapping", "binding", b.ID, "mapping", b.MappingID, "error", err)
+		return nil
+	}
+	if m == nil {
+		d.Log.Warn("binding dispatch: mapping missing", "binding", b.ID, "mapping", b.MappingID)
+	}
+	return m
 }
 
 // dispatchOneBinding offers one capture to one binding. The binding applies
@@ -672,20 +690,8 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 // already fired from firing again on a later cycle. A failed enqueue after the
 // claim loses that dispatch, which is the at-most-once side of the trade.
 func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent) {
-	if d.Mappings == nil {
-		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
-		return
-	}
-	m, err := d.Mappings.GetMapping(ctx, b.MappingID)
-	if err != nil {
-		d.Log.Warn("binding dispatch: get mapping", "binding", b.ID, "mapping", b.MappingID, "error", err)
-		return
-	}
-	if m == nil {
-		d.Log.Warn("binding dispatch: mapping missing", "binding", b.ID, "mapping", b.MappingID)
-		return
-	}
-	if m.EventTypeID != c.EventType {
+	m := d.bindingMapping(ctx, b)
+	if m == nil || m.EventTypeID != c.EventType {
 		return
 	}
 	values, failures := mapping.Resolve(m.Fields, []byte(c.Body))
@@ -719,8 +725,20 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	}
 	title := fmt.Sprintf("binding %s/%d from %s", b.Name, b.Version, c.Source)
 	body := renderBindingBody(values, c)
-	if _, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, owner, repo, title, body, b.Workflow, "", b.ID, b.Version); err != nil {
+	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, owner, repo, title, body, b.Workflow, "", b.ID, b.Version)
+	if err != nil {
 		d.Log.Warn("binding dispatch: enqueue", "binding", b.ID, "capture", c.ID, "error", err)
+		return
+	}
+	if c.Unsigned {
+		if _, err := d.Store.InsertEvent(ctx, events.Event{
+			TaskID: task.ID,
+			Kind:   events.KindUnsignedEvent,
+			Detail: fmt.Sprintf("started by an unsigned event from source %q", c.Source),
+			Data:   map[string]any{"source": c.Source, "capture_id": c.ID, "binding_id": b.ID},
+		}); err != nil {
+			d.Log.Warn("binding dispatch: unsigned marker", "task", task.ID, "error", err)
+		}
 	}
 }
 

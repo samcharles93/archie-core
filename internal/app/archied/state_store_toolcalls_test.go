@@ -11,6 +11,8 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -173,11 +175,15 @@ func TestInsertEventSucceedsWhenProjectionFails(t *testing.T) {
 // around a nil writer.
 func TestStateStoreDepsProjectToolCalls(t *testing.T) {
 	st := store.OpenTest(t)
-	eda := edastore.OpenTest(t)
+	pool, err := postgres.Open(t.Context(), pgtest.URL(t))
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	defer pool.Close()
 
 	b := newBootstrap()
 	b.st = st
-	b.eda = eda
+	b.eda = postgres.NewEDA(pool, nil)
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
 	if _, ok := deps.Tasks.(*toolCallProjectingTaskStore); !ok {
 		t.Fatalf("deps.Tasks = %T, want the tool_call projecting decorator", deps.Tasks)

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,7 +11,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -148,6 +151,48 @@ func TestDispatchBindingsSkipsUnauthenticatedCaptures(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Fatalf("unauthenticated capture spawned %d task(s), want 0", len(tasks))
 	}
+}
+
+// markUnsigned reports every undispatched capture as taken on an approved
+// unsigned source, which the legacy capture store cannot persist.
+type markUnsigned struct {
+	storecontract.BindingDispatcher
+}
+
+func (m markUnsigned) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]store.CapturedEvent, error) {
+	cs, err := m.BindingDispatcher.ListUndispatchedCaptures(ctx, sources, limit)
+	for i := range cs {
+		cs[i].Unsigned = true
+	}
+	return cs, err
+}
+
+// An event on an approved unsigned source dispatches without a signature,
+// and the task it starts carries an unsigned_event on its timeline.
+func TestDispatchBindingsDispatchesUnsignedCaptureAndMarksTimeline(t *testing.T) {
+	s := openDispatchTestStore(t)
+	mappingID := seedMapping(t, s, "fw", mapping.Field{Name: "title", Path: "title", Type: mapping.TypeString})
+	seedArmedBinding(t, s, "fw", mappingID)
+	seedCapture(t, s, "fw", false, `{"title":"blocked"}`)
+
+	d := newDispatchDaemon(t, s)
+	d.BindingDispatcher = markUnsigned{d.BindingDispatcher}
+	d.dispatchBindings(t.Context())
+
+	tasks, err := s.Tasks(t.Context(), 10)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("Tasks = %d (err %v), want 1", len(tasks), err)
+	}
+	evs, err := s.TaskEvents(t.Context(), tasks[0].ID)
+	if err != nil {
+		t.Fatalf("TaskEvents: %v", err)
+	}
+	for _, e := range evs {
+		if e.Kind == events.KindUnsignedEvent {
+			return
+		}
+	}
+	t.Fatalf("task timeline has no %s event: %+v", events.KindUnsignedEvent, evs)
 }
 
 // Test 33: a required field whose path is missing in the capture body
@@ -305,7 +350,6 @@ func seedArmedBindingWithRepo(t *testing.T, s *dispatchStores, source, mappingID
 		Workflow:  "implement",
 		Owner:     owner,
 		Repo:      repo,
-		Secret:    "0123456789abcdef0123456789abcdef",
 	})
 	if err != nil {
 		t.Fatalf("InsertBinding: %v", err)

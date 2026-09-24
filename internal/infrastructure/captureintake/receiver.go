@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
@@ -41,10 +41,10 @@ type Receiver struct {
 	// is read. Nil disables rate limiting, which composition never does in
 	// production.
 	Limiter *webhookguard.RateLimiter
-	// Bindings resolves the armed binding whose secret authenticates a
-	// source. Nil disables per-source HMAC verification and every event
-	// records as authenticated=false.
-	Bindings storecontract.BindingDispatcher
+	// Sources resolves the source a path names and its signing setting.
+	// Nil disables verification: every event records as neither
+	// authenticated nor unsigned, so none dispatches.
+	Sources SourceResolver
 	// Retention and MaxEvents are passed straight to InsertCapture's
 	// prune-on-write bounds. See config.CaptureConfig.
 	Retention time.Duration
@@ -60,23 +60,28 @@ type Receiver struct {
 	Log     *slog.Logger
 }
 
+// SourceResolver is the one SourceStore read intake needs.
+type SourceResolver interface {
+	GetSource(ctx context.Context, path string) (*source.Source, error)
+}
+
 // Register mounts the receiver on mux.
 func (rc *Receiver) Register(mux *http.ServeMux) {
 	mux.HandleFunc(Path, rc.ServeHTTP)
 }
 
-// ServeHTTP accepts an inbound webhook POST and persists it. If a binding is
-// armed for this source the body must also carry a valid HMAC signature; only
-// correctly-signed events are recorded as authenticated (t2db.5 point 1). An
-// unauthenticated event is still captured, visible in the inspector, and
-// marked unauthenticated -- the dispatch loop's auth check
-// (binding.Matcher.Matches) is the actual gate against false task creation.
+// ServeHTTP accepts an inbound webhook POST and persists it. On a signed
+// source only a valid HMAC under the source's secret marks the event
+// authenticated; on an approved unsigned source every event is marked
+// unsigned. Anything else is still captured and visible in the inspector,
+// but is neither, so the dispatch loop's check (binding.Matcher.Matches over
+// CapturedEvent.Dispatchable) never starts a task from it.
 func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rc.Captures == nil {
 		http.Error(w, "capture not configured", http.StatusServiceUnavailable)
 		return
 	}
-	source := r.PathValue("source")
+	path := r.PathValue("source")
 
 	// webhookguard.RateLimiter's bucket map assumes a bounded, operator-
 	// registered key space (see its doc comment) -- it is never evicted, and
@@ -91,7 +96,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	armed := rc.armedBindings(r, source)
+	src := rc.resolveSource(r, path)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytesOrFallback(rc.MaxBodyBytes))
 	body, err := io.ReadAll(r.Body)
@@ -102,23 +107,8 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// HMAC verification against each binding armed for this source: a
-	// signature valid for any of their secrets authenticates the event. Mirrors channels/webhook/webhook.go's header precedence:
-	// GitHub-style X-Hub-Signature-256 first, X-Signature-256 fallback.
-	// Empty header + non-empty secret is never valid (VerifyHMAC's own
-	// guard), so an absent signature with an armed binding lands here as
-	// authenticated=false rather than authenticated=true.
-	sig := r.Header.Get("X-Hub-Signature-256")
-	if sig == "" {
-		sig = r.Header.Get("X-Signature-256")
-	}
-	authenticated := false
-	for _, b := range armed {
-		if webhookguard.VerifyHMAC(body, sig, b.Secret) {
-			authenticated = true
-			break
-		}
-	}
+	// Verified on the raw bytes, before redaction parses them.
+	authenticated, unsigned := verify(src, r.Header, body)
 
 	headers, _ := json.Marshal(r.Header)
 	redactedHeaders, err := webhookguard.RedactPayload(headers)
@@ -136,16 +126,17 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	c := storecontract.CapturedEvent{
 		ReceivedAt:    time.Now().UTC(),
-		Source:        source,
+		Source:        path,
 		RemoteAddr:    r.RemoteAddr,
 		ContentType:   r.Header.Get("Content-Type"),
 		Headers:       string(redactedHeaders),
 		Body:          string(redactedBody),
 		Authenticated: authenticated,
+		Unsigned:      unsigned,
 	}
 	id, err := rc.Captures.InsertCapture(r.Context(), c, rc.Retention, rc.MaxEvents)
 	if err != nil {
-		rc.logger().Error("capture insert", "err", err, "source", source)
+		rc.logger().Error("capture insert", "err", err, "source", path)
 		http.Error(w, "capture failed", http.StatusInternalServerError)
 		return
 	}
@@ -160,29 +151,49 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rc.Publish != nil {
 		rc.Publish(r.Context(), events.Event{
 			Kind:   "capture",
-			Detail: "capture from " + source,
-			Data:   map[string]any{"id": id, "source": source},
+			Detail: "capture from " + path,
+			Data:   map[string]any{"id": id, "source": path, "unsigned": unsigned},
 		})
 	}
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// armedBindings resolves the bindings armed for source before the body is
-// read. A lookup error is logged and treated as "no armed binding" -- the
-// dispatch loop's auth check is the actual gate, so failing closed here would
-// amplify a transient store hiccup into a capture outage for every
-// sender-not-yet-bound flow.
-func (rc *Receiver) armedBindings(r *http.Request, source string) []binding.Binding {
-	if rc.Bindings == nil {
+// resolveSource looks up the source a path names. A lookup error is logged
+// and treated as an unknown source: the event is still captured but cannot
+// dispatch, so failing open here costs no safety, while failing closed would
+// turn a transient store hiccup into a capture outage.
+func (rc *Receiver) resolveSource(r *http.Request, path string) *source.Source {
+	if rc.Sources == nil {
 		return nil
 	}
-	armed, err := rc.Bindings.ArmedBindingsForSource(r.Context(), source)
+	src, err := rc.Sources.GetSource(r.Context(), path)
 	if err != nil {
-		rc.logger().Warn("armed bindings lookup", "source", source, "err", err)
+		rc.logger().Warn("source lookup", "source", path, "err", err)
 		return nil
 	}
-	return armed
+	return src
+}
+
+// verify decides how an event on src may dispatch. An approved unsigned
+// source marks it unsigned. Otherwise a valid HMAC under the source's secret
+// authenticates it: X-Hub-Signature-256 first, X-Signature-256 as fallback.
+// A source with no secret yet authenticates nothing, since an empty key is
+// one anybody can sign with.
+func verify(src *source.Source, h http.Header, body []byte) (authenticated, unsigned bool) {
+	switch {
+	case src == nil:
+		return false, false
+	case src.Unsigned():
+		return false, true
+	case src.Secret == "":
+		return false, false
+	}
+	sig := h.Get("X-Hub-Signature-256")
+	if sig == "" {
+		sig = h.Get("X-Signature-256")
+	}
+	return webhookguard.VerifyHMAC(body, sig, src.Secret), false
 }
 
 func (rc *Receiver) logger() *slog.Logger {

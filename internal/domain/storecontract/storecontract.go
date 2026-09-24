@@ -24,6 +24,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -212,6 +213,20 @@ type BindingStore interface {
 	ApproveBinding(ctx context.Context, id string) error
 }
 
+// SourceStore persists capture sources and their signing setting
+// (docs/prds/event-automation.md "Sources"). The path is the key and never
+// changes. Secrets cross this surface in plaintext; the store encrypts them
+// at rest. Signing transitions are decided by the source domain and written
+// with an expected-from guard, so two operators cannot race an approval.
+type SourceStore interface {
+	InsertSource(ctx context.Context, s source.Source) error
+	// GetSource returns (nil, nil) for an unknown path.
+	GetSource(ctx context.Context, path string) (*source.Source, error)
+	ListSources(ctx context.Context) ([]source.Source, error)
+	SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error
+	SetSourceSecret(ctx context.Context, path, secret string) error
+}
+
 // BindingDispatcher is the dispatch-loop surface over the bindings store:
 // look up armed bindings for HMAC verification, list captures that still
 // need dispatching, and record the at-most-once ledger row. The
@@ -296,7 +311,14 @@ type CapturedEvent struct {
 	// when it arrived, or empty when it matched none. An unidentified capture
 	// is never dispatched.
 	EventType string `json:"event_type"`
+	// Unsigned marks an event that arrived on an approved unsigned source.
+	// It dispatches without Authenticated and is flagged wherever it shows.
+	Unsigned bool `json:"unsigned"`
 }
+
+// Dispatchable reports whether a binding may start a task from this event:
+// a valid signature, or a source approved to take unsigned events.
+func (c CapturedEvent) Dispatchable() bool { return c.Authenticated || c.Unsigned }
 
 // ConfigSnapshot is the running configuration as the dashboard renders it,
 // published by whoever owns configuration for whoever displays it.
@@ -397,6 +419,13 @@ var (
 	ErrMappingNotFound = errors.New("store: mapping not found")
 	// ErrEventTypeNotFound is returned when an event type ID does not exist.
 	ErrEventTypeNotFound = errors.New("store: event type not found")
+	// ErrSourceNotFound is returned when a source path does not exist.
+	ErrSourceNotFound = errors.New("store: source not found")
+	// ErrSourcePathTaken is returned when a new source's path is in use.
+	ErrSourcePathTaken = errors.New("store: source path already taken")
+	// ErrSourceSigningStale is returned when a signing write's expected
+	// from state does not match the stored one.
+	ErrSourceSigningStale = errors.New("store: source signing does not match expected state")
 
 	// ErrResourceNotFound is returned when a control-plane resource kind has
 	// no stored document. It is in-process only (not on the gRPC wire): the

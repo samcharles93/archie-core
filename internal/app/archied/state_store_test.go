@@ -12,7 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -147,16 +147,27 @@ func TestStateStoreDepsServePlaybookDispatcher(t *testing.T) {
 
 	b := newBootstrap()
 	b.st = st
-	// The playbook ledger moved to the event-capture store with the rest of
-	// the dispatch tables; the task store no longer serves it.
-	eda := edastore.OpenTest(t)
+	// The playbook ledger, sources and event types are served by the
+	// event-capture store; the task store no longer serves them.
+	pool, err := postgres.Open(t.Context(), pgtest.URL(t))
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	defer pool.Close()
+	if err := postgres.Migrate(t.Context(), pool, postgres.Migrations()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	eda := postgres.NewEDA(pool, nil)
 	b.eda = eda
 	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
 	if deps.PlaybookDispatcher == nil {
 		t.Fatal("stateStoreDeps leaves PlaybookDispatcher nil; the standalone State Store is the only production server for the playbook dispatch ledger")
 	}
 	if deps.PlaybookDispatcher != storecontract.PlaybookDispatcher(eda) {
-		t.Fatalf("PlaybookDispatcher = %T, want the opened *edastore.Store", deps.PlaybookDispatcher)
+		t.Fatalf("PlaybookDispatcher = %T, want the opened event-capture store", deps.PlaybookDispatcher)
+	}
+	if deps.Sources == nil || deps.EventTypes == nil {
+		t.Fatalf("stateStoreDeps Sources = %v, EventTypes = %v; want both served, or intake verifies nothing and nothing dispatches", deps.Sources, deps.EventTypes)
 	}
 	// A boot without a store must not fabricate one: nil keeps the RPCs honest
 	// as unavailable rather than depending on a nil receiver.

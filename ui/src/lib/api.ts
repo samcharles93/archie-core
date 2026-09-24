@@ -178,6 +178,14 @@ export const api = {
     request<T>(`/api/bindings/${encodeURIComponent(id)}`, { method: "PATCH", body: binding }),
   bindingDelete: (id: string) => request<void>(`/api/bindings/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
   bindingApprove: <T = unknown>(id: string) => request<T>(`/api/bindings/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+  sources: <T = unknown>() => request<T>("/api/sources"),
+  sourceCreate: <T = unknown>(path: string) => request<T>("/api/sources", { method: "POST", body: { path } }),
+  sourceSigning: <T = unknown>(path: string, signed: boolean) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/signing`, { method: "POST", body: { signed } }),
+  sourceApproveUnsigned: <T = unknown>(path: string) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/approve-unsigned`, { method: "POST" }),
+  sourceSecret: <T = unknown>(path: string) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/secret`, { method: "POST" }),
   chatSessions: <T = unknown>() => request<T>("/api/chat/sessions"),
   chatMessages: <T = unknown>(id: string) => request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
   chatTurns: <T = unknown>(id: string) => request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),

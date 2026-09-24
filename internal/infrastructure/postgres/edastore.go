@@ -45,7 +45,7 @@ type EDA struct {
 	notify func(events.Event)
 }
 
-// NewEDA builds an EDA store over pool. A nil cipher keeps binding secrets in
+// NewEDA builds an EDA store over pool. A nil cipher keeps source secrets in
 // plaintext (the behaviour that predates the option); the caller resolves the
 // keyring through edastore.NewBindingCipher, exactly as the PocketBase store
 // does. The pool is owned by the caller, not this store.
@@ -99,6 +99,7 @@ func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, 
 		Headers:       c.Headers,
 		Body:          c.Body,
 		Authenticated: c.Authenticated,
+		Unsigned:      c.Unsigned,
 		ReceivedAt:    received.UTC(),
 		EventType:     eventType,
 	}); err != nil {
@@ -135,6 +136,7 @@ func captureValue(r postgresdb.Capture) storecontract.CapturedEvent {
 		Body:          r.Body,
 		Authenticated: r.Authenticated,
 		EventType:     r.EventType,
+		Unsigned:      r.Unsigned,
 	}
 }
 
@@ -304,19 +306,10 @@ func (s *EDA) RecordMappingMatch(ctx context.Context, mappingID, captureID strin
 
 // --- bindings ---
 
-func (s *EDA) encryptSecret(secret string) (string, error) {
-	if s.cipher == nil {
-		return secret, nil
-	}
-	encrypted, err := s.cipher.Encrypt(secret)
-	if err != nil {
-		return "", fmt.Errorf("edastore: encrypt binding secret: %w", err)
-	}
-	return encrypted, nil
-}
-
-func (s *EDA) bindingValue(r postgresdb.Binding) (binding.Binding, error) {
-	b := binding.Binding{
+// bindingValue takes GetBindingRow; the list queries' rows share its fields
+// and convert to it.
+func bindingValue(r postgresdb.GetBindingRow) binding.Binding {
+	return binding.Binding{
 		ID:        r.ID,
 		Name:      r.Name,
 		Matcher:   binding.Matcher{Source: r.Source},
@@ -327,31 +320,14 @@ func (s *EDA) bindingValue(r postgresdb.Binding) (binding.Binding, error) {
 		Repo:      r.Repo,
 		Version:   int(r.Version),
 		Status:    binding.Status(r.Status),
-		Secret:    r.Secret,
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 	}
-	if s.cipher != nil && b.Secret != "" {
-		plain, err := s.cipher.Decrypt(b.Secret)
-		if err != nil {
-			return binding.Binding{}, fmt.Errorf("edastore: decrypt binding secret: %w", err)
-		}
-		b.Secret = plain
-	}
-	return b, nil
 }
 
 // InsertBinding stores a new binding as pending_approval. Any number of
 // bindings may share a source.
 func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, error) {
-	secret := b.Secret
-	if secret != "" {
-		var err error
-		secret, err = s.encryptSecret(secret)
-		if err != nil {
-			return "", err
-		}
-	}
 	id := newRecordID()
 	err := s.q.InsertBinding(ctx, postgresdb.InsertBindingParams{
 		ID:       id,
@@ -363,7 +339,6 @@ func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, err
 		Owner:    b.Owner,
 		Repo:     b.Repo,
 		Status:   string(binding.StatusPendingApproval),
-		Secret:   secret,
 	})
 	if err != nil {
 		return "", fmt.Errorf("edastore: insert binding: %w", err)
@@ -382,10 +357,7 @@ func (s *EDA) GetBinding(ctx context.Context, id string) (*binding.Binding, erro
 	if err != nil {
 		return nil, err
 	}
-	b, err := s.bindingValue(r)
-	if err != nil {
-		return nil, err
-	}
+	b := bindingValue(r)
 	return &b, nil
 }
 
@@ -396,11 +368,7 @@ func (s *EDA) ListBindings(ctx context.Context) ([]binding.Binding, error) {
 	}
 	out := make([]binding.Binding, 0, len(rows))
 	for _, r := range rows {
-		b, err := s.bindingValue(r)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, b)
+		out = append(out, bindingValue(postgresdb.GetBindingRow(r)))
 	}
 	return out, nil
 }
@@ -413,28 +381,14 @@ func (s *EDA) ArmedBindingsForSource(ctx context.Context, source string) ([]bind
 	}
 	out := make([]binding.Binding, 0, len(rows))
 	for _, r := range rows {
-		b, err := s.bindingValue(r)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, b)
+		out = append(out, bindingValue(postgresdb.GetBindingRow(r)))
 	}
 	return out, nil
 }
 
 // UpdateBinding rewrites a binding's editable fields, bumps its version and
-// drops it back to pending_approval. An empty secret means "keep the stored
-// one" (the CASE in the query), so an edit form that does not echo the secret
-// cannot blank an armed binding's HMAC key.
+// drops it back to pending_approval.
 func (s *EDA) UpdateBinding(ctx context.Context, b binding.Binding) error {
-	secret := b.Secret
-	if secret != "" {
-		var err error
-		secret, err = s.encryptSecret(secret)
-		if err != nil {
-			return err
-		}
-	}
 	n, err := s.q.UpdateBinding(ctx, postgresdb.UpdateBindingParams{
 		ID:       b.ID,
 		Name:     b.Name,
@@ -445,7 +399,6 @@ func (s *EDA) UpdateBinding(ctx context.Context, b binding.Binding) error {
 		Owner:    b.Owner,
 		Repo:     b.Repo,
 		Status:   string(binding.StatusPendingApproval),
-		Secret:   secret,
 	})
 	if err != nil {
 		return err

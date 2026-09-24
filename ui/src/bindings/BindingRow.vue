@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, Pencil, Trash2 } from "@lucide/vue";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import BindingStatusBadge from "./BindingStatusBadge.vue";
@@ -20,7 +21,10 @@ const emit = defineEmits<{
   <TableRow>
     <TableCell class="font-medium">{{ props.binding.name }}</TableCell>
     <TableCell class="font-mono text-fg-muted">
-      {{ eventTypeLabel(bindingEventType(props.binding, props.mappings), props.eventTypes) }}
+      <div class="flex items-center gap-2">
+        {{ eventTypeLabel(bindingEventType(props.binding, props.mappings), props.eventTypes) }}
+        <Badge v-if="props.binding.unsigned" variant="warn">Unsigned</Badge>
+      </div>
     </TableCell>
     <TableCell class="max-w-56 truncate font-mono text-xs text-fg-muted" :title="props.binding.filter">
       {{ props.binding.filter || "—" }}

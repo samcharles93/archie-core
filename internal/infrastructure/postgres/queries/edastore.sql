@@ -1,11 +1,11 @@
 -- EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
 
 -- name: InsertCapture :exec
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1;
@@ -14,7 +14,7 @@ LIMIT $1;
 -- A capture is undispatched while some armed binding on its source, whose
 -- mapping belongs to the capture's event type, has not dispatched it. An
 -- unidentified capture has no event type, so it is never listed.
-SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.event_type
+SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type
 FROM captures c
 WHERE c.source = ANY(@sources::text[])
   AND c.event_type <> ''
@@ -63,30 +63,25 @@ ON CONFLICT DO NOTHING;
 DELETE FROM mappings WHERE id = $1;
 
 -- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, secret)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10);
+INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9);
 
 -- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
 FROM bindings WHERE id = $1;
 
 -- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
 FROM bindings ORDER BY created_at DESC;
 
 -- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at, filter
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC;
 
 -- name: UpdateBinding :execrows
--- An empty secret means "keep the stored one": the CASE leaves the column
--- untouched so an edit form that does not echo the secret cannot blank an
--- armed binding's HMAC key.
 UPDATE bindings
 SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,
-    version = version + 1, status = $9,
-    secret = CASE WHEN sqlc.arg(secret)::text = '' THEN secret ELSE sqlc.arg(secret) END,
-    updated_at = now()
+    version = version + 1, status = $9, updated_at = now()
 WHERE id = $1;
 
 -- name: SetBindingArmed :execrows
@@ -140,3 +135,24 @@ DELETE FROM event_types WHERE id = $1;
 -- Serialises saves per source so two concurrent saves cannot each pass the
 -- overlap check against a set that excludes the other.
 SELECT pg_advisory_xact_lock(hashtext('event_types:' || sqlc.arg(source)::text));
+-- name: InsertSource :exec
+INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3);
+
+-- name: GetSource :one
+SELECT path, signing, secret, created_at, updated_at FROM sources WHERE path = $1;
+
+-- name: ListSources :many
+SELECT path, signing, secret, created_at, updated_at FROM sources ORDER BY created_at DESC, path;
+
+-- name: SetSourceSigning :execrows
+UPDATE sources SET signing = sqlc.arg(to_signing), updated_at = now()
+WHERE path = sqlc.arg(path) AND signing = sqlc.arg(from_signing);
+
+-- name: SetSourceSecret :execrows
+UPDATE sources SET secret = $2, updated_at = now() WHERE path = $1;
+
+-- name: SourceExists :one
+SELECT EXISTS (SELECT 1 FROM sources WHERE path = $1);
+
+-- name: DeriveSources :exec
+SELECT derive_sources();

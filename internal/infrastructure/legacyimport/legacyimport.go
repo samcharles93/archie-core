@@ -284,6 +284,13 @@ func importInto(ctx context.Context, tx pgx.Tx, present []domain, sources map[st
 			return Report{}, err
 		}
 	}
+	// Sources are derived, not imported: the migration derived them from an
+	// empty target, so derive again from what was just loaded.
+	if sources["eda"] != nil {
+		if err := postgresdb.New(tx).DeriveSources(ctx); err != nil {
+			return Report{}, fmt.Errorf("legacy import: derive sources: %w", err)
+		}
+	}
 	if gw := sources["gateway"]; gw != nil {
 		var err error
 		if report.UnindexedMessages, err = unindexedMessages(ctx, gw, loaded); err != nil {

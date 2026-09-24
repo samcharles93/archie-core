@@ -49,6 +49,7 @@ type Capture struct {
 	Body          string
 	Authenticated bool
 	ReceivedAt    time.Time
+	Unsigned      bool
 	EventType     string
 }
 
@@ -206,6 +207,14 @@ type Session struct {
 	BranchName      string
 	CreatedAt       int64
 	LastActiveAt    int64
+}
+
+type Source struct {
+	Path      string
+	Signing   string
+	Secret    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Task struct {
