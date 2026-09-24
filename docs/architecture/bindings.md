@@ -21,7 +21,8 @@ machine** governing whether it is live.
 type Binding struct {
     ID, Name           // identity
     Matcher            // { Source string } -- the webhook path segment, e.g. "sentry"
-    MappingID          // which Mapping resolves payload fields
+    MappingID          // which Mapping resolves payload fields; its event type is the binding's
+    Filter             // optional CEL over the mapping's parameters
     Workflow           // registered workflow name to dispatch to
     Version            // bumped on every edit
     Status             // pending_approval | armed
@@ -34,19 +35,23 @@ them from the dashboard while the daemon runs, without a restart.
 
 ### Matching
 
-`Matcher.Source` is the only predicate today: the path segment a sender
-POSTs to (e.g. a webhook hitting `.../sentry` matches bindings with
-`Matcher.Source == "sentry"`). The storage column is plain `TEXT`, so adding
-predicates later is non-breaking -- extend `Matcher`, don't invent a second
-matcher shape.
+A binding applies to a capture when the capture arrived on `Matcher.Source`,
+was identified as the event type its mapping belongs to, and passes its
+`Filter` (`binding.CompileFilter`, checked against the mapping's parameters on
+save). Any number of bindings may share a source; each dispatches a capture at
+most once, claimed in `binding_dispatches` keyed by (binding, capture) before
+its task is enqueued. An event signed with any armed binding's secret on the
+source is authenticated.
 
 ### Mapping
 
 `mapping.Resolve(fields, payload)` walks a captured JSON payload against a
 list of typed `Field`s (name, JSON path, expected type), returning resolved
-values plus a `[]Failure` for anything that didn't parse or type-match. This
-is schema-by-example in practice: a mapping is authored by pointing at a
-real captured payload in the dashboard, not by guessing a schema in advance.
+values plus a `[]Failure` for anything that didn't parse or type-match. A
+mapping belongs to an event type, and `mapping.CheckSchema` refuses a field
+whose path or type the type's inferred schema lacks. Each capture a mapping
+resolves at dispatch is counted once in `mapping_matches`, read back as
+`MatchCount` and `LastMatchedAt`.
 
 ### Versioning
 
