@@ -106,7 +106,7 @@ Do not expose these helper flags as daemon settings.
 
 | Keys | Default, validation, and consumer | Status |
 | --- | --- | --- |
-| `work_dir`, `state_dir`, `db_path` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; explicit `~` paths are home-expanded. `state_dir` holds the embedded NATS store and endpoint file, task logs and the readiness disk target. `db_path` only locates the legacy `<db_path>-tasks.sqlite`, `-eda.sqlite` and `-conversations.sqlite` files for `archie-state-store import` and the boot gate. | production-wired |
+| `work_dir`, `state_dir` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; explicit `~` paths are home-expanded. `state_dir` holds the embedded NATS store and endpoint file, task logs and the readiness disk target. | production-wired |
 | `skills_dir` | Empty falls back to `work_dir` for startup workflow registry. | partially-wired |
 | `plugin_dir` | Empty disables daemon plugin loading; configured directory loaded in `internal/app/archied`. | production-wired |
 | `poll_interval` | Default `60s`; root poll loop uses it, identities may override only interval. | production-wired |

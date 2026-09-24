@@ -15,10 +15,7 @@ process; nothing else opens the database.
 3. Map it in the store (`taskFromRow`, `bindingValue` and friends). If the
    column holds encoded data, the package that owns the type owns the encoding
    (`task.EncodeInputs`), and the store and the wire both use it.
-4. Add the column to `newColumns` in
-   `internal/infrastructure/legacyimport/load.go` if legacy data has no value
-   for it. The importer refuses a target column it cannot fill otherwise.
-5. Carry it over the wire (next section) if any process other than the State
+4. Carry it over the wire (next section) if any process other than the State
    Store reads it.
 
 ## Adding a field to a wire message

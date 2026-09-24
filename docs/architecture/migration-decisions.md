@@ -223,8 +223,8 @@ pass today. `cmd/archie-messaging/architecture_test.go` does not exist, and the
 check that section specifies -- `go list -deps ./cmd/archie-messaging` links
 zero banned runtime packages -- reported four at the time (the task store was
 then `internal/store` over `modernc.org/sqlite`; the gate now bans
-`modernc.org/sqlite`, `github.com/jackc/pgx`, `internal/infrastructure/postgres`
-and `internal/infrastructure/legacyread` in its place):
+`modernc.org/sqlite`, `github.com/jackc/pgx` and
+`internal/infrastructure/postgres` in its place):
 
 | banned package | PRD category |
 | --- | --- |

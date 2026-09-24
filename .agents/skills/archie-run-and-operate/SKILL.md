@@ -18,7 +18,7 @@ history.
 | Stage request | One autonomous workflow stage sent on `archie.agent.<task-id>.request`. |
 | Full-task handoff | A whole workflow sent on core NATS subject `archie.taskrun.<task-id>` to a task container. |
 | Work directory | `work_dir`: task clones plus memory and candidate index artifacts. |
-| State directory | `state_dir` (default `~/.local/share/archie`): embedded NATS store, task logs. Task, event, capture and conversation data live in the PostgreSQL database `database_url` names. `db_path` only locates pre-PostgreSQL files for `archie-state-store import`. |
+| State directory | `state_dir` (default `~/.local/share/archie`): embedded NATS store, task logs. Task, event, capture and conversation data live in the PostgreSQL database `database_url` names. |
 
 ## Apply the operational safety boundary
 

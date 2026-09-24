@@ -103,8 +103,8 @@ func TestStateStoreBootsWithStaleDatabaseOwnedValues(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "config.toml")
 			body := fmt.Sprintf(
-				"bot_user = 'archie'\ndb_path = %q\ndatabase_url = %q\n%s[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n",
-				filepath.Join(dir, "state.db"), pgtest.URL(t), tt.body,
+				"bot_user = 'archie'\ndatabase_url = %q\n%s[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n",
+				pgtest.URL(t), tt.body,
 			)
 			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 				t.Fatal(err)

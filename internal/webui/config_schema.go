@@ -91,7 +91,7 @@ type ConfigSection struct {
 //     restart even though the dashboard already renders it as editable.
 //   - Web, SkillsDir, PluginDir, SecretEngineDir are absent from both
 //     allowlists entirely, so they require a restart.
-//   - WorkDir and DBPath are locked (configuration.DeniedKeys), not merely
+//   - WorkDir and DatabaseURL are locked (configuration.DeniedKeys), not merely
 //     restart-required -- the dashboard cannot change them at all.
 func configFieldDescriptors() []ConfigSection {
 	return []ConfigSection{
@@ -148,7 +148,6 @@ func configFieldDescriptors() []ConfigSection {
 			Fields: []ConfigField{
 				{Key: "work_dir", Label: "Work directory", Type: FieldString, Editable: false},
 				{Key: "state_dir", Label: "State directory", Description: "Embedded NATS store, task logs and the readiness disk probe.", Type: FieldString, Editable: false},
-				{Key: "db_path", Label: "Legacy SQLite path prefix", Description: "Locates pre-PostgreSQL files for the one-time import only.", Type: FieldString, Editable: false},
 				{Key: "database_url", Label: "PostgreSQL URL", Description: "The State Store's database connection; set at boot, restart required.", Type: FieldString, Editable: false},
 				{Key: "skills_dir", Label: "Shared skills directory", Description: "Empty uses the work directory.", Type: FieldString, Editable: true, RestartRequired: true},
 				{Key: "plugin_dir", Label: "Daemon plugin directory", Description: "Empty means no daemon plugins.", Type: FieldString, Editable: true, RestartRequired: true},
@@ -194,7 +193,6 @@ func configFieldValues(view ConfigView) map[string]any {
 		"budgets.gate_max_failures":  view.Budgets.GateMaxFailures,
 		"work_dir":                   view.Storage.WorkDir,
 		"state_dir":                  view.Storage.StateDir,
-		"db_path":                    view.Storage.DBPath,
 		"database_url":               view.Storage.DatabaseURL,
 		"skills_dir":                 view.Storage.SkillsDir,
 		"plugin_dir":                 view.Storage.PluginDir,

@@ -30,7 +30,6 @@ func configWithFakeSecrets() *config.Holder {
 	return config.NewHolder(config.Config{
 		WorkDir:   "/work/archie",
 		SkillsDir: "/work/archie/.agents/skills",
-		DBPath:    "/work/archie/archie.db",
 		BotUser:   "archie-bot",
 		BotEmail:  "archie@example.com",
 		Label:     "archie",
@@ -343,7 +342,7 @@ func TestHandleConfigReportsLockedKeys(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, key := range []string{"db_path", "database_url", "work_dir"} {
+	for _, key := range []string{"database_url", "work_dir"} {
 		if got.Locked[key] == "" {
 			t.Errorf("Locked[%q] is empty, want a reason", key)
 		}

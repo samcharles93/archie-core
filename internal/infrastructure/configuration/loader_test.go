@@ -51,7 +51,6 @@ func TestLoadExpandsConfiguredHomePaths(t *testing.T) {
 	contents := `
 bot_user = "widget"
 work_dir = "~/archie/work"
-db_path = "~/archie/archie.db"
 state_dir = "~/archie/state"
 
 [chat]
@@ -74,7 +73,6 @@ name = "app"
 		want string
 	}{
 		"work_dir":       {got: cfg.WorkDir, want: filepath.Join(home, "archie", "work")},
-		"db_path":        {got: cfg.DBPath, want: filepath.Join(home, "archie", "archie.db")},
 		"state_dir":      {got: cfg.StateDir, want: filepath.Join(home, "archie", "state")},
 		"chat.workspace": {got: cfg.Chat.Workspace, want: filepath.Join(home, "archie", "workspace")},
 	}
@@ -87,15 +85,13 @@ name = "app"
 	}
 }
 
-// state_dir defaults to archie's directory under the data home, independent
-// of db_path, which only locates legacy files for the one-time import.
+// state_dir defaults to archie's directory under the data home.
 func TestStateDirDefaultsToTheDataHome(t *testing.T) {
 	dataHome := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := `
 bot_user = "widget"
-db_path = "/elsewhere/archie.db"
 
 [[repos]]
 owner = "acme"

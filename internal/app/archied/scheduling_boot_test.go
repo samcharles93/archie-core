@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -33,7 +32,7 @@ func newTestBoot(t *testing.T, tasks gateway.TaskCreator) *boot {
 		log:                 slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		bus:                 bus,
 		doc:                 &configuration.Document{},
-		cfg:                 config.Config{DBPath: filepath.Join(t.TempDir(), "archie.db")},
+		cfg:                 config.Config{},
 		chatTasks:           tasks,
 		defaultChatIdentity: "primary",
 	}

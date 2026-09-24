@@ -47,7 +47,6 @@ const (
 	RecoveryRestore  = "restore"
 	RecoveryValidate = "validate"
 	RecoveryRollback = "rollback"
-	RecoveryImport   = "import"
 )
 
 // StateStoreRecoveryOptions are the process inputs for one offline recovery
@@ -70,21 +69,11 @@ type StateStoreRecoveryOptions struct {
 	// Revision is the revision rollback replays. Zero means the newest
 	// revision older than the one the resource carries now.
 	Revision int64
-	// DBPath and DatabaseURL are import's source and target: the configured
-	// db_path every legacy file is named from, and the Postgres URL. Either
-	// left empty is read from the configuration.
-	DBPath      string
-	DatabaseURL string
 }
 
 // RunStateStoreRecovery performs one offline operation on the task database and
 // returns the line the command reports on stdout.
 func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
-	// import names its legacy sources from db_path and its target from
-	// database_url itself.
-	if options.Operation == RecoveryImport {
-		return importLegacy(ctx, options)
-	}
 	return runPostgresRecovery(ctx, options)
 }
 

@@ -441,17 +441,13 @@ type Config struct {
 	// SecretEngineDir contains Yaegi secret-engine plugins. Built-in env and
 	// bws engines remain available when this is empty.
 	SecretEngineDir string `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
-	// DBPath locates the legacy SQLite files ("<db_path>-tasks.sqlite",
-	// "-eda.sqlite", "-conversations.sqlite") for the one-time import and the
-	// boot gate that refuses to serve until it has run. Nothing else reads it.
-	DBPath string `toml:"db_path" yaml:"db_path"`
 	// StateDir is the host directory archie keeps non-database state in: the
 	// embedded NATS store and its endpoint file, the task-log registry, and
 	// the readiness disk probe's data target. Bootstrap-only.
 	StateDir string `toml:"state_dir" yaml:"state_dir"`
 	// DatabaseURL is the PostgreSQL connection URL the standalone State Store
-	// process opens at boot. It is bootstrap-only (the same class as db_path
-	// and work_dir): the pool is opened once, so a runtime change cannot take
+	// process opens at boot. It is bootstrap-only (the same class as
+	// state_dir and work_dir): the pool is opened once, so a runtime change cannot take
 	// effect, and it is refused by the runtime overlay. It has no default --
 	// an empty value is a startup error for the State Store, which fails
 	// closed rather than fall back to SQLite (the epic is Postgres-only).

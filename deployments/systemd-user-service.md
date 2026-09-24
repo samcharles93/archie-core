@@ -254,5 +254,4 @@ docker compose pull agent
 ```
 
 `state_dir` and other paths are native host paths. Point `state_dir` at the
-intended state directory (embedded NATS store, task logs); `db_path` only
-locates pre-PostgreSQL files for `archie-state-store import`.
+intended state directory (embedded NATS store, task logs).

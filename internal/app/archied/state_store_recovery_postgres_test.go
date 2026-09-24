@@ -25,8 +25,8 @@ func pgRecoveryFixture(t *testing.T) (configPath string, pool *pgxpool.Pool, url
 	url = pgtest.URL(t)
 	dir := t.TempDir()
 	configPath = filepath.Join(dir, "config.toml")
-	body := fmt.Sprintf("bot_user = 'archie'\ndb_path = %q\ndatabase_url = %q\n[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n",
-		filepath.Join(dir, "archie.db"), url)
+	body := fmt.Sprintf("bot_user = 'archie'\ndatabase_url = %q\n[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n",
+		url)
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

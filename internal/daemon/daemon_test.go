@@ -1955,7 +1955,6 @@ const (
 func configWithCanarySecrets() config.Config {
 	return config.Config{
 		WorkDir:  "/work/archie",
-		DBPath:   "/work/archie/archie.db",
 		BotUser:  "archie-bot",
 		BotEmail: "archie@example.com",
 		Label:    "archie",

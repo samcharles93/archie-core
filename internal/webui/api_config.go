@@ -243,7 +243,6 @@ type BudgetsView struct {
 type StorageView struct {
 	WorkDir         string `json:"work_dir"`
 	StateDir        string `json:"state_dir"`
-	DBPath          string `json:"db_path"`
 	DatabaseURL     string `json:"database_url"`
 	SkillsDir       string `json:"skills_dir,omitempty"`
 	PluginDir       string `json:"plugin_dir,omitempty"`
@@ -377,7 +376,6 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 		Storage: StorageView{
 			WorkDir:         cfg.WorkDir,
 			StateDir:        cfg.StateDir,
-			DBPath:          cfg.DBPath,
 			DatabaseURL:     cfg.DatabaseURL,
 			SkillsDir:       cfg.SkillsDir,
 			PluginDir:       cfg.PluginDir,

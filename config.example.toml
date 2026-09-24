@@ -14,13 +14,11 @@
 
 # work_dir = "~/.local/share/archie/work"   # default
 # state_dir = "~/.local/share/archie"       # default; embedded NATS store, task logs, disk probe
-# db_path  = "~/.local/share/archie/archie.db" # default; locates pre-PostgreSQL SQLite files for the import only
 
 # The PostgreSQL connection archie-state-store, archied and archie-gateway
 # serve from. Required: each fails closed without it.
-# An install with SQLite stores under db_path runs `archie-state-store import`
-# once, with archie stopped, before it starts. `docker compose up -d postgres` starts
-# a matching local postgres:18 with this default URL.
+# `docker compose up -d postgres` starts a matching local postgres:18 with this
+# default URL.
 # database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 
 # skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
