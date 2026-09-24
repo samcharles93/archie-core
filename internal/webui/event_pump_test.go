@@ -163,6 +163,9 @@ func openSSEStream(t *testing.T, ctx context.Context, ts *httptest.Server) <-cha
 				return
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			return
+		}
 	}()
 	return lines
 }
