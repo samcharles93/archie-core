@@ -148,6 +148,10 @@ func (s *Server) handleControlPlaneWatch(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	// Headers go out now: the browser marks the stream live on them, and an
+	// unchanged resource may send nothing for hours.
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
 	for {
 		response, recvErr := stream.Recv()
 		if errors.Is(recvErr, io.EOF) || r.Context().Err() != nil {

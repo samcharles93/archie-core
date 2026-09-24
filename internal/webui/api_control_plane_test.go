@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,6 +23,7 @@ type controlPlaneClientStub struct {
 	query     *controlpb.Resource
 	history   *controlpb.HistoryRequest
 	revisions []*controlpb.Revision
+	watch     grpc.ServerStreamingClient[controlpb.WatchResponse]
 	err       error
 }
 
@@ -47,7 +49,39 @@ func (f *controlPlaneClientStub) Command(_ context.Context, request *controlpb.C
 }
 
 func (f *controlPlaneClientStub) Watch(context.Context, *controlpb.WatchRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[controlpb.WatchResponse], error) {
-	return nil, f.err
+	return f.watch, f.err
+}
+
+// idleWatch is a watch stream with nothing to deliver: Recv blocks until the
+// request ends, as a real stream does while the resource is unchanged.
+type idleWatch struct {
+	grpc.ClientStream
+	done <-chan struct{}
+}
+
+func (w idleWatch) Recv() (*controlpb.WatchResponse, error) {
+	<-w.done
+	return nil, context.Canceled
+}
+
+// TestControlPlaneWatchOpensBeforeTheFirstChange: a browser marks an event
+// stream live when its headers arrive. Holding them until the first change
+// leaves every settings card reading "Connecting" on an unchanged resource.
+func TestControlPlaneWatchOpensBeforeTheFirstChange(t *testing.T) {
+	server := httptest.NewServer((&Server{ControlPlane: &controlPlaneClientStub{watch: idleWatch{done: t.Context().Done()}}}).Handler())
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/control-plane/watch/workflow-execution-settings", nil)
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("watch did not answer before its first change: %v", err)
+	}
+	defer response.Body.Close()
+	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", got)
+	}
 }
 
 func TestControlPlaneCommandSuppliesTrustedAttribution(t *testing.T) {
