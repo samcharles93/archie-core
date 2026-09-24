@@ -48,6 +48,8 @@ function text(value: unknown): string {
 export interface TimelineLine {
   title: string;
   detail: string;
+  /** Set for an event a reader must not skim past. */
+  tone?: "warn";
 }
 
 export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
@@ -111,6 +113,10 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
       title: "Configuration captured",
       detail: "The effective task-runtime configuration for this run.",
     };
+  }
+  if (ev.kind === "unsigned_event") {
+    const source = text(data.source);
+    return { title: "Started by an unsigned event", detail: source ? `source ${source}` : "", tone: "warn" };
   }
   if (ev.kind === "changes_captured") {
     const totals = (data.totals ?? {}) as { files?: unknown };

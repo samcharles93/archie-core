@@ -611,7 +611,7 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 // single cycle's worst-case latency on a backlog.
 const bindingDispatchBatchLimit = 100
 
-// dispatchBindings walks authenticated captures whose source has at
+// dispatchBindings walks dispatchable captures whose source has at
 // least one armed binding, evaluates each binding's matcher against
 // the capture, resolves fields through the binding's mapping, and
 // enqueues a task per matched (binding, capture) pair.
@@ -662,7 +662,7 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 			continue
 		}
 		for _, b := range armed {
-			if !b.Matcher.Matches(c.Source, c.Authenticated) {
+			if !b.Matcher.Matches(c.Source, c.Dispatchable()) {
 				continue
 			}
 			d.dispatchOneBinding(ctx, b, c)
@@ -736,6 +736,16 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 		}
 		d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
 		return
+	}
+	if c.Unsigned {
+		if _, err := d.Store.InsertEvent(ctx, events.Event{
+			TaskID: task.ID,
+			Kind:   events.KindUnsignedEvent,
+			Detail: fmt.Sprintf("started by an unsigned event from source %q", c.Source),
+			Data:   map[string]any{"source": c.Source, "capture_id": c.ID, "binding_id": b.ID},
+		}); err != nil {
+			d.Log.Warn("binding dispatch: unsigned marker", "task", task.ID, "error", err)
+		}
 	}
 }
 

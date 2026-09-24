@@ -12,7 +12,6 @@ type bindingInput struct {
 	Name     string
 	Source   string
 	Workflow string
-	Secret   string
 }
 
 func insertBinding(t *testing.T, s *Store, in bindingInput) string {
@@ -21,7 +20,6 @@ func insertBinding(t *testing.T, s *Store, in bindingInput) string {
 		Name:     in.Name,
 		Matcher:  binding.Matcher{Source: in.Source},
 		Workflow: in.Workflow,
-		Secret:   in.Secret,
 	})
 	if err != nil {
 		t.Fatalf("InsertBinding() error = %v", err)

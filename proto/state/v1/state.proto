@@ -135,6 +135,14 @@ service StateStoreService {
   rpc DeleteBinding(DeleteBindingRequest) returns (DeleteBindingResponse);
   rpc ApproveBinding(ApproveBindingRequest) returns (ApproveBindingResponse);
 
+  // Source (event-automation.md "Sources"): the capture endpoint and its
+  // signing setting. Secrets travel in plaintext; the store encrypts at rest.
+  rpc InsertSource(InsertSourceRequest) returns (InsertSourceResponse);
+  rpc GetSource(GetSourceRequest) returns (GetSourceResponse);
+  rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse);
+  rpc SetSourceSigning(SetSourceSigningRequest) returns (SetSourceSigningResponse);
+  rpc SetSourceSecret(SetSourceSecretRequest) returns (SetSourceSecretResponse);
+
   // Dispatch
   rpc ArmedBindingsForSource(ArmedBindingsForSourceRequest) returns (ArmedBindingsForSourceResponse);
   rpc RecordDispatch(RecordDispatchRequest) returns (RecordDispatchResponse);
@@ -318,6 +326,8 @@ message CapturedEvent {
   // event_type is the ID of the event type the capture was identified as on
   // arrival; empty is unidentified.
   string event_type = 9;
+  // unsigned marks an event taken on an approved unsigned source.
+  bool unsigned = 10;
 }
 
 // EventTypeHeaderCondition mirrors internal/domain/eventtype.HeaderCondition.
@@ -380,9 +390,19 @@ message Binding {
   string repo = 7;
   int64 version = 8;
   string status = 9;
-  string secret = 10;
+  // Unused: signing moved to Source. Kept so the field number is never reused.
+  string secret = 10 [deprecated = true];
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
+}
+
+// Source mirrors internal/domain/source.Source.
+message Source {
+  string path = 1;
+  string signing = 2;
+  string secret = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
 }
 
 // WorkflowStat mirrors internal/store.WorkflowStat.
@@ -756,6 +776,31 @@ message DeleteBindingResponse {}
 
 message ApproveBindingRequest { string id = 1; }
 message ApproveBindingResponse {}
+
+message InsertSourceRequest { Source source = 1; }
+message InsertSourceResponse {}
+
+message GetSourceRequest { string path = 1; }
+message GetSourceResponse {
+  Source source = 1;
+  bool found = 2;
+}
+
+message ListSourcesRequest {}
+message ListSourcesResponse { repeated Source sources = 1; }
+
+message SetSourceSigningRequest {
+  string path = 1;
+  string from = 2;
+  string to = 3;
+}
+message SetSourceSigningResponse {}
+
+message SetSourceSecretRequest {
+  string path = 1;
+  string secret = 2;
+}
+message SetSourceSecretResponse {}
 
 message ArmedBindingsForSourceRequest { string source = 1; }
 message ArmedBindingsForSourceResponse { repeated Binding bindings = 1; }

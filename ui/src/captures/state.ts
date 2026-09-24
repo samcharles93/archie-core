@@ -28,6 +28,7 @@ export interface Capture {
   authenticated?: boolean;
   /** The event type it was identified as on arrival; empty is unidentified. */
   event_type?: string;
+  unsigned?: boolean;
 }
 
 interface CapturesResponse {

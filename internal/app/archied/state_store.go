@@ -254,10 +254,8 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.Bindings = b.eda
 		deps.BindingDispatcher = b.eda
 		deps.PlaybookDispatcher = b.eda
-		// Only the Postgres EDA store holds event types.
-		if eventTypes, ok := any(b.eda).(storecontract.EventTypeStore); ok {
-			deps.EventTypes = eventTypes
-		}
+		deps.EventTypes = b.eda
+		deps.Sources = b.eda
 	}
 	// tool_call events project into the tool_calls collection on the same
 	// event-capture store: this process legitimately owns both, so the

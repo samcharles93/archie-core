@@ -8,7 +8,6 @@ func validBinding() Binding {
 		Matcher:   Matcher{Source: "sentry"},
 		MappingID: "m1",
 		Workflow:  "implement",
-		Secret:    "0123456789abcdef0123456789abcdef",
 	}
 }
 
@@ -33,47 +32,6 @@ func TestValidateAcceptsBothOwnerAndRepo(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsPartialRepoPin: Owner and Repo are a pair. A
-// binding naming only one of them is ambiguous -- it isn't "no pin"
-// (that's both empty) and it isn't a complete pin, so it must be
-// rejected at validation time rather than silently guessing which
-// half was meant.
-// TestValidateForUpdateAcceptsEmptySecret is the fix for a real bug found
-// via browser testing (t2db.8): UpdateBinding's own documented contract
-// treats an empty Secret as "preserve the existing one" (COALESCE against
-// NULLIF), but the API handler validated with the create-time Validate,
-// which rejected any edit that didn't retype the full secret -- making
-// the store's own documented behavior unreachable.
-func TestValidateForUpdateAcceptsEmptySecret(t *testing.T) {
-	b := validBinding()
-	b.Secret = ""
-	if err := b.ValidateForUpdate(); err != nil {
-		t.Fatalf("ValidateForUpdate() = %v, want nil for an empty (preserve-existing) secret", err)
-	}
-}
-
-// TestValidateForUpdateStillEnforcesLengthOnANewSecret confirms the fix
-// isn't a blanket bypass: a genuinely-supplied short secret on update is
-// still rejected, same floor as create.
-func TestValidateForUpdateStillEnforcesLengthOnANewSecret(t *testing.T) {
-	b := validBinding()
-	b.Secret = "short"
-	if err := b.ValidateForUpdate(); err == nil {
-		t.Fatal("ValidateForUpdate() = nil, want error for a too-short (but non-empty) secret")
-	}
-}
-
-// TestValidateRejectsEmptySecretOnCreate pins that the fix is scoped to
-// update only -- Validate (used at create time, where there is no
-// existing secret to fall back to) still requires a real one.
-func TestValidateRejectsEmptySecretOnCreate(t *testing.T) {
-	b := validBinding()
-	b.Secret = ""
-	if err := b.Validate(); err == nil {
-		t.Fatal("Validate() = nil, want error for an empty secret at create time")
-	}
-}
-
 func TestValidateRejectsPartialRepoPin(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -90,5 +48,23 @@ func TestValidateRejectsPartialRepoPin(t *testing.T) {
 				t.Fatalf("Validate() = nil, want error for partial owner/repo pin (owner=%q repo=%q)", tt.owner, tt.repo)
 			}
 		})
+	}
+}
+
+func TestMatcherMatchesOnlyDispatchableEventsFromItsSource(t *testing.T) {
+	m := Matcher{Source: "sentry"}
+	tests := []struct {
+		source       string
+		dispatchable bool
+		want         bool
+	}{
+		{"sentry", true, true},
+		{"sentry", false, false},
+		{"other", true, false},
+	}
+	for _, tt := range tests {
+		if got := m.Matches(tt.source, tt.dispatchable); got != tt.want {
+			t.Errorf("Matches(%q, %v) = %v, want %v", tt.source, tt.dispatchable, got, tt.want)
+		}
 	}
 }

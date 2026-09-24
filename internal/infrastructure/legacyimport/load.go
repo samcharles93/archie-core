@@ -24,10 +24,12 @@ var droppedColumns = map[string]bool{
 }
 
 // newColumns are target columns added after the legacy stores, with no
-// legacy value to carry. Imported rows take the column default: an imported
-// capture has no event type, so it stays unidentified and never dispatches.
+// legacy value to carry; an imported row takes the column default. An
+// imported capture has no event type, so it stays unidentified and never
+// dispatches, and no legacy source could take unsigned events.
 var newColumns = map[string]bool{
 	"captures.event_type": true,
+	"captures.unsigned":   true,
 }
 
 // targetKeys override a table's legacy key where the target has no column

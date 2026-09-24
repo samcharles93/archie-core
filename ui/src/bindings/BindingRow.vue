@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, Pencil, Trash2 } from "@lucide/vue";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import BindingStatusBadge from "./BindingStatusBadge.vue";
@@ -18,7 +19,12 @@ const emit = defineEmits<{
 <template>
   <TableRow>
     <TableCell class="font-medium">{{ props.binding.name }}</TableCell>
-    <TableCell class="font-mono text-fg-muted">{{ matcherSource(props.binding) }}</TableCell>
+    <TableCell class="font-mono text-fg-muted">
+      <div class="flex items-center gap-2">
+        {{ matcherSource(props.binding) }}
+        <Badge v-if="props.binding.unsigned" variant="warn">Unsigned</Badge>
+      </div>
+    </TableCell>
     <TableCell>{{ props.binding.workflow || "—" }}</TableCell>
     <TableCell class="font-mono text-fg-muted">{{ repoPin(props.binding) }}</TableCell>
     <TableCell><BindingStatusBadge :status="props.binding.status" /></TableCell>

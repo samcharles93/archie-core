@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -151,6 +152,7 @@ func capturedEventProto(c storecontract.CapturedEvent) *pb.CapturedEvent {
 		Id: c.ID, ReceivedAt: timestamp(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
 		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
+		Unsigned: c.Unsigned,
 	}
 }
 
@@ -162,6 +164,24 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 		ID: c.Id, ReceivedAt: timeValue(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
 		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
+		Unsigned: c.Unsigned,
+	}
+}
+
+func sourceProto(s source.Source) *pb.Source {
+	return &pb.Source{
+		Path: s.Path, Signing: string(s.Signing), Secret: s.Secret,
+		CreatedAt: timestamp(s.CreatedAt), UpdatedAt: timestamp(s.UpdatedAt),
+	}
+}
+
+func sourceValue(s *pb.Source) source.Source {
+	if s == nil {
+		return source.Source{}
+	}
+	return source.Source{
+		Path: s.Path, Signing: source.Signing(s.Signing), Secret: s.Secret,
+		CreatedAt: timeValue(s.CreatedAt), UpdatedAt: timeValue(s.UpdatedAt),
 	}
 }
 
@@ -199,7 +219,7 @@ func bindingProto(b binding.Binding) *pb.Binding {
 	return &pb.Binding{
 		Id: b.ID, Name: b.Name, Matcher: &pb.BindingMatcher{Source: b.Matcher.Source},
 		MappingId: b.MappingID, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		Version: int64(b.Version), Status: string(b.Status), Secret: b.Secret,
+		Version: int64(b.Version), Status: string(b.Status),
 		CreatedAt: timestamp(b.CreatedAt), UpdatedAt: timestamp(b.UpdatedAt),
 	}
 }
@@ -215,7 +235,7 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	return binding.Binding{
 		ID: b.Id, Name: b.Name, Matcher: binding.Matcher{Source: source},
 		MappingID: b.MappingId, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		Version: int(b.Version), Status: binding.Status(b.Status), Secret: b.Secret,
+		Version: int(b.Version), Status: binding.Status(b.Status),
 		CreatedAt: timeValue(b.CreatedAt), UpdatedAt: timeValue(b.UpdatedAt),
 	}
 }
@@ -274,6 +294,9 @@ const (
 	msgBindingOverlap    = "binding overlap"
 	msgBindingTransition = "binding transition rejected"
 	msgAlreadyDispatched = "already dispatched"
+	msgSourceNotFound    = "source not found"
+	msgSourcePathTaken   = "source path taken"
+	msgSourceSigning     = "source signing stale"
 	msgInternal          = "state store: internal error"
 	// msgTaskLogsUnavailable is the public phrase for "this service has no
 	// task-log reader". It is a wire contract like the sentinels above: the
@@ -306,28 +329,12 @@ func mapError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 	}
-	switch {
-	case errors.Is(err, storecontract.ErrStaleTransition):
-		return status.Error(codes.FailedPrecondition, msgStaleTransition)
-	case errors.Is(err, storecontract.ErrBindingNotFound):
-		return status.Error(codes.NotFound, msgBindingNotFound)
-	case errors.Is(err, storecontract.ErrMappingNotFound):
-		return status.Error(codes.NotFound, msgMappingNotFound)
-	case errors.Is(err, storecontract.ErrEventTypeNotFound):
-		return status.Error(codes.NotFound, msgEventTypeNotFound)
-	case errors.Is(err, eventtype.ErrOverlap):
-		return status.Error(codes.FailedPrecondition, msgEventTypeOverlap)
-	case errors.Is(err, eventtype.ErrInvalid):
-		return status.Error(codes.InvalidArgument, msgEventTypeInvalid)
-	case errors.Is(err, storecontract.ErrBindingOverlap):
-		return status.Error(codes.FailedPrecondition, msgBindingOverlap)
-	case errors.Is(err, storecontract.ErrBindingTransition):
-		return status.Error(codes.FailedPrecondition, msgBindingTransition)
-	case errors.Is(err, storecontract.ErrAlreadyDispatched):
-		return status.Error(codes.AlreadyExists, msgAlreadyDispatched)
-	default:
-		return status.Error(codes.Internal, msgInternal)
+	for _, w := range wireErrors {
+		if errors.Is(err, w.sentinel) {
+			return status.Error(w.code, w.message)
+		}
 	}
+	return status.Error(codes.Internal, msgInternal)
 }
 
 // unmapError rehydrates a gRPC status error back to the store sentinel it
@@ -382,20 +389,37 @@ type wireStatus struct {
 	message string
 }
 
-// wireSentinels is the (code, canonical message) to sentinel table
-// sentinelForStatus reads.
-var wireSentinels = map[wireStatus]error{
-	{codes.FailedPrecondition, msgStaleTransition}:   storecontract.ErrStaleTransition,
-	{codes.FailedPrecondition, msgBindingOverlap}:    storecontract.ErrBindingOverlap,
-	{codes.FailedPrecondition, msgBindingTransition}: storecontract.ErrBindingTransition,
-	{codes.FailedPrecondition, msgEventTypeOverlap}:  eventtype.ErrOverlap,
-	{codes.InvalidArgument, msgEventTypeInvalid}:     eventtype.ErrInvalid,
-	{codes.NotFound, msgBindingNotFound}:             storecontract.ErrBindingNotFound,
-	{codes.NotFound, msgMappingNotFound}:             storecontract.ErrMappingNotFound,
-	{codes.NotFound, msgEventTypeNotFound}:           storecontract.ErrEventTypeNotFound,
-	{codes.AlreadyExists, msgAlreadyDispatched}:      storecontract.ErrAlreadyDispatched,
-	{codes.Unavailable, msgTaskLogsUnavailable}:      logging.ErrTaskLogsUnavailable,
+// wireErrors pairs each sentinel with its canonical (code, message). mapError
+// reads it forward and sentinelForStatus backward, so the two directions
+// cannot drift.
+var wireErrors = []struct {
+	sentinel error
+	code     codes.Code
+	message  string
+}{
+	{storecontract.ErrStaleTransition, codes.FailedPrecondition, msgStaleTransition},
+	{storecontract.ErrBindingOverlap, codes.FailedPrecondition, msgBindingOverlap},
+	{storecontract.ErrBindingTransition, codes.FailedPrecondition, msgBindingTransition},
+	{storecontract.ErrSourceSigningStale, codes.FailedPrecondition, msgSourceSigning},
+	{eventtype.ErrOverlap, codes.FailedPrecondition, msgEventTypeOverlap},
+	{eventtype.ErrInvalid, codes.InvalidArgument, msgEventTypeInvalid},
+	{storecontract.ErrBindingNotFound, codes.NotFound, msgBindingNotFound},
+	{storecontract.ErrMappingNotFound, codes.NotFound, msgMappingNotFound},
+	{storecontract.ErrEventTypeNotFound, codes.NotFound, msgEventTypeNotFound},
+	{storecontract.ErrSourceNotFound, codes.NotFound, msgSourceNotFound},
+	{storecontract.ErrAlreadyDispatched, codes.AlreadyExists, msgAlreadyDispatched},
+	{storecontract.ErrSourcePathTaken, codes.AlreadyExists, msgSourcePathTaken},
+	{logging.ErrTaskLogsUnavailable, codes.Unavailable, msgTaskLogsUnavailable},
 }
+
+// wireSentinels indexes wireErrors by (code, canonical message).
+var wireSentinels = func() map[wireStatus]error {
+	m := make(map[wireStatus]error, len(wireErrors))
+	for _, w := range wireErrors {
+		m[wireStatus{w.code, w.message}] = w.sentinel
+	}
+	return m
+}()
 
 // configSnapshotProto and configSnapshotValue carry the dashboard's
 // configuration projection. document crosses as bytes, unread by either side

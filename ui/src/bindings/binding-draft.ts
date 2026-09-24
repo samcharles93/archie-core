@@ -6,9 +6,8 @@
  */
 
 /**
- * A binding as GET /api/bindings returns it. Secret is never returned: the
- * daemon strips it from every read, and a blank secret on update is its
- * server-side "keep the current one".
+ * A binding as GET /api/bindings returns it. Signing belongs to the source the
+ * matcher names; unsigned is set when that source takes unsigned events.
  */
 export interface Binding {
   id: string;
@@ -21,6 +20,7 @@ export interface Binding {
   repo?: string;
   status?: string;
   version?: number;
+  unsigned?: boolean;
 }
 
 /** The fields of GET /api/mappings this page needs. */
@@ -71,7 +71,6 @@ export interface BindingDraft {
   workflow: string;
   owner: string;
   repo: string;
-  secret: string;
 }
 
 export function emptyDraft(): BindingDraft {
@@ -83,7 +82,6 @@ export function emptyDraft(): BindingDraft {
     workflow: "",
     owner: "",
     repo: "",
-    secret: generateSecret(),
   };
 }
 
@@ -96,9 +94,6 @@ export function draftFromBinding(binding: Binding): BindingDraft {
     workflow: binding.workflow || "",
     owner: binding.owner || "",
     repo: binding.repo || "",
-    // Deliberately blank: the secret is never sent to the browser, and an
-    // empty one on update keeps whatever the sender already signs with.
-    secret: "",
   };
 }
 
@@ -111,14 +106,7 @@ export function bindingPayload(draft: BindingDraft): Record<string, unknown> {
     workflow: draft.workflow,
     owner: draft.owner,
     repo: draft.repo,
-    secret: draft.secret,
   };
-}
-
-/** A 32-byte hex signing secret for a new binding. */
-export function generateSecret(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** The repo pin a row shows, or an em dash when the binding takes the

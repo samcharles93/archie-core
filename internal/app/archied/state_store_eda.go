@@ -14,6 +14,8 @@ type eventCaptureStore interface {
 	storecontract.BindingStore
 	storecontract.BindingDispatcher
 	storecontract.PlaybookDispatcher
+	storecontract.EventTypeStore
+	storecontract.SourceStore
 	toolCallWriter
 }
 

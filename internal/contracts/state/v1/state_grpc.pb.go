@@ -83,6 +83,11 @@ const (
 	StateStoreService_UpdateBinding_FullMethodName              = "/state.v1.StateStoreService/UpdateBinding"
 	StateStoreService_DeleteBinding_FullMethodName              = "/state.v1.StateStoreService/DeleteBinding"
 	StateStoreService_ApproveBinding_FullMethodName             = "/state.v1.StateStoreService/ApproveBinding"
+	StateStoreService_InsertSource_FullMethodName               = "/state.v1.StateStoreService/InsertSource"
+	StateStoreService_GetSource_FullMethodName                  = "/state.v1.StateStoreService/GetSource"
+	StateStoreService_ListSources_FullMethodName                = "/state.v1.StateStoreService/ListSources"
+	StateStoreService_SetSourceSigning_FullMethodName           = "/state.v1.StateStoreService/SetSourceSigning"
+	StateStoreService_SetSourceSecret_FullMethodName            = "/state.v1.StateStoreService/SetSourceSecret"
 	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
 	StateStoreService_RecordPlaybookDispatch_FullMethodName     = "/state.v1.StateStoreService/RecordPlaybookDispatch"
@@ -214,6 +219,13 @@ type StateStoreServiceClient interface {
 	UpdateBinding(ctx context.Context, in *UpdateBindingRequest, opts ...grpc.CallOption) (*UpdateBindingResponse, error)
 	DeleteBinding(ctx context.Context, in *DeleteBindingRequest, opts ...grpc.CallOption) (*DeleteBindingResponse, error)
 	ApproveBinding(ctx context.Context, in *ApproveBindingRequest, opts ...grpc.CallOption) (*ApproveBindingResponse, error)
+	// Source (event-automation.md "Sources"): the capture endpoint and its
+	// signing setting. Secrets travel in plaintext; the store encrypts at rest.
+	InsertSource(ctx context.Context, in *InsertSourceRequest, opts ...grpc.CallOption) (*InsertSourceResponse, error)
+	GetSource(ctx context.Context, in *GetSourceRequest, opts ...grpc.CallOption) (*GetSourceResponse, error)
+	ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error)
+	SetSourceSigning(ctx context.Context, in *SetSourceSigningRequest, opts ...grpc.CallOption) (*SetSourceSigningResponse, error)
+	SetSourceSecret(ctx context.Context, in *SetSourceSecretRequest, opts ...grpc.CallOption) (*SetSourceSecretResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(ctx context.Context, in *RecordDispatchRequest, opts ...grpc.CallOption) (*RecordDispatchResponse, error)
@@ -899,6 +911,56 @@ func (c *stateStoreServiceClient) ApproveBinding(ctx context.Context, in *Approv
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) InsertSource(ctx context.Context, in *InsertSourceRequest, opts ...grpc.CallOption) (*InsertSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InsertSourceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_InsertSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetSource(ctx context.Context, in *GetSourceRequest, opts ...grpc.CallOption) (*GetSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSourceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSourcesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListSources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetSourceSigning(ctx context.Context, in *SetSourceSigningRequest, opts ...grpc.CallOption) (*SetSourceSigningResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSourceSigningResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetSourceSigning_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetSourceSecret(ctx context.Context, in *SetSourceSecretRequest, opts ...grpc.CallOption) (*SetSourceSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSourceSecretResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetSourceSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ArmedBindingsForSourceResponse)
@@ -1101,6 +1163,13 @@ type StateStoreServiceServer interface {
 	UpdateBinding(context.Context, *UpdateBindingRequest) (*UpdateBindingResponse, error)
 	DeleteBinding(context.Context, *DeleteBindingRequest) (*DeleteBindingResponse, error)
 	ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error)
+	// Source (event-automation.md "Sources"): the capture endpoint and its
+	// signing setting. Secrets travel in plaintext; the store encrypts at rest.
+	InsertSource(context.Context, *InsertSourceRequest) (*InsertSourceResponse, error)
+	GetSource(context.Context, *GetSourceRequest) (*GetSourceResponse, error)
+	ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error)
+	SetSourceSigning(context.Context, *SetSourceSigningRequest) (*SetSourceSigningResponse, error)
+	SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error)
@@ -1318,6 +1387,21 @@ func (UnimplementedStateStoreServiceServer) DeleteBinding(context.Context, *Dele
 }
 func (UnimplementedStateStoreServiceServer) ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApproveBinding not implemented")
+}
+func (UnimplementedStateStoreServiceServer) InsertSource(context.Context, *InsertSourceRequest) (*InsertSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InsertSource not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetSource(context.Context, *GetSourceRequest) (*GetSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSource not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSources not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetSourceSigning(context.Context, *SetSourceSigningRequest) (*SetSourceSigningResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSourceSigning not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSourceSecret not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ArmedBindingsForSource not implemented")
@@ -2499,6 +2583,96 @@ func _StateStoreService_ApproveBinding_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_InsertSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InsertSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).InsertSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_InsertSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).InsertSource(ctx, req.(*InsertSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetSource(ctx, req.(*GetSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListSources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListSources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListSources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListSources(ctx, req.(*ListSourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetSourceSigning_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSourceSigningRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetSourceSigning(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetSourceSigning_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetSourceSigning(ctx, req.(*SetSourceSigningRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetSourceSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSourceSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetSourceSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetSourceSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetSourceSecret(ctx, req.(*SetSourceSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_ArmedBindingsForSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ArmedBindingsForSourceRequest)
 	if err := dec(in); err != nil {
@@ -2872,6 +3046,26 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApproveBinding",
 			Handler:    _StateStoreService_ApproveBinding_Handler,
+		},
+		{
+			MethodName: "InsertSource",
+			Handler:    _StateStoreService_InsertSource_Handler,
+		},
+		{
+			MethodName: "GetSource",
+			Handler:    _StateStoreService_GetSource_Handler,
+		},
+		{
+			MethodName: "ListSources",
+			Handler:    _StateStoreService_ListSources_Handler,
+		},
+		{
+			MethodName: "SetSourceSigning",
+			Handler:    _StateStoreService_SetSourceSigning_Handler,
+		},
+		{
+			MethodName: "SetSourceSecret",
+			Handler:    _StateStoreService_SetSourceSecret_Handler,
 		},
 		{
 			MethodName: "ArmedBindingsForSource",
