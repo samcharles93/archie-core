@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"strings"
 	"sync"
@@ -120,6 +121,9 @@ type Daemon struct {
 	// BindingStore to keep the CRUD interface under the interfacebloat
 	// limit. Optional: nil disables the dispatch loop.
 	BindingDispatcher storecontract.BindingDispatcher
+	// MappingMatches counts each event a mapping resolved at dispatch.
+	// Optional: nil leaves match counts unrecorded.
+	MappingMatches storecontract.MappingMatchRecorder
 	// BindingTaskCreator enqueues a task triggered by a binding. Split
 	// off TaskLifecycle so the lifecycle surface stays narrow and the
 	// dispatch loop does not acquire the full task-creation contract.
@@ -611,30 +615,18 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 // single cycle's worst-case latency on a backlog.
 const bindingDispatchBatchLimit = 100
 
-// dispatchBindings walks authenticated captures whose source has at
-// least one armed binding, evaluates each binding's matcher against
-// the capture, resolves fields through the binding's mapping, and
-// enqueues a task per matched (binding, capture) pair.
+// dispatchBindings walks identified captures on sources with an armed
+// binding and offers each capture to every armed binding on its source.
+// Each binding dispatches it at most once (dispatchOneBinding).
 //
-// The binding_dispatches ledger is the at-most-once guarantee across
-// cycles and daemon restarts: RecordDispatch returns
-// storecontract.ErrAlreadyDispatched on a duplicate (binding_id, capture_id)
-// pair, and dispatchOneBinding treats that as a normal "another cycle
-// raced us" outcome rather than an error.
-//
-// Nil Bindings, BindingDispatcher or BindingTaskCreator disables the
-// loop (legacy behaviour: daemons built before t2db.4 Phase E had no
-// playbook bindings, and each field's own doc comment promises this
-// degrade-not-panic contract independently).
+// Nil Bindings, BindingDispatcher or BindingTaskCreator disables the loop.
 func (d *Daemon) dispatchBindings(ctx context.Context) {
 	if d.Bindings == nil || d.BindingDispatcher == nil || d.BindingTaskCreator == nil {
 		return
 	}
 
 	// Gather armed sources first so the captures query filters down to
-	// only relevant rows -- the table-level view over captured_events
-	// is otherwise unbounded, and a backlog of unrelated sources
-	// should never be scanned on a cycle.
+	// only relevant rows.
 	bindings, err := d.Bindings.ListBindings(ctx)
 	if err != nil {
 		d.Log.Warn("list bindings failed", "error", err)
@@ -655,6 +647,11 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 		d.Log.Warn("list undispatched captures failed", "error", err)
 		return
 	}
+	workflows, err := d.activeWorkflows(ctx)
+	if err != nil {
+		d.Log.Warn("binding dispatch: workflow definitions unavailable", "error", err)
+		return
+	}
 	for _, c := range captures {
 		armed, err := d.BindingDispatcher.ArmedBindingsForSource(ctx, c.Source)
 		if err != nil {
@@ -662,81 +659,120 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 			continue
 		}
 		for _, b := range armed {
-			if !b.Matcher.Matches(c.Source, c.Authenticated) {
+			if !b.Matcher.Matches(c.Source, c.Dispatchable()) {
 				continue
 			}
-			d.dispatchOneBinding(ctx, b, c)
+			d.dispatchOneBinding(ctx, b, c, workflows)
 		}
 	}
 }
 
-// dispatchOneBinding handles a single (binding, capture) match: resolve
-// fields through the binding's mapping, enqueue a task, and record the
-// dispatch in the dedup ledger. Each step degrades independently --
-// a mapping lookup failure logs and returns, a required-field
-// resolution failure records a binding_dispatch_failure event and
-// returns without enqueueing, an enqueue failure logs and returns, and
-// a RecordDispatch returning ErrAlreadyDispatched is treated as a
-// benign race winner (another cycle already created the task).
-//
-// Owner/repo resolution currently falls back to the single configured
-// repo (when exactly one is configured); binding.Owner/Repo is a
-// follow-up so multi-repo deployments don't have to live with the
-// ambiguity.
-func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent) {
+// bindingMapping returns b's mapping, or nil after logging why it is
+// unavailable.
+func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping.Mapping {
 	if d.Mappings == nil {
 		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
-		return
+		return nil
 	}
 	m, err := d.Mappings.GetMapping(ctx, b.MappingID)
 	if err != nil {
 		d.Log.Warn("binding dispatch: get mapping", "binding", b.ID, "mapping", b.MappingID, "error", err)
-		return
+		return nil
 	}
 	if m == nil {
 		d.Log.Warn("binding dispatch: mapping missing", "binding", b.ID, "mapping", b.MappingID)
+	}
+	return m
+}
+
+// dispatchOneBinding offers one capture to one binding. The binding applies
+// when its mapping belongs to the capture's event type. The mapping resolves
+// the payload (a required-field failure records binding_dispatch_failure and
+// stops), counts the match, and the binding's filter must admit the resolved
+// parameters. The workflow it targets must accept the binding's inputs and
+// repository (resolveBindingTarget). The dispatch is then claimed in the binding_dispatches ledger
+// before the task is enqueued: a capture stays listed until every binding for
+// its event type has dispatched it, so the claim is what stops a binding that
+// already fired from firing again on a later cycle. A failed enqueue after the
+// claim loses that dispatch, which is the at-most-once side of the trade.
+func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, workflows workflow.WorkflowDefinitionCollection) {
+	m := d.bindingMapping(ctx, b)
+	if m == nil || m.EventTypeID != c.EventType {
 		return
 	}
 	values, failures := mapping.Resolve(m.Fields, []byte(c.Body))
 	if hasBlockingFailure(m.Fields, failures) {
-		_, _ = d.Store.InsertEvent(ctx, events.Event{
-			Kind:   "binding_dispatch_failure",
-			Detail: fmt.Sprintf("binding %q (capture %q): required field failed", b.ID, c.ID),
-			Data: map[string]any{
-				"binding_id":      b.ID,
-				"binding_version": b.Version,
-				"capture_id":      c.ID,
-				"failures":        failures,
-			},
-		})
+		d.recordDispatchFailure(ctx, b, c, "required field failed", map[string]any{"failures": failures})
+		return
+	}
+	if d.MappingMatches != nil {
+		if err := d.MappingMatches.RecordMappingMatch(ctx, m.ID, c.ID); err != nil {
+			d.Log.Warn("binding dispatch: record mapping match", "mapping", m.ID, "capture", c.ID, "error", err)
+		}
+	}
+	filter, err := binding.CompileFilter(b.Filter, m.Fields)
+	if err != nil {
+		d.recordDispatchFailure(ctx, b, c, "filter does not compile", map[string]any{"error": err.Error()})
+		return
+	}
+	if admitted, _ := filter.Admits(values); !admitted {
 		return
 	}
 
-	owner, repo, ok := d.resolveBindingRepo(b)
+	target, reason, ok := d.resolveBindingTarget(b, values, workflows)
+	if reason != "" {
+		d.recordDispatchFailure(ctx, b, c, reason, nil)
+	}
 	if !ok {
-		return // resolveBindingRepo already logged a warning
+		return
+	}
+	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0); err != nil {
+		if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
+			d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
+		}
+		return
 	}
 	title := fmt.Sprintf("binding %s/%d from %s", b.Name, b.Version, c.Source)
 	body := renderBindingBody(values, c)
-
-	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, owner, repo, title, body, b.Workflow, "", b.ID, b.Version)
+	if target.declared {
+		body = fmt.Sprintf("Started by binding %q from capture %q; the workflow's inputs travel with the task.", b.Name, c.ID)
+	}
+	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, target.owner, target.repo, title, body, b.Workflow, "", b.ID, b.Version, target.inputs)
 	if err != nil {
 		d.Log.Warn("binding dispatch: enqueue", "binding", b.ID, "capture", c.ID, "error", err)
 		return
 	}
-
-	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, task.ID); err != nil {
-		if errors.Is(err, storecontract.ErrAlreadyDispatched) {
-			// Another cycle or daemon instance raced us and already
-			// recorded the dispatch. The duplicate task remains
-			// queued (delete-on-races is its own can of worms),
-			// but the ledger prevents the same (binding, capture)
-			// pair from ever being dispatched again.
-			return
-		}
-		d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
-		return
+	if c.Unsigned {
+		d.markUnsignedStart(ctx, task.ID, b, c)
 	}
+}
+
+// markUnsignedStart records on a task's timeline that an unsigned event
+// started it.
+func (d *Daemon) markUnsignedStart(ctx context.Context, taskID int64, b binding.Binding, c storecontract.CapturedEvent) {
+	if _, err := d.Store.InsertEvent(ctx, events.Event{
+		TaskID: taskID,
+		Kind:   events.KindUnsignedEvent,
+		Detail: fmt.Sprintf("started by an unsigned event from source %q", c.Source),
+		Data:   map[string]any{"source": c.Source, "capture_id": c.ID, "binding_id": b.ID},
+	}); err != nil {
+		d.Log.Warn("binding dispatch: unsigned marker", "task", taskID, "error", err)
+	}
+}
+
+// recordDispatchFailure records why a binding did not dispatch a capture.
+func (d *Daemon) recordDispatchFailure(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, reason string, extra map[string]any) {
+	data := map[string]any{
+		"binding_id":      b.ID,
+		"binding_version": b.Version,
+		"capture_id":      c.ID,
+	}
+	maps.Copy(data, extra)
+	_, _ = d.Store.InsertEvent(ctx, events.Event{
+		Kind:   "binding_dispatch_failure",
+		Detail: fmt.Sprintf("binding %q (capture %q): %s", b.ID, c.ID, reason),
+		Data:   data,
+	})
 }
 
 // hasBlockingFailure reports whether any of the failures belongs to a
@@ -835,7 +871,7 @@ func (d *Daemon) botUserForTask(task *workflowtask.Task) string {
 	return d.Cfg.Get().BotUser
 }
 
-// drainNATS processes tasks from NATS, falling back to SQLite ClaimNext for
+// drainNATS processes tasks from NATS, falling back to the task store's ClaimNext for
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {
@@ -1197,7 +1233,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 
 	trees := d.treesFor(task)
 	repo, ok := d.repoFor(task)
-	if !ok {
+	if !ok && task.HasRepository() {
 		d.parkRunningTask(ctx, task.ID, "repo no longer in config", taskstate.ParkTerminal)
 		return
 	}
@@ -1206,31 +1242,26 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 		return
 	}
 
-	workDir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "attempt", task.Attempt)
-
-	// Clone the worktree before Docker mount setup. The container
-	// binds /data/worktree to workDir on the host  --  the directory
-	// must exist before Acquire is called.
-	var branch string
-	var err error
-	// Every task gets an independent full clone. The former
-	// PreparePersistent path shared objects with a per-repo bare cache;
-	// go-git has no --dissociate, so a shared cache would stay a live
-	// dependency of each worktree and expiring one would corrupt running
-	// tasks. repo.PersistentStorage still governs the container volume.
-	_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels)
-	if err != nil {
-		d.Log.Error("worktree prepare failed", "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error(), taskstate.ParkTransient)
+	workDir, ok := d.prepareWorkspace(ctx, task, trees, repo)
+	if !ok {
 		return
 	}
-	task.Branch = branch
-	if err := d.Store.Update(ctx, task); err != nil {
-		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
+	if !task.HasRepository() {
+		defer func() {
+			if err := trees.RemoveScratch(task.ID); err != nil {
+				d.Log.Warn("scratch workspace cleanup failed", "task", task.ID, "err", err)
+			}
+		}()
 	}
 
-	ctr, revokeStateStoreGrant, ok := d.acquireTaskContainer(ctx, task, repo, workDir)
+	// The workflow is pinned before the container starts, because the
+	// profile it names decides the container's image.
+	profile, ok := d.pinTaskProfile(ctx, task)
+	if !ok {
+		return
+	}
+	ctr, revokeStateStoreGrant, ok := d.acquireTaskContainer(ctx, task, repo, workDir, profile.Image)
 	if !ok {
 		return
 	}
@@ -1245,7 +1276,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	// worktreerpc clients to that identity, and the daemon registered one
 	// server pair per identity (plus the root pair), so a container-mode
 	// task is always served by its own forge client and worktree manager.
-	d.runViaAgent(ctx, task, repo)
+	d.runViaAgent(ctx, task, repo, profile)
 
 	// Teardown storage after workflow completes. The Docker backend is a
 	// no-op; future backends (temp volumes, NFS leases) use this hook.
@@ -1262,8 +1293,40 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	d.cleanupTerminalTaskWorktree(ctx, task, trees)
 }
 
+// prepareWorkspace makes the directory the container binds as its
+// workspace, which must exist before Acquire: a fresh clone of the task's
+// repository, or an empty scratch directory for a task with none. It parks
+// the task and reports false when it cannot.
+func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, trees *worktree.Manager, repo config.Repo) (string, bool) {
+	if !task.HasRepository() {
+		dir, err := trees.PrepareScratch(task.ID)
+		if err != nil {
+			d.Log.Error("scratch workspace prepare failed", "err", err)
+			d.parkRunningTask(ctx, task.ID, "scratch workspace prepare failed: "+err.Error(), taskstate.ParkTransient)
+			return "", false
+		}
+		return dir, true
+	}
+	// Every task gets an independent full clone. The former
+	// PreparePersistent path shared objects with a per-repo bare cache;
+	// go-git has no --dissociate, so a shared cache would stay a live
+	// dependency of each worktree and expiring one would corrupt running
+	// tasks. repo.PersistentStorage still governs the container volume.
+	dir, branch, err := trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels)
+	if err != nil {
+		d.Log.Error("worktree prepare failed", "err", err)
+		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error(), taskstate.ParkTransient)
+		return "", false
+	}
+	task.Branch = branch
+	if err := d.Store.Update(ctx, task); err != nil {
+		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
+	}
+	return dir, true
+}
+
 func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow.Task, trees *worktree.Manager) {
-	if d.Store == nil || trees == nil || task == nil {
+	if d.Store == nil || trees == nil || task == nil || !task.HasRepository() {
 		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -1313,6 +1376,7 @@ func (d *Daemon) acquireTaskContainer(
 	task *workflow.Task,
 	repo config.Repo,
 	workDir string,
+	image string,
 ) (*container.Container, func(), bool) {
 	park := func(reason string, err error) {
 		d.Log.Error(reason, "err", err)
@@ -1325,6 +1389,7 @@ func (d *Daemon) acquireTaskContainer(
 		Number: task.IssueNumber, Title: task.Title, Body: task.Body,
 		Labels:   strings.Split(task.Labels, ","),
 		Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
+		Inputs: task.Inputs,
 	}); err != nil {
 		park("task.json write failed", err)
 		return nil, nil, false
@@ -1365,7 +1430,7 @@ func (d *Daemon) acquireTaskContainer(
 		return nil, nil, false
 	}
 
-	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv(task, stateStoreToken))
+	ctr, err := d.ContainerPool.Acquire(ctx, image, mounts, d.containerEnv(task, stateStoreToken))
 	if err != nil {
 		revokeStateStoreGrant()
 		// Roll back the storage we just set up: the mounts were created
@@ -1479,28 +1544,15 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 // itself when nothing else could have: the request never reached (or was
 // never answered by) an archie-agent, or archie-agent failed before its
 // own workflow.Run got a chance to record an outcome.
-func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo) {
-	if d.WorktreeGrants == nil {
-		const reason = "worktree publication grants are unavailable"
-		d.Log.Error(reason, "task", task.ID)
-		d.parkRunningTask(ctx, task.ID, reason, taskstate.ParkTransient)
-		return
-	}
-	grant, revoke, err := d.WorktreeGrants.Issue(task)
-	if err != nil {
-		d.Log.Error("worktree publication grant failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree publication grant failed: "+err.Error(), taskstate.ParkTransient)
+func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile) {
+	grant, revoke, ok := d.publicationGrant(ctx, task)
+	if !ok {
 		return
 	}
 	defer revoke()
 	cfg := d.configFor(task)
 	taskCfg := cfg.ForTask()
 	d.captureAttemptConfig(ctx, task, taskCfg)
-	if err := d.pinWorkflowDefinition(ctx, task); err != nil {
-		d.Log.Error("pin workflow definition failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error(), taskstate.ParkTransient)
-		return
-	}
 	req := taskrun.Request{
 		Task:               task,
 		Repo:               repo,
@@ -1511,6 +1563,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		KindWorkflows:      d.KindWorkflows,
 		LabelWorkflows:     d.LabelWorkflows,
 		WorkflowDefinition: task.WorkflowDefinitionYAML,
+		Tools:              profile.Tools,
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -1547,6 +1600,48 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	}
 
 	d.Log.Info("taskrun complete", "task", task.ID, "status", resp.Status)
+}
+
+// pinTaskProfile pins the task's workflow definition and resolves the agent
+// profile it names, parking the task when either fails. An unconfigured
+// profile needs an operator: the fix is configuration, then a retry.
+func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (config.AgentProfile, bool) {
+	if err := d.pinWorkflowDefinition(ctx, task); err != nil {
+		d.Log.Error("pin workflow definition failed", "task", task.ID, "err", err)
+		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error(), taskstate.ParkTransient)
+		return config.AgentProfile{}, false
+	}
+	iface, err := workflowtask.ParseWorkflowInterface(task.WorkflowDefinitionYAML)
+	if err == nil {
+		var profile config.AgentProfile
+		if profile, err = d.configFor(task).Containers.Profile(iface.Profile); err == nil {
+			return profile, true
+		}
+	}
+	d.Log.Error("agent profile unavailable", "task", task.ID, "err", err)
+	d.parkRunningTask(ctx, task.ID, "workflow "+task.Workflow+": "+err.Error(), taskstate.ParkNeedsHuman)
+	return config.AgentProfile{}, false
+}
+
+// publicationGrant issues the capability to publish the task's branch. A task
+// with no repository has nothing to publish and gets none.
+func (d *Daemon) publicationGrant(ctx context.Context, task *workflow.Task) (string, func(), bool) {
+	if !task.HasRepository() {
+		return "", func() {}, true
+	}
+	if d.WorktreeGrants == nil {
+		const reason = "worktree publication grants are unavailable"
+		d.Log.Error(reason, "task", task.ID)
+		d.parkRunningTask(ctx, task.ID, reason, taskstate.ParkTransient)
+		return "", nil, false
+	}
+	grant, revoke, err := d.WorktreeGrants.Issue(task)
+	if err != nil {
+		d.Log.Error("worktree publication grant failed", "task", task.ID, "err", err)
+		d.parkRunningTask(ctx, task.ID, "worktree publication grant failed: "+err.Error(), taskstate.ParkTransient)
+		return "", nil, false
+	}
+	return grant, revoke, true
 }
 
 func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
@@ -1952,6 +2047,9 @@ func (d *Daemon) repoFor(t *workflow.Task) (config.Repo, bool) {
 // policy comes from the identity's own config, not the root daemon's.
 // Unknown repos default to the safe, serialized behavior.
 func (d *Daemon) allowConcurrentForTask(task *workflow.Task) bool {
+	if !task.HasRepository() {
+		return true
+	}
 	repo, ok := d.repoFor(task)
 	return ok && repo.AllowConcurrent
 }

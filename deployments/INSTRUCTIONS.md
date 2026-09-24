@@ -18,7 +18,7 @@ This archive contains six linux/amd64 binaries:
   this process they are simply absent — and nothing logs an error
   (`archie-core-1c01`), which is why it has a unit of its own in
   `deployments/systemd-user-service.md`.
-- **`archie-state-store`** — owns the single `archie.db` SQLite file behind
+- **`archie-state-store`** — owns the task data in PostgreSQL behind
   a gRPC contract. `archied` and `archie-gateway` are gRPC clients of it, not
   owners of the database.
 - **`archie-playbooks`** — standalone CLI to lint playbook binding YAML

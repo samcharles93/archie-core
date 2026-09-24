@@ -2,13 +2,12 @@ package archied
 
 import (
 	"log/slog"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // TestBuildDaemonCarriesWorkflowRoutingBindings pins the composition hop in the
@@ -21,10 +20,7 @@ import (
 // the "tested in isolation, never verified wired" shape this repo has been bitten
 // by before.
 func TestBuildDaemonCarriesWorkflowRoutingBindings(t *testing.T) {
-	storeA, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "store-a.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	storeA := pgstore.Open(t)
 	t.Cleanup(func() { _ = storeA.Close() })
 	storeB := openSecondStore(t)
 

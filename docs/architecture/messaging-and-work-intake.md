@@ -104,7 +104,7 @@ The canonical session and message implementation must supply:
   metadata;
 - session lifecycle and active-request state;
 - session-to-agent-instance and parent-session lineage;
-- durable SQLite round trips and timestamp validation.
+- durable database round trips and timestamp validation.
 
 These semantics must use the confirmed Agent, user, channel-binding, and
 conversation ownership model.
@@ -264,7 +264,7 @@ queued.
   delivery source, so a webhook-delivered issue and a later poll of the same
   issue dedup through `PublishUnique` instead of double-enqueuing.
 - Chat-spawned and playbook-binding-dispatched work enqueues through
-  `EnqueueChatTask`/`EnqueueBindingTask` (`internal/store`), stamped with
+  `EnqueueChatTask`/`EnqueueBindingTask` (`internal/infrastructure/postgres`), stamped with
   `binding_id`/`binding_version` for provenance.
 
 Webhook intake is opt-in per deployment (`Forge.Intake` = `poll` (default),
@@ -287,7 +287,7 @@ model and its threat model are `docs/architecture/bindings.md`.
   the Agent System.
 - Source identity is incomplete: sessions use configured bot usernames, tasks
   use identity strings, and external message IDs are generally absent.
-- SQLite and NATS deduplication are based on forge coordinates rather than a
+- Database and NATS deduplication are based on forge coordinates rather than a
   channel-neutral source-message reference.
 - Replies and acknowledgements have no durable delivery-attempt lifecycle, so
   partial success and retry behaviour differ by adapter.
@@ -316,7 +316,7 @@ model and its threat model are `docs/architecture/bindings.md`.
 Semantic/vector search over chat messages is an **explicit non-goal** until usage
 data shows a real need.
 
-Message search is lexical only: session-scoped SQLite FTS5 queries paged via
+Message search is lexical only: session-scoped PostgreSQL full-text queries paged via
 `MessageQuery{Query,Limit,Offset}` → `MessagePage`. Do not add embeddings
 configuration or vector columns to message records.
 

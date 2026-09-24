@@ -42,7 +42,7 @@ boundaries.
 | Scheduler Service | cron/ticker contract | `internal/domain/scheduling` |
 | Execution Environment | execution-dispatch contract | `internal/domain/workflow`, task dispatch paths |
 | Runner | isolated worktree/container execution | `internal/container`, `internal/agentexec`, `internal/worktree` |
-| State Store | state-access contract | `internal/store` |
+| State Store | state-access contract | `internal/infrastructure/postgres` |
 
 ### Discovery
 
@@ -191,8 +191,8 @@ historical record rather than an outstanding gate.
    State Store service's contract (less isolation, less migration risk).
    Not yet decided.
 
-   **RESOLVED.** One State Store service owns the existing
-   single SQLite file behind narrow typed contracts (`TaskStore`,
+   **RESOLVED.** One State Store service owns the task data
+   (now PostgreSQL, see `docs/prds/state-store-contract.md`) behind narrow typed contracts (`TaskStore`,
    `CaptureStore`, `MappingStore`, `BindingStore`, `WorkflowStore`) over
    gRPC. *(Ratified 2026-09-06: the workflow contract is now the
    domain-owned `workflow.Store`, which supersedes
@@ -201,7 +201,7 @@ historical record rather than an outstanding gate.
    No physical database-per-service: the solo-maintainer / team-
    topology rule of thumb plus the low value of per-service autonomy for
    one person rule it out, and one store means no distributed-transactions
-   problem. The Gateway keeps its own already-separate session SQLite.
+   problem.
    Concrete migration path (generalise `storerpc`, swap consumers one
    contract at a time, stand up the store service, split the file only on
    evidence):
@@ -212,7 +212,7 @@ historical record rather than an outstanding gate.
    `docs/prds/state-store-contract.md` (rev. 2c): one `StateStore` gRPC service,
    42 RPCs; **ownership split** — consumer-owned `workflow.Store` +
    `workflow.Task`/`Status`/`Source` in the workflow domain (dependency rules
-   #2/#7), producer-owned daemon/webui store surfaces in `internal/store`;
+   #2/#7), producer-owned daemon/webui store surfaces in `internal/domain/storecontract`;
    the `Task`/`Status`/`Source` + interface relocation is a Phase 2
    prerequisite pulled from migration-decisions §4 (`store.Task →
    WorkflowExecution`); `RecordDispatch` drops `*sql.Tx`; `Close` off-wire;

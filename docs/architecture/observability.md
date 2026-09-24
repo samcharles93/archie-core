@@ -165,11 +165,9 @@ would have to guess which side of a boundary an event belongs to across a daemon
 restart, a stale-run recovery, or two interleaved attempts, and a guess rendered
 as structure is exactly the false fidelity this surface exists to avoid.
 
-The column reaches an existing database through the presence-gated arm in
-`internal/store`'s `migrateTasks` — `eventsSchema` is `CREATE TABLE IF NOT
-EXISTS`, so on an existing database the migrator is the *only* thing that adds
-it. `PRAGMA user_version` is unchanged because the loop is presence-gated
-rather than version-gated, and nothing is backfilled.
+The column is part of the events table in
+`internal/infrastructure/postgres/migrations/0001_state_store.sql`, and nothing
+is backfilled.
 
 ### Read surface
 
@@ -310,8 +308,8 @@ attempt".
 Every part is additive. A capture or a configuration emit that cannot happen
 leaves the run alone — reporting must never park a task. Reverting the change
 set removes the endpoints and the page; the extra column and the extra event
-kinds are inert to the previous revision (SQLite ignores a column no statement
-names, and an unfamiliar event kind already renders as unfamiliar), and there is
+kinds are inert to the previous revision (a column no statement names is
+ignored, and an unfamiliar event kind already renders as unfamiliar), and there is
 no data transformation to undo.
 
 ## Dependency direction

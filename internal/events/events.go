@@ -106,13 +106,18 @@ const (
 	KindTurnCompleted = "turn_completed"
 
 	// EDA edit activity (bindings and mappings on the captures store). Each
-	// successful write on the State Store's PocketBase tables emits one
+	// successful write on the State Store's binding and mapping tables emits one
 	// event through the same task-DB path capture arrival uses, so a
 	// dashboard edit is visible on the activity stream without a manual
 	// refresh. data: id (the edited record), action (create, update,
 	// approve, delete).
 	KindBindingChanged = "binding_changed"
 	KindMappingChanged = "mapping_changed"
+
+	// KindUnsignedEvent marks a task started by an event from an approved
+	// unsigned source, so its timeline shows that nothing authenticated
+	// the sender. data: source, capture_id, binding_id.
+	KindUnsignedEvent = "unsigned_event"
 
 	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
 	// update -- whether the restarted daemon came back up healthy and on

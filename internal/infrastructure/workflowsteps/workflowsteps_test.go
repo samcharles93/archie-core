@@ -1,6 +1,8 @@
 package workflowsteps
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -187,5 +189,28 @@ func TestRepoHookStepsCompileThroughTheManager(t *testing.T) {
 	broken := strings.Replace(definition, "level: error", "level: fatal", 1)
 	if _, err := workflow.ParseAndCompile(broken, registry); err == nil || !strings.Contains(err.Error(), "fatal") {
 		t.Fatalf("ParseAndCompile(%q) error = %v, want the unusable rule refused by name", broken, err)
+	}
+}
+
+// The shipped example workflows parse against the vocabulary the roots
+// register, so an example cannot drift from the steps that exist.
+func TestExampleWorkflowsParse(t *testing.T) {
+	paths, err := filepath.Glob("../../../examples/workflows/*.yaml")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no example workflows found: %v", err)
+	}
+	manager, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := manager.Registry()
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := workflow.ParseDefinition(string(src), registry); err != nil {
+			t.Errorf("%s: %v", path, err)
+		}
 	}
 }

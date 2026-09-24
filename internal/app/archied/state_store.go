@@ -1,7 +1,7 @@
 // state_store.go composes the standalone archie-state-store process. It mirrors
 // gateway.go / cmd/archie-gateway: the binary is a thin main that passes
-// process inputs into RunStateStore, which owns the single archie.db SQLite
-// file, registers every StateStore gRPC handler (the same service .4.2 serves
+// process inputs into RunStateStore, which serves the task and event-capture
+// stores from Postgres, registers every StateStore gRPC handler (the same service .4.2 serves
 // in-process on the daemon), and shuts down cleanly on ctx cancellation.
 //
 // See docs/prds/state-store-contract.md (rev. 2c) -- the single authoritative
@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
@@ -25,11 +24,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
-	"github.com/samcharles93/archie-core/internal/infrastructure/stateadmin"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func configuredIdentityNames(cfg config.Config) []string {
@@ -68,17 +64,12 @@ type StateStoreOptions struct {
 	// address: GET /healthz (liveness) and GET /health/detailed (the
 	// state_db probe). Empty disables it.
 	ReadyAddr string
-	// AdminAddr, when non-empty, starts the read-only operator dashboard on
-	// the address. It co-tenants on the same SQLite file this process already
-	// owns, so it needs no lock and no database of its own. Empty disables it.
-	AdminAddr string
 }
 
-// RunStateStore owns the single archie.db SQLite file, registers every
-// StateStore gRPC handler, and serves until ctx is cancelled. It opens only
-// the task store -- the gateway's session SQLite is owned by the separate
-// archie-gateway process and is deliberately untouched (state-store-contract
-// rev. 2c §12 step 8). The store service owns its own DB lifecycle, so
+// RunStateStore serves the task and event-capture stores from Postgres,
+// registers every StateStore gRPC handler, and serves until ctx is cancelled.
+// The conversation store belongs to the separate archie-gateway process. The
+// store service owns its own DB lifecycle, so
 // b.cleanup() is the sole owner closing b.st here (in-process owner).
 func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	b := newBootstrap()
@@ -192,10 +183,12 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 	return server, nil
 }
 
-// openStateStore opens the single task-store SQLite file exactly once for
-// service ownership. It resolves secrets (for the binding cipher) but does
-// NOT open gateway chat sessions -- those live in the separate archie-gateway
-// process on their own SQLite file and are out of state-store scope.
+// openStateStore composes the State Store process's persistence: it resolves
+// secrets (for the binding cipher), opens and migrates the process-scoped
+// PostgreSQL pool (fail closed), and serves the task and event-capture stores
+// from it.
+// It does NOT open gateway chat sessions -- those live in the separate
+// archie-gateway process on their own store and are out of state-store scope.
 func (b *boot) openStateStore(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	secrets, err := configuredSecretRegistry(&cfg, log)
@@ -209,56 +202,18 @@ func (b *boot) openStateStore(ctx context.Context) error {
 		log.Error("configure bindings cipher", "err", err)
 		return err
 	}
-	// Claim the database before opening it. This process is the file's owner
-	// for as long as it lives, and the claim is what an offline recovery
-	// command checks before it rewrites the file: without it, "the State Store
-	// is stopped" is a rule the operator is trusted to have followed rather
-	// than a fact the command can verify. A second State Store on the same
-	// database fails here, which is the single-owner invariant stated instead
-	// of merely documented.
-	path := taskDBPath(cfg.DBPath)
-	ownership, err := store.AcquireOwnership(path)
-	if err != nil {
-		log.Error("claim state store ownership", "err", err)
+	// Open the PostgreSQL pool and apply the schema before anything else: the
+	// State Store fails closed without a working database_url.
+	if err := b.openStateStorePool(ctx); err != nil {
 		return err
 	}
-	b.addCleanup(func() {
-		if err := ownership.Release(); err != nil {
-			log.Error("release state store ownership", "err", err)
-		}
-	})
-	eda, err := edastore.Open(edastore.Config{
-		DBPath:  edaDBPath(cfg.DBPath),
-		DataDir: filepath.Join(filepath.Dir(path), "eda"),
-		Cipher:  bindingCipher,
-	})
-	if err != nil {
-		log.Error("open event-capture store", "err", err)
-		return err
-	}
-	b.eda = eda
-	b.addCleanup(func() {
-		if err := eda.Close(); err != nil {
-			log.Error("close event-capture store", "err", err)
-		}
-	})
-
-	st, err := openProductionTaskStore(ctx, path)
-	if err != nil {
-		log.Error("open state store", "err", err)
-		return err
-	}
-	b.st = st
-	b.addCleanup(func() {
-		if err := st.Close(); err != nil {
-			log.Error("close state store", "err", err)
-		}
-	})
+	b.openTaskStore()
+	b.openEDAStore(bindingCipher)
 	return nil
 }
 
 // stateStoreDeps assembles the store surfaces the StateStore service fronts.
-// b.st is the narrow storecontract.TaskStore; the wide *store.Store also implements
+// b.st is the narrow storecontract.TaskStore; the concrete store also implements
 // the capture/mapping/binding surfaces, so each is asserted here (the same
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.
@@ -277,9 +232,7 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	// Task logs live in the state directory, which this process owns, and the
 	// dashboard process owns no such directory -- so this is where a task-log
 	// read is served from (docs/prds/ui-service-boundary.md). The reader is
-	// the daemon's own registry, built over the same state-directory
-	// derivation this process uses for its SQLite file; both resolve from the
-	// same configured DBPath, so they agree on where archie keeps its state.
+	// the daemon's own registry over the configured state_dir.
 	//
 	// The nil check is on the registry, not on the interface it is assigned
 	// to: a nil *logging.TaskRegistry stored in this field produces a non-nil
@@ -290,8 +243,8 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if b.taskLogs != nil {
 		deps.TaskLogs = b.taskLogs
 	}
-	// The event-capture contracts are served by the PocketBase store, not the
-	// task store: those tables moved. BindingTaskCreator stays below on the
+	// The event-capture contracts are served by the event-capture store, not
+	// the task store. BindingTaskCreator stays below on the
 	// task store, because creating a task is the one thing it still does.
 	if b.eda != nil {
 		deps.Captures = b.eda
@@ -299,6 +252,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.Bindings = b.eda
 		deps.BindingDispatcher = b.eda
 		deps.PlaybookDispatcher = b.eda
+		deps.EventTypes = b.eda
+		deps.Sources = b.eda
+		deps.MappingMatches = b.eda
 	}
 	// tool_call events project into the tool_calls collection on the same
 	// event-capture store: this process legitimately owns both, so the
@@ -383,40 +339,7 @@ func (b *boot) startOptionalSurfaces(ctx context.Context, options StateStoreOpti
 			return err
 		}
 	}
-	if options.AdminAddr != "" {
-		if err := b.startStateAdmin(ctx, options.AdminAddr); err != nil {
-			return err
-		}
-	}
 	return nil
-}
-
-// startStateAdmin starts the read-only operator dashboard on adminAddr.
-//
-// It is started here, inside the process that already holds the database's
-// ownership claim (openStateStore above), because that claim is what makes a
-// second reader safe to co-tenant: a separate admin process would be a second
-// opener of a single-owner file. The surface exposes view collections only and
-// refuses the routes that could write, so the StateStoreService contract this
-// process serves stays the only writer of task state.
-func (b *boot) startStateAdmin(ctx context.Context, adminAddr string) error {
-	admin, err := stateadmin.New(stateadmin.Config{
-		DBPath:  taskDBPath(b.cfg.DBPath),
-		DataDir: filepath.Join(filepath.Dir(taskDBPath(b.cfg.DBPath)), "admin"),
-	})
-	if err != nil {
-		return err
-	}
-	b.addCleanup(func() {
-		if err := admin.Close(); err != nil {
-			b.log.Error("close state admin", "err", err)
-		}
-	})
-	handler, err := admin.Handler()
-	if err != nil {
-		return fmt.Errorf("build state admin handler: %w", err)
-	}
-	return b.serveHealth(ctx, adminAddr, handler, "state store admin")
 }
 
 // stateStoreServerOpts applies the transport security boundary (§9): a

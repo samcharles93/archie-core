@@ -6,30 +6,83 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // mappingTestServer builds a Server with both Mappings and Captures backed
-// by the same concrete *store.Store, so preview tests can insert a real
+// by the same concrete *pgstore.TaskDB, so preview tests can insert a real
 // capture and resolve a mapping against it end to end.
 func mappingTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	return &Server{
-		Store:    s,
-		Log:      slog.New(slog.DiscardHandler),
-		Mappings: eda,
-		Captures: eda,
+		Store:      s,
+		Log:        slog.New(slog.DiscardHandler),
+		Mappings:   eda,
+		Captures:   eda,
+		EventTypes: testEventTypes(),
+	}
+}
+
+// testEventTypes holds one event type, et-1, whose schema has every path the
+// mapping tests write.
+func testEventTypes() *memEventTypes {
+	return &memEventTypes{types: []eventtype.EventType{{
+		ID: "et-1", Source: "sentry", Name: "issue",
+		Schema: map[string]eventtype.ValueType{
+			"a": eventtype.TypeString, "b": eventtype.TypeBool,
+			"issue": eventtype.TypeObject, "issue.title": eventtype.TypeString,
+		},
+	}}}
+}
+
+// A mapping belongs to an event type and is checked against its schema.
+func TestHandleMappingSaveChecksEventTypeSchema(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventType string
+		path      string
+		fieldType mapping.FieldType
+		want      int
+	}{
+		{"fits the schema", "et-1", "issue.title", mapping.TypeString, http.StatusCreated},
+		{"no event type", "", "issue.title", mapping.TypeString, http.StatusBadRequest},
+		{"unknown event type", "et-9", "issue.title", mapping.TypeString, http.StatusBadRequest},
+		{"path the type does not have", "et-1", "sender.login", mapping.TypeString, http.StatusBadRequest},
+		{"type differs from the schema", "et-1", "issue.title", mapping.TypeNumber, http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := mappingTestServer(t)
+			req := map[string]any{
+				"name":          "m",
+				"event_type_id": tt.eventType,
+				"fields":        []mapping.Field{{Name: "f", Path: tt.path, Type: tt.fieldType}},
+			}
+			if w := doJSON(t, srv, http.MethodPost, "/api/mappings", req); w.Code != tt.want {
+				t.Fatalf("create status = %d, want %d; body = %s", w.Code, tt.want, w.Body.String())
+			}
+			ok := doJSON(t, srv, http.MethodPost, "/api/mappings", map[string]any{
+				"name": "base", "event_type_id": "et-1",
+				"fields": []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
+			})
+			var created mapping.Mapping
+			_ = json.Unmarshal(ok.Body.Bytes(), &created)
+			want := tt.want
+			if want == http.StatusCreated {
+				want = http.StatusOK
+			}
+			if w := doJSON(t, srv, http.MethodPatch, "/api/mappings/"+created.ID, req); w.Code != want {
+				t.Fatalf("update status = %d, want %d; body = %s", w.Code, want, w.Body.String())
+			}
+		})
 	}
 }
 
@@ -74,8 +127,9 @@ func doJSONWithHeaders(t *testing.T, srv *Server, method, path string, body any,
 func TestHandleMappingCreateAndGet(t *testing.T) {
 	srv := mappingTestServer(t)
 	w := doJSON(t, srv, http.MethodPost, "/api/mappings", map[string]any{
-		"name":        "sentry issue opened",
-		"source_hint": "sentry",
+		"name":          "sentry issue opened",
+		"source_hint":   "sentry",
+		"event_type_id": "et-1",
 		"fields": []mapping.Field{
 			{Name: "title", Path: "issue.title", Type: mapping.TypeString, Required: true},
 		},
@@ -124,8 +178,9 @@ func TestHandleMappingsList(t *testing.T) {
 	srv := mappingTestServer(t)
 	for range 3 {
 		doJSON(t, srv, http.MethodPost, "/api/mappings", map[string]any{
-			"name":   "m",
-			"fields": []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
+			"name":          "m",
+			"event_type_id": "et-1",
+			"fields":        []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
 		})
 	}
 	w := doJSON(t, srv, http.MethodGet, "/api/mappings", nil)
@@ -146,15 +201,17 @@ func TestHandleMappingsList(t *testing.T) {
 func TestHandleMappingUpdate(t *testing.T) {
 	srv := mappingTestServer(t)
 	w := doJSON(t, srv, http.MethodPost, "/api/mappings", map[string]any{
-		"name":   "orig",
-		"fields": []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
+		"name":          "orig",
+		"event_type_id": "et-1",
+		"fields":        []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
 	})
 	var created mapping.Mapping
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 
 	w = doJSON(t, srv, http.MethodPatch, "/api/mappings/"+created.ID, map[string]any{
-		"name":   "renamed",
-		"fields": []mapping.Field{{Name: "b", Path: "b", Type: mapping.TypeBool}},
+		"name":          "renamed",
+		"event_type_id": "et-1",
+		"fields":        []mapping.Field{{Name: "b", Path: "b", Type: mapping.TypeBool}},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("update status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
@@ -171,8 +228,9 @@ func TestHandleMappingUpdate(t *testing.T) {
 func TestHandleMappingUpdateMissingReturns404(t *testing.T) {
 	srv := mappingTestServer(t)
 	w := doJSON(t, srv, http.MethodPatch, "/api/mappings/999", map[string]any{
-		"name":   "x",
-		"fields": []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
+		"name":          "x",
+		"event_type_id": "et-1",
+		"fields":        []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
 	})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusNotFound, w.Body.String())
@@ -182,8 +240,9 @@ func TestHandleMappingUpdateMissingReturns404(t *testing.T) {
 func TestHandleMappingDelete(t *testing.T) {
 	srv := mappingTestServer(t)
 	w := doJSON(t, srv, http.MethodPost, "/api/mappings", map[string]any{
-		"name":   "m",
-		"fields": []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
+		"name":          "m",
+		"event_type_id": "et-1",
+		"fields":        []mapping.Field{{Name: "a", Path: "a", Type: mapping.TypeString}},
 	})
 	var created mapping.Mapping
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
@@ -200,7 +259,7 @@ func TestHandleMappingDelete(t *testing.T) {
 
 func TestHandleMappingPreviewResolvesAgainstARealCapture(t *testing.T) {
 	srv := mappingTestServer(t)
-	capID, err := srv.Captures.InsertCapture(t.Context(), store.CapturedEvent{
+	capID, err := srv.Captures.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		Source: "sentry",
 		Body:   `{"issue":{"title":"bug found"},"count":3}`,
 	}, 0, 0)
@@ -274,8 +333,9 @@ func TestHandleMappingsUnavailableWhenNotConfigured(t *testing.T) {
 func TestHandleMappingMutationsRequireCSRFHeader(t *testing.T) {
 	srv := mappingTestServer(t)
 	newMapping := map[string]any{
-		"name":        "sentry issue opened",
-		"source_hint": "sentry",
+		"name":          "sentry issue opened",
+		"source_hint":   "sentry",
+		"event_type_id": "et-1",
 		"fields": []mapping.Field{
 			{Name: "title", Path: "issue.title", Type: mapping.TypeString, Required: true},
 		},

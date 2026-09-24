@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
 
@@ -46,11 +47,11 @@ import (
 	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -107,7 +108,13 @@ type boot struct {
 	playbooks *playbook.Store
 
 	st  storecontract.TaskStore
-	eda *edastore.Store
+	eda eventCaptureStore
+	// pg is the State Store process's process-scoped PostgreSQL pool, opened
+	// and migrated by openStateStorePool. It is the one connection the
+	// standalone archie-state-store binary holds: do not open a second pool
+	// per subsystem. Nil for every other process: the daemon and Gateway reach
+	// the State Store over gRPC and hold only the conversation store's pool.
+	pg *pgxpool.Pool
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
 	// dialed to the standalone archie-state-store gRPC service at
@@ -115,7 +122,7 @@ type boot struct {
 	// in-process, per docs/prds/state-store-contract.md §12 step 7). It is set
 	// by openStateStoreAdapter, which requires [services.state].target to be
 	// set. The b.st field remains solely for the standalone archie-state-store
-	// binary, which owns the single SQLite file.
+	// binary, which serves the task store from Postgres.
 	stateStore storecontract.TaskStore
 	// stateStoreGrants issues per-task, scoped State Store credentials for
 	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
@@ -147,6 +154,9 @@ type boot struct {
 	// boot builds both archied and archie-gateway.
 	processName      string
 	chatSessionStore gateway.SessionStore
+	// chatPool is the conversation store's pool, which the store owns and
+	// closes; the Gateway also holds its serve claim on it.
+	chatPool *pgxpool.Pool
 
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
@@ -317,11 +327,10 @@ func (b *boot) setupLogging() error {
 	}
 	logFeed := logging.NewFeed(1000)
 	b.logFeed = logFeed
-	// Task logs live alongside the store rather than under cfg.Log.File's
+	// Task logs live in the state directory rather than under cfg.Log.File's
 	// directory: cfg.Log.File is optional (file logging can be off), while
-	// DBPath is required for the daemon to run at all, so it is the more
-	// reliable anchor for "where archie keeps its state" on this host.
-	taskLogs := logging.NewTaskRegistry(filepath.Join(filepath.Dir(cfg.DBPath), "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
+	// state_dir always resolves.
+	taskLogs := logging.NewTaskRegistry(filepath.Join(cfg.StateDir, "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
 	b.taskLogs = taskLogs
 	fileLog, logCloser, logErr := logging.New(logging.Options{
 		File:      cfg.Log.File,
@@ -354,9 +363,8 @@ func (b *boot) openStores(ctx context.Context) error {
 	b.secrets = secrets
 	b.forgeClient, b.token = resolveForge(cfg.Forge, secrets, log)
 
-	// The daemon and gateway no longer open archie.db directly: the single
-	// SQLite file is owned by the standalone archie-state-store process, and
-	// both consumers dial its gRPC State Store contract. openStateStoreAdapter
+	// The daemon and gateway do not serve the State Store's tables: the
+	// standalone archie-state-store process does, and both consumers dial its gRPC State Store contract. openStateStoreAdapter
 	// (called by Run and RunGateway after openStores) resolves b.stateStore as
 	// the remote *staterpc.Client. There is no local store to open here
 	// (docs/prds/state-store-contract.md §12 step 7, no dual-store ownership).
@@ -401,15 +409,38 @@ func (b *boot) openStateStoreAdapter() error {
 	return nil
 }
 
-func (b *boot) openChatSessions(_ context.Context) error { //nolint:unparam // context keeps the composition phase contract aligned with other openers
-	chatSessionStore, err := makeTelegramSessionStore(b.cfg) //nolint:contextcheck // SQLite schema initialization is synchronous and has no context-aware API
+// openChatSessions opens the conversation store on its own pool from
+// database_url. The daemon reads it (session curator) and the Gateway serves
+// it; only the Gateway claims serve ownership (claimGatewayOwnership).
+func (b *boot) openChatSessions(ctx context.Context) error {
+	pool, err := openServicePool(ctx, b.cfg.DatabaseURL, b.cfg.DBPath, "the conversation store")
 	if err != nil {
 		return fmt.Errorf("open conversation store: %w", err)
 	}
+	chatSessionStore := gateway.NewPostgresSessionStore(pool)
+	b.chatPool = pool
 	b.chatSessionStore = chatSessionStore
 	b.addCleanup(func() {
 		if err := chatSessionStore.Close(); err != nil {
 			b.log.Error("close conversation store", "err", err)
+		}
+	})
+	return nil
+}
+
+// claimGatewayOwnership holds the Gateway's serve claim for the process's
+// life, so a second Gateway (whose turn recovery would fail this one's
+// in-flight turns) refuses to start. It runs after openChatSessions, so its
+// cleanup releases the claim before the conversation store closes the pool.
+func (b *boot) claimGatewayOwnership(ctx context.Context) error {
+	ownership, err := postgres.AcquireOwnership(ctx, b.chatPool, postgres.OwnerGateway)
+	if err != nil {
+		return fmt.Errorf("claim gateway ownership: %w", err)
+	}
+	releaseCtx := context.WithoutCancel(ctx)
+	b.addCleanup(func() {
+		if err := ownership.Release(releaseCtx); err != nil {
+			b.log.Error("release gateway ownership", "err", err)
 		}
 	})
 	return nil
@@ -444,7 +475,7 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
 }
 
-// setupObservability builds the event bus and dashboard server. Every event is logged to SQLite (stamped with its row id) and
+// setupObservability builds the event bus and dashboard server. Every event is persisted (stamped with its row id) and
 // then fanned out to live dashboard connections.
 func (b *boot) setupObservability(ctx context.Context) {
 	cfg, log := b.cfg, b.log
@@ -487,7 +518,7 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 			return err
 		}
 	} else {
-		endpoint, readErr := readEmbeddedNATSEndpoint(cfg.DBPath)
+		endpoint, readErr := readEmbeddedNATSEndpoint(cfg.StateDir)
 		if readErr == nil {
 			url, natsToken = endpoint.URL, endpoint.Token
 			if probe, err := nats.Connect(ctx, nats.Config{URL: url, Token: natsToken, Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, log); err == nil {
@@ -565,13 +596,19 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 // registers the client close, so the client closes first (cleanups run LIFO).
 func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	cfg, log := b.cfg, b.log
+	// An empty state_dir would put the store and its endpoint file in the
+	// process's working directory. Defaults always set it, so empty means a
+	// caller skipped them.
+	if cfg.StateDir == "" {
+		return "", "", errors.New("embedded nats: state_dir is required")
+	}
 	host := ""
 	if b.containerPool != nil {
 		host = b.containerPool.HostGateway()
 	}
 	srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
 		Host:     host,
-		StoreDir: filepath.Join(filepath.Dir(cfg.DBPath), "nats"),
+		StoreDir: filepath.Join(cfg.StateDir, "nats"),
 	}, log)
 	if err != nil {
 		log.Error("embedded nats start failed", "err", err)
@@ -579,7 +616,7 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	}
 	b.addCleanup(func() { srv.Shutdown() })
 	log.Info("embedded nats started", "url", srv.ClientURL())
-	if err := writeEmbeddedNATSEndpoint(cfg.DBPath, srv.ClientURL(), srv.Token()); err != nil {
+	if err := writeEmbeddedNATSEndpoint(cfg.StateDir, srv.ClientURL(), srv.Token()); err != nil {
 		srv.Shutdown()
 		return "", "", err
 	}
@@ -632,7 +669,7 @@ func (b *boot) setupLLMAndChat(ctx context.Context) error {
 		return err
 	}
 	b.addCleanup(cleanup)
-	// Channel routers execute turns locally and need the SQLite TurnLedger.
+	// Channel routers execute turns locally and need the conversation store's TurnLedger.
 	// The remote contract serves web chat; it must not replace their store.
 	b.chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
 	b.setupReadinessProbes()
@@ -1316,6 +1353,9 @@ func (b *boot) buildDaemon() {
 	}
 	if bd, ok := b.stateStore.(storecontract.BindingDispatcher); ok {
 		b.d.BindingDispatcher = bd
+	}
+	if mm, ok := b.stateStore.(storecontract.MappingMatchRecorder); ok {
+		b.d.MappingMatches = mm
 	}
 	if btc, ok := b.stateStore.(storecontract.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc

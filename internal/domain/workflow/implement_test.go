@@ -476,7 +476,7 @@ type fakeTrees struct {
 }
 
 func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
-	return "", "", nil
+	return f.dir, "", nil
 }
 
 func (f *fakeTrees) CommitAll(context.Context, string, string) (bool, error) {

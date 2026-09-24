@@ -43,6 +43,8 @@ type Request struct {
 	WorktreeGrant string `json:"worktree_grant,omitempty"`
 	// WorkflowDefinition is the exact YAML pinned on Task before dispatch.
 	WorkflowDefinition string `json:"workflow_definition"`
+	// Tools is the agent profile's tool allowlist; empty allows every tool.
+	Tools []string `json:"tools,omitempty"`
 }
 
 // Validate rejects a full-task request that cannot be correlated to a real
@@ -54,7 +56,7 @@ func (r Request) Validate() error {
 	if r.Task.ID <= 0 {
 		return fmt.Errorf("task ID must be positive, got %d", r.Task.ID)
 	}
-	if r.WorktreeGrant == "" {
+	if r.WorktreeGrant == "" && r.Task.HasRepository() {
 		return errors.New("worktree grant is required")
 	}
 	if r.WorkflowDefinition == "" {

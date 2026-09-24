@@ -10,8 +10,8 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // isNil reports whether v is nil, including a typed nil func or pointer
@@ -61,8 +61,8 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	if _, ok := srv.Store.(*staterpc.Client); !ok {
 		t.Fatalf("Store = %T, want *staterpc.Client", srv.Store)
 	}
-	if _, ok := srv.Store.(*store.Store); ok {
-		t.Fatal("Store is the concrete *store.Store; the UI process must not open archie.db")
+	if _, ok := srv.Store.(*pgstore.TaskDB); ok {
+		t.Fatal("Store is the concrete *pgstore.TaskDB; the UI process must not open archie.db")
 	}
 	if srv.Chat == nil {
 		t.Fatal("Chat is nil; the UI process must dial the Gateway contract")

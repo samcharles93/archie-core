@@ -21,7 +21,8 @@ machine** governing whether it is live.
 type Binding struct {
     ID, Name           // identity
     Matcher            // { Source string } -- the webhook path segment, e.g. "sentry"
-    MappingID          // which Mapping resolves payload fields
+    MappingID          // which Mapping resolves payload fields; its event type is the binding's
+    Filter             // optional CEL over the mapping's parameters
     Workflow           // registered workflow name to dispatch to
     Version            // bumped on every edit
     Status             // pending_approval | armed
@@ -29,24 +30,28 @@ type Binding struct {
 }
 ```
 
-Bindings live in the store (SQLite), not `config.toml` -- operators author
+Bindings live in the store (PostgreSQL), not `config.toml` -- operators author
 them from the dashboard while the daemon runs, without a restart.
 
 ### Matching
 
-`Matcher.Source` is the only predicate today: the path segment a sender
-POSTs to (e.g. a webhook hitting `.../sentry` matches bindings with
-`Matcher.Source == "sentry"`). The storage column is plain `TEXT`, so adding
-predicates later is non-breaking -- extend `Matcher`, don't invent a second
-matcher shape.
+A binding applies to a capture when the capture arrived on `Matcher.Source`,
+was identified as the event type its mapping belongs to, and passes its
+`Filter` (`binding.CompileFilter`, checked against the mapping's parameters on
+save). Any number of bindings may share a source; each dispatches a capture at
+most once, claimed in `binding_dispatches` keyed by (binding, capture) before
+its task is enqueued. An event signed with any armed binding's secret on the
+source is authenticated.
 
 ### Mapping
 
 `mapping.Resolve(fields, payload)` walks a captured JSON payload against a
 list of typed `Field`s (name, JSON path, expected type), returning resolved
-values plus a `[]Failure` for anything that didn't parse or type-match. This
-is schema-by-example in practice: a mapping is authored by pointing at a
-real captured payload in the dashboard, not by guessing a schema in advance.
+values plus a `[]Failure` for anything that didn't parse or type-match. A
+mapping belongs to an event type, and `mapping.CheckSchema` refuses a field
+whose path or type the type's inferred schema lacks. Each capture a mapping
+resolves at dispatch is counted once in `mapping_matches`, read back as
+`MatchCount` and `LastMatchedAt`.
 
 ### Versioning
 
@@ -96,8 +101,9 @@ unauthenticated event can never trigger a binding, no matter how well it
 would otherwise match." Enforced structurally at two points, not just
 convention:
 
-- `captured_events.authenticated` is a real column (`internal/store/
-  captures.go`), set at capture time.
+- `captures.authenticated` is a real column
+  (`internal/infrastructure/postgres/migrations/0002_edastore.sql`), set at
+  capture time.
 - `dispatchBindings` (`internal/daemon/daemon.go:479`) walks **authenticated
   captures whose source has at least one armed binding** -- an
   unauthenticated capture is never even considered for dispatch.
@@ -112,7 +118,7 @@ binding reverts it.
 
 Capture writes are bounded independently of the approval gate, so a flood
 of unauthenticated traffic cannot exhaust disk or drown the inspector:
-`InsertCapture` (`internal/store/captures.go`) prunes by both **retention
+`InsertCapture` (`internal/infrastructure/postgres/edastore.go`) prunes by both **retention
 window** (`WHERE received_at < cutoff`) and **max event count** in the same
 insert transaction.
 
@@ -121,14 +127,14 @@ insert transaction.
 A playbook-originated task is dispatched into the **same** gate, diff-cap,
 sandboxed-container, worktree-isolation pipeline every task goes through
 regardless of origin. Verified precisely, not assumed: `dispatchOneBinding`
-calls `EnqueueBindingTask` (`internal/store/store.go`), which wraps
+calls `EnqueueBindingTask` (`internal/infrastructure/postgres/store.go`), which wraps
 `EnqueueChatTask` -- the same direct-to-`tasks`-table enqueue path
 chat-spawned tasks already use, then stamps `binding_id`/`binding_version`
 for provenance in a second statement. This is a **different** enqueue
 mechanism from forge-issue polling's `workintake.TaskEnvelope`/NATS path
 (`docs/prds/event-sources-and-reactions.md`) -- binding and forge-issue
 tasks arrive by different producers, but both become an ordinary
-`store.Task` row that `ClaimNext` picks up identically, so both get the
+`workflow.Task` row that `ClaimNext` picks up identically, so both get the
 same gate/worktree pipeline downstream regardless of which producer created
 the row. Payload content is
 ordinary untrusted prompt input; the sender's text is never treated as a
@@ -151,8 +157,8 @@ Two independent protections, not one:
 ### Secrets at rest
 
 `Binding.Secret` (the HMAC shared secret a sender signs with) is encrypted
-at rest via AES-GCM (`internal/store/binding_cipher.go`, `archie-core-
-t2db.7`) -- a leaked SQLite file does not leak sender-side shared secrets in
+at rest via AES-GCM (`internal/infrastructure/bindingcipher`, `archie-core-
+t2db.7`) -- a leaked database dump does not leak sender-side shared secrets in
 plaintext. The envelope is versioned (`bindingEnvelopeVersion`) so a future
 cipher or KDF change can roll forward without breaking already-encrypted
 rows, and the AAD binds ciphertext to the binding-secret context so it
@@ -164,8 +170,8 @@ documented legacy behaviour, not silent degradation.
 
 `dispatchBindings` enqueues at most one task per `(binding, capture)` pair,
 enforced by a real ledger, not best-effort application logic:
-`RecordDispatch` (`internal/store/bindings.go`) does `INSERT OR IGNORE` into
-`binding_dispatches`, unique on `(binding_id, capture_id)`; a duplicate
+`RecordDispatch` (`internal/infrastructure/postgres/edastore.go`) inserts into
+`binding_dispatches`, unique on `(binding, capture)`; a duplicate
 insert returns the sentinel `ErrAlreadyDispatched`, which the dispatch loop
 treats as "another cycle raced us," not an error. This guarantee holds
 **across daemon restarts**, not just within one process's lifetime, because
@@ -173,8 +179,8 @@ the ledger is a durable table, not in-memory state.
 
 This ledger is also the direct precedent for the EDA playbook engine's
 execution-time idempotency, now landed (`archie-core-t2db.17` closed): the
-`playbook_dispatches` table in `internal/store/playbook_dispatches.go` copies
-`binding_dispatches`'s `INSERT OR IGNORE` conventions with a
+`playbook_dispatches` table (`RecordPlaybookDispatch`) copies
+`binding_dispatches`'s unique-ledger conventions with a
 `(playbook_id, playbook_version, event_id, action_id)` key
 (`docs/prds/eda-playbook-engine.md` gap 2).
 

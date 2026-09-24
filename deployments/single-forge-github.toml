@@ -6,7 +6,13 @@
 # ==============================================================================
 
 work_dir = "~/.local/share/archie/work"
-db_path  = "~/.local/share/archie/archie.db"
+state_dir = "~/.local/share/archie"   # NATS store, task logs
+# db_path (default ~/.local/share/archie/archie.db) only locates pre-PostgreSQL
+# files for `archie-state-store import`.
+# The State Store's PostgreSQL connection (required; Postgres-only epic).
+# `docker compose up -d postgres` provides this local default; point it at
+# your own Postgres 18 server otherwise.
+database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 poll_interval = "60s"
 label = "archie"
 bot_user = "archie-bot"
@@ -19,8 +25,8 @@ diff_cap_lines = 400
 [services.gateway]
 target = "127.0.0.1:8585"
 
-# The State Store gRPC service owns the single archie.db SQLite file. archied
-# and archie-gateway dial it here and never open archie.db themselves
+# The State Store gRPC service owns the PostgreSQL task data. archied and
+# archie-gateway dial it here and never open those tables themselves
 # (docs/prds/state-store-contract.md §12 step 7). This deployment runs the
 # agent in containers, so the target must be the Docker bridge gateway address
 # (172.17.0.1) that the container can reach, and a non-loopback target requires

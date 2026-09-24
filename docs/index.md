@@ -20,6 +20,9 @@ you add without touching code or restarting anything.
 - [Architecture](architecture/index.md) is the authority for settled design:
   the domain boundaries, the workflow engine, the task lifecycle, and the
   invariants that hold the whole thing together.
+- [Development guides](development/index.md) list, area by area (frontend UI,
+  agent, workflows, daemon, State Store, control plane), everything a change
+  must reach.
 
 ## What runs where
 

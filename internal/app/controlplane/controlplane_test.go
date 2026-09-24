@@ -13,9 +13,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // testSteps builds the production workflow step vocabulary for tests that are
@@ -45,7 +46,7 @@ func testServer(t *testing.T, resources ResourceStore) *Server {
 func TestCatalogCarriesShippedWorkflowDefinitionsForRestore(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	catalog, err := testServer(t, resources).Catalog(t.Context(), &pb.CatalogRequest{})
 	if err != nil {
@@ -72,7 +73,7 @@ func TestCatalogCarriesShippedWorkflowDefinitionsForRestore(t *testing.T) {
 func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
@@ -94,7 +95,7 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.PutResource(t.Context(), store.ResourceWrite{Kind: WorkflowDefinitionsKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "override"}); err != nil {
+	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{Kind: WorkflowDefinitionsKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "override"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
@@ -112,7 +113,7 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
@@ -131,7 +132,7 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.PutResource(t.Context(), store.ResourceWrite{Kind: PersonasKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "persona-edit"}); err != nil {
+	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{Kind: PersonasKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "persona-edit"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
@@ -150,7 +151,7 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 func TestImportWorkflowExecutionSettingsDoesNotOverwriteExistingValue(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	first := workflow.ExecutionSettings{MaxModelToolSteps: 10, MaxRuntime: time.Minute, MaxConsecutiveGateFailures: 2}
@@ -176,7 +177,7 @@ func TestImportWorkflowExecutionSettingsDoesNotOverwriteExistingValue(t *testing
 func TestRegistryRoutesAndValidatesDefinitions(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	// The image is required, here as in the file document: a seed without one is
@@ -212,7 +213,7 @@ func TestRegistryRoutesAndValidatesDefinitions(t *testing.T) {
 func TestProviderSeedKeepsReferencesAndNeverResolvedSecrets(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	cfg := config.Config{Providers: map[string]config.Provider{"openai": {Class: "openai", APIKeyEnv: "OPENAI_API_KEY", APIKey: config.SecretRef{Engine: "env", Key: "OPENAI_API_KEY"}}}}
@@ -239,7 +240,7 @@ func TestProviderSeedKeepsReferencesAndNeverResolvedSecrets(t *testing.T) {
 func TestHistoryCarriesEveryRevisionWithItsAudit(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
@@ -288,7 +289,7 @@ func TestHistoryCarriesEveryRevisionWithItsAudit(t *testing.T) {
 func TestImportConfigSkipsASeedItCannotValidate(t *testing.T) {
 	t.Parallel()
 
-	resources := store.OpenTest(t)
+	resources := pgstore.Open(t)
 	defer resources.Close()
 	server := testServer(t, resources)
 	// Every other field is filled in the way the loader fills it (Validate
@@ -307,7 +308,7 @@ func TestImportConfigSkipsASeedItCannotValidate(t *testing.T) {
 	if len(skipped) != 1 || skipped[0].Kind != RepositoryPoliciesKind || skipped[0].Err == nil {
 		t.Fatalf("skipped = %+v, want the repository policies and the reason", skipped)
 	}
-	if _, err := resources.Resource(t.Context(), RepositoryPoliciesKind); !errors.Is(err, store.ErrResourceNotFound) {
+	if _, err := resources.Resource(t.Context(), RepositoryPoliciesKind); !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Errorf("repository policies Resource = %v, want ErrResourceNotFound: an invalid seed must not be stored", err)
 	}
 	// Kinds that are fine are still seeded: one skipped kind does not abandon

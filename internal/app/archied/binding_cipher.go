@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -13,7 +13,7 @@ import (
 // config through the secret registry and returns the EDA store's cipher. An unset
 // encryption_key returns a nil cipher, keeping the legacy plaintext path (the
 // store's default). See docs/prds/binding-secret-encryption.md.
-func bindingCipherFromConfig(cfg config.Config, secrets *secret.Registry) (edastore.BindingCipher, error) {
+func bindingCipherFromConfig(cfg config.Config, secrets *secret.Registry) (bindingcipher.BindingCipher, error) {
 	if cfg.Bindings.EncryptionKey == (secret.SecretRef{}) {
 		return nil, nil
 	}
@@ -36,5 +36,5 @@ func bindingCipherFromConfig(cfg config.Config, secrets *secret.Registry) (edast
 			previous = append(previous, v)
 		}
 	}
-	return edastore.NewBindingCipher(active, previous)
+	return bindingcipher.NewBindingCipher(active, previous)
 }

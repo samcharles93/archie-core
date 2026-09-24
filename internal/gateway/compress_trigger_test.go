@@ -38,10 +38,7 @@ func (s *countingReplaceStore) ReplaceMessages(ctx context.Context, sessionID st
 // written to it.
 func newTriggerStore(t *testing.T) *countingReplaceStore {
 	t.Helper()
-	inner, err := NewSQLiteSessionStoreMemory()
-	if err != nil {
-		t.Fatalf("NewSQLiteSessionStoreMemory: %v", err)
-	}
+	inner := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = inner.Close() })
 	ledger, ok := inner.(TurnLedger)
 	if !ok {

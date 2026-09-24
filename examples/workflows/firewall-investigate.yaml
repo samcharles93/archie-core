@@ -1,0 +1,18 @@
+# A workflow with no repository: a binding on a firewall event type assigns
+# src_ip from a mapped parameter and runs one agent mission in a scratch
+# workspace under the network-investigator profile. Paste it into the
+# dashboard's workflow definitions.
+id: firewall-investigate
+repository: none
+profile: network-investigator
+inputs:
+  src_ip: { type: string, required: true }
+  severity: { type: string }
+steps:
+  - type: agent.run
+    settings:
+      mission: >-
+        Investigate the source address in the inputs: who owns it, what it
+        resolves to, and whether it is reachable. Report what you found and
+        how serious it looks given the severity.
+      read_only: true

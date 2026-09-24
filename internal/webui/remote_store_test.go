@@ -3,7 +3,7 @@ package webui
 // Remote-contract coverage for the dashboard data paths. The production UI
 // process (archie-ui, and the daemon's webui) serves task, capture, mapping
 // and binding routes against a *staterpc.Client — the remote read contract —
-// not a concrete *store.Store. Every other webui test feeds a local store
+// not a concrete *pgstore.TaskDB. Every other webui test feeds a local store
 // directly, so none of them prove the handlers work once the data crosses the
 // gRPC wire. These do: they stand up a real SQLite store behind
 // staterpc.RegisterServer, dial it, and assert the handlers serve correctly.
@@ -21,9 +21,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // newRemoteTestServer serves a real SQLite store behind a gRPC listener and
@@ -33,10 +32,7 @@ import (
 // rather than a fake.
 func newRemoteTestServer(t *testing.T) *Server {
 	t.Helper()
-	st, err := store.Open(t.Context(), t.TempDir()+"/remote.db")
-	if err != nil {
-		t.Fatalf("open temp store: %v", err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -48,7 +44,7 @@ func newRemoteTestServer(t *testing.T) *Server {
 	// surfaces, the event-capture store serves captures/mappings/bindings.
 	// Leaving one nil makes ListMappings/ListBindings fail closed with
 	// err*Unavailable, which is also the real wiring.
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	staterpc.RegisterServer(server, staterpc.Deps{
 		Tasks:              st,
 		Captures:           eda,

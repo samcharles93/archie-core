@@ -6,6 +6,11 @@
 
 ## Problem
 
+> Storage superseded: every store now lives in PostgreSQL behind
+> `internal/domain/storecontract`, implemented in `internal/infrastructure/postgres`
+> (`docs/prds/state-store-contract.md`). SQLite names below describe the
+> original design.
+
 `binding.Binding.Secret` (the per-source HMAC shared secret) is persisted as
 plaintext in the `bindings.secret TEXT` column. Anyone with read access to the
 SQLite file -- the same access level as `captured_events.body` and `tasks.body`
@@ -94,8 +99,8 @@ old material must be retained.
 - `internal/app/archied/bootstrap.go` `openStores`: resolve both refs through
   the already-built `secrets` registry, pass the material to `store.Open` via a
   new option `store.WithBindingCipher(cipher)`.
-- `internal/store`: add a `BindingCipher` interface (concrete AES-GCM impl in
-  `binding_cipher.go`), a `bindingCipher` field on `Store`, and the `Open`
+- `internal/infrastructure/bindingcipher`: the `BindingCipher` interface and
+  concrete AES-GCM impl, consumed by the event-capture store; a `bindingCipher` field on `Store`, and the `Open`
   option. **Nil cipher = plaintext**, so existing call sites and tests change
   nothing and legacy deployments keep current behaviour until they set a key.
 

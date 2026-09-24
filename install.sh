@@ -8,9 +8,9 @@
 #     - env (environment variables & API secrets)
 #     - persona/
 #     - skills/
-#   Data:   ${XDG_DATA_HOME:-~/.local/share}/archie
-#     - archie.db-tasks.sqlite
-#     - archie.db-conversations.sqlite
+#   Data:   ${XDG_DATA_HOME:-~/.local/share}/archie   (state_dir)
+#     - nats/
+#     - logs/tasks/
 #     - work/
 #     - memories/
 #     - tasks/
@@ -186,7 +186,7 @@ echo "==> Building native archie binaries..."
   # ask each installed binary what it is (archie-core-k94o).
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION}"
-  # archied does not run alone: the State Store owns archie.db, the Gateway
+  # archied does not run alone: the State Store owns the task data, the Gateway
   # serves the chat contract, the dashboard is its own process, and the
   # Messaging Service owns the chat channels. Building only archied leaves it
   # unable to boot, and omitting archie-messaging leaves the Telegram, email and
@@ -460,7 +460,7 @@ RestartSec=5s
 WantedBy=default.target
 EOF
 
-  # The State Store owns archie.db and is the process everything else dials, so
+  # The State Store owns the task data and is the process everything else dials, so
   # its unit is the first dependency the others name.
   cat <<EOF > "${SYSTEMD_USER_DIR}/archie-state-store.service"
 [Unit]

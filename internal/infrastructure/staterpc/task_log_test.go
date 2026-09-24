@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // TestTaskLogContract drives the task-log read group through both adapters,
@@ -41,7 +41,7 @@ func TestTaskLogContract(t *testing.T) {
 
 			var c taskLogContract = reader
 			if mode == "grpc" {
-				c = remoteTaskStore(t, store.OpenTest(t), reader, nil)
+				c = remoteTaskStore(t, pgstore.Open(t), reader, nil)
 			}
 
 			t.Run("a page carries the decoded entries and their fields", func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestTaskLogContract(t *testing.T) {
 // that has no log, and the dashboard rendered that as "task logging is
 // optional and was not enabled for this run".
 func TestTaskLogContractWithoutAReaderIsUnavailable(t *testing.T) {
-	local := store.OpenTest(t)
+	local := pgstore.Open(t)
 	// remoteContract leaves Deps.TaskLogs nil, which is what a store service
 	// sharing no state directory with the daemon looks like.
 	c := remoteContract(t, local)

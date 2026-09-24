@@ -131,8 +131,9 @@ type MessagePage struct {
 	// NextOffset is meaningful only when HasMore is true.
 	NextOffset int
 	HasMore    bool
-	// Truncated is retained in the transport contract and is always false for
-	// SQLite because it can count the complete result set.
+	// Truncated is retained in the transport contract and is always false:
+	// both store implementations (SQLite FTS5 and Postgres tsvector) count the
+	// complete result set, so no page is ever reported as truncated.
 	Truncated bool
 }
 

@@ -7,13 +7,13 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 )
 
-// toolCallWriter is the edastore surface the projection writes through. Kept
+// toolCallWriter is the EDA store surface the projection writes through. Kept
 // narrow so a test can fail it without touching the real store.
 type toolCallWriter interface {
-	InsertToolCall(ctx context.Context, tc edastore.ToolCall) error
+	InsertToolCall(ctx context.Context, tc postgres.ToolCall) error
 }
 
 // toolCallProjectingTaskStore decorates the State Store's task store so every
@@ -69,10 +69,10 @@ func (s *toolCallProjectingTaskStore) InsertEvent(ctx context.Context, e events.
 // fields stay unwritten -- the event reports neither -- so they are schema
 // reserved for a producer that one day reports them, not promises this
 // projection makes.
-func toolCallFromEvent(e events.Event) edastore.ToolCall {
+func toolCallFromEvent(e events.Event) postgres.ToolCall {
 	tool, _ := e.Data["tool"].(string)
 	failed, _ := e.Data["failed"].(bool)
-	tc := edastore.ToolCall{
+	tc := postgres.ToolCall{
 		TaskID:   e.TaskID,
 		Attempt:  e.Attempt,
 		Tool:     tool,

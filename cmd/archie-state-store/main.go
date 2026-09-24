@@ -1,11 +1,6 @@
-// Command archie-state-store hosts the State Store's gRPC contract and owns
-// the single archie.db SQLite file. It is the .4.3 companion to the daemon's
-// in-process State Store server: the same StateStoreService .4.2 serves, but
-// extracted into its own process with its own store lifecycle.
-//
-// The gateway's session SQLite is owned by the separate archie-gateway process
-// and is untouched here. See docs/prds/state-store-contract.md (rev. 2c) §5,
-// §9 and §11.
+// Command archie-state-store hosts the State Store's gRPC contract and is the
+// only process that owns the PostgreSQL stores behind it. See
+// docs/prds/state-store-contract.md §5, §9 and §11.
 package main
 
 import (
@@ -39,9 +34,8 @@ func run() int {
 	flag.StringVar(&options.Listen, "listen", "", "state store gRPC listen address (defaults to [services.state].listen, else 127.0.0.1:9090)")
 	flag.StringVar(&options.Token, "token", "", "bearer token required for a non-loopback listener (defaults to [services.state].target_token)")
 	flag.StringVar(&options.ReadyAddr, "ready-addr", "", "optional readiness HTTP listen address (e.g. 127.0.0.1:9091)")
-	flag.StringVar(&options.AdminAddr, "admin-addr", "", "optional read-only operator dashboard listen address (e.g. 127.0.0.1:8090)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: archie-state-store [flags]   # serve the State Store gRPC contract\n\noffline recovery: archie-state-store <backup|restore|validate|rollback> -h\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: archie-state-store [flags]   # serve the State Store gRPC contract\n\noffline recovery: archie-state-store <backup|restore|validate|rollback|import> -h\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

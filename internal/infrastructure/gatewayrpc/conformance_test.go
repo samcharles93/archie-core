@@ -15,9 +15,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -213,7 +213,7 @@ func TestTaskActionErrorsKeepTheirSentinelOverGRPC(t *testing.T) {
 	}{
 		{name: "not found", err: fmt.Errorf("task 7: %w", taskactions.ErrNotFound)},
 		{name: "conflict", err: fmt.Errorf("%w: action \"approve\" is not available while task is parked", taskactions.ErrConflict)},
-		{name: "stale transition", err: fmt.Errorf("stop task 7: %w", store.ErrStaleTransition)},
+		{name: "stale transition", err: fmt.Errorf("stop task 7: %w", storecontract.ErrStaleTransition)},
 		{name: "unavailable", err: taskactions.ErrUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

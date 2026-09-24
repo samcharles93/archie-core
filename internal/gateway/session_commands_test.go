@@ -544,12 +544,15 @@ func TestRouteUndoInvalidN(t *testing.T) {
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
 	r.sessionTracker.setActive("chat-13", "", sessionID)
 
-	reply, err := r.Route(context.Background(), inbound("chat-13", "/undo notanumber"))
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-	if !strings.Contains(reply, "Usage: /undo") {
-		t.Errorf("reply = %q, want usage message", reply)
+	// An N wider than int32 must be rejected, not wrapped into the SQL LIMIT.
+	for _, arg := range []string{"notanumber", "4294967297"} {
+		reply, err := r.Route(context.Background(), inbound("chat-13", "/undo "+arg))
+		if err != nil {
+			t.Fatalf("Route(%q): %v", arg, err)
+		}
+		if !strings.Contains(reply, "Usage: /undo") {
+			t.Errorf("/undo %s: reply = %q, want usage message", arg, reply)
+		}
 	}
 }
 

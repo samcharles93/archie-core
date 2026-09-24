@@ -68,8 +68,8 @@ Start at these verified anchors:
 | Resident daemon | `cmd/archied/main.go` → `internal/app/archied.Run()` (`internal/app/archied/main.go`) → `daemon.Daemon` |
 | Sandboxed worker | `cmd/archie-agent/main.go` → `internal/app/agentworker/`; NATS boundary in `internal/infrastructure/agenttransport/nats/` |
 | Task orchestration | `internal/daemon/daemon.go`, `internal/domain/workflow/` |
-| Task contracts | `internal/domain/storecontract/storecontract.go` (`TaskStore`); `internal/store/interface.go` holds compatibility aliases only |
-| Production task persistence | `internal/store/`; `openProductionTaskStore` reached via `internal/app/archied/state_store.go` |
+| Task contracts | `internal/domain/storecontract/storecontract.go` (`TaskStore`) |
+| Production task persistence | `internal/infrastructure/postgres/`; built in `internal/app/archied/state_store.go` |
 | RPC split | `internal/{taskrun,natsrpc,forgerpc,worktreerpc}/` plus `internal/infrastructure/staterpc/` (gRPC State Store) |
 | Chat and channels | `internal/gateway/`, `internal/channels/` |
 | Configuration | `internal/config/`, `internal/infrastructure/configuration/`, `config.example.toml`, `deployments/*.toml` |
@@ -80,8 +80,8 @@ Start at these verified anchors:
 ### Map packages before reading files
 
 ```sh
-go list -f '{{.ImportPath}}|go={{join .GoFiles ","}}|tests={{join .TestGoFiles ","}}' ./internal/store
-go list -json ./internal/store
+go list -f '{{.ImportPath}}|go={{join .GoFiles ","}}|tests={{join .TestGoFiles ","}}' ./internal/infrastructure/postgres
+go list -json ./internal/infrastructure/postgres
 .agents/skills/archie-codebase-discovery/scripts/package-edges.sh ./internal/...
 ```
 
@@ -96,7 +96,7 @@ gopls references -d internal/domain/storecontract/storecontract.go:33:2
 gopls implementation internal/domain/storecontract/storecontract.go:33:2
 gopls call_hierarchy internal/domain/storecontract/storecontract.go:33:2
 go doc ./internal/domain/storecontract.TaskStore
-go test ./internal/store -list '.'
+go test ./internal/infrastructure/postgres -list '.'
 ```
 
 ### Generate AST candidates for construction
@@ -189,14 +189,16 @@ and `Loader.Dir` for overlay/`conf.d` inputs). There is no `config.Load` or
 6. Read contract/architecture tests.
 7. Confirm deploy inputs in Compose and CI.
 
-### Trace SQLite persistence
+### Trace persistence
 
 Treat `internal/domain/storecontract` as the application contract and
-`internal/store` as the production SQLite adapter behind it.
+`internal/infrastructure/postgres` as the production adapter behind it; the
+schema is `internal/infrastructure/postgres/migrations/` and the queries are
+sqlc-generated from `queries/`.
 
 ```sh
 gopls implementation internal/domain/storecontract/storecontract.go:33:2
-rg -n 'CREATE TABLE|CREATE INDEX|QueryContext|ExecContext|BeginTx' internal/store
+rg -n 'CREATE TABLE|CREATE INDEX' internal/infrastructure/postgres/migrations
 ```
 
 ## Reject false confidence

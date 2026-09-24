@@ -225,12 +225,21 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	cfg.SecretEngineDir = expandHomePath(cfg.SecretEngineDir)
 	cfg.WorkDir = expandHomePath(cfg.WorkDir)
 	cfg.DBPath = expandHomePath(cfg.DBPath)
+	cfg.StateDir = expandHomePath(cfg.StateDir)
 	cfg.Chat.Workspace = expandHomePath(cfg.Chat.Workspace)
+	// DatabaseURL has no default and is not path-expanded: it is a connection
+	// URL, not a file path. Empty means "not configured", which the State
+	// Store refuses at boot (fail closed) rather than a value this loader can
+	// invent -- a wrong default would point a production store at a database
+	// that does not exist.
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(l.dataHome(), "archie", "work")
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = filepath.Join(l.dataHome(), "archie", "archie.db")
+	}
+	if cfg.StateDir == "" {
+		cfg.StateDir = filepath.Join(l.dataHome(), "archie")
 	}
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = config.Duration(defaultPollInterval)

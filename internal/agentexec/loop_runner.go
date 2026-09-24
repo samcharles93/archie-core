@@ -40,6 +40,14 @@ type LoopRunner struct {
 	// Limits bounds the size of tool results fed back into the stage. The
 	// zero value applies no limits.
 	Limits ToolLimits
+	// AllowTools is the agent profile's allowlist over the tools archie adds
+	// (central/MCP, repository scripts and skill plugins). Empty allows them
+	// all. A stage's capture tools are how it returns structured results, so
+	// they are never filtered. The agent loop's built-in file tools are not
+	// covered either: ai-sdk agentloop registers them itself with no filter
+	// hook, so they are always present (read-only when the stage asks), and
+	// restricting them needs an ai-sdk change.
+	AllowTools []string
 }
 
 func NewLoopRunner(
@@ -114,10 +122,10 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, rep
 		ReadOnly:     req.ReadOnly,
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
 		Extra: mergeToolSets(
-			centralTools,
+			allowedTools(centralTools, r.AllowTools),
 			captureTools,
-			scriptTools,
-			pluginTools,
+			allowedTools(scriptTools, r.AllowTools),
+			allowedTools(pluginTools, r.AllowTools),
 		),
 		Logger: r.logger(req),
 	})
@@ -386,6 +394,20 @@ func scriptToolSet(workspace string) core.ToolSet {
 			},
 		),
 	}
+}
+
+// allowedTools keeps the tools allow names; an empty allow keeps them all.
+func allowedTools(set core.ToolSet, allow []string) core.ToolSet {
+	if len(allow) == 0 {
+		return set
+	}
+	kept := core.ToolSet{}
+	for name, tool := range set {
+		if slices.Contains(allow, name) {
+			kept[name] = tool
+		}
+	}
+	return kept
 }
 
 // mergeToolSets combines tool sets into one; later sets win on name

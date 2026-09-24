@@ -182,8 +182,8 @@ the chat service's session-store RPCs and is proven by
 `TestStoreClientPreservesCanonicalRecords`. It is deliberately unwired.
 Production `archied` dials the standalone gateway for `ChatContract` only
 (`composeChatContract` → `gatewayrpc.Dial` returns a `*Client`, not a
-`*StoreClient`), and the daemon's session store is in-process SQLite via
-`makeTelegramSessionStore`. The test comment that says it mirrors production
+`*StoreClient`), and the Gateway's session store is PostgreSQL via
+`gateway.NewPostgresSessionStore`. The test comment that says it mirrors production
 describes the target, not today's tree. Kept rather than deleted because the
 migration it serves is deferred by this very section, and re-deriving a tested
 wire adapter once that lands is pure cost.
@@ -221,7 +221,10 @@ prohibition list is untouched.
 not cover (2026-09-22, `archie-core-1ng1`).** The PRD's deletion gate cannot
 pass today. `cmd/archie-messaging/architecture_test.go` does not exist, and the
 check that section specifies -- `go list -deps ./cmd/archie-messaging` links
-zero banned runtime packages -- reports four:
+zero banned runtime packages -- reported four at the time (the task store was
+then `internal/store` over `modernc.org/sqlite`; the gate now bans
+`modernc.org/sqlite`, `github.com/jackc/pgx`, `internal/infrastructure/postgres`
+and `internal/infrastructure/legacyread` in its place):
 
 | banned package | PRD category |
 | --- | --- |
@@ -577,9 +580,9 @@ viewer count, and `Broadcast` is a no-op when nobody is watching.
 
 Three properties make the cursor sufficient, and a push hub unnecessary:
 
-- **The cursor cannot skip.** `internal/store/store.go` opens the database with
-  `SetMaxOpenConns(1)`, so writes serialise and a row's `id` is assigned in
-  commit order. There is no window in which a lower id becomes visible after a
+- **The cursor cannot skip.** `internal/infrastructure/postgres` takes an
+  advisory event-append lock around each insert (`TestEventInsertsCommitInIDOrder`),
+  so a row's `id` is assigned in commit order. There is no window in which a lower id becomes visible after a
   higher one, which is the failure mode that normally rules out polling an
   autoincrement cursor. SSE catch-up already depends on this same property.
 - **A broadcast is a wakeup, not the payload.** `sseStream.drain` treats each
@@ -592,7 +595,7 @@ Three properties make the cursor sufficient, and a push hub unnecessary:
 - **The table is the only complete fan-out point.** Events reach the store
   through several paths that never touch the daemon's bus, including the
   audit event `store.ArchiveTask` writes inside its transaction
-  (`internal/store/store.go`) and the binding-dispatch failure
+  (`internal/infrastructure/postgres/store.go`) and the binding-dispatch failure
   `internal/daemon/daemon.go` inserts directly. A push hub would have to be
   hooked at every write site and at post-commit, and would silently miss any
   site added later that forgets to notify. Reading the table misses nothing.

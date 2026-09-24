@@ -13,12 +13,12 @@ history.
 
 | Term | Meaning here |
 |---|---|
-| `archied` | Resident orchestrator. Owns config, forge credentials, SQLite stores, worktrees, gateways, dashboard, optional NATS/Docker orchestration. |
+| `archied` | Resident orchestrator. Owns config, forge credentials, worktrees, gateways, dashboard, optional NATS/Docker orchestration. |
 | `archie-agent` | Long-running NATS worker. Consumes per-stage `archie.agent.>` requests and full-task `archie.taskrun.>` requests. Not a stdin/stdout worker. |
 | Stage request | One autonomous workflow stage sent on `archie.agent.<task-id>.request`. |
 | Full-task handoff | A whole workflow sent on core NATS subject `archie.taskrun.<task-id>` to a task container. |
 | Work directory | `work_dir`: task clones plus memory and candidate index artifacts. |
-| State path prefix | `db_path`: the configured prefix. Task/event state uses `<db_path>-tasks.sqlite`; conversation state uses `<db_path>-conversations.sqlite`. |
+| State directory | `state_dir` (default `~/.local/share/archie`): embedded NATS store, task logs. Task, event, capture and conversation data live in the PostgreSQL database `database_url` names. `db_path` only locates pre-PostgreSQL files for `archie-state-store import`. |
 
 ## Apply the operational safety boundary
 
@@ -65,7 +65,7 @@ Both linked binaries may also display Go's `-quickchecks` flag from
 
 | Config shape | What runs | Operational status on 2026-09-18 |
 |---|---|---|
-| `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims from SQLite, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
+| `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims through the State Store, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
 | `agent.mode = "subprocess"` | `archied` starts `agent.command` per stage and expects one JSON invocation on stdin, one response on stdout. | **Open/broken with default command.** `cmd/archie-agent` is a long-running NATS worker and never calls `agentexec.ServeOne`. |
 | `agent.mode = "nats"`, `[nats]`, containers disabled | `archied` runs the workflow; each autonomous stage goes to a separately started `archie-agent`. | **Implemented but operator-assembled.** Launch and supervise a worker separately. |
 | `agent.mode = "nats"`, `[nats]`, `containers.enabled = true` | `archied` publishes task discovery through JetStream, prepares a worktree, spawns one agent container, sends the whole workflow on `archie.taskrun.<id>`. | **Host daemon + Compose NATS path.** `deployments/docker-nats-stack.toml` demonstrates it. |
@@ -95,7 +95,7 @@ startup did not complete. The daemon has no HTTP health endpoint.
 
 Stop with `Ctrl-C`. The signal cancels active work, waits for dispatch
 goroutines, stops capability and memory managers, removes Archie-labelled
-containers, closes NATS, and closes the SQLite stores.
+containers, closes NATS, and closes its store connections.
 
 ## Run a standalone NATS worker
 
@@ -154,8 +154,8 @@ are spawned by the host `archied` process through `/var/run/docker.sock`.
 |---|---|
 | Daemon logs | JSON on host stderr; the configured host supervisor captures them. |
 | Agent logs | JSON on worker/container stderr. Task containers use `AutoRemove`. |
-| Tasks and events | SQLite database at `<db_path>-tasks.sqlite`; default `~/.local/share/archie/archie.db-tasks.sqlite`. |
-| Chat sessions and messages | SQLite database at `<db_path>-conversations.sqlite`. |
+| Tasks and events | PostgreSQL (`database_url`), served by `archie-state-store`. |
+| Chat sessions and messages | PostgreSQL (`database_url`), served by `archie-gateway`. |
 | Default task worktree | `<work_dir>/<owner>-<repo>/issue-<number>`; default root `~/.local/share/archie/work`. |
 | Identity worktree | `<work_dir>/identity-<identity>/<owner>-<repo>/issue-<number>`. |
 | Container worktree | Host worktree bind-mounted read/write at `/data/worktree`; `task.json` written under `.git/` so the agent's commit cannot sweep it onto the task branch. |
@@ -217,7 +217,7 @@ Docker builds. The Gitea workflow that used to be the production build path was
 dropped (`dd9bddc2`); `deployments/*.toml` are the supported profiles.
 
 Before promotion: record running image IDs/digests; config checksums (no
-secrets); task counts via safe GET; establish a SQLite backup procedure.
+secrets); task counts via safe GET; take backups with `archie-state-store backup`.
 
 No complete rollback command exists, no versioned image tags. Restoring a binary
 does not undo forge changes, task transitions, or data-format changes.

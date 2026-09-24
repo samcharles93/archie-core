@@ -7,18 +7,17 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
 
 func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 	cfg := config.Config{
-		DBPath:   filepath.Join(t.TempDir(), "tasks.db"),
-		Services: config.Services{config.ServiceNameGateway: {Target: "127.0.0.1:1"}},
+		DBPath:      filepath.Join(t.TempDir(), "tasks.db"),
+		DatabaseURL: pgtest.URL(t),
+		Services:    config.Services{config.ServiceNameGateway: {Target: "127.0.0.1:1"}},
 	}
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state-store.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 	b := &boot{cfg: cfg, log: slog.Default(), cfgHolder: config.NewHolder(cfg), stateStore: st, personas: gateway.NewPersonaRegistry(gateway.DefaultPersonas())}
 	t.Cleanup(b.cleanup)

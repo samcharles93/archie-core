@@ -485,9 +485,23 @@ type Config struct {
 	ModuleDir string `toml:"module_dir" yaml:"module_dir"`
 	// SecretEngineDir contains Yaegi secret-engine plugins. Built-in env and
 	// bws engines remain available when this is empty.
-	SecretEngineDir string   `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
-	DBPath          string   `toml:"db_path" yaml:"db_path"`
-	PollInterval    Duration `toml:"poll_interval" yaml:"poll_interval"`
+	SecretEngineDir string `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
+	// DBPath locates the legacy SQLite files ("<db_path>-tasks.sqlite",
+	// "-eda.sqlite", "-conversations.sqlite") for the one-time import and the
+	// boot gate that refuses to serve until it has run. Nothing else reads it.
+	DBPath string `toml:"db_path" yaml:"db_path"`
+	// StateDir is the host directory archie keeps non-database state in: the
+	// embedded NATS store and its endpoint file, the task-log registry, and
+	// the readiness disk probe's data target. Bootstrap-only.
+	StateDir string `toml:"state_dir" yaml:"state_dir"`
+	// DatabaseURL is the PostgreSQL connection URL the standalone State Store
+	// process opens at boot. It is bootstrap-only (the same class as db_path
+	// and work_dir): the pool is opened once, so a runtime change cannot take
+	// effect, and it is refused by the runtime overlay. It has no default --
+	// an empty value is a startup error for the State Store, which fails
+	// closed rather than fall back to SQLite (the epic is Postgres-only).
+	DatabaseURL  string   `toml:"database_url" yaml:"database_url"`
+	PollInterval Duration `toml:"poll_interval" yaml:"poll_interval"`
 	// Label marks issues archie should pick up.
 	Label   string `toml:"label" yaml:"label"`
 	BotUser string `toml:"bot_user" yaml:"bot_user"`
@@ -892,6 +906,56 @@ type ContainerConfig struct {
 	// gateway; external deployments can set a Compose network explicitly when
 	// workers must resolve broker service names (e.g. "archie-core_default").
 	Network string `toml:"network" yaml:"network"`
+	// Profiles are the named agent profiles a workflow selects with
+	// `profile:`. A workflow that names none runs under the default profile:
+	// Image and every tool.
+	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles"`
+}
+
+// AgentProfile is a named execution environment for an agent. Secrets and
+// forge or network access are granted to identities, not profiles
+// (docs/prds/orgs-and-access.md). A workflow's profile name is not checked
+// when the workflow is saved: a name with no profile here parks the task for
+// an operator when it is dispatched (daemon pinTaskProfile).
+type AgentProfile struct {
+	// Image is the container image; empty means [containers].image.
+	Image string `toml:"image" yaml:"image"`
+	// Tools allowlists the tools archie adds to the agent (MCP servers,
+	// repository scripts and skill plugins) by name. Empty allows them all.
+	// The agent loop's own file tools are always present, read-only when a
+	// step asks for that.
+	Tools []string `toml:"tools" yaml:"tools"`
+}
+
+// Profile resolves the profile a workflow names: "" is the default profile,
+// and an unconfigured name is an error.
+func (c ContainerConfig) Profile(name string) (AgentProfile, error) {
+	if name == "" {
+		return AgentProfile{Image: c.Image}, nil
+	}
+	p, ok := c.Profiles[name]
+	if !ok {
+		return AgentProfile{}, fmt.Errorf("agent profile %q is not configured", name)
+	}
+	if p.Image == "" {
+		p.Image = c.Image
+	}
+	return p, nil
+}
+
+// ValidateProfiles rejects a profile with an empty name or an empty tool name.
+func (c ContainerConfig) ValidateProfiles() error {
+	for name, p := range c.Profiles {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("containers.profiles: a profile name must not be empty")
+		}
+		for _, tool := range p.Tools {
+			if strings.TrimSpace(tool) == "" {
+				return fmt.Errorf("containers.profiles.%s.tools: a tool name must not be empty", name)
+			}
+		}
+	}
+	return nil
 }
 
 // Log configures where archied writes its logs.

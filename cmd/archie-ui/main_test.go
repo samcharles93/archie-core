@@ -36,11 +36,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -484,12 +484,9 @@ func streamChat(t *testing.T, d dashboard, prompt string) []chatFrame {
 // that forgets to publish a field, which is the failure mode this covers:
 // chat.show_tool_calls, the operator name and the channel flag all reach the
 // extracted process through this projection and nowhere else (GitHub #821).
-func seedStore(t *testing.T, dir string) *store.Store {
+func seedStore(t *testing.T, dir string) *pgstore.TaskDB {
 	t.Helper()
-	st, err := store.Open(t.Context(), filepath.Join(dir, "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	if _, err := st.EnqueueIssue(t.Context(), "acme", "widget", 7, "smoke task", "body", "", ""); err != nil {
@@ -528,13 +525,13 @@ func daemonConfig(showToolCalls bool) config.Config {
 // writes the result to the store the UI process reads it back from. The UI
 // process holds no configuration, so this is the only path by which a setting
 // reaches its pages.
-func publishConfig(t *testing.T, st *store.Store, cfg config.Config) {
+func publishConfig(t *testing.T, st *pgstore.TaskDB, cfg config.Config) {
 	t.Helper()
 	document, err := json.Marshal(webui.BuildConfigView(webui.ConfigViewInput{Config: cfg}))
 	if err != nil {
 		t.Fatalf("render the configuration projection: %v", err)
 	}
-	if err := st.PutConfigSnapshot(t.Context(), store.ConfigSnapshot{
+	if err := st.PutConfigSnapshot(t.Context(), storecontract.ConfigSnapshot{
 		Schema: webui.ConfigViewSchema, Document: document,
 	}); err != nil {
 		t.Fatalf("publish config snapshot: %v", err)
@@ -555,10 +552,7 @@ func publishConfig(t *testing.T, st *store.Store, cfg config.Config) {
 // that test's page underneath it.
 func TestUIProcessLinksMultiIdentityTaskRowsToTheirOwningForge(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.Open(t.Context(), filepath.Join(dir, "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	// One task carrying its identity (name resolves it), one without an
@@ -595,14 +589,14 @@ func TestUIProcessLinksMultiIdentityTaskRowsToTheirOwningForge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutConfigSnapshot(t.Context(), store.ConfigSnapshot{
+	if err := st.PutConfigSnapshot(t.Context(), storecontract.ConfigSnapshot{
 		Schema: webui.ConfigViewSchema, Document: published,
 	}); err != nil {
 		t.Fatalf("publish config snapshot: %v", err)
 	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		eda := edastore.OpenTest(t)
+		eda := pgstore.EDA(t, nil)
 		staterpc.RegisterServer(r, staterpc.Deps{
 			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			Log: slog.New(slog.DiscardHandler),
@@ -659,7 +653,7 @@ func TestUIProcessServesTheDashboardAgainstLiveDependencies(t *testing.T) {
 	gateway := &fakeGateway{}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		eda := edastore.OpenTest(t)
+		eda := pgstore.EDA(t, nil)
 		staterpc.RegisterServer(r, staterpc.Deps{
 			Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st,
 			Log: slog.New(slog.DiscardHandler),

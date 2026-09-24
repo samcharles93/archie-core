@@ -157,6 +157,11 @@ export const api = {
   updateInstall: <T = unknown>(snapshot: unknown) =>
     request<T>("/api/chat/update/install", { method: "POST", body: { snapshot }, timeoutMs: 15 * 60_000 }),
   captures: <T = unknown>(limit?: number) => request<T>("/api/captures" + qs({ limit })),
+  eventTypes: <T = unknown>() => request<T>("/api/event-types"),
+  eventTypeCreate: <T = unknown>(eventType: Payload) => request<T>("/api/event-types", { method: "POST", body: eventType }),
+  eventTypeUpdate: <T = unknown>(id: string, eventType: Payload) =>
+    request<T>(`/api/event-types/${encodeURIComponent(id)}`, { method: "PUT", body: eventType }),
+  eventTypeDelete: (id: string) => request<void>(`/api/event-types/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
   mappings: <T = unknown>() => request<T>("/api/mappings"),
   mappingCreate: <T = unknown>(mapping: Payload) => request<T>("/api/mappings", { method: "POST", body: mapping }),
   mappingUpdate: <T = unknown>(id: string, mapping: Payload) =>
@@ -173,6 +178,14 @@ export const api = {
     request<T>(`/api/bindings/${encodeURIComponent(id)}`, { method: "PATCH", body: binding }),
   bindingDelete: (id: string) => request<void>(`/api/bindings/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
   bindingApprove: <T = unknown>(id: string) => request<T>(`/api/bindings/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+  sources: <T = unknown>() => request<T>("/api/sources"),
+  sourceCreate: <T = unknown>(path: string) => request<T>("/api/sources", { method: "POST", body: { path } }),
+  sourceSigning: <T = unknown>(path: string, signed: boolean) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/signing`, { method: "POST", body: { signed } }),
+  sourceApproveUnsigned: <T = unknown>(path: string) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/approve-unsigned`, { method: "POST" }),
+  sourceSecret: <T = unknown>(path: string) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/secret`, { method: "POST" }),
   chatSessions: <T = unknown>() => request<T>("/api/chat/sessions"),
   chatMessages: <T = unknown>(id: string) => request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
   chatTurns: <T = unknown>(id: string) => request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),

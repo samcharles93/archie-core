@@ -2,8 +2,11 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -71,4 +74,43 @@ func CanonicalTurnID(sessionID, sourceID string) string {
 
 func legacyCanonicalTurnID(sessionID, sourceID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("archie-turn:\x00"+sessionID+"\x00"+sourceID)).String()
+}
+
+func prepareInitialTurn(initial TurnRecord, now time.Time) (TurnRecord, string, error) {
+	if initial.TurnID == "" {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: turn ID is required")
+	}
+	initial.Status = TurnStatusRunning
+	initial.Attempt = 1
+	if initial.CreatedAt.IsZero() {
+		initial.CreatedAt = now
+	}
+	initial.UpdatedAt = now
+	toolCalls, err := marshalToolCalls(initial.ToolCalls)
+	return initial, toolCalls, err
+}
+
+// marshalToolCalls encodes tool activity for storage; an empty slice becomes
+// "[]" so it round-trips through unmarshalToolCalls to nil.
+func marshalToolCalls(events []ToolCallEvent) (string, error) {
+	if len(events) == 0 {
+		return "[]", nil
+	}
+	encoded, err := json.Marshal(events)
+	if err != nil {
+		return "", fmt.Errorf("sessionstore: marshal tool calls: %w", err)
+	}
+	return string(encoded), nil
+}
+
+// unmarshalToolCalls decodes tool activity persisted by marshalToolCalls.
+func unmarshalToolCalls(raw string) ([]ToolCallEvent, error) {
+	if raw == "" || raw == "[]" {
+		return nil, nil
+	}
+	var events []ToolCallEvent
+	if err := json.Unmarshal([]byte(raw), &events); err != nil {
+		return nil, fmt.Errorf("sessionstore: unmarshal tool calls: %w", err)
+	}
+	return events, nil
 }

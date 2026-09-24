@@ -155,7 +155,8 @@ type navNode struct {
 // may be read by anyone. architecture/ and prds/ are written for contributors --
 // the organisation rules, the migration register, the review procedure, the open
 // design decisions -- and a reader looking for what Archie is and how to point an
-// event at it is not served by meeting them in one sidebar. They are the
+// event at it is not served by meeting them in one sidebar. development/ holds
+// the checklists for changing Archie, written for the same readers. They are the
 // development set. Everything else is the public set.
 //
 // Selective PRD publication is gone with the split rather than carried into it: it
@@ -169,7 +170,7 @@ type navNode struct {
 var (
 	heldBackTrees   = map[string]bool{"archive": true, "inspiration": true, "news": true}
 	heldBackPages   = map[string]bool{"github-token.md": true}
-	developmentTree = map[string]bool{"architecture": true, "prds": true}
+	developmentTree = map[string]bool{"architecture": true, "prds": true, "development": true}
 )
 
 // setFor is the set one published page belongs to, by its top-level directory.

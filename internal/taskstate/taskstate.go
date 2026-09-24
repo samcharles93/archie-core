@@ -9,7 +9,7 @@
 // for "the pull request was closed without merging" -- no longer meant one
 // thing.
 //
-// internal/gateway deliberately does not import internal/store, so it kept a
+// internal/gateway deliberately does not import the task store, so it kept a
 // hand-synced copy of the status strings with a comment asking future editors
 // to keep them aligned. That is the same defect one level down. This package
 // has no dependencies, so both can import it and the copy can go.
@@ -57,13 +57,17 @@ const (
 	// Declined means an operator refused the work. Whether they said so from
 	// the dashboard or from chat, the task lands here.
 	Declined = "closed_wont_do"
+
+	// Completed means a workflow that opens no pull request finished its
+	// work, such as a run with no repository.
+	Completed = "completed"
 )
 
 // Terminal reports whether a status is an end state, from which no further
 // work happens without an operator asking for it.
 func Terminal(status string) bool {
 	switch status {
-	case Merged, Rejected, Dead, Declined:
+	case Merged, Rejected, Dead, Declined, Completed:
 		return true
 	default:
 		return false
@@ -90,7 +94,7 @@ func Actions(status string) []Action {
 		actions = []Action{ActionRetry, ActionAbandon, ActionReject}
 	case PROpen:
 		actions = []Action{ActionOpenPR, ActionOpenIssue, ActionReject}
-	case Merged, Rejected, Dead, Declined:
+	case Merged, Rejected, Dead, Declined, Completed:
 		actions = []Action{ActionArchive}
 	}
 	return actions
@@ -172,6 +176,7 @@ func Statuses() []StatusMeta {
 		{ID: WaitingHuman, Label: "Waiting for you", Kind: "warn", NeedsYou: true},
 		{ID: PROpen, Label: "In review", Kind: "ok"},
 		{ID: Merged, Label: "Merged", Kind: "ok"},
+		{ID: Completed, Label: "Done", Kind: "ok"},
 		{ID: Parked, Label: "Parked", Kind: "warn", NeedsYou: true},
 		{ID: Dead, Label: "Stopped (too many retries)", Kind: "danger"},
 		{ID: Rejected, Label: "Rejected", Kind: "danger"},

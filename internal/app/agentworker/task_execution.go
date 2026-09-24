@@ -198,12 +198,13 @@ func newTaskRunner(providers map[string]agentexec.Provider, log *slog.Logger) ag
 	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
 }
 
-// applyToolLimits wires the task's carried tool policy into a *LoopRunner's
-// result cap/spill, so a worker-executed stage enforces the same limits the
-// daemon's own chat path applies (config.Config.Tools.Policy, carried
-// non-secret via TaskConfig.ToolPolicy). A runner that isn't a *LoopRunner
-// (e.g. a test fake) is left untouched.
-func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy) {
+// applyToolLimits wires the task's carried tool policy and its agent
+// profile's tool allowlist into a *LoopRunner: the result cap/spill, so a
+// worker-executed stage enforces the same limits the daemon's own chat path
+// applies (config.Config.Tools.Policy, carried non-secret via
+// TaskConfig.ToolPolicy), and the tools the profile allows. A runner that
+// isn't a *LoopRunner (e.g. a test fake) is left untouched.
+func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []string) {
 	runner, ok := agent.(*agentexec.LoopRunner)
 	if !ok {
 		return
@@ -212,6 +213,7 @@ func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy) {
 		MaxResultChars: policy.MaxResultChars,
 		SpillDir:       policy.SpillDir,
 	}
+	runner.AllowTools = allow
 }
 
 // routeTask remains available for routing-only callers. Production execution
@@ -273,7 +275,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	if agent == nil {
 		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
 	}
-	applyToolLimits(agent, req.Cfg.ToolPolicy)
+	applyToolLimits(agent, req.Cfg.ToolPolicy, req.Tools)
 	agent = persistentRunner{Runner: agent, enabled: req.Repo.PersistentStorage}
 
 	// A workflow run in this process publishes to an in-process *events.Bus

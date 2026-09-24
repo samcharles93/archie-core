@@ -112,6 +112,17 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "container profile with an empty tool name",
+			kind: ContainerRuntimePoliciesKind,
+			value: config.ContainerConfig{Image: "archie-agent:test", Profiles: map[string]config.AgentProfile{
+				"net": {Tools: []string{""}},
+			}},
+			mutate: func(cfg *config.Config) {
+				cfg.Containers.Profiles = map[string]config.AgentProfile{"net": {Tools: []string{""}}}
+			},
+			wantErr: true,
+		},
+		{
 			name:    "container runtime policies without an image",
 			kind:    ContainerRuntimePoliciesKind,
 			value:   config.ContainerConfig{PullPolicy: "missing"},

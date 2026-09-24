@@ -18,7 +18,15 @@ import (
 type YAMLDefinition struct {
 	ID    string       `yaml:"id" json:"id"`
 	Steps []StepRecord `yaml:"steps" json:"steps"`
+	// WorkflowInterface declares the workflow's inputs, repository mode and
+	// agent profile.
+	task.WorkflowInterface `yaml:",inline" json:",inline"`
 }
+
+// repoFreeStepTypes are the step types that run without a repository. A
+// workflow whose repository is not required may use only these, since it may
+// run with no worktree at all.
+var repoFreeStepTypes = map[string]bool{AgentRunStepName: true}
 
 // StepRecord selects one registered step type and supplies its typed settings.
 type StepRecord struct {
@@ -45,10 +53,17 @@ func ParseDefinition(src string, registry StepRegistry) (YAMLDefinition, error) 
 	if len(definition.Steps) == 0 {
 		return YAMLDefinition{}, fmt.Errorf("workflow %q has no steps", definition.ID)
 	}
+	if err := definition.Validate(); err != nil {
+		return YAMLDefinition{}, fmt.Errorf("workflow %q: %w", definition.ID, err)
+	}
+	mode := definition.RepositoryMode()
 	for i, step := range definition.Steps {
 		factory, ok := registry[step.Type]
 		if !ok {
 			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: unknown type %q", definition.ID, i+1, step.Type)
+		}
+		if mode != task.RepositoryRequired && !repoFreeStepTypes[step.Type] {
+			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: %q needs a repository, but the workflow's repository is %s", definition.ID, i+1, step.Type, mode)
 		}
 		if _, err := factory(step.Settings); err != nil {
 			return YAMLDefinition{}, fmt.Errorf("workflow %q step %q settings: %w", definition.ID, step.Type, err)

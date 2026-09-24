@@ -12,6 +12,11 @@ reference by ID.
 
 ## Decision: a new `internal/domain/mapping` package, SQLite storage
 
+> Storage superseded: every store now lives in PostgreSQL behind
+> `internal/domain/storecontract`, implemented in `internal/infrastructure/postgres`
+> (`docs/prds/state-store-contract.md`). SQLite names below describe the
+> original design.
+
 `internal/domain/mapping` owns the mapping vocabulary and the pure
 resolve/preview rule; `internal/store` persists it (mirrors
 `captures.go`'s shape exactly -- inline schema const, narrow store
@@ -107,7 +112,7 @@ is `t2db.4`'s job, not duplicated here.
 
 ## Storage
 
-`internal/store/mappings.go`, `field_mappings` table: `id, name,
+The `mappings` table: `id, name,
 source_hint, fields_json, created_at, updated_at`. `fields_json` is the
 `[]Field` slice JSON-encoded into one column -- fields have no independent
 query need (nothing filters "mappings with a field named X"), so a

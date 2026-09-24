@@ -107,36 +107,53 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) hasWorkflow(ctx context.Context, id string) (bool, error) {
-	definitions, err := s.workflowDefinitions(ctx)
+	_, found, err := s.workflowEntry(ctx, id)
+	return found, err
+}
+
+// workflowEntry returns the stored definition of workflow id.
+func (s *Server) workflowEntry(ctx context.Context, id string) (task.WorkflowDefinitionEntry, bool, error) {
+	collection, err := s.workflowCollection(ctx)
 	if err != nil {
-		return false, err
+		return task.WorkflowDefinitionEntry{}, false, err
 	}
-	for _, definition := range definitions {
-		if definition.ID == id {
-			return true, nil
-		}
+	entry, found := collection.DefinitionByID(id)
+	return entry, found, nil
+}
+
+func (s *Server) workflowCollection(ctx context.Context) (task.WorkflowDefinitionCollection, error) {
+	if s.ControlPlane == nil {
+		return task.WorkflowDefinitionCollection{}, nil
 	}
-	return false, nil
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: workflowDefinitionsKind})
+	if err != nil {
+		return task.WorkflowDefinitionCollection{}, err
+	}
+	if response.Resource == nil {
+		return task.WorkflowDefinitionCollection{}, errors.New("workflow definitions missing")
+	}
+	var collection task.WorkflowDefinitionCollection
+	if err := json.Unmarshal(response.Resource.ValueJson, &collection); err != nil {
+		return task.WorkflowDefinitionCollection{}, err
+	}
+	return collection, nil
 }
 
 func (s *Server) workflowDefinitions(ctx context.Context) ([]task.Definition, error) {
 	if s.ControlPlane == nil {
 		return nil, nil
 	}
-	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: workflowDefinitionsKind})
+	collection, err := s.workflowCollection(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if response.Resource == nil {
-		return nil, errors.New("workflow definitions missing")
-	}
-	var collection task.WorkflowDefinitionCollection
-	if err := json.Unmarshal(response.Resource.ValueJson, &collection); err != nil {
 		return nil, err
 	}
 	definitions := make([]task.Definition, 0, len(collection.Definitions))
 	for _, entry := range collection.Definitions {
-		definitions = append(definitions, task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: true})
+		definition := task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: true, Repository: task.RepositoryRequired}
+		if iface, err := task.ParseWorkflowInterface(entry.YAML); err == nil {
+			definition.Inputs, definition.Repository = iface.Inputs, iface.RepositoryMode()
+		}
+		definitions = append(definitions, definition)
 	}
 	return definitions, nil
 }

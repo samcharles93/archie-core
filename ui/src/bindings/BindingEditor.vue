@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Check, Copy, RefreshCw } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -7,14 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { eventTypeLabel, type EventType } from "@/captures/event-types";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   draftFromBinding,
   emptyDraft,
-  generateSecret,
+  mappingsForEventType,
+  paramsForType,
+  takesRepository,
   type Binding,
   type BindingDraft,
   type MappingOption,
@@ -22,15 +22,17 @@ import {
 } from "./binding-draft";
 
 /**
- * The binding editor: name, the matcher source senders POST to, the field
- * mapping, the workflow, an optional repo pin, and the shared secret their
- * signature is checked against.
+ * The binding editor: name, the event type it applies to, one of that type's
+ * mappings, an optional filter over the mapping's parameters, the workflow, its
+ * inputs, and the repository when the workflow takes one. Signing is the
+ * source's.
  */
 
 const props = defineProps<{
   /** null is a new binding; a binding is an edit. */
   binding: Binding | null;
   mappings: MappingOption[];
+  eventTypes: EventType[];
   workflows: WorkflowOption[];
   saving: boolean;
   error: string | null;
@@ -45,23 +47,58 @@ const draft = ref<BindingDraft>(emptyDraft());
 watch(
   open,
   (isOpen) => {
-    if (isOpen) draft.value = props.binding ? draftFromBinding(props.binding) : emptyDraft();
+    if (isOpen) draft.value = props.binding ? draftFromBinding(props.binding, props.mappings) : emptyDraft();
   },
   { immediate: true },
 );
 
-const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
-const copied = ref(false);
-async function copySecret(): Promise<void> {
-  await navigator.clipboard.writeText(draft.value.secret);
-  copied.value = true;
-  setTimeout(() => (copied.value = false), 1500);
+const typeMappings = computed(() => mappingsForEventType(props.mappings, draft.value.eventTypeId));
+
+// A mapping belongs to one event type, so changing the type clears a mapping
+// that no longer fits it.
+watch(
+  () => draft.value.eventTypeId,
+  () => {
+    if (!typeMappings.value.some((m) => m.id === draft.value.mappingId)) draft.value.mappingId = "";
+  },
+);
+
+const workflow = computed(() => props.workflows.find((w) => w.id === draft.value.workflow));
+const declaredInputs = computed(() => Object.entries(workflow.value?.inputs ?? {}).sort(([a], [b]) => a.localeCompare(b)));
+const mappingFields = computed(() => props.mappings.find((m) => m.id === draft.value.mappingId)?.fields ?? []);
+const stringParams = computed(() => paramsForType(mappingFields.value, "string"));
+
+// The constant sentinel stands for "no parameter": Select items cannot carry
+// an empty value.
+const CONSTANT = "__constant__";
+
+function inputDraft(name: string) {
+  draft.value.inputs[name] ??= { param: "", value: "" };
+  return draft.value.inputs[name];
 }
+
+function inputSource(name: string): string {
+  return inputDraft(name).param || CONSTANT;
+}
+
+function setInputSource(name: string, source: unknown): void {
+  inputDraft(name).param = source === CONSTANT ? "" : String(source);
+}
+
+const NO_PARAM = "__none__";
+const repoSource = computed({
+  get: () => draft.value.repoParam || NO_PARAM,
+  set: (v: string) => {
+    draft.value.repoParam = v === NO_PARAM ? "" : v;
+  },
+});
+
+const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
 </script>
 
 <template>
   <Dialog v-model:open="open">
-    <!-- Seven fields make this taller than a short window; the dialog itself
+    <!-- Six fields make this taller than a short window; the dialog itself
          scrolls rather than clipping its own Save button. -->
     <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
       <DialogHeader>
@@ -79,25 +116,41 @@ async function copySecret(): Promise<void> {
           </Field>
 
           <Field>
-            <FieldLabel for="binding-source">Source</FieldLabel>
-            <Input id="binding-source" v-model="draft.source" />
-            <FieldDescription>The path segment senders POST to, for example "sentry".</FieldDescription>
+            <FieldLabel for="binding-event-type">Event type</FieldLabel>
+            <Select v-model="draft.eventTypeId">
+              <SelectTrigger id="binding-event-type" class="w-full">
+                <SelectValue placeholder="Pick an event type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem v-for="type in props.eventTypes" :key="type.id" :value="type.id">
+                    {{ eventTypeLabel(type.id, props.eventTypes) }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field>
             <FieldLabel for="binding-mapping">Field mapping</FieldLabel>
-            <Select v-model="draft.mappingId">
+            <Select v-model="draft.mappingId" :disabled="!typeMappings.length">
               <SelectTrigger id="binding-mapping" class="w-full">
-                <SelectValue placeholder="Pick a saved mapping" />
+                <SelectValue :placeholder="draft.eventTypeId && !typeMappings.length ? 'No mappings for this event type' : 'Pick a mapping'" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem v-for="mapping in props.mappings" :key="mapping.id" :value="String(mapping.id)">
+                  <SelectItem v-for="mapping in typeMappings" :key="mapping.id" :value="String(mapping.id)">
                     {{ mapping.name }}
                   </SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
+          </Field>
+
+          <Field>
+            <FieldLabel for="binding-filter">Filter</FieldLabel>
+            <Input id="binding-filter" v-model="draft.filter" class="font-mono text-xs" placeholder='severity in ["high", "critical"]' />
+            <FieldDescription>Optional CEL over the mapping's parameters.</FieldDescription>
           </Field>
 
           <Field>
@@ -116,7 +169,48 @@ async function copySecret(): Promise<void> {
             </Select>
           </Field>
 
-          <Field>
+          <Field v-for="[name, spec] in declaredInputs" :key="name">
+            <FieldLabel :for="`binding-input-${name}`">
+              Input <span class="font-mono">{{ name }}</span>
+              <span class="text-fg-muted">({{ spec.type }}{{ spec.required ? ", required" : "" }})</span>
+            </FieldLabel>
+            <div class="grid grid-cols-2 items-start gap-3">
+              <Select :model-value="inputSource(name)" @update:model-value="setInputSource(name, $event)">
+                <SelectTrigger :id="`binding-input-${name}`" class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem :value="CONSTANT">Constant</SelectItem>
+                    <SelectItem v-for="field in paramsForType(mappingFields, spec.type)" :key="field.name" :value="field.name">
+                      {{ field.name }}
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Input v-if="!inputDraft(name).param" v-model="inputDraft(name).value" class="font-mono text-xs" placeholder="value" />
+            </div>
+          </Field>
+
+          <Field v-if="takesRepository(workflow)">
+            <FieldLabel for="binding-repo-param">Repository from</FieldLabel>
+            <Select v-model="repoSource">
+              <SelectTrigger id="binding-repo-param" class="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem :value="NO_PARAM">A pinned or configured repo</SelectItem>
+                  <SelectItem v-for="field in stringParams" :key="field.name" :value="field.name">
+                    Parameter {{ field.name }}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>A parameter must hold owner/name and name a configured repo.</FieldDescription>
+          </Field>
+
+          <Field v-if="takesRepository(workflow) && !draft.repoParam">
             <div class="grid grid-cols-2 items-start gap-3">
               <Field>
                 <FieldLabel for="binding-owner">Pinned owner</FieldLabel>
@@ -132,38 +226,6 @@ async function copySecret(): Promise<void> {
             </FieldDescription>
           </Field>
 
-          <Field>
-            <FieldLabel for="binding-secret">Signing secret</FieldLabel>
-            <InputGroup v-if="draft.secret">
-              <InputGroupInput id="binding-secret" :model-value="draft.secret" class="font-mono text-xs" readonly />
-              <InputGroupAddon align="inline-end">
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <InputGroupButton size="icon-xs" aria-label="Copy secret" @click="copySecret">
-                      <Check v-if="copied" />
-                      <Copy v-else />
-                    </InputGroupButton>
-                  </TooltipTrigger>
-                  <TooltipContent>Copy secret</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <InputGroupButton size="icon-xs" aria-label="Regenerate secret" @click="draft.secret = generateSecret()">
-                      <RefreshCw />
-                    </InputGroupButton>
-                  </TooltipTrigger>
-                  <TooltipContent>Regenerate</TooltipContent>
-                </Tooltip>
-              </InputGroupAddon>
-            </InputGroup>
-            <div v-else class="flex h-9 items-center justify-between rounded-md border px-3 text-sm">
-              <span class="text-fg-muted">Stored · HMAC-SHA256</span>
-              <Button type="button" variant="ghost" size="sm" @click="draft.secret = generateSecret()">
-                <RefreshCw data-icon="inline-start" />
-                Replace
-              </Button>
-            </div>
-          </Field>
         </FieldGroup>
 
         <!-- Beside the buttons, not at the top: the dialog scrolls, and Save is

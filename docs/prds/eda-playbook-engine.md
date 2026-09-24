@@ -353,10 +353,15 @@ single-action playbooks the two granularities are equivalent in effect;
 the difference starts with multi-action runs -- where whole-run keying
 would already be wrong.
 
+> Storage superseded: every store now lives in PostgreSQL behind
+> `internal/domain/storecontract`, implemented in `internal/infrastructure/postgres`
+> (`docs/prds/state-store-contract.md`). SQLite names below describe the
+> original design.
+
 **Storage/lookup: a new durable ledger table `playbook_dispatches` in
-`internal/store`, copying `binding_dispatches`'s conventions exactly**
+the event-capture store, copying `binding_dispatches`'s conventions exactly**
 (durable table, `INSERT OR IGNORE`, sentinel error, rows freed with
-their parent, survives daemon restarts -- `internal/store/bindings.go`):
+their parent, survives daemon restarts -- `RecordDispatch`):
 
 ```sql
 CREATE TABLE playbook_dispatches (
@@ -376,9 +381,9 @@ write rather than a constraint error, and the caller matches it with
 (`internal/daemon/daemon.go` -- "another cycle already won this
 race," not an error to surface). The record is consumed by the playbook
 coordinator at dispatch time through a domain-side interface implemented
-by `internal/store` -- the same shape as `BindingDispatcher`
-(`internal/store/interface.go`) -- and the table lands in the
-store's schema application (`internal/store/store.go`). No change
+by the event-capture store -- the same shape as `BindingDispatcher`
+(`internal/domain/storecontract`) -- and the table lands in the
+store's schema migrations. No change
 to `internal/eventbus`; no per-message dedup state on the client.
 
 **Lifetime: no time-based expiry, and no automatic reclamation.** Rows are

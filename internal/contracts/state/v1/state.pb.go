@@ -1318,8 +1318,11 @@ type Task struct {
 	// separately from retry_count, so an operator's manual retries no
 	// longer draw down the review-remediation budget (and vice versa).
 	RemediationRounds int32 `protobuf:"varint,33,opt,name=remediation_rounds,json=remediationRounds,proto3" json:"remediation_rounds,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// inputs_json is the JSON object of workflow inputs a binding dispatch
+	// resolved (task.EncodeInputs); empty for a task no binding started.
+	InputsJson    string `protobuf:"bytes,34,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1583,6 +1586,13 @@ func (x *Task) GetRemediationRounds() int32 {
 	return 0
 }
 
+func (x *Task) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
 // Event mirrors internal/events.Event. Data is carried as a JSON object
 // string (matching the store's own on-disk representation) rather than
 // google.protobuf.Struct, to stay a direct mirror of the existing column.
@@ -1745,7 +1755,7 @@ func (x *Event) GetPrincipalId() string {
 	return ""
 }
 
-// CapturedEvent mirrors internal/store.CapturedEvent.
+// CapturedEvent mirrors storecontract.CapturedEvent.
 type CapturedEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1756,6 +1766,11 @@ type CapturedEvent struct {
 	Headers       string                 `protobuf:"bytes,6,opt,name=headers,proto3" json:"headers,omitempty"`
 	Body          string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
 	Authenticated bool                   `protobuf:"varint,8,opt,name=authenticated,proto3" json:"authenticated,omitempty"`
+	// event_type is the ID of the event type the capture was identified as on
+	// arrival; empty is unidentified.
+	EventType string `protobuf:"bytes,9,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	// unsigned marks an event taken on an approved unsigned source.
+	Unsigned      bool `protobuf:"varint,10,opt,name=unsigned,proto3" json:"unsigned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1846,6 +1861,236 @@ func (x *CapturedEvent) GetAuthenticated() bool {
 	return false
 }
 
+func (x *CapturedEvent) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *CapturedEvent) GetUnsigned() bool {
+	if x != nil {
+		return x.Unsigned
+	}
+	return false
+}
+
+// EventTypeHeaderCondition mirrors internal/domain/eventtype.HeaderCondition.
+type EventTypeHeaderCondition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventTypeHeaderCondition) Reset() {
+	*x = EventTypeHeaderCondition{}
+	mi := &file_state_v1_state_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventTypeHeaderCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventTypeHeaderCondition) ProtoMessage() {}
+
+func (x *EventTypeHeaderCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventTypeHeaderCondition.ProtoReflect.Descriptor instead.
+func (*EventTypeHeaderCondition) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *EventTypeHeaderCondition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EventTypeHeaderCondition) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+// EventTypePayloadCondition mirrors internal/domain/eventtype.PayloadCondition.
+type EventTypePayloadCondition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Op            string                 `protobuf:"bytes,2,opt,name=op,proto3" json:"op,omitempty"`
+	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventTypePayloadCondition) Reset() {
+	*x = EventTypePayloadCondition{}
+	mi := &file_state_v1_state_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventTypePayloadCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventTypePayloadCondition) ProtoMessage() {}
+
+func (x *EventTypePayloadCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventTypePayloadCondition.ProtoReflect.Descriptor instead.
+func (*EventTypePayloadCondition) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *EventTypePayloadCondition) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *EventTypePayloadCondition) GetOp() string {
+	if x != nil {
+		return x.Op
+	}
+	return ""
+}
+
+func (x *EventTypePayloadCondition) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+// EventType mirrors internal/domain/eventtype.EventType. header_conditions and
+// payload_conditions are its rule; schema maps each payload path to its type.
+type EventType struct {
+	state             protoimpl.MessageState       `protogen:"open.v1"`
+	Id                string                       `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Source            string                       `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Name              string                       `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	HeaderConditions  []*EventTypeHeaderCondition  `protobuf:"bytes,4,rep,name=header_conditions,json=headerConditions,proto3" json:"header_conditions,omitempty"`
+	PayloadConditions []*EventTypePayloadCondition `protobuf:"bytes,5,rep,name=payload_conditions,json=payloadConditions,proto3" json:"payload_conditions,omitempty"`
+	Schema            map[string]string            `protobuf:"bytes,6,rep,name=schema,proto3" json:"schema,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CreatedAt         *timestamppb.Timestamp       `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt         *timestamppb.Timestamp       `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *EventType) Reset() {
+	*x = EventType{}
+	mi := &file_state_v1_state_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventType) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventType) ProtoMessage() {}
+
+func (x *EventType) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventType.ProtoReflect.Descriptor instead.
+func (*EventType) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *EventType) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *EventType) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *EventType) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EventType) GetHeaderConditions() []*EventTypeHeaderCondition {
+	if x != nil {
+		return x.HeaderConditions
+	}
+	return nil
+}
+
+func (x *EventType) GetPayloadConditions() []*EventTypePayloadCondition {
+	if x != nil {
+		return x.PayloadConditions
+	}
+	return nil
+}
+
+func (x *EventType) GetSchema() map[string]string {
+	if x != nil {
+		return x.Schema
+	}
+	return nil
+}
+
+func (x *EventType) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *EventType) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
 // MappingField mirrors internal/domain/mapping.Field.
 type MappingField struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1859,7 +2104,7 @@ type MappingField struct {
 
 func (x *MappingField) Reset() {
 	*x = MappingField{}
-	mi := &file_state_v1_state_proto_msgTypes[27]
+	mi := &file_state_v1_state_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1871,7 +2116,7 @@ func (x *MappingField) String() string {
 func (*MappingField) ProtoMessage() {}
 
 func (x *MappingField) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[27]
+	mi := &file_state_v1_state_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1884,7 +2129,7 @@ func (x *MappingField) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MappingField.ProtoReflect.Descriptor instead.
 func (*MappingField) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{27}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *MappingField) GetName() string {
@@ -1917,20 +2162,24 @@ func (x *MappingField) GetRequired() bool {
 
 // Mapping mirrors internal/domain/mapping.Mapping.
 type Mapping struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	SourceHint    string                 `protobuf:"bytes,3,opt,name=source_hint,json=sourceHint,proto3" json:"source_hint,omitempty"`
-	Fields        []*MappingField        `protobuf:"bytes,4,rep,name=fields,proto3" json:"fields,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	SourceHint  string                 `protobuf:"bytes,3,opt,name=source_hint,json=sourceHint,proto3" json:"source_hint,omitempty"`
+	Fields      []*MappingField        `protobuf:"bytes,4,rep,name=fields,proto3" json:"fields,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	EventTypeId string                 `protobuf:"bytes,7,opt,name=event_type_id,json=eventTypeId,proto3" json:"event_type_id,omitempty"`
+	// match_count and last_matched_at are read-only: the store counts them.
+	MatchCount    int64                  `protobuf:"varint,8,opt,name=match_count,json=matchCount,proto3" json:"match_count,omitempty"`
+	LastMatchedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_matched_at,json=lastMatchedAt,proto3" json:"last_matched_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Mapping) Reset() {
 	*x = Mapping{}
-	mi := &file_state_v1_state_proto_msgTypes[28]
+	mi := &file_state_v1_state_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1942,7 +2191,7 @@ func (x *Mapping) String() string {
 func (*Mapping) ProtoMessage() {}
 
 func (x *Mapping) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[28]
+	mi := &file_state_v1_state_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1955,7 +2204,7 @@ func (x *Mapping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mapping.ProtoReflect.Descriptor instead.
 func (*Mapping) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{28}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Mapping) GetId() string {
@@ -2000,6 +2249,27 @@ func (x *Mapping) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Mapping) GetEventTypeId() string {
+	if x != nil {
+		return x.EventTypeId
+	}
+	return ""
+}
+
+func (x *Mapping) GetMatchCount() int64 {
+	if x != nil {
+		return x.MatchCount
+	}
+	return 0
+}
+
+func (x *Mapping) GetLastMatchedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastMatchedAt
+	}
+	return nil
+}
+
 // BindingMatcher mirrors internal/domain/binding.Matcher.
 type BindingMatcher struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2010,7 +2280,7 @@ type BindingMatcher struct {
 
 func (x *BindingMatcher) Reset() {
 	*x = BindingMatcher{}
-	mi := &file_state_v1_state_proto_msgTypes[29]
+	mi := &file_state_v1_state_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2022,7 +2292,7 @@ func (x *BindingMatcher) String() string {
 func (*BindingMatcher) ProtoMessage() {}
 
 func (x *BindingMatcher) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[29]
+	mi := &file_state_v1_state_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2035,7 +2305,7 @@ func (x *BindingMatcher) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BindingMatcher.ProtoReflect.Descriptor instead.
 func (*BindingMatcher) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{29}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *BindingMatcher) GetSource() string {
@@ -2047,26 +2317,35 @@ func (x *BindingMatcher) GetSource() string {
 
 // Binding mirrors internal/domain/binding.Binding.
 type Binding struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Matcher       *BindingMatcher        `protobuf:"bytes,3,opt,name=matcher,proto3" json:"matcher,omitempty"`
-	MappingId     string                 `protobuf:"bytes,4,opt,name=mapping_id,json=mappingId,proto3" json:"mapping_id,omitempty"`
-	Workflow      string                 `protobuf:"bytes,5,opt,name=workflow,proto3" json:"workflow,omitempty"`
-	Owner         string                 `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
-	Repo          string                 `protobuf:"bytes,7,opt,name=repo,proto3" json:"repo,omitempty"`
-	Version       int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
-	Status        string                 `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
-	Secret        string                 `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Matcher   *BindingMatcher        `protobuf:"bytes,3,opt,name=matcher,proto3" json:"matcher,omitempty"`
+	MappingId string                 `protobuf:"bytes,4,opt,name=mapping_id,json=mappingId,proto3" json:"mapping_id,omitempty"`
+	Workflow  string                 `protobuf:"bytes,5,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	Owner     string                 `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
+	Repo      string                 `protobuf:"bytes,7,opt,name=repo,proto3" json:"repo,omitempty"`
+	Version   int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
+	Status    string                 `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	// Unused: signing moved to Source. Kept so the field number is never reused.
+	//
+	// Deprecated: Marked as deprecated in state/v1/state.proto.
+	Secret    string                 `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Filter    string                 `protobuf:"bytes,13,opt,name=filter,proto3" json:"filter,omitempty"`
+	// inputs_json assigns workflow inputs, a JSON object of
+	// {"param": name} or {"value": constant} per input.
+	InputsJson string `protobuf:"bytes,14,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	// repo_param names the mapped parameter holding "owner/name".
+	RepoParam     string `protobuf:"bytes,15,opt,name=repo_param,json=repoParam,proto3" json:"repo_param,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Binding) Reset() {
 	*x = Binding{}
-	mi := &file_state_v1_state_proto_msgTypes[30]
+	mi := &file_state_v1_state_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2078,7 +2357,7 @@ func (x *Binding) String() string {
 func (*Binding) ProtoMessage() {}
 
 func (x *Binding) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[30]
+	mi := &file_state_v1_state_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2091,7 +2370,7 @@ func (x *Binding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Binding.ProtoReflect.Descriptor instead.
 func (*Binding) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{30}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Binding) GetId() string {
@@ -2157,6 +2436,7 @@ func (x *Binding) GetStatus() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in state/v1/state.proto.
 func (x *Binding) GetSecret() string {
 	if x != nil {
 		return x.Secret
@@ -2178,7 +2458,105 @@ func (x *Binding) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// WorkflowStat mirrors internal/store.WorkflowStat.
+func (x *Binding) GetFilter() string {
+	if x != nil {
+		return x.Filter
+	}
+	return ""
+}
+
+func (x *Binding) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
+func (x *Binding) GetRepoParam() string {
+	if x != nil {
+		return x.RepoParam
+	}
+	return ""
+}
+
+// Source mirrors internal/domain/source.Source.
+type Source struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Signing       string                 `protobuf:"bytes,2,opt,name=signing,proto3" json:"signing,omitempty"`
+	Secret        string                 `protobuf:"bytes,3,opt,name=secret,proto3" json:"secret,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Source) Reset() {
+	*x = Source{}
+	mi := &file_state_v1_state_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Source) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Source) ProtoMessage() {}
+
+func (x *Source) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Source.ProtoReflect.Descriptor instead.
+func (*Source) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *Source) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *Source) GetSigning() string {
+	if x != nil {
+		return x.Signing
+	}
+	return ""
+}
+
+func (x *Source) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *Source) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Source) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+// WorkflowStat mirrors storecontract.WorkflowStat.
 type WorkflowStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Workflow      string                 `protobuf:"bytes,1,opt,name=workflow,proto3" json:"workflow,omitempty"`
@@ -2195,7 +2573,7 @@ type WorkflowStat struct {
 
 func (x *WorkflowStat) Reset() {
 	*x = WorkflowStat{}
-	mi := &file_state_v1_state_proto_msgTypes[31]
+	mi := &file_state_v1_state_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2207,7 +2585,7 @@ func (x *WorkflowStat) String() string {
 func (*WorkflowStat) ProtoMessage() {}
 
 func (x *WorkflowStat) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[31]
+	mi := &file_state_v1_state_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2220,7 +2598,7 @@ func (x *WorkflowStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkflowStat.ProtoReflect.Descriptor instead.
 func (*WorkflowStat) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{31}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *WorkflowStat) GetWorkflow() string {
@@ -2279,7 +2657,7 @@ func (x *WorkflowStat) GetTotalTokens() int64 {
 	return 0
 }
 
-// StageStat mirrors internal/store.StageStat.
+// StageStat mirrors storecontract.StageStat.
 type StageStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Workflow      string                 `protobuf:"bytes,1,opt,name=workflow,proto3" json:"workflow,omitempty"`
@@ -2293,7 +2671,7 @@ type StageStat struct {
 
 func (x *StageStat) Reset() {
 	*x = StageStat{}
-	mi := &file_state_v1_state_proto_msgTypes[32]
+	mi := &file_state_v1_state_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2305,7 +2683,7 @@ func (x *StageStat) String() string {
 func (*StageStat) ProtoMessage() {}
 
 func (x *StageStat) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[32]
+	mi := &file_state_v1_state_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2318,7 +2696,7 @@ func (x *StageStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageStat.ProtoReflect.Descriptor instead.
 func (*StageStat) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{32}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *StageStat) GetWorkflow() string {
@@ -2356,7 +2734,7 @@ func (x *StageStat) GetErrors() int64 {
 	return 0
 }
 
-// DayTokens mirrors internal/store.DayTokens.
+// DayTokens mirrors storecontract.DayTokens.
 type DayTokens struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Day           string                 `protobuf:"bytes,1,opt,name=day,proto3" json:"day,omitempty"`
@@ -2367,7 +2745,7 @@ type DayTokens struct {
 
 func (x *DayTokens) Reset() {
 	*x = DayTokens{}
-	mi := &file_state_v1_state_proto_msgTypes[33]
+	mi := &file_state_v1_state_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2379,7 +2757,7 @@ func (x *DayTokens) String() string {
 func (*DayTokens) ProtoMessage() {}
 
 func (x *DayTokens) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[33]
+	mi := &file_state_v1_state_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2392,7 +2770,7 @@ func (x *DayTokens) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DayTokens.ProtoReflect.Descriptor instead.
 func (*DayTokens) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{33}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *DayTokens) GetDay() string {
@@ -2424,7 +2802,7 @@ type EnqueueIssueRequest struct {
 
 func (x *EnqueueIssueRequest) Reset() {
 	*x = EnqueueIssueRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[34]
+	mi := &file_state_v1_state_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2436,7 +2814,7 @@ func (x *EnqueueIssueRequest) String() string {
 func (*EnqueueIssueRequest) ProtoMessage() {}
 
 func (x *EnqueueIssueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[34]
+	mi := &file_state_v1_state_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2449,7 +2827,7 @@ func (x *EnqueueIssueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueIssueRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueIssueRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{34}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *EnqueueIssueRequest) GetOwner() string {
@@ -2510,7 +2888,7 @@ type EnqueueIssueResponse struct {
 
 func (x *EnqueueIssueResponse) Reset() {
 	*x = EnqueueIssueResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[35]
+	mi := &file_state_v1_state_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2522,7 +2900,7 @@ func (x *EnqueueIssueResponse) String() string {
 func (*EnqueueIssueResponse) ProtoMessage() {}
 
 func (x *EnqueueIssueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[35]
+	mi := &file_state_v1_state_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2535,7 +2913,7 @@ func (x *EnqueueIssueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueIssueResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueIssueResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{35}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *EnqueueIssueResponse) GetInserted() bool {
@@ -2559,7 +2937,7 @@ type EnqueueChatTaskRequest struct {
 
 func (x *EnqueueChatTaskRequest) Reset() {
 	*x = EnqueueChatTaskRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[36]
+	mi := &file_state_v1_state_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2571,7 +2949,7 @@ func (x *EnqueueChatTaskRequest) String() string {
 func (*EnqueueChatTaskRequest) ProtoMessage() {}
 
 func (x *EnqueueChatTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[36]
+	mi := &file_state_v1_state_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2584,7 +2962,7 @@ func (x *EnqueueChatTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueChatTaskRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueChatTaskRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{36}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *EnqueueChatTaskRequest) GetOwner() string {
@@ -2638,7 +3016,7 @@ type EnqueueChatTaskResponse struct {
 
 func (x *EnqueueChatTaskResponse) Reset() {
 	*x = EnqueueChatTaskResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[37]
+	mi := &file_state_v1_state_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2650,7 +3028,7 @@ func (x *EnqueueChatTaskResponse) String() string {
 func (*EnqueueChatTaskResponse) ProtoMessage() {}
 
 func (x *EnqueueChatTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[37]
+	mi := &file_state_v1_state_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2663,7 +3041,7 @@ func (x *EnqueueChatTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueChatTaskResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueChatTaskResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{37}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *EnqueueChatTaskResponse) GetTask() *Task {
@@ -2681,7 +3059,7 @@ type ClaimNextRequest struct {
 
 func (x *ClaimNextRequest) Reset() {
 	*x = ClaimNextRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[38]
+	mi := &file_state_v1_state_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2693,7 +3071,7 @@ func (x *ClaimNextRequest) String() string {
 func (*ClaimNextRequest) ProtoMessage() {}
 
 func (x *ClaimNextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[38]
+	mi := &file_state_v1_state_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2706,7 +3084,7 @@ func (x *ClaimNextRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimNextRequest.ProtoReflect.Descriptor instead.
 func (*ClaimNextRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{38}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{42}
 }
 
 type ClaimNextResponse struct {
@@ -2719,7 +3097,7 @@ type ClaimNextResponse struct {
 
 func (x *ClaimNextResponse) Reset() {
 	*x = ClaimNextResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[39]
+	mi := &file_state_v1_state_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2731,7 +3109,7 @@ func (x *ClaimNextResponse) String() string {
 func (*ClaimNextResponse) ProtoMessage() {}
 
 func (x *ClaimNextResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[39]
+	mi := &file_state_v1_state_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2744,7 +3122,7 @@ func (x *ClaimNextResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimNextResponse.ProtoReflect.Descriptor instead.
 func (*ClaimNextResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{39}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ClaimNextResponse) GetTask() *Task {
@@ -2772,7 +3150,7 @@ type ClaimByIssueRequest struct {
 
 func (x *ClaimByIssueRequest) Reset() {
 	*x = ClaimByIssueRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[40]
+	mi := &file_state_v1_state_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2784,7 +3162,7 @@ func (x *ClaimByIssueRequest) String() string {
 func (*ClaimByIssueRequest) ProtoMessage() {}
 
 func (x *ClaimByIssueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[40]
+	mi := &file_state_v1_state_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2797,7 +3175,7 @@ func (x *ClaimByIssueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimByIssueRequest.ProtoReflect.Descriptor instead.
 func (*ClaimByIssueRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{40}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ClaimByIssueRequest) GetOwner() string {
@@ -2831,7 +3209,7 @@ type ClaimByIssueResponse struct {
 
 func (x *ClaimByIssueResponse) Reset() {
 	*x = ClaimByIssueResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[41]
+	mi := &file_state_v1_state_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2843,7 +3221,7 @@ func (x *ClaimByIssueResponse) String() string {
 func (*ClaimByIssueResponse) ProtoMessage() {}
 
 func (x *ClaimByIssueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[41]
+	mi := &file_state_v1_state_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2856,7 +3234,7 @@ func (x *ClaimByIssueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimByIssueResponse.ProtoReflect.Descriptor instead.
 func (*ClaimByIssueResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{41}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ClaimByIssueResponse) GetTask() *Task {
@@ -2885,7 +3263,7 @@ type TransitionRequest struct {
 
 func (x *TransitionRequest) Reset() {
 	*x = TransitionRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[42]
+	mi := &file_state_v1_state_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2897,7 +3275,7 @@ func (x *TransitionRequest) String() string {
 func (*TransitionRequest) ProtoMessage() {}
 
 func (x *TransitionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[42]
+	mi := &file_state_v1_state_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2910,7 +3288,7 @@ func (x *TransitionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionRequest.ProtoReflect.Descriptor instead.
 func (*TransitionRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{42}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TransitionRequest) GetTaskId() int64 {
@@ -2949,7 +3327,7 @@ type TransitionResponse struct {
 
 func (x *TransitionResponse) Reset() {
 	*x = TransitionResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[43]
+	mi := &file_state_v1_state_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2961,7 +3339,7 @@ func (x *TransitionResponse) String() string {
 func (*TransitionResponse) ProtoMessage() {}
 
 func (x *TransitionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[43]
+	mi := &file_state_v1_state_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2974,7 +3352,7 @@ func (x *TransitionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionResponse.ProtoReflect.Descriptor instead.
 func (*TransitionResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{43}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{47}
 }
 
 type UpdateRequest struct {
@@ -2986,7 +3364,7 @@ type UpdateRequest struct {
 
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[44]
+	mi := &file_state_v1_state_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2998,7 +3376,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[44]
+	mi := &file_state_v1_state_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3011,7 +3389,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{44}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *UpdateRequest) GetTask() *Task {
@@ -3029,7 +3407,7 @@ type UpdateResponse struct {
 
 func (x *UpdateResponse) Reset() {
 	*x = UpdateResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[45]
+	mi := &file_state_v1_state_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3041,7 +3419,7 @@ func (x *UpdateResponse) String() string {
 func (*UpdateResponse) ProtoMessage() {}
 
 func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[45]
+	mi := &file_state_v1_state_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3054,7 +3432,7 @@ func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResponse.ProtoReflect.Descriptor instead.
 func (*UpdateResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{45}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{49}
 }
 
 type RequeueRequest struct {
@@ -3068,7 +3446,7 @@ type RequeueRequest struct {
 
 func (x *RequeueRequest) Reset() {
 	*x = RequeueRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[46]
+	mi := &file_state_v1_state_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3080,7 +3458,7 @@ func (x *RequeueRequest) String() string {
 func (*RequeueRequest) ProtoMessage() {}
 
 func (x *RequeueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[46]
+	mi := &file_state_v1_state_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3093,7 +3471,7 @@ func (x *RequeueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequeueRequest.ProtoReflect.Descriptor instead.
 func (*RequeueRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{46}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *RequeueRequest) GetTaskId() int64 {
@@ -3125,7 +3503,7 @@ type RequeueResponse struct {
 
 func (x *RequeueResponse) Reset() {
 	*x = RequeueResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[47]
+	mi := &file_state_v1_state_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3137,7 +3515,7 @@ func (x *RequeueResponse) String() string {
 func (*RequeueResponse) ProtoMessage() {}
 
 func (x *RequeueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[47]
+	mi := &file_state_v1_state_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3150,7 +3528,7 @@ func (x *RequeueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequeueResponse.ProtoReflect.Descriptor instead.
 func (*RequeueResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{47}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{51}
 }
 
 type ParkTaskRequest struct {
@@ -3165,7 +3543,7 @@ type ParkTaskRequest struct {
 
 func (x *ParkTaskRequest) Reset() {
 	*x = ParkTaskRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[48]
+	mi := &file_state_v1_state_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3177,7 +3555,7 @@ func (x *ParkTaskRequest) String() string {
 func (*ParkTaskRequest) ProtoMessage() {}
 
 func (x *ParkTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[48]
+	mi := &file_state_v1_state_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3190,7 +3568,7 @@ func (x *ParkTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParkTaskRequest.ProtoReflect.Descriptor instead.
 func (*ParkTaskRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{48}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ParkTaskRequest) GetTaskId() int64 {
@@ -3229,7 +3607,7 @@ type ParkTaskResponse struct {
 
 func (x *ParkTaskResponse) Reset() {
 	*x = ParkTaskResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[49]
+	mi := &file_state_v1_state_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3241,7 +3619,7 @@ func (x *ParkTaskResponse) String() string {
 func (*ParkTaskResponse) ProtoMessage() {}
 
 func (x *ParkTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[49]
+	mi := &file_state_v1_state_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3254,7 +3632,7 @@ func (x *ParkTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParkTaskResponse.ProtoReflect.Descriptor instead.
 func (*ParkTaskResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{49}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{53}
 }
 
 type RecoverStaleRequest struct {
@@ -3265,7 +3643,7 @@ type RecoverStaleRequest struct {
 
 func (x *RecoverStaleRequest) Reset() {
 	*x = RecoverStaleRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[50]
+	mi := &file_state_v1_state_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3277,7 +3655,7 @@ func (x *RecoverStaleRequest) String() string {
 func (*RecoverStaleRequest) ProtoMessage() {}
 
 func (x *RecoverStaleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[50]
+	mi := &file_state_v1_state_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3290,7 +3668,7 @@ func (x *RecoverStaleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverStaleRequest.ProtoReflect.Descriptor instead.
 func (*RecoverStaleRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{50}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{54}
 }
 
 type RecoverStaleResponse struct {
@@ -3302,7 +3680,7 @@ type RecoverStaleResponse struct {
 
 func (x *RecoverStaleResponse) Reset() {
 	*x = RecoverStaleResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[51]
+	mi := &file_state_v1_state_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3314,7 +3692,7 @@ func (x *RecoverStaleResponse) String() string {
 func (*RecoverStaleResponse) ProtoMessage() {}
 
 func (x *RecoverStaleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[51]
+	mi := &file_state_v1_state_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3327,7 +3705,7 @@ func (x *RecoverStaleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverStaleResponse.ProtoReflect.Descriptor instead.
 func (*RecoverStaleResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{51}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *RecoverStaleResponse) GetCount() int64 {
@@ -3348,7 +3726,7 @@ type ArchiveTaskRequest struct {
 
 func (x *ArchiveTaskRequest) Reset() {
 	*x = ArchiveTaskRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[52]
+	mi := &file_state_v1_state_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3360,7 +3738,7 @@ func (x *ArchiveTaskRequest) String() string {
 func (*ArchiveTaskRequest) ProtoMessage() {}
 
 func (x *ArchiveTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[52]
+	mi := &file_state_v1_state_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3373,7 +3751,7 @@ func (x *ArchiveTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveTaskRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveTaskRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{52}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ArchiveTaskRequest) GetTaskId() int64 {
@@ -3406,7 +3784,7 @@ type ArchiveTaskResponse struct {
 
 func (x *ArchiveTaskResponse) Reset() {
 	*x = ArchiveTaskResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[53]
+	mi := &file_state_v1_state_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3418,7 +3796,7 @@ func (x *ArchiveTaskResponse) String() string {
 func (*ArchiveTaskResponse) ProtoMessage() {}
 
 func (x *ArchiveTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[53]
+	mi := &file_state_v1_state_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3431,7 +3809,7 @@ func (x *ArchiveTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveTaskResponse.ProtoReflect.Descriptor instead.
 func (*ArchiveTaskResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{53}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ArchiveTaskResponse) GetEventId() int64 {
@@ -3452,7 +3830,7 @@ type RetryTaskRequest struct {
 
 func (x *RetryTaskRequest) Reset() {
 	*x = RetryTaskRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[54]
+	mi := &file_state_v1_state_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3464,7 +3842,7 @@ func (x *RetryTaskRequest) String() string {
 func (*RetryTaskRequest) ProtoMessage() {}
 
 func (x *RetryTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[54]
+	mi := &file_state_v1_state_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3477,7 +3855,7 @@ func (x *RetryTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryTaskRequest.ProtoReflect.Descriptor instead.
 func (*RetryTaskRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{54}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *RetryTaskRequest) GetTaskId() int64 {
@@ -3509,7 +3887,7 @@ type RetryTaskResponse struct {
 
 func (x *RetryTaskResponse) Reset() {
 	*x = RetryTaskResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[55]
+	mi := &file_state_v1_state_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3521,7 +3899,7 @@ func (x *RetryTaskResponse) String() string {
 func (*RetryTaskResponse) ProtoMessage() {}
 
 func (x *RetryTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[55]
+	mi := &file_state_v1_state_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3534,7 +3912,7 @@ func (x *RetryTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryTaskResponse.ProtoReflect.Descriptor instead.
 func (*RetryTaskResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{55}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{59}
 }
 
 type BeginRemediationRequest struct {
@@ -3547,7 +3925,7 @@ type BeginRemediationRequest struct {
 
 func (x *BeginRemediationRequest) Reset() {
 	*x = BeginRemediationRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[56]
+	mi := &file_state_v1_state_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3559,7 +3937,7 @@ func (x *BeginRemediationRequest) String() string {
 func (*BeginRemediationRequest) ProtoMessage() {}
 
 func (x *BeginRemediationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[56]
+	mi := &file_state_v1_state_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3572,7 +3950,7 @@ func (x *BeginRemediationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginRemediationRequest.ProtoReflect.Descriptor instead.
 func (*BeginRemediationRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{56}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *BeginRemediationRequest) GetTaskId() int64 {
@@ -3597,7 +3975,7 @@ type BeginRemediationResponse struct {
 
 func (x *BeginRemediationResponse) Reset() {
 	*x = BeginRemediationResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[57]
+	mi := &file_state_v1_state_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3609,7 +3987,7 @@ func (x *BeginRemediationResponse) String() string {
 func (*BeginRemediationResponse) ProtoMessage() {}
 
 func (x *BeginRemediationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[57]
+	mi := &file_state_v1_state_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3622,7 +4000,7 @@ func (x *BeginRemediationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginRemediationResponse.ProtoReflect.Descriptor instead.
 func (*BeginRemediationResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{57}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{61}
 }
 
 type UpdateReviewPayloadRequest struct {
@@ -3635,7 +4013,7 @@ type UpdateReviewPayloadRequest struct {
 
 func (x *UpdateReviewPayloadRequest) Reset() {
 	*x = UpdateReviewPayloadRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[58]
+	mi := &file_state_v1_state_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3647,7 +4025,7 @@ func (x *UpdateReviewPayloadRequest) String() string {
 func (*UpdateReviewPayloadRequest) ProtoMessage() {}
 
 func (x *UpdateReviewPayloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[58]
+	mi := &file_state_v1_state_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3660,7 +4038,7 @@ func (x *UpdateReviewPayloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateReviewPayloadRequest.ProtoReflect.Descriptor instead.
 func (*UpdateReviewPayloadRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{58}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *UpdateReviewPayloadRequest) GetTaskId() int64 {
@@ -3685,7 +4063,7 @@ type UpdateReviewPayloadResponse struct {
 
 func (x *UpdateReviewPayloadResponse) Reset() {
 	*x = UpdateReviewPayloadResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[59]
+	mi := &file_state_v1_state_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3697,7 +4075,7 @@ func (x *UpdateReviewPayloadResponse) String() string {
 func (*UpdateReviewPayloadResponse) ProtoMessage() {}
 
 func (x *UpdateReviewPayloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[59]
+	mi := &file_state_v1_state_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3710,7 +4088,7 @@ func (x *UpdateReviewPayloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateReviewPayloadResponse.ProtoReflect.Descriptor instead.
 func (*UpdateReviewPayloadResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{59}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{63}
 }
 
 type SetReviewCursorsRequest struct {
@@ -3724,7 +4102,7 @@ type SetReviewCursorsRequest struct {
 
 func (x *SetReviewCursorsRequest) Reset() {
 	*x = SetReviewCursorsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[60]
+	mi := &file_state_v1_state_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3736,7 +4114,7 @@ func (x *SetReviewCursorsRequest) String() string {
 func (*SetReviewCursorsRequest) ProtoMessage() {}
 
 func (x *SetReviewCursorsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[60]
+	mi := &file_state_v1_state_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3749,7 +4127,7 @@ func (x *SetReviewCursorsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReviewCursorsRequest.ProtoReflect.Descriptor instead.
 func (*SetReviewCursorsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{60}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *SetReviewCursorsRequest) GetTaskId() int64 {
@@ -3781,7 +4159,7 @@ type SetReviewCursorsResponse struct {
 
 func (x *SetReviewCursorsResponse) Reset() {
 	*x = SetReviewCursorsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[61]
+	mi := &file_state_v1_state_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3793,7 +4171,7 @@ func (x *SetReviewCursorsResponse) String() string {
 func (*SetReviewCursorsResponse) ProtoMessage() {}
 
 func (x *SetReviewCursorsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[61]
+	mi := &file_state_v1_state_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3806,7 +4184,7 @@ func (x *SetReviewCursorsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReviewCursorsResponse.ProtoReflect.Descriptor instead.
 func (*SetReviewCursorsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{61}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{65}
 }
 
 type TaskByIssueRequest struct {
@@ -3820,7 +4198,7 @@ type TaskByIssueRequest struct {
 
 func (x *TaskByIssueRequest) Reset() {
 	*x = TaskByIssueRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[62]
+	mi := &file_state_v1_state_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3832,7 +4210,7 @@ func (x *TaskByIssueRequest) String() string {
 func (*TaskByIssueRequest) ProtoMessage() {}
 
 func (x *TaskByIssueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[62]
+	mi := &file_state_v1_state_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3845,7 +4223,7 @@ func (x *TaskByIssueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskByIssueRequest.ProtoReflect.Descriptor instead.
 func (*TaskByIssueRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{62}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *TaskByIssueRequest) GetOwner() string {
@@ -3879,7 +4257,7 @@ type TaskByIssueResponse struct {
 
 func (x *TaskByIssueResponse) Reset() {
 	*x = TaskByIssueResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[63]
+	mi := &file_state_v1_state_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3891,7 +4269,7 @@ func (x *TaskByIssueResponse) String() string {
 func (*TaskByIssueResponse) ProtoMessage() {}
 
 func (x *TaskByIssueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[63]
+	mi := &file_state_v1_state_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3904,7 +4282,7 @@ func (x *TaskByIssueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskByIssueResponse.ProtoReflect.Descriptor instead.
 func (*TaskByIssueResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{63}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *TaskByIssueResponse) GetTask() *Task {
@@ -3932,7 +4310,7 @@ type OpenTaskByPRRequest struct {
 
 func (x *OpenTaskByPRRequest) Reset() {
 	*x = OpenTaskByPRRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[64]
+	mi := &file_state_v1_state_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3944,7 +4322,7 @@ func (x *OpenTaskByPRRequest) String() string {
 func (*OpenTaskByPRRequest) ProtoMessage() {}
 
 func (x *OpenTaskByPRRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[64]
+	mi := &file_state_v1_state_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3957,7 +4335,7 @@ func (x *OpenTaskByPRRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenTaskByPRRequest.ProtoReflect.Descriptor instead.
 func (*OpenTaskByPRRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{64}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *OpenTaskByPRRequest) GetOwner() string {
@@ -3991,7 +4369,7 @@ type OpenTaskByPRResponse struct {
 
 func (x *OpenTaskByPRResponse) Reset() {
 	*x = OpenTaskByPRResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[65]
+	mi := &file_state_v1_state_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4003,7 +4381,7 @@ func (x *OpenTaskByPRResponse) String() string {
 func (*OpenTaskByPRResponse) ProtoMessage() {}
 
 func (x *OpenTaskByPRResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[65]
+	mi := &file_state_v1_state_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4016,7 +4394,7 @@ func (x *OpenTaskByPRResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenTaskByPRResponse.ProtoReflect.Descriptor instead.
 func (*OpenTaskByPRResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{65}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *OpenTaskByPRResponse) GetTask() *Task {
@@ -4042,7 +4420,7 @@ type TaskByIDRequest struct {
 
 func (x *TaskByIDRequest) Reset() {
 	*x = TaskByIDRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[66]
+	mi := &file_state_v1_state_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4054,7 +4432,7 @@ func (x *TaskByIDRequest) String() string {
 func (*TaskByIDRequest) ProtoMessage() {}
 
 func (x *TaskByIDRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[66]
+	mi := &file_state_v1_state_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4067,7 +4445,7 @@ func (x *TaskByIDRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskByIDRequest.ProtoReflect.Descriptor instead.
 func (*TaskByIDRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{66}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *TaskByIDRequest) GetTaskId() int64 {
@@ -4087,7 +4465,7 @@ type TaskByIDResponse struct {
 
 func (x *TaskByIDResponse) Reset() {
 	*x = TaskByIDResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[67]
+	mi := &file_state_v1_state_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4099,7 +4477,7 @@ func (x *TaskByIDResponse) String() string {
 func (*TaskByIDResponse) ProtoMessage() {}
 
 func (x *TaskByIDResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[67]
+	mi := &file_state_v1_state_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4112,7 +4490,7 @@ func (x *TaskByIDResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskByIDResponse.ProtoReflect.Descriptor instead.
 func (*TaskByIDResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{67}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *TaskByIDResponse) GetTask() *Task {
@@ -4137,7 +4515,7 @@ type OpenPRsRequest struct {
 
 func (x *OpenPRsRequest) Reset() {
 	*x = OpenPRsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[68]
+	mi := &file_state_v1_state_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4149,7 +4527,7 @@ func (x *OpenPRsRequest) String() string {
 func (*OpenPRsRequest) ProtoMessage() {}
 
 func (x *OpenPRsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[68]
+	mi := &file_state_v1_state_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4162,7 +4540,7 @@ func (x *OpenPRsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenPRsRequest.ProtoReflect.Descriptor instead.
 func (*OpenPRsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{68}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{72}
 }
 
 type OpenPRsResponse struct {
@@ -4174,7 +4552,7 @@ type OpenPRsResponse struct {
 
 func (x *OpenPRsResponse) Reset() {
 	*x = OpenPRsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[69]
+	mi := &file_state_v1_state_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4186,7 +4564,7 @@ func (x *OpenPRsResponse) String() string {
 func (*OpenPRsResponse) ProtoMessage() {}
 
 func (x *OpenPRsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[69]
+	mi := &file_state_v1_state_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4199,7 +4577,7 @@ func (x *OpenPRsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenPRsResponse.ProtoReflect.Descriptor instead.
 func (*OpenPRsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{69}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *OpenPRsResponse) GetTasks() []*Task {
@@ -4217,7 +4595,7 @@ type ClearTerminalTasksRequest struct {
 
 func (x *ClearTerminalTasksRequest) Reset() {
 	*x = ClearTerminalTasksRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[70]
+	mi := &file_state_v1_state_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4229,7 +4607,7 @@ func (x *ClearTerminalTasksRequest) String() string {
 func (*ClearTerminalTasksRequest) ProtoMessage() {}
 
 func (x *ClearTerminalTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[70]
+	mi := &file_state_v1_state_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4242,7 +4620,7 @@ func (x *ClearTerminalTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearTerminalTasksRequest.ProtoReflect.Descriptor instead.
 func (*ClearTerminalTasksRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{70}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{74}
 }
 
 type ClearTerminalTasksResponse struct {
@@ -4254,7 +4632,7 @@ type ClearTerminalTasksResponse struct {
 
 func (x *ClearTerminalTasksResponse) Reset() {
 	*x = ClearTerminalTasksResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[71]
+	mi := &file_state_v1_state_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4266,7 +4644,7 @@ func (x *ClearTerminalTasksResponse) String() string {
 func (*ClearTerminalTasksResponse) ProtoMessage() {}
 
 func (x *ClearTerminalTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[71]
+	mi := &file_state_v1_state_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4279,7 +4657,7 @@ func (x *ClearTerminalTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearTerminalTasksResponse.ProtoReflect.Descriptor instead.
 func (*ClearTerminalTasksResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{71}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ClearTerminalTasksResponse) GetCount() int64 {
@@ -4298,7 +4676,7 @@ type TasksRequest struct {
 
 func (x *TasksRequest) Reset() {
 	*x = TasksRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[72]
+	mi := &file_state_v1_state_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4310,7 +4688,7 @@ func (x *TasksRequest) String() string {
 func (*TasksRequest) ProtoMessage() {}
 
 func (x *TasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[72]
+	mi := &file_state_v1_state_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4323,7 +4701,7 @@ func (x *TasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TasksRequest.ProtoReflect.Descriptor instead.
 func (*TasksRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{72}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *TasksRequest) GetLimit() int64 {
@@ -4342,7 +4720,7 @@ type TasksResponse struct {
 
 func (x *TasksResponse) Reset() {
 	*x = TasksResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[73]
+	mi := &file_state_v1_state_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4354,7 +4732,7 @@ func (x *TasksResponse) String() string {
 func (*TasksResponse) ProtoMessage() {}
 
 func (x *TasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[73]
+	mi := &file_state_v1_state_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4367,7 +4745,7 @@ func (x *TasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TasksResponse.ProtoReflect.Descriptor instead.
 func (*TasksResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{73}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *TasksResponse) GetTasks() []*Task {
@@ -4385,7 +4763,7 @@ type StatusCountsRequest struct {
 
 func (x *StatusCountsRequest) Reset() {
 	*x = StatusCountsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[74]
+	mi := &file_state_v1_state_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4397,7 +4775,7 @@ func (x *StatusCountsRequest) String() string {
 func (*StatusCountsRequest) ProtoMessage() {}
 
 func (x *StatusCountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[74]
+	mi := &file_state_v1_state_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4410,7 +4788,7 @@ func (x *StatusCountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusCountsRequest.ProtoReflect.Descriptor instead.
 func (*StatusCountsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{74}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{78}
 }
 
 type StatusCountsResponse struct {
@@ -4422,7 +4800,7 @@ type StatusCountsResponse struct {
 
 func (x *StatusCountsResponse) Reset() {
 	*x = StatusCountsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[75]
+	mi := &file_state_v1_state_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4434,7 +4812,7 @@ func (x *StatusCountsResponse) String() string {
 func (*StatusCountsResponse) ProtoMessage() {}
 
 func (x *StatusCountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[75]
+	mi := &file_state_v1_state_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4447,7 +4825,7 @@ func (x *StatusCountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusCountsResponse.ProtoReflect.Descriptor instead.
 func (*StatusCountsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{75}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *StatusCountsResponse) GetCounts() map[string]int64 {
@@ -4466,7 +4844,7 @@ type InsertEventRequest struct {
 
 func (x *InsertEventRequest) Reset() {
 	*x = InsertEventRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[76]
+	mi := &file_state_v1_state_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4478,7 +4856,7 @@ func (x *InsertEventRequest) String() string {
 func (*InsertEventRequest) ProtoMessage() {}
 
 func (x *InsertEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[76]
+	mi := &file_state_v1_state_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4491,7 +4869,7 @@ func (x *InsertEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertEventRequest.ProtoReflect.Descriptor instead.
 func (*InsertEventRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{76}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *InsertEventRequest) GetEvent() *Event {
@@ -4510,7 +4888,7 @@ type InsertEventResponse struct {
 
 func (x *InsertEventResponse) Reset() {
 	*x = InsertEventResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[77]
+	mi := &file_state_v1_state_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4522,7 +4900,7 @@ func (x *InsertEventResponse) String() string {
 func (*InsertEventResponse) ProtoMessage() {}
 
 func (x *InsertEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[77]
+	mi := &file_state_v1_state_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4535,7 +4913,7 @@ func (x *InsertEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertEventResponse.ProtoReflect.Descriptor instead.
 func (*InsertEventResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{77}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *InsertEventResponse) GetId() int64 {
@@ -4560,7 +4938,7 @@ type EventsSinceRequest struct {
 
 func (x *EventsSinceRequest) Reset() {
 	*x = EventsSinceRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[78]
+	mi := &file_state_v1_state_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4572,7 +4950,7 @@ func (x *EventsSinceRequest) String() string {
 func (*EventsSinceRequest) ProtoMessage() {}
 
 func (x *EventsSinceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[78]
+	mi := &file_state_v1_state_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4585,7 +4963,7 @@ func (x *EventsSinceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventsSinceRequest.ProtoReflect.Descriptor instead.
 func (*EventsSinceRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{78}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *EventsSinceRequest) GetSinceId() string {
@@ -4611,7 +4989,7 @@ type EventsSinceResponse struct {
 
 func (x *EventsSinceResponse) Reset() {
 	*x = EventsSinceResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[79]
+	mi := &file_state_v1_state_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4623,7 +5001,7 @@ func (x *EventsSinceResponse) String() string {
 func (*EventsSinceResponse) ProtoMessage() {}
 
 func (x *EventsSinceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[79]
+	mi := &file_state_v1_state_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4636,7 +5014,7 @@ func (x *EventsSinceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventsSinceResponse.ProtoReflect.Descriptor instead.
 func (*EventsSinceResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{79}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *EventsSinceResponse) GetEvents() []*Event {
@@ -4655,7 +5033,7 @@ type TaskEventsRequest struct {
 
 func (x *TaskEventsRequest) Reset() {
 	*x = TaskEventsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[80]
+	mi := &file_state_v1_state_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4667,7 +5045,7 @@ func (x *TaskEventsRequest) String() string {
 func (*TaskEventsRequest) ProtoMessage() {}
 
 func (x *TaskEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[80]
+	mi := &file_state_v1_state_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4680,7 +5058,7 @@ func (x *TaskEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskEventsRequest.ProtoReflect.Descriptor instead.
 func (*TaskEventsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{80}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *TaskEventsRequest) GetTaskId() int64 {
@@ -4699,7 +5077,7 @@ type TaskEventsResponse struct {
 
 func (x *TaskEventsResponse) Reset() {
 	*x = TaskEventsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[81]
+	mi := &file_state_v1_state_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4711,7 +5089,7 @@ func (x *TaskEventsResponse) String() string {
 func (*TaskEventsResponse) ProtoMessage() {}
 
 func (x *TaskEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[81]
+	mi := &file_state_v1_state_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4724,7 +5102,7 @@ func (x *TaskEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskEventsResponse.ProtoReflect.Descriptor instead.
 func (*TaskEventsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{81}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *TaskEventsResponse) GetEvents() []*Event {
@@ -4742,7 +5120,7 @@ type WorkflowStatsRequest struct {
 
 func (x *WorkflowStatsRequest) Reset() {
 	*x = WorkflowStatsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[82]
+	mi := &file_state_v1_state_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4754,7 +5132,7 @@ func (x *WorkflowStatsRequest) String() string {
 func (*WorkflowStatsRequest) ProtoMessage() {}
 
 func (x *WorkflowStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[82]
+	mi := &file_state_v1_state_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4767,7 +5145,7 @@ func (x *WorkflowStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkflowStatsRequest.ProtoReflect.Descriptor instead.
 func (*WorkflowStatsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{82}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{86}
 }
 
 type WorkflowStatsResponse struct {
@@ -4779,7 +5157,7 @@ type WorkflowStatsResponse struct {
 
 func (x *WorkflowStatsResponse) Reset() {
 	*x = WorkflowStatsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[83]
+	mi := &file_state_v1_state_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4791,7 +5169,7 @@ func (x *WorkflowStatsResponse) String() string {
 func (*WorkflowStatsResponse) ProtoMessage() {}
 
 func (x *WorkflowStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[83]
+	mi := &file_state_v1_state_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4804,7 +5182,7 @@ func (x *WorkflowStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkflowStatsResponse.ProtoReflect.Descriptor instead.
 func (*WorkflowStatsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{83}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *WorkflowStatsResponse) GetStats() []*WorkflowStat {
@@ -4822,7 +5200,7 @@ type StageStatsRequest struct {
 
 func (x *StageStatsRequest) Reset() {
 	*x = StageStatsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[84]
+	mi := &file_state_v1_state_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4834,7 +5212,7 @@ func (x *StageStatsRequest) String() string {
 func (*StageStatsRequest) ProtoMessage() {}
 
 func (x *StageStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[84]
+	mi := &file_state_v1_state_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4847,7 +5225,7 @@ func (x *StageStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageStatsRequest.ProtoReflect.Descriptor instead.
 func (*StageStatsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{84}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{88}
 }
 
 type StageStatsResponse struct {
@@ -4859,7 +5237,7 @@ type StageStatsResponse struct {
 
 func (x *StageStatsResponse) Reset() {
 	*x = StageStatsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[85]
+	mi := &file_state_v1_state_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4871,7 +5249,7 @@ func (x *StageStatsResponse) String() string {
 func (*StageStatsResponse) ProtoMessage() {}
 
 func (x *StageStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[85]
+	mi := &file_state_v1_state_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4884,7 +5262,7 @@ func (x *StageStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageStatsResponse.ProtoReflect.Descriptor instead.
 func (*StageStatsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{85}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *StageStatsResponse) GetStats() []*StageStat {
@@ -4903,7 +5281,7 @@ type TokensByDayRequest struct {
 
 func (x *TokensByDayRequest) Reset() {
 	*x = TokensByDayRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[86]
+	mi := &file_state_v1_state_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4915,7 +5293,7 @@ func (x *TokensByDayRequest) String() string {
 func (*TokensByDayRequest) ProtoMessage() {}
 
 func (x *TokensByDayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[86]
+	mi := &file_state_v1_state_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4928,7 +5306,7 @@ func (x *TokensByDayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokensByDayRequest.ProtoReflect.Descriptor instead.
 func (*TokensByDayRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{86}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *TokensByDayRequest) GetDays() int64 {
@@ -4947,7 +5325,7 @@ type TokensByDayResponse struct {
 
 func (x *TokensByDayResponse) Reset() {
 	*x = TokensByDayResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[87]
+	mi := &file_state_v1_state_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4959,7 +5337,7 @@ func (x *TokensByDayResponse) String() string {
 func (*TokensByDayResponse) ProtoMessage() {}
 
 func (x *TokensByDayResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[87]
+	mi := &file_state_v1_state_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4972,7 +5350,7 @@ func (x *TokensByDayResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokensByDayResponse.ProtoReflect.Descriptor instead.
 func (*TokensByDayResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{87}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *TokensByDayResponse) GetTokens() []*DayTokens {
@@ -4999,7 +5377,7 @@ type ConfigSnapshot struct {
 
 func (x *ConfigSnapshot) Reset() {
 	*x = ConfigSnapshot{}
-	mi := &file_state_v1_state_proto_msgTypes[88]
+	mi := &file_state_v1_state_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5011,7 +5389,7 @@ func (x *ConfigSnapshot) String() string {
 func (*ConfigSnapshot) ProtoMessage() {}
 
 func (x *ConfigSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[88]
+	mi := &file_state_v1_state_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5024,7 +5402,7 @@ func (x *ConfigSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigSnapshot.ProtoReflect.Descriptor instead.
 func (*ConfigSnapshot) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{88}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ConfigSnapshot) GetSchema() string {
@@ -5057,7 +5435,7 @@ type PutConfigSnapshotRequest struct {
 
 func (x *PutConfigSnapshotRequest) Reset() {
 	*x = PutConfigSnapshotRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[89]
+	mi := &file_state_v1_state_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5069,7 +5447,7 @@ func (x *PutConfigSnapshotRequest) String() string {
 func (*PutConfigSnapshotRequest) ProtoMessage() {}
 
 func (x *PutConfigSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[89]
+	mi := &file_state_v1_state_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5082,7 +5460,7 @@ func (x *PutConfigSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutConfigSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*PutConfigSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{89}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *PutConfigSnapshotRequest) GetSnapshot() *ConfigSnapshot {
@@ -5100,7 +5478,7 @@ type PutConfigSnapshotResponse struct {
 
 func (x *PutConfigSnapshotResponse) Reset() {
 	*x = PutConfigSnapshotResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[90]
+	mi := &file_state_v1_state_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5112,7 +5490,7 @@ func (x *PutConfigSnapshotResponse) String() string {
 func (*PutConfigSnapshotResponse) ProtoMessage() {}
 
 func (x *PutConfigSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[90]
+	mi := &file_state_v1_state_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5125,7 +5503,7 @@ func (x *PutConfigSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutConfigSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*PutConfigSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{90}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{94}
 }
 
 type GetConfigSnapshotRequest struct {
@@ -5136,7 +5514,7 @@ type GetConfigSnapshotRequest struct {
 
 func (x *GetConfigSnapshotRequest) Reset() {
 	*x = GetConfigSnapshotRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[91]
+	mi := &file_state_v1_state_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5148,7 +5526,7 @@ func (x *GetConfigSnapshotRequest) String() string {
 func (*GetConfigSnapshotRequest) ProtoMessage() {}
 
 func (x *GetConfigSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[91]
+	mi := &file_state_v1_state_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5161,7 +5539,7 @@ func (x *GetConfigSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetConfigSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{91}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{95}
 }
 
 type GetConfigSnapshotResponse struct {
@@ -5174,7 +5552,7 @@ type GetConfigSnapshotResponse struct {
 
 func (x *GetConfigSnapshotResponse) Reset() {
 	*x = GetConfigSnapshotResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[92]
+	mi := &file_state_v1_state_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5186,7 +5564,7 @@ func (x *GetConfigSnapshotResponse) String() string {
 func (*GetConfigSnapshotResponse) ProtoMessage() {}
 
 func (x *GetConfigSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[92]
+	mi := &file_state_v1_state_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5199,7 +5577,7 @@ func (x *GetConfigSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetConfigSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{92}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *GetConfigSnapshotResponse) GetSnapshot() *ConfigSnapshot {
@@ -5236,7 +5614,7 @@ type ChannelStatus struct {
 
 func (x *ChannelStatus) Reset() {
 	*x = ChannelStatus{}
-	mi := &file_state_v1_state_proto_msgTypes[93]
+	mi := &file_state_v1_state_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5248,7 +5626,7 @@ func (x *ChannelStatus) String() string {
 func (*ChannelStatus) ProtoMessage() {}
 
 func (x *ChannelStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[93]
+	mi := &file_state_v1_state_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5261,7 +5639,7 @@ func (x *ChannelStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChannelStatus.ProtoReflect.Descriptor instead.
 func (*ChannelStatus) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{93}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ChannelStatus) GetId() string {
@@ -5322,7 +5700,7 @@ type PutChannelStatusRequest struct {
 
 func (x *PutChannelStatusRequest) Reset() {
 	*x = PutChannelStatusRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[94]
+	mi := &file_state_v1_state_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5334,7 +5712,7 @@ func (x *PutChannelStatusRequest) String() string {
 func (*PutChannelStatusRequest) ProtoMessage() {}
 
 func (x *PutChannelStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[94]
+	mi := &file_state_v1_state_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5347,7 +5725,7 @@ func (x *PutChannelStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutChannelStatusRequest.ProtoReflect.Descriptor instead.
 func (*PutChannelStatusRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{94}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *PutChannelStatusRequest) GetChannels() []*ChannelStatus {
@@ -5365,7 +5743,7 @@ type PutChannelStatusResponse struct {
 
 func (x *PutChannelStatusResponse) Reset() {
 	*x = PutChannelStatusResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[95]
+	mi := &file_state_v1_state_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5377,7 +5755,7 @@ func (x *PutChannelStatusResponse) String() string {
 func (*PutChannelStatusResponse) ProtoMessage() {}
 
 func (x *PutChannelStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[95]
+	mi := &file_state_v1_state_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5390,7 +5768,7 @@ func (x *PutChannelStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutChannelStatusResponse.ProtoReflect.Descriptor instead.
 func (*PutChannelStatusResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{95}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{99}
 }
 
 type ListChannelStatusRequest struct {
@@ -5401,7 +5779,7 @@ type ListChannelStatusRequest struct {
 
 func (x *ListChannelStatusRequest) Reset() {
 	*x = ListChannelStatusRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[96]
+	mi := &file_state_v1_state_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5413,7 +5791,7 @@ func (x *ListChannelStatusRequest) String() string {
 func (*ListChannelStatusRequest) ProtoMessage() {}
 
 func (x *ListChannelStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[96]
+	mi := &file_state_v1_state_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5426,7 +5804,7 @@ func (x *ListChannelStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChannelStatusRequest.ProtoReflect.Descriptor instead.
 func (*ListChannelStatusRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{96}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{100}
 }
 
 type ListChannelStatusResponse struct {
@@ -5438,7 +5816,7 @@ type ListChannelStatusResponse struct {
 
 func (x *ListChannelStatusResponse) Reset() {
 	*x = ListChannelStatusResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[97]
+	mi := &file_state_v1_state_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5450,7 +5828,7 @@ func (x *ListChannelStatusResponse) String() string {
 func (*ListChannelStatusResponse) ProtoMessage() {}
 
 func (x *ListChannelStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[97]
+	mi := &file_state_v1_state_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5463,7 +5841,7 @@ func (x *ListChannelStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChannelStatusResponse.ProtoReflect.Descriptor instead.
 func (*ListChannelStatusResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{97}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *ListChannelStatusResponse) GetChannels() []*ChannelStatus {
@@ -5492,7 +5870,7 @@ type ApplyStatus struct {
 
 func (x *ApplyStatus) Reset() {
 	*x = ApplyStatus{}
-	mi := &file_state_v1_state_proto_msgTypes[98]
+	mi := &file_state_v1_state_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5504,7 +5882,7 @@ func (x *ApplyStatus) String() string {
 func (*ApplyStatus) ProtoMessage() {}
 
 func (x *ApplyStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[98]
+	mi := &file_state_v1_state_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5517,7 +5895,7 @@ func (x *ApplyStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyStatus.ProtoReflect.Descriptor instead.
 func (*ApplyStatus) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{98}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *ApplyStatus) GetProcess() string {
@@ -5564,7 +5942,7 @@ type PutApplyStatusRequest struct {
 
 func (x *PutApplyStatusRequest) Reset() {
 	*x = PutApplyStatusRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[99]
+	mi := &file_state_v1_state_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5576,7 +5954,7 @@ func (x *PutApplyStatusRequest) String() string {
 func (*PutApplyStatusRequest) ProtoMessage() {}
 
 func (x *PutApplyStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[99]
+	mi := &file_state_v1_state_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5589,7 +5967,7 @@ func (x *PutApplyStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutApplyStatusRequest.ProtoReflect.Descriptor instead.
 func (*PutApplyStatusRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{99}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *PutApplyStatusRequest) GetStatus() *ApplyStatus {
@@ -5607,7 +5985,7 @@ type PutApplyStatusResponse struct {
 
 func (x *PutApplyStatusResponse) Reset() {
 	*x = PutApplyStatusResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[100]
+	mi := &file_state_v1_state_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5619,7 +5997,7 @@ func (x *PutApplyStatusResponse) String() string {
 func (*PutApplyStatusResponse) ProtoMessage() {}
 
 func (x *PutApplyStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[100]
+	mi := &file_state_v1_state_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5632,7 +6010,7 @@ func (x *PutApplyStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutApplyStatusResponse.ProtoReflect.Descriptor instead.
 func (*PutApplyStatusResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{100}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{104}
 }
 
 type ListApplyStatusRequest struct {
@@ -5643,7 +6021,7 @@ type ListApplyStatusRequest struct {
 
 func (x *ListApplyStatusRequest) Reset() {
 	*x = ListApplyStatusRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[101]
+	mi := &file_state_v1_state_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5655,7 +6033,7 @@ func (x *ListApplyStatusRequest) String() string {
 func (*ListApplyStatusRequest) ProtoMessage() {}
 
 func (x *ListApplyStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[101]
+	mi := &file_state_v1_state_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5668,7 +6046,7 @@ func (x *ListApplyStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListApplyStatusRequest.ProtoReflect.Descriptor instead.
 func (*ListApplyStatusRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{101}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{105}
 }
 
 type ListApplyStatusResponse struct {
@@ -5680,7 +6058,7 @@ type ListApplyStatusResponse struct {
 
 func (x *ListApplyStatusResponse) Reset() {
 	*x = ListApplyStatusResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[102]
+	mi := &file_state_v1_state_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5692,7 +6070,7 @@ func (x *ListApplyStatusResponse) String() string {
 func (*ListApplyStatusResponse) ProtoMessage() {}
 
 func (x *ListApplyStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[102]
+	mi := &file_state_v1_state_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5705,7 +6083,7 @@ func (x *ListApplyStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListApplyStatusResponse.ProtoReflect.Descriptor instead.
 func (*ListApplyStatusResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{102}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *ListApplyStatusResponse) GetStatuses() []*ApplyStatus {
@@ -5732,7 +6110,7 @@ type TaskLogEntry struct {
 
 func (x *TaskLogEntry) Reset() {
 	*x = TaskLogEntry{}
-	mi := &file_state_v1_state_proto_msgTypes[103]
+	mi := &file_state_v1_state_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5744,7 +6122,7 @@ func (x *TaskLogEntry) String() string {
 func (*TaskLogEntry) ProtoMessage() {}
 
 func (x *TaskLogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[103]
+	mi := &file_state_v1_state_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5757,7 +6135,7 @@ func (x *TaskLogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskLogEntry.ProtoReflect.Descriptor instead.
 func (*TaskLogEntry) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{103}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *TaskLogEntry) GetId() int64 {
@@ -5822,7 +6200,7 @@ type ReadTaskLogRequest struct {
 
 func (x *ReadTaskLogRequest) Reset() {
 	*x = ReadTaskLogRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[104]
+	mi := &file_state_v1_state_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5834,7 +6212,7 @@ func (x *ReadTaskLogRequest) String() string {
 func (*ReadTaskLogRequest) ProtoMessage() {}
 
 func (x *ReadTaskLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[104]
+	mi := &file_state_v1_state_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5847,7 +6225,7 @@ func (x *ReadTaskLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadTaskLogRequest.ProtoReflect.Descriptor instead.
 func (*ReadTaskLogRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{104}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *ReadTaskLogRequest) GetTaskId() int64 {
@@ -5933,7 +6311,7 @@ type ReadTaskLogResponse struct {
 
 func (x *ReadTaskLogResponse) Reset() {
 	*x = ReadTaskLogResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[105]
+	mi := &file_state_v1_state_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5945,7 +6323,7 @@ func (x *ReadTaskLogResponse) String() string {
 func (*ReadTaskLogResponse) ProtoMessage() {}
 
 func (x *ReadTaskLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[105]
+	mi := &file_state_v1_state_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5958,7 +6336,7 @@ func (x *ReadTaskLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadTaskLogResponse.ProtoReflect.Descriptor instead.
 func (*ReadTaskLogResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{105}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *ReadTaskLogResponse) GetEntries() []*TaskLogEntry {
@@ -6017,7 +6395,7 @@ type StreamTaskLogContentRequest struct {
 
 func (x *StreamTaskLogContentRequest) Reset() {
 	*x = StreamTaskLogContentRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[106]
+	mi := &file_state_v1_state_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6029,7 +6407,7 @@ func (x *StreamTaskLogContentRequest) String() string {
 func (*StreamTaskLogContentRequest) ProtoMessage() {}
 
 func (x *StreamTaskLogContentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[106]
+	mi := &file_state_v1_state_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6042,7 +6420,7 @@ func (x *StreamTaskLogContentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamTaskLogContentRequest.ProtoReflect.Descriptor instead.
 func (*StreamTaskLogContentRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{106}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *StreamTaskLogContentRequest) GetTaskId() int64 {
@@ -6070,7 +6448,7 @@ type StreamTaskLogContentResponse struct {
 
 func (x *StreamTaskLogContentResponse) Reset() {
 	*x = StreamTaskLogContentResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[107]
+	mi := &file_state_v1_state_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6082,7 +6460,7 @@ func (x *StreamTaskLogContentResponse) String() string {
 func (*StreamTaskLogContentResponse) ProtoMessage() {}
 
 func (x *StreamTaskLogContentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[107]
+	mi := &file_state_v1_state_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6095,7 +6473,7 @@ func (x *StreamTaskLogContentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamTaskLogContentResponse.ProtoReflect.Descriptor instead.
 func (*StreamTaskLogContentResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{107}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *StreamTaskLogContentResponse) GetChunk() []byte {
@@ -6130,7 +6508,7 @@ type InsertCaptureRequest struct {
 
 func (x *InsertCaptureRequest) Reset() {
 	*x = InsertCaptureRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[108]
+	mi := &file_state_v1_state_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6142,7 +6520,7 @@ func (x *InsertCaptureRequest) String() string {
 func (*InsertCaptureRequest) ProtoMessage() {}
 
 func (x *InsertCaptureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[108]
+	mi := &file_state_v1_state_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6155,7 +6533,7 @@ func (x *InsertCaptureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertCaptureRequest.ProtoReflect.Descriptor instead.
 func (*InsertCaptureRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{108}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *InsertCaptureRequest) GetCapture() *CapturedEvent {
@@ -6188,7 +6566,7 @@ type InsertCaptureResponse struct {
 
 func (x *InsertCaptureResponse) Reset() {
 	*x = InsertCaptureResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[109]
+	mi := &file_state_v1_state_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6200,7 +6578,7 @@ func (x *InsertCaptureResponse) String() string {
 func (*InsertCaptureResponse) ProtoMessage() {}
 
 func (x *InsertCaptureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[109]
+	mi := &file_state_v1_state_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6213,7 +6591,7 @@ func (x *InsertCaptureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertCaptureResponse.ProtoReflect.Descriptor instead.
 func (*InsertCaptureResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{109}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *InsertCaptureResponse) GetId() string {
@@ -6232,7 +6610,7 @@ type ListCapturesRequest struct {
 
 func (x *ListCapturesRequest) Reset() {
 	*x = ListCapturesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[110]
+	mi := &file_state_v1_state_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6244,7 +6622,7 @@ func (x *ListCapturesRequest) String() string {
 func (*ListCapturesRequest) ProtoMessage() {}
 
 func (x *ListCapturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[110]
+	mi := &file_state_v1_state_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6257,7 +6635,7 @@ func (x *ListCapturesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCapturesRequest.ProtoReflect.Descriptor instead.
 func (*ListCapturesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{110}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *ListCapturesRequest) GetLimit() int64 {
@@ -6276,7 +6654,7 @@ type ListCapturesResponse struct {
 
 func (x *ListCapturesResponse) Reset() {
 	*x = ListCapturesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[111]
+	mi := &file_state_v1_state_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6288,7 +6666,7 @@ func (x *ListCapturesResponse) String() string {
 func (*ListCapturesResponse) ProtoMessage() {}
 
 func (x *ListCapturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[111]
+	mi := &file_state_v1_state_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6301,7 +6679,7 @@ func (x *ListCapturesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCapturesResponse.ProtoReflect.Descriptor instead.
 func (*ListCapturesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{111}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *ListCapturesResponse) GetCaptures() []*CapturedEvent {
@@ -6320,7 +6698,7 @@ type StreamCapturesRequest struct {
 
 func (x *StreamCapturesRequest) Reset() {
 	*x = StreamCapturesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[112]
+	mi := &file_state_v1_state_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6332,7 +6710,7 @@ func (x *StreamCapturesRequest) String() string {
 func (*StreamCapturesRequest) ProtoMessage() {}
 
 func (x *StreamCapturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[112]
+	mi := &file_state_v1_state_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6345,7 +6723,7 @@ func (x *StreamCapturesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamCapturesRequest.ProtoReflect.Descriptor instead.
 func (*StreamCapturesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{112}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *StreamCapturesRequest) GetLimit() int64 {
@@ -6365,7 +6743,7 @@ type StreamCapturesResponse struct {
 
 func (x *StreamCapturesResponse) Reset() {
 	*x = StreamCapturesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[113]
+	mi := &file_state_v1_state_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6377,7 +6755,7 @@ func (x *StreamCapturesResponse) String() string {
 func (*StreamCapturesResponse) ProtoMessage() {}
 
 func (x *StreamCapturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[113]
+	mi := &file_state_v1_state_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6390,7 +6768,7 @@ func (x *StreamCapturesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamCapturesResponse.ProtoReflect.Descriptor instead.
 func (*StreamCapturesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{113}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *StreamCapturesResponse) GetCapture() *CapturedEvent {
@@ -6409,7 +6787,7 @@ type InsertMappingRequest struct {
 
 func (x *InsertMappingRequest) Reset() {
 	*x = InsertMappingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[114]
+	mi := &file_state_v1_state_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6421,7 +6799,7 @@ func (x *InsertMappingRequest) String() string {
 func (*InsertMappingRequest) ProtoMessage() {}
 
 func (x *InsertMappingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[114]
+	mi := &file_state_v1_state_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6434,7 +6812,7 @@ func (x *InsertMappingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertMappingRequest.ProtoReflect.Descriptor instead.
 func (*InsertMappingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{114}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *InsertMappingRequest) GetMapping() *Mapping {
@@ -6453,7 +6831,7 @@ type InsertMappingResponse struct {
 
 func (x *InsertMappingResponse) Reset() {
 	*x = InsertMappingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[115]
+	mi := &file_state_v1_state_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6465,7 +6843,7 @@ func (x *InsertMappingResponse) String() string {
 func (*InsertMappingResponse) ProtoMessage() {}
 
 func (x *InsertMappingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[115]
+	mi := &file_state_v1_state_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6478,7 +6856,7 @@ func (x *InsertMappingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertMappingResponse.ProtoReflect.Descriptor instead.
 func (*InsertMappingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{115}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *InsertMappingResponse) GetId() string {
@@ -6497,7 +6875,7 @@ type GetMappingRequest struct {
 
 func (x *GetMappingRequest) Reset() {
 	*x = GetMappingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[116]
+	mi := &file_state_v1_state_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6509,7 +6887,7 @@ func (x *GetMappingRequest) String() string {
 func (*GetMappingRequest) ProtoMessage() {}
 
 func (x *GetMappingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[116]
+	mi := &file_state_v1_state_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6522,7 +6900,7 @@ func (x *GetMappingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMappingRequest.ProtoReflect.Descriptor instead.
 func (*GetMappingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{116}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *GetMappingRequest) GetId() string {
@@ -6542,7 +6920,7 @@ type GetMappingResponse struct {
 
 func (x *GetMappingResponse) Reset() {
 	*x = GetMappingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[117]
+	mi := &file_state_v1_state_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6554,7 +6932,7 @@ func (x *GetMappingResponse) String() string {
 func (*GetMappingResponse) ProtoMessage() {}
 
 func (x *GetMappingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[117]
+	mi := &file_state_v1_state_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6567,7 +6945,7 @@ func (x *GetMappingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMappingResponse.ProtoReflect.Descriptor instead.
 func (*GetMappingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{117}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *GetMappingResponse) GetMapping() *Mapping {
@@ -6592,7 +6970,7 @@ type ListMappingsRequest struct {
 
 func (x *ListMappingsRequest) Reset() {
 	*x = ListMappingsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[118]
+	mi := &file_state_v1_state_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6604,7 +6982,7 @@ func (x *ListMappingsRequest) String() string {
 func (*ListMappingsRequest) ProtoMessage() {}
 
 func (x *ListMappingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[118]
+	mi := &file_state_v1_state_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6617,7 +6995,7 @@ func (x *ListMappingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMappingsRequest.ProtoReflect.Descriptor instead.
 func (*ListMappingsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{118}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{122}
 }
 
 type ListMappingsResponse struct {
@@ -6629,7 +7007,7 @@ type ListMappingsResponse struct {
 
 func (x *ListMappingsResponse) Reset() {
 	*x = ListMappingsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[119]
+	mi := &file_state_v1_state_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6641,7 +7019,7 @@ func (x *ListMappingsResponse) String() string {
 func (*ListMappingsResponse) ProtoMessage() {}
 
 func (x *ListMappingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[119]
+	mi := &file_state_v1_state_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6654,7 +7032,7 @@ func (x *ListMappingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMappingsResponse.ProtoReflect.Descriptor instead.
 func (*ListMappingsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{119}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *ListMappingsResponse) GetMappings() []*Mapping {
@@ -6673,7 +7051,7 @@ type UpdateMappingRequest struct {
 
 func (x *UpdateMappingRequest) Reset() {
 	*x = UpdateMappingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[120]
+	mi := &file_state_v1_state_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6685,7 +7063,7 @@ func (x *UpdateMappingRequest) String() string {
 func (*UpdateMappingRequest) ProtoMessage() {}
 
 func (x *UpdateMappingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[120]
+	mi := &file_state_v1_state_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6698,7 +7076,7 @@ func (x *UpdateMappingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMappingRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMappingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{120}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *UpdateMappingRequest) GetMapping() *Mapping {
@@ -6716,7 +7094,7 @@ type UpdateMappingResponse struct {
 
 func (x *UpdateMappingResponse) Reset() {
 	*x = UpdateMappingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[121]
+	mi := &file_state_v1_state_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6728,7 +7106,7 @@ func (x *UpdateMappingResponse) String() string {
 func (*UpdateMappingResponse) ProtoMessage() {}
 
 func (x *UpdateMappingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[121]
+	mi := &file_state_v1_state_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6741,7 +7119,7 @@ func (x *UpdateMappingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMappingResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMappingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{121}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{125}
 }
 
 type DeleteMappingRequest struct {
@@ -6753,7 +7131,7 @@ type DeleteMappingRequest struct {
 
 func (x *DeleteMappingRequest) Reset() {
 	*x = DeleteMappingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[122]
+	mi := &file_state_v1_state_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6765,7 +7143,7 @@ func (x *DeleteMappingRequest) String() string {
 func (*DeleteMappingRequest) ProtoMessage() {}
 
 func (x *DeleteMappingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[122]
+	mi := &file_state_v1_state_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6778,7 +7156,7 @@ func (x *DeleteMappingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMappingRequest.ProtoReflect.Descriptor instead.
 func (*DeleteMappingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{122}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *DeleteMappingRequest) GetId() string {
@@ -6796,7 +7174,7 @@ type DeleteMappingResponse struct {
 
 func (x *DeleteMappingResponse) Reset() {
 	*x = DeleteMappingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[123]
+	mi := &file_state_v1_state_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6808,7 +7186,7 @@ func (x *DeleteMappingResponse) String() string {
 func (*DeleteMappingResponse) ProtoMessage() {}
 
 func (x *DeleteMappingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[123]
+	mi := &file_state_v1_state_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6821,7 +7199,423 @@ func (x *DeleteMappingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMappingResponse.ProtoReflect.Descriptor instead.
 func (*DeleteMappingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{123}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{127}
+}
+
+type RecordMappingMatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MappingId     string                 `protobuf:"bytes,1,opt,name=mapping_id,json=mappingId,proto3" json:"mapping_id,omitempty"`
+	CaptureId     string                 `protobuf:"bytes,2,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordMappingMatchRequest) Reset() {
+	*x = RecordMappingMatchRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[128]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordMappingMatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordMappingMatchRequest) ProtoMessage() {}
+
+func (x *RecordMappingMatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[128]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordMappingMatchRequest.ProtoReflect.Descriptor instead.
+func (*RecordMappingMatchRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{128}
+}
+
+func (x *RecordMappingMatchRequest) GetMappingId() string {
+	if x != nil {
+		return x.MappingId
+	}
+	return ""
+}
+
+func (x *RecordMappingMatchRequest) GetCaptureId() string {
+	if x != nil {
+		return x.CaptureId
+	}
+	return ""
+}
+
+type RecordMappingMatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordMappingMatchResponse) Reset() {
+	*x = RecordMappingMatchResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[129]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordMappingMatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordMappingMatchResponse) ProtoMessage() {}
+
+func (x *RecordMappingMatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[129]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordMappingMatchResponse.ProtoReflect.Descriptor instead.
+func (*RecordMappingMatchResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{129}
+}
+
+type InsertEventTypeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventType     *EventType             `protobuf:"bytes,1,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InsertEventTypeRequest) Reset() {
+	*x = InsertEventTypeRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[130]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InsertEventTypeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InsertEventTypeRequest) ProtoMessage() {}
+
+func (x *InsertEventTypeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[130]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InsertEventTypeRequest.ProtoReflect.Descriptor instead.
+func (*InsertEventTypeRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{130}
+}
+
+func (x *InsertEventTypeRequest) GetEventType() *EventType {
+	if x != nil {
+		return x.EventType
+	}
+	return nil
+}
+
+type InsertEventTypeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InsertEventTypeResponse) Reset() {
+	*x = InsertEventTypeResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[131]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InsertEventTypeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InsertEventTypeResponse) ProtoMessage() {}
+
+func (x *InsertEventTypeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[131]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InsertEventTypeResponse.ProtoReflect.Descriptor instead.
+func (*InsertEventTypeResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{131}
+}
+
+func (x *InsertEventTypeResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type UpdateEventTypeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventType     *EventType             `protobuf:"bytes,1,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateEventTypeRequest) Reset() {
+	*x = UpdateEventTypeRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[132]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEventTypeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEventTypeRequest) ProtoMessage() {}
+
+func (x *UpdateEventTypeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[132]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEventTypeRequest.ProtoReflect.Descriptor instead.
+func (*UpdateEventTypeRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{132}
+}
+
+func (x *UpdateEventTypeRequest) GetEventType() *EventType {
+	if x != nil {
+		return x.EventType
+	}
+	return nil
+}
+
+type UpdateEventTypeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateEventTypeResponse) Reset() {
+	*x = UpdateEventTypeResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[133]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEventTypeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEventTypeResponse) ProtoMessage() {}
+
+func (x *UpdateEventTypeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[133]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEventTypeResponse.ProtoReflect.Descriptor instead.
+func (*UpdateEventTypeResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{133}
+}
+
+type DeleteEventTypeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEventTypeRequest) Reset() {
+	*x = DeleteEventTypeRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[134]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEventTypeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEventTypeRequest) ProtoMessage() {}
+
+func (x *DeleteEventTypeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[134]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEventTypeRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEventTypeRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{134}
+}
+
+func (x *DeleteEventTypeRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteEventTypeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEventTypeResponse) Reset() {
+	*x = DeleteEventTypeResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[135]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEventTypeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEventTypeResponse) ProtoMessage() {}
+
+func (x *DeleteEventTypeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[135]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEventTypeResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEventTypeResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{135}
+}
+
+type ListEventTypesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEventTypesRequest) Reset() {
+	*x = ListEventTypesRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[136]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEventTypesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEventTypesRequest) ProtoMessage() {}
+
+func (x *ListEventTypesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[136]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEventTypesRequest.ProtoReflect.Descriptor instead.
+func (*ListEventTypesRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{136}
+}
+
+type ListEventTypesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventTypes    []*EventType           `protobuf:"bytes,1,rep,name=event_types,json=eventTypes,proto3" json:"event_types,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEventTypesResponse) Reset() {
+	*x = ListEventTypesResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[137]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEventTypesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEventTypesResponse) ProtoMessage() {}
+
+func (x *ListEventTypesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[137]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEventTypesResponse.ProtoReflect.Descriptor instead.
+func (*ListEventTypesResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{137}
+}
+
+func (x *ListEventTypesResponse) GetEventTypes() []*EventType {
+	if x != nil {
+		return x.EventTypes
+	}
+	return nil
 }
 
 type InsertBindingRequest struct {
@@ -6833,7 +7627,7 @@ type InsertBindingRequest struct {
 
 func (x *InsertBindingRequest) Reset() {
 	*x = InsertBindingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[124]
+	mi := &file_state_v1_state_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6845,7 +7639,7 @@ func (x *InsertBindingRequest) String() string {
 func (*InsertBindingRequest) ProtoMessage() {}
 
 func (x *InsertBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[124]
+	mi := &file_state_v1_state_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6858,7 +7652,7 @@ func (x *InsertBindingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertBindingRequest.ProtoReflect.Descriptor instead.
 func (*InsertBindingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{124}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *InsertBindingRequest) GetBinding() *Binding {
@@ -6877,7 +7671,7 @@ type InsertBindingResponse struct {
 
 func (x *InsertBindingResponse) Reset() {
 	*x = InsertBindingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[125]
+	mi := &file_state_v1_state_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6889,7 +7683,7 @@ func (x *InsertBindingResponse) String() string {
 func (*InsertBindingResponse) ProtoMessage() {}
 
 func (x *InsertBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[125]
+	mi := &file_state_v1_state_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6902,7 +7696,7 @@ func (x *InsertBindingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InsertBindingResponse.ProtoReflect.Descriptor instead.
 func (*InsertBindingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{125}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *InsertBindingResponse) GetId() string {
@@ -6921,7 +7715,7 @@ type GetBindingRequest struct {
 
 func (x *GetBindingRequest) Reset() {
 	*x = GetBindingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[126]
+	mi := &file_state_v1_state_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6933,7 +7727,7 @@ func (x *GetBindingRequest) String() string {
 func (*GetBindingRequest) ProtoMessage() {}
 
 func (x *GetBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[126]
+	mi := &file_state_v1_state_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6946,7 +7740,7 @@ func (x *GetBindingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBindingRequest.ProtoReflect.Descriptor instead.
 func (*GetBindingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{126}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *GetBindingRequest) GetId() string {
@@ -6966,7 +7760,7 @@ type GetBindingResponse struct {
 
 func (x *GetBindingResponse) Reset() {
 	*x = GetBindingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[127]
+	mi := &file_state_v1_state_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6978,7 +7772,7 @@ func (x *GetBindingResponse) String() string {
 func (*GetBindingResponse) ProtoMessage() {}
 
 func (x *GetBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[127]
+	mi := &file_state_v1_state_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6991,7 +7785,7 @@ func (x *GetBindingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBindingResponse.ProtoReflect.Descriptor instead.
 func (*GetBindingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{127}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *GetBindingResponse) GetBinding() *Binding {
@@ -7016,7 +7810,7 @@ type ListBindingsRequest struct {
 
 func (x *ListBindingsRequest) Reset() {
 	*x = ListBindingsRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[128]
+	mi := &file_state_v1_state_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7028,7 +7822,7 @@ func (x *ListBindingsRequest) String() string {
 func (*ListBindingsRequest) ProtoMessage() {}
 
 func (x *ListBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[128]
+	mi := &file_state_v1_state_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7041,7 +7835,7 @@ func (x *ListBindingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBindingsRequest.ProtoReflect.Descriptor instead.
 func (*ListBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{128}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{142}
 }
 
 type ListBindingsResponse struct {
@@ -7053,7 +7847,7 @@ type ListBindingsResponse struct {
 
 func (x *ListBindingsResponse) Reset() {
 	*x = ListBindingsResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[129]
+	mi := &file_state_v1_state_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7065,7 +7859,7 @@ func (x *ListBindingsResponse) String() string {
 func (*ListBindingsResponse) ProtoMessage() {}
 
 func (x *ListBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[129]
+	mi := &file_state_v1_state_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7078,7 +7872,7 @@ func (x *ListBindingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBindingsResponse.ProtoReflect.Descriptor instead.
 func (*ListBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{129}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *ListBindingsResponse) GetBindings() []*Binding {
@@ -7097,7 +7891,7 @@ type UpdateBindingRequest struct {
 
 func (x *UpdateBindingRequest) Reset() {
 	*x = UpdateBindingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[130]
+	mi := &file_state_v1_state_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7109,7 +7903,7 @@ func (x *UpdateBindingRequest) String() string {
 func (*UpdateBindingRequest) ProtoMessage() {}
 
 func (x *UpdateBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[130]
+	mi := &file_state_v1_state_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7122,7 +7916,7 @@ func (x *UpdateBindingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBindingRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBindingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{130}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *UpdateBindingRequest) GetBinding() *Binding {
@@ -7140,7 +7934,7 @@ type UpdateBindingResponse struct {
 
 func (x *UpdateBindingResponse) Reset() {
 	*x = UpdateBindingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[131]
+	mi := &file_state_v1_state_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7152,7 +7946,7 @@ func (x *UpdateBindingResponse) String() string {
 func (*UpdateBindingResponse) ProtoMessage() {}
 
 func (x *UpdateBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[131]
+	mi := &file_state_v1_state_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7165,7 +7959,7 @@ func (x *UpdateBindingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBindingResponse.ProtoReflect.Descriptor instead.
 func (*UpdateBindingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{131}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{145}
 }
 
 type DeleteBindingRequest struct {
@@ -7177,7 +7971,7 @@ type DeleteBindingRequest struct {
 
 func (x *DeleteBindingRequest) Reset() {
 	*x = DeleteBindingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[132]
+	mi := &file_state_v1_state_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7189,7 +7983,7 @@ func (x *DeleteBindingRequest) String() string {
 func (*DeleteBindingRequest) ProtoMessage() {}
 
 func (x *DeleteBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[132]
+	mi := &file_state_v1_state_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7202,7 +7996,7 @@ func (x *DeleteBindingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBindingRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBindingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{132}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *DeleteBindingRequest) GetId() string {
@@ -7220,7 +8014,7 @@ type DeleteBindingResponse struct {
 
 func (x *DeleteBindingResponse) Reset() {
 	*x = DeleteBindingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[133]
+	mi := &file_state_v1_state_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7232,7 +8026,7 @@ func (x *DeleteBindingResponse) String() string {
 func (*DeleteBindingResponse) ProtoMessage() {}
 
 func (x *DeleteBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[133]
+	mi := &file_state_v1_state_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7245,7 +8039,7 @@ func (x *DeleteBindingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBindingResponse.ProtoReflect.Descriptor instead.
 func (*DeleteBindingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{133}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{147}
 }
 
 type ApproveBindingRequest struct {
@@ -7257,7 +8051,7 @@ type ApproveBindingRequest struct {
 
 func (x *ApproveBindingRequest) Reset() {
 	*x = ApproveBindingRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[134]
+	mi := &file_state_v1_state_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7269,7 +8063,7 @@ func (x *ApproveBindingRequest) String() string {
 func (*ApproveBindingRequest) ProtoMessage() {}
 
 func (x *ApproveBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[134]
+	mi := &file_state_v1_state_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7282,7 +8076,7 @@ func (x *ApproveBindingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveBindingRequest.ProtoReflect.Descriptor instead.
 func (*ApproveBindingRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{134}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *ApproveBindingRequest) GetId() string {
@@ -7300,7 +8094,7 @@ type ApproveBindingResponse struct {
 
 func (x *ApproveBindingResponse) Reset() {
 	*x = ApproveBindingResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[135]
+	mi := &file_state_v1_state_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7312,7 +8106,7 @@ func (x *ApproveBindingResponse) String() string {
 func (*ApproveBindingResponse) ProtoMessage() {}
 
 func (x *ApproveBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[135]
+	mi := &file_state_v1_state_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7325,7 +8119,447 @@ func (x *ApproveBindingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveBindingResponse.ProtoReflect.Descriptor instead.
 func (*ApproveBindingResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{135}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{149}
+}
+
+type InsertSourceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        *Source                `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InsertSourceRequest) Reset() {
+	*x = InsertSourceRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[150]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InsertSourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InsertSourceRequest) ProtoMessage() {}
+
+func (x *InsertSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[150]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InsertSourceRequest.ProtoReflect.Descriptor instead.
+func (*InsertSourceRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{150}
+}
+
+func (x *InsertSourceRequest) GetSource() *Source {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+type InsertSourceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InsertSourceResponse) Reset() {
+	*x = InsertSourceResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[151]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InsertSourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InsertSourceResponse) ProtoMessage() {}
+
+func (x *InsertSourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[151]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InsertSourceResponse.ProtoReflect.Descriptor instead.
+func (*InsertSourceResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{151}
+}
+
+type GetSourceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSourceRequest) Reset() {
+	*x = GetSourceRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[152]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSourceRequest) ProtoMessage() {}
+
+func (x *GetSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[152]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSourceRequest.ProtoReflect.Descriptor instead.
+func (*GetSourceRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{152}
+}
+
+func (x *GetSourceRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type GetSourceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        *Source                `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSourceResponse) Reset() {
+	*x = GetSourceResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[153]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSourceResponse) ProtoMessage() {}
+
+func (x *GetSourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[153]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSourceResponse.ProtoReflect.Descriptor instead.
+func (*GetSourceResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{153}
+}
+
+func (x *GetSourceResponse) GetSource() *Source {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *GetSourceResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+type ListSourcesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSourcesRequest) Reset() {
+	*x = ListSourcesRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[154]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSourcesRequest) ProtoMessage() {}
+
+func (x *ListSourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[154]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSourcesRequest.ProtoReflect.Descriptor instead.
+func (*ListSourcesRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{154}
+}
+
+type ListSourcesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sources       []*Source              `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSourcesResponse) Reset() {
+	*x = ListSourcesResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[155]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSourcesResponse) ProtoMessage() {}
+
+func (x *ListSourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[155]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSourcesResponse.ProtoReflect.Descriptor instead.
+func (*ListSourcesResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{155}
+}
+
+func (x *ListSourcesResponse) GetSources() []*Source {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+type SetSourceSigningRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	From          string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	To            string                 `protobuf:"bytes,3,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSourceSigningRequest) Reset() {
+	*x = SetSourceSigningRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[156]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSourceSigningRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSourceSigningRequest) ProtoMessage() {}
+
+func (x *SetSourceSigningRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[156]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSourceSigningRequest.ProtoReflect.Descriptor instead.
+func (*SetSourceSigningRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{156}
+}
+
+func (x *SetSourceSigningRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetSourceSigningRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *SetSourceSigningRequest) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+type SetSourceSigningResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSourceSigningResponse) Reset() {
+	*x = SetSourceSigningResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[157]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSourceSigningResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSourceSigningResponse) ProtoMessage() {}
+
+func (x *SetSourceSigningResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[157]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSourceSigningResponse.ProtoReflect.Descriptor instead.
+func (*SetSourceSigningResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{157}
+}
+
+type SetSourceSecretRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSourceSecretRequest) Reset() {
+	*x = SetSourceSecretRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[158]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSourceSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSourceSecretRequest) ProtoMessage() {}
+
+func (x *SetSourceSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[158]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSourceSecretRequest.ProtoReflect.Descriptor instead.
+func (*SetSourceSecretRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{158}
+}
+
+func (x *SetSourceSecretRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetSourceSecretRequest) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+type SetSourceSecretResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSourceSecretResponse) Reset() {
+	*x = SetSourceSecretResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[159]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSourceSecretResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSourceSecretResponse) ProtoMessage() {}
+
+func (x *SetSourceSecretResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[159]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSourceSecretResponse.ProtoReflect.Descriptor instead.
+func (*SetSourceSecretResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{159}
 }
 
 type ArmedBindingsForSourceRequest struct {
@@ -7337,7 +8571,7 @@ type ArmedBindingsForSourceRequest struct {
 
 func (x *ArmedBindingsForSourceRequest) Reset() {
 	*x = ArmedBindingsForSourceRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[136]
+	mi := &file_state_v1_state_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7349,7 +8583,7 @@ func (x *ArmedBindingsForSourceRequest) String() string {
 func (*ArmedBindingsForSourceRequest) ProtoMessage() {}
 
 func (x *ArmedBindingsForSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[136]
+	mi := &file_state_v1_state_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7362,7 +8596,7 @@ func (x *ArmedBindingsForSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArmedBindingsForSourceRequest.ProtoReflect.Descriptor instead.
 func (*ArmedBindingsForSourceRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{136}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *ArmedBindingsForSourceRequest) GetSource() string {
@@ -7381,7 +8615,7 @@ type ArmedBindingsForSourceResponse struct {
 
 func (x *ArmedBindingsForSourceResponse) Reset() {
 	*x = ArmedBindingsForSourceResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[137]
+	mi := &file_state_v1_state_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7393,7 +8627,7 @@ func (x *ArmedBindingsForSourceResponse) String() string {
 func (*ArmedBindingsForSourceResponse) ProtoMessage() {}
 
 func (x *ArmedBindingsForSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[137]
+	mi := &file_state_v1_state_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7406,7 +8640,7 @@ func (x *ArmedBindingsForSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArmedBindingsForSourceResponse.ProtoReflect.Descriptor instead.
 func (*ArmedBindingsForSourceResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{137}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *ArmedBindingsForSourceResponse) GetBindings() []*Binding {
@@ -7421,7 +8655,7 @@ type RecordDispatchRequest struct {
 	BindingId      string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,2,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
 	CaptureId      string                 `protobuf:"bytes,3,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
-	// task_id addresses the SQLite-owned task tables, which are not migrating.
+	// task_id addresses the tasks table.
 	TaskId        int64 `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -7429,7 +8663,7 @@ type RecordDispatchRequest struct {
 
 func (x *RecordDispatchRequest) Reset() {
 	*x = RecordDispatchRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[138]
+	mi := &file_state_v1_state_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7441,7 +8675,7 @@ func (x *RecordDispatchRequest) String() string {
 func (*RecordDispatchRequest) ProtoMessage() {}
 
 func (x *RecordDispatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[138]
+	mi := &file_state_v1_state_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7454,7 +8688,7 @@ func (x *RecordDispatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordDispatchRequest.ProtoReflect.Descriptor instead.
 func (*RecordDispatchRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{138}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *RecordDispatchRequest) GetBindingId() string {
@@ -7493,7 +8727,7 @@ type RecordDispatchResponse struct {
 
 func (x *RecordDispatchResponse) Reset() {
 	*x = RecordDispatchResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[139]
+	mi := &file_state_v1_state_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7505,7 +8739,7 @@ func (x *RecordDispatchResponse) String() string {
 func (*RecordDispatchResponse) ProtoMessage() {}
 
 func (x *RecordDispatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[139]
+	mi := &file_state_v1_state_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7518,7 +8752,7 @@ func (x *RecordDispatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordDispatchResponse.ProtoReflect.Descriptor instead.
 func (*RecordDispatchResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{139}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{163}
 }
 
 type RecordPlaybookDispatchRequest struct {
@@ -7533,7 +8767,7 @@ type RecordPlaybookDispatchRequest struct {
 
 func (x *RecordPlaybookDispatchRequest) Reset() {
 	*x = RecordPlaybookDispatchRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[140]
+	mi := &file_state_v1_state_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7545,7 +8779,7 @@ func (x *RecordPlaybookDispatchRequest) String() string {
 func (*RecordPlaybookDispatchRequest) ProtoMessage() {}
 
 func (x *RecordPlaybookDispatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[140]
+	mi := &file_state_v1_state_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7558,7 +8792,7 @@ func (x *RecordPlaybookDispatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordPlaybookDispatchRequest.ProtoReflect.Descriptor instead.
 func (*RecordPlaybookDispatchRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{140}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *RecordPlaybookDispatchRequest) GetPlaybookId() string {
@@ -7597,7 +8831,7 @@ type RecordPlaybookDispatchResponse struct {
 
 func (x *RecordPlaybookDispatchResponse) Reset() {
 	*x = RecordPlaybookDispatchResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[141]
+	mi := &file_state_v1_state_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7609,7 +8843,7 @@ func (x *RecordPlaybookDispatchResponse) String() string {
 func (*RecordPlaybookDispatchResponse) ProtoMessage() {}
 
 func (x *RecordPlaybookDispatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[141]
+	mi := &file_state_v1_state_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7622,7 +8856,7 @@ func (x *RecordPlaybookDispatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordPlaybookDispatchResponse.ProtoReflect.Descriptor instead.
 func (*RecordPlaybookDispatchResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{141}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{165}
 }
 
 type DeletePlaybookDispatchesRequest struct {
@@ -7634,7 +8868,7 @@ type DeletePlaybookDispatchesRequest struct {
 
 func (x *DeletePlaybookDispatchesRequest) Reset() {
 	*x = DeletePlaybookDispatchesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[142]
+	mi := &file_state_v1_state_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7646,7 +8880,7 @@ func (x *DeletePlaybookDispatchesRequest) String() string {
 func (*DeletePlaybookDispatchesRequest) ProtoMessage() {}
 
 func (x *DeletePlaybookDispatchesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[142]
+	mi := &file_state_v1_state_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7659,7 +8893,7 @@ func (x *DeletePlaybookDispatchesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlaybookDispatchesRequest.ProtoReflect.Descriptor instead.
 func (*DeletePlaybookDispatchesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{142}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{166}
 }
 
 func (x *DeletePlaybookDispatchesRequest) GetPlaybookId() string {
@@ -7677,7 +8911,7 @@ type DeletePlaybookDispatchesResponse struct {
 
 func (x *DeletePlaybookDispatchesResponse) Reset() {
 	*x = DeletePlaybookDispatchesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[143]
+	mi := &file_state_v1_state_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7689,7 +8923,7 @@ func (x *DeletePlaybookDispatchesResponse) String() string {
 func (*DeletePlaybookDispatchesResponse) ProtoMessage() {}
 
 func (x *DeletePlaybookDispatchesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[143]
+	mi := &file_state_v1_state_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7702,7 +8936,7 @@ func (x *DeletePlaybookDispatchesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlaybookDispatchesResponse.ProtoReflect.Descriptor instead.
 func (*DeletePlaybookDispatchesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{143}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{167}
 }
 
 type ListUndispatchedCapturesRequest struct {
@@ -7715,7 +8949,7 @@ type ListUndispatchedCapturesRequest struct {
 
 func (x *ListUndispatchedCapturesRequest) Reset() {
 	*x = ListUndispatchedCapturesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[144]
+	mi := &file_state_v1_state_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7727,7 +8961,7 @@ func (x *ListUndispatchedCapturesRequest) String() string {
 func (*ListUndispatchedCapturesRequest) ProtoMessage() {}
 
 func (x *ListUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[144]
+	mi := &file_state_v1_state_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7740,7 +8974,7 @@ func (x *ListUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUndispatchedCapturesRequest.ProtoReflect.Descriptor instead.
 func (*ListUndispatchedCapturesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{144}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *ListUndispatchedCapturesRequest) GetSources() []string {
@@ -7766,7 +9000,7 @@ type ListUndispatchedCapturesResponse struct {
 
 func (x *ListUndispatchedCapturesResponse) Reset() {
 	*x = ListUndispatchedCapturesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[145]
+	mi := &file_state_v1_state_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7778,7 +9012,7 @@ func (x *ListUndispatchedCapturesResponse) String() string {
 func (*ListUndispatchedCapturesResponse) ProtoMessage() {}
 
 func (x *ListUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[145]
+	mi := &file_state_v1_state_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7791,7 +9025,7 @@ func (x *ListUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUndispatchedCapturesResponse.ProtoReflect.Descriptor instead.
 func (*ListUndispatchedCapturesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{145}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{169}
 }
 
 func (x *ListUndispatchedCapturesResponse) GetCaptures() []*CapturedEvent {
@@ -7811,7 +9045,7 @@ type StreamUndispatchedCapturesRequest struct {
 
 func (x *StreamUndispatchedCapturesRequest) Reset() {
 	*x = StreamUndispatchedCapturesRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[146]
+	mi := &file_state_v1_state_proto_msgTypes[170]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7823,7 +9057,7 @@ func (x *StreamUndispatchedCapturesRequest) String() string {
 func (*StreamUndispatchedCapturesRequest) ProtoMessage() {}
 
 func (x *StreamUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[146]
+	mi := &file_state_v1_state_proto_msgTypes[170]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7836,7 +9070,7 @@ func (x *StreamUndispatchedCapturesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use StreamUndispatchedCapturesRequest.ProtoReflect.Descriptor instead.
 func (*StreamUndispatchedCapturesRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{146}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{170}
 }
 
 func (x *StreamUndispatchedCapturesRequest) GetSources() []string {
@@ -7863,7 +9097,7 @@ type StreamUndispatchedCapturesResponse struct {
 
 func (x *StreamUndispatchedCapturesResponse) Reset() {
 	*x = StreamUndispatchedCapturesResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[147]
+	mi := &file_state_v1_state_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7875,7 +9109,7 @@ func (x *StreamUndispatchedCapturesResponse) String() string {
 func (*StreamUndispatchedCapturesResponse) ProtoMessage() {}
 
 func (x *StreamUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[147]
+	mi := &file_state_v1_state_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7888,7 +9122,7 @@ func (x *StreamUndispatchedCapturesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use StreamUndispatchedCapturesResponse.ProtoReflect.Descriptor instead.
 func (*StreamUndispatchedCapturesResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{147}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{171}
 }
 
 func (x *StreamUndispatchedCapturesResponse) GetCapture() *CapturedEvent {
@@ -7908,13 +9142,14 @@ type EnqueueBindingTaskRequest struct {
 	Identity       string                 `protobuf:"bytes,6,opt,name=identity,proto3" json:"identity,omitempty"`
 	BindingId      string                 `protobuf:"bytes,7,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,8,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
+	InputsJson     string                 `protobuf:"bytes,9,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EnqueueBindingTaskRequest) Reset() {
 	*x = EnqueueBindingTaskRequest{}
-	mi := &file_state_v1_state_proto_msgTypes[148]
+	mi := &file_state_v1_state_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7926,7 +9161,7 @@ func (x *EnqueueBindingTaskRequest) String() string {
 func (*EnqueueBindingTaskRequest) ProtoMessage() {}
 
 func (x *EnqueueBindingTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[148]
+	mi := &file_state_v1_state_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7939,7 +9174,7 @@ func (x *EnqueueBindingTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueBindingTaskRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueBindingTaskRequest) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{148}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{172}
 }
 
 func (x *EnqueueBindingTaskRequest) GetOwner() string {
@@ -7998,6 +9233,13 @@ func (x *EnqueueBindingTaskRequest) GetBindingVersion() int64 {
 	return 0
 }
 
+func (x *EnqueueBindingTaskRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
+	}
+	return ""
+}
+
 type EnqueueBindingTaskResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Task          *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
@@ -8007,7 +9249,7 @@ type EnqueueBindingTaskResponse struct {
 
 func (x *EnqueueBindingTaskResponse) Reset() {
 	*x = EnqueueBindingTaskResponse{}
-	mi := &file_state_v1_state_proto_msgTypes[149]
+	mi := &file_state_v1_state_proto_msgTypes[173]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8019,7 +9261,7 @@ func (x *EnqueueBindingTaskResponse) String() string {
 func (*EnqueueBindingTaskResponse) ProtoMessage() {}
 
 func (x *EnqueueBindingTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_state_v1_state_proto_msgTypes[149]
+	mi := &file_state_v1_state_proto_msgTypes[173]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8032,7 +9274,7 @@ func (x *EnqueueBindingTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueBindingTaskResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueBindingTaskResponse) Descriptor() ([]byte, []int) {
-	return file_state_v1_state_proto_rawDescGZIP(), []int{149}
+	return file_state_v1_state_proto_rawDescGZIP(), []int{173}
 }
 
 func (x *EnqueueBindingTaskResponse) GetTask() *Task {
@@ -8122,7 +9364,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12-\n" +
 	"\x05audit\x18\x04 \x01(\v2\x17.state.v1.IdentityAuditR\x05audit\"M\n" +
 	"\x1bBindIdentitySubjectResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xd9\b\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xfa\b\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -8166,7 +9408,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\rreview_cursor\x18\x1f \x01(\x03R\freviewCursor\x12\x1d\n" +
 	"\n" +
 	"park_class\x18  \x01(\tR\tparkClass\x12-\n" +
-	"\x12remediation_rounds\x18! \x01(\x05R\x11remediationRounds\"\xf8\x02\n" +
+	"\x12remediation_rounds\x18! \x01(\x05R\x11remediationRounds\x12\x1f\n" +
+	"\vinputs_json\x18\" \x01(\tR\n" +
+	"inputsJson\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -8183,7 +9427,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bactor_id\x18\f \x01(\tR\aactorId\x12\x1d\n" +
 	"\n" +
 	"actor_kind\x18\r \x01(\tR\tactorKind\x12!\n" +
-	"\fprincipal_id\x18\x0e \x01(\tR\vprincipalId\"\x8c\x02\n" +
+	"\fprincipal_id\x18\x0e \x01(\tR\vprincipalId\"\xc7\x02\n" +
 	"\rCapturedEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12;\n" +
 	"\vreceived_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -8194,12 +9438,37 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\x12\x18\n" +
 	"\aheaders\x18\x06 \x01(\tR\aheaders\x12\x12\n" +
 	"\x04body\x18\a \x01(\tR\x04body\x12$\n" +
-	"\rauthenticated\x18\b \x01(\bR\rauthenticated\"f\n" +
+	"\rauthenticated\x18\b \x01(\bR\rauthenticated\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\t \x01(\tR\teventType\x12\x1a\n" +
+	"\bunsigned\x18\n" +
+	" \x01(\bR\bunsigned\"D\n" +
+	"\x18EventTypeHeaderCondition\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"U\n" +
+	"\x19EventTypePayloadCondition\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x0e\n" +
+	"\x02op\x18\x02 \x01(\tR\x02op\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\"\xd6\x03\n" +
+	"\tEventType\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12O\n" +
+	"\x11header_conditions\x18\x04 \x03(\v2\".state.v1.EventTypeHeaderConditionR\x10headerConditions\x12R\n" +
+	"\x12payload_conditions\x18\x05 \x03(\v2#.state.v1.EventTypePayloadConditionR\x11payloadConditions\x127\n" +
+	"\x06schema\x18\x06 \x03(\v2\x1f.state.v1.EventType.SchemaEntryR\x06schema\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a9\n" +
+	"\vSchemaEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"f\n" +
 	"\fMappingField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x1a\n" +
-	"\brequired\x18\x04 \x01(\bR\brequired\"\xf4\x01\n" +
+	"\brequired\x18\x04 \x01(\bR\brequired\"\xfd\x02\n" +
 	"\aMapping\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
@@ -8209,9 +9478,13 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"(\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\"\n" +
+	"\revent_type_id\x18\a \x01(\tR\veventTypeId\x12\x1f\n" +
+	"\vmatch_count\x18\b \x01(\x03R\n" +
+	"matchCount\x12B\n" +
+	"\x0flast_matched_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastMatchedAt\"(\n" +
 	"\x0eBindingMatcher\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\"\x86\x03\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\"\xe2\x03\n" +
 	"\aBinding\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +
@@ -8222,13 +9495,26 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x05owner\x18\x06 \x01(\tR\x05owner\x12\x12\n" +
 	"\x04repo\x18\a \x01(\tR\x04repo\x12\x18\n" +
 	"\aversion\x18\b \x01(\x03R\aversion\x12\x16\n" +
-	"\x06status\x18\t \x01(\tR\x06status\x12\x16\n" +
+	"\x06status\x18\t \x01(\tR\x06status\x12\x1a\n" +
 	"\x06secret\x18\n" +
-	" \x01(\tR\x06secret\x129\n" +
+	" \x01(\tB\x02\x18\x01R\x06secret\x129\n" +
 	"\n" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe6\x01\n" +
+	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
+	"\x06filter\x18\r \x01(\tR\x06filter\x12\x1f\n" +
+	"\vinputs_json\x18\x0e \x01(\tR\n" +
+	"inputsJson\x12\x1d\n" +
+	"\n" +
+	"repo_param\x18\x0f \x01(\tR\trepoParam\"\xc4\x01\n" +
+	"\x06Source\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\asigning\x18\x02 \x01(\tR\asigning\x12\x16\n" +
+	"\x06secret\x18\x03 \x01(\tR\x06secret\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe6\x01\n" +
 	"\fWorkflowStat\x12\x1a\n" +
 	"\bworkflow\x18\x01 \x01(\tR\bworkflow\x12\x12\n" +
 	"\x04runs\x18\x02 \x01(\x03R\x04runs\x12\x16\n" +
@@ -8492,7 +9778,29 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x15UpdateMappingResponse\"&\n" +
 	"\x14DeleteMappingRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x17\n" +
-	"\x15DeleteMappingResponse\"C\n" +
+	"\x15DeleteMappingResponse\"Y\n" +
+	"\x19RecordMappingMatchRequest\x12\x1d\n" +
+	"\n" +
+	"mapping_id\x18\x01 \x01(\tR\tmappingId\x12\x1d\n" +
+	"\n" +
+	"capture_id\x18\x02 \x01(\tR\tcaptureId\"\x1c\n" +
+	"\x1aRecordMappingMatchResponse\"L\n" +
+	"\x16InsertEventTypeRequest\x122\n" +
+	"\n" +
+	"event_type\x18\x01 \x01(\v2\x13.state.v1.EventTypeR\teventType\")\n" +
+	"\x17InsertEventTypeResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"L\n" +
+	"\x16UpdateEventTypeRequest\x122\n" +
+	"\n" +
+	"event_type\x18\x01 \x01(\v2\x13.state.v1.EventTypeR\teventType\"\x19\n" +
+	"\x17UpdateEventTypeResponse\"(\n" +
+	"\x16DeleteEventTypeRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x19\n" +
+	"\x17DeleteEventTypeResponse\"\x17\n" +
+	"\x15ListEventTypesRequest\"N\n" +
+	"\x16ListEventTypesResponse\x124\n" +
+	"\vevent_types\x18\x01 \x03(\v2\x13.state.v1.EventTypeR\n" +
+	"eventTypes\"C\n" +
 	"\x14InsertBindingRequest\x12+\n" +
 	"\abinding\x18\x01 \x01(\v2\x11.state.v1.BindingR\abinding\"'\n" +
 	"\x15InsertBindingResponse\x12\x0e\n" +
@@ -8513,7 +9821,27 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x15DeleteBindingResponse\"'\n" +
 	"\x15ApproveBindingRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
-	"\x16ApproveBindingResponse\"7\n" +
+	"\x16ApproveBindingResponse\"?\n" +
+	"\x13InsertSourceRequest\x12(\n" +
+	"\x06source\x18\x01 \x01(\v2\x10.state.v1.SourceR\x06source\"\x16\n" +
+	"\x14InsertSourceResponse\"&\n" +
+	"\x10GetSourceRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"S\n" +
+	"\x11GetSourceResponse\x12(\n" +
+	"\x06source\x18\x01 \x01(\v2\x10.state.v1.SourceR\x06source\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"\x14\n" +
+	"\x12ListSourcesRequest\"A\n" +
+	"\x13ListSourcesResponse\x12*\n" +
+	"\asources\x18\x01 \x03(\v2\x10.state.v1.SourceR\asources\"Q\n" +
+	"\x17SetSourceSigningRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x03 \x01(\tR\x02to\"\x1a\n" +
+	"\x18SetSourceSigningResponse\"D\n" +
+	"\x16SetSourceSecretRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\"\x19\n" +
+	"\x17SetSourceSecretResponse\"7\n" +
 	"\x1dArmedBindingsForSourceRequest\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\"O\n" +
 	"\x1eArmedBindingsForSourceResponse\x12-\n" +
@@ -8546,7 +9874,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asources\x18\x01 \x03(\tR\asources\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x03R\x05limit\"W\n" +
 	"\"StreamUndispatchedCapturesResponse\x121\n" +
-	"\acapture\x18\x01 \x01(\v2\x17.state.v1.CapturedEventR\acapture\"\xef\x01\n" +
+	"\acapture\x18\x01 \x01(\v2\x17.state.v1.CapturedEventR\acapture\"\x90\x02\n" +
 	"\x19EnqueueBindingTaskRequest\x12\x14\n" +
 	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x14\n" +
@@ -8556,9 +9884,11 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bidentity\x18\x06 \x01(\tR\bidentity\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\a \x01(\tR\tbindingId\x12'\n" +
-	"\x0fbinding_version\x18\b \x01(\x03R\x0ebindingVersion\"@\n" +
+	"\x0fbinding_version\x18\b \x01(\x03R\x0ebindingVersion\x12\x1f\n" +
+	"\vinputs_json\x18\t \x01(\tR\n" +
+	"inputsJson\"@\n" +
 	"\x1aEnqueueBindingTaskResponse\x12\"\n" +
-	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task2\xbe,\n" +
+	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task2\x903\n" +
 	"\x11StateStoreService\x12\\\n" +
 	"\x11RegisterTaskGrant\x12\".state.v1.RegisterTaskGrantRequest\x1a#.state.v1.RegisterTaskGrantResponse\x12V\n" +
 	"\x0fRevokeTaskGrant\x12 .state.v1.RevokeTaskGrantRequest\x1a!.state.v1.RevokeTaskGrantResponse\x12S\n" +
@@ -8617,14 +9947,24 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"GetMapping\x12\x1b.state.v1.GetMappingRequest\x1a\x1c.state.v1.GetMappingResponse\x12M\n" +
 	"\fListMappings\x12\x1d.state.v1.ListMappingsRequest\x1a\x1e.state.v1.ListMappingsResponse\x12P\n" +
 	"\rUpdateMapping\x12\x1e.state.v1.UpdateMappingRequest\x1a\x1f.state.v1.UpdateMappingResponse\x12P\n" +
-	"\rDeleteMapping\x12\x1e.state.v1.DeleteMappingRequest\x1a\x1f.state.v1.DeleteMappingResponse\x12P\n" +
+	"\rDeleteMapping\x12\x1e.state.v1.DeleteMappingRequest\x1a\x1f.state.v1.DeleteMappingResponse\x12_\n" +
+	"\x12RecordMappingMatch\x12#.state.v1.RecordMappingMatchRequest\x1a$.state.v1.RecordMappingMatchResponse\x12V\n" +
+	"\x0fInsertEventType\x12 .state.v1.InsertEventTypeRequest\x1a!.state.v1.InsertEventTypeResponse\x12V\n" +
+	"\x0fUpdateEventType\x12 .state.v1.UpdateEventTypeRequest\x1a!.state.v1.UpdateEventTypeResponse\x12V\n" +
+	"\x0fDeleteEventType\x12 .state.v1.DeleteEventTypeRequest\x1a!.state.v1.DeleteEventTypeResponse\x12S\n" +
+	"\x0eListEventTypes\x12\x1f.state.v1.ListEventTypesRequest\x1a .state.v1.ListEventTypesResponse\x12P\n" +
 	"\rInsertBinding\x12\x1e.state.v1.InsertBindingRequest\x1a\x1f.state.v1.InsertBindingResponse\x12G\n" +
 	"\n" +
 	"GetBinding\x12\x1b.state.v1.GetBindingRequest\x1a\x1c.state.v1.GetBindingResponse\x12M\n" +
 	"\fListBindings\x12\x1d.state.v1.ListBindingsRequest\x1a\x1e.state.v1.ListBindingsResponse\x12P\n" +
 	"\rUpdateBinding\x12\x1e.state.v1.UpdateBindingRequest\x1a\x1f.state.v1.UpdateBindingResponse\x12P\n" +
 	"\rDeleteBinding\x12\x1e.state.v1.DeleteBindingRequest\x1a\x1f.state.v1.DeleteBindingResponse\x12S\n" +
-	"\x0eApproveBinding\x12\x1f.state.v1.ApproveBindingRequest\x1a .state.v1.ApproveBindingResponse\x12k\n" +
+	"\x0eApproveBinding\x12\x1f.state.v1.ApproveBindingRequest\x1a .state.v1.ApproveBindingResponse\x12M\n" +
+	"\fInsertSource\x12\x1d.state.v1.InsertSourceRequest\x1a\x1e.state.v1.InsertSourceResponse\x12D\n" +
+	"\tGetSource\x12\x1a.state.v1.GetSourceRequest\x1a\x1b.state.v1.GetSourceResponse\x12J\n" +
+	"\vListSources\x12\x1c.state.v1.ListSourcesRequest\x1a\x1d.state.v1.ListSourcesResponse\x12Y\n" +
+	"\x10SetSourceSigning\x12!.state.v1.SetSourceSigningRequest\x1a\".state.v1.SetSourceSigningResponse\x12V\n" +
+	"\x0fSetSourceSecret\x12 .state.v1.SetSourceSecretRequest\x1a!.state.v1.SetSourceSecretResponse\x12k\n" +
 	"\x16ArmedBindingsForSource\x12'.state.v1.ArmedBindingsForSourceRequest\x1a(.state.v1.ArmedBindingsForSourceResponse\x12S\n" +
 	"\x0eRecordDispatch\x12\x1f.state.v1.RecordDispatchRequest\x1a .state.v1.RecordDispatchResponse\x12k\n" +
 	"\x16RecordPlaybookDispatch\x12'.state.v1.RecordPlaybookDispatchRequest\x1a(.state.v1.RecordPlaybookDispatchResponse\x12q\n" +
@@ -8647,7 +9987,7 @@ func file_state_v1_state_proto_rawDescGZIP() []byte {
 	return file_state_v1_state_proto_rawDescData
 }
 
-var file_state_v1_state_proto_msgTypes = make([]protoimpl.MessageInfo, 151)
+var file_state_v1_state_proto_msgTypes = make([]protoimpl.MessageInfo, 176)
 var file_state_v1_state_proto_goTypes = []any{
 	(*RegisterTaskGrantRequest)(nil),           // 0: state.v1.RegisterTaskGrantRequest
 	(*RegisterTaskGrantResponse)(nil),          // 1: state.v1.RegisterTaskGrantResponse
@@ -8676,135 +10016,160 @@ var file_state_v1_state_proto_goTypes = []any{
 	(*Task)(nil),                               // 24: state.v1.Task
 	(*Event)(nil),                              // 25: state.v1.Event
 	(*CapturedEvent)(nil),                      // 26: state.v1.CapturedEvent
-	(*MappingField)(nil),                       // 27: state.v1.MappingField
-	(*Mapping)(nil),                            // 28: state.v1.Mapping
-	(*BindingMatcher)(nil),                     // 29: state.v1.BindingMatcher
-	(*Binding)(nil),                            // 30: state.v1.Binding
-	(*WorkflowStat)(nil),                       // 31: state.v1.WorkflowStat
-	(*StageStat)(nil),                          // 32: state.v1.StageStat
-	(*DayTokens)(nil),                          // 33: state.v1.DayTokens
-	(*EnqueueIssueRequest)(nil),                // 34: state.v1.EnqueueIssueRequest
-	(*EnqueueIssueResponse)(nil),               // 35: state.v1.EnqueueIssueResponse
-	(*EnqueueChatTaskRequest)(nil),             // 36: state.v1.EnqueueChatTaskRequest
-	(*EnqueueChatTaskResponse)(nil),            // 37: state.v1.EnqueueChatTaskResponse
-	(*ClaimNextRequest)(nil),                   // 38: state.v1.ClaimNextRequest
-	(*ClaimNextResponse)(nil),                  // 39: state.v1.ClaimNextResponse
-	(*ClaimByIssueRequest)(nil),                // 40: state.v1.ClaimByIssueRequest
-	(*ClaimByIssueResponse)(nil),               // 41: state.v1.ClaimByIssueResponse
-	(*TransitionRequest)(nil),                  // 42: state.v1.TransitionRequest
-	(*TransitionResponse)(nil),                 // 43: state.v1.TransitionResponse
-	(*UpdateRequest)(nil),                      // 44: state.v1.UpdateRequest
-	(*UpdateResponse)(nil),                     // 45: state.v1.UpdateResponse
-	(*RequeueRequest)(nil),                     // 46: state.v1.RequeueRequest
-	(*RequeueResponse)(nil),                    // 47: state.v1.RequeueResponse
-	(*ParkTaskRequest)(nil),                    // 48: state.v1.ParkTaskRequest
-	(*ParkTaskResponse)(nil),                   // 49: state.v1.ParkTaskResponse
-	(*RecoverStaleRequest)(nil),                // 50: state.v1.RecoverStaleRequest
-	(*RecoverStaleResponse)(nil),               // 51: state.v1.RecoverStaleResponse
-	(*ArchiveTaskRequest)(nil),                 // 52: state.v1.ArchiveTaskRequest
-	(*ArchiveTaskResponse)(nil),                // 53: state.v1.ArchiveTaskResponse
-	(*RetryTaskRequest)(nil),                   // 54: state.v1.RetryTaskRequest
-	(*RetryTaskResponse)(nil),                  // 55: state.v1.RetryTaskResponse
-	(*BeginRemediationRequest)(nil),            // 56: state.v1.BeginRemediationRequest
-	(*BeginRemediationResponse)(nil),           // 57: state.v1.BeginRemediationResponse
-	(*UpdateReviewPayloadRequest)(nil),         // 58: state.v1.UpdateReviewPayloadRequest
-	(*UpdateReviewPayloadResponse)(nil),        // 59: state.v1.UpdateReviewPayloadResponse
-	(*SetReviewCursorsRequest)(nil),            // 60: state.v1.SetReviewCursorsRequest
-	(*SetReviewCursorsResponse)(nil),           // 61: state.v1.SetReviewCursorsResponse
-	(*TaskByIssueRequest)(nil),                 // 62: state.v1.TaskByIssueRequest
-	(*TaskByIssueResponse)(nil),                // 63: state.v1.TaskByIssueResponse
-	(*OpenTaskByPRRequest)(nil),                // 64: state.v1.OpenTaskByPRRequest
-	(*OpenTaskByPRResponse)(nil),               // 65: state.v1.OpenTaskByPRResponse
-	(*TaskByIDRequest)(nil),                    // 66: state.v1.TaskByIDRequest
-	(*TaskByIDResponse)(nil),                   // 67: state.v1.TaskByIDResponse
-	(*OpenPRsRequest)(nil),                     // 68: state.v1.OpenPRsRequest
-	(*OpenPRsResponse)(nil),                    // 69: state.v1.OpenPRsResponse
-	(*ClearTerminalTasksRequest)(nil),          // 70: state.v1.ClearTerminalTasksRequest
-	(*ClearTerminalTasksResponse)(nil),         // 71: state.v1.ClearTerminalTasksResponse
-	(*TasksRequest)(nil),                       // 72: state.v1.TasksRequest
-	(*TasksResponse)(nil),                      // 73: state.v1.TasksResponse
-	(*StatusCountsRequest)(nil),                // 74: state.v1.StatusCountsRequest
-	(*StatusCountsResponse)(nil),               // 75: state.v1.StatusCountsResponse
-	(*InsertEventRequest)(nil),                 // 76: state.v1.InsertEventRequest
-	(*InsertEventResponse)(nil),                // 77: state.v1.InsertEventResponse
-	(*EventsSinceRequest)(nil),                 // 78: state.v1.EventsSinceRequest
-	(*EventsSinceResponse)(nil),                // 79: state.v1.EventsSinceResponse
-	(*TaskEventsRequest)(nil),                  // 80: state.v1.TaskEventsRequest
-	(*TaskEventsResponse)(nil),                 // 81: state.v1.TaskEventsResponse
-	(*WorkflowStatsRequest)(nil),               // 82: state.v1.WorkflowStatsRequest
-	(*WorkflowStatsResponse)(nil),              // 83: state.v1.WorkflowStatsResponse
-	(*StageStatsRequest)(nil),                  // 84: state.v1.StageStatsRequest
-	(*StageStatsResponse)(nil),                 // 85: state.v1.StageStatsResponse
-	(*TokensByDayRequest)(nil),                 // 86: state.v1.TokensByDayRequest
-	(*TokensByDayResponse)(nil),                // 87: state.v1.TokensByDayResponse
-	(*ConfigSnapshot)(nil),                     // 88: state.v1.ConfigSnapshot
-	(*PutConfigSnapshotRequest)(nil),           // 89: state.v1.PutConfigSnapshotRequest
-	(*PutConfigSnapshotResponse)(nil),          // 90: state.v1.PutConfigSnapshotResponse
-	(*GetConfigSnapshotRequest)(nil),           // 91: state.v1.GetConfigSnapshotRequest
-	(*GetConfigSnapshotResponse)(nil),          // 92: state.v1.GetConfigSnapshotResponse
-	(*ChannelStatus)(nil),                      // 93: state.v1.ChannelStatus
-	(*PutChannelStatusRequest)(nil),            // 94: state.v1.PutChannelStatusRequest
-	(*PutChannelStatusResponse)(nil),           // 95: state.v1.PutChannelStatusResponse
-	(*ListChannelStatusRequest)(nil),           // 96: state.v1.ListChannelStatusRequest
-	(*ListChannelStatusResponse)(nil),          // 97: state.v1.ListChannelStatusResponse
-	(*ApplyStatus)(nil),                        // 98: state.v1.ApplyStatus
-	(*PutApplyStatusRequest)(nil),              // 99: state.v1.PutApplyStatusRequest
-	(*PutApplyStatusResponse)(nil),             // 100: state.v1.PutApplyStatusResponse
-	(*ListApplyStatusRequest)(nil),             // 101: state.v1.ListApplyStatusRequest
-	(*ListApplyStatusResponse)(nil),            // 102: state.v1.ListApplyStatusResponse
-	(*TaskLogEntry)(nil),                       // 103: state.v1.TaskLogEntry
-	(*ReadTaskLogRequest)(nil),                 // 104: state.v1.ReadTaskLogRequest
-	(*ReadTaskLogResponse)(nil),                // 105: state.v1.ReadTaskLogResponse
-	(*StreamTaskLogContentRequest)(nil),        // 106: state.v1.StreamTaskLogContentRequest
-	(*StreamTaskLogContentResponse)(nil),       // 107: state.v1.StreamTaskLogContentResponse
-	(*InsertCaptureRequest)(nil),               // 108: state.v1.InsertCaptureRequest
-	(*InsertCaptureResponse)(nil),              // 109: state.v1.InsertCaptureResponse
-	(*ListCapturesRequest)(nil),                // 110: state.v1.ListCapturesRequest
-	(*ListCapturesResponse)(nil),               // 111: state.v1.ListCapturesResponse
-	(*StreamCapturesRequest)(nil),              // 112: state.v1.StreamCapturesRequest
-	(*StreamCapturesResponse)(nil),             // 113: state.v1.StreamCapturesResponse
-	(*InsertMappingRequest)(nil),               // 114: state.v1.InsertMappingRequest
-	(*InsertMappingResponse)(nil),              // 115: state.v1.InsertMappingResponse
-	(*GetMappingRequest)(nil),                  // 116: state.v1.GetMappingRequest
-	(*GetMappingResponse)(nil),                 // 117: state.v1.GetMappingResponse
-	(*ListMappingsRequest)(nil),                // 118: state.v1.ListMappingsRequest
-	(*ListMappingsResponse)(nil),               // 119: state.v1.ListMappingsResponse
-	(*UpdateMappingRequest)(nil),               // 120: state.v1.UpdateMappingRequest
-	(*UpdateMappingResponse)(nil),              // 121: state.v1.UpdateMappingResponse
-	(*DeleteMappingRequest)(nil),               // 122: state.v1.DeleteMappingRequest
-	(*DeleteMappingResponse)(nil),              // 123: state.v1.DeleteMappingResponse
-	(*InsertBindingRequest)(nil),               // 124: state.v1.InsertBindingRequest
-	(*InsertBindingResponse)(nil),              // 125: state.v1.InsertBindingResponse
-	(*GetBindingRequest)(nil),                  // 126: state.v1.GetBindingRequest
-	(*GetBindingResponse)(nil),                 // 127: state.v1.GetBindingResponse
-	(*ListBindingsRequest)(nil),                // 128: state.v1.ListBindingsRequest
-	(*ListBindingsResponse)(nil),               // 129: state.v1.ListBindingsResponse
-	(*UpdateBindingRequest)(nil),               // 130: state.v1.UpdateBindingRequest
-	(*UpdateBindingResponse)(nil),              // 131: state.v1.UpdateBindingResponse
-	(*DeleteBindingRequest)(nil),               // 132: state.v1.DeleteBindingRequest
-	(*DeleteBindingResponse)(nil),              // 133: state.v1.DeleteBindingResponse
-	(*ApproveBindingRequest)(nil),              // 134: state.v1.ApproveBindingRequest
-	(*ApproveBindingResponse)(nil),             // 135: state.v1.ApproveBindingResponse
-	(*ArmedBindingsForSourceRequest)(nil),      // 136: state.v1.ArmedBindingsForSourceRequest
-	(*ArmedBindingsForSourceResponse)(nil),     // 137: state.v1.ArmedBindingsForSourceResponse
-	(*RecordDispatchRequest)(nil),              // 138: state.v1.RecordDispatchRequest
-	(*RecordDispatchResponse)(nil),             // 139: state.v1.RecordDispatchResponse
-	(*RecordPlaybookDispatchRequest)(nil),      // 140: state.v1.RecordPlaybookDispatchRequest
-	(*RecordPlaybookDispatchResponse)(nil),     // 141: state.v1.RecordPlaybookDispatchResponse
-	(*DeletePlaybookDispatchesRequest)(nil),    // 142: state.v1.DeletePlaybookDispatchesRequest
-	(*DeletePlaybookDispatchesResponse)(nil),   // 143: state.v1.DeletePlaybookDispatchesResponse
-	(*ListUndispatchedCapturesRequest)(nil),    // 144: state.v1.ListUndispatchedCapturesRequest
-	(*ListUndispatchedCapturesResponse)(nil),   // 145: state.v1.ListUndispatchedCapturesResponse
-	(*StreamUndispatchedCapturesRequest)(nil),  // 146: state.v1.StreamUndispatchedCapturesRequest
-	(*StreamUndispatchedCapturesResponse)(nil), // 147: state.v1.StreamUndispatchedCapturesResponse
-	(*EnqueueBindingTaskRequest)(nil),          // 148: state.v1.EnqueueBindingTaskRequest
-	(*EnqueueBindingTaskResponse)(nil),         // 149: state.v1.EnqueueBindingTaskResponse
-	nil,                                        // 150: state.v1.StatusCountsResponse.CountsEntry
-	(*timestamppb.Timestamp)(nil),              // 151: google.protobuf.Timestamp
+	(*EventTypeHeaderCondition)(nil),           // 27: state.v1.EventTypeHeaderCondition
+	(*EventTypePayloadCondition)(nil),          // 28: state.v1.EventTypePayloadCondition
+	(*EventType)(nil),                          // 29: state.v1.EventType
+	(*MappingField)(nil),                       // 30: state.v1.MappingField
+	(*Mapping)(nil),                            // 31: state.v1.Mapping
+	(*BindingMatcher)(nil),                     // 32: state.v1.BindingMatcher
+	(*Binding)(nil),                            // 33: state.v1.Binding
+	(*Source)(nil),                             // 34: state.v1.Source
+	(*WorkflowStat)(nil),                       // 35: state.v1.WorkflowStat
+	(*StageStat)(nil),                          // 36: state.v1.StageStat
+	(*DayTokens)(nil),                          // 37: state.v1.DayTokens
+	(*EnqueueIssueRequest)(nil),                // 38: state.v1.EnqueueIssueRequest
+	(*EnqueueIssueResponse)(nil),               // 39: state.v1.EnqueueIssueResponse
+	(*EnqueueChatTaskRequest)(nil),             // 40: state.v1.EnqueueChatTaskRequest
+	(*EnqueueChatTaskResponse)(nil),            // 41: state.v1.EnqueueChatTaskResponse
+	(*ClaimNextRequest)(nil),                   // 42: state.v1.ClaimNextRequest
+	(*ClaimNextResponse)(nil),                  // 43: state.v1.ClaimNextResponse
+	(*ClaimByIssueRequest)(nil),                // 44: state.v1.ClaimByIssueRequest
+	(*ClaimByIssueResponse)(nil),               // 45: state.v1.ClaimByIssueResponse
+	(*TransitionRequest)(nil),                  // 46: state.v1.TransitionRequest
+	(*TransitionResponse)(nil),                 // 47: state.v1.TransitionResponse
+	(*UpdateRequest)(nil),                      // 48: state.v1.UpdateRequest
+	(*UpdateResponse)(nil),                     // 49: state.v1.UpdateResponse
+	(*RequeueRequest)(nil),                     // 50: state.v1.RequeueRequest
+	(*RequeueResponse)(nil),                    // 51: state.v1.RequeueResponse
+	(*ParkTaskRequest)(nil),                    // 52: state.v1.ParkTaskRequest
+	(*ParkTaskResponse)(nil),                   // 53: state.v1.ParkTaskResponse
+	(*RecoverStaleRequest)(nil),                // 54: state.v1.RecoverStaleRequest
+	(*RecoverStaleResponse)(nil),               // 55: state.v1.RecoverStaleResponse
+	(*ArchiveTaskRequest)(nil),                 // 56: state.v1.ArchiveTaskRequest
+	(*ArchiveTaskResponse)(nil),                // 57: state.v1.ArchiveTaskResponse
+	(*RetryTaskRequest)(nil),                   // 58: state.v1.RetryTaskRequest
+	(*RetryTaskResponse)(nil),                  // 59: state.v1.RetryTaskResponse
+	(*BeginRemediationRequest)(nil),            // 60: state.v1.BeginRemediationRequest
+	(*BeginRemediationResponse)(nil),           // 61: state.v1.BeginRemediationResponse
+	(*UpdateReviewPayloadRequest)(nil),         // 62: state.v1.UpdateReviewPayloadRequest
+	(*UpdateReviewPayloadResponse)(nil),        // 63: state.v1.UpdateReviewPayloadResponse
+	(*SetReviewCursorsRequest)(nil),            // 64: state.v1.SetReviewCursorsRequest
+	(*SetReviewCursorsResponse)(nil),           // 65: state.v1.SetReviewCursorsResponse
+	(*TaskByIssueRequest)(nil),                 // 66: state.v1.TaskByIssueRequest
+	(*TaskByIssueResponse)(nil),                // 67: state.v1.TaskByIssueResponse
+	(*OpenTaskByPRRequest)(nil),                // 68: state.v1.OpenTaskByPRRequest
+	(*OpenTaskByPRResponse)(nil),               // 69: state.v1.OpenTaskByPRResponse
+	(*TaskByIDRequest)(nil),                    // 70: state.v1.TaskByIDRequest
+	(*TaskByIDResponse)(nil),                   // 71: state.v1.TaskByIDResponse
+	(*OpenPRsRequest)(nil),                     // 72: state.v1.OpenPRsRequest
+	(*OpenPRsResponse)(nil),                    // 73: state.v1.OpenPRsResponse
+	(*ClearTerminalTasksRequest)(nil),          // 74: state.v1.ClearTerminalTasksRequest
+	(*ClearTerminalTasksResponse)(nil),         // 75: state.v1.ClearTerminalTasksResponse
+	(*TasksRequest)(nil),                       // 76: state.v1.TasksRequest
+	(*TasksResponse)(nil),                      // 77: state.v1.TasksResponse
+	(*StatusCountsRequest)(nil),                // 78: state.v1.StatusCountsRequest
+	(*StatusCountsResponse)(nil),               // 79: state.v1.StatusCountsResponse
+	(*InsertEventRequest)(nil),                 // 80: state.v1.InsertEventRequest
+	(*InsertEventResponse)(nil),                // 81: state.v1.InsertEventResponse
+	(*EventsSinceRequest)(nil),                 // 82: state.v1.EventsSinceRequest
+	(*EventsSinceResponse)(nil),                // 83: state.v1.EventsSinceResponse
+	(*TaskEventsRequest)(nil),                  // 84: state.v1.TaskEventsRequest
+	(*TaskEventsResponse)(nil),                 // 85: state.v1.TaskEventsResponse
+	(*WorkflowStatsRequest)(nil),               // 86: state.v1.WorkflowStatsRequest
+	(*WorkflowStatsResponse)(nil),              // 87: state.v1.WorkflowStatsResponse
+	(*StageStatsRequest)(nil),                  // 88: state.v1.StageStatsRequest
+	(*StageStatsResponse)(nil),                 // 89: state.v1.StageStatsResponse
+	(*TokensByDayRequest)(nil),                 // 90: state.v1.TokensByDayRequest
+	(*TokensByDayResponse)(nil),                // 91: state.v1.TokensByDayResponse
+	(*ConfigSnapshot)(nil),                     // 92: state.v1.ConfigSnapshot
+	(*PutConfigSnapshotRequest)(nil),           // 93: state.v1.PutConfigSnapshotRequest
+	(*PutConfigSnapshotResponse)(nil),          // 94: state.v1.PutConfigSnapshotResponse
+	(*GetConfigSnapshotRequest)(nil),           // 95: state.v1.GetConfigSnapshotRequest
+	(*GetConfigSnapshotResponse)(nil),          // 96: state.v1.GetConfigSnapshotResponse
+	(*ChannelStatus)(nil),                      // 97: state.v1.ChannelStatus
+	(*PutChannelStatusRequest)(nil),            // 98: state.v1.PutChannelStatusRequest
+	(*PutChannelStatusResponse)(nil),           // 99: state.v1.PutChannelStatusResponse
+	(*ListChannelStatusRequest)(nil),           // 100: state.v1.ListChannelStatusRequest
+	(*ListChannelStatusResponse)(nil),          // 101: state.v1.ListChannelStatusResponse
+	(*ApplyStatus)(nil),                        // 102: state.v1.ApplyStatus
+	(*PutApplyStatusRequest)(nil),              // 103: state.v1.PutApplyStatusRequest
+	(*PutApplyStatusResponse)(nil),             // 104: state.v1.PutApplyStatusResponse
+	(*ListApplyStatusRequest)(nil),             // 105: state.v1.ListApplyStatusRequest
+	(*ListApplyStatusResponse)(nil),            // 106: state.v1.ListApplyStatusResponse
+	(*TaskLogEntry)(nil),                       // 107: state.v1.TaskLogEntry
+	(*ReadTaskLogRequest)(nil),                 // 108: state.v1.ReadTaskLogRequest
+	(*ReadTaskLogResponse)(nil),                // 109: state.v1.ReadTaskLogResponse
+	(*StreamTaskLogContentRequest)(nil),        // 110: state.v1.StreamTaskLogContentRequest
+	(*StreamTaskLogContentResponse)(nil),       // 111: state.v1.StreamTaskLogContentResponse
+	(*InsertCaptureRequest)(nil),               // 112: state.v1.InsertCaptureRequest
+	(*InsertCaptureResponse)(nil),              // 113: state.v1.InsertCaptureResponse
+	(*ListCapturesRequest)(nil),                // 114: state.v1.ListCapturesRequest
+	(*ListCapturesResponse)(nil),               // 115: state.v1.ListCapturesResponse
+	(*StreamCapturesRequest)(nil),              // 116: state.v1.StreamCapturesRequest
+	(*StreamCapturesResponse)(nil),             // 117: state.v1.StreamCapturesResponse
+	(*InsertMappingRequest)(nil),               // 118: state.v1.InsertMappingRequest
+	(*InsertMappingResponse)(nil),              // 119: state.v1.InsertMappingResponse
+	(*GetMappingRequest)(nil),                  // 120: state.v1.GetMappingRequest
+	(*GetMappingResponse)(nil),                 // 121: state.v1.GetMappingResponse
+	(*ListMappingsRequest)(nil),                // 122: state.v1.ListMappingsRequest
+	(*ListMappingsResponse)(nil),               // 123: state.v1.ListMappingsResponse
+	(*UpdateMappingRequest)(nil),               // 124: state.v1.UpdateMappingRequest
+	(*UpdateMappingResponse)(nil),              // 125: state.v1.UpdateMappingResponse
+	(*DeleteMappingRequest)(nil),               // 126: state.v1.DeleteMappingRequest
+	(*DeleteMappingResponse)(nil),              // 127: state.v1.DeleteMappingResponse
+	(*RecordMappingMatchRequest)(nil),          // 128: state.v1.RecordMappingMatchRequest
+	(*RecordMappingMatchResponse)(nil),         // 129: state.v1.RecordMappingMatchResponse
+	(*InsertEventTypeRequest)(nil),             // 130: state.v1.InsertEventTypeRequest
+	(*InsertEventTypeResponse)(nil),            // 131: state.v1.InsertEventTypeResponse
+	(*UpdateEventTypeRequest)(nil),             // 132: state.v1.UpdateEventTypeRequest
+	(*UpdateEventTypeResponse)(nil),            // 133: state.v1.UpdateEventTypeResponse
+	(*DeleteEventTypeRequest)(nil),             // 134: state.v1.DeleteEventTypeRequest
+	(*DeleteEventTypeResponse)(nil),            // 135: state.v1.DeleteEventTypeResponse
+	(*ListEventTypesRequest)(nil),              // 136: state.v1.ListEventTypesRequest
+	(*ListEventTypesResponse)(nil),             // 137: state.v1.ListEventTypesResponse
+	(*InsertBindingRequest)(nil),               // 138: state.v1.InsertBindingRequest
+	(*InsertBindingResponse)(nil),              // 139: state.v1.InsertBindingResponse
+	(*GetBindingRequest)(nil),                  // 140: state.v1.GetBindingRequest
+	(*GetBindingResponse)(nil),                 // 141: state.v1.GetBindingResponse
+	(*ListBindingsRequest)(nil),                // 142: state.v1.ListBindingsRequest
+	(*ListBindingsResponse)(nil),               // 143: state.v1.ListBindingsResponse
+	(*UpdateBindingRequest)(nil),               // 144: state.v1.UpdateBindingRequest
+	(*UpdateBindingResponse)(nil),              // 145: state.v1.UpdateBindingResponse
+	(*DeleteBindingRequest)(nil),               // 146: state.v1.DeleteBindingRequest
+	(*DeleteBindingResponse)(nil),              // 147: state.v1.DeleteBindingResponse
+	(*ApproveBindingRequest)(nil),              // 148: state.v1.ApproveBindingRequest
+	(*ApproveBindingResponse)(nil),             // 149: state.v1.ApproveBindingResponse
+	(*InsertSourceRequest)(nil),                // 150: state.v1.InsertSourceRequest
+	(*InsertSourceResponse)(nil),               // 151: state.v1.InsertSourceResponse
+	(*GetSourceRequest)(nil),                   // 152: state.v1.GetSourceRequest
+	(*GetSourceResponse)(nil),                  // 153: state.v1.GetSourceResponse
+	(*ListSourcesRequest)(nil),                 // 154: state.v1.ListSourcesRequest
+	(*ListSourcesResponse)(nil),                // 155: state.v1.ListSourcesResponse
+	(*SetSourceSigningRequest)(nil),            // 156: state.v1.SetSourceSigningRequest
+	(*SetSourceSigningResponse)(nil),           // 157: state.v1.SetSourceSigningResponse
+	(*SetSourceSecretRequest)(nil),             // 158: state.v1.SetSourceSecretRequest
+	(*SetSourceSecretResponse)(nil),            // 159: state.v1.SetSourceSecretResponse
+	(*ArmedBindingsForSourceRequest)(nil),      // 160: state.v1.ArmedBindingsForSourceRequest
+	(*ArmedBindingsForSourceResponse)(nil),     // 161: state.v1.ArmedBindingsForSourceResponse
+	(*RecordDispatchRequest)(nil),              // 162: state.v1.RecordDispatchRequest
+	(*RecordDispatchResponse)(nil),             // 163: state.v1.RecordDispatchResponse
+	(*RecordPlaybookDispatchRequest)(nil),      // 164: state.v1.RecordPlaybookDispatchRequest
+	(*RecordPlaybookDispatchResponse)(nil),     // 165: state.v1.RecordPlaybookDispatchResponse
+	(*DeletePlaybookDispatchesRequest)(nil),    // 166: state.v1.DeletePlaybookDispatchesRequest
+	(*DeletePlaybookDispatchesResponse)(nil),   // 167: state.v1.DeletePlaybookDispatchesResponse
+	(*ListUndispatchedCapturesRequest)(nil),    // 168: state.v1.ListUndispatchedCapturesRequest
+	(*ListUndispatchedCapturesResponse)(nil),   // 169: state.v1.ListUndispatchedCapturesResponse
+	(*StreamUndispatchedCapturesRequest)(nil),  // 170: state.v1.StreamUndispatchedCapturesRequest
+	(*StreamUndispatchedCapturesResponse)(nil), // 171: state.v1.StreamUndispatchedCapturesResponse
+	(*EnqueueBindingTaskRequest)(nil),          // 172: state.v1.EnqueueBindingTaskRequest
+	(*EnqueueBindingTaskResponse)(nil),         // 173: state.v1.EnqueueBindingTaskResponse
+	nil,                                        // 174: state.v1.EventType.SchemaEntry
+	nil,                                        // 175: state.v1.StatusCountsResponse.CountsEntry
+	(*timestamppb.Timestamp)(nil),              // 176: google.protobuf.Timestamp
 }
 var file_state_v1_state_proto_depIdxs = []int32{
-	151, // 0: state.v1.Identity.created_at:type_name -> google.protobuf.Timestamp
-	151, // 1: state.v1.Identity.updated_at:type_name -> google.protobuf.Timestamp
+	176, // 0: state.v1.Identity.created_at:type_name -> google.protobuf.Timestamp
+	176, // 1: state.v1.Identity.updated_at:type_name -> google.protobuf.Timestamp
 	4,   // 2: state.v1.ListIdentitiesResponse.identities:type_name -> state.v1.Identity
 	4,   // 3: state.v1.GetIdentityResponse.identity:type_name -> state.v1.Identity
 	5,   // 4: state.v1.CreateIdentityRequest.audit:type_name -> state.v1.IdentityAudit
@@ -8820,200 +10185,234 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	4,   // 14: state.v1.ResolveIdentitySubjectResponse.identity:type_name -> state.v1.Identity
 	5,   // 15: state.v1.BindIdentitySubjectRequest.audit:type_name -> state.v1.IdentityAudit
 	4,   // 16: state.v1.BindIdentitySubjectResponse.identity:type_name -> state.v1.Identity
-	151, // 17: state.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	151, // 18: state.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	151, // 19: state.v1.Event.at:type_name -> google.protobuf.Timestamp
-	151, // 20: state.v1.CapturedEvent.received_at:type_name -> google.protobuf.Timestamp
-	27,  // 21: state.v1.Mapping.fields:type_name -> state.v1.MappingField
-	151, // 22: state.v1.Mapping.created_at:type_name -> google.protobuf.Timestamp
-	151, // 23: state.v1.Mapping.updated_at:type_name -> google.protobuf.Timestamp
-	29,  // 24: state.v1.Binding.matcher:type_name -> state.v1.BindingMatcher
-	151, // 25: state.v1.Binding.created_at:type_name -> google.protobuf.Timestamp
-	151, // 26: state.v1.Binding.updated_at:type_name -> google.protobuf.Timestamp
-	24,  // 27: state.v1.EnqueueChatTaskResponse.task:type_name -> state.v1.Task
-	24,  // 28: state.v1.ClaimNextResponse.task:type_name -> state.v1.Task
-	24,  // 29: state.v1.ClaimByIssueResponse.task:type_name -> state.v1.Task
-	24,  // 30: state.v1.UpdateRequest.task:type_name -> state.v1.Task
-	25,  // 31: state.v1.ArchiveTaskRequest.audit:type_name -> state.v1.Event
-	24,  // 32: state.v1.TaskByIssueResponse.task:type_name -> state.v1.Task
-	24,  // 33: state.v1.OpenTaskByPRResponse.task:type_name -> state.v1.Task
-	24,  // 34: state.v1.TaskByIDResponse.task:type_name -> state.v1.Task
-	24,  // 35: state.v1.OpenPRsResponse.tasks:type_name -> state.v1.Task
-	24,  // 36: state.v1.TasksResponse.tasks:type_name -> state.v1.Task
-	150, // 37: state.v1.StatusCountsResponse.counts:type_name -> state.v1.StatusCountsResponse.CountsEntry
-	25,  // 38: state.v1.InsertEventRequest.event:type_name -> state.v1.Event
-	25,  // 39: state.v1.EventsSinceResponse.events:type_name -> state.v1.Event
-	25,  // 40: state.v1.TaskEventsResponse.events:type_name -> state.v1.Event
-	31,  // 41: state.v1.WorkflowStatsResponse.stats:type_name -> state.v1.WorkflowStat
-	32,  // 42: state.v1.StageStatsResponse.stats:type_name -> state.v1.StageStat
-	33,  // 43: state.v1.TokensByDayResponse.tokens:type_name -> state.v1.DayTokens
-	151, // 44: state.v1.ConfigSnapshot.published_at:type_name -> google.protobuf.Timestamp
-	88,  // 45: state.v1.PutConfigSnapshotRequest.snapshot:type_name -> state.v1.ConfigSnapshot
-	88,  // 46: state.v1.GetConfigSnapshotResponse.snapshot:type_name -> state.v1.ConfigSnapshot
-	151, // 47: state.v1.ChannelStatus.observed_at:type_name -> google.protobuf.Timestamp
-	93,  // 48: state.v1.PutChannelStatusRequest.channels:type_name -> state.v1.ChannelStatus
-	93,  // 49: state.v1.ListChannelStatusResponse.channels:type_name -> state.v1.ChannelStatus
-	151, // 50: state.v1.ApplyStatus.reported_at:type_name -> google.protobuf.Timestamp
-	98,  // 51: state.v1.PutApplyStatusRequest.status:type_name -> state.v1.ApplyStatus
-	98,  // 52: state.v1.ListApplyStatusResponse.statuses:type_name -> state.v1.ApplyStatus
-	151, // 53: state.v1.TaskLogEntry.time:type_name -> google.protobuf.Timestamp
-	151, // 54: state.v1.ReadTaskLogRequest.since:type_name -> google.protobuf.Timestamp
-	151, // 55: state.v1.ReadTaskLogRequest.until:type_name -> google.protobuf.Timestamp
-	103, // 56: state.v1.ReadTaskLogResponse.entries:type_name -> state.v1.TaskLogEntry
-	26,  // 57: state.v1.InsertCaptureRequest.capture:type_name -> state.v1.CapturedEvent
-	26,  // 58: state.v1.ListCapturesResponse.captures:type_name -> state.v1.CapturedEvent
-	26,  // 59: state.v1.StreamCapturesResponse.capture:type_name -> state.v1.CapturedEvent
-	28,  // 60: state.v1.InsertMappingRequest.mapping:type_name -> state.v1.Mapping
-	28,  // 61: state.v1.GetMappingResponse.mapping:type_name -> state.v1.Mapping
-	28,  // 62: state.v1.ListMappingsResponse.mappings:type_name -> state.v1.Mapping
-	28,  // 63: state.v1.UpdateMappingRequest.mapping:type_name -> state.v1.Mapping
-	30,  // 64: state.v1.InsertBindingRequest.binding:type_name -> state.v1.Binding
-	30,  // 65: state.v1.GetBindingResponse.binding:type_name -> state.v1.Binding
-	30,  // 66: state.v1.ListBindingsResponse.bindings:type_name -> state.v1.Binding
-	30,  // 67: state.v1.UpdateBindingRequest.binding:type_name -> state.v1.Binding
-	30,  // 68: state.v1.ArmedBindingsForSourceResponse.bindings:type_name -> state.v1.Binding
-	26,  // 69: state.v1.ListUndispatchedCapturesResponse.captures:type_name -> state.v1.CapturedEvent
-	26,  // 70: state.v1.StreamUndispatchedCapturesResponse.capture:type_name -> state.v1.CapturedEvent
-	24,  // 71: state.v1.EnqueueBindingTaskResponse.task:type_name -> state.v1.Task
-	0,   // 72: state.v1.StateStoreService.RegisterTaskGrant:input_type -> state.v1.RegisterTaskGrantRequest
-	2,   // 73: state.v1.StateStoreService.RevokeTaskGrant:input_type -> state.v1.RevokeTaskGrantRequest
-	6,   // 74: state.v1.StateStoreService.ListIdentities:input_type -> state.v1.ListIdentitiesRequest
-	8,   // 75: state.v1.StateStoreService.GetIdentity:input_type -> state.v1.GetIdentityRequest
-	10,  // 76: state.v1.StateStoreService.CreateIdentity:input_type -> state.v1.CreateIdentityRequest
-	11,  // 77: state.v1.StateStoreService.RenameIdentity:input_type -> state.v1.RenameIdentityRequest
-	12,  // 78: state.v1.StateStoreService.SuspendIdentity:input_type -> state.v1.SuspendIdentityRequest
-	13,  // 79: state.v1.StateStoreService.ReactivateIdentity:input_type -> state.v1.ReactivateIdentityRequest
-	14,  // 80: state.v1.StateStoreService.RetireIdentity:input_type -> state.v1.RetireIdentityRequest
-	20,  // 81: state.v1.StateStoreService.ResolveIdentitySubject:input_type -> state.v1.ResolveIdentitySubjectRequest
-	22,  // 82: state.v1.StateStoreService.BindIdentitySubject:input_type -> state.v1.BindIdentitySubjectRequest
-	34,  // 83: state.v1.StateStoreService.EnqueueIssue:input_type -> state.v1.EnqueueIssueRequest
-	36,  // 84: state.v1.StateStoreService.EnqueueChatTask:input_type -> state.v1.EnqueueChatTaskRequest
-	38,  // 85: state.v1.StateStoreService.ClaimNext:input_type -> state.v1.ClaimNextRequest
-	40,  // 86: state.v1.StateStoreService.ClaimByIssue:input_type -> state.v1.ClaimByIssueRequest
-	42,  // 87: state.v1.StateStoreService.Transition:input_type -> state.v1.TransitionRequest
-	44,  // 88: state.v1.StateStoreService.Update:input_type -> state.v1.UpdateRequest
-	46,  // 89: state.v1.StateStoreService.Requeue:input_type -> state.v1.RequeueRequest
-	48,  // 90: state.v1.StateStoreService.ParkTask:input_type -> state.v1.ParkTaskRequest
-	50,  // 91: state.v1.StateStoreService.RecoverStale:input_type -> state.v1.RecoverStaleRequest
-	52,  // 92: state.v1.StateStoreService.ArchiveTask:input_type -> state.v1.ArchiveTaskRequest
-	54,  // 93: state.v1.StateStoreService.RetryTask:input_type -> state.v1.RetryTaskRequest
-	56,  // 94: state.v1.StateStoreService.BeginRemediation:input_type -> state.v1.BeginRemediationRequest
-	58,  // 95: state.v1.StateStoreService.UpdateReviewPayload:input_type -> state.v1.UpdateReviewPayloadRequest
-	60,  // 96: state.v1.StateStoreService.SetReviewCursors:input_type -> state.v1.SetReviewCursorsRequest
-	62,  // 97: state.v1.StateStoreService.TaskByIssue:input_type -> state.v1.TaskByIssueRequest
-	64,  // 98: state.v1.StateStoreService.OpenTaskByPR:input_type -> state.v1.OpenTaskByPRRequest
-	66,  // 99: state.v1.StateStoreService.TaskByID:input_type -> state.v1.TaskByIDRequest
-	68,  // 100: state.v1.StateStoreService.OpenPRs:input_type -> state.v1.OpenPRsRequest
-	70,  // 101: state.v1.StateStoreService.ClearTerminalTasks:input_type -> state.v1.ClearTerminalTasksRequest
-	72,  // 102: state.v1.StateStoreService.Tasks:input_type -> state.v1.TasksRequest
-	74,  // 103: state.v1.StateStoreService.StatusCounts:input_type -> state.v1.StatusCountsRequest
-	76,  // 104: state.v1.StateStoreService.InsertEvent:input_type -> state.v1.InsertEventRequest
-	78,  // 105: state.v1.StateStoreService.EventsSince:input_type -> state.v1.EventsSinceRequest
-	80,  // 106: state.v1.StateStoreService.TaskEvents:input_type -> state.v1.TaskEventsRequest
-	82,  // 107: state.v1.StateStoreService.WorkflowStats:input_type -> state.v1.WorkflowStatsRequest
-	84,  // 108: state.v1.StateStoreService.StageStats:input_type -> state.v1.StageStatsRequest
-	86,  // 109: state.v1.StateStoreService.TokensByDay:input_type -> state.v1.TokensByDayRequest
-	89,  // 110: state.v1.StateStoreService.PutConfigSnapshot:input_type -> state.v1.PutConfigSnapshotRequest
-	91,  // 111: state.v1.StateStoreService.GetConfigSnapshot:input_type -> state.v1.GetConfigSnapshotRequest
-	94,  // 112: state.v1.StateStoreService.PutChannelStatus:input_type -> state.v1.PutChannelStatusRequest
-	96,  // 113: state.v1.StateStoreService.ListChannelStatus:input_type -> state.v1.ListChannelStatusRequest
-	99,  // 114: state.v1.StateStoreService.PutApplyStatus:input_type -> state.v1.PutApplyStatusRequest
-	101, // 115: state.v1.StateStoreService.ListApplyStatus:input_type -> state.v1.ListApplyStatusRequest
-	104, // 116: state.v1.StateStoreService.ReadTaskLog:input_type -> state.v1.ReadTaskLogRequest
-	106, // 117: state.v1.StateStoreService.StreamTaskLogContent:input_type -> state.v1.StreamTaskLogContentRequest
-	108, // 118: state.v1.StateStoreService.InsertCapture:input_type -> state.v1.InsertCaptureRequest
-	110, // 119: state.v1.StateStoreService.ListCaptures:input_type -> state.v1.ListCapturesRequest
-	112, // 120: state.v1.StateStoreService.StreamCaptures:input_type -> state.v1.StreamCapturesRequest
-	114, // 121: state.v1.StateStoreService.InsertMapping:input_type -> state.v1.InsertMappingRequest
-	116, // 122: state.v1.StateStoreService.GetMapping:input_type -> state.v1.GetMappingRequest
-	118, // 123: state.v1.StateStoreService.ListMappings:input_type -> state.v1.ListMappingsRequest
-	120, // 124: state.v1.StateStoreService.UpdateMapping:input_type -> state.v1.UpdateMappingRequest
-	122, // 125: state.v1.StateStoreService.DeleteMapping:input_type -> state.v1.DeleteMappingRequest
-	124, // 126: state.v1.StateStoreService.InsertBinding:input_type -> state.v1.InsertBindingRequest
-	126, // 127: state.v1.StateStoreService.GetBinding:input_type -> state.v1.GetBindingRequest
-	128, // 128: state.v1.StateStoreService.ListBindings:input_type -> state.v1.ListBindingsRequest
-	130, // 129: state.v1.StateStoreService.UpdateBinding:input_type -> state.v1.UpdateBindingRequest
-	132, // 130: state.v1.StateStoreService.DeleteBinding:input_type -> state.v1.DeleteBindingRequest
-	134, // 131: state.v1.StateStoreService.ApproveBinding:input_type -> state.v1.ApproveBindingRequest
-	136, // 132: state.v1.StateStoreService.ArmedBindingsForSource:input_type -> state.v1.ArmedBindingsForSourceRequest
-	138, // 133: state.v1.StateStoreService.RecordDispatch:input_type -> state.v1.RecordDispatchRequest
-	140, // 134: state.v1.StateStoreService.RecordPlaybookDispatch:input_type -> state.v1.RecordPlaybookDispatchRequest
-	142, // 135: state.v1.StateStoreService.DeletePlaybookDispatches:input_type -> state.v1.DeletePlaybookDispatchesRequest
-	144, // 136: state.v1.StateStoreService.ListUndispatchedCaptures:input_type -> state.v1.ListUndispatchedCapturesRequest
-	146, // 137: state.v1.StateStoreService.StreamUndispatchedCaptures:input_type -> state.v1.StreamUndispatchedCapturesRequest
-	148, // 138: state.v1.StateStoreService.EnqueueBindingTask:input_type -> state.v1.EnqueueBindingTaskRequest
-	1,   // 139: state.v1.StateStoreService.RegisterTaskGrant:output_type -> state.v1.RegisterTaskGrantResponse
-	3,   // 140: state.v1.StateStoreService.RevokeTaskGrant:output_type -> state.v1.RevokeTaskGrantResponse
-	7,   // 141: state.v1.StateStoreService.ListIdentities:output_type -> state.v1.ListIdentitiesResponse
-	9,   // 142: state.v1.StateStoreService.GetIdentity:output_type -> state.v1.GetIdentityResponse
-	15,  // 143: state.v1.StateStoreService.CreateIdentity:output_type -> state.v1.CreateIdentityResponse
-	16,  // 144: state.v1.StateStoreService.RenameIdentity:output_type -> state.v1.RenameIdentityResponse
-	17,  // 145: state.v1.StateStoreService.SuspendIdentity:output_type -> state.v1.SuspendIdentityResponse
-	18,  // 146: state.v1.StateStoreService.ReactivateIdentity:output_type -> state.v1.ReactivateIdentityResponse
-	19,  // 147: state.v1.StateStoreService.RetireIdentity:output_type -> state.v1.RetireIdentityResponse
-	21,  // 148: state.v1.StateStoreService.ResolveIdentitySubject:output_type -> state.v1.ResolveIdentitySubjectResponse
-	23,  // 149: state.v1.StateStoreService.BindIdentitySubject:output_type -> state.v1.BindIdentitySubjectResponse
-	35,  // 150: state.v1.StateStoreService.EnqueueIssue:output_type -> state.v1.EnqueueIssueResponse
-	37,  // 151: state.v1.StateStoreService.EnqueueChatTask:output_type -> state.v1.EnqueueChatTaskResponse
-	39,  // 152: state.v1.StateStoreService.ClaimNext:output_type -> state.v1.ClaimNextResponse
-	41,  // 153: state.v1.StateStoreService.ClaimByIssue:output_type -> state.v1.ClaimByIssueResponse
-	43,  // 154: state.v1.StateStoreService.Transition:output_type -> state.v1.TransitionResponse
-	45,  // 155: state.v1.StateStoreService.Update:output_type -> state.v1.UpdateResponse
-	47,  // 156: state.v1.StateStoreService.Requeue:output_type -> state.v1.RequeueResponse
-	49,  // 157: state.v1.StateStoreService.ParkTask:output_type -> state.v1.ParkTaskResponse
-	51,  // 158: state.v1.StateStoreService.RecoverStale:output_type -> state.v1.RecoverStaleResponse
-	53,  // 159: state.v1.StateStoreService.ArchiveTask:output_type -> state.v1.ArchiveTaskResponse
-	55,  // 160: state.v1.StateStoreService.RetryTask:output_type -> state.v1.RetryTaskResponse
-	57,  // 161: state.v1.StateStoreService.BeginRemediation:output_type -> state.v1.BeginRemediationResponse
-	59,  // 162: state.v1.StateStoreService.UpdateReviewPayload:output_type -> state.v1.UpdateReviewPayloadResponse
-	61,  // 163: state.v1.StateStoreService.SetReviewCursors:output_type -> state.v1.SetReviewCursorsResponse
-	63,  // 164: state.v1.StateStoreService.TaskByIssue:output_type -> state.v1.TaskByIssueResponse
-	65,  // 165: state.v1.StateStoreService.OpenTaskByPR:output_type -> state.v1.OpenTaskByPRResponse
-	67,  // 166: state.v1.StateStoreService.TaskByID:output_type -> state.v1.TaskByIDResponse
-	69,  // 167: state.v1.StateStoreService.OpenPRs:output_type -> state.v1.OpenPRsResponse
-	71,  // 168: state.v1.StateStoreService.ClearTerminalTasks:output_type -> state.v1.ClearTerminalTasksResponse
-	73,  // 169: state.v1.StateStoreService.Tasks:output_type -> state.v1.TasksResponse
-	75,  // 170: state.v1.StateStoreService.StatusCounts:output_type -> state.v1.StatusCountsResponse
-	77,  // 171: state.v1.StateStoreService.InsertEvent:output_type -> state.v1.InsertEventResponse
-	79,  // 172: state.v1.StateStoreService.EventsSince:output_type -> state.v1.EventsSinceResponse
-	81,  // 173: state.v1.StateStoreService.TaskEvents:output_type -> state.v1.TaskEventsResponse
-	83,  // 174: state.v1.StateStoreService.WorkflowStats:output_type -> state.v1.WorkflowStatsResponse
-	85,  // 175: state.v1.StateStoreService.StageStats:output_type -> state.v1.StageStatsResponse
-	87,  // 176: state.v1.StateStoreService.TokensByDay:output_type -> state.v1.TokensByDayResponse
-	90,  // 177: state.v1.StateStoreService.PutConfigSnapshot:output_type -> state.v1.PutConfigSnapshotResponse
-	92,  // 178: state.v1.StateStoreService.GetConfigSnapshot:output_type -> state.v1.GetConfigSnapshotResponse
-	95,  // 179: state.v1.StateStoreService.PutChannelStatus:output_type -> state.v1.PutChannelStatusResponse
-	97,  // 180: state.v1.StateStoreService.ListChannelStatus:output_type -> state.v1.ListChannelStatusResponse
-	100, // 181: state.v1.StateStoreService.PutApplyStatus:output_type -> state.v1.PutApplyStatusResponse
-	102, // 182: state.v1.StateStoreService.ListApplyStatus:output_type -> state.v1.ListApplyStatusResponse
-	105, // 183: state.v1.StateStoreService.ReadTaskLog:output_type -> state.v1.ReadTaskLogResponse
-	107, // 184: state.v1.StateStoreService.StreamTaskLogContent:output_type -> state.v1.StreamTaskLogContentResponse
-	109, // 185: state.v1.StateStoreService.InsertCapture:output_type -> state.v1.InsertCaptureResponse
-	111, // 186: state.v1.StateStoreService.ListCaptures:output_type -> state.v1.ListCapturesResponse
-	113, // 187: state.v1.StateStoreService.StreamCaptures:output_type -> state.v1.StreamCapturesResponse
-	115, // 188: state.v1.StateStoreService.InsertMapping:output_type -> state.v1.InsertMappingResponse
-	117, // 189: state.v1.StateStoreService.GetMapping:output_type -> state.v1.GetMappingResponse
-	119, // 190: state.v1.StateStoreService.ListMappings:output_type -> state.v1.ListMappingsResponse
-	121, // 191: state.v1.StateStoreService.UpdateMapping:output_type -> state.v1.UpdateMappingResponse
-	123, // 192: state.v1.StateStoreService.DeleteMapping:output_type -> state.v1.DeleteMappingResponse
-	125, // 193: state.v1.StateStoreService.InsertBinding:output_type -> state.v1.InsertBindingResponse
-	127, // 194: state.v1.StateStoreService.GetBinding:output_type -> state.v1.GetBindingResponse
-	129, // 195: state.v1.StateStoreService.ListBindings:output_type -> state.v1.ListBindingsResponse
-	131, // 196: state.v1.StateStoreService.UpdateBinding:output_type -> state.v1.UpdateBindingResponse
-	133, // 197: state.v1.StateStoreService.DeleteBinding:output_type -> state.v1.DeleteBindingResponse
-	135, // 198: state.v1.StateStoreService.ApproveBinding:output_type -> state.v1.ApproveBindingResponse
-	137, // 199: state.v1.StateStoreService.ArmedBindingsForSource:output_type -> state.v1.ArmedBindingsForSourceResponse
-	139, // 200: state.v1.StateStoreService.RecordDispatch:output_type -> state.v1.RecordDispatchResponse
-	141, // 201: state.v1.StateStoreService.RecordPlaybookDispatch:output_type -> state.v1.RecordPlaybookDispatchResponse
-	143, // 202: state.v1.StateStoreService.DeletePlaybookDispatches:output_type -> state.v1.DeletePlaybookDispatchesResponse
-	145, // 203: state.v1.StateStoreService.ListUndispatchedCaptures:output_type -> state.v1.ListUndispatchedCapturesResponse
-	147, // 204: state.v1.StateStoreService.StreamUndispatchedCaptures:output_type -> state.v1.StreamUndispatchedCapturesResponse
-	149, // 205: state.v1.StateStoreService.EnqueueBindingTask:output_type -> state.v1.EnqueueBindingTaskResponse
-	139, // [139:206] is the sub-list for method output_type
-	72,  // [72:139] is the sub-list for method input_type
-	72,  // [72:72] is the sub-list for extension type_name
-	72,  // [72:72] is the sub-list for extension extendee
-	0,   // [0:72] is the sub-list for field type_name
+	176, // 17: state.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	176, // 18: state.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	176, // 19: state.v1.Event.at:type_name -> google.protobuf.Timestamp
+	176, // 20: state.v1.CapturedEvent.received_at:type_name -> google.protobuf.Timestamp
+	27,  // 21: state.v1.EventType.header_conditions:type_name -> state.v1.EventTypeHeaderCondition
+	28,  // 22: state.v1.EventType.payload_conditions:type_name -> state.v1.EventTypePayloadCondition
+	174, // 23: state.v1.EventType.schema:type_name -> state.v1.EventType.SchemaEntry
+	176, // 24: state.v1.EventType.created_at:type_name -> google.protobuf.Timestamp
+	176, // 25: state.v1.EventType.updated_at:type_name -> google.protobuf.Timestamp
+	30,  // 26: state.v1.Mapping.fields:type_name -> state.v1.MappingField
+	176, // 27: state.v1.Mapping.created_at:type_name -> google.protobuf.Timestamp
+	176, // 28: state.v1.Mapping.updated_at:type_name -> google.protobuf.Timestamp
+	176, // 29: state.v1.Mapping.last_matched_at:type_name -> google.protobuf.Timestamp
+	32,  // 30: state.v1.Binding.matcher:type_name -> state.v1.BindingMatcher
+	176, // 31: state.v1.Binding.created_at:type_name -> google.protobuf.Timestamp
+	176, // 32: state.v1.Binding.updated_at:type_name -> google.protobuf.Timestamp
+	176, // 33: state.v1.Source.created_at:type_name -> google.protobuf.Timestamp
+	176, // 34: state.v1.Source.updated_at:type_name -> google.protobuf.Timestamp
+	24,  // 35: state.v1.EnqueueChatTaskResponse.task:type_name -> state.v1.Task
+	24,  // 36: state.v1.ClaimNextResponse.task:type_name -> state.v1.Task
+	24,  // 37: state.v1.ClaimByIssueResponse.task:type_name -> state.v1.Task
+	24,  // 38: state.v1.UpdateRequest.task:type_name -> state.v1.Task
+	25,  // 39: state.v1.ArchiveTaskRequest.audit:type_name -> state.v1.Event
+	24,  // 40: state.v1.TaskByIssueResponse.task:type_name -> state.v1.Task
+	24,  // 41: state.v1.OpenTaskByPRResponse.task:type_name -> state.v1.Task
+	24,  // 42: state.v1.TaskByIDResponse.task:type_name -> state.v1.Task
+	24,  // 43: state.v1.OpenPRsResponse.tasks:type_name -> state.v1.Task
+	24,  // 44: state.v1.TasksResponse.tasks:type_name -> state.v1.Task
+	175, // 45: state.v1.StatusCountsResponse.counts:type_name -> state.v1.StatusCountsResponse.CountsEntry
+	25,  // 46: state.v1.InsertEventRequest.event:type_name -> state.v1.Event
+	25,  // 47: state.v1.EventsSinceResponse.events:type_name -> state.v1.Event
+	25,  // 48: state.v1.TaskEventsResponse.events:type_name -> state.v1.Event
+	35,  // 49: state.v1.WorkflowStatsResponse.stats:type_name -> state.v1.WorkflowStat
+	36,  // 50: state.v1.StageStatsResponse.stats:type_name -> state.v1.StageStat
+	37,  // 51: state.v1.TokensByDayResponse.tokens:type_name -> state.v1.DayTokens
+	176, // 52: state.v1.ConfigSnapshot.published_at:type_name -> google.protobuf.Timestamp
+	92,  // 53: state.v1.PutConfigSnapshotRequest.snapshot:type_name -> state.v1.ConfigSnapshot
+	92,  // 54: state.v1.GetConfigSnapshotResponse.snapshot:type_name -> state.v1.ConfigSnapshot
+	176, // 55: state.v1.ChannelStatus.observed_at:type_name -> google.protobuf.Timestamp
+	97,  // 56: state.v1.PutChannelStatusRequest.channels:type_name -> state.v1.ChannelStatus
+	97,  // 57: state.v1.ListChannelStatusResponse.channels:type_name -> state.v1.ChannelStatus
+	176, // 58: state.v1.ApplyStatus.reported_at:type_name -> google.protobuf.Timestamp
+	102, // 59: state.v1.PutApplyStatusRequest.status:type_name -> state.v1.ApplyStatus
+	102, // 60: state.v1.ListApplyStatusResponse.statuses:type_name -> state.v1.ApplyStatus
+	176, // 61: state.v1.TaskLogEntry.time:type_name -> google.protobuf.Timestamp
+	176, // 62: state.v1.ReadTaskLogRequest.since:type_name -> google.protobuf.Timestamp
+	176, // 63: state.v1.ReadTaskLogRequest.until:type_name -> google.protobuf.Timestamp
+	107, // 64: state.v1.ReadTaskLogResponse.entries:type_name -> state.v1.TaskLogEntry
+	26,  // 65: state.v1.InsertCaptureRequest.capture:type_name -> state.v1.CapturedEvent
+	26,  // 66: state.v1.ListCapturesResponse.captures:type_name -> state.v1.CapturedEvent
+	26,  // 67: state.v1.StreamCapturesResponse.capture:type_name -> state.v1.CapturedEvent
+	31,  // 68: state.v1.InsertMappingRequest.mapping:type_name -> state.v1.Mapping
+	31,  // 69: state.v1.GetMappingResponse.mapping:type_name -> state.v1.Mapping
+	31,  // 70: state.v1.ListMappingsResponse.mappings:type_name -> state.v1.Mapping
+	31,  // 71: state.v1.UpdateMappingRequest.mapping:type_name -> state.v1.Mapping
+	29,  // 72: state.v1.InsertEventTypeRequest.event_type:type_name -> state.v1.EventType
+	29,  // 73: state.v1.UpdateEventTypeRequest.event_type:type_name -> state.v1.EventType
+	29,  // 74: state.v1.ListEventTypesResponse.event_types:type_name -> state.v1.EventType
+	33,  // 75: state.v1.InsertBindingRequest.binding:type_name -> state.v1.Binding
+	33,  // 76: state.v1.GetBindingResponse.binding:type_name -> state.v1.Binding
+	33,  // 77: state.v1.ListBindingsResponse.bindings:type_name -> state.v1.Binding
+	33,  // 78: state.v1.UpdateBindingRequest.binding:type_name -> state.v1.Binding
+	34,  // 79: state.v1.InsertSourceRequest.source:type_name -> state.v1.Source
+	34,  // 80: state.v1.GetSourceResponse.source:type_name -> state.v1.Source
+	34,  // 81: state.v1.ListSourcesResponse.sources:type_name -> state.v1.Source
+	33,  // 82: state.v1.ArmedBindingsForSourceResponse.bindings:type_name -> state.v1.Binding
+	26,  // 83: state.v1.ListUndispatchedCapturesResponse.captures:type_name -> state.v1.CapturedEvent
+	26,  // 84: state.v1.StreamUndispatchedCapturesResponse.capture:type_name -> state.v1.CapturedEvent
+	24,  // 85: state.v1.EnqueueBindingTaskResponse.task:type_name -> state.v1.Task
+	0,   // 86: state.v1.StateStoreService.RegisterTaskGrant:input_type -> state.v1.RegisterTaskGrantRequest
+	2,   // 87: state.v1.StateStoreService.RevokeTaskGrant:input_type -> state.v1.RevokeTaskGrantRequest
+	6,   // 88: state.v1.StateStoreService.ListIdentities:input_type -> state.v1.ListIdentitiesRequest
+	8,   // 89: state.v1.StateStoreService.GetIdentity:input_type -> state.v1.GetIdentityRequest
+	10,  // 90: state.v1.StateStoreService.CreateIdentity:input_type -> state.v1.CreateIdentityRequest
+	11,  // 91: state.v1.StateStoreService.RenameIdentity:input_type -> state.v1.RenameIdentityRequest
+	12,  // 92: state.v1.StateStoreService.SuspendIdentity:input_type -> state.v1.SuspendIdentityRequest
+	13,  // 93: state.v1.StateStoreService.ReactivateIdentity:input_type -> state.v1.ReactivateIdentityRequest
+	14,  // 94: state.v1.StateStoreService.RetireIdentity:input_type -> state.v1.RetireIdentityRequest
+	20,  // 95: state.v1.StateStoreService.ResolveIdentitySubject:input_type -> state.v1.ResolveIdentitySubjectRequest
+	22,  // 96: state.v1.StateStoreService.BindIdentitySubject:input_type -> state.v1.BindIdentitySubjectRequest
+	38,  // 97: state.v1.StateStoreService.EnqueueIssue:input_type -> state.v1.EnqueueIssueRequest
+	40,  // 98: state.v1.StateStoreService.EnqueueChatTask:input_type -> state.v1.EnqueueChatTaskRequest
+	42,  // 99: state.v1.StateStoreService.ClaimNext:input_type -> state.v1.ClaimNextRequest
+	44,  // 100: state.v1.StateStoreService.ClaimByIssue:input_type -> state.v1.ClaimByIssueRequest
+	46,  // 101: state.v1.StateStoreService.Transition:input_type -> state.v1.TransitionRequest
+	48,  // 102: state.v1.StateStoreService.Update:input_type -> state.v1.UpdateRequest
+	50,  // 103: state.v1.StateStoreService.Requeue:input_type -> state.v1.RequeueRequest
+	52,  // 104: state.v1.StateStoreService.ParkTask:input_type -> state.v1.ParkTaskRequest
+	54,  // 105: state.v1.StateStoreService.RecoverStale:input_type -> state.v1.RecoverStaleRequest
+	56,  // 106: state.v1.StateStoreService.ArchiveTask:input_type -> state.v1.ArchiveTaskRequest
+	58,  // 107: state.v1.StateStoreService.RetryTask:input_type -> state.v1.RetryTaskRequest
+	60,  // 108: state.v1.StateStoreService.BeginRemediation:input_type -> state.v1.BeginRemediationRequest
+	62,  // 109: state.v1.StateStoreService.UpdateReviewPayload:input_type -> state.v1.UpdateReviewPayloadRequest
+	64,  // 110: state.v1.StateStoreService.SetReviewCursors:input_type -> state.v1.SetReviewCursorsRequest
+	66,  // 111: state.v1.StateStoreService.TaskByIssue:input_type -> state.v1.TaskByIssueRequest
+	68,  // 112: state.v1.StateStoreService.OpenTaskByPR:input_type -> state.v1.OpenTaskByPRRequest
+	70,  // 113: state.v1.StateStoreService.TaskByID:input_type -> state.v1.TaskByIDRequest
+	72,  // 114: state.v1.StateStoreService.OpenPRs:input_type -> state.v1.OpenPRsRequest
+	74,  // 115: state.v1.StateStoreService.ClearTerminalTasks:input_type -> state.v1.ClearTerminalTasksRequest
+	76,  // 116: state.v1.StateStoreService.Tasks:input_type -> state.v1.TasksRequest
+	78,  // 117: state.v1.StateStoreService.StatusCounts:input_type -> state.v1.StatusCountsRequest
+	80,  // 118: state.v1.StateStoreService.InsertEvent:input_type -> state.v1.InsertEventRequest
+	82,  // 119: state.v1.StateStoreService.EventsSince:input_type -> state.v1.EventsSinceRequest
+	84,  // 120: state.v1.StateStoreService.TaskEvents:input_type -> state.v1.TaskEventsRequest
+	86,  // 121: state.v1.StateStoreService.WorkflowStats:input_type -> state.v1.WorkflowStatsRequest
+	88,  // 122: state.v1.StateStoreService.StageStats:input_type -> state.v1.StageStatsRequest
+	90,  // 123: state.v1.StateStoreService.TokensByDay:input_type -> state.v1.TokensByDayRequest
+	93,  // 124: state.v1.StateStoreService.PutConfigSnapshot:input_type -> state.v1.PutConfigSnapshotRequest
+	95,  // 125: state.v1.StateStoreService.GetConfigSnapshot:input_type -> state.v1.GetConfigSnapshotRequest
+	98,  // 126: state.v1.StateStoreService.PutChannelStatus:input_type -> state.v1.PutChannelStatusRequest
+	100, // 127: state.v1.StateStoreService.ListChannelStatus:input_type -> state.v1.ListChannelStatusRequest
+	103, // 128: state.v1.StateStoreService.PutApplyStatus:input_type -> state.v1.PutApplyStatusRequest
+	105, // 129: state.v1.StateStoreService.ListApplyStatus:input_type -> state.v1.ListApplyStatusRequest
+	108, // 130: state.v1.StateStoreService.ReadTaskLog:input_type -> state.v1.ReadTaskLogRequest
+	110, // 131: state.v1.StateStoreService.StreamTaskLogContent:input_type -> state.v1.StreamTaskLogContentRequest
+	112, // 132: state.v1.StateStoreService.InsertCapture:input_type -> state.v1.InsertCaptureRequest
+	114, // 133: state.v1.StateStoreService.ListCaptures:input_type -> state.v1.ListCapturesRequest
+	116, // 134: state.v1.StateStoreService.StreamCaptures:input_type -> state.v1.StreamCapturesRequest
+	118, // 135: state.v1.StateStoreService.InsertMapping:input_type -> state.v1.InsertMappingRequest
+	120, // 136: state.v1.StateStoreService.GetMapping:input_type -> state.v1.GetMappingRequest
+	122, // 137: state.v1.StateStoreService.ListMappings:input_type -> state.v1.ListMappingsRequest
+	124, // 138: state.v1.StateStoreService.UpdateMapping:input_type -> state.v1.UpdateMappingRequest
+	126, // 139: state.v1.StateStoreService.DeleteMapping:input_type -> state.v1.DeleteMappingRequest
+	128, // 140: state.v1.StateStoreService.RecordMappingMatch:input_type -> state.v1.RecordMappingMatchRequest
+	130, // 141: state.v1.StateStoreService.InsertEventType:input_type -> state.v1.InsertEventTypeRequest
+	132, // 142: state.v1.StateStoreService.UpdateEventType:input_type -> state.v1.UpdateEventTypeRequest
+	134, // 143: state.v1.StateStoreService.DeleteEventType:input_type -> state.v1.DeleteEventTypeRequest
+	136, // 144: state.v1.StateStoreService.ListEventTypes:input_type -> state.v1.ListEventTypesRequest
+	138, // 145: state.v1.StateStoreService.InsertBinding:input_type -> state.v1.InsertBindingRequest
+	140, // 146: state.v1.StateStoreService.GetBinding:input_type -> state.v1.GetBindingRequest
+	142, // 147: state.v1.StateStoreService.ListBindings:input_type -> state.v1.ListBindingsRequest
+	144, // 148: state.v1.StateStoreService.UpdateBinding:input_type -> state.v1.UpdateBindingRequest
+	146, // 149: state.v1.StateStoreService.DeleteBinding:input_type -> state.v1.DeleteBindingRequest
+	148, // 150: state.v1.StateStoreService.ApproveBinding:input_type -> state.v1.ApproveBindingRequest
+	150, // 151: state.v1.StateStoreService.InsertSource:input_type -> state.v1.InsertSourceRequest
+	152, // 152: state.v1.StateStoreService.GetSource:input_type -> state.v1.GetSourceRequest
+	154, // 153: state.v1.StateStoreService.ListSources:input_type -> state.v1.ListSourcesRequest
+	156, // 154: state.v1.StateStoreService.SetSourceSigning:input_type -> state.v1.SetSourceSigningRequest
+	158, // 155: state.v1.StateStoreService.SetSourceSecret:input_type -> state.v1.SetSourceSecretRequest
+	160, // 156: state.v1.StateStoreService.ArmedBindingsForSource:input_type -> state.v1.ArmedBindingsForSourceRequest
+	162, // 157: state.v1.StateStoreService.RecordDispatch:input_type -> state.v1.RecordDispatchRequest
+	164, // 158: state.v1.StateStoreService.RecordPlaybookDispatch:input_type -> state.v1.RecordPlaybookDispatchRequest
+	166, // 159: state.v1.StateStoreService.DeletePlaybookDispatches:input_type -> state.v1.DeletePlaybookDispatchesRequest
+	168, // 160: state.v1.StateStoreService.ListUndispatchedCaptures:input_type -> state.v1.ListUndispatchedCapturesRequest
+	170, // 161: state.v1.StateStoreService.StreamUndispatchedCaptures:input_type -> state.v1.StreamUndispatchedCapturesRequest
+	172, // 162: state.v1.StateStoreService.EnqueueBindingTask:input_type -> state.v1.EnqueueBindingTaskRequest
+	1,   // 163: state.v1.StateStoreService.RegisterTaskGrant:output_type -> state.v1.RegisterTaskGrantResponse
+	3,   // 164: state.v1.StateStoreService.RevokeTaskGrant:output_type -> state.v1.RevokeTaskGrantResponse
+	7,   // 165: state.v1.StateStoreService.ListIdentities:output_type -> state.v1.ListIdentitiesResponse
+	9,   // 166: state.v1.StateStoreService.GetIdentity:output_type -> state.v1.GetIdentityResponse
+	15,  // 167: state.v1.StateStoreService.CreateIdentity:output_type -> state.v1.CreateIdentityResponse
+	16,  // 168: state.v1.StateStoreService.RenameIdentity:output_type -> state.v1.RenameIdentityResponse
+	17,  // 169: state.v1.StateStoreService.SuspendIdentity:output_type -> state.v1.SuspendIdentityResponse
+	18,  // 170: state.v1.StateStoreService.ReactivateIdentity:output_type -> state.v1.ReactivateIdentityResponse
+	19,  // 171: state.v1.StateStoreService.RetireIdentity:output_type -> state.v1.RetireIdentityResponse
+	21,  // 172: state.v1.StateStoreService.ResolveIdentitySubject:output_type -> state.v1.ResolveIdentitySubjectResponse
+	23,  // 173: state.v1.StateStoreService.BindIdentitySubject:output_type -> state.v1.BindIdentitySubjectResponse
+	39,  // 174: state.v1.StateStoreService.EnqueueIssue:output_type -> state.v1.EnqueueIssueResponse
+	41,  // 175: state.v1.StateStoreService.EnqueueChatTask:output_type -> state.v1.EnqueueChatTaskResponse
+	43,  // 176: state.v1.StateStoreService.ClaimNext:output_type -> state.v1.ClaimNextResponse
+	45,  // 177: state.v1.StateStoreService.ClaimByIssue:output_type -> state.v1.ClaimByIssueResponse
+	47,  // 178: state.v1.StateStoreService.Transition:output_type -> state.v1.TransitionResponse
+	49,  // 179: state.v1.StateStoreService.Update:output_type -> state.v1.UpdateResponse
+	51,  // 180: state.v1.StateStoreService.Requeue:output_type -> state.v1.RequeueResponse
+	53,  // 181: state.v1.StateStoreService.ParkTask:output_type -> state.v1.ParkTaskResponse
+	55,  // 182: state.v1.StateStoreService.RecoverStale:output_type -> state.v1.RecoverStaleResponse
+	57,  // 183: state.v1.StateStoreService.ArchiveTask:output_type -> state.v1.ArchiveTaskResponse
+	59,  // 184: state.v1.StateStoreService.RetryTask:output_type -> state.v1.RetryTaskResponse
+	61,  // 185: state.v1.StateStoreService.BeginRemediation:output_type -> state.v1.BeginRemediationResponse
+	63,  // 186: state.v1.StateStoreService.UpdateReviewPayload:output_type -> state.v1.UpdateReviewPayloadResponse
+	65,  // 187: state.v1.StateStoreService.SetReviewCursors:output_type -> state.v1.SetReviewCursorsResponse
+	67,  // 188: state.v1.StateStoreService.TaskByIssue:output_type -> state.v1.TaskByIssueResponse
+	69,  // 189: state.v1.StateStoreService.OpenTaskByPR:output_type -> state.v1.OpenTaskByPRResponse
+	71,  // 190: state.v1.StateStoreService.TaskByID:output_type -> state.v1.TaskByIDResponse
+	73,  // 191: state.v1.StateStoreService.OpenPRs:output_type -> state.v1.OpenPRsResponse
+	75,  // 192: state.v1.StateStoreService.ClearTerminalTasks:output_type -> state.v1.ClearTerminalTasksResponse
+	77,  // 193: state.v1.StateStoreService.Tasks:output_type -> state.v1.TasksResponse
+	79,  // 194: state.v1.StateStoreService.StatusCounts:output_type -> state.v1.StatusCountsResponse
+	81,  // 195: state.v1.StateStoreService.InsertEvent:output_type -> state.v1.InsertEventResponse
+	83,  // 196: state.v1.StateStoreService.EventsSince:output_type -> state.v1.EventsSinceResponse
+	85,  // 197: state.v1.StateStoreService.TaskEvents:output_type -> state.v1.TaskEventsResponse
+	87,  // 198: state.v1.StateStoreService.WorkflowStats:output_type -> state.v1.WorkflowStatsResponse
+	89,  // 199: state.v1.StateStoreService.StageStats:output_type -> state.v1.StageStatsResponse
+	91,  // 200: state.v1.StateStoreService.TokensByDay:output_type -> state.v1.TokensByDayResponse
+	94,  // 201: state.v1.StateStoreService.PutConfigSnapshot:output_type -> state.v1.PutConfigSnapshotResponse
+	96,  // 202: state.v1.StateStoreService.GetConfigSnapshot:output_type -> state.v1.GetConfigSnapshotResponse
+	99,  // 203: state.v1.StateStoreService.PutChannelStatus:output_type -> state.v1.PutChannelStatusResponse
+	101, // 204: state.v1.StateStoreService.ListChannelStatus:output_type -> state.v1.ListChannelStatusResponse
+	104, // 205: state.v1.StateStoreService.PutApplyStatus:output_type -> state.v1.PutApplyStatusResponse
+	106, // 206: state.v1.StateStoreService.ListApplyStatus:output_type -> state.v1.ListApplyStatusResponse
+	109, // 207: state.v1.StateStoreService.ReadTaskLog:output_type -> state.v1.ReadTaskLogResponse
+	111, // 208: state.v1.StateStoreService.StreamTaskLogContent:output_type -> state.v1.StreamTaskLogContentResponse
+	113, // 209: state.v1.StateStoreService.InsertCapture:output_type -> state.v1.InsertCaptureResponse
+	115, // 210: state.v1.StateStoreService.ListCaptures:output_type -> state.v1.ListCapturesResponse
+	117, // 211: state.v1.StateStoreService.StreamCaptures:output_type -> state.v1.StreamCapturesResponse
+	119, // 212: state.v1.StateStoreService.InsertMapping:output_type -> state.v1.InsertMappingResponse
+	121, // 213: state.v1.StateStoreService.GetMapping:output_type -> state.v1.GetMappingResponse
+	123, // 214: state.v1.StateStoreService.ListMappings:output_type -> state.v1.ListMappingsResponse
+	125, // 215: state.v1.StateStoreService.UpdateMapping:output_type -> state.v1.UpdateMappingResponse
+	127, // 216: state.v1.StateStoreService.DeleteMapping:output_type -> state.v1.DeleteMappingResponse
+	129, // 217: state.v1.StateStoreService.RecordMappingMatch:output_type -> state.v1.RecordMappingMatchResponse
+	131, // 218: state.v1.StateStoreService.InsertEventType:output_type -> state.v1.InsertEventTypeResponse
+	133, // 219: state.v1.StateStoreService.UpdateEventType:output_type -> state.v1.UpdateEventTypeResponse
+	135, // 220: state.v1.StateStoreService.DeleteEventType:output_type -> state.v1.DeleteEventTypeResponse
+	137, // 221: state.v1.StateStoreService.ListEventTypes:output_type -> state.v1.ListEventTypesResponse
+	139, // 222: state.v1.StateStoreService.InsertBinding:output_type -> state.v1.InsertBindingResponse
+	141, // 223: state.v1.StateStoreService.GetBinding:output_type -> state.v1.GetBindingResponse
+	143, // 224: state.v1.StateStoreService.ListBindings:output_type -> state.v1.ListBindingsResponse
+	145, // 225: state.v1.StateStoreService.UpdateBinding:output_type -> state.v1.UpdateBindingResponse
+	147, // 226: state.v1.StateStoreService.DeleteBinding:output_type -> state.v1.DeleteBindingResponse
+	149, // 227: state.v1.StateStoreService.ApproveBinding:output_type -> state.v1.ApproveBindingResponse
+	151, // 228: state.v1.StateStoreService.InsertSource:output_type -> state.v1.InsertSourceResponse
+	153, // 229: state.v1.StateStoreService.GetSource:output_type -> state.v1.GetSourceResponse
+	155, // 230: state.v1.StateStoreService.ListSources:output_type -> state.v1.ListSourcesResponse
+	157, // 231: state.v1.StateStoreService.SetSourceSigning:output_type -> state.v1.SetSourceSigningResponse
+	159, // 232: state.v1.StateStoreService.SetSourceSecret:output_type -> state.v1.SetSourceSecretResponse
+	161, // 233: state.v1.StateStoreService.ArmedBindingsForSource:output_type -> state.v1.ArmedBindingsForSourceResponse
+	163, // 234: state.v1.StateStoreService.RecordDispatch:output_type -> state.v1.RecordDispatchResponse
+	165, // 235: state.v1.StateStoreService.RecordPlaybookDispatch:output_type -> state.v1.RecordPlaybookDispatchResponse
+	167, // 236: state.v1.StateStoreService.DeletePlaybookDispatches:output_type -> state.v1.DeletePlaybookDispatchesResponse
+	169, // 237: state.v1.StateStoreService.ListUndispatchedCaptures:output_type -> state.v1.ListUndispatchedCapturesResponse
+	171, // 238: state.v1.StateStoreService.StreamUndispatchedCaptures:output_type -> state.v1.StreamUndispatchedCapturesResponse
+	173, // 239: state.v1.StateStoreService.EnqueueBindingTask:output_type -> state.v1.EnqueueBindingTaskResponse
+	163, // [163:240] is the sub-list for method output_type
+	86,  // [86:163] is the sub-list for method input_type
+	86,  // [86:86] is the sub-list for extension type_name
+	86,  // [86:86] is the sub-list for extension extendee
+	0,   // [0:86] is the sub-list for field type_name
 }
 
 func init() { file_state_v1_state_proto_init() }
@@ -9027,7 +10426,7 @@ func file_state_v1_state_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_state_v1_state_proto_rawDesc), len(file_state_v1_state_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   151,
+			NumMessages:   176,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -128,3 +128,16 @@ func TestRequestRoutingBindingsWireKeys(t *testing.T) {
 		}
 	}
 }
+
+// A task with no repository publishes nothing, so it runs without a
+// worktree grant; a repository task still needs one.
+func TestRequestValidateGrantFollowsRepository(t *testing.T) {
+	scratch := Request{Task: &workflow.Task{ID: 1}, WorkflowDefinition: "id: w\n"}
+	if err := scratch.Validate(); err != nil {
+		t.Errorf("no-repository request without a grant: %v", err)
+	}
+	repo := Request{Task: &workflow.Task{ID: 1, Owner: "acme", Repo: "api"}, WorkflowDefinition: "id: w\n"}
+	if err := repo.Validate(); err == nil {
+		t.Error("repository request without a grant was accepted")
+	}
+}

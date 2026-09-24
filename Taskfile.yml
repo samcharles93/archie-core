@@ -53,6 +53,22 @@ tasks:
     cmds:
       - bash tools/proto.sh lint
 
+  db:generate:
+    desc: "Regenerate the sqlc query code from the schema and query files"
+    summary: |
+      Writes internal/infrastructure/postgres/postgresdb. The output is
+      committed, so this dirties the tree deliberately: review the diff and
+      commit it with the schema or query change that caused it. Never
+      hand-edit the generated package.
+    cmds:
+      - go -C tools tool sqlc generate -f {{.ROOT_DIR}}/internal/infrastructure/postgres/sqlc.yaml
+
+  db:check:
+    desc: "Regenerate the sqlc code and reject uncommitted generated differences"
+    cmds:
+      - task: db:generate
+      - git diff --exit-code -- internal/infrastructure/postgres/postgresdb
+
   proto:check:
     desc: Regenerate contracts and reject uncommitted generated differences
     cmds:
@@ -353,10 +369,6 @@ tasks:
                            archie-gateway and archie-ui dial it -- none owns
                            the DB in-process
                            (docs/prds/state-store-contract.md §12 step 7)
-        * state admin     read-only PocketBase surface over archie.db on
-                           127.0.0.1:8686 (view collections only; the gRPC
-                           contract stays the only writer). Served by the
-                           archie-state-store process, not a sixth one.
         * archie-ui        serves the dashboard on 127.0.0.1:8484 from the
                            embedded dist (deployments/dev.toml). After the
                            UI cutover (archie-core-8cda.5.4) archied runs no
@@ -375,6 +387,25 @@ tasks:
       Ctrl-C stops all five.
     deps: [dev:daemon, dev:gateway, dev:state-store, dev:dashboard, dev:ui]
 
+  dev:postgres:
+    desc: "Start the dev PostgreSQL 18 service and wait until it accepts connections (prefer `task dev`)"
+    cmds:
+      - docker compose up -d postgres
+      # `up -d` returns before the container is ready; wait for its
+      # healthcheck so the State Store (which fails closed on a bad URL) does
+      # not race the boot.
+      - |
+        set -eu
+        for _ in $(seq 1 60); do
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q postgres)" 2>/dev/null || true)
+          if [ "$status" = "healthy" ]; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "postgres did not become healthy within 60s" >&2
+        exit 1
+
   dev:daemon:
     desc: archied only, live-reloading via air (prefer `task dev`)
     cmds:
@@ -387,12 +418,11 @@ tasks:
 
   dev:state-store:
     desc: archie-state-store only, no live-reload (prefer `task dev`)
-    # -admin-addr serves the read-only operator dashboard over the same
-    # archie.db this process already owns. It is a flag rather than a config
-    # key for the same reason -ready-addr is: the address is a property of
-    # how this process was launched, not of the deployment's config document.
+    # The State Store fails closed without a PostgreSQL URL (Postgres-only
+    # epic), so bring the Compose service up and wait for it before booting.
+    deps: [dev:postgres]
     cmds:
-      - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml -admin-addr 127.0.0.1:8686
+      - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml
 
   dev:gateway:
     desc: archie-gateway only, no live-reload (prefer `task dev`)
@@ -515,6 +545,7 @@ tasks:
       # after them only reads it, so it runs concurrently.
       - task: fmt
       - task: proto:check
+      - task: db:check
       - task: check:readonly
 
   check:readonly:

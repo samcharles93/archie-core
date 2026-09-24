@@ -9,6 +9,8 @@ package configuration
 // config renderer can reference the policy without linking the overlay's
 // SQLite store (archie-core-8cda.5.6).
 var DeniedKeys = map[string]string{
-	"db_path":  "required for bootstrap; cannot be changed at runtime",
-	"work_dir": "pins the daemon's working layout; cannot be changed at runtime",
+	"db_path":      "required for bootstrap; cannot be changed at runtime",
+	"database_url": "required for bootstrap; cannot be changed at runtime",
+	"state_dir":    "required for bootstrap; cannot be changed at runtime",
+	"work_dir":     "pins the daemon's working layout; cannot be changed at runtime",
 }

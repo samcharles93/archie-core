@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // A decoded task-log page must never carry a nil slice for a collection field.
@@ -54,7 +54,7 @@ func TestTaskLogPageCarriesNoNilCollectionFields(t *testing.T) {
 
 				var c taskLogContract = reader
 				if mode == "grpc" {
-					c = remoteTaskStore(t, store.OpenTest(t), reader, nil)
+					c = remoteTaskStore(t, pgstore.Open(t), reader, nil)
 				}
 
 				page, err := c.TaskLog(ctx, taskID, 0, logging.Query{})

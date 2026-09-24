@@ -10,9 +10,9 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	domain "github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -86,10 +86,10 @@ func TestActionErrorKeepsItsSentinelAcrossNATS(t *testing.T) {
 		},
 		{
 			name:   "store refused a stale transition",
-			store:  stubStore{task: running, err: store.ErrStaleTransition},
+			store:  stubStore{task: running, err: storecontract.ErrStaleTransition},
 			cancel: func(int64) bool { return true },
 			action: taskstate.ActionStop,
-			want:   store.ErrStaleTransition,
+			want:   storecontract.ErrStaleTransition,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -117,6 +117,6 @@ func validateContainers(input []byte) error {
 		if strings.TrimSpace(settings.Image) == "" {
 			return fmt.Errorf("container image is required for autonomous workflow workers")
 		}
-		return nil
+		return settings.ValidateProfiles()
 	})
 }

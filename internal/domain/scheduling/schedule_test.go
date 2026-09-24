@@ -36,8 +36,8 @@ func TestScheduleCronNextRun(t *testing.T) {
 			want:    zoned(2026, 8, 24, 12, 15, 0),
 		},
 		{
-			// pins the pocketbase AND semantics: Vixie cron would give the
-			// next Monday (2026-08-31); tools/cron gives Monday the 1st.
+			// pins the AND semantics: Vixie cron would give the next Monday
+			// (2026-08-31); this dialect gives Monday the 1st.
 			name:    "dual-restricted day-of-month and day-of-week AND, not Vixie OR",
 			expr:    "0 0 1 * 1",
 			lastRun: zoned(2026, 8, 24, 12, 15, 30),

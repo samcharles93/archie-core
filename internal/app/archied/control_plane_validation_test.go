@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
 
 // staleDatabaseOwnedSettings are TOML fragments, each carrying one value a
@@ -70,9 +71,12 @@ func TestLoadConfigAcceptsStaleDatabaseOwnedValues(t *testing.T) {
 
 // staleBootGrace is how long one boot in
 // TestStateStoreBootsWithStaleDatabaseOwnedValues may run before the test cancels
-// it: short, because the assertion does not depend on it -- a refusal arrives as
-// an error either before the cancel (first select) or after it (second select,
-// where a non-Canceled error fails the test).
+// it. A refusal arrives as an error before the cancel (first select); a boot
+// that serves returns only after the cancel (second select). The bound must be
+// long enough for a full boot -- now Postgres pool + migration, then SQLite and
+// the control-plane seed -- to finish, because cancelling mid-seed surfaces a
+// transaction error that reads as a refusal rather than as the interrupt it is.
+// 2s matches startupGrace, the sibling single-boot bound.
 //
 // staleShutdownGrace bounds the shutdown, and is deliberately not the 5s the
 // single-boot regression test uses: this table runs five boots back to back on a
@@ -80,7 +84,7 @@ func TestLoadConfigAcceptsStaleDatabaseOwnedValues(t *testing.T) {
 // the bound costs nothing when shutdown is quick and only decides how long a
 // failure takes to report.
 const (
-	staleBootGrace     = 250 * time.Millisecond
+	staleBootGrace     = 2 * time.Second
 	staleShutdownGrace = 30 * time.Second
 )
 
@@ -99,8 +103,8 @@ func TestStateStoreBootsWithStaleDatabaseOwnedValues(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "config.toml")
 			body := fmt.Sprintf(
-				"bot_user = 'archie'\ndb_path = %q\n%s[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n",
-				filepath.Join(dir, "state.db"), tt.body,
+				"bot_user = 'archie'\ndb_path = %q\ndatabase_url = %q\n%s[forge]\ntype = 'github'\nhost = 'https://github.example.com'\n",
+				filepath.Join(dir, "state.db"), pgtest.URL(t), tt.body,
 			)
 			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 				t.Fatal(err)

@@ -43,8 +43,8 @@ that has since moved on.
 
 ## Attempt attribution: a column, not a guess
 
-`events.Event.Attempt`, persisted by `internal/store` as the `events.attempt`
-column (`internal/store/events.go`, `eventsSchema`), is a real column,
+`events.Event.Attempt`, persisted as the `events.attempt` column
+(`internal/infrastructure/postgres/migrations/0001_state_store.sql`), is a real column,
 `NOT NULL DEFAULT 0`. It was chosen over segmenting the stream on `task_queued` /
 `task_retried` because a fold would have to guess which side of a boundary an
 event belongs to when the daemon restarts mid-attempt, when `RecoverStale`
@@ -59,6 +59,11 @@ unattributed events so the page can say so instead of presenting old history as
 attempt 1.
 
 ## Migration against an existing `archie.db`
+
+> Storage superseded: every store now lives in PostgreSQL behind
+> `internal/domain/storecontract`, implemented in `internal/infrastructure/postgres`
+> (`docs/prds/state-store-contract.md`). SQLite names below describe the
+> original design.
 
 The store's migrator (`migrateTasks` in `internal/store/store.go`) already reads
 `PRAGMA table_info` through `tableColumns` and applies a presence-gated
@@ -249,8 +254,7 @@ than useless.
 
 ## Files this change touches
 
-- `internal/store/`: the `events.attempt` column, its migrator arm, and the
-  schema-presence test.
+- the State Store schema: the `events.attempt` column.
 - `internal/events/`: `Event.Attempt`, `KindChangesCaptured`,
   `KindConfigCaptured`, `ConfigCapturedSchema`.
 - `internal/domain/workflow/task/changes.go`: the change value types.

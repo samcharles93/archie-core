@@ -4,28 +4,23 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
-// bindingTestServer wires a Server backed by a single *store.Store for all
+// bindingTestServer wires a Server backed by a single *pgstore.TaskDB for all
 // three dashboards surfaces (Captures, Mappings, Bindings) and seeds the
 // one workflow binding tests need to pass server-side validation.
 func bindingTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
-	eda := edastore.OpenTest(t)
+	eda := pgstore.EDA(t, nil)
 	return &Server{
 		Store:        s,
 		Log:          slog.New(slog.DiscardHandler),
@@ -52,16 +47,13 @@ func seedMapping(t *testing.T, srv *Server, name string) string {
 }
 
 // validBindingRequest returns a populated bindingRequest that passes
-// binding.Validate and server-side workflow validation. The Secret is 32
-// bytes (above the 16-byte floor) so length never accidentally trips
-// validation in a test that isn't about secret length.
+// binding.Validate and server-side workflow validation.
 func validBindingRequest(suffix, source, mappingID string) map[string]any {
 	return map[string]any{
 		"name":       "binding " + suffix,
 		"matcher":    map[string]any{"source": source},
 		"mapping_id": mappingID,
 		"workflow":   "implement",
-		"secret":     "0123456789abcdef0123456789abcdef",
 	}
 }
 
@@ -83,9 +75,6 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 	if created.Status != binding.StatusPendingApproval {
 		t.Fatalf("created.Status = %q, want %q", created.Status, binding.StatusPendingApproval)
 	}
-	if created.Secret != "" {
-		t.Fatalf("created.Secret = %q, want \"\" (response must strip secret)", created.Secret)
-	}
 
 	w = doJSON(t, srv, http.MethodGet, "/api/bindings/"+created.ID, nil)
 	if w.Code != http.StatusOK {
@@ -98,15 +87,12 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 	if got.ID != created.ID {
 		t.Fatalf("got.ID = %q, want %q", got.ID, created.ID)
 	}
-	if got.Secret != "" {
-		t.Fatalf("get.Secret = %q, want \"\"", got.Secret)
-	}
 }
 
 // TestHandleBindingCreateAndUpdateRoundTripsOwnerRepo covers the
 // multi-repo fix at the API layer: a create/update request carrying
 // owner/repo persists them, and they're visible in the response
-// (they're not secret, unlike Secret).
+// (they're not secret).
 func TestHandleBindingCreateAndUpdateRoundTripsOwnerRepo(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")
@@ -159,51 +145,6 @@ func TestHandleBindingCreateRejectsPartialOwnerRepo(t *testing.T) {
 	}
 }
 
-func TestHandleBindingsListStripsSecrets(t *testing.T) {
-	srv := bindingTestServer(t)
-	mappingID := seedMapping(t, srv, "m")
-	doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("a", "sentry", mappingID))
-
-	w := doJSON(t, srv, http.MethodGet, "/api/bindings", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	var body struct {
-		Bindings []binding.Binding `json:"bindings"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(body.Bindings) != 1 {
-		t.Fatalf("bindings = %d, want 1", len(body.Bindings))
-	}
-	if body.Bindings[0].Secret != "" {
-		t.Fatalf("listed Secret = %q, want \"\"", body.Bindings[0].Secret)
-	}
-	// Defence against accidental echo in the raw JSON: the "secret" key
-	// must not appear at all (the binding.Binding tag is omitempty).
-	if strings.Contains(w.Body.String(), `"secret"`) {
-		t.Fatalf("list response leaked secret key: %s", w.Body.String())
-	}
-}
-
-func TestHandleBindingCreateRejectsOverlap(t *testing.T) {
-	srv := bindingTestServer(t)
-	mappingID := seedMapping(t, srv, "m")
-
-	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("first", "sentry", mappingID))
-	if w.Code != http.StatusCreated {
-		t.Fatalf("first create status = %d, want %d; body = %s", w.Code, http.StatusCreated, w.Body.String())
-	}
-
-	// Overlap because Per bead t2db.4, two bindings may not own the same
-	// source; the second insert must surface ErrBindingOverlap -> 409.
-	w = doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("second", "sentry", mappingID))
-	if w.Code != http.StatusConflict {
-		t.Fatalf("second create status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
-	}
-}
-
 func TestHandleBindingCreateRejectsMissingWorkflow(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")
@@ -220,10 +161,8 @@ func TestHandleBindingCreateRejectsValidationFailure(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")
 
-	// Short secret trips binding.Validate's length floor regardless of
-	// any store-side check.
 	req := validBindingRequest("a", "sentry", mappingID)
-	req["secret"] = "short"
+	req["name"] = " "
 	w := doJSON(t, srv, http.MethodPost, "/api/bindings", req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusBadRequest, w.Body.String())
@@ -274,35 +213,6 @@ func TestHandleBindingUpdatePreservesOtherFields(t *testing.T) {
 	// Status MUST not regress from a state the caller never asked for.
 	if updated.Status != binding.StatusPendingApproval {
 		t.Fatalf("updated.Status = %q, want draft or pending_approval", updated.Status)
-	}
-}
-
-// TestHandleBindingUpdateWithEmptySecretPreservesExisting is the API-layer
-// half of UpdateBinding's own documented contract ("Secret is preserved
-// when the caller passes an empty string ... so a partial update cannot
-// erase the HMAC secret"): an edit that never touches the secret field
-// must not be rejected by Validate's create-time secret-length floor,
-// since nothing about the existing secret is changing.
-func TestHandleBindingUpdateWithEmptySecretPreservesExisting(t *testing.T) {
-	srv := bindingTestServer(t)
-	mappingID := seedMapping(t, srv, "m")
-	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("a", "sentry", mappingID))
-	var created binding.Binding
-	_ = json.Unmarshal(w.Body.Bytes(), &created)
-
-	update := validBindingRequest("renamed", "sentry", mappingID)
-	update["secret"] = ""
-	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+created.ID, update)
-	if w.Code != http.StatusOK {
-		t.Fatalf("patch status = %d, want %d (empty secret must mean 'keep existing', not fail validation); body = %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	stored, err := srv.Bindings.GetBinding(t.Context(), created.ID)
-	if err != nil || stored == nil {
-		t.Fatalf("GetBinding: %+v, %v", stored, err)
-	}
-	if stored.Secret != "0123456789abcdef0123456789abcdef" {
-		t.Fatalf("stored secret = %q, want the original secret preserved", stored.Secret)
 	}
 }
 
@@ -437,5 +347,36 @@ func TestHandleBindingMutationsRequireCSRFHeader(t *testing.T) {
 				t.Fatalf("status = %d, want %d without a CSRF header; body = %s", w.Code, http.StatusForbidden, w.Body.String())
 			}
 		})
+	}
+}
+
+// Saving a binding checks it against the workflow's declared inputs: an
+// unassigned required input is refused, and assigned inputs round-trip.
+func TestHandleBindingChecksWorkflowInputs(t *testing.T) {
+	srv := bindingTestServer(t)
+	srv.ControlPlane = workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{
+		ID:   "investigate",
+		YAML: "id: investigate\nrepository: none\ninputs:\n  subject: {type: string, required: true}\nsteps:\n  - type: agent.run\n    settings:\n      mission: look\n",
+	}}})
+	mappingID := seedMapping(t, srv, "m")
+
+	req := validBindingRequest("a", "sentry", mappingID)
+	req["workflow"] = "investigate"
+	w := doJSON(t, srv, http.MethodPost, "/api/bindings", req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), `requires input "subject"`) {
+		t.Fatalf("create without the required input = %d %s, want 400 naming the input", w.Code, w.Body.String())
+	}
+
+	req["inputs"] = map[string]any{"subject": map[string]any{"param": "title"}}
+	w = doJSON(t, srv, http.MethodPost, "/api/bindings", req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s, want 201", w.Code, w.Body.String())
+	}
+	var created binding.Binding
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Inputs["subject"].Param != "title" {
+		t.Fatalf("created inputs = %+v, want subject from title", created.Inputs)
 	}
 }

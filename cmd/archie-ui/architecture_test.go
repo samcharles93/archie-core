@@ -1,6 +1,6 @@
 // This file enforces the objective half of the UI Service deletion gate
 // (docs/prds/ui-service-boundary.md, "The deletion gate is objective"). The
-// composition half -- no config.Holder, no concrete *store.Store, no Gateway
+// composition half -- no config.Holder, no concrete task store, no Gateway
 // runtime type -- is pinned by internal/app/archieui's
 // TestComposeUIServerHoldsNoDaemonState. This pins the claim that test cannot
 // see: that the linked binary carries no daemon runtime at all. Go imports
@@ -28,7 +28,9 @@ type bannedCategory struct {
 var deletionGate = []bannedCategory{
 	{"SQL/store implementation", []string{
 		"modernc.org/sqlite",
-		modulePath + "internal/store",
+		"github.com/jackc/pgx",
+		modulePath + "internal/infrastructure/postgres",
+		modulePath + "internal/infrastructure/legacyread",
 	}},
 	{"daemon runtime", []string{
 		modulePath + "internal/daemon",

@@ -16,6 +16,15 @@ split `archie.db`. It records method ownership, DTO/wire representation, error s
 limits, mode/config shape, local-adapter compatibility, and cutover/deletion rules so that
 `.4.2` and `.4.3` have exactly one authoritative surface to build against.
 
+> **Storage superseded.** The store behind this contract is PostgreSQL:
+> `internal/infrastructure/postgres` implements the producer-owned interfaces in
+> `internal/domain/storecontract` and `workflow.Store`, over the database
+> `database_url` names. `internal/store`, the SQLite file and the local adapter
+> are gone; where this document says `archie.db`, `*store.Store` or
+> `internal/store`, read the State Store's PostgreSQL database and
+> `internal/infrastructure/postgres`. The contract, ownership split, error
+> semantics and cutover rules stand.
+
 > **Current state — read before `.4.2` starts.** The §12 step 2 relocation (`archie-core-8cda.
 > 4.8`) has landed: `Task`/`Status*`/`Source*` and the 3-method `workflow.Store` now live in
 > `internal/domain/workflow`, the six production workflow files import no `internal/store`
@@ -584,9 +593,9 @@ an explicit operator decision.
   `target` cannot boot, so the section ships uncommented.
 - Composition root: `internal/app/archied/bootstrap.go` (the daemon) and
   `internal/app/archieui/config.go` (the UI process) both read `cfg.Services.Get("state")` and
-  dial the remote State Store. `openProductionTaskStore` is **not** called from the daemon: it
-  lives in the standalone `archie-state-store` process (`internal/app/archied/state_store.go`),
-  which is the only path that opens `archie.db`.
+  dial the remote State Store. The task store is built only in the standalone
+  `archie-state-store` process (`internal/app/archied/state_store.go`), which is the only path
+  that opens the task tables.
 
 > **Mode fork, decided.** The gateway uses a single `target` address (no enum). The State Store
 > boundary uses the same seam for symmetry, and **both now require a non-empty `target`**: the
@@ -656,7 +665,7 @@ an explicit operator decision.
    contracts for a contract-code (no dual-live *window*; each contract is either local or remote
    at a time).
 7. **Final flip / deletion of the in-process serving path:** when the daemon no longer owns the
-   store (i.e. `TaskStore` has moved), delete the in-process `openProductionTaskStore` /
+   store (i.e. `TaskStore` has moved), delete the in-process task-store /
    `wireWebStoreSurfaces` path in the daemon in a **same-commit** deletion — no dual-store
    ownership. The single SQLite file remains owned by `archie-state-store`.
 8. **Never** split `archie.db` or add a second store. The gateway keeps its own already-separate

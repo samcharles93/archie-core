@@ -36,8 +36,25 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
           go install mvdan.cc/gofumpt@v0.11.0
           bash tools/proto.sh install
+
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ripgrep
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+
+          echo "/usr/lib/postgresql/18/bin" >> $GITHUB_PATH
+
+          pg_dump --version
+          pg_restore --version
 
       - name: Ensure contract baseline ref
         run: |

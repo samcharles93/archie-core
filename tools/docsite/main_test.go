@@ -48,6 +48,7 @@ func TestTheSplitIsByAudience(t *testing.T) {
 	for _, want := range []string{
 		"/dev/architecture/",
 		"/dev/architecture/organisation/",
+		"/dev/development/",
 		"/dev/prds/ui-service-boundary/",
 		// Selective PRD publication is gone: an open PRD is a development page like
 		// any other, which is what removes the pressure that published five of them

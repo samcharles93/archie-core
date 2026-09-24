@@ -2,47 +2,35 @@ package archied
 
 import (
 	"log/slog"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
-// openSecondStore opens a second, independent *store.Store on a fresh temp
+// openSecondStore opens a second, independent *pgstore.TaskDB on a fresh temp
 // path so a boot consumer test can prove the composition routes through
 // b.stateStore rather than b.st: the two differ by identity, so an assertion
 // that a consumer field holds storeB (not storeA) can only pass if the wiring
 // reads b.stateStore.
 // stateStoreAdapter stands in for the real adapter (*staterpc.Client), which
 // fronts both halves of the contract over one connection: the task store and
-// the event-capture store. A plain *store.Store no longer satisfies the
+// the event-capture store. A plain *pgstore.TaskDB no longer satisfies the
 // event-capture surfaces, so a test that asserts "everything routes through
 // the adapter" needs something that implements them, exactly as the client
 // does in production.
-// edaSide aliases the event-capture store so it can be embedded beside
-// *store.Store: both are named Store, and Go allows only one embedded field
-// per name.
-type edaSide = edastore.Store
-
 type stateStoreAdapter struct {
-	*store.Store
-	*edaSide
+	*pgstore.TaskDB
+	*postgres.EDA
 }
-
-// Close disambiguates the two embedded stores, which both have one.
-func (a *stateStoreAdapter) Close() error { return a.Store.Close() }
 
 func openSecondStore(t *testing.T) *stateStoreAdapter {
 	t.Helper()
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state-store.db"))
-	if err != nil {
-		t.Fatalf("open second store: %v", err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
-	return &stateStoreAdapter{Store: st, edaSide: edastore.OpenTest(t)}
+	return &stateStoreAdapter{TaskDB: st, EDA: pgstore.EDA(t, nil)}
 }
 
 // TestBuildDaemonRoutesTaskStoreThroughStateStore proves the daemon's task
@@ -52,10 +40,7 @@ func openSecondStore(t *testing.T) *stateStoreAdapter {
 // (docs/prds/state-store-contract.md §12 step 6): the daemon's Store field and
 // its mapping/binding dispatch surfaces all come from the adapter.
 func TestBuildDaemonRoutesTaskStoreThroughStateStore(t *testing.T) {
-	storeA, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "store-a.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	storeA := pgstore.Open(t)
 	t.Cleanup(func() { _ = storeA.Close() })
 	storeB := openSecondStore(t)
 

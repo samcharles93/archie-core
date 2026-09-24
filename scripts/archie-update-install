@@ -43,48 +43,17 @@ configured_agent_image() {
   printf '%s' "$image"
 }
 
-# The task store is `<db_path>-tasks.sqlite`, not db_path itself: the daemon
-# derives it with taskDBPath() in internal/app/archied/main.go, and the
-# configured path may be a zero-byte placeholder while the real store sits
-# beside it. Backing up the literal value would produce an empty backup, and a
-# rollback would then restore that empty file over the database and delete its
-# -wal/-shm -- destroying the task store it exists to protect.
-#
-# Only the top-level key counts. db_path can also appear under a TOML table
-# (the retired [indexing] section once owned its own database), and the first
-# match in the file can
-# easily be one of those.
-configured_task_db_path() {
-  local base
-  base="$(awk '
-    BEGIN { top = 1 }
-    /^[[:space:]]*\[/ { top = 0 }
-    top && /^[[:space:]]*db_path[[:space:]]*=/ {
-      value = $0
-      sub(/^[[:space:]]*db_path[[:space:]]*=[[:space:]]*/, "", value)
-      sub(/[[:space:]]*(#.*)?$/, "", value)
-      if (value ~ /^".*"$/) { sub(/^"/, "", value); sub(/"$/, "", value); print value }
-      else if (length(value) >= 2 && substr(value, 1, 1) == sprintf("%c", 39) && substr(value, length(value), 1) == sprintf("%c", 39)) print substr(value, 2, length(value) - 2)
-      exit
-    }
-  ' "$CONFIG_PATH" 2>/dev/null || true)"
-  [ -n "$base" ] || return 0
-  printf '%s' "$base-tasks.sqlite"
-}
-
 AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-$(configured_agent_image)}"
 AGENT_IMAGE="${AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
 AGENT_IMAGE_BACKUP="$BIN_DIR/archie-agent-image.prev.tar"
 # State for the managed image, independent of archied's daemon build stamp.
 AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
 AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
-TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
-TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
+DB_SNAPSHOT="${ARCHIE_DB_SNAPSHOT:-$BIN_DIR/archie-db.pre-update.dump}"
 # The address the daemon dials for its state, so the watchdog can wait for it to
-# accept connections before it starts archied. Read with the same narrow awk as
-# the task database path and for the same reason: the daemon stays the authority
-# on validation, and this script deliberately understands one scalar rather than
-# parsing TOML. Scoped to [services.state] so the Gateway's own target cannot be
+# accept connections before it starts archied. Read with a narrow awk: the
+# daemon stays the authority on validation, and this script deliberately
+# understands one scalar rather than parsing TOML. Scoped to [services.state] so the Gateway's own target cannot be
 # mistaken for it, and exact on the key so target_token is not.
 configured_state_store_target() {
   awk '
@@ -262,24 +231,19 @@ if [[ ",$components," == *,daemon,* ]]; then
   fi
 fi
 
-# Pre-flight, before any write to the host. The task database backup is the
-# watchdog's only route back from a forward schema migration, so an update
-# that cannot take one must not start: once binaries are replaced, a failure
-# leaves the previous release unable to read the store it just migrated. This
-# runs ahead of the adapter refresh below so a refusal changes nothing at all.
-#
-# The snapshot is taken by the recovery subcommand of the release being
-# installed, from its own checkout, rather than by hand-rolled sqlite3 shell:
-# the operator running `archie-state-store backup` by hand and the installer
-# are then the same implementation, and the two cannot drift. The installed
-# binary is the previous release, which may predate the subcommand, so it
-# cannot be the one asked -- and a release whose recovery path will not build is a
-# release that cannot back up, which is exactly what this pre-flight refuses.
-if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_DB_PATH" ]; then
-  echo "==> backing up task database for schema-safe rollback"
-  mkdir -p "$(dirname "$TASK_DB_BACKUP")"
-  if ! go run ./cmd/archie-state-store backup -db "$TASK_DB_PATH" -out "$TASK_DB_BACKUP"; then
-    echo "refusing to install $GW: could not back up the task database at $TASK_DB_PATH, so a failed update could not be rolled back" >&2
+# The pre-migration snapshot of the PostgreSQL database: the whole database,
+# since every service shares it. The new State Store migrates on start and a
+# migration is never undone automatically (goose Down drops tables), so this
+# snapshot is the only way back, restored by an operator with every service
+# stopped. The recovery subcommand resolves database_url from the same config
+# the services boot with, so the connection string never passes through this
+# script. No snapshot, no update: this pre-flight runs before any write to the
+# host, so a refusal changes nothing at all.
+if [[ ",$components," == *,daemon,* ]]; then
+  echo "==> snapshotting the database before the update migrates it"
+  mkdir -p "$(dirname "$DB_SNAPSHOT")"
+  if ! go run ./cmd/archie-state-store backup -config "$CONFIG_PATH" -out "$DB_SNAPSHOT"; then
+    echo "refusing to install $GW: could not snapshot the database named by $CONFIG_PATH, so a failed migration could not be recovered" >&2
     exit 1
   fi
 fi
@@ -375,8 +339,8 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_AGENT_VERSION_FILE="$AGENT_VERSION_FILE" \
   --setenv=ARCHIE_AGENT_VERSION_BACKUP="$AGENT_VERSION_BACKUP" \
   --setenv=ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS="${AGENT_VERSION_PREVIOUS_EXISTS:-0}" \
-  --setenv=ARCHIE_TASK_DB_PATH="$TASK_DB_PATH" \
-  --setenv=ARCHIE_TASK_DB_BACKUP="$TASK_DB_BACKUP" \
+  --setenv=ARCHIE_DB_SNAPSHOT="$DB_SNAPSHOT" \
+  --setenv=ARCHIE_CONFIG_PATH="$CONFIG_PATH" \
   --setenv=ARCHIE_UPDATE_STATE_STORE_TARGET="$STATE_STORE_TARGET" \
   "$BIN_DIR/archie-update-watchdog"
 

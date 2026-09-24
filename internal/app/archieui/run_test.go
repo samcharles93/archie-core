@@ -18,13 +18,13 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/infrastructure/edastore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -100,10 +100,7 @@ func serveGRPC(t *testing.T, register func(grpc.ServiceRegistrar)) (target strin
 // every route with no contract behind it degrades exactly as
 // docs/prds/ui-service-boundary.md:130-131 permits.
 func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open temp store: %v", err)
-	}
+	st := pgstore.Open(t)
 	defer st.Close()
 	seeded, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", "")
 	if err != nil {
@@ -119,7 +116,7 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutConfigSnapshot(t.Context(), store.ConfigSnapshot{
+	if err := st.PutConfigSnapshot(t.Context(), storecontract.ConfigSnapshot{
 		Schema: webui.ConfigViewSchema, Document: published,
 	}); err != nil {
 		t.Fatalf("publish config snapshot: %v", err)
@@ -152,7 +149,7 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		eda := edastore.OpenTest(t)
+		eda := pgstore.EDA(t, nil)
 		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
 	})
 	defer stopState()

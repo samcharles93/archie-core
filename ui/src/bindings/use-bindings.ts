@@ -1,6 +1,7 @@
 import { ref } from "vue";
 
 import { api, ApiError } from "@/lib/api";
+import type { EventType } from "@/captures/event-types";
 import {
   bindingPayload,
   type Binding,
@@ -37,6 +38,7 @@ export function useBindings() {
   // null means loading, [] means loaded and empty.
   const bindings = ref<Binding[] | null>(null);
   const mappings = ref<MappingOption[]>([]);
+  const eventTypes = ref<EventType[]>([]);
   const workflows = ref<WorkflowOption[]>([]);
   const failure = ref<LoadFailure | null>(null);
   // A failed mutation is not a failed load: the list on screen is still
@@ -48,13 +50,15 @@ export function useBindings() {
   async function load(): Promise<void> {
     failure.value = null;
     try {
-      const [b, m, w] = await Promise.all([
+      const [b, m, w, t] = await Promise.all([
         api.bindings<{ bindings?: Binding[] }>(),
         api.mappings<{ mappings?: MappingOption[] }>(),
         api.workflows<{ definitions?: WorkflowOption[] }>(),
+        api.eventTypes<{ event_types?: EventType[] }>(),
       ]);
       bindings.value = b.bindings || [];
       mappings.value = m.mappings || [];
+      eventTypes.value = t.event_types || [];
       // Only enabled definitions are offerable: binding to a disabled one
       // would persist a binding that can never dispatch.
       workflows.value = (w.definitions || []).filter((d) => d.enabled);
@@ -73,7 +77,8 @@ export function useBindings() {
     saving.value = true;
     saveFailure.value = null;
     try {
-      const body = bindingPayload(draft);
+      const workflow = workflows.value.find((w) => w.id === draft.workflow);
+      const body = bindingPayload(draft, eventTypes.value, workflow);
       if (draft.id) {
         await api.bindingUpdate(String(draft.id), body);
       } else {
@@ -112,6 +117,7 @@ export function useBindings() {
   return {
     bindings,
     mappings,
+    eventTypes,
     workflows,
     failure,
     actionFailure,

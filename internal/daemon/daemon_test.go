@@ -27,10 +27,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -558,7 +558,7 @@ func startEmbeddedNATSForDaemon(t *testing.T) *server.Server {
 // daemonWithNATS returns the daemon, its store, and the concrete bus
 // client -- tests that drive core-NATS subscriptions directly need the
 // connection, which the TaskBus contract deliberately does not expose.
-func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
+func daemonWithNATS(t *testing.T) (*Daemon, *pgstore.TaskDB, *arnats.Client) {
 	t.Helper()
 	srv := startEmbeddedNATSForDaemon(t)
 	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL(), Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, slog.New(slog.DiscardHandler))
@@ -567,7 +567,7 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 	}
 	t.Cleanup(client.Close)
 
-	s := store.OpenTest(t)
+	s := pgstore.Open(t)
 	d := &Daemon{
 		Cfg: config.NewHolder(config.Config{
 			Dispatch: config.Dispatch{Labels: map[string]string{
@@ -624,7 +624,7 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	// No responder registered on the taskrun subject, ever  --  the retry
 	// window must exhaust and runViaAgent must park rather than leave the
 	// task stuck running.
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 
 	got, err := s.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || got == nil {
@@ -684,7 +684,7 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 		t.Cleanup(func() { _ = sub.Unsubscribe() })
 	}()
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 
 	got, err := s.TaskByIssue(ctx, "acme", "widget", 6)
 	if err != nil || got == nil {
@@ -716,7 +716,7 @@ func TestRunViaAgentDoesNotRetryOnContextCancellation(t *testing.T) {
 	}
 
 	start := time.Now()
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		t.Fatalf("runViaAgent took %s with an already-cancelled context, want it to return immediately without retrying", elapsed)
 	}
@@ -743,7 +743,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 
 	got, err := s.TaskByIssue(ctx, "acme", "widget", 2)
 	if err != nil || got == nil {
@@ -788,7 +788,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
 	repo := config.Repo{Owner: "acme", Name: "widget", Base: "main"}
-	d.runViaAgent(ctx, task, repo)
+	runPinnedViaAgent(ctx, d, task, repo)
 
 	select {
 	case req := <-received:
@@ -857,7 +857,7 @@ func TestRunViaAgentSendsMCPServers(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 
 	select {
 	case req := <-received:
@@ -908,7 +908,7 @@ func TestRunViaAgentSendsRoutingBindings(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 
 	select {
 	case p := <-received:
@@ -957,7 +957,7 @@ func TestRunViaAgentObservesReportedAgentVersion(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 
 	version, installType, ok := status.Snapshot()
 	if !ok || version != "1.9.11" || installType != "container" {
@@ -992,7 +992,7 @@ func TestRunViaAgentIgnoresEmptyAgentVersion(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget"})
 
 	if _, _, ok := status.Snapshot(); ok {
 		t.Fatal("Snapshot() reports observed after an empty AgentVersion response")
@@ -1115,10 +1115,10 @@ func (f *testForge) React(context.Context, string, string, int, string) error   
 func (f *testForge) VerifyPush(context.Context, string, string) error              { return nil }
 func (f *testForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
-func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *store.Store, *testForge) {
+func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *pgstore.TaskDB, *testForge) {
 	t.Helper()
 
-	s := store.OpenTest(t)
+	s := pgstore.Open(t)
 	fg := &testForge{}
 
 	cfg := config.Config{
@@ -1256,9 +1256,9 @@ func TestDaemonStoresIdentityRunners(t *testing.T) {
 // only ever be acted on through that identity's own forge client and
 // worktree manager; it must never fall back to the root d.Forge/d.Trees
 // or leak into the other identity's client.
-func twoIdentityDaemon(t *testing.T) (d *Daemon, s *store.Store, rootFg, archieFg, winterFg *testForge) {
+func twoIdentityDaemon(t *testing.T) (d *Daemon, s *pgstore.TaskDB, rootFg, archieFg, winterFg *testForge) {
 	t.Helper()
-	s = store.OpenTest(t)
+	s = pgstore.Open(t)
 	rootFg = &testForge{}
 	archieFg = &testForge{}
 	winterFg = &testForge{}
@@ -1439,7 +1439,7 @@ func TestStartupSweepsEveryConfiguredForge(t *testing.T) {
 
 			d := &Daemon{
 				Cfg:        config.NewHolder(config.Config{Repos: tc.rootRepos}),
-				Store:      store.OpenTest(t),
+				Store:      pgstore.Open(t),
 				Forge:      rootFg,
 				Log:        slog.New(slog.DiscardHandler),
 				Identities: runners,
@@ -1499,7 +1499,7 @@ func TestStartupSweepIsolatesAStalledForge(t *testing.T) {
 	siblingFg := &sweepForge{}
 	d := &Daemon{
 		Cfg:        config.NewHolder(config.Config{}),
-		Store:      store.OpenTest(t),
+		Store:      pgstore.Open(t),
 		Forge:      rootFg,
 		Log:        slog.New(slog.DiscardHandler),
 		Identities: []*IdentityRunner{{Name: "sibling", Forge: siblingFg}},
@@ -2031,7 +2031,7 @@ func TestDispatchCapturesTheAttemptsEffectiveConfig(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 
 	timeline, err := s.TaskEvents(ctx, task.ID)
 	if err != nil {
@@ -2139,7 +2139,7 @@ func TestDispatchCapturesTheAttemptsEffectiveConfig(t *testing.T) {
 // always fails, so the fail-open policy of the capture can be observed without
 // breaking everything else the dispatch needs.
 type failingEventStore struct {
-	*store.Store
+	*pgstore.TaskDB
 }
 
 func (f failingEventStore) InsertEvent(context.Context, events.Event) (int64, error) {
@@ -2151,7 +2151,7 @@ func (f failingEventStore) InsertEvent(context.Context, events.Event) (int64, er
 // go out anyway, and nothing may park.
 func TestCaptureAttemptConfigFailureDoesNotStopTheDispatch(t *testing.T) {
 	d, s, busClient := daemonWithNATS(t)
-	d.Store = failingEventStore{Store: s}
+	d.Store = failingEventStore{TaskDB: s}
 	ctx := context.Background()
 
 	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 6, "t", "b", "", ""); err != nil {
@@ -2173,7 +2173,7 @@ func TestCaptureAttemptConfigFailureDoesNotStopTheDispatch(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	runPinnedViaAgent(ctx, d, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 
 	select {
 	case <-dispatched:
@@ -2283,5 +2283,70 @@ func TestConfigForIdentityInheritsAnUnsetDiffCap(t *testing.T) {
 	off := configForIdentity(root, config.IdentityConfig{BotUser: "three", DiffCapLines: new(0)})
 	if off.DiffCap() != 0 {
 		t.Fatalf("DiffCap() = %d, want 0: an identity may switch its own cap off explicitly", off.DiffCap())
+	}
+}
+
+// A workflow's profile decides the tools the agent gets: its allowlist is
+// carried in the taskrun request, and a profile that is not configured parks
+// the task for an operator instead of running it under the default.
+func TestRunViaAgentCarriesTheWorkflowProfile(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	cfg := d.Cfg.Get()
+	cfg.Containers.Profiles = map[string]config.AgentProfile{"net": {Image: "agent-net:1", Tools: []string{"whois"}}}
+	d.Cfg.Set(cfg)
+	d.WorkflowDefinitions = &workflowDefinitionsStub{collection: workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{
+		{ID: "netflow", YAML: "id: netflow\nprofile: net\nsteps:\n  - type: implement.prepare\n"},
+		{ID: "missing", YAML: "id: missing\nprofile: gone\nsteps:\n  - type: implement.prepare\n"},
+	}}, version: 1}
+	ctx := context.Background()
+
+	claim := func(number int, wf string) *workflow.Task {
+		t.Helper()
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", number, "t", "b", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		task, err := s.ClaimNext(ctx)
+		if err != nil || task == nil {
+			t.Fatalf("claim: (%v, %v)", task, err)
+		}
+		task.Workflow = wf
+		return task
+	}
+
+	task := claim(11, "netflow")
+	received := make(chan taskrun.Request, 1)
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		var req taskrun.Request
+		_ = json.Unmarshal(msg.Data, &req)
+		received <- req
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	profile, ok := d.pinTaskProfile(ctx, task)
+	if !ok || profile.Image != "agent-net:1" {
+		t.Fatalf("pinTaskProfile() = %+v, %v; want the net profile", profile, ok)
+	}
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, profile)
+	select {
+	case req := <-received:
+		if len(req.Tools) != 1 || req.Tools[0] != "whois" {
+			t.Fatalf("request Tools = %v, want the profile's allowlist", req.Tools)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("archied did not publish a taskrun request")
+	}
+
+	parked := claim(12, "missing")
+	if _, ok := d.pinTaskProfile(ctx, parked); ok {
+		t.Fatal("a workflow naming an unconfigured profile was not refused")
+	}
+	got, err := s.TaskByID(ctx, parked.ID)
+	if err != nil || got.Status != workflow.StatusParked || !strings.Contains(got.ParkReason, `"gone" is not configured`) {
+		t.Fatalf("task = %+v, %v; want parked naming the profile", got, err)
 	}
 }

@@ -50,10 +50,9 @@ func gatewayListenAndToken(b *boot, options GatewayOptions) (listen, token strin
 
 // RunGateway owns conversation persistence, model runtime and tool-provider
 // lifecycles. Task-store adapters access the State Store contract (remote
-// *staterpc.Client via [services.state].target), not archie.db directly: the
-// single SQLite file is owned by archie-state-store, and the Gateway keeps its
-// own already-separate session SQLite (docs/prds/state-store-contract.md §12
-// step 8), which is out of state-store scope.
+// *staterpc.Client via [services.state].target). The Gateway serves the
+// conversation store from database_url and holds the Gateway serve claim for
+// its whole life.
 func RunGateway(ctx context.Context, options GatewayOptions) error {
 	b := newBootstrap()
 	b.processName = applystatus.Gateway
@@ -68,7 +67,6 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	// The Gateway also no longer opens archie.db directly: it consumes the
 	// same remote State Store contract the daemon does via
 	// [services.state].target (docs/prds/state-store-contract.md §12 step 7).
-	// Its own session SQLite is untouched and stays Gateway-owned.
 	if err := b.openGatewayState(ctx); err != nil {
 		return err
 	}
@@ -84,7 +82,7 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 		nc, err = natsio.Connect(url, natsio.Token(token))
 	} else {
 		var endpoint embeddedNATSEndpoint
-		endpoint, err = readEmbeddedNATSEndpoint(b.cfg.DBPath)
+		endpoint, err = readEmbeddedNATSEndpoint(b.cfg.StateDir)
 		if err == nil {
 			url, token = endpoint.URL, endpoint.Token
 			nc, err = natsio.Connect(url, natsio.Token(token))
@@ -127,6 +125,9 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 }
 
 func (b *boot) openGatewayState(ctx context.Context) error {
+	if err := b.claimGatewayOwnership(ctx); err != nil {
+		return err
+	}
 	if err := b.openStateStoreAdapter(); err != nil {
 		return err
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // testAt is a fixed instant every synthetic event in this file shares, so a
@@ -130,7 +129,7 @@ var errWriteFailed = errors.New("write failed")
 // fakeEventStore serves EventsSince from a fixed, pre-seeded slice, paginating
 // the same way the real store does: up to limit events after cursor.
 type fakeEventStore struct {
-	store.TaskStore
+	storecontract.TaskStore
 	all []events.Event
 }
 

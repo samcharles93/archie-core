@@ -7,19 +7,19 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-func TestDiskProbePath_PrefersDBPath(t *testing.T) {
-	cfg := config.Config{DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
-	if got := diskProbePath(cfg); got != "/data/archie" {
-		t.Fatalf("diskProbePath = %q, want /data/archie", got)
+func TestDiskProbePath_PrefersStateDir(t *testing.T) {
+	cfg := config.Config{StateDir: "/var/lib/archie", DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
+	if got := diskProbePath(cfg); got != "/var/lib/archie" {
+		t.Fatalf("diskProbePath = %q, want /var/lib/archie", got)
 	}
 }
 
 func TestDiskProbePath_FallsBackToWorkDir(t *testing.T) {
-	cfg := config.Config{WorkDir: "/srv/archie"}
+	cfg := config.Config{DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
 	if got := diskProbePath(cfg); got != "/srv/archie" {
 		t.Fatalf("diskProbePath = %q, want /srv/archie", got)
 	}
@@ -49,10 +49,7 @@ func TestPingChat_ReportsUnwiredChat(t *testing.T) {
 // on the store, config, disk, model and gateway in the running daemon -- only
 // that every subsystem the epic names is actually wired.
 func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
 	cfg := config.Config{

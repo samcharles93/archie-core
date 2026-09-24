@@ -32,6 +32,7 @@ export const DEFAULT_STATUSES: StatusMeta[] = [
   { id: "waiting_human", label: "Waiting for you", kind: "warn", needs_you: true },
   { id: "pr_open", label: "In review", kind: "ok" },
   { id: "merged", label: "Merged", kind: "ok" },
+  { id: "completed", label: "Done", kind: "ok" },
   { id: "parked", label: "Parked", kind: "warn", needs_you: true },
   { id: "dead", label: "Stopped (too many retries)", kind: "danger" },
   { id: "rejected", label: "Rejected", kind: "danger" },

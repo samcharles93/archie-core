@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // resourceReader is the one read the layering performs: a resource kind's value
@@ -72,10 +72,10 @@ type storeReader struct {
 
 func (r storeReader) Query(ctx context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
 	resource, err := r.resources.Resource(ctx, kind)
-	if errors.Is(err, store.ErrResourceNotFound) {
+	if errors.Is(err, storecontract.ErrResourceNotFound) {
 		seed, ok := r.seeds[kind]
 		if !ok {
-			return 0, false, fmt.Errorf("read %s: %w", kind, store.ErrResourceNotFound)
+			return 0, false, fmt.Errorf("read %s: %w", kind, storecontract.ErrResourceNotFound)
 		}
 		if err := decode(seed); err != nil {
 			return 0, false, fmt.Errorf("decode %s seed: %w", kind, err)
@@ -187,7 +187,20 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := layerResourceJSON(ctx, reader, versions, ContainerRuntimePoliciesKind, &out.Containers); err != nil {
+	if err := layerResource(ctx, reader, versions, ContainerRuntimePoliciesKind, func(value []byte) error {
+		// A document that omits Profiles (one stored before they existed)
+		// inherits the file's. One that carries them replaces the file's:
+		// json.Unmarshal merges into an existing map, so without clearing it a
+		// profile deleted from the store would come back from the file.
+		var keys map[string]json.RawMessage
+		if err := json.Unmarshal(value, &keys); err != nil {
+			return err
+		}
+		if _, stored := keys["Profiles"]; stored {
+			out.Containers.Profiles = nil
+		}
+		return json.Unmarshal(value, &out.Containers)
+	}); err != nil {
 		return config.Config{}, nil, err
 	}
 	return out, versions, nil

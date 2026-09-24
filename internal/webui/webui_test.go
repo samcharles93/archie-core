@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,15 +28,12 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
 	srv := &Server{Store: s, Log: slog.New(slog.DiscardHandler)}
 	// Composition always gives the dashboard a Gateway contract; task
@@ -51,7 +47,7 @@ func newTestServer(t *testing.T) *Server {
 // inject errors. Methods that are not overridden delegate to the inner
 // store via the embedded interface.
 type stubStore struct {
-	store.TaskStore
+	storecontract.TaskStore
 	workflowStatsErr error
 	stageStatsErr    error
 	tokensByDayErr   error
@@ -75,21 +71,21 @@ func (s *stubStore) Requeue(ctx context.Context, id int64, from, workflow string
 	return s.TaskStore.Requeue(ctx, id, from, workflow)
 }
 
-func (s *stubStore) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, error) {
+func (s *stubStore) WorkflowStats(ctx context.Context) ([]storecontract.WorkflowStat, error) {
 	if s.workflowStatsErr != nil {
 		return nil, s.workflowStatsErr
 	}
 	return s.TaskStore.WorkflowStats(ctx)
 }
 
-func (s *stubStore) StageStats(ctx context.Context) ([]store.StageStat, error) {
+func (s *stubStore) StageStats(ctx context.Context) ([]storecontract.StageStat, error) {
 	if s.stageStatsErr != nil {
 		return nil, s.stageStatsErr
 	}
 	return s.TaskStore.StageStats(ctx)
 }
 
-func (s *stubStore) TokensByDay(ctx context.Context, days int) ([]store.DayTokens, error) {
+func (s *stubStore) TokensByDay(ctx context.Context, days int) ([]storecontract.DayTokens, error) {
 	if s.tokensByDayErr != nil {
 		return nil, s.tokensByDayErr
 	}

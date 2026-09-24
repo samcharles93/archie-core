@@ -13,7 +13,15 @@
 # secret_engine_dir = "~/.config/archie/secret-engines"
 
 # work_dir = "~/.local/share/archie/work"   # default
-# db_path  = "~/.local/share/archie/archie.db" # prefix for independent task and conversation SQLite files
+# state_dir = "~/.local/share/archie"       # default; embedded NATS store, task logs, disk probe
+# db_path  = "~/.local/share/archie/archie.db" # default; locates pre-PostgreSQL SQLite files for the import only
+
+# The PostgreSQL connection archie-state-store, archied and archie-gateway
+# serve from. Required: each fails closed without it.
+# An install with SQLite stores under db_path runs `archie-state-store import`
+# once, with archie stopped, before it starts. `docker compose up -d postgres` starts
+# a matching local postgres:18 with this default URL.
+# database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 
 # skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
 # plugin_dir = "~/.local/share/archie/plugins" # daemon plugin manifests; unset means no plugins are loaded
@@ -342,9 +350,9 @@ target = "127.0.0.1:8585"          # archie-gateway's gRPC address (always remot
 
 [services.state]
 target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address archied and
-#                                       # archie-gateway dial. They no longer own archie.db
+#                                       # archie-gateway dial. They own no task data
 #                                       # in-process: the standalone archie-state-store process
-#                                       # owns the single SQLite file (docs/prds/state-store-contract.md
+#                                       # owns it in PostgreSQL (docs/prds/state-store-contract.md
 #                                       # §10/§12 step 7). An empty target is a startup error.
 # listen = "127.0.0.1:9090"         # The address archie-state-store BINDS. Read only by that
 #                                     # process; every client ignores it. Defaults to the target
@@ -372,10 +380,9 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # Unbound webhook capture: POST /webhooks/capture/{source} accepts and
 # stores any inbound payload archie doesn't yet have a binding for, so it can
 # be inspected and mapped later (see docs/prds/event-capture-storage.md).
-# Stored in the same SQLite database as tasks, not NATS -- capture has one
+# Stored in the same PostgreSQL database as tasks, not NATS -- capture has one
 # writer and one (human, dashboard) reader, so it doesn't need JetStream's
-# fan-out/replay machinery, and SQLite is available in every deployment
-# shape unconditionally. All fields default when the section is absent;
+# fan-out/replay machinery. All fields default when the section is absent;
 # capture is on by default.
 #
 # From the UI cutover (archie-core-8cda.5.4) the receiver is mounted by the
@@ -428,7 +435,7 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 
 # Playbook-binding at-rest encryption: [bindings].encryption_key resolves a
 # 32-byte high-entropy key through the secret registry (engine + key) and seals
-# each binding's HMAC secret in the SQLite bindings.secret column with AES-256-
+# each binding's HMAC secret in the bindings.secret column with AES-256-
 # GCM (see docs/prds/binding-secret-encryption.md). When the key is absent,
 # binding secrets are stored as plaintext (the pre-t2db.7 behaviour) -- enabling
 # encryption does not retroactively encrypt existing rows, which stay plaintext
@@ -451,6 +458,14 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # max_uptime = "60m"               # container lifetime cap
 # volume_ttl = "72h"               # max age for persistent repo volumes and Git clone caches
 # pull_policy = "missing"          # "missing" or "always"
+#
+# Agent profiles a workflow selects with `profile: <name>`. A workflow that
+# names none runs under [containers].image with every tool.
+# Once the State Store holds container policies, edit profiles in the
+# dashboard (Settings, Advanced); a stored set replaces the file's.
+# [containers.profiles.network-investigator]
+# image = "archie-agent-net:local"  # docker compose build agent-net; empty uses [containers].image
+# tools = []                        # allowlist over MCP, script and plugin tools; empty allows all
 
 # At least one [[repos]] entry is required before archied will poll
 # anything -- it is deliberately left commented rather than shipped active:

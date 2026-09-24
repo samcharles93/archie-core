@@ -293,7 +293,7 @@ Focused tests verify that:
 
 ## Current hazards
 
-- SQLite task uniqueness is `(owner, repo, issue_number)` and excludes identity.
+- Task uniqueness is `(owner, repo, issue_number)` and excludes identity.
   Two identities discovering the same forge issue cannot own distinct task
   records.
 - NATS deduplication uses `owner/repo/issue` and excludes identity, so discovery

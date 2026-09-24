@@ -54,7 +54,7 @@ never authorize because two mutable strings match; never rename Agent when only
 model/provider/display name changes; never pool two Agents' memory.
 
 ```bash
-rg -n 'type IdentityConfig|type IdentityRunner|Identity string|BotUser string' internal/config internal/daemon internal/store internal/gateway
+rg -n 'type IdentityConfig|type IdentityRunner|Identity string|BotUser string' internal/config internal/daemon internal/infrastructure/postgres internal/gateway
 ```
 
 ## Use the canonical interaction vocabulary
@@ -87,7 +87,7 @@ Do not describe current `/spawn` as this target. It directly creates a
 `task.Task` with synthetic forge issue number.
 
 ```bash
-rg -n 'type Message struct|type MessageEvent struct|ToLegacy|type Conversation struct|CreateTask|EnqueueChatTask|synthetic' internal/domain/messaging internal/gateway internal/store internal/app/archied
+rg -n 'type Message struct|type MessageEvent struct|ToLegacy|type Conversation struct|CreateTask|EnqueueChatTask|synthetic' internal/domain/messaging internal/gateway internal/infrastructure/postgres internal/app/archied
 ```
 
 ## Use the canonical execution vocabulary
@@ -119,12 +119,12 @@ running after crash -> queued
 ```
 
 Do not claim enforced. `Store.Transition` now guards on `from`
-(`WHERE id=? AND status=?` → `store.ErrStaleTransition`) and writes status plus
+(→ `storecontract.ErrStaleTransition`) and writes status plus
 history in one transaction; the sentinel crosses the State Store gRPC boundary.
-See `internal/store/store.go`.
+See `internal/infrastructure/postgres/store.go`.
 
 ```bash
-rg -n 'Status[A-Za-z]+|func \(s \*Store\) Transition|func \(s \*Store\) Requeue|RecoverStale' internal/store internal/domain/workflow internal/gateway
+rg -n 'Status[A-Za-z]+|func \(s \*Store\) Transition|func \(s \*Store\) Requeue|RecoverStale' internal/infrastructure/postgres internal/domain/workflow internal/gateway
 ```
 
 ## Keep memory scope separate from conversation scope

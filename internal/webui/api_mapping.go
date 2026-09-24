@@ -14,9 +14,40 @@ import (
 // PATCH /api/mappings/{id} both accept. ID/CreatedAt/UpdatedAt are
 // server-assigned, never taken from the request body.
 type mappingRequest struct {
-	Name       string          `json:"name"`
-	SourceHint string          `json:"source_hint"`
-	Fields     []mapping.Field `json:"fields"`
+	Name        string          `json:"name"`
+	SourceHint  string          `json:"source_hint"`
+	EventTypeID string          `json:"event_type_id"`
+	Fields      []mapping.Field `json:"fields"`
+}
+
+// validateMapping checks m is well-formed and fits its event type's schema.
+// It writes the refusal and returns false when it does not.
+func (s *Server) validateMapping(w http.ResponseWriter, r *http.Request, m mapping.Mapping) bool {
+	if err := m.Validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+	if s.EventTypes == nil {
+		http.Error(w, "event types not configured", http.StatusServiceUnavailable)
+		return false
+	}
+	types, err := s.EventTypes.ListEventTypes(r.Context())
+	if err != nil {
+		s.Log.Error("list event types", "err", err)
+		http.Error(w, "list event types failed", http.StatusInternalServerError)
+		return false
+	}
+	for _, t := range types {
+		if t.ID == m.EventTypeID {
+			if err := mapping.CheckSchema(m.Fields, t.Schema); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return false
+			}
+			return true
+		}
+	}
+	http.Error(w, "mapping: event type not found: "+m.EventTypeID, http.StatusBadRequest)
+	return false
 }
 
 func (s *Server) handleMappingsList(w http.ResponseWriter, r *http.Request) {
@@ -46,9 +77,8 @@ func (s *Server) handleMappingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	m := mapping.Mapping{Name: req.Name, SourceHint: req.SourceHint, Fields: req.Fields}
-	if err := m.Validate(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	m := mapping.Mapping{Name: req.Name, SourceHint: req.SourceHint, EventTypeID: req.EventTypeID, Fields: req.Fields}
+	if !s.validateMapping(w, r, m) {
 		return
 	}
 	id, err := s.Mappings.InsertMapping(r.Context(), m)
@@ -108,9 +138,8 @@ func (s *Server) handleMappingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	m := mapping.Mapping{ID: id, Name: req.Name, SourceHint: req.SourceHint, Fields: req.Fields}
-	if err := m.Validate(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	m := mapping.Mapping{ID: id, Name: req.Name, SourceHint: req.SourceHint, EventTypeID: req.EventTypeID, Fields: req.Fields}
+	if !s.validateMapping(w, r, m) {
 		return
 	}
 	if err := s.Mappings.UpdateMapping(r.Context(), m); err != nil {

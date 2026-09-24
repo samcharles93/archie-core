@@ -36,7 +36,9 @@ type bannedCategory struct {
 var deletionGate = []bannedCategory{
 	{"state store", []string{
 		"modernc.org/sqlite",
-		modulePath + "internal/store",
+		"github.com/jackc/pgx",
+		modulePath + "internal/infrastructure/postgres",
+		modulePath + "internal/infrastructure/legacyread",
 	}},
 	{"daemon runtime", []string{
 		modulePath + "internal/daemon",

@@ -6,6 +6,8 @@ import { useRoute, useRouter } from "vue-router";
 import CaptureDetail from "./CaptureDetail.vue";
 import CaptureStatus from "./CaptureStatus.vue";
 import CapturesCard from "./CapturesCard.vue";
+import EventTypesCard from "./EventTypesCard.vue";
+import { loadEventTypes } from "./event-type-state";
 import { load, selectById, selectNewest, selected, useCaptures } from "./state";
 
 /**
@@ -66,7 +68,7 @@ onMounted(async () => {
   }
   window.addEventListener("resize", measure);
 
-  await load();
+  await Promise.all([load(), loadEventTypes()]);
   // The URL names a selection before the window is read, so the restore waits
   // for the list; an id it no longer holds falls back to the newest capture,
   // which is what a page opened with nothing named starts on too.
@@ -99,5 +101,8 @@ watch(selected, (capture) => {
       <CapturesCard />
     </div>
     <CaptureDetail :max-height="paneCap" />
+  </div>
+  <div class="mt-4">
+    <EventTypesCard />
   </div>
 </template>

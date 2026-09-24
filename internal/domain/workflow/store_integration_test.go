@@ -4,22 +4,21 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
 
 // storeIntegrationRunner is a minimal agentexec.Runner stub, duplicated
 // here (rather than reused from the in-package tests) because this file
 // lives in the external workflow_test package: it needs the real
-// *store.Store as a workflow.Store, and the package under test now owns
+// *pgstore.TaskDB as a workflow.Store, and the package under test now owns
 // workflow.Task/Status/Source, which would otherwise cycle back through
-// internal/store's dependency on internal/domain/workflow.
+// the store's dependency on internal/domain/workflow.
 type storeIntegrationRunner struct {
 	result agentexec.Result
 }
@@ -44,10 +43,7 @@ func (r *storeIntegrationRunner) Run(
 // and the store as park_reason, but never the log. A workflow that ends without
 // an outcome is the smallest way to reach that path.
 func TestRunRecordsAParkReasonInTheRunsOwnLog(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() {
 		if err := st.Close(); err != nil {
 			t.Errorf("close store: %v", err)
@@ -82,10 +78,7 @@ func TestRunRecordsAParkReasonInTheRunsOwnLog(t *testing.T) {
 }
 
 func TestAgentStagePersistsReturnedNotes(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() {
 		if err := st.Close(); err != nil {
 			t.Errorf("close store: %v", err)
@@ -119,10 +112,7 @@ func TestAgentStagePersistsReturnedNotes(t *testing.T) {
 }
 
 func TestRunLeavesInterruptedTaskForCrashRecovery(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := pgstore.Open(t)
 	t.Cleanup(func() {
 		if err := st.Close(); err != nil {
 			t.Errorf("close store: %v", err)

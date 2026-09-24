@@ -346,7 +346,7 @@ func TestAcquireEnforcesMaxUptime(t *testing.T) {
 		log: discardLogger(),
 	}
 
-	c, err := pool.Acquire(context.Background(), nil, nil)
+	c, err := pool.Acquire(context.Background(), "", nil, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestReleaseCancelsTheMaxUptimeTimer(t *testing.T) {
 		log: discardLogger(),
 	}
 
-	c, err := pool.Acquire(context.Background(), nil, nil)
+	c, err := pool.Acquire(context.Background(), "", nil, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestGracePeriodDoesNotExtendTheMaxUptimeCap(t *testing.T) {
 		log: discardLogger(),
 	}
 
-	c, err := pool.Acquire(context.Background(), nil, nil)
+	c, err := pool.Acquire(context.Background(), "", nil, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -540,7 +540,7 @@ func TestReleaseAfterTheReaperFiredDoesNotTearDownTwice(t *testing.T) {
 		log: discardLogger(),
 	}
 
-	c, err := pool.Acquire(context.Background(), nil, nil)
+	c, err := pool.Acquire(context.Background(), "", nil, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -608,7 +608,7 @@ func TestReaperCallbackAfterReleaseDoesNotResurrectTeardown(t *testing.T) {
 		log: discardLogger(),
 	}
 
-	c, err := pool.Acquire(context.Background(), nil, nil)
+	c, err := pool.Acquire(context.Background(), "", nil, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -675,7 +675,7 @@ func TestPoolActiveReportsInFlightContainers(t *testing.T) {
 	var held []*Container
 	acquire := func(t *testing.T) {
 		t.Helper()
-		c, err := pool.Acquire(context.Background(), nil, nil)
+		c, err := pool.Acquire(context.Background(), "", nil, nil)
 		if err != nil {
 			t.Fatalf("Acquire: %v", err)
 		}
