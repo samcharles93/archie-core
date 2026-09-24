@@ -50,7 +50,7 @@ const documentedStaleWindow = 90 * time.Second
 // fileConfig()'s [budgets] on all three fields, so a process that comes back on
 // any file value is detectably not on the stored one.
 var restartEditedSettings = workflow.ExecutionSettings{
-	MaxModelToolSteps: 40, MaxRuntime: 10 * time.Minute, MaxConsecutiveGateFailures: 2,
+	MaxModelToolSteps: 40, MaxRuntime: 10 * time.Minute, MaxConsecutiveGateFailures: 2, MaxTaskRuntime: 4 * time.Hour,
 }
 
 // controlPlaneRestartFixture is a real State Store for the restart test: the
@@ -181,7 +181,7 @@ func TestRestartKeepsADatabaseOwnedSettingsChange(t *testing.T) {
 	firstCtx, stopFirst := context.WithCancel(t.Context())
 	first := startRestartProcess(firstCtx, t, fixture.dial(t))
 	stopFirst()
-	if got := first.cfgHolder.Get().Budgets; got != budgetsFor(workflow.ExecutionSettings{MaxModelToolSteps: 1, MaxRuntime: time.Minute}) {
+	if got := first.cfgHolder.Get().Budgets; got != budgetsFor(workflow.ExecutionSettings{MaxModelToolSteps: 1, MaxRuntime: time.Minute, MaxTaskRuntime: 4 * time.Hour}) {
 		t.Fatalf("first process budgets = %+v, want the seeded file budgets", got)
 	}
 	if got := first.cfgHolder.Get().PluginDir; got != fileConfig().PluginDir {
@@ -191,7 +191,7 @@ func TestRestartKeepsADatabaseOwnedSettingsChange(t *testing.T) {
 	// 1. The dashboard writes the change. Its handler, not this test, supplies
 	// the attribution: webAudit attributes to identity.SystemID.
 	expectedVersion := int64(1)
-	executionSettingsDocument := []byte(`{"max_model_tool_steps":40,"max_runtime_seconds":600,"max_consecutive_gate_failures":2}`)
+	executionSettingsDocument := []byte(`{"max_model_tool_steps":40,"max_runtime_seconds":600,"max_consecutive_gate_failures":2,"max_task_runtime_seconds":14400}`)
 	if version := dashboardReplace(t, dashboard, controlplane.WorkflowExecutionSettingsKind, executionSettingsDocument, expectedVersion); version != 2 {
 		t.Fatalf("workflow execution settings after edit = version %d, want 2", version)
 	}
@@ -334,6 +334,7 @@ func decodeExecutionSettingsRevision(t *testing.T, value json.RawMessage) workfl
 		MaxModelToolSteps          int   `json:"max_model_tool_steps"`
 		MaxRuntimeSeconds          int64 `json:"max_runtime_seconds"`
 		MaxConsecutiveGateFailures int   `json:"max_consecutive_gate_failures"`
+		MaxTaskRuntimeSeconds      int64 `json:"max_task_runtime_seconds"`
 	}
 	if err := json.Unmarshal(value, &document); err != nil {
 		t.Fatalf("decode revision value: %v (%s)", err, value)
@@ -342,6 +343,7 @@ func decodeExecutionSettingsRevision(t *testing.T, value json.RawMessage) workfl
 		MaxModelToolSteps:          document.MaxModelToolSteps,
 		MaxRuntime:                 time.Duration(document.MaxRuntimeSeconds) * time.Second,
 		MaxConsecutiveGateFailures: document.MaxConsecutiveGateFailures,
+		MaxTaskRuntime:             time.Duration(document.MaxTaskRuntimeSeconds) * time.Second,
 	}
 }
 

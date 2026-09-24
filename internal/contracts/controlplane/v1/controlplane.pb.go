@@ -547,6 +547,238 @@ func (x *HistoryResponse) GetRevisions() []*Revision {
 	return nil
 }
 
+// AuditEntry is one changed field of one record. Old and new values are JSON;
+// an absent side is empty.
+type AuditEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Table         string                 `protobuf:"bytes,2,opt,name=table,proto3" json:"table,omitempty"`
+	RecordKey     string                 `protobuf:"bytes,3,opt,name=record_key,json=recordKey,proto3" json:"record_key,omitempty"`
+	Field         string                 `protobuf:"bytes,4,opt,name=field,proto3" json:"field,omitempty"`
+	OldValueJson  []byte                 `protobuf:"bytes,5,opt,name=old_value_json,json=oldValueJson,proto3" json:"old_value_json,omitempty"`
+	NewValueJson  []byte                 `protobuf:"bytes,6,opt,name=new_value_json,json=newValueJson,proto3" json:"new_value_json,omitempty"`
+	Version       int64                  `protobuf:"varint,7,opt,name=version,proto3" json:"version,omitempty"`
+	Actor         string                 `protobuf:"bytes,8,opt,name=actor,proto3" json:"actor,omitempty"`
+	Source        string                 `protobuf:"bytes,9,opt,name=source,proto3" json:"source,omitempty"`
+	RequestId     string                 `protobuf:"bytes,10,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	At            *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditEntry) Reset() {
+	*x = AuditEntry{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditEntry) ProtoMessage() {}
+
+func (x *AuditEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditEntry.ProtoReflect.Descriptor instead.
+func (*AuditEntry) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AuditEntry) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *AuditEntry) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetRecordKey() string {
+	if x != nil {
+		return x.RecordKey
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetOldValueJson() []byte {
+	if x != nil {
+		return x.OldValueJson
+	}
+	return nil
+}
+
+func (x *AuditEntry) GetNewValueJson() []byte {
+	if x != nil {
+		return x.NewValueJson
+	}
+	return nil
+}
+
+func (x *AuditEntry) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *AuditEntry) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+type AuditRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Table      string                 `protobuf:"bytes,1,opt,name=table,proto3" json:"table,omitempty"`
+	RecordKeys []string               `protobuf:"bytes,2,rep,name=record_keys,json=recordKeys,proto3" json:"record_keys,omitempty"`
+	// Limit caps the entries returned, newest first. Zero means the server's
+	// own default.
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditRequest) Reset() {
+	*x = AuditRequest{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditRequest) ProtoMessage() {}
+
+func (x *AuditRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditRequest.ProtoReflect.Descriptor instead.
+func (*AuditRequest) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *AuditRequest) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *AuditRequest) GetRecordKeys() []string {
+	if x != nil {
+		return x.RecordKeys
+	}
+	return nil
+}
+
+func (x *AuditRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type AuditResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*AuditEntry          `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditResponse) Reset() {
+	*x = AuditResponse{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditResponse) ProtoMessage() {}
+
+func (x *AuditResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditResponse.ProtoReflect.Descriptor instead.
+func (*AuditResponse) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AuditResponse) GetEntries() []*AuditEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
 type CommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Kind            string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
@@ -564,7 +796,7 @@ type CommandRequest struct {
 
 func (x *CommandRequest) Reset() {
 	*x = CommandRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -576,7 +808,7 @@ func (x *CommandRequest) String() string {
 func (*CommandRequest) ProtoMessage() {}
 
 func (x *CommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -589,7 +821,7 @@ func (x *CommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandRequest.ProtoReflect.Descriptor instead.
 func (*CommandRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{9}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CommandRequest) GetKind() string {
@@ -650,7 +882,7 @@ type CommandResponse struct {
 
 func (x *CommandResponse) Reset() {
 	*x = CommandResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -662,7 +894,7 @@ func (x *CommandResponse) String() string {
 func (*CommandResponse) ProtoMessage() {}
 
 func (x *CommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -675,7 +907,7 @@ func (x *CommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResponse.ProtoReflect.Descriptor instead.
 func (*CommandResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{10}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CommandResponse) GetResource() *Resource {
@@ -695,7 +927,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -707,7 +939,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -720,7 +952,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{11}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WatchRequest) GetKind() string {
@@ -747,7 +979,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -759,7 +991,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -772,7 +1004,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{12}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WatchResponse) GetResource() *Resource {
@@ -832,7 +1064,30 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"J\n" +
 	"\x0fHistoryResponse\x127\n" +
-	"\trevisions\x18\x01 \x03(\v2\x19.controlplane.v1.RevisionR\trevisions\"\xd5\x01\n" +
+	"\trevisions\x18\x01 \x03(\v2\x19.controlplane.v1.RevisionR\trevisions\"\xc6\x02\n" +
+	"\n" +
+	"AuditEntry\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
+	"\x05table\x18\x02 \x01(\tR\x05table\x12\x1d\n" +
+	"\n" +
+	"record_key\x18\x03 \x01(\tR\trecordKey\x12\x14\n" +
+	"\x05field\x18\x04 \x01(\tR\x05field\x12$\n" +
+	"\x0eold_value_json\x18\x05 \x01(\fR\foldValueJson\x12$\n" +
+	"\x0enew_value_json\x18\x06 \x01(\fR\fnewValueJson\x12\x18\n" +
+	"\aversion\x18\a \x01(\x03R\aversion\x12\x14\n" +
+	"\x05actor\x18\b \x01(\tR\x05actor\x12\x16\n" +
+	"\x06source\x18\t \x01(\tR\x06source\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\n" +
+	" \x01(\tR\trequestId\x12*\n" +
+	"\x02at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"[\n" +
+	"\fAuditRequest\x12\x14\n" +
+	"\x05table\x18\x01 \x01(\tR\x05table\x12\x1f\n" +
+	"\vrecord_keys\x18\x02 \x03(\tR\n" +
+	"recordKeys\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"F\n" +
+	"\rAuditResponse\x125\n" +
+	"\aentries\x18\x01 \x03(\v2\x1b.controlplane.v1.AuditEntryR\aentries\"\xd5\x01\n" +
 	"\x0eCommandRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x1d\n" +
@@ -850,11 +1105,12 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\rafter_version\x18\x02 \x01(\x03R\fafterVersion\"\\\n" +
 	"\rWatchResponse\x125\n" +
 	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2\x91\x03\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error2\xd9\x03\n" +
 	"\x13ControlPlaneService\x12L\n" +
 	"\aCatalog\x12\x1f.controlplane.v1.CatalogRequest\x1a .controlplane.v1.CatalogResponse\x12F\n" +
 	"\x05Query\x12\x1d.controlplane.v1.QueryRequest\x1a\x1e.controlplane.v1.QueryResponse\x12L\n" +
-	"\aHistory\x12\x1f.controlplane.v1.HistoryRequest\x1a .controlplane.v1.HistoryResponse\x12L\n" +
+	"\aHistory\x12\x1f.controlplane.v1.HistoryRequest\x1a .controlplane.v1.HistoryResponse\x12F\n" +
+	"\x05Audit\x12\x1d.controlplane.v1.AuditRequest\x1a\x1e.controlplane.v1.AuditResponse\x12L\n" +
 	"\aCommand\x12\x1f.controlplane.v1.CommandRequest\x1a .controlplane.v1.CommandResponse\x12H\n" +
 	"\x05Watch\x12\x1d.controlplane.v1.WatchRequest\x1a\x1e.controlplane.v1.WatchResponse0\x01B\xdc\x01\n" +
 	"\x13com.controlplane.v1B\x11ControlplaneProtoP\x01ZUgithub.com/samcharles93/archie-core/internal/contracts/controlplane/v1;controlplanev1\xa2\x02\x03CXX\xaa\x02\x0fControlplane.V1\xca\x02\x0fControlplane\\V1\xe2\x02\x1bControlplane\\V1\\GPBMetadata\xea\x02\x10Controlplane::V1b\x06proto3"
@@ -871,7 +1127,7 @@ func file_controlplane_v1_controlplane_proto_rawDescGZIP() []byte {
 	return file_controlplane_v1_controlplane_proto_rawDescData
 }
 
-var file_controlplane_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_controlplane_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_controlplane_v1_controlplane_proto_goTypes = []any{
 	(*ResourceDescriptor)(nil),    // 0: controlplane.v1.ResourceDescriptor
 	(*CatalogRequest)(nil),        // 1: controlplane.v1.CatalogRequest
@@ -882,35 +1138,42 @@ var file_controlplane_v1_controlplane_proto_goTypes = []any{
 	(*Revision)(nil),              // 6: controlplane.v1.Revision
 	(*HistoryRequest)(nil),        // 7: controlplane.v1.HistoryRequest
 	(*HistoryResponse)(nil),       // 8: controlplane.v1.HistoryResponse
-	(*CommandRequest)(nil),        // 9: controlplane.v1.CommandRequest
-	(*CommandResponse)(nil),       // 10: controlplane.v1.CommandResponse
-	(*WatchRequest)(nil),          // 11: controlplane.v1.WatchRequest
-	(*WatchResponse)(nil),         // 12: controlplane.v1.WatchResponse
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*AuditEntry)(nil),            // 9: controlplane.v1.AuditEntry
+	(*AuditRequest)(nil),          // 10: controlplane.v1.AuditRequest
+	(*AuditResponse)(nil),         // 11: controlplane.v1.AuditResponse
+	(*CommandRequest)(nil),        // 12: controlplane.v1.CommandRequest
+	(*CommandResponse)(nil),       // 13: controlplane.v1.CommandResponse
+	(*WatchRequest)(nil),          // 14: controlplane.v1.WatchRequest
+	(*WatchResponse)(nil),         // 15: controlplane.v1.WatchResponse
+	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
 }
 var file_controlplane_v1_controlplane_proto_depIdxs = []int32{
 	0,  // 0: controlplane.v1.CatalogResponse.resources:type_name -> controlplane.v1.ResourceDescriptor
-	13, // 1: controlplane.v1.Resource.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 1: controlplane.v1.Resource.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 2: controlplane.v1.QueryResponse.resource:type_name -> controlplane.v1.Resource
-	13, // 3: controlplane.v1.Revision.at:type_name -> google.protobuf.Timestamp
+	16, // 3: controlplane.v1.Revision.at:type_name -> google.protobuf.Timestamp
 	6,  // 4: controlplane.v1.HistoryResponse.revisions:type_name -> controlplane.v1.Revision
-	3,  // 5: controlplane.v1.CommandResponse.resource:type_name -> controlplane.v1.Resource
-	3,  // 6: controlplane.v1.WatchResponse.resource:type_name -> controlplane.v1.Resource
-	1,  // 7: controlplane.v1.ControlPlaneService.Catalog:input_type -> controlplane.v1.CatalogRequest
-	4,  // 8: controlplane.v1.ControlPlaneService.Query:input_type -> controlplane.v1.QueryRequest
-	7,  // 9: controlplane.v1.ControlPlaneService.History:input_type -> controlplane.v1.HistoryRequest
-	9,  // 10: controlplane.v1.ControlPlaneService.Command:input_type -> controlplane.v1.CommandRequest
-	11, // 11: controlplane.v1.ControlPlaneService.Watch:input_type -> controlplane.v1.WatchRequest
-	2,  // 12: controlplane.v1.ControlPlaneService.Catalog:output_type -> controlplane.v1.CatalogResponse
-	5,  // 13: controlplane.v1.ControlPlaneService.Query:output_type -> controlplane.v1.QueryResponse
-	8,  // 14: controlplane.v1.ControlPlaneService.History:output_type -> controlplane.v1.HistoryResponse
-	10, // 15: controlplane.v1.ControlPlaneService.Command:output_type -> controlplane.v1.CommandResponse
-	12, // 16: controlplane.v1.ControlPlaneService.Watch:output_type -> controlplane.v1.WatchResponse
-	12, // [12:17] is the sub-list for method output_type
-	7,  // [7:12] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	16, // 5: controlplane.v1.AuditEntry.at:type_name -> google.protobuf.Timestamp
+	9,  // 6: controlplane.v1.AuditResponse.entries:type_name -> controlplane.v1.AuditEntry
+	3,  // 7: controlplane.v1.CommandResponse.resource:type_name -> controlplane.v1.Resource
+	3,  // 8: controlplane.v1.WatchResponse.resource:type_name -> controlplane.v1.Resource
+	1,  // 9: controlplane.v1.ControlPlaneService.Catalog:input_type -> controlplane.v1.CatalogRequest
+	4,  // 10: controlplane.v1.ControlPlaneService.Query:input_type -> controlplane.v1.QueryRequest
+	7,  // 11: controlplane.v1.ControlPlaneService.History:input_type -> controlplane.v1.HistoryRequest
+	10, // 12: controlplane.v1.ControlPlaneService.Audit:input_type -> controlplane.v1.AuditRequest
+	12, // 13: controlplane.v1.ControlPlaneService.Command:input_type -> controlplane.v1.CommandRequest
+	14, // 14: controlplane.v1.ControlPlaneService.Watch:input_type -> controlplane.v1.WatchRequest
+	2,  // 15: controlplane.v1.ControlPlaneService.Catalog:output_type -> controlplane.v1.CatalogResponse
+	5,  // 16: controlplane.v1.ControlPlaneService.Query:output_type -> controlplane.v1.QueryResponse
+	8,  // 17: controlplane.v1.ControlPlaneService.History:output_type -> controlplane.v1.HistoryResponse
+	11, // 18: controlplane.v1.ControlPlaneService.Audit:output_type -> controlplane.v1.AuditResponse
+	13, // 19: controlplane.v1.ControlPlaneService.Command:output_type -> controlplane.v1.CommandResponse
+	15, // 20: controlplane.v1.ControlPlaneService.Watch:output_type -> controlplane.v1.WatchResponse
+	15, // [15:21] is the sub-list for method output_type
+	9,  // [9:15] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_controlplane_v1_controlplane_proto_init() }
@@ -924,7 +1187,7 @@ func file_controlplane_v1_controlplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_controlplane_v1_controlplane_proto_rawDesc), len(file_controlplane_v1_controlplane_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

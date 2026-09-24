@@ -23,6 +23,8 @@ type controlPlaneClientStub struct {
 	query     *controlpb.Resource
 	history   *controlpb.HistoryRequest
 	revisions []*controlpb.Revision
+	audit     *controlpb.AuditRequest
+	entries   []*controlpb.AuditEntry
 	watch     grpc.ServerStreamingClient[controlpb.WatchResponse]
 	err       error
 }
@@ -38,6 +40,11 @@ func (f *controlPlaneClientStub) Query(context.Context, *controlpb.QueryRequest,
 func (f *controlPlaneClientStub) History(_ context.Context, request *controlpb.HistoryRequest, _ ...grpc.CallOption) (*controlpb.HistoryResponse, error) {
 	f.history = request
 	return &controlpb.HistoryResponse{Revisions: f.revisions}, f.err
+}
+
+func (f *controlPlaneClientStub) Audit(_ context.Context, request *controlpb.AuditRequest, _ ...grpc.CallOption) (*controlpb.AuditResponse, error) {
+	f.audit = request
+	return &controlpb.AuditResponse{Entries: f.entries}, f.err
 }
 
 func (f *controlPlaneClientStub) Command(_ context.Context, request *controlpb.CommandRequest, _ ...grpc.CallOption) (*controlpb.CommandResponse, error) {
@@ -175,5 +182,41 @@ func TestControlPlaneHistoryWithoutAControlPlaneIsUnavailable(t *testing.T) {
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", response.Code)
+	}
+}
+
+// TestControlPlaneAuditFiltersByTableAndRecord: the page names its table and
+// records; the endpoint forwards exactly those and returns each changed field
+// with its JSON values intact.
+func TestControlPlaneAuditFiltersByTableAndRecord(t *testing.T) {
+	client := &controlPlaneClientStub{entries: []*controlpb.AuditEntry{{
+		Id: 9, Table: "resources", RecordKey: "workflow-execution-settings", Field: "max_model_tool_steps",
+		OldValueJson: []byte("90"), NewValueJson: []byte("120"), Version: 2, Actor: "system", Source: "archie-ui",
+	}}}
+	server := &Server{ControlPlane: client}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/control-plane/audit?table=resources&key=workflow-execution-settings&key=model-settings", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
+	}
+	if client.audit.GetTable() != "resources" || strings.Join(client.audit.GetRecordKeys(), ",") != "workflow-execution-settings,model-settings" {
+		t.Fatalf("forwarded %+v", client.audit)
+	}
+	var got struct {
+		Entries []struct {
+			Field    string          `json:"field"`
+			OldValue json.RawMessage `json:"old_value"`
+			NewValue json.RawMessage `json:"new_value"`
+			Version  int64           `json:"version"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Entries) != 1 || got.Entries[0].Field != "max_model_tool_steps" || string(got.Entries[0].OldValue) != "90" || string(got.Entries[0].NewValue) != "120" || got.Entries[0].Version != 2 {
+		t.Fatalf("entries = %+v", got.Entries)
 	}
 }

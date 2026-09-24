@@ -202,12 +202,16 @@ func (b *boot) applyWorkflowExecutionSettings(ctx context.Context, settings work
 	b.cfgHolder.Set(candidate.cfg)
 	b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, version, nil)
 	b.log.Info("workflow execution settings applied", "version", version)
+	if limit, uptime := settings.MaxTaskRuntime, candidate.cfg.Containers.MaxUptime.Std(); uptime > 0 && (limit <= 0 || limit > uptime) {
+		b.log.Warn("containers.max_uptime is shorter than the task time limit; the container is killed first", "max_uptime", uptime, "max_task_runtime", limit)
+	}
 	return nil
 }
 
 func applyExecutionBudgets(cfg *config.Config, settings workflow.ExecutionSettings) {
 	cfg.Budgets = config.Budgets{
 		MaxSteps: settings.MaxModelToolSteps, WallClock: config.Duration(settings.MaxRuntime), GateMaxFailures: settings.MaxConsecutiveGateFailures,
+		TaskWallClock: config.Duration(settings.MaxTaskRuntime),
 	}
 	for i := range cfg.Identities {
 		cfg.Identities[i].Budgets = cfg.Budgets

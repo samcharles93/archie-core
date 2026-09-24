@@ -99,6 +99,20 @@ export interface ResourceRevision {
   at?: string;
 }
 
+/** One changed field of one record, as sys_audit holds it. */
+export interface AuditEntry {
+  id: number;
+  table: string;
+  record_key: string;
+  field: string;
+  old_value: unknown;
+  new_value: unknown;
+  version: number;
+  actor: string;
+  source: string;
+  at?: string;
+}
+
 interface HistoryResponse {
   revisions?: ResourceRevision[];
 }
@@ -365,6 +379,15 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     return response.revisions ?? [];
   }
 
+  async function audit(table: string, keys: string[]): Promise<AuditEntry[]> {
+    const query = new URLSearchParams({ table });
+    for (const key of keys) query.append("key", key);
+    const response = await request<{ entries?: AuditEntry[] }>(
+      `/api/control-plane/audit?${query}`,
+    );
+    return response.entries ?? [];
+  }
+
   /** The shipped definitions the catalog offers as "restore shipped". */
   function shippedWorkflows(): WorkflowDefinitionCollection {
     const defaults = catalog.value.find(
@@ -384,6 +407,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     catalogError,
     states,
     genericResources,
+    audit,
     history,
     load,
     loadApplyStatus,

@@ -2399,3 +2399,40 @@ func TestRunViaAgentParksWhenTheContainerExits(t *testing.T) {
 		t.Fatalf("task = %+v, %v; want parked naming the container exit", got, err)
 	}
 }
+
+// A task that outruns its overall time limit is parked with the limit named,
+// even while its agent is still alive and silent.
+func TestRunViaAgentParksWhenTheTaskTimeLimitPasses(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	ctx := context.Background()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 22, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(*natsio.Msg) {})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	runCtx, stop := withTaskTimeLimit(ctx, 100*time.Millisecond)
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		d.runViaAgent(runCtx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, config.AgentProfile{})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runViaAgent still blocked after the task time limit passed")
+	}
+
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got.Status != workflow.StatusParked || !strings.Contains(got.ParkReason, "task exceeded its time limit (100ms)") {
+		t.Fatalf("task = %+v, %v; want parked naming the time limit", got, err)
+	}
+}

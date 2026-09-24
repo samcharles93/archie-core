@@ -167,11 +167,13 @@ func (r Repo) EffectiveMaxRetries(global int) int {
 	return global
 }
 
-// Budgets bound every agent stage. Zero disables a limit.
+// Budgets bound every agent stage, and TaskWallClock the whole task run. Zero
+// disables a limit.
 type Budgets struct {
 	MaxSteps        int      `toml:"max_steps" json:"max_steps" yaml:"max_steps"`
 	WallClock       Duration `toml:"wall_clock" json:"wall_clock" yaml:"wall_clock"`
 	GateMaxFailures int      `toml:"gate_max_failures" json:"gate_max_failures" yaml:"gate_max_failures"`
+	TaskWallClock   Duration `toml:"task_wall_clock" json:"task_wall_clock" yaml:"task_wall_clock"`
 }
 
 // Provider configures one LLM provider for the runtime catalog.

@@ -212,6 +212,20 @@ type Source struct {
 	UpdatedAt time.Time
 }
 
+type SysAudit struct {
+	ID            int64
+	At            time.Time
+	TableName     string
+	RecordKey     string
+	Field         string
+	OldValue      []byte
+	NewValue      []byte
+	RecordVersion int64
+	Actor         string
+	Source        string
+	RequestID     string
+}
+
 type Task struct {
 	ID                        int64
 	Owner                     string

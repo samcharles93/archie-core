@@ -308,8 +308,9 @@ listen = "127.0.0.1:8484"
 
 [budgets]
 max_steps = 60
-wall_clock = "30m"
+wall_clock = "30m"          # one agent call
 gate_max_failures = 5
+task_wall_clock = "4h"      # a whole task run; keep containers.max_uptime at or above it
 
 # Services selects contract adapters at composition time (see
 # docs/prds/state-store-contract.md).

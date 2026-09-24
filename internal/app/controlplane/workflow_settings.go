@@ -14,10 +14,17 @@ import (
 
 const WorkflowExecutionSettingsKind = "workflow-execution-settings"
 
+// defaultTaskRuntime bounds a task run when the stored settings predate the
+// limit.
+const defaultTaskRuntime = 4 * time.Hour
+
 type executionSettingsDocument struct {
 	MaxModelToolSteps          int   `json:"max_model_tool_steps"`
-	MaxRuntimeSeconds          int64 `json:"max_runtime_seconds"`
+	MaxRuntimeSeconds          int64 `json:"max_runtime_seconds" title:"Max seconds per agent call" doc:"Limit for one agent call inside a stage. 0 disables it."`
 	MaxConsecutiveGateFailures int   `json:"max_consecutive_gate_failures"`
+	// MaxTaskRuntimeSeconds is a pointer so a document stored before the
+	// field existed reads as the default, while an explicit 0 disables it.
+	MaxTaskRuntimeSeconds *int64 `json:"max_task_runtime_seconds" title:"Max task runtime seconds" doc:"Limit for a whole task run; the task is parked when it passes. 0 disables it."`
 }
 
 // ImportWorkflowExecutionSettings preserves the focused bootstrap API for callers
@@ -46,14 +53,18 @@ func workflowDefinition() Definition {
 	return Definition{
 		Kind: WorkflowExecutionSettingsKind, Title: "Workflow execution settings", ApplyMode: "live", Document: executionSettingsDocument{},
 		Seed: func(cfg config.Config) any {
-			return executionSettingsDocument{cfg.Budgets.MaxSteps, int64(time.Duration(cfg.Budgets.WallClock) / time.Second), cfg.Budgets.GateMaxFailures}
+			taskRuntime := time.Duration(cfg.Budgets.TaskWallClock)
+			if taskRuntime == 0 {
+				taskRuntime = defaultTaskRuntime
+			}
+			return executionSettingsDocument{cfg.Budgets.MaxSteps, int64(time.Duration(cfg.Budgets.WallClock) / time.Second), cfg.Budgets.GateMaxFailures, new(int64(taskRuntime / time.Second))}
 		},
 		Validate: func(input []byte) error { _, err := decodeSettings(input); return err },
 	}
 }
 
 func encodeSettings(s workflow.ExecutionSettings) ([]byte, error) {
-	return json.Marshal(executionSettingsDocument{s.MaxModelToolSteps, int64(s.MaxRuntime / time.Second), s.MaxConsecutiveGateFailures})
+	return json.Marshal(executionSettingsDocument{s.MaxModelToolSteps, int64(s.MaxRuntime / time.Second), s.MaxConsecutiveGateFailures, new(int64(s.MaxTaskRuntime / time.Second))})
 }
 
 func decodeSettings(value []byte) (workflow.ExecutionSettings, error) {
@@ -61,7 +72,11 @@ func decodeSettings(value []byte) (workflow.ExecutionSettings, error) {
 	if err := json.Unmarshal(value, &document); err != nil {
 		return workflow.ExecutionSettings{}, fmt.Errorf("%w: invalid JSON: %w", ErrValidation, err)
 	}
-	settings := workflow.ExecutionSettings{MaxModelToolSteps: document.MaxModelToolSteps, MaxRuntime: time.Duration(document.MaxRuntimeSeconds) * time.Second, MaxConsecutiveGateFailures: document.MaxConsecutiveGateFailures}
+	taskRuntime := defaultTaskRuntime
+	if document.MaxTaskRuntimeSeconds != nil {
+		taskRuntime = time.Duration(*document.MaxTaskRuntimeSeconds) * time.Second
+	}
+	settings := workflow.ExecutionSettings{MaxModelToolSteps: document.MaxModelToolSteps, MaxRuntime: time.Duration(document.MaxRuntimeSeconds) * time.Second, MaxConsecutiveGateFailures: document.MaxConsecutiveGateFailures, MaxTaskRuntime: taskRuntime}
 	if err := settings.Validate(); err != nil {
 		return workflow.ExecutionSettings{}, fmt.Errorf("%w: %w", ErrValidation, err)
 	}

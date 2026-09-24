@@ -78,6 +78,10 @@ func (*watchStub) History(context.Context, *pb.HistoryRequest, ...grpc.CallOptio
 	panic("unexpected History")
 }
 
+func (*watchStub) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
+}
+
 func (*watchStub) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {
 	panic("unexpected Command")
 }
@@ -177,7 +181,7 @@ func (s *scriptStream) Recv() (*pb.WatchResponse, error) {
 func TestWorkflowExecutionSettingsWatchIsReEstablishedAfterTheStreamEnds(t *testing.T) {
 	// 25 steps and an hour, so an applied update is unmistakably not the value
 	// the daemon booted with.
-	updated := workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4}
+	updated := workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4, MaxTaskRuntime: 4 * time.Hour}
 	updatedDocument := `{"max_model_tool_steps": 25, "max_runtime_seconds": 3600, "max_consecutive_gate_failures": 4}`
 
 	for _, tt := range watchStreamEnds {
@@ -358,7 +362,7 @@ func TestWatchTransportFailureDoesNotOverwriteARefusal(t *testing.T) {
 // already runs, and reported a second time.
 func TestWatchReconnectDoesNotReplayWhatItAlreadyApplied(t *testing.T) {
 	t.Parallel()
-	updated := workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4}
+	updated := workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4, MaxTaskRuntime: 4 * time.Hour}
 	updatedDocument := `{"max_model_tool_steps": 25, "max_runtime_seconds": 3600, "max_consecutive_gate_failures": 4}`
 	b, recorder := newLiveApplyBoot(t, fileConfig())
 	stub := &watchStub{
@@ -1087,6 +1091,10 @@ func (b busyWatch) Query(context.Context, *pb.QueryRequest, ...grpc.CallOption) 
 
 func (busyWatch) History(context.Context, *pb.HistoryRequest, ...grpc.CallOption) (*pb.HistoryResponse, error) {
 	panic("unexpected History")
+}
+
+func (busyWatch) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
 }
 
 func (busyWatch) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {

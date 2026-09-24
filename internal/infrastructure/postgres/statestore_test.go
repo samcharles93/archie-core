@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -294,5 +296,39 @@ func TestConcurrentResourceWritesAcceptOnlyOneExpectedVersion(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].Version != 1 {
 		t.Fatalf("history after race = %+v, want exactly one version 1", history)
+	}
+}
+
+// TestResourceWritesRecordFieldLevelAudit: each write records one sys_audit row
+// per field it changed, newest first, and a replayed write records nothing.
+func TestResourceWritesRecordFieldLevelAudit(t *testing.T) {
+	resources := resourcesFor(t)
+	put := func(value string, expected int64, request string) {
+		t.Helper()
+		if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+			Kind: "settings", Value: []byte(value), Actor: "sam", Source: "archie-ui",
+			RequestID: request, ExpectedVersion: expected,
+		}); err != nil {
+			t.Fatalf("PutResource(%s): %v", value, err)
+		}
+	}
+	put(`{"a":1,"b":2}`, 0, "r1")
+	put(`{"a":1,"b":3,"c":4}`, 1, "r2")
+	put(`{"a":1,"b":3,"c":4}`, 1, "r2")
+
+	audit, err := resources.Audit(t.Context(), storecontract.AuditTableResources, []string{"settings"}, 0)
+	if err != nil {
+		t.Fatalf("ResourceAudit: %v", err)
+	}
+	got := make([]string, 0, len(audit))
+	for _, entry := range audit {
+		got = append(got, fmt.Sprintf("v%d %s %s->%s by %s", entry.Version, entry.Field, entry.OldValue, entry.NewValue, entry.Actor))
+	}
+	want := []string{
+		"v2 c ->4 by sam", "v2 b 2->3 by sam",
+		"v1 b ->2 by sam", "v1 a ->1 by sam",
+	}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Fatalf("audit =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

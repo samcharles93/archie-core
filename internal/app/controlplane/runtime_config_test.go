@@ -28,6 +28,10 @@ func (*runtimeConfigClient) History(context.Context, *pb.HistoryRequest, ...grpc
 	panic("unexpected History")
 }
 
+func (*runtimeConfigClient) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
+}
+
 func (*runtimeConfigClient) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {
 	panic("unexpected Command")
 }

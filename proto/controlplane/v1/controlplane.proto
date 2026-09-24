@@ -8,6 +8,7 @@ service ControlPlaneService {
   rpc Catalog(CatalogRequest) returns (CatalogResponse);
   rpc Query(QueryRequest) returns (QueryResponse);
   rpc History(HistoryRequest) returns (HistoryResponse);
+  rpc Audit(AuditRequest) returns (AuditResponse);
   rpc Command(CommandRequest) returns (CommandResponse);
   rpc Watch(WatchRequest) returns (stream WatchResponse);
 }
@@ -56,6 +57,30 @@ message HistoryRequest {
   int32 limit = 2;
 }
 message HistoryResponse { repeated Revision revisions = 1; }
+
+// AuditEntry is one changed field of one record. Old and new values are JSON;
+// an absent side is empty.
+message AuditEntry {
+  int64 id = 1;
+  string table = 2;
+  string record_key = 3;
+  string field = 4;
+  bytes old_value_json = 5;
+  bytes new_value_json = 6;
+  int64 version = 7;
+  string actor = 8;
+  string source = 9;
+  string request_id = 10;
+  google.protobuf.Timestamp at = 11;
+}
+message AuditRequest {
+  string table = 1;
+  repeated string record_keys = 2;
+  // Limit caps the entries returned, newest first. Zero means the server's
+  // own default.
+  int32 limit = 3;
+}
+message AuditResponse { repeated AuditEntry entries = 1; }
 
 message CommandRequest {
   string kind = 1;

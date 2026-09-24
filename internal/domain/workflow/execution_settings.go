@@ -11,6 +11,7 @@ type ExecutionSettings struct {
 	MaxModelToolSteps          int           `json:"max_model_tool_steps"`
 	MaxRuntime                 time.Duration `json:"max_runtime"`
 	MaxConsecutiveGateFailures int           `json:"max_consecutive_gate_failures"`
+	MaxTaskRuntime             time.Duration `json:"max_task_runtime"`
 }
 
 // Validate rejects negative limits. Zero preserves the established meaning of
@@ -22,6 +23,9 @@ func (s ExecutionSettings) Validate() error {
 	}
 	if s.MaxRuntime < 0 {
 		errs = append(errs, fmt.Errorf("max runtime must not be negative"))
+	}
+	if s.MaxTaskRuntime < 0 {
+		errs = append(errs, fmt.Errorf("max task runtime must not be negative"))
 	}
 	if s.MaxConsecutiveGateFailures < 0 {
 		errs = append(errs, fmt.Errorf("max consecutive gate failures must not be negative"))

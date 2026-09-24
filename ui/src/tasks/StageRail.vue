@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { useIntervalFn } from "@vueuse/core";
+import { computed, ref } from "vue";
 
 import {
   Empty,
@@ -13,6 +14,8 @@ import AttemptSelector from "./AttemptSelector.vue";
 import PanelError from "./PanelError.vue";
 import PanelLoading from "./PanelLoading.vue";
 import StageRow from "./StageRow.vue";
+import { selectConfigEvent, taskTimeLimitMs } from "./attempt-config";
+import { duration } from "./timeline-event";
 import { stageStatusMeta } from "./stage-rail";
 import { useTaskRun } from "./use-task-run";
 import type { AttemptsState, Stage } from "./task-run";
@@ -61,6 +64,23 @@ function selectStage(stage: Stage): void {
   run.setTab("log");
 }
 
+const now = ref(new Date());
+useIntervalFn(() => (now.value = new Date()), 30_000);
+const limitMs = computed(() =>
+  taskTimeLimitMs(selectConfigEvent(run.events, attempt.value?.attempt ?? null)),
+);
+/** Time used is shown only while the attempt runs: once it ends, the stage
+ * durations are the record, and wall time since the start is not work. */
+const timeLimit = computed(() => {
+  if (!limitMs.value) return "";
+  const limit = duration(limitMs.value);
+  const started = Date.parse(attempt.value?.started_at ?? "");
+  if (attempt.value?.status !== "running" || Number.isNaN(started)) {
+    return `${limit} time limit`;
+  }
+  return `${duration(Math.max(0, now.value.getTime() - started))} used of ${limit} limit`;
+});
+
 /** An attempt's start is rendered as an absolute instant, never as "started 2
  * days ago": on a still-running attempt a relative stamp reads as two days of
  * work, which is exactly the elapsed-time claim the design forbids. */
@@ -108,6 +128,9 @@ const startedAt = computed(() => {
         </template>
         <Badge :variant="meta.kind">{{ meta.label }}</Badge>
         <span class="text-xs text-fg-muted">{{ startedAt }}</span>
+        <span v-if="timeLimit" class="text-xs text-fg-muted">{{
+          timeLimit
+        }}</span>
       </div>
       <ol
         v-if="stages.length"

@@ -48,6 +48,10 @@ func (*controlPlaneStub) History(context.Context, *pb.HistoryRequest, ...grpc.Ca
 	panic("unexpected History")
 }
 
+func (*controlPlaneStub) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
+}
+
 func (*controlPlaneStub) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {
 	panic("unexpected Command")
 }

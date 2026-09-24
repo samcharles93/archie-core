@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuditTable from "@/base/AuditTable.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
@@ -25,5 +26,6 @@ onMounted(controlPlane.load);
       :key="descriptor.kind"
       :descriptor="descriptor"
     />
+    <AuditTable :resources="resources" />
   </div>
 </template>

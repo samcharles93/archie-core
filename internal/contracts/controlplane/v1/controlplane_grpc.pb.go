@@ -22,6 +22,7 @@ const (
 	ControlPlaneService_Catalog_FullMethodName = "/controlplane.v1.ControlPlaneService/Catalog"
 	ControlPlaneService_Query_FullMethodName   = "/controlplane.v1.ControlPlaneService/Query"
 	ControlPlaneService_History_FullMethodName = "/controlplane.v1.ControlPlaneService/History"
+	ControlPlaneService_Audit_FullMethodName   = "/controlplane.v1.ControlPlaneService/Audit"
 	ControlPlaneService_Command_FullMethodName = "/controlplane.v1.ControlPlaneService/Command"
 	ControlPlaneService_Watch_FullMethodName   = "/controlplane.v1.ControlPlaneService/Watch"
 )
@@ -33,6 +34,7 @@ type ControlPlaneServiceClient interface {
 	Catalog(ctx context.Context, in *CatalogRequest, opts ...grpc.CallOption) (*CatalogResponse, error)
 	Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (*QueryResponse, error)
 	History(ctx context.Context, in *HistoryRequest, opts ...grpc.CallOption) (*HistoryResponse, error)
+	Audit(ctx context.Context, in *AuditRequest, opts ...grpc.CallOption) (*AuditResponse, error)
 	Command(ctx context.Context, in *CommandRequest, opts ...grpc.CallOption) (*CommandResponse, error)
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
 }
@@ -75,6 +77,16 @@ func (c *controlPlaneServiceClient) History(ctx context.Context, in *HistoryRequ
 	return out, nil
 }
 
+func (c *controlPlaneServiceClient) Audit(ctx context.Context, in *AuditRequest, opts ...grpc.CallOption) (*AuditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuditResponse)
+	err := c.cc.Invoke(ctx, ControlPlaneService_Audit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controlPlaneServiceClient) Command(ctx context.Context, in *CommandRequest, opts ...grpc.CallOption) (*CommandResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CommandResponse)
@@ -111,6 +123,7 @@ type ControlPlaneServiceServer interface {
 	Catalog(context.Context, *CatalogRequest) (*CatalogResponse, error)
 	Query(context.Context, *QueryRequest) (*QueryResponse, error)
 	History(context.Context, *HistoryRequest) (*HistoryResponse, error)
+	Audit(context.Context, *AuditRequest) (*AuditResponse, error)
 	Command(context.Context, *CommandRequest) (*CommandResponse, error)
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
 	mustEmbedUnimplementedControlPlaneServiceServer()
@@ -131,6 +144,9 @@ func (UnimplementedControlPlaneServiceServer) Query(context.Context, *QueryReque
 }
 func (UnimplementedControlPlaneServiceServer) History(context.Context, *HistoryRequest) (*HistoryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method History not implemented")
+}
+func (UnimplementedControlPlaneServiceServer) Audit(context.Context, *AuditRequest) (*AuditResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Audit not implemented")
 }
 func (UnimplementedControlPlaneServiceServer) Command(context.Context, *CommandRequest) (*CommandResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Command not implemented")
@@ -213,6 +229,24 @@ func _ControlPlaneService_History_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControlPlaneService_Audit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServiceServer).Audit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlaneService_Audit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServiceServer).Audit(ctx, req.(*AuditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ControlPlaneService_Command_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CommandRequest)
 	if err := dec(in); err != nil {
@@ -260,6 +294,10 @@ var ControlPlaneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "History",
 			Handler:    _ControlPlaneService_History_Handler,
+		},
+		{
+			MethodName: "Audit",
+			Handler:    _ControlPlaneService_Audit_Handler,
 		},
 		{
 			MethodName: "Command",

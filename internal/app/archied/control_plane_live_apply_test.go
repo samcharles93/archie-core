@@ -25,7 +25,7 @@ import (
 // limits stayed" and a test that asserts "the update was applied" cannot
 // disagree about what "running" means.
 var (
-	bootedSettings = workflow.ExecutionSettings{MaxModelToolSteps: 10, MaxRuntime: 5 * time.Minute, MaxConsecutiveGateFailures: 3}
+	bootedSettings = workflow.ExecutionSettings{MaxModelToolSteps: 10, MaxRuntime: 5 * time.Minute, MaxConsecutiveGateFailures: 3, MaxTaskRuntime: 4 * time.Hour}
 	bootedDocument = `{"max_model_tool_steps": 10, "max_runtime_seconds": 300, "max_consecutive_gate_failures": 3}`
 )
 
@@ -122,6 +122,10 @@ func (s *settingsWatchStub) Query(context.Context, *pb.QueryRequest, ...grpc.Cal
 
 func (*settingsWatchStub) History(context.Context, *pb.HistoryRequest, ...grpc.CallOption) (*pb.HistoryResponse, error) {
 	panic("unexpected History")
+}
+
+func (*settingsWatchStub) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
 }
 
 func (*settingsWatchStub) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {
@@ -297,7 +301,7 @@ func TestLiveExecutionSettingsRefusalIsReportedThroughTheClient(t *testing.T) {
 		{
 			name:        "an update the process can run is applied",
 			document:    `{"max_model_tool_steps": 25, "max_runtime_seconds": 3600, "max_consecutive_gate_failures": 4}`,
-			wantRunning: workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4},
+			wantRunning: workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4, MaxTaskRuntime: 4 * time.Hour},
 			wantVersion: 2,
 		},
 		{
@@ -353,5 +357,6 @@ func budgetsFor(settings workflow.ExecutionSettings) config.Budgets {
 		MaxSteps:        settings.MaxModelToolSteps,
 		WallClock:       config.Duration(settings.MaxRuntime),
 		GateMaxFailures: settings.MaxConsecutiveGateFailures,
+		TaskWallClock:   config.Duration(settings.MaxTaskRuntime),
 	}
 }

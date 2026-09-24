@@ -39,6 +39,10 @@ func (scriptedWatchClient) History(context.Context, *pb.HistoryRequest, ...grpc.
 	panic("History is not part of the watch path")
 }
 
+func (scriptedWatchClient) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
+}
+
 func (scriptedWatchClient) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {
 	panic("Command is not part of the watch path")
 }

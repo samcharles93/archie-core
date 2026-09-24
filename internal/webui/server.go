@@ -293,6 +293,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}/history", s.handleControlPlaneHistory)
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
 	mux.HandleFunc("GET /api/control-plane/watch/{kind}", s.handleControlPlaneWatch)
+	mux.HandleFunc("GET /api/control-plane/audit", s.handleAudit)
 	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
 	mux.HandleFunc("GET /api/identities/watch", s.handleIdentitiesWatch)
 	mux.HandleFunc("POST /api/identities", s.handleIdentityCreate)

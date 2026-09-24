@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -52,6 +53,29 @@ func (s *Resources) ResourceHistory(ctx context.Context, kind string, limit int)
 		))
 	}
 	return resources, nil
+}
+
+// Audit returns the field-level audit of the named records of one table,
+// newest first. A limit of zero or less returns every entry.
+func (s *Resources) Audit(ctx context.Context, table string, keys []string, limit int) ([]storecontract.AuditEntry, error) {
+	if limit <= 0 {
+		limit = math.MaxInt32
+	}
+	rows, err := postgresdb.New(s.pool).AuditForRecords(ctx, postgresdb.AuditForRecordsParams{
+		TableName: table, RecordKeys: keys, EntryLimit: int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]storecontract.AuditEntry, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, storecontract.AuditEntry{
+			ID: row.ID, Table: row.TableName, RecordKey: row.RecordKey, Field: row.Field,
+			OldValue: row.OldValue, NewValue: row.NewValue, Version: row.RecordVersion,
+			Actor: row.Actor, Source: row.Source, RequestID: row.RequestID, At: row.At,
+		})
+	}
+	return entries, nil
 }
 
 func (s *Resources) PutResource(ctx context.Context, write storecontract.ResourceWrite) (_ storecontract.Resource, retErr error) {
@@ -109,6 +133,12 @@ func (s *Resources) PutResource(ctx context.Context, write storecontract.Resourc
 		CurrentVersion: current, At: write.At,
 	})
 	if err != nil {
+		return storecontract.Resource{}, err
+	}
+	if err := queries.InsertResourceAudit(ctx, postgresdb.InsertResourceAuditParams{
+		At: write.At, Kind: write.Kind, Version: resource.Version, Actor: write.Actor,
+		Source: write.Source, RequestID: write.RequestID, PreviousVersion: current, Value: write.Value,
+	}); err != nil {
 		return storecontract.Resource{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -10,7 +10,6 @@ import {
   type ResourceDescriptor,
 } from "@/stores/control-plane";
 import ConfigCard from "./ConfigCard.vue";
-import ResourceHistory from "./ResourceHistory.vue";
 import StructuredValueEditor from "./StructuredValueEditor.vue";
 import { parseSchema } from "./resource-schema";
 
@@ -75,6 +74,5 @@ async function save(): Promise<void> {
         </Button>
       </div>
     </form>
-    <ResourceHistory :kind="descriptor.kind" />
   </ConfigCard>
 </template>

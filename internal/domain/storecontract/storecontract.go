@@ -450,6 +450,27 @@ type Resource struct {
 	At              time.Time
 }
 
+// AuditTableResources is the sys_audit table name for control-plane resources,
+// keyed by resource kind.
+const AuditTableResources = "resources"
+
+// AuditEntry is one changed field of one record, as sys_audit holds it. Any
+// store table may write entries; Table and RecordKey locate the record.
+// OldValue and NewValue are JSON; an absent side is empty.
+type AuditEntry struct {
+	ID        int64
+	Table     string
+	RecordKey string
+	Field     string
+	OldValue  []byte
+	NewValue  []byte
+	Version   int64
+	Actor     string
+	Source    string
+	RequestID string
+	At        time.Time
+}
+
 // ResourceWrite is a control-plane resource write request. ExpectedVersion is
 // the optimistic-concurrency guard: a write whose expectation does not match
 // the stored revision is refused with ErrResourceVersionConflict.

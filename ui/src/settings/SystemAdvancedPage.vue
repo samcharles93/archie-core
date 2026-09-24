@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuditTable from "@/base/AuditTable.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
@@ -32,6 +33,7 @@ onMounted(load);
       :key="descriptor.kind"
       :descriptor="descriptor"
     />
+    <AuditTable :resources="resources" />
     <ConfigCard title="Managed elsewhere">
       <div class="flex flex-wrap gap-2">
         <Button as-child variant="outline"

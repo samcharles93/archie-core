@@ -33,6 +33,7 @@ var (
 type ResourceStore interface {
 	Resource(context.Context, string) (storecontract.Resource, error)
 	ResourceHistory(context.Context, string, int) ([]storecontract.Resource, error)
+	Audit(ctx context.Context, table string, keys []string, limit int) ([]storecontract.AuditEntry, error)
 	PutResource(context.Context, storecontract.ResourceWrite) (storecontract.Resource, error)
 }
 
@@ -107,6 +108,33 @@ func (s *Server) History(ctx context.Context, request *pb.HistoryRequest) (*pb.H
 		})
 	}
 	return &pb.HistoryResponse{Revisions: out}, nil
+}
+
+// defaultAuditLimit caps an audit read: a page shows recent changes, not the
+// whole trail.
+const defaultAuditLimit = 500
+
+func (s *Server) Audit(ctx context.Context, request *pb.AuditRequest) (*pb.AuditResponse, error) {
+	if request.GetTable() == "" || len(request.GetRecordKeys()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "table and record keys are required")
+	}
+	limit := int(request.GetLimit())
+	if limit <= 0 || limit > defaultAuditLimit {
+		limit = defaultAuditLimit
+	}
+	entries, err := s.store.Audit(ctx, request.GetTable(), request.GetRecordKeys(), limit)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]*pb.AuditEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, &pb.AuditEntry{
+			Id: entry.ID, Table: entry.Table, RecordKey: entry.RecordKey, Field: entry.Field,
+			OldValueJson: entry.OldValue, NewValueJson: entry.NewValue, Version: entry.Version,
+			Actor: entry.Actor, Source: entry.Source, RequestId: entry.RequestID, At: timestamp(entry.At),
+		})
+	}
+	return &pb.AuditResponse{Entries: out}, nil
 }
 
 func (s *Server) Command(ctx context.Context, request *pb.CommandRequest) (*pb.CommandResponse, error) {

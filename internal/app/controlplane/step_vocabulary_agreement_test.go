@@ -320,6 +320,10 @@ func (c *definitionsClient) History(context.Context, *pb.HistoryRequest, ...grpc
 	panic("History is not part of the workflow-definitions path")
 }
 
+func (c *definitionsClient) Audit(context.Context, *pb.AuditRequest, ...grpc.CallOption) (*pb.AuditResponse, error) {
+	return &pb.AuditResponse{}, nil
+}
+
 func (c *definitionsClient) Command(_ context.Context, request *pb.CommandRequest, _ ...grpc.CallOption) (*pb.CommandResponse, error) {
 	c.command = request
 	return &pb.CommandResponse{Resource: &pb.Resource{Version: 5}}, nil

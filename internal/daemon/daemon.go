@@ -1276,9 +1276,11 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	// worktreerpc clients to that identity, and the daemon registered one
 	// server pair per identity (plus the root pair), so a container-mode
 	// task is always served by its own forge client and worktree manager.
-	runCtx, stopWatch := withContainerExit(ctx, ctr.Exited())
+	limitCtx, stopLimit := withTaskTimeLimit(ctx, d.configFor(task).Budgets.TaskWallClock.Std())
+	runCtx, stopWatch := withContainerExit(limitCtx, ctr.Exited())
 	d.runViaAgent(runCtx, task, repo, profile)
 	stopWatch()
+	stopLimit()
 
 	// Teardown storage after workflow completes. The Docker backend is a
 	// no-op; future backends (temp volumes, NFS leases) use this hook.
@@ -1575,8 +1577,8 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	}
 
 	reply, err := d.requestTaskRun(ctx, task.ID, data)
-	if err != nil && errors.Is(context.Cause(ctx), errContainerExited) {
-		err = errContainerExited
+	if cause := context.Cause(ctx); err != nil && (errors.Is(cause, errContainerExited) || errors.Is(cause, errTaskTimeLimit)) {
+		err = cause
 	}
 	if err != nil {
 		d.Log.Error("taskrun request failed", "task", task.ID, "err", err)
@@ -2098,4 +2100,17 @@ func withContainerExit(ctx context.Context, exited <-chan struct{}) (context.Con
 		}
 	}()
 	return runCtx, func() { cancel(nil) }
+}
+
+// errTaskTimeLimit is the cancellation cause when a task outruns its overall
+// time limit (the execution settings' max task runtime).
+var errTaskTimeLimit = errors.New("task exceeded its time limit")
+
+// withTaskTimeLimit bounds a whole task run. A limit of zero or less applies
+// no bound.
+func withTaskTimeLimit(ctx context.Context, limit time.Duration) (context.Context, func()) {
+	if limit <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeoutCause(ctx, limit, fmt.Errorf("%w (%s)", errTaskTimeLimit, limit))
 }
