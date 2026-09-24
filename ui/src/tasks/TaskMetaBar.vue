@@ -8,8 +8,7 @@ import { statusKind, statusLabel } from "@/lib/task-meta";
 import { useTaskRun } from "./use-task-run";
 
 /**
- * The task's lifecycle status, plus whatever the page parks on the same row
- * (the attempt pager rides here, pushed right). Everything comes from reads
+ * The task's lifecycle status and, when parked, why. Everything comes from reads
  * the page already holds, so the bar costs no request of its own.
  *
  * "Not read" and "loading" are kept apart from "no status": the task list is
@@ -33,7 +32,11 @@ const taskStatusLabel = computed(() => statusLabel(run.task?.status ?? ""));
     >
     <template v-else-if="run.task">
       <Badge :variant="taskKind">{{ taskStatusLabel }}</Badge>
+      <span
+        v-if="run.task.status === 'parked' && run.task.park_reason"
+        class="min-w-0 break-words text-fg-muted"
+        >{{ run.task.park_reason }}</span
+      >
     </template>
-    <slot />
   </div>
 </template>

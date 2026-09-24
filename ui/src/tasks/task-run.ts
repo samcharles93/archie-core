@@ -51,6 +51,7 @@ export interface TaskRecord {
   issue_url?: string;
   pr_number?: number;
   pr_url?: string;
+  park_reason?: string;
   actions?: string[];
 }
 

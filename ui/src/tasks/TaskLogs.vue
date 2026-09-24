@@ -112,7 +112,6 @@ const download = computed(() =>
       class="mb-3"
       :filters="filters"
       :stages="stages"
-      :attempt="resolvedAttempt"
       @filter="$emit('filter', $event)"
     />
 

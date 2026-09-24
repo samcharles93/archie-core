@@ -5,7 +5,6 @@ import { useRoute } from "vue-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 
-import AttemptSelector from "./AttemptSelector.vue";
 import TabBar from "./TabBar.vue";
 import TaskDetailNotice from "./TaskDetailNotice.vue";
 import TaskHeader from "./TaskHeader.vue";
@@ -27,8 +26,8 @@ import { provideTaskRun } from "./use-task-run";
  *
  * The page is a master-detail split pane (docs/prds/task-run-master-detail.md):
  * the stage rail is the master and is always visible, the four context panels
- * are the inspector and own the tab bar. Below the shell's 900px frame
- * breakpoint the rail stacks above the inspector.
+ * are the inspector and own the tab bar. Below the `lg` breakpoint the rail
+ * stacks above the inspector.
  *
  * This file composes the page and nothing else: the reads and the caches are
  * use-task-run, the head, meta bar, notes, restart control, attempt selector,
@@ -49,9 +48,7 @@ const run = provideTaskRun(taskId);
   <TaskDetailNotice v-else-if="run.missing" kind="missing" :raw="rawId" />
   <div v-else>
     <TaskHeader :id="rawId" />
-    <TaskMetaBar>
-      <AttemptSelector class="ml-auto" />
-    </TaskMetaBar>
+    <TaskMetaBar />
     <TaskNotes :id="rawId" />
 
     <div

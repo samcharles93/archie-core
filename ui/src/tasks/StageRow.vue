@@ -52,7 +52,6 @@ const nodeClass = computed(() =>
 <template>
   <li
     class="relative grid grid-cols-[1.75rem_1fr] gap-2 pb-4 before:absolute before:top-4 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-border-strong last:before:hidden max-md:grid-cols-1 max-md:border-b max-md:border-border max-md:pb-3 max-md:before:hidden"
-    :class="props.selected ? 'rounded-md bg-primary-soft' : ''"
   >
     <span
       :class="nodeClass"
@@ -60,7 +59,7 @@ const nodeClass = computed(() =>
       aria-hidden="true"
       class="max-md:hidden"
     />
-    <div class="min-w-0" :class="props.selected ? '-my-2 rounded-md py-2' : ''">
+    <div class="min-w-0">
       <!--
         Selecting a stage commands the inspector to this stage's log (the
         master-detail contract). The control is a real button so keyboard
@@ -68,7 +67,8 @@ const nodeClass = computed(() =>
       -->
       <button
         type="button"
-        class="flex w-full flex-wrap items-center gap-2 rounded text-left"
+        class="-mx-2 -my-1 flex w-[calc(100%+1rem)] flex-wrap items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted/40"
+        :class="props.selected ? 'bg-primary-soft hover:bg-primary-soft' : ''"
         :aria-pressed="props.selected ?? false"
         @click="emit('select')"
       >
