@@ -5,6 +5,14 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.41.1] - 2026-09-25
+
+### archied
+
+- **First published build of 1.41.0.** The 1.41.0 tag produced no release
+  artifacts; 1.41.1 carries everything listed under 1.41.0 below, including
+  the PostgreSQL 18 requirement and the removed config keys.
+
 ## [1.41.0] - 2026-09-25
 
 ### archied
