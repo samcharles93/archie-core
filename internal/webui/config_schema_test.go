@@ -64,7 +64,7 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 		"bot_user", "bot_email", "label", "forge.type", "forge.host", "diff_cap_lines",
 		"repos", "models", "providers",
 		"budgets.max_steps", "budgets.wall_clock", "budgets.gate_max_failures",
-		"work_dir", "state_dir", "db_path", "database_url", "skills_dir", "plugin_dir", "secret_engine_dir",
+		"work_dir", "state_dir", "database_url", "skills_dir", "plugin_dir", "secret_engine_dir",
 		"containers.image", "containers.max_concurrency", "containers.max_uptime",
 		"containers.volume_ttl", "containers.pull_policy", "containers.network",
 		"web.listen",
@@ -101,7 +101,6 @@ func TestConfigFieldDescriptorsRestartRequiredIsDeliberate(t *testing.T) {
 		"budgets.gate_max_failures":  false,
 		"work_dir":                   false, // locked, not merely restart-required
 		"state_dir":                  false, // locked, not merely restart-required
-		"db_path":                    false, // locked, not merely restart-required
 		"database_url":               false, // locked, not merely restart-required
 		"skills_dir":                 true,  // absent from reloadableFields
 		"plugin_dir":                 true,
@@ -144,13 +143,13 @@ func TestConfigFieldDescriptorsStructuredFieldsAreNotEditable(t *testing.T) {
 }
 
 // TestConfigFieldDescriptorsLockedStorageFieldsAreNotEditable pins
-// work_dir/db_path as Editable: false in the static catalog. They are also
+// work_dir/database_url as Editable: false in the static catalog. They are also
 // reported LockedReason at runtime via overlay.DeniedKeys (api_config.go),
 // but the catalog marks them non-editable independently so the generic
 // renderer does not need runtime state to know not to offer an edit
 // affordance for a key that can never succeed.
 func TestConfigFieldDescriptorsLockedStorageFieldsAreNotEditable(t *testing.T) {
-	locked := map[string]bool{"work_dir": true, "state_dir": true, "db_path": true, "database_url": true}
+	locked := map[string]bool{"work_dir": true, "state_dir": true, "database_url": true}
 	for _, section := range configFieldDescriptors() {
 		for _, f := range section.Fields {
 			if locked[f.Key] && f.Editable {

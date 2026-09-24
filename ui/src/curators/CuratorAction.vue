@@ -17,12 +17,18 @@ const props = defineProps<{ action: CuratorActionEntry }>();
 <template>
   <li class="rounded-sm bg-muted px-3 py-2">
     <div class="flex items-baseline justify-between gap-2">
-      <span class="text-sm font-medium">{{ props.action.type || "action" }}</span>
+      <span class="text-sm font-medium">{{
+        props.action.type || "action"
+      }}</span>
       <span class="text-xs text-fg-subtle">{{ ago(props.action.at) }}</span>
     </div>
-    <p v-if="props.action.detail" class="mt-1 text-sm text-fg-muted">{{ props.action.detail }}</p>
+    <p v-if="props.action.detail" class="mt-1 text-sm text-fg-muted">
+      {{ props.action.detail }}
+    </p>
     <!-- The reason is the point of this list: an action without one is not
          reviewable. -->
-    <p v-if="props.action.reason" class="mt-1 text-xs text-fg-subtle">Why: {{ props.action.reason }}</p>
+    <p v-if="props.action.reason" class="mt-1 text-xs text-fg-subtle">
+      Why: {{ props.action.reason }}
+    </p>
   </li>
 </template>

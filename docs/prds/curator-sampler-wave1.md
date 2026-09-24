@@ -87,7 +87,7 @@ each implementing `Sampler`:
   sort, ties keep input order so output is deterministic even when two
   candidates share a timestamp), then truncates to `req.Cap` (0 = all).
 - **`staleness`** (`NewStaleness()`): the mirror of recency -- sorts oldest-
-  `At`-first, then truncates to `req.Cap`. This is explicitly a *proxy*:
+  `At`-first, then truncates to `req.Cap`. This is explicitly a _proxy_:
   "hasn't been touched in the longest time" using whatever timestamp the
   caller populated `Candidate.At` with (created, updated, or
   last-reviewed -- the caller's choice, not this package's), never the
@@ -119,7 +119,7 @@ that already accommodates the known future consumer.
 
 Only `ID` and `At` are used by any wave-1 strategy. `Metadata` exists solely
 so GitHub #437 can carry an embedding vector (or whatever else the k-NN/
-power-iteration step needs) through the *same* `Candidate` type without this
+power-iteration step needs) through the _same_ `Candidate` type without this
 package importing `internal/domain/embedding` or growing a `Vector` field
 that every non-surprisal strategy ignores. Untyped and optional, exactly
 like `image.GenerateRequest.Options` and `curator.Action.Detail`'s existing

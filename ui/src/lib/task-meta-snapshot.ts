@@ -29,7 +29,12 @@ export interface ChangeStatusMeta {
 export const DEFAULT_STATUSES: StatusMeta[] = [
   { id: "queued", label: "Queued", kind: "idle" },
   { id: "running", label: "Working", kind: "info" },
-  { id: "waiting_human", label: "Waiting for you", kind: "warn", needs_you: true },
+  {
+    id: "waiting_human",
+    label: "Waiting for you",
+    kind: "warn",
+    needs_you: true,
+  },
   { id: "pr_open", label: "In review", kind: "ok" },
   { id: "merged", label: "Merged", kind: "ok" },
   { id: "completed", label: "Done", kind: "ok" },
@@ -40,13 +45,38 @@ export const DEFAULT_STATUSES: StatusMeta[] = [
 ];
 
 export const DEFAULT_ACTIONS: ActionMeta[] = [
-  { id: "cancel", label: "Cancel", kind: "quiet", confirm: `Cancel "{title}"? This closes the forge issue.` },
-  { id: "stop", label: "Stop", kind: "primary", confirm: `Stop "{title}"? Recoverable work will remain parked.` },
+  {
+    id: "cancel",
+    label: "Cancel",
+    kind: "quiet",
+    confirm: `Cancel "{title}"? This closes the forge issue.`,
+  },
+  {
+    id: "stop",
+    label: "Stop",
+    kind: "primary",
+    confirm: `Stop "{title}"? Recoverable work will remain parked.`,
+  },
   { id: "approve", label: "Approve", kind: "primary" },
-  { id: "reject", label: "Reject", kind: "quiet", confirm: `Reject "{title}"? This closes the forge issue.` },
+  {
+    id: "reject",
+    label: "Reject",
+    kind: "quiet",
+    confirm: `Reject "{title}"? This closes the forge issue.`,
+  },
   { id: "retry", label: "Retry", kind: "primary" },
-  { id: "abandon", label: "Abandon", kind: "quiet", confirm: `Abandon "{title}"? This closes the forge issue.` },
-  { id: "archive", label: "Archive", kind: "quiet", confirm: `Archive the local record for "{title}"?` },
+  {
+    id: "abandon",
+    label: "Abandon",
+    kind: "quiet",
+    confirm: `Abandon "{title}"? This closes the forge issue.`,
+  },
+  {
+    id: "archive",
+    label: "Archive",
+    kind: "quiet",
+    confirm: `Archive the local record for "{title}"?`,
+  },
   { id: "open_pr", label: "Open PR", kind: "link" },
   { id: "open_issue", label: "Open issue", kind: "link" },
 ];

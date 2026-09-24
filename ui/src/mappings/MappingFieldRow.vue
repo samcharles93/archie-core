@@ -4,7 +4,14 @@ import { Trash2 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { FIELD_TYPES, asFieldType } from "./mapping-fields";
 import MappingPreviewStatus from "./MappingPreviewStatus.vue";
@@ -22,8 +29,15 @@ import type { MappingField, Preview, PreviewFailure } from "./state";
  * table cell at 720px, and a segmented control there would push the row wider
  * than the dialog it sits in.
  */
-defineProps<{ field: MappingField; preview: Preview | null; failure?: PreviewFailure }>();
-const emit = defineEmits<{ update: [patch: Partial<MappingField>]; remove: [] }>();
+defineProps<{
+  field: MappingField;
+  preview: Preview | null;
+  failure?: PreviewFailure;
+}>();
+const emit = defineEmits<{
+  update: [patch: Partial<MappingField>];
+  remove: [];
+}>();
 </script>
 
 <template>
@@ -36,16 +50,25 @@ const emit = defineEmits<{ update: [patch: Partial<MappingField>]; remove: [] }>
       />
     </TableCell>
     <TableCell class="font-mono text-xs">
-      <span class="block max-w-56 truncate" :title="field.path">{{ field.path }}</span>
+      <span class="block max-w-56 truncate" :title="field.path">{{
+        field.path
+      }}</span>
     </TableCell>
     <TableCell>
-      <Select :model-value="field.type" @update:model-value="(value) => emit('update', { type: asFieldType(value) })">
+      <Select
+        :model-value="field.type"
+        @update:model-value="
+          (value) => emit('update', { type: asFieldType(value) })
+        "
+      >
         <SelectTrigger size="sm" :aria-label="`Type for ${field.name}`">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            <SelectItem v-for="type in FIELD_TYPES" :key="type" :value="type">{{ type }}</SelectItem>
+            <SelectItem v-for="type in FIELD_TYPES" :key="type" :value="type">{{
+              type
+            }}</SelectItem>
           </SelectGroup>
         </SelectContent>
       </Select>
@@ -54,14 +77,25 @@ const emit = defineEmits<{ update: [patch: Partial<MappingField>]; remove: [] }>
       <Checkbox
         :model-value="field.required"
         :aria-label="`Required: ${field.name}`"
-        @update:model-value="(value) => emit('update', { required: value === true })"
+        @update:model-value="
+          (value) => emit('update', { required: value === true })
+        "
       />
     </TableCell>
     <TableCell>
-      <MappingPreviewStatus :field="field" :preview="preview" :failure="failure" />
+      <MappingPreviewStatus
+        :field="field"
+        :preview="preview"
+        :failure="failure"
+      />
     </TableCell>
     <TableCell>
-      <Button variant="ghost" size="icon-xs" :aria-label="`Remove ${field.name}`" @click="emit('remove')">
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        :aria-label="`Remove ${field.name}`"
+        @click="emit('remove')"
+      >
         <Trash2 />
       </Button>
     </TableCell>

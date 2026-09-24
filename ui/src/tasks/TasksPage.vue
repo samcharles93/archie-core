@@ -5,7 +5,10 @@
 // and is exported so it can be tested directly (jsdom implements neither
 // matchMedia nor scrollIntoView).
 export function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true
+  );
 }
 
 export function revealBehavior(): ScrollBehavior {
@@ -17,12 +20,22 @@ export function revealBehavior(): ScrollBehavior {
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { statusList } from "@/lib/task-meta";
 import { useLiveResource } from "@/stores/live-updates";
 import TaskFilters from "./TaskFilters.vue";
-import { boardStatus, initialTaskFilter, taskMatchesStatus } from "./task-filter";
+import {
+  boardStatus,
+  initialTaskFilter,
+  taskMatchesStatus,
+} from "./task-filter";
 import type { Task } from "./TaskRow.vue";
 import TaskTable from "./TaskTable.vue";
 import TasksState from "./TasksState.vue";
@@ -43,7 +56,9 @@ const tasks = ref<Task[] | null>(null);
 const error = ref<string | null>(null);
 const search = ref("");
 
-const statusQuery = computed(() => (typeof route.query.status === "string" ? route.query.status : ""));
+const statusQuery = computed(() =>
+  typeof route.query.status === "string" ? route.query.status : "",
+);
 const requestedTaskId = computed(() => {
   const raw = route.query.task;
   const id = Number(typeof raw === "string" ? raw : NaN);
@@ -63,7 +78,9 @@ const visible = computed(() =>
     if (!taskMatchesStatus(task, status.value, statusList())) return false;
     const needle = search.value.trim().toLowerCase();
     if (!needle) return true;
-    return `${task.title ?? ""} ${task.repo ?? ""}`.toLowerCase().includes(needle);
+    return `${task.title ?? ""} ${task.repo ?? ""}`
+      .toLowerCase()
+      .includes(needle);
   }),
 );
 

@@ -37,7 +37,7 @@ func TestSetupChecklistRendersFromTheProjection(t *testing.T) {
 				Repos:   []config.Repo{{Owner: "acme", Name: "widget"}},
 				Chat: config.ChatConfig{
 					Operator: "Sam",
-					Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+					Telegram: config.TelegramConfig{Token: config.SecretRef{Engine: "env", Key: "TELEGRAM_TOKEN"}},
 				},
 			},
 			wantOperator: "Sam",
@@ -120,7 +120,7 @@ func TestSetupChecklistChatChannelStepCountsEveryFrontEnd(t *testing.T) {
 		{
 			name: "telegram token env",
 			cfg: config.Config{Chat: config.ChatConfig{
-				Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+				Telegram: config.TelegramConfig{Token: config.SecretRef{Engine: "env", Key: "TELEGRAM_TOKEN"}},
 			}},
 			want: true,
 		},

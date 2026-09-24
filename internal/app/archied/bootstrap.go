@@ -413,7 +413,7 @@ func (b *boot) openStateStoreAdapter() error {
 // database_url. The daemon reads it (session curator) and the Gateway serves
 // it; only the Gateway claims serve ownership (claimGatewayOwnership).
 func (b *boot) openChatSessions(ctx context.Context) error {
-	pool, err := openServicePool(ctx, b.cfg.DatabaseURL, b.cfg.DBPath, "the conversation store")
+	pool, err := openServicePool(ctx, b.cfg.DatabaseURL, "the conversation store")
 	if err != nil {
 		return fmt.Errorf("open conversation store: %w", err)
 	}

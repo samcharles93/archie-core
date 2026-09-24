@@ -43,11 +43,6 @@ func configuredIdentityNames(cfg config.Config) []string {
 	return names
 }
 
-// edaDBPath derives the event-capture database from the configured db_path,
-// beside the task database rather than inside it: the two stores have separate
-// lifecycles and only meet at binding_dispatches.task_id.
-func edaDBPath(configuredPath string) string { return configuredPath + "-eda.sqlite" }
-
 // StateStoreOptions contains process inputs for the standalone State Store.
 type StateStoreOptions struct {
 	Config  string

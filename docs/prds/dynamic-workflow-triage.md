@@ -3,7 +3,7 @@
 **Status:** Finalised
 
 Epic: archie-core-enfj. Scope: give `workflow.Route()` a real, content-aware
-fallback instead of unconditionally defaulting every unlabeled task to the
+fallback instead of unconditionally defaulting every unlabelled task to the
 heaviest workflow.
 
 ## Problem
@@ -17,8 +17,8 @@ since `task_spawn` rarely sets labels — falls straight through to
 commit-push → review → open-pr` pipeline, regardless of what the task
 actually asks for.
 
-`task_spawn`'s own tool schema overpromises: *"workflow: … Omit to let the
-daemon route it"* (`internal/gateway/task_tools.go`) implies real
+`task_spawn`'s own tool schema overpromises: _"workflow: … Omit to let the
+daemon route it"_ (`internal/gateway/task_tools.go`) implies real
 routing exists. It doesn't — "route" means "check labels, then
 give up and run the heaviest workflow anyway."
 
@@ -26,7 +26,7 @@ Confirmed in production: a chat-spawned task whose
 entire content was "this is just a test, close it when you receive it" ran
 the full `implement` pipeline end to end — 669,421 tokens, ~7 minutes —
 when nothing about the request needed a worktree-driven build at all. The
-`plan` stage's own LLM output *correctly* concluded no code change was
+`plan` stage's own LLM output _correctly_ concluded no code change was
 needed, but that conclusion arrives two expensive stages (`baseline`,
 `plan`) too late to save anything.
 
@@ -39,7 +39,7 @@ task immediately or hands off to the workflow the task actually needs.
 `implement` fallback — a two-line change, fully backward compatible when
 `triage` isn't wired up.
 
-Triage does **not** replace label-based routing. A labeled task
+Triage does **not** replace label-based routing. A labelled task
 (`bug`/`feature`/bootstrap) already has a free, reliable signal and goes
 straight to its known workflow unchanged — spending a classification
 call there would be pure waste. Triage only fires in the gap that
@@ -76,7 +76,7 @@ production incident: a no-op request now costs one classification call
 
 `needs_code_change: true` → sets `tc.Task.Workflow` to the classifier's
 chosen workflow (`implement`/`tdd`/`feasibility`, defaulting to
-`implement` if the field is missing or unrecognized) and an Outcome that
+`implement` if the field is missing or unrecognised) and an Outcome that
 requeues the task under it, the same requeue mechanism
 `chatTaskControllerAdapter.ApproveChatTask` already uses
 (`main.go`, `requeue(ctx, taskID, fromStatus, workflow)`). The task then
@@ -87,7 +87,7 @@ classification twice for the same task.
 ### Non-goals (v1)
 
 - Full bug/feature intent classification quality — the classifier only
-  needs to be *directionally* right; a wrong `tdd` vs `implement` call
+  needs to be _directionally_ right; a wrong `tdd` vs `implement` call
   still produces a working PR, just via a slightly less-tailored pipeline.
   Tightening this is a follow-up, not a blocker.
 - Any change to label-based routing, `Route()`'s explicit-workflow branch,
@@ -99,7 +99,7 @@ classification twice for the same task.
 ## Testing
 
 - `workflow_test.go`: `Route()` picks `reg["triage"]` over `reg["implement"]`
-  for an unlabeled task when both are registered; falls back to
+  for an unlabelled task when both are registered; falls back to
   `reg["implement"]` unchanged when `triage` isn't registered (regression
   guard for every existing `Route()` test).
 - New `triage_test.go`: classify → `needs_code_change: false` closes

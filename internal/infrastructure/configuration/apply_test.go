@@ -100,24 +100,6 @@ func TestApplyOverlayValuesMergesEveryMapEntry(t *testing.T) {
 		check   func(t *testing.T, cfg config.Config)
 	}{
 		{
-			name: "image.hosted entry keeps the fields the overlay omits",
-			start: config.Config{Image: config.ImageConfig{Hosted: map[string]config.ImageHostedProvider{
-				"minimax": {Enabled: true, Class: "minimax", APIKeyEnv: "MINIMAX_API_KEY"},
-			}}},
-			overlay: map[string]any{"image": map[string]any{"hosted": map[string]any{
-				"minimax": map[string]any{"base_url": "https://api.example"},
-			}}},
-			check: func(t *testing.T, cfg config.Config) {
-				t.Helper()
-				want := map[string]config.ImageHostedProvider{
-					"minimax": {Enabled: true, Class: "minimax", APIKeyEnv: "MINIMAX_API_KEY", BaseURL: "https://api.example"},
-				}
-				if !maps.Equal(cfg.Image.Hosted, want) {
-					t.Errorf("Image.Hosted = %+v, want %+v", cfg.Image.Hosted, want)
-				}
-			},
-		},
-		{
 			name: "providers entry keeps the fields the overlay omits",
 			start: config.Config{Providers: map[string]config.Provider{
 				"anthropic": {Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY"},

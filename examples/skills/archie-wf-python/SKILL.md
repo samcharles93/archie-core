@@ -9,6 +9,7 @@ metadata:
     tools: [python, pytest, ruff, mypy, pip-audit]
     engine: any
 ---
+
 # Python Ecosystem Conventions
 
 ## Preflight
@@ -41,6 +42,7 @@ with test files outside the package root.
 ## Package management
 
 arcie-core assumes:
+
 - `requirements.txt` or `pyproject.toml` at the repo root
 - Tests run with `pytest` (the ecosystem default)
 - Linting with `ruff` (recommended) or `flake8`
@@ -50,6 +52,7 @@ arcie-core assumes:
 ## Virtual environment
 
 Before the gate runs, ensure dependencies are installed:
+
 ```bash
 python -m venv .venv
 . .venv/bin/activate
@@ -58,6 +61,7 @@ pip install pytest ruff mypy pip-audit
 ```
 
 For `pyproject.toml` projects:
+
 ```bash
 pip install -e ".[dev]"
 ```
@@ -65,16 +69,19 @@ pip install -e ".[dev]"
 ## Common gate failures
 
 ### ruff
-- `F401`: unused import  --  remove it
-- `E501`: line too long  --  break the line
-- `I001`: import order  --  let ruff fix it with `ruff check --fix`
+
+- `F401`: unused import -- remove it
+- `E501`: line too long -- break the line
+- `I001`: import order -- let ruff fix it with `ruff check --fix`
 
 ### mypy
-- Missing type annotation on public function  --  add it
-- `Cannot determine type`  --  add explicit annotation
-- Import errors  --  check the package is installed in the venv
+
+- Missing type annotation on public function -- add it
+- `Cannot determine type` -- add explicit annotation
+- Import errors -- check the package is installed in the venv
 
 ### pytest
-- Test discovery failed  --  check `__init__.py` files and test naming
-- Import errors  --  verify the package is installed (`pip install -e .`)
-- Assertion failures  --  fix the code, not the test
+
+- Test discovery failed -- check `__init__.py` files and test naming
+- Import errors -- verify the package is installed (`pip install -e .`)
+- Assertion failures -- fix the code, not the test

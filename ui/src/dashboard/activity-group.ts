@@ -22,7 +22,6 @@ import { activityDetail } from "./activity-detail.ts";
  * every event, and this module decides only how the feed presents them.
  */
 
-
 /** One displayed row: either a single event (count 1) or a collapsed run. */
 export interface ActivityGroup {
   /** Stable identity of the run: the grouping key of its first event. */
@@ -55,7 +54,14 @@ export function groupActivity(events: ActivityEvent[]): ActivityGroup[] {
       last.events.push(event);
       continue;
     }
-    groups.push({ key, label, taskID, count: 1, representative: event, events: [event] });
+    groups.push({
+      key,
+      label,
+      taskID,
+      count: 1,
+      representative: event,
+      events: [event],
+    });
   }
   return groups;
 }

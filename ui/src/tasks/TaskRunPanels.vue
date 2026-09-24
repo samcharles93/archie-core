@@ -27,7 +27,10 @@ const run = useTaskRun();
 
 <template>
   <TabsContent v-for="tab in RUN_TABS" :key="tab.id" :value="tab.id">
-    <PanelLoading v-if="run.attempts === undefined" label="Loading this task's attempts…" />
+    <PanelLoading
+      v-if="run.attempts === undefined"
+      label="Loading this task's attempts…"
+    />
 
     <PanelError
       v-else-if="run.attempts === null"
@@ -50,7 +53,11 @@ const run = useTaskRun();
       @filter="run.setFilters"
     />
 
-    <ChangedFiles v-else-if="tab.id === 'changes'" :state="run.changesState" :task="run.task" />
+    <ChangedFiles
+      v-else-if="tab.id === 'changes'"
+      :state="run.changesState"
+      :task="run.task"
+    />
 
     <AttemptConfig
       v-else-if="tab.id === 'config'"
@@ -58,6 +65,10 @@ const run = useTaskRun();
       :attempt="run.attemptNumber"
     />
 
-    <DebugView v-else-if="tab.id === 'debug'" :state="run.debugState" :attempt="run.attemptNumber" />
+    <DebugView
+      v-else-if="tab.id === 'debug'"
+      :state="run.debugState"
+      :attempt="run.attemptNumber"
+    />
   </TabsContent>
 </template>

@@ -19,6 +19,16 @@ breaking:
   # they cannot be versioned apart. Only the type rule is relaxed, and only in
   # this file: every other FILE breaking rule still applies here, so a rename,
   # a renumber or a removal is still caught, and no other contract is affected.
+  #
+  # A third, deliberate break removes the superseded unary ListCaptures and
+  # ListUndispatchedCaptures RPCs and the unused Binding.secret field (number
+  # and name reserved). Nothing outside this repository speaks the contract.
   ignore_only:
     FIELD_SAME_TYPE:
+      - state/v1/state.proto
+    RPC_NO_DELETE:
+      - state/v1/state.proto
+    MESSAGE_NO_DELETE:
+      - state/v1/state.proto
+    FIELD_NO_DELETE:
       - state/v1/state.proto

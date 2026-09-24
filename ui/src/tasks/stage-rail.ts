@@ -28,7 +28,9 @@ const STAGE_STATUS: Record<string, StageStatusMeta> = {
 };
 
 export function stageStatusMeta(status?: string | null): StageStatusMeta {
-  return STAGE_STATUS[status ?? ""] || { label: status || "unknown", kind: "idle" };
+  return (
+    STAGE_STATUS[status ?? ""] || { label: status || "unknown", kind: "idle" }
+  );
 }
 
 /**

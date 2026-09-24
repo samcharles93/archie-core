@@ -14,7 +14,9 @@
 </script>
 
 <template>
-  <div class="grid grid-cols-1 min-[701px]:supports-[grid-template-columns:subgrid]:grid-cols-[max-content_minmax(0,1fr)_auto]">
+  <div
+    class="grid grid-cols-1 min-[701px]:supports-[grid-template-columns:subgrid]:grid-cols-[max-content_minmax(0,1fr)_auto]"
+  >
     <slot />
   </div>
 </template>

@@ -4,8 +4,19 @@ import { computed, ref } from "vue";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   currentModels,
   selectedModel,
@@ -50,7 +61,12 @@ function clear(value: unknown): string {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <Button variant="ghost" size="icon-sm" aria-label="Chat settings" title="Chat settings">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Chat settings"
+        title="Chat settings"
+      >
         <Settings />
       </Button>
     </PopoverTrigger>
@@ -59,14 +75,22 @@ function clear(value: unknown): string {
 
       <Field class="gap-1">
         <FieldLabel class="text-xs text-fg-muted">Personality</FieldLabel>
-        <Select :model-value="personaValue" @update:model-value="setPersona(clear($event))">
+        <Select
+          :model-value="personaValue"
+          @update:model-value="setPersona(clear($event))"
+        >
           <SelectTrigger size="sm" class="w-full" aria-label="Personality">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               <SelectItem :value="DEFAULT">Default</SelectItem>
-              <SelectItem v-for="name in selectorData.personas || []" :key="name" :value="name">{{ name }}</SelectItem>
+              <SelectItem
+                v-for="name in selectorData.personas || []"
+                :key="name"
+                :value="name"
+                >{{ name }}</SelectItem
+              >
             </SelectGroup>
           </SelectContent>
         </Select>
@@ -74,14 +98,21 @@ function clear(value: unknown): string {
 
       <Field v-if="(selectorData.providers || []).length" class="gap-1">
         <FieldLabel class="text-xs text-fg-muted">Provider</FieldLabel>
-        <Select :model-value="providerValue" @update:model-value="setProvider(clear($event))">
+        <Select
+          :model-value="providerValue"
+          @update:model-value="setProvider(clear($event))"
+        >
           <SelectTrigger size="sm" class="w-full" aria-label="Provider">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               <SelectItem :value="DEFAULT">Default</SelectItem>
-              <SelectItem v-for="provider in selectorData.providers || []" :key="provider" :value="provider">
+              <SelectItem
+                v-for="provider in selectorData.providers || []"
+                :key="provider"
+                :value="provider"
+              >
                 {{ provider }}
               </SelectItem>
             </SelectGroup>
@@ -91,14 +122,22 @@ function clear(value: unknown): string {
 
       <Field class="gap-1">
         <FieldLabel class="text-xs text-fg-muted">Model</FieldLabel>
-        <Select :model-value="modelValue" @update:model-value="setModel(clear($event))">
+        <Select
+          :model-value="modelValue"
+          @update:model-value="setModel(clear($event))"
+        >
           <SelectTrigger size="sm" class="w-full" aria-label="Model">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               <SelectItem :value="DEFAULT">Default</SelectItem>
-              <SelectItem v-for="model in currentModels" :key="model" :value="model">{{ model }}</SelectItem>
+              <SelectItem
+                v-for="model in currentModels"
+                :key="model"
+                :value="model"
+                >{{ model }}</SelectItem
+              >
             </SelectGroup>
           </SelectContent>
         </Select>

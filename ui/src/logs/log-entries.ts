@@ -30,13 +30,18 @@ export function entryKey(entry: LogEntry): string {
  * internal/webui/api_tasks_logs.go).
  */
 export function matchesFilters(entry: LogEntry, filters: LogFilters): boolean {
-  if (filters.level && !filters.level.split(",").includes((entry.level || "").toUpperCase())) {
+  if (
+    filters.level &&
+    !filters.level.split(",").includes((entry.level || "").toUpperCase())
+  ) {
     return false;
   }
-  if (filters.component && entry.fields?.component !== filters.component) return false;
+  if (filters.component && entry.fields?.component !== filters.component)
+    return false;
   if (filters.q) {
     const needle = filters.q.toLowerCase();
-    const hay = `${entry.message || entry.msg || ""} ${JSON.stringify(entry.fields || {})}`.toLowerCase();
+    const hay =
+      `${entry.message || entry.msg || ""} ${JSON.stringify(entry.fields || {})}`.toLowerCase();
     if (!hay.includes(needle)) return false;
   }
   return true;
@@ -58,5 +63,7 @@ export function mergeEntries(
   const byID = new Map<string, LogEntry>();
   for (const entry of history) byID.set(entryKey(entry), entry);
   for (const [id, entry] of live) byID.set(id, entry);
-  return [...byID.values()].filter((entry) => matchesFilters(entry, filters)).slice(-1000);
+  return [...byID.values()]
+    .filter((entry) => matchesFilters(entry, filters))
+    .slice(-1000);
 }

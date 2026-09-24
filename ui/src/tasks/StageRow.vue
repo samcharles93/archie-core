@@ -26,7 +26,9 @@ const emit = defineEmits<{ select: [] }>();
 
 const meta = computed(() => stageStatusMeta(props.stage.status));
 const ran = computed(() => duration(props.stage.duration_ms));
-const reports = computed(() => agentReports(props.events, props.attemptNumber, props.stage.name));
+const reports = computed(() =>
+  agentReports(props.events, props.attemptNumber, props.stage.name),
+);
 
 // The node carries the status as a shape, the same way the label's own kind
 // does; the connector behind it is what makes the stages read as one run rather
@@ -68,9 +70,15 @@ const nodeClass = computed(() =>
         <!-- A stage name is one unbroken token often enough that it has to be
              allowed to break, or a long one pushes the status and duration off
              the row. -->
-        <span class="min-w-0 font-mono font-medium break-words hover:underline" :class="props.selected ? 'text-primary' : ''">{{ stage.name || "(unnamed stage)" }}</span>
+        <span
+          class="min-w-0 font-mono font-medium break-words hover:underline"
+          :class="props.selected ? 'text-primary' : ''"
+          >{{ stage.name || "(unnamed stage)" }}</span
+        >
         <Badge :variant="meta.kind">{{ meta.label }}</Badge>
-        <span class="text-xs text-fg-muted">{{ ran ? `ran for ${ran}` : "duration not recorded" }}</span>
+        <span class="text-xs text-fg-muted">{{
+          ran ? `ran for ${ran}` : "duration not recorded"
+        }}</span>
       </button>
       <div
         v-if="stage.error"
@@ -78,7 +86,11 @@ const nodeClass = computed(() =>
       >
         {{ stage.error }}
       </div>
-      <div v-for="(report, i) in reports" :key="i" class="mt-2 text-xs text-fg-muted">
+      <div
+        v-for="(report, i) in reports"
+        :key="i"
+        class="mt-2 text-xs text-fg-muted"
+      >
         <span>Agent's own report, not verified by archie: </span>
         {{ [report.title, report.detail].filter(Boolean).join(" · ") }}
       </div>

@@ -27,7 +27,7 @@ func TestPublishedProjectionAgreesWithFrontEndsOnConfiguredChannels(t *testing.T
 		{
 			name: "telegram token",
 			cfg: config.Config{Chat: config.ChatConfig{
-				Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+				Telegram: config.TelegramConfig{Token: config.SecretRef{Engine: "env", Key: "TELEGRAM_TOKEN"}},
 			}},
 		},
 		{

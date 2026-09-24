@@ -33,13 +33,13 @@ actions:
     position: module
     kind: log
     args:
-      message: '"build finished"'                 # literal
-    when: 'event.label == "bugfix"'               # gate on event field
+      message: '"build finished"' # literal
+    when: 'event.label == "bugfix"' # gate on event field
   - position: module
     kind: log
     args:
       message: '"done: " + string(actions.build.result.written)'
-    when: 'actions.build.result.written == true'
+    when: "actions.build.result.written == true"
 ```
 
 ## Trust boundary of the expression
@@ -48,7 +48,7 @@ A playbook YAML is **operator-installed, in-process, daemon-privileged**
 -- the same tier as `ModuleDir`/`PluginDir`/`SecretEngineDir`
 (module-position.md's trust-boundary section): loaded from a configured
 directory at startup, never from a webhook body or task worktree. The
-schema-by-example flow uses live events to *design against*; the saved
+schema-by-example flow uses live events to _design against_; the saved
 playbook is operator-authored file content in an operator-configured
 location.
 
@@ -90,8 +90,8 @@ expression body.
 The plugin engine rule forbids a generic `Module` interface with an
 `any` payload; it exists to keep static implementation contracts
 typed. Evaluating CEL against runtime `map[string]any` is **not the
-same problem**: the rule concerns *implementation contracts* (static
-operations a capability family exposes), not *runtime data values*
+same problem**: the rule concerns _implementation contracts_ (static
+operations a capability family exposes), not _runtime data values_
 (legitimately dynamic -- an event payload's shape is unknown until it
 arrives). The Module contract stays fully typed (generated
 `Args`/`Result` schemas); CEL is a read-only data reader under the
@@ -102,9 +102,9 @@ playbook engine family, not a new capability contract. Stated once.
 One flat context, namespaced from the playbook run, built at dispatch
 time:
 
-| Name | Type | Source |
-|---|---|---|
-| `event` | `map(string, dyn)` | The triggering event's decoded payload (webhook body / forge issue / schedule tick). Field access via `event.<field>`, map access via `event["field"]`, presence via `has(event.<field>)`. |
+| Name      | Type                     | Source                                                                                                                                                                                                                                                                                                |
+| --------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event`   | `map(string, dyn)`       | The triggering event's decoded payload (webhook body / forge issue / schedule tick). Field access via `event.<field>`, map access via `event["field"]`, presence via `has(event.<field>)`.                                                                                                            |
 | `actions` | per-playbook object type | Previous actions' results, one field per declared action `id` (`actions.<id>`), each field typed `{ result: <KindResult> }` so a later action reads an earlier one's `Result` struct (`actions.<id>.result.<field>`) with field-level checking. The current action and later actions are not present. |
 
 Expressions may also read literal-only state (numbers, strings,
@@ -153,13 +153,13 @@ This means the lint tool and the daemon share one checker
 
 ## Candidate comparison
 
-| Candidate | Maintenance | Safety surface | Cost (measured) | Verdict |
-|---|---|---|---|---|
-| **CEL (cel.dev/cel-go)** | Actively maintained (google/cel, monthly releases) | Non-Turing-complete, linear eval, `CostLimit`/`CostTracking`/`ParserRecursionLimit`, no side effects, error values not panics | **+13.0MB** (2.34MB -> 15.25MB) | **Chosen** |
-| `expr-lang/expr` v1.17.8 | Actively maintained | Side-effect-free, `DisableAllBuiltins`, depth limits (CVE fixed w/ tests) | +3.9MB (2.34MB -> 6.28MB) | Not chosen: two safety CVEs this cycle; smaller ecosystem; no protobuf/type-model fit with future schema-gen |
-| `gval` v1.2.3 | Maintained, slower | No builtin-restriction surface; extras (ternary/`??`) not wanted | +3.0MB (2 transitive deps) | Not chosen |
-| `govaluate` | **ARCHIVED** (author archived 2024) | n/a | n/a | Not chosen: dead |
-| `starlark-go` | Maintained (Bazel) | Turing-complete with step limits | large (full language) | Not chosen: whole-language surface |
+| Candidate                | Maintenance                                        | Safety surface                                                                                                                | Cost (measured)                 | Verdict                                                                                                      |
+| ------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **CEL (cel.dev/cel-go)** | Actively maintained (google/cel, monthly releases) | Non-Turing-complete, linear eval, `CostLimit`/`CostTracking`/`ParserRecursionLimit`, no side effects, error values not panics | **+13.0MB** (2.34MB -> 15.25MB) | **Chosen**                                                                                                   |
+| `expr-lang/expr` v1.17.8 | Actively maintained                                | Side-effect-free, `DisableAllBuiltins`, depth limits (CVE fixed w/ tests)                                                     | +3.9MB (2.34MB -> 6.28MB)       | Not chosen: two safety CVEs this cycle; smaller ecosystem; no protobuf/type-model fit with future schema-gen |
+| `gval` v1.2.3            | Maintained, slower                                 | No builtin-restriction surface; extras (ternary/`??`) not wanted                                                              | +3.0MB (2 transitive deps)      | Not chosen                                                                                                   |
+| `govaluate`              | **ARCHIVED** (author archived 2024)                | n/a                                                                                                                           | n/a                             | Not chosen: dead                                                                                             |
+| `starlark-go`            | Maintained (Bazel)                                 | Turing-complete with step limits                                                                                              | large (full language)           | Not chosen: whole-language surface                                                                           |
 
 ## Vetting record
 
@@ -200,7 +200,7 @@ Source reviewed at HEAD:
 
 A bespoke grammar for the shipped cases (path read + comparison + bool
 composition) is small, but the load-time-validation requirement makes
-the comparison: the reject-at-load rule requires *field-level* static
+the comparison: the reject-at-load rule requires _field-level_ static
 checking of result paths against generated `Result` schemas, which is
 CEL's type-checker's job. Re-implementing that on a hand-rolled
 grammar means re-implementing a type system -- more code than the
@@ -209,7 +209,7 @@ community surface for future expression needs (even declarative ones).
 The bespoke option only wins on binary size, and the size cost of CEL
 is measured and bounded.
 
-## Judgment calls (flagged for sign-off)
+## Judgement calls (flagged for sign-off)
 
 - **J1 -- `id` required on referenced actions, unknown id = load
   failure.** Matches the reject-at-load rule. Alternative considered: an alternative
@@ -221,7 +221,7 @@ is measured and bounded.
   any value that reads context data is written in CEL. One mechanism,
   no interpolation marker, no second syntax to learn. Alternative considered: cEL
   string literals must be quoted inside YAML (e.g. `message:
-  '"build finished"'`), which is slightly noisy for mostly-literal
+'"build finished"'`), which is slightly noisy for mostly-literal
   args; accepted for uniformity -- the linter catches quoting mistakes
   at load.
 - **J3 -- condition failure semantics.** A condition that errors at

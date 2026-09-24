@@ -33,7 +33,12 @@ withDefaults(
       "
     >
       <div v-if="assistant && tools.length" class="mb-2 grid gap-0.5 text-xs">
-        <ChatToolCall v-for="(tool, i) in tools" :key="i" :tool="tool" :streaming="streaming" />
+        <ChatToolCall
+          v-for="(tool, i) in tools"
+          :key="i"
+          :tool="tool"
+          :streaming="streaming"
+        />
       </div>
       <ChatMarkdown v-if="assistant" :text="text" />
       <div v-else class="whitespace-pre-wrap">{{ text }}</div>

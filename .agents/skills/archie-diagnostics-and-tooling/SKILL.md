@@ -79,12 +79,12 @@ go run "$skill/scripts/source-metrics.go" -root . -top 30
 
 Read its tab-separated schema:
 
-| Record | Columns after record name |
-|---|---|
-| `META` | key, value |
-| `METRIC` | module, metric, integer |
+| Record    | Columns after record name                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------- |
+| `META`    | key, value                                                                                                      |
+| `METRIC`  | module, metric, integer                                                                                         |
 | `PACKAGE` | module, directory, production files, test files, generated files, production lines, test lines, generated lines |
-| `HOTSPOT` | module, file, declaration line, symbol, body-span lines, statement nodes, approximate syntactic complexity |
+| `HOTSPOT` | module, file, declaration line, symbol, body-span lines, statement nodes, approximate syntactic complexity      |
 
 The defaults (80 body lines, complexity 15) mirror numeric triage points in
 `.golangci.yml`. They do **not** implement `funlen` or `cyclop`. Run configured
@@ -135,8 +135,8 @@ marshalling) reports zero. Confirm each candidate by hand before calling a
 field dead.
 
 For every candidate: run `gopls references -d` on the exact field identifier;
-trace decode → default → validation → normalization/copy → composition-root read
-→ concrete component → observable behavior.
+trace decode → default → validation → normalisation/copy → composition-root read
+→ concrete component → observable behaviour.
 
 ### Measure delivery and hygiene drift
 
@@ -184,7 +184,7 @@ production-only, test-only, compatibility, generated, and unreachable paths
 separately.
 
 As of 2026-09-18, `Taskfile.yml` defines no `deadcode` task and `go tool` lists
-no dead-code analyzer.
+no dead-code analyser.
 
 ## Collect test, race, coverage, and runtime evidence
 
@@ -226,7 +226,7 @@ diff -u "$evidence_dir/delivery.tsv" "$after_dir/delivery.tsv"
 
 If output differs from prediction: confirm checkout, dirty state, script
 revision, flags, toolchain; explain each delta; branch to semantic discovery
-when a count cannot explain behavior. Reject a "better" metric that moved
+when a count cannot explain behaviour. Reject a "better" metric that moved
 duplication, hid a path, or weakened a gate.
 
 ## Dated current snapshot
@@ -235,15 +235,15 @@ The bundled scripts measured this checkout on 2026-09-18 (HEAD `2e1e1549`).
 These are post-fix numbers: earlier runs of the same scripts reported roughly
 3x these file and line counts because they walked `.worktrees/`.
 
-| Observation | Unstable value |
-|---|---:|
-| Root production/test/generated Go files | 408 / 402 / 9 |
-| Root production/test/generated physical lines | 74,752 / 95,264 / 12,774 |
-| `internal/app/archied.Run` body span / approximate complexity | 97 / 19 |
-| Root internal packages / direct internal edges | 110 / 316 |
-| Tagged config field rows | 194 |
-| Tracked paths / tracked `node_modules` paths / tracked symlinks | 1,088 / 0 / 1 |
-| `.dockerignore` present | 1 |
+| Observation                                                     |           Unstable value |
+| --------------------------------------------------------------- | -----------------------: |
+| Root production/test/generated Go files                         |            408 / 402 / 9 |
+| Root production/test/generated physical lines                   | 74,752 / 95,264 / 12,774 |
+| `internal/app/archied.Run` body span / approximate complexity   |                  97 / 19 |
+| Root internal packages / direct internal edges                  |                110 / 316 |
+| Tagged config field rows                                        |                      194 |
+| Tracked paths / tracked `node_modules` paths / tracked symlinks |            1,088 / 0 / 1 |
+| `.dockerignore` present                                         |                        1 |
 
 `source-metrics.go` and `git ls-files` reconcile here: 408 + 9 generated
 production files and 402 test files, plus the `tools` module's 5 / 2 / 0,

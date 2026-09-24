@@ -73,14 +73,14 @@ func TestCheckReportsAStaleChangelog(t *testing.T) {
 	if err == nil {
 		t.Fatal("check accepted a committed tree that lags the changelog")
 	}
-	for _, want := range []string{"task news", "docs/news/1.32.0.md"} {
+	for _, want := range []string{"task news", releasesJSONPath} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want it to mention %q", err, want)
 		}
 	}
 }
 
-func TestCheckReportsAStaleVersionPage(t *testing.T) {
+func TestCheckIgnoresRetiredMarkdownAdapters(t *testing.T) {
 	root := t.TempDir()
 	writeChangelog(t, root, changelogFixture)
 	if err := write(root); err != nil {
@@ -92,16 +92,12 @@ func TestCheckReportsAStaleVersionPage(t *testing.T) {
 		t.Fatalf("write stale page: %v", err)
 	}
 
-	err := check(root)
-	if err == nil {
-		t.Fatal("check ignored a page for a version the changelog does not carry")
-	}
-	if !strings.Contains(err.Error(), "9.9.9.md") || !strings.Contains(err.Error(), "not generated") {
-		t.Fatalf("error = %q, want it to name the stale page", err)
+	if err := check(root); err != nil {
+		t.Fatalf("check considered a retired Markdown adapter: %v", err)
 	}
 }
 
-func TestCheckReportsTheRetiredComponentLayout(t *testing.T) {
+func TestCheckIgnoresRetiredComponentMarkdownLayout(t *testing.T) {
 	root := t.TempDir()
 	writeChangelog(t, root, changelogFixture)
 	if err := write(root); err != nil {
@@ -116,12 +112,8 @@ func TestCheckReportsTheRetiredComponentLayout(t *testing.T) {
 		t.Fatalf("write retired page: %v", err)
 	}
 
-	err := check(root)
-	if err == nil {
-		t.Fatal("check ignored a page left in the retired per-component layout")
-	}
-	if !strings.Contains(err.Error(), "archied/1.31.0.md") {
-		t.Fatalf("error = %q, want it to name the retired page", err)
+	if err := check(root); err != nil {
+		t.Fatalf("check considered a retired component Markdown adapter: %v", err)
 	}
 }
 

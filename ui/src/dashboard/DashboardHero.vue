@@ -12,12 +12,16 @@ function greeting(): string {
   return "Good evening";
 }
 
-const currentGreeting = computed(() => (setup.value?.operator ? `${greeting()}, ${setup.value.operator}` : greeting()));
+const currentGreeting = computed(() =>
+  setup.value?.operator ? `${greeting()}, ${setup.value.operator}` : greeting(),
+);
 </script>
 
 <template>
   <div class="mb-5 flex flex-wrap items-start justify-between gap-5">
-    <h1 class="text-3xl font-semibold tracking-[-0.03em]">{{ currentGreeting }}</h1>
+    <h1 class="text-3xl font-semibold tracking-[-0.03em]">
+      {{ currentGreeting }}
+    </h1>
     <div class="flex flex-wrap items-center gap-2">
       <DashboardActions />
     </div>

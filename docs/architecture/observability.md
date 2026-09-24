@@ -32,15 +32,15 @@ that container did:
    `Summary`/`Detail` — no step-by-step transcript (tool calls, durations,
    errors). There is no transcript to recover even in principle.
 5. **`agentexec.SubjectForSystem`** is documented as the return channel for
-   exactly this — *"log dumps, health, and PII warnings... the daemon reads
-   these for observability and never forwards them"* — but has no publisher
+   exactly this — _"log dumps, health, and PII warnings... the daemon reads
+   these for observability and never forwards them"_ — but has no publisher
    and no consumer anywhere in the codebase except a subject-format
    assertion in `nats_test.go`. The designed return path was never wired.
 
 The practical consequence: a task parks with
 `stage baseline: baseline red -- go build ./... fails and builder could not
 auto-fix (status: parked)` and there is no way — not from the dashboard, not
-from Telegram chat, not by SSH'ing into the deployment host — to see *why*
+from Telegram chat, not by SSH'ing into the deployment host — to see _why_
 `go build` failed. The container that knew is already gone.
 
 This matters beyond debugging convenience: supported deployments can combine
@@ -149,8 +149,8 @@ additions. So is the read half: the three per-attempt endpoints
 that consumes them. The decision record, the rejected alternatives and the honest
 limits are `docs/prds/task-run-detail.md`.
 
-The task log surface above answers *why did this park?*. This surface answers
-*what did this run actually do?*, per attempt.
+The task log surface above answers _why did this park?_. This surface answers
+_what did this run actually do?_, per attempt.
 
 ### Attempt attribution
 
@@ -205,15 +205,15 @@ the task's current attempt, and the resolved attempt is echoed in the response.
 `stage_start` and `stage_finish` are the only inputs, so the derivation is
 explicit and each case is pinned by a test:
 
-| Events seen for the stage | Reported |
-| --- | --- |
-| `stage_finish` with `data.error` | `failed`, with the error text |
-| `stage_finish` with `data.interrupted` | `interrupted` |
-| `stage_finish`, neither | `ok` — "returned without error" |
-| `stage_start` unmatched, and this is the task's current in-flight attempt | `running` |
-| `stage_start` unmatched on any dead attempt | `interrupted` — the run ended without finishing it |
-| `stage_finish` with no matching start | the stage, with no start time invented |
-| no stage information at all for that attempt | `unknown` |
+| Events seen for the stage                                                 | Reported                                           |
+| ------------------------------------------------------------------------- | -------------------------------------------------- |
+| `stage_finish` with `data.error`                                          | `failed`, with the error text                      |
+| `stage_finish` with `data.interrupted`                                    | `interrupted`                                      |
+| `stage_finish`, neither                                                   | `ok` — "returned without error"                    |
+| `stage_start` unmatched, and this is the task's current in-flight attempt | `running`                                          |
+| `stage_start` unmatched on any dead attempt                               | `interrupted` — the run ended without finishing it |
+| `stage_finish` with no matching start                                     | the stage, with no start time invented             |
+| no stage information at all for that attempt                              | `unknown`                                          |
 
 **There is no exit code.** `stage_finish` carries a duration and an optional
 error string and nothing else, so no stage can be shown as pass/fail and the

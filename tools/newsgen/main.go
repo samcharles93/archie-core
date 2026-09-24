@@ -5,17 +5,14 @@
 // a version without its section. Tags are deliberately not a source, because CI
 // and deployment check out shallow and a site build has no tags to read.
 //
-// Output is generated and committed:
+// Generated and committed artifacts:
 //
 //	docs/news/releases.json      the canonical, host-neutral fact set
 //	docs/news/redirects.json     the retired per-component URLs, mapped to pages
-//	docs/news/index.md           the news page
-//	docs/news/<version>.md       one page per release
 //
 // `newsgen check` reproduces the output in memory and fails when the committed
-// files differ, which keeps a changelog edit from landing without its pages.
-// `newsgen` rewrites only files it owns and leaves every other file in
-// docs/news alone.
+// files differ, which keeps a changelog edit from landing without updating the
+// artifacts consumed by the external documentation site.
 package main
 
 import (
@@ -28,7 +25,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -155,9 +151,6 @@ func check(repoRoot string) error {
 			problems = append(problems, path+" does not match the changelog")
 		}
 	}
-	for _, path := range unownedPages(repoRoot, files) {
-		problems = append(problems, path+" is not generated; move it out of the generated directory")
-	}
 	if len(problems) > 0 {
 		sort.Strings(problems)
 		return fmt.Errorf("release notes are stale:\n  %s\n  fix with `task news`, then commit the result",
@@ -165,46 +158,4 @@ func check(repoRoot string) error {
 	}
 	fmt.Printf("newsgen: %d release notes match the changelog\n", len(releases))
 	return nil
-}
-
-// releasePageName matches the basename of a generated version page, so a page
-// left behind for a release the changelog no longer carries is reported.
-var releasePageName = regexp.MustCompile(`^[0-9]+\.[0-9]+`)
-
-// unownedPages lists files under docs/news that this tool does not produce. A
-// page from the retired per-component layout (a file in a subdirectory) and a
-// stale version page are both unowned; anything else is a hand-written news
-// item, and the news directory's root is where those live.
-func unownedPages(repoRoot string, files map[string][]byte) []string {
-	var unowned []string
-	root := filepath.Join(repoRoot, newsDir)
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		relative, err := filepath.Rel(repoRoot, path)
-		if err != nil {
-			return err
-		}
-		slash := filepath.ToSlash(relative)
-		if _, generated := files[slash]; generated {
-			return nil
-		}
-		if strings.Contains(slash[len(newsDir)+1:], "/") || looksLikeReleasePage(filepath.Base(path)) {
-			unowned = append(unowned, slash)
-		}
-		return nil
-	})
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		unowned = append(unowned, fmt.Sprintf("%s is unreadable: %v", newsDir, err))
-	}
-	return unowned
-}
-
-func looksLikeReleasePage(name string) bool {
-	base, ok := strings.CutSuffix(name, ".md")
-	return ok && releasePageName.MatchString(base)
 }

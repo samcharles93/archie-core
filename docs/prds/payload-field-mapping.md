@@ -6,9 +6,10 @@
 
 Answers what a "mapping" is, where it lives, and what "resolve against a
 real event" means precisely enough to implement. `t2db.4` (binding: matcher
-+ mapping + workflow) is out of scope -- this bead ships the mapping
-concept and its preview only, as a standalone entity `t2db.4` will later
-reference by ID.
+
+- mapping + workflow) is out of scope -- this bead ships the mapping
+  concept and its preview only, as a standalone entity `t2db.4` will later
+  reference by ID.
 
 ## Decision: a new `internal/domain/mapping` package, SQLite storage
 
@@ -104,7 +105,7 @@ the operator every problem at once, not the first one.
 it against an operator-picked capture and renders every result, pass or
 fail, in the UI -- that satisfies this bead's "fail loudly" acceptance
 criterion, because at this stage the only runtime consumer of a mapping
-*is* the human previewing it. `t2db.4` will call the identical function
+_is_ the human previewing it. `t2db.4` will call the identical function
 when a live event triggers a binding and turn any non-empty `failures` into
 a visible operator-facing failure (park the task / surface in the
 inspector) instead of starting a workflow with blank fields -- that wiring
@@ -131,7 +132,7 @@ bypass -- unlike capture, nothing here accepts unauthenticated input):
 - `GET /api/mappings` / `POST /api/mappings` -- list / create
 - `GET|PATCH|DELETE /api/mappings/{id}`
 - `POST /api/mappings/preview` -- body `{fields: []Field, capture_id:
-  int64}`, calls `mapping.Resolve` against that capture's stored (already
+int64}`, calls `mapping.Resolve` against that capture's stored (already
   redacted) `Body` and returns `{values, failures}`. Deliberately takes
   loose `fields` rather than a saved mapping ID, so an operator can iterate
   before saving anything -- "never ship a mapping the operator has not seen

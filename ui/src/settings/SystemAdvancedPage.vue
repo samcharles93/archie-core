@@ -24,13 +24,31 @@ onMounted(load);
   <div>
     <PageHeader title="Advanced" />
 
-    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
-    <StructuredResourceCard v-for="descriptor in resources" :key="descriptor.kind" :descriptor="descriptor" />
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">
+      {{ catalogError }}
+    </p>
+    <StructuredResourceCard
+      v-for="descriptor in resources"
+      :key="descriptor.kind"
+      :descriptor="descriptor"
+    />
     <ConfigCard title="Managed elsewhere">
       <div class="flex flex-wrap gap-2">
-        <Button as-child variant="outline"><RouterLink :to="'/events?tab=inspector'">Captured events</RouterLink></Button>
-        <Button as-child variant="outline"><RouterLink :to="'/events?tab=mappings'">Capture mappings</RouterLink></Button>
-        <Button as-child variant="outline"><RouterLink :to="'/events?tab=bindings'">Capture bindings</RouterLink></Button>
+        <Button as-child variant="outline"
+          ><RouterLink :to="'/events?tab=inspector'"
+            >Captured events</RouterLink
+          ></Button
+        >
+        <Button as-child variant="outline"
+          ><RouterLink :to="'/events?tab=mappings'"
+            >Capture mappings</RouterLink
+          ></Button
+        >
+        <Button as-child variant="outline"
+          ><RouterLink :to="'/events?tab=bindings'"
+            >Capture bindings</RouterLink
+          ></Button
+        >
       </div>
     </ConfigCard>
     <DangerousActionsCard />

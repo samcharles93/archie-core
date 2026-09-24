@@ -1,4 +1,4 @@
-# archie-core TypeScript Plugin Engine  --  PRD
+# archie-core TypeScript Plugin Engine -- PRD
 
 **Author:** Archie
 **Date:** 2026-07-21  
@@ -8,7 +8,7 @@
 
 ## Summary
 
-A TypeScript-based plugin engine that lets repositories ship interpreted, dynamically-loaded workflow extensions. Plugins are `.ts` files placed in `.archie/workflows/`. archie-core discovers them on its next poll cycle, transpiles them to JavaScript via esbuild, and executes them in an embedded [goja](https://github.com/dop251/goja) runtime  --  a pure-Go ECMAScript interpreter with zero CGO dependencies.
+A TypeScript-based plugin engine that lets repositories ship interpreted, dynamically-loaded workflow extensions. Plugins are `.ts` files placed in `.archie/workflows/`. archie-core discovers them on its next poll cycle, transpiles them to JavaScript via esbuild, and executes them in an embedded [goja](https://github.com/dop251/goja) runtime -- a pure-Go ECMAScript interpreter with zero CGO dependencies.
 
 ---
 
@@ -19,22 +19,24 @@ A TypeScript-based plugin engine that lets repositories ship interpreted, dynami
 TypeScript is the most widely understood language among developers writing automation, CI, and workflow scripts. It already ships in most projects. Gate authors already know it. The ecosystem for linting, formatting, and type-checking is mature and free.
 
 Having a TypeScript-native plugin engine means:
+
 - Plugin authors get familiar syntax, type safety, and IDE support
-- No separate toolchain  --  just `.ts` files in a folder
+- No separate toolchain -- just `.ts` files in a folder
 - Skills, gates, and workflow stages share the same language
 
 ### Why goja
 
-| Competitor | Problem |
-|---|---|
-| V8 CGO bindings | Requires CGO, ~50MB static libraries, platform-specific builds |
-| QuickJS CGO | Requires CGO, smaller than V8 but still a C dependency |
-| QJS (Wazero) | Pure Go WASM, but sandboxed  --  can't expose Go functions efficiently |
-| Ramune | Heavy dependency, bundles an entire TypeScript 7 compiler |
-| Node.js subprocess | Process overhead per execution, IPC serialization cost |
+| Competitor         | Problem                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| V8 CGO bindings    | Requires CGO, ~50MB static libraries, platform-specific builds       |
+| QuickJS CGO        | Requires CGO, smaller than V8 but still a C dependency               |
+| QJS (Wazero)       | Pure Go WASM, but sandboxed -- can't expose Go functions efficiently |
+| Ramune             | Heavy dependency, bundles an entire TypeScript 7 compiler            |
+| Node.js subprocess | Process overhead per execution, IPC serialisation cost               |
 
 goja is a pure-Go ECMAScript 5.1+ interpreter at ~20k lines. It:
-- Has **zero CGO**  --  cross-compiles everywhere Go does
+
+- Has **zero CGO** -- cross-compiles everywhere Go does
 - Passes nearly all TC39 Test262 tests for ES5.1 + significant ES6 coverage
 - Can run Babel and the TypeScript compiler itself (proven capability)
 - Provides direct Go↔JS interop via `Set()`/`Get()`/`Runtime.RunString()`
@@ -61,7 +63,7 @@ During the poll cycle, archie-core scans each repo's worktree for `.archie/workf
 
 ```
 .archie/workflows/
-├── custom-gate.ts        # gate functions: exported `check()` 
+├── custom-gate.ts        # gate functions: exported `check()`
 ├── db-migration.ts        # custom stage: exported `stage()`
 └── notify-slack.ts        # skill script: exported `run()`
 ```
@@ -72,11 +74,11 @@ Each file is a self-contained module. No `package.json`, no `node_modules`, no e
 
 A plugin declares its role via an exported symbol:
 
-| Export | Role | When called |
-|---|---|---|
-| `export function check(ctx: GateContext): Finding[]` | Gate function | After shell-based gate, before commit |
-| `export function stage(): Stage` | Workflow stage | When a workflow references the stage name |
-| `export function run(ctx: ScriptContext): void` | Skill script | When a skill's instructions invoke the script |
+| Export                                               | Role           | When called                                   |
+| ---------------------------------------------------- | -------------- | --------------------------------------------- |
+| `export function check(ctx: GateContext): Finding[]` | Gate function  | After shell-based gate, before commit         |
+| `export function stage(): Stage`                     | Workflow stage | When a workflow references the stage name     |
+| `export function run(ctx: ScriptContext): void`      | Skill script   | When a skill's instructions invoke the script |
 
 arcie-core discovers the role by checking which exports exist. A file can export multiple roles.
 
@@ -86,54 +88,54 @@ arcie-core discovers the role by checking which exports exist. A file can export
 // .archie/workflows/custom-gate.ts
 
 interface GateContext {
-    diff: string;           // unified diff of changes
-    changedFiles: string[]; // list of changed file paths
-    dir: string;            // absolute worktree path
-    repo: string;           // "owner/name"
-    baseRef: string;        // "origin/main"
+  diff: string; // unified diff of changes
+  changedFiles: string[]; // list of changed file paths
+  dir: string; // absolute worktree path
+  repo: string; // "owner/name"
+  baseRef: string; // "origin/main"
 }
 
 interface Finding {
-    level: "error" | "warn";
-    file?: string;
-    line?: number;
-    message: string;
+  level: "error" | "warn";
+  file?: string;
+  line?: number;
+  message: string;
 }
 
 interface Block {
-    name: string;
-    message: string;
+  name: string;
+  message: string;
 }
 
 export function check(ctx: GateContext): Finding[] {
-    const findings: Finding[] = [];
+  const findings: Finding[] = [];
 
-    // Rule: no new panic() calls
-    for (const line of ctx.diff.split("\n")) {
-        if (line.startsWith("+") && !line.startsWith("+++")) {
-            if (line.includes("panic(")) {
-                findings.push({
-                    level: "error",
-                    message: "new panic() call  --  use error returns instead"
-                });
-            }
-        }
+  // Rule: no new panic() calls
+  for (const line of ctx.diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      if (line.includes("panic(")) {
+        findings.push({
+          level: "error",
+          message: "new panic() call  --  use error returns instead",
+        });
+      }
     }
+  }
 
-    // Rule: no time.Sleep in non-test files
-    for (const file of ctx.changedFiles) {
-        if (file.endsWith("_test.go")) continue;
-        const content = archie.readFile(`${ctx.dir}/${file}`);
-        if (content.includes("time.Sleep")) {
-            findings.push({
-                level: "warn",
-                file: file,
-                message: "time.Sleep in non-test code  --  use time.Ticker instead"
-            });
-        }
+  // Rule: no time.Sleep in non-test files
+  for (const file of ctx.changedFiles) {
+    if (file.endsWith("_test.go")) continue;
+    const content = archie.readFile(`${ctx.dir}/${file}`);
+    if (content.includes("time.Sleep")) {
+      findings.push({
+        level: "warn",
+        file: file,
+        message: "time.Sleep in non-test code  --  use time.Ticker instead",
+      });
     }
+  }
 
-    return findings;
+  return findings;
 }
 ```
 
@@ -145,21 +147,21 @@ After transpilation and execution, archie-core calls `check(ctx)` via goja. Erro
 // .archie/workflows/run-migrations.ts
 
 export function stage(): Stage {
-    return {
-        name: "db-migration",
-        run: (ctx: TaskContext): string | null => {
-            // Check if migrations directory exists
-            const hasMigrations = archie.fileExists(`${ctx.dir}/migrations`);
-            if (!hasMigrations) return null; // nothing to do
+  return {
+    name: "db-migration",
+    run: (ctx: TaskContext): string | null => {
+      // Check if migrations directory exists
+      const hasMigrations = archie.fileExists(`${ctx.dir}/migrations`);
+      if (!hasMigrations) return null; // nothing to do
 
-            // Run migration tests
-            const result = archie.exec("go", ["test", "./migrations/..."]);
-            if (result.exitCode !== 0) {
-                return `migration tests failed: ${result.stderr}`;
-            }
-            return null; // success
-        }
-    };
+      // Run migration tests
+      const result = archie.exec("go", ["test", "./migrations/..."]);
+      if (result.exitCode !== 0) {
+        return `migration tests failed: ${result.stderr}`;
+      }
+      return null; // success
+    },
+  };
 }
 ```
 
@@ -169,11 +171,11 @@ export function stage(): Stage {
 // .archie/workflows/security-audit.ts
 
 export function run(ctx: ScriptContext): void {
-    const result = archie.exec("gitleaks", ["detect", "--no-git"]);
-    if (result.exitCode !== 0) {
-        archie.log("warn", `gitleaks found secrets:\n${result.stdout}`);
-    }
-    archie.log("info", "security audit complete");
+  const result = archie.exec("gitleaks", ["detect", "--no-git"]);
+  if (result.exitCode !== 0) {
+    archie.log("warn", `gitleaks found secrets:\n${result.stdout}`);
+  }
+  archie.log("info", "security audit complete");
 }
 ```
 
@@ -183,33 +185,33 @@ arcie-core exposes a `archie` global in the goja runtime:
 
 ```typescript
 interface Archie {
-    // File operations (scoped to worktree)
-    readFile(path: string): string;
-    fileExists(path: string): boolean;
-    listDir(path: string): string[];
-    walkDir(path: string): string[];
-    
-    // Shell execution
-    exec(command: string, args?: string[]): ExecResult;
-    
-    // Logging
-    log(level: string, message: string): void;
-    
-    // Path utilities
-    resolve(...parts: string[]): string;
-    ext(path: string): string;
-    
-    // Environment
-    env(key: string): string;
-    
-    // HTTP (optional, gated)
-    fetch(url: string, options?: FetchOptions): FetchResult;
+  // File operations (scoped to worktree)
+  readFile(path: string): string;
+  fileExists(path: string): boolean;
+  listDir(path: string): string[];
+  walkDir(path: string): string[];
+
+  // Shell execution
+  exec(command: string, args?: string[]): ExecResult;
+
+  // Logging
+  log(level: string, message: string): void;
+
+  // Path utilities
+  resolve(...parts: string[]): string;
+  ext(path: string): string;
+
+  // Environment
+  env(key: string): string;
+
+  // HTTP (optional, gated)
+  fetch(url: string, options?: FetchOptions): FetchResult;
 }
 
 interface ExecResult {
-    stdout: string;
-    stderr: string;
-    exitCode: number;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
 }
 ```
 
@@ -217,7 +219,7 @@ All file operations are **jailed to the worktree**. `archie.readFile("/etc/passw
 
 ### Reload cycle
 
-Plugins are loaded fresh on every poll cycle  --  archie-core already fresh-clones per task. No hot-reload complexity, no cache invalidation. The worktree is the source of truth.
+Plugins are loaded fresh on every poll cycle -- archie-core already fresh-clones per task. No hot-reload complexity, no cache invalidation. The worktree is the source of truth.
 
 For the rare case where a plugin errors at parse/transpile time, archie-core comments on the issue with the diagnostic and parks the task. The plugin author fixes the `.ts` file and requeues.
 
@@ -377,18 +379,18 @@ if gatePlugin := tc.Plugins.Gate(); gatePlugin != nil {
 
 goja natively supports ES5.1 with significant ES6 features. Modern syntax like `async/await`, `??`, `?.`, or `class` fields may not parse. The transpile step (esbuild targeting ES2017) handles most of this, but there will be edge cases:
 
-| Feature | Status |
-|---|---|
-| Arrow functions | ✅ via transpile |
-| Template literals | ✅ via transpile |
-| Destructuring | ✅ via transpile |
-| `const`/`let` | ✅ via transpile |
-| `async/await` | ❌ not supported (goja is synchronous) |
-| `Promise` | ❌ requires `goja_nodejs` event loop |
-| Generators | ❌ not supported |
-| `Proxy` | ❌ not supported |
+| Feature           | Status                                 |
+| ----------------- | -------------------------------------- |
+| Arrow functions   | ✅ via transpile                       |
+| Template literals | ✅ via transpile                       |
+| Destructuring     | ✅ via transpile                       |
+| `const`/`let`     | ✅ via transpile                       |
+| `async/await`     | ❌ not supported (goja is synchronous) |
+| `Promise`         | ❌ requires `goja_nodejs` event loop   |
+| Generators        | ❌ not supported                       |
+| `Proxy`           | ❌ not supported                       |
 
-For gate scripts, this is fine  --  gates are synchronous by nature. If async is genuinely needed later, the Bun backend (via `tsgo`) is the escape hatch.
+For gate scripts, this is fine -- gates are synchronous by nature. If async is genuinely needed later, the Bun backend (via `tsgo`) is the escape hatch.
 
 ### Performance
 
@@ -402,44 +404,48 @@ Plugins can't `import` from npm or other files. They're self-contained modules. 
 
 ## Comparison: Yaegi vs goja
 
-| | Yaegi (Go) | goja + esbuild (TypeScript) |
-|---|---|---|
-| **Language** | Go | TypeScript |
-| **Pure Go** | ✅ | ✅ (goja + esbuild both pure Go) |
-| **CGO** | None | None |
-| **Transpile step** | None (interpreted directly) | esbuild TS→JS (~3ms) |
-| **Author audience** | Go developers | Anyone who knows TypeScript |
-| **Type annotations** | N/A (Go is typed) | Stripped by esbuild (no type-check at runtime) |
-| **Interop** | Direct Go↔Go via `Use()` | Bridge via `archie` global |
-| **Performance** | Interpreted Go (~10x slower than compiled) | Interpreted JS (~50x slower than V8, fine for gates) |
-| **Maturity** | 8k stars, used by Traefik for plugins | 7k stars, used by k6, goja is battle-tested |
-| **File extension** | `.go` | `.ts` |
-| **Plugin folder** | `.archie/workflows/` | `.archie/workflows/` |
-| **Best for** | Custom stages needing Go's stdlib, tight daemon integration | Custom gates and scripts where author familiarity matters |
+|                      | Yaegi (Go)                                                  | goja + esbuild (TypeScript)                               |
+| -------------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| **Language**         | Go                                                          | TypeScript                                                |
+| **Pure Go**          | ✅                                                          | ✅ (goja + esbuild both pure Go)                          |
+| **CGO**              | None                                                        | None                                                      |
+| **Transpile step**   | None (interpreted directly)                                 | esbuild TS→JS (~3ms)                                      |
+| **Author audience**  | Go developers                                               | Anyone who knows TypeScript                               |
+| **Type annotations** | N/A (Go is typed)                                           | Stripped by esbuild (no type-check at runtime)            |
+| **Interop**          | Direct Go↔Go via `Use()`                                    | Bridge via `archie` global                                |
+| **Performance**      | Interpreted Go (~10x slower than compiled)                  | Interpreted JS (~50x slower than V8, fine for gates)      |
+| **Maturity**         | 8k stars, used by Traefik for plugins                       | 7k stars, used by k6, goja is battle-tested               |
+| **File extension**   | `.go`                                                       | `.ts`                                                     |
+| **Plugin folder**    | `.archie/workflows/`                                        | `.archie/workflows/`                                      |
+| **Best for**         | Custom stages needing Go's stdlib, tight daemon integration | Custom gates and scripts where author familiarity matters |
 
-**Recommendation: support both.** They solve different problems. Yaegi for repo owners who want full Go power in their custom stages. goja for repo owners who want to write gates and scripts in TypeScript. Both load from `.archie/workflows/`  --  archie-core discovers which engine to use by file extension (`.go` → Yaegi, `.ts` → goja+esbuild).
+**Recommendation: support both.** They solve different problems. Yaegi for repo owners who want full Go power in their custom stages. goja for repo owners who want to write gates and scripts in TypeScript. Both load from `.archie/workflows/` -- archie-core discovers which engine to use by file extension (`.go` → Yaegi, `.ts` → goja+esbuild).
 
 ---
 
 ## Implementation phases
 
 ### Phase 1: goja runtime + esbuild
+
 - Add `github.com/dop251/goja` and `github.com/evanw/esbuild` as dependencies
 - Build `internal/plugins/` with loader, runtime pool, bridge
 - Wire gate plugin discovery into the implement and TDD workflows
 - Gate plugins run after shell-based gate, before commit
 
 ### Phase 2: Custom stages
+
 - Stage plugins discovered and registered alongside built-in stages
 - `config.toml` can reference plugin stages by name
 - TaskContext exposed to JS plugins
 
 ### Phase 3: Skill scripts
+
 - Skill SKILL.md can reference `scripts/security-audit.ts`
 - archie-core loads, transpiles, and evaluates when the skill activates
 - Script stdout captured and returned to the agent as tool output
 
 ### Phase 4: Yaegi side-by-side
+
 - Go plugin files (`.go`) loaded via Yaegi from the same `.archie/workflows/` directory
 - Same discovery pattern, different interpreter
 - archie-core chooses engine by file extension

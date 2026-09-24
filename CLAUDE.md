@@ -170,7 +170,7 @@ structures found in legacy packages.
 ## Per-Package Invariants & Traps
 
 - **Config fields (cross-cutting): a field that parses is not a field that works.**
-  A knob added to a struct the extensible surface reuses *parses* everywhere
+  A knob added to a struct the extensible surface reuses _parses_ everywhere
   without taking effect anywhere, and a knob read from the wrong layer is just
   as invisible: a file key is only a seed once a stored resource outranks it.
   Before adding or reusing a config field, name its consumer, and reject the
@@ -215,15 +215,15 @@ structures found in legacy packages.
   changing this package or its callers.
 - The proto (`proto/state/v1/state.proto`, service `StateStoreService`,
   package `statev1` in `internal/contracts/state/v1/`) is one gRPC service
-  fronting every ratified store contract (50 RPCs, including grant management
-  and deprecated compatibility RPCs); the Go consumer facades
+  fronting every ratified store contract, including grant management; the Go
+  consumer facades
   stay narrow (`workflow.Store`, `store.TaskStore`, etc., all ≤8 methods
   except the `TaskStore` composite) via `staterpc.Client`'s multiple `var _`
   assertions -- never add a Go interface method without a matching RPC.
 - Error sentinels (`store.ErrStaleTransition`, `ErrBindingNotFound`, ...)
   cross the wire via `mapError`/`unmapError` in `values.go`, matched on
   `(code, exact canonical message)`. Changing a canonical message string
-  breaks `errors.Is` on the client without changing behavior visibly --
+  breaks `errors.Is` on the client without changing behaviour visibly --
   treat those message constants as part of the wire contract.
 - The State Store is a standalone process (`cmd/archie-state-store`, run via
   `archied.RunStateStore`) -- the daemon and Gateway never own the task
@@ -233,14 +233,14 @@ structures found in legacy packages.
   service, and never reintroduce an in-process serving path in the
   daemon/Gateway (`TestOpenStoresNeverOwnsTaskDB` guards this).
 - Per-task credentials are scoped, not just authenticated: `daemon.
-  StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
+StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
   task-scoped grant at the remote State Store via `RegisterTaskGrant` before
   `ContainerPool.Acquire` and revokes it via `RevokeTaskGrant` on `Release`
   (`acquireTaskContainer`/`process` in `internal/daemon/daemon.go`). Fails
   closed (parks the task) if a State Store is configured but no issuer is
   wired -- it must never fall back to forwarding the daemon's own
   administrative token. Server-side, `staterpc.TaskGrants.UnaryInterceptor`
-  authorizes a task-scoped token for only `Update`/`Transition`/`InsertEvent`
+  authorises a task-scoped token for only `Update`/`Transition`/`InsertEvent`
   on its own task ID; every other RPC (including `RegisterTaskGrant`/
   `RevokeTaskGrant` themselves and the streaming capture RPCs) requires the
   administrative token.
@@ -307,7 +307,7 @@ structures found in legacy packages.
    separate fresh-context reviewer pass on every change as a matter of course.
    Red-green TDD plus `task check` is the gate; a manual adversarial pass is
    opt-in per request — ask before running one. This is the rule for a human or
-   agent *contributor*. Separately, archied runs the same adversarial review
+   agent _contributor_. Separately, archied runs the same adversarial review
    automatically on the PRs it opens (gated per repo by `repo.review_enabled`)
    — see `docs/architecture/adversarial-review.md`. The two paths are distinct:
    you run one when asked; archied runs one before it opens a PR.
@@ -344,7 +344,7 @@ bd remember            # Persist cross-session architectural facts
   through Dolt, not through git commits on this repo.
 - **A bead never carries production instance detail.** No operator host name,
   hostname, IP or port, filesystem path, PID, or credential -- in the body
-  *or* the title, since both sync to the Dolt remote and are therefore
+  _or_ the title, since both sync to the Dolt remote and are therefore
   published. Write the mechanism and the evidence shape instead ("a production
   host", "the State Store target", "the host's `config.toml`"), and put the
   host-specific facts in the operator's memos instance, which the bead may

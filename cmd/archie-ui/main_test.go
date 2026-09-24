@@ -224,7 +224,6 @@ func writeUIConfig(t *testing.T, dir, stateTarget, gatewayTarget string) string 
 	t.Helper()
 	path := filepath.Join(dir, "config.toml")
 	content := fmt.Sprintf(`bot_user = "archie-bot"
-db_path = %q
 [forge]
 type = "github"
 host = "https://github.example.com"
@@ -236,7 +235,7 @@ name = "widget"
 target = %q
 [services.gateway]
 target = %q
-`, filepath.Join(dir, "archie.db"), stateTarget, gatewayTarget)
+`, stateTarget, gatewayTarget)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write ui config: %v", err)
 	}

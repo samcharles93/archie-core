@@ -11,24 +11,24 @@
 
 Every claim in this document is mapped to what exists in the tree.
 
-| Claim | Status | Where it stands |
-|---|---|---|
-| Curator engine family: typed contract, owning registry, start/health/stop, narrow host access | **Implemented** | `internal/domain/curator/{contract,registry,runtime,registrar,activity,wake}.go` |
-| Curator declared shape (`Manifest`: interval, cooldown, on_input, tools, skills, memory engine, conversations, model) | **Implemented** | `internal/domain/curator/contract.go`; `Validate()` requires `Interval > 0` |
-| Two reference curators run through the registry | **Implemented** | `internal/infrastructure/skillcurator`, `internal/infrastructure/sessioncurator` |
-| Curator definitions as persisted, API-editable data | **Aspirational -- zero code** | No table, no entity, no RPC, no config block |
-| Generic definition-driven engine that executes a declared tool set + free-form instructions | **Aspirational -- zero code** | Only the two code-registered curators exist |
-| `Registrar.Tools` (`ToolBuilder`) resolved and bound at registration | **Partial** | Interface declared (`registrar.go`); **no implementation anywhere**; `bootstrap.go` builds the `Registrar` with no `Tools` field |
-| A curator can declare tools at all | **Partial** | `Manifest.Tools` exists, but `registry.go` fails registration with `"curator manifest: declares tools but the registrar has no ToolBuilder"` |
-| Curator passes that actually reach a model with tools | **Cosmetic only** | `curator.ChatRequest` carries `Tools`/`MaxSteps`; `curatorLLMRunner` (`internal/app/archied/main.go`) drops both and returns `ChatResult{Text}` only |
-| Dynamic registration / removal (no restart) | **Aspirational -- zero code** | `Registry` has `Register`, no `Unregister`; `Runtime` has `Start`/`Nudge`/`Stop`, no `Add`/`Remove`; `Start()` snapshots membership |
-| Curator definition CRUD over REST | **Partial** | `GET /api/curators` read-only (`internal/webui/server.go`); no write routes |
-| Curator definition config | **Aspirational -- zero code** | No `[curator]` block in `internal/config/config.go` |
-| Store/API as definition authority | **Aspirational -- zero code** | No curator persistence of any kind |
-| No live-path defaults for interval/cooldown/tools/model/memory engine | **Partial** | `skillcurator.DefaultInterval` / `sessioncurator.DefaultInterval` are Go consts read at registration; `curator.NewRuntime(..., RuntimeConfig{})` uses code defaults for pass timeout and concurrency |
-| Idle curators are observable in logs | **Partial** | `runtime.go` logs nothing when `Check` reports not-due; the session-memory curator's hourly pass is the only curator activity ever logged |
-| Sampler family | **Implemented** | `internal/domain/sampling`, shipped; no curator consumes a `Sampler` yet |
-| Forge/issue reach from chat | **Implemented** (via `shell`) | No dedicated issue tool exists, but the chat agent's `shell` is unconfined (`chat.unrestricted_filesystem = true`), so `gh issue edit|comment|create|close` works. Dedicated tools (#161) are convenience, not a blocker |
+| Claim                                                                                                                 | Status                        | Where it stands                                                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Curator engine family: typed contract, owning registry, start/health/stop, narrow host access                         | **Implemented**               | `internal/domain/curator/{contract,registry,runtime,registrar,activity,wake}.go`                                                                                                                     |
+| Curator declared shape (`Manifest`: interval, cooldown, on_input, tools, skills, memory engine, conversations, model) | **Implemented**               | `internal/domain/curator/contract.go`; `Validate()` requires `Interval > 0`                                                                                                                          |
+| Two reference curators run through the registry                                                                       | **Implemented**               | `internal/infrastructure/skillcurator`, `internal/infrastructure/sessioncurator`                                                                                                                     |
+| Curator definitions as persisted, API-editable data                                                                   | **Aspirational -- zero code** | No table, no entity, no RPC, no config block                                                                                                                                                         |
+| Generic definition-driven engine that executes a declared tool set + free-form instructions                           | **Aspirational -- zero code** | Only the two code-registered curators exist                                                                                                                                                          |
+| `Registrar.Tools` (`ToolBuilder`) resolved and bound at registration                                                  | **Partial**                   | Interface declared (`registrar.go`); **no implementation anywhere**; `bootstrap.go` builds the `Registrar` with no `Tools` field                                                                     |
+| A curator can declare tools at all                                                                                    | **Partial**                   | `Manifest.Tools` exists, but `registry.go` fails registration with `"curator manifest: declares tools but the registrar has no ToolBuilder"`                                                         |
+| Curator passes that actually reach a model with tools                                                                 | **Cosmetic only**             | `curator.ChatRequest` carries `Tools`/`MaxSteps`; `curatorLLMRunner` (`internal/app/archied/main.go`) drops both and returns `ChatResult{Text}` only                                                 |
+| Dynamic registration / removal (no restart)                                                                           | **Aspirational -- zero code** | `Registry` has `Register`, no `Unregister`; `Runtime` has `Start`/`Nudge`/`Stop`, no `Add`/`Remove`; `Start()` snapshots membership                                                                  |
+| Curator definition CRUD over REST                                                                                     | **Partial**                   | `GET /api/curators` read-only (`internal/webui/server.go`); no write routes                                                                                                                          |
+| Curator definition config                                                                                             | **Aspirational -- zero code** | No `[curator]` block in `internal/config/config.go`                                                                                                                                                  |
+| Store/API as definition authority                                                                                     | **Aspirational -- zero code** | No curator persistence of any kind                                                                                                                                                                   |
+| No live-path defaults for interval/cooldown/tools/model/memory engine                                                 | **Partial**                   | `skillcurator.DefaultInterval` / `sessioncurator.DefaultInterval` are Go consts read at registration; `curator.NewRuntime(..., RuntimeConfig{})` uses code defaults for pass timeout and concurrency |
+| Idle curators are observable in logs                                                                                  | **Partial**                   | `runtime.go` logs nothing when `Check` reports not-due; the session-memory curator's hourly pass is the only curator activity ever logged                                                            |
+| Sampler family                                                                                                        | **Implemented**               | `internal/domain/sampling`, shipped; no curator consumes a `Sampler` yet                                                                                                                             |
+| Forge/issue reach from chat                                                                                           | **Implemented** (via `shell`) | No dedicated issue tool exists, but the chat agent's `shell` is unconfined (`chat.unrestricted_filesystem = true`), so `gh issue edit                                                                | comment | create | close` works. Dedicated tools (#161) are convenience, not a blocker |
 
 > **Target state, not current state.** Everything below marked aspirational is
 > design, not a description of the daemon as it runs.
@@ -44,9 +44,9 @@ daemon's model adapter drops the tools even if it were bound. The curator family
 therefore has exactly one shape (cheap, tool-less maintenance pass) and its only
 extension point is compiling Go.
 
-Sam's requirement is the opposite: *"Curators should be dynamically created and
-defined, in addition to being able to be defined in code/config/webui"* and *"No
-configuration should ever be hard-coded."* The motivating consumer is a
+Sam's requirement is the opposite: _"Curators should be dynamically created and
+defined, in addition to being able to be defined in code/config/webui"_ and _"No
+configuration should ever be hard-coded."_ The motivating consumer is a
 project/orchestrator curator -- declared as data, given forge issue tools, and
 pointed at a repo to review, refine, and propose issues.
 
@@ -60,11 +60,11 @@ skills, memory engine, conversations, and model, and `Validate()` already
 enforces what a valid shape means. The definition adds only what `Manifest`
 cannot express:
 
-| Definition field | Relationship to `Manifest` |
-|---|---|
-| `name`, `enabled` | Identity and lifecycle; the registry's key is the name |
-| `instructions` | **Free-form** system prompt for the generic engine -- the piece that makes a definition more than a knob set |
-| interval, cooldown, on_input, tools, skills, memory_engine, conversations, model | The existing `Manifest` fields verbatim; the definition **is** a `Manifest` |
+| Definition field                                                                 | Relationship to `Manifest`                                                                                   |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `name`, `enabled`                                                                | Identity and lifecycle; the registry's key is the name                                                       |
+| `instructions`                                                                   | **Free-form** system prompt for the generic engine -- the piece that makes a definition more than a knob set |
+| interval, cooldown, on_input, tools, skills, memory_engine, conversations, model | The existing `Manifest` fields verbatim; the definition **is** a `Manifest`                                  |
 
 Code-registered engines keep `CuratorEngine` unchanged. A data-defined curator is
 served by one registered engine whose `Manifest()` is the stored definition and
@@ -78,11 +78,11 @@ This is the curator domain's missing half, not a standalone tool: it lands in
 
 Three sources, per Sam's requirement. **The store is authoritative.**
 
-| Source | Role | Collision behaviour |
-|---|---|---|
+| Source                            | Role                                                                     | Collision behaviour                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Code** (a registered Go engine) | The escape hatch: a curator whose strategy is Go, not tools+instructions | Wins over data for its own name -- a data definition cannot silently replace a compiled engine; the store refuses the collision and logs it |
-| **Config** (`[[curators]]`) | **Seed data only**, merged at startup | Insert-if-absent. A store row of the same name is never overwritten, and deleting a store row is not undone by config on the next boot |
-| **WebUI/API** (the store) | **Authoritative** | Wins over config on a name collision; the only source of truth after first boot |
+| **Config** (`[[curators]]`)       | **Seed data only**, merged at startup                                    | Insert-if-absent. A store row of the same name is never overwritten, and deleting a store row is not undone by config on the next boot      |
+| **WebUI/API** (the store)         | **Authoritative**                                                        | Wins over config on a name collision; the only source of truth after first boot                                                             |
 
 Config existing at all is what makes a definition reproducible on a fresh host;
 making it authoritative would make the API a lie, so it is seed data with a
@@ -135,11 +135,11 @@ must not block removal forever.
 
 Mirror `internal/webui/api_binding.go`, not a new pattern:
 
-| Route | Handler shape |
-|---|---|
-| `GET /api/curators` | Existing read-only list, fields unchanged (dashboard keeps working) |
-| `POST /api/curators` | `handleCuratorCreate` |
-| `GET /api/curators/{id}` / `PATCH` / `DELETE` | `handleCuratorGet` / `Update` / `Delete` |
+| Route                                         | Handler shape                                                       |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| `GET /api/curators`                           | Existing read-only list, fields unchanged (dashboard keeps working) |
+| `POST /api/curators`                          | `handleCuratorCreate`                                               |
+| `GET /api/curators/{id}` / `PATCH` / `DELETE` | `handleCuratorGet` / `Update` / `Delete`                            |
 
 All mutations behind `authorizeTaskMutation`, same as bindings and mappings. A
 successful mutation goes through the runtime apply path above, so it is live
@@ -153,11 +153,11 @@ and Gateway never open it (`TestOpenStoresNeverOwnsTaskDB` guards this), and
 contract. AGENTS.md forbids adding a Go interface method without a matching RPC.
 That fixes the order:
 
-| Phase | Ships | Proto work |
-|---|---|---|
-| 1. Engine + config source | `ToolBuilder`, tool-carrying passes, generic engine, `[[curators]]`, idle logging | None -- nothing persisted yet |
-| 2. Runtime mutation | `Unregister`, `Add`/`Remove`, apply path | None -- in-memory membership |
-| 3. Persistence | definition entity + store schema, config seed (store authoritative), REST CRUD | **Same change**: request/response messages + RPCs, `staterpc.Client` façade, `mapError`/`unmapError`, and an update to `docs/prds/state-store-contract.md` |
+| Phase                     | Ships                                                                             | Proto work                                                                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Engine + config source | `ToolBuilder`, tool-carrying passes, generic engine, `[[curators]]`, idle logging | None -- nothing persisted yet                                                                                                                              |
+| 2. Runtime mutation       | `Unregister`, `Add`/`Remove`, apply path                                          | None -- in-memory membership                                                                                                                               |
+| 3. Persistence            | definition entity + store schema, config seed (store authoritative), REST CRUD    | **Same change**: request/response messages + RPCs, `staterpc.Client` façade, `mapError`/`unmapError`, and an update to `docs/prds/state-store-contract.md` |
 
 Phases 1 and 2 are genuinely independent of the wire boundary, so they are not
 blocked on it. Phase 3 is where the boundary is unavoidable: a definition the
@@ -184,7 +184,7 @@ stop being read at registration (the value becomes seed data), and
   the same authority as bindings -- not exposed on the chat tool surface.
 - **No dashboard SPA editor page.** The REST surface is the WebUI definition
   source; the dashboard can adopt it separately.
-- **No forge issue tools here.** This design only ensures a curator *can declare*
+- **No forge issue tools here.** This design only ensures a curator _can declare_
   tools. Dedicated issue tools (#161) are a convenience, not a prerequisite: the
   chat agent already reaches issues through the unconfined `shell` tool
   (`gh issue edit|comment|create|close`). See the correction on #789.

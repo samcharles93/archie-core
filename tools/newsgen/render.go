@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // releasesJSONPath is the canonical, host-neutral artifact every renderer
@@ -14,12 +13,9 @@ const releasesJSONPath = "docs/news/releases.json"
 
 // redirectsJSONPath is the redirect table. The per-component pages were retired,
 // so every `/news/<component>/<version>/` URL published before the merge is
-// mapped to the unified page for that version. It is generated beside the pages
-// for the same reason they are: a hand-kept list would drift from them.
+// mapped to the unified page for that version. It is generated beside the
+// canonical release facts so the two stay in sync.
 const redirectsJSONPath = "docs/news/redirects.json"
-
-// newsDir is where the MkDocs adapter writes the news index and its pages.
-const newsDir = "docs/news"
 
 // legacyComponentDirs are the URL namespaces the per-component pages used. Both
 // are mapped for every version rather than only the component that released it,
@@ -43,12 +39,8 @@ func render(releases []release) (map[string][]byte, error) {
 		return nil, err
 	}
 	files := map[string][]byte{
-		releasesJSONPath:      canonical,
-		redirectsJSONPath:     redirects,
-		newsDir + "/index.md": renderIndex(releases),
-	}
-	for _, r := range releases {
-		files[fmt.Sprintf("%s/%s.md", newsDir, r.Version)] = renderRelease(r)
+		releasesJSONPath:  canonical,
+		redirectsJSONPath: redirects,
 	}
 	return files, nil
 }
@@ -81,31 +73,4 @@ func encodeJSON(path string, value any) ([]byte, error) {
 		return nil, fmt.Errorf("encode %s: %w", path, err)
 	}
 	return buf.Bytes(), nil
-}
-
-// renderIndex is the news page: one dated group per release day, newest first.
-func renderIndex(releases []release) []byte {
-	var b strings.Builder
-	b.WriteString("# News\n\n")
-	b.WriteString("Release notes, newest first.\n")
-	lastDate := ""
-	for _, r := range releases {
-		if r.Date != lastDate {
-			fmt.Fprintf(&b, "\n## %s\n\n", r.Date)
-			lastDate = r.Date
-		}
-		fmt.Fprintf(&b, "- [%s](%s.md)\n", r.Version, r.Version)
-	}
-	return []byte(b.String())
-}
-
-// renderRelease is one version's page: the facts, and the changelog body
-// verbatim, which carries that release's per-component sections.
-func renderRelease(r release) []byte {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# %s\n\n", r.Version)
-	fmt.Fprintf(&b, "Released %s. [All news](index.md)\n\n", r.Date)
-	b.WriteString(r.Body)
-	b.WriteString("\n")
-	return []byte(b.String())
 }

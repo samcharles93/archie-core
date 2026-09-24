@@ -19,11 +19,6 @@ func TestChatConfigFrontEnds(t *testing.T) {
 			want: map[string]bool{"telegram": false, "email": false, "webhook": false},
 		},
 		{
-			name: "telegram bot token from the environment",
-			chat: ChatConfig{Telegram: TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"}},
-			want: map[string]bool{"telegram": true, "email": false, "webhook": false},
-		},
-		{
 			name: "telegram bot token through the secret engine",
 			chat: ChatConfig{Telegram: TelegramConfig{Token: SecretRef{Engine: "builtin", Key: "telegram"}}},
 			want: map[string]bool{"telegram": true, "email": false, "webhook": false},
@@ -41,18 +36,16 @@ func TestChatConfigFrontEnds(t *testing.T) {
 		{
 			name: "every front-end at once",
 			chat: ChatConfig{
-				Telegram:    TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+				Telegram:    TelegramConfig{Token: SecretRef{Engine: "env", Key: "TELEGRAM_TOKEN"}},
 				Email:       EmailConfig{ListenAddr: "127.0.0.1:2525"},
 				WebhookAddr: "127.0.0.1:9099",
 			},
 			want: map[string]bool{"telegram": true, "email": true, "webhook": true},
 		},
 		{
-			// Whitespace is not a value: an env var name of " " resolves
-			// to nothing and " " cannot be listened on.
+			// Whitespace is not a value: " " cannot be listened on.
 			name: "whitespace-only values are not configured",
 			chat: ChatConfig{
-				Telegram:    TelegramConfig{TokenEnv: "   "},
 				Email:       EmailConfig{ListenAddr: " "},
 				WebhookAddr: "\t",
 			},

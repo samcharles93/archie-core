@@ -58,16 +58,20 @@ export const taskIDsBySource = ref(new Map<string, number>());
 export async function loadDashboard(): Promise<void> {
   error.value = null;
   try {
-    const [nextSummary, nextSetup, nextWorkflows, nextTasks] = await Promise.all([
-      api.summary<Summary>(),
-      api.setup<Setup>().catch(() => null),
-      api.workflows<{ workflows?: WorkflowStat[] }>().catch(() => null),
-      api.tasks<DashboardTask[]>().catch(() => []),
-    ]);
+    const [nextSummary, nextSetup, nextWorkflows, nextTasks] =
+      await Promise.all([
+        api.summary<Summary>(),
+        api.setup<Setup>().catch(() => null),
+        api.workflows<{ workflows?: WorkflowStat[] }>().catch(() => null),
+        api.tasks<DashboardTask[]>().catch(() => []),
+      ]);
     const map = new Map<string, number>();
     for (const task of nextTasks) {
       if (task.owner && task.repo && task.issue_number) {
-        map.set(`${task.owner}/${task.repo}#${task.issue_number}`, Number(task.id));
+        map.set(
+          `${task.owner}/${task.repo}#${task.issue_number}`,
+          Number(task.id),
+        );
       }
     }
     taskIDsBySource.value = map;
@@ -80,7 +84,10 @@ export async function loadDashboard(): Promise<void> {
   }
 }
 
-export function taskIDForEvent(event: ActivityEvent, bySource: Map<string, number>): number {
+export function taskIDForEvent(
+  event: ActivityEvent,
+  bySource: Map<string, number>,
+): number {
   if (Number(event.task_id) > 0) return Number(event.task_id);
   if (!event.repo || !event.issue) return 0;
   return Number(bySource.get(`${event.repo}#${event.issue}`)) || 0;

@@ -8,7 +8,7 @@
 ## Decision
 
 The skill curator's v1 scope is **mechanical validation and safe
-normalization only** -- it never rewrites skill prose, never deletes a
+normalisation only** -- it never rewrites skill prose, never deletes a
 skill, and never calls the model. Each pass:
 
 1. Lists every skill under one configured root.
@@ -16,13 +16,13 @@ skill, and never calls the model. Each pass:
    (`internal/skill.Parse`).
 3. Records an `Action` for any structural problem: a parse failure, or a
    missing `name`/`description` in the frontmatter that parsed.
-4. Normalizes trivial whitespace (trailing whitespace per line, exactly
-   one trailing newline) and writes back **only** when normalization
+4. Normalises trivial whitespace (trailing whitespace per line, exactly
+   one trailing newline) and writes back **only** when normalisation
    actually changes the bytes, recording an `Action` for that write.
 
-Nothing here needs judgment. "Review, prune, and improve" -- the epic's
+Nothing here needs judgement. "Review, prune, and improve" -- the epic's
 framing -- is real for v1 but deliberately narrow: review is structural
-validation, improve is whitespace normalization, and prune is *reporting*
+validation, improve is whitespace normalisation, and prune is _reporting_
 a problem, never removing a skill. `Manifest.Skills = true` still marks
 this curator agentic (existing `agentic()` rule), so it receives model
 access from the registrar -- unused but nothing about the contract
@@ -39,7 +39,7 @@ contract holds for a second, structurally different consumer than the
 session-memory curator (files-as-skills vs. observations-as-memory), not
 solving "what makes a skill good." Mechanical validation is real,
 useful, safe to run unattended, and fully exercises
-List/Read/Write --  every method `curator.SkillStore` declares except
+List/Read/Write -- every method `curator.SkillStore` declares except
 `Delete`, which this curator's Pass never has a safe reason to call in
 v1 (kept implemented on the store adapter regardless, since the
 interface requires it and a future consumer may).
@@ -48,7 +48,7 @@ interface requires it and a future consumer may).
 
 `internal/skill.Discover` parses every `SKILL.md` under a root and
 returns an error for the **whole** call if any one of them fails to
-parse -- the read side was built for "load the catalog to start the
+parse -- the read side was built for "load the catalogue to start the
 daemon," where one bad skill failing the whole boot is arguably correct,
 not for "review each skill and report what's wrong with it
 individually." A per-skill parse failure must become one `Action`, not
@@ -66,7 +66,7 @@ every root `skill.CatalogRoots`/`DefaultRoots` would read for a model
 (which layers a shared dir over the per-profile one). Write and Delete
 need one unambiguous target; a curator that could write into a shared,
 multi-tenant skills directory is a bigger decision than this issue
-covers. The model still sees the full multi-root catalog through the
+covers. The model still sees the full multi-root catalogue through the
 existing read path -- this curator only maintains the local one.
 
 ## Shape
@@ -118,7 +118,7 @@ func (c *Curator) Pass(ctx context.Context, in curator.PassInput) (curator.PassR
 
 - **parse failure** -- `Action{Type: "skill.invalid", Reason: "frontmatter failed to parse"}`
 - **missing required field** -- `Action{Type: "skill.incomplete", Reason: "name" | "description"}`
-- **normalized** -- content changed by whitespace cleanup, written back,
+- **normalised** -- content changed by whitespace cleanup, written back,
   `Action{Type: "skill.normalized", Detail: "<name>: trimmed trailing whitespace"}`
 - **clean** -- no action recorded (a pass with nothing to report is not
   an error, and not every skill needs an entry every time)
@@ -140,11 +140,11 @@ file reads).
   `metadata.archie.tools` naming a tool that no longer exists). The
   mechanism to check "does this tool exist" belongs to a tool registry
   this curator has no access to and shouldn't be given for this --
-  `curator.ToolBuilder.Build` resolves the curator's *own* declared
+  `curator.ToolBuilder.Build` resolves the curator's _own_ declared
   tools, not an arbitrary existence check against skill-referenced
   names. A real fix here is a separate, better-scoped issue.
 - **No multi-root awareness.** One configured root, matching
-  `loadWorkflows`'s existing resolution, not the full layered catalog a
+  `loadWorkflows`'s existing resolution, not the full layered catalogue a
   chat turn sees.
 - **No new curator-specific webui or chat surface.** Activity is visible
   through the existing curator observability surface

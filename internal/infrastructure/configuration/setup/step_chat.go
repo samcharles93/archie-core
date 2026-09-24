@@ -10,10 +10,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
-// telegramTokenEnv is the env var Telegram's bot token is stored under.
-// TelegramConfig has no secret.SecretRef field -- unlike the forge and
-// provider steps, the config edit is a plain token_env string, not a
-// {engine,key} inline table.
+// telegramTokenEnv is the env var a prompted Telegram bot token is stored
+// under.
 const telegramTokenEnv = "ARCHIE_TELEGRAM_TOKEN"
 
 func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params) (tableEdits, error) {
@@ -30,14 +28,11 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params
 	}
 
 	// A reference means the value already lives in a secret engine: write the
-	// reference and ask nothing. A supplied reference may name any engine, which
-	// the legacy token_env form cannot express, so it writes the preferred
-	// secret-reference form instead. Otherwise the token comes from a prompt, and
+	// reference and ask nothing. Otherwise the token comes from a prompt, and
 	// only from a prompt; see stepForgeWithToken.
-	tokenForm := "token_env"
-	tokenValue := tomlwrite.String(telegramTokenEnv)
+	tokenValue := tomlwrite.Ref("env", telegramTokenEnv)
 	if ref := params.TelegramTokenRef; ref != (config.SecretRef{}) {
-		tokenForm, tokenValue = "token", tomlwrite.Ref(ref.Engine, ref.Key)
+		tokenValue = tomlwrite.Ref(ref.Engine, ref.Key)
 	} else {
 		token, err := p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
 		if err != nil {
@@ -72,7 +67,7 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params
 
 	return tableEdits{
 		"chat.telegram": {
-			tokenForm:          tokenValue,
+			"token":            tokenValue,
 			"allowed_user_ids": intArrayLiteral(ids),
 		},
 	}, nil

@@ -32,20 +32,31 @@ test("pages do not expose passive refresh controls", async () => {
 });
 
 test("a 401 does not offer a reload that cannot restore authentication", async () => {
-  const source = await readFile(new URL("../src/tasks/TaskRowActions.vue", import.meta.url), "utf8");
+  const source = await readFile(
+    new URL("../src/tasks/TaskRowActions.vue", import.meta.url),
+    "utf8",
+  );
   assert.doesNotMatch(source, /Reload to sign in|window\.location\.reload/);
 });
 
 test("the application starts one Pinia-owned live update stream", async () => {
-  const main = await readFile(new URL("../src/main.ts", import.meta.url), "utf8");
+  const main = await readFile(
+    new URL("../src/main.ts", import.meta.url),
+    "utf8",
+  );
   assert.match(main, /useLiveUpdatesStore\(pinia\)\.initialize\(\)/);
 });
 
 test("backend events invalidate only their owning projections", () => {
-  assert.deepEqual(resourcesForEvent({ kind: "stage_finish", task_id: 42 }), ["tasks"]);
+  assert.deepEqual(resourcesForEvent({ kind: "stage_finish", task_id: 42 }), [
+    "tasks",
+  ]);
   assert.deepEqual(resourcesForEvent({ kind: "task_queued" }), ["tasks"]);
   assert.deepEqual(resourcesForEvent({ kind: "capture" }), ["captures"]);
-  assert.deepEqual(resourcesForEvent({ kind: "curator_action" }), ["curators", "skills"]);
+  assert.deepEqual(resourcesForEvent({ kind: "curator_action" }), [
+    "curators",
+    "skills",
+  ]);
   assert.deepEqual(resourcesForEvent({ kind: "update_report" }), ["updates"]);
   assert.deepEqual(resourcesForEvent({ kind: "log" }), []);
 });

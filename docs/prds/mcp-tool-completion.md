@@ -23,7 +23,7 @@ production-wired.
 
 `bd search "MCP client"` shows five closed transport beads and one open:
 server-initiated sampling (`#151`). `internal/tools/mcp/client.go`
-holds a single `callMu *sync.Mutex` that serializes every `tools/call`
+holds a single `callMu *sync.Mutex` that serialises every `tools/call`
 regardless of server — `ParallelToolCalls` does not exist on the `MCPServer`
 config struct (`internal/config/config.go`), confirming `#177` is a
 real gap, not a stale bead. `#178` (wire MCP tool servers for the chat agent,
@@ -64,11 +64,11 @@ parallel model-calling path for MCP sampling.
 
 **Failure mapping.**
 
-| condition | contract error |
-|---|---|
-| no `SamplingHandler` configured | JSON-RPC method-not-found, per spec |
-| handler returns error | JSON-RPC internal error, message from handler |
-| handler timeout | JSON-RPC timeout error; use the transport's existing request-timeout config, not a new one |
+| condition                       | contract error                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
+| no `SamplingHandler` configured | JSON-RPC method-not-found, per spec                                                        |
+| handler returns error           | JSON-RPC internal error, message from handler                                              |
+| handler timeout                 | JSON-RPC timeout error; use the transport's existing request-timeout config, not a new one |
 
 **Testing.** Fakeable entirely — a stub `SamplingHandler` and a fake
 transport that emits a `sampling/createMessage` frame. No real backend
@@ -79,11 +79,11 @@ needed; belongs in `task check`.
 **Decision.** `ParallelToolCalls bool` (default `false`) goes on `MCPServer`
 in `internal/config/config.go`, next to `Transport`/`Command`. The
 mutex in `client.go` becomes per-server: when `ParallelToolCalls` is
-false (default, and the only behavior), keep the single `callMu`
-serializing that server's calls exactly as now; when true, drop the mutex for
+false (default, and the only behaviour), keep the single `callMu`
+serialising that server's calls exactly as now; when true, drop the mutex for
 that server's `Client` instance entirely and let the caller's own
 concurrency (already proven by the closed concurrent-dispatch bead, `#183`)
-handle it. This is additive — no server's behavior changes unless an operator
+handle it. This is additive — no server's behaviour changes unless an operator
 opts in.
 
 **Call site.** `internal/config/config.go` (struct field),
@@ -130,10 +130,10 @@ there rather than duplicating the pool).
 
 **Error/failure mapping.**
 
-| condition | contract error |
-|---|---|
-| pool exhausted (no container slot) | MCP client returns connection-refused equivalent; server marked unavailable in the registry until retried |
-| container fails health/start | same as `#151`'s handler-error path — surfaced through the client's existing reconnect/backoff (`transport.go`), not a new retry loop |
+| condition                          | contract error                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| pool exhausted (no container slot) | MCP client returns connection-refused equivalent; server marked unavailable in the registry until retried                             |
+| container fails health/start       | same as `#151`'s handler-error path — surfaced through the client's existing reconnect/backoff (`transport.go`), not a new retry loop |
 
 **Testing.** `Sandboxed=false` path is the existing, already-tested
 unsandboxed flow — no change. `Sandboxed=true` needs a real
@@ -149,7 +149,7 @@ is for a turn where each result should be surfaced to the operator (or the
 next tool call) before the next call fires — e.g. a mutating tool chain where
 showing intermediate state matters. Add a `DispatchMode` enum
 (`Concurrent`/`Sequential`) to whatever type selects the closed
-`#183` concurrent path, defaulting to `Concurrent` (its only behavior).
+`#183` concurrent path, defaulting to `Concurrent` (its only behaviour).
 
 **Call site.** The tool-dispatch entry point that `#183`'s closed
 implementation lives in (grep the concurrent-dispatch symbol added for
@@ -164,27 +164,27 @@ preview callbacks fire in order before the next call starts. `task check`.
 
 ## Call site inventory
 
-| concern | file | change |
-|---|---|---|
-| MCP client transports (stdio/HTTP/SSE) | `internal/tools/mcp/transport*.go` | none — already handles this |
-| MCP client call serialization | `internal/tools/mcp/client.go` | change (`#177`) |
-| MCP server config | `internal/config/config.go` | new fields: `ParallelToolCalls`, `Sandboxed` |
-| Sampling dispatch | `internal/tools/mcp/client.go` | new (`#151`) |
-| Sampling handler wiring | `internal/app/archied/main.go` | new (`#151`), reuses `chatGenerateOptions` |
-| Sandboxed MCP launch | MCP client constructor + `internal/container/pool.go` | new (`#178`/`#179`) |
-| Concurrent tool dispatch | dispatch entry point (closed `#183`) | none — already handles this |
-| Sequential tool dispatch + previews | same dispatch entry point | new (`#182`) |
-| Guardrails / classification / registry / disclosure | `internal/tools/guardrail.go`, `classification.go`, `registry.go`, `disclosure.go` | none — already handles this |
-| `config.example.toml` MCP block | `config.example.toml` | doc update for new fields |
+| concern                                             | file                                                                               | change                                       |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------- |
+| MCP client transports (stdio/HTTP/SSE)              | `internal/tools/mcp/transport*.go`                                                 | none — already handles this                  |
+| MCP client call serialisation                       | `internal/tools/mcp/client.go`                                                     | change (`#177`)                              |
+| MCP server config                                   | `internal/config/config.go`                                                        | new fields: `ParallelToolCalls`, `Sandboxed` |
+| Sampling dispatch                                   | `internal/tools/mcp/client.go`                                                     | new (`#151`)                                 |
+| Sampling handler wiring                             | `internal/app/archied/main.go`                                                     | new (`#151`), reuses `chatGenerateOptions`   |
+| Sandboxed MCP launch                                | MCP client constructor + `internal/container/pool.go`                              | new (`#178`/`#179`)                          |
+| Concurrent tool dispatch                            | dispatch entry point (closed `#183`)                                               | none — already handles this                  |
+| Sequential tool dispatch + previews                 | same dispatch entry point                                                          | new (`#182`)                                 |
+| Guardrails / classification / registry / disclosure | `internal/tools/guardrail.go`, `classification.go`, `registry.go`, `disclosure.go` | none — already handles this                  |
+| `config.example.toml` MCP block                     | `config.example.toml`                                                              | doc update for new fields                    |
 
 ## Execution: multi-agent team breakdown
 
-| sub-feature | issue | implementer scope | suggested council lenses | why |
-|---|---|---|---|---|
-| Server-initiated sampling | `#151` | `client.go` dispatch branch, `main.go` handler wiring | `lens-contract` | new JSON-RPC method surface crossing the MCP wire contract |
-| Parallel-tool-calls flag | `#177` | config field, conditional mutex, constructor wiring | `lens-boundary` | per-server behavior change must not leak into other servers' serialization |
+| sub-feature                          | issue          | implementer scope                                                                  | suggested council lenses            | why                                                                                             |
+| ------------------------------------ | -------------- | ---------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Server-initiated sampling            | `#151`         | `client.go` dispatch branch, `main.go` handler wiring                              | `lens-contract`                     | new JSON-RPC method surface crossing the MCP wire contract                                      |
+| Parallel-tool-calls flag             | `#177`         | config field, conditional mutex, constructor wiring                                | `lens-boundary`                     | per-server behaviour change must not leak into other servers' serialisation                     |
 | Sandboxed MCP + Firecracker deferral | `#178`, `#179` | config field, constructor routing through `ContainerPool`, pool entrypoint variant | `lens-operator`, `lens-deletionist` | operator: sandbox-down failure path; deletionist: keeps `#179` from becoming unused scaffolding |
-| Sequential dispatch with previews | `#182` | `DispatchMode` enum, sequential branch, preview reuse of streaming seam | `lens-maintainer` | two coexisting dispatch modes need a reader to tell which applies without re-deriving both |
+| Sequential dispatch with previews    | `#182`         | `DispatchMode` enum, sequential branch, preview reuse of streaming seam            | `lens-maintainer`                   | two coexisting dispatch modes need a reader to tell which applies without re-deriving both      |
 
 ## File and link the beads
 

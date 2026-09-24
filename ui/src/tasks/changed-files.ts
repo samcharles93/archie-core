@@ -20,10 +20,15 @@ export { changeStatusLabel as fileStatusLabel } from "@/lib/task-meta";
  * coordinates shows its owner/repo and PR number as text rather than a dead
  * link.
  */
-export function captureLinks(capture: Capture | undefined, task: TaskRecord | null): { repo: string; pr: string } {
+export function captureLinks(
+  capture: Capture | undefined,
+  task: TaskRecord | null,
+): { repo: string; pr: string } {
   const repo = capture?.repo_url || task?.repo_url || "";
   const samePR =
-    task && String(task.pr_number ?? "") !== "" && String(task.pr_number) === String(capture?.pr_number ?? "");
+    task &&
+    String(task.pr_number ?? "") !== "" &&
+    String(task.pr_number) === String(capture?.pr_number ?? "");
   const pr = capture?.pr_url || (samePR ? task?.pr_url || "" : "");
   return { repo, pr };
 }

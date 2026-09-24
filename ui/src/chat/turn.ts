@@ -35,7 +35,12 @@ export function resolveTurn(
   retry: RetryOptions | null | undefined,
   composerValue: string,
 ): { text: string; turn: ChatTurn; isRetry: boolean } {
-  const isRetry = !!(retry && typeof retry === "object" && retry.turn && typeof retry.turn.text === "string");
+  const isRetry = !!(
+    retry &&
+    typeof retry === "object" &&
+    retry.turn &&
+    typeof retry.turn.text === "string"
+  );
   const text = isRetry ? retry.turn!.text : composerValue.trim();
   const turn = isRetry ? retryChatTurn(retry.turn!) : newChatTurn(text);
   return { text, turn, isRetry };

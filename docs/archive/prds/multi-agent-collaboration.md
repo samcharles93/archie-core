@@ -1,7 +1,7 @@
 # Multi-Agent Collaboration -- PRD
 
 **Status:** Draft (discovery interview complete, 2026-07-25)
-**Author:** Discovery interview (archie-core-abg.1), synthesized from Sam's answers
+**Author:** Discovery interview (archie-core-abg.1), synthesised from Sam's answers
 **Parent epic:** archie-core-abg
 
 ---
@@ -80,7 +80,7 @@ implementation slice -- see section 5.
 ## 3. Constraints from existing architecture
 
 From `ARCHITECTURE.md` and `docs/prds/archie-core-v2-architecture.md`
-(read in full before implementation; summarized here):
+(read in full before implementation; summarised here):
 
 - **`Config.BotUser` is a single global field** (`internal/config`) -- the
   root blocker for daemon-side multi-identity. Becomes a per-identity field
@@ -93,7 +93,7 @@ From `ARCHITECTURE.md` and `docs/prds/archie-core-v2-architecture.md`
   (e.g. `archie.<identity>.task.<type>`) but that's a design decision, not
   yet made.
 - **Dispatch is `daemon.Run()` polling per configured forge/repo list**,
-  serialized per `owner/repo` by default (`AllowConcurrent` opts out).
+  serialised per `owner/repo` by default (`AllowConcurrent` opts out).
   Multi-identity daemon means multiple poll loops (or one loop iterating
   multiple identity configs) feeding the same NATS/container dispatch
   machinery.
@@ -109,7 +109,7 @@ From `ARCHITECTURE.md` and `docs/prds/archie-core-v2-architecture.md`
 - **The daemon gatekeeps all agent output** -- "no agent output reaches a
   human without daemon review" (`archie-core-v2-architecture.md` sec.7).
   Chat channels must respect this: a chat message that triggers a spawn goes
-  through the same review/labeling machinery PRs and comments do today, not
+  through the same review/labelling machinery PRs and comments do today, not
   a side channel that bypasses it.
 - **Environmental constraints over prompt rules** (`ARCHITECTURE.md` design
   decision #1) -- chat-triggered actions (spawn, approve, cancel) should be
@@ -119,7 +119,7 @@ From `ARCHITECTURE.md` and `docs/prds/archie-core-v2-architecture.md`
 ## 4. Identity model (design direction, not yet finalized)
 
 Confirmed requirement: within one daemon, identities differ by bot identity,
-repo list, *and* model/provider config (per the archie/winter diff). Proposed
+repo list, _and_ model/provider config (per the archie/winter diff). Proposed
 shape -- **not yet approved, needs a follow-up design pass before
 implementation**:
 
@@ -139,6 +139,7 @@ forge = { type = "gitea", host = "...", token_env = "..." }
 models = { triage = "...", planner = "...", builder = "..." }
 repos = [ ... ]
 ```
+
 ```
 
 **Design answer (2026-07-25): per-identity goroutine, shared infrastructure.**
@@ -231,3 +232,4 @@ on.
       identity).
 - [ ] Broken into scoped, dependency-ordered beads issues under
       `archie-core-abg`, the way the 5zh epic was. (Next step, this session.)
+```

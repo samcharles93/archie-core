@@ -145,12 +145,6 @@ func makeUpdateService(s chatSetup) *releaseupdate.Service {
 	return updates
 }
 
-// conversationDBPath is the legacy SQLite conversation database the one-time
-// import reads.
-func conversationDBPath(taskDBPath string) string {
-	return taskDBPath + "-conversations.sqlite"
-}
-
 func makeChatLLMResponder(
 	ctx context.Context,
 	channel string,

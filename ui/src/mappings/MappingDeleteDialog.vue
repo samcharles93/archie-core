@@ -33,12 +33,15 @@ function onOpenChange(open: boolean) {
         </AlertDialogMedia>
         <AlertDialogTitle>Delete this mapping?</AlertDialogTitle>
         <AlertDialogDescription>
-          "{{ pendingDelete?.name }}" will be removed. Anything bound to it stops resolving.
+          "{{ pendingDelete?.name }}" will be removed. Anything bound to it
+          stops resolving.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel @click="cancelDelete">Cancel</AlertDialogCancel>
-        <AlertDialogAction variant="destructive" @click="confirmDelete">Delete</AlertDialogAction>
+        <AlertDialogAction variant="destructive" @click="confirmDelete"
+          >Delete</AlertDialogAction
+        >
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

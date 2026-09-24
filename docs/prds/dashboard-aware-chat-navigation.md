@@ -7,7 +7,7 @@
 ## Decision
 
 Make the web chat **dashboard-aware**: the agent is told which dashboard page
-the operator has *open*, knows what each page is for, and can **point**
+the operator has _open_, knows what each page is for, and can **point**
 the operator to the relevant page with a **clickable destination chip** the UI
 renders and follows - Option B (context + navigate), not just "tell me in text."
 
@@ -22,15 +22,15 @@ Three seams, each an existing extension point, one new tool and one message fiel
    UI renders it as a clickable chip that routes the operator there. This is the
    "plenty of resources" the requirement named.
 
-We deliberately keep the agent's answer honest: the chip is *evidence* it can
+We deliberately keep the agent's answer honest: the chip is _evidence_ it can
 validly produce because dashboard_navigate is a real tool whose result is
 rendered, not a markdown link the model invents.
 
 ## Why now
 
 This is the natural next step of the "chat on any page" work, and the original
-request named it explicitly: *"archie should be able to see what page you're on
-too. and point out where to go. so it needs plenty of resources."* The chat
+request named it explicitly: _"archie should be able to see what page you're on
+too. and point out where to go. so it needs plenty of resources."_ The chat
 is a full-page route with no knowledge of the rest of the dashboard; the agent
 cannot see which page the operator is on and cannot reliably direct them anywhere.
 The critique of the chat UI already identified "chat is not available on any page"

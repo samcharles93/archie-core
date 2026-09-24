@@ -2,8 +2,19 @@
 import { computed, onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
@@ -30,7 +41,9 @@ onMounted(load);
 const filtered = computed(() => {
   const term = search.value.trim().toLowerCase();
   if (!term) return skills.value;
-  return skills.value.filter((s) => `${s.name} ${s.description}`.toLowerCase().includes(term));
+  return skills.value.filter((s) =>
+    `${s.name} ${s.description}`.toLowerCase().includes(term),
+  );
 });
 </script>
 
@@ -41,11 +54,21 @@ const filtered = computed(() => {
     <Card>
       <CardHeader>
         <CardTitle>Catalogue</CardTitle>
-        <CardDescription>Project, shared, and user-global skills</CardDescription>
-        <Input v-model="search" type="search" placeholder="Search skills…" aria-label="Search skills" class="max-w-xs" />
+        <CardDescription
+          >Project, shared, and user-global skills</CardDescription
+        >
+        <Input
+          v-model="search"
+          type="search"
+          placeholder="Search skills…"
+          aria-label="Search skills"
+          class="max-w-xs"
+        />
       </CardHeader>
       <CardContent>
-        <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
+        <div
+          class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]"
+        >
           <Empty v-if="loadError">
             <EmptyHeader>
               <EmptyTitle>Cannot reach archied</EmptyTitle>
@@ -56,8 +79,8 @@ const filtered = computed(() => {
             <EmptyHeader>
               <EmptyTitle>No skills discovered yet</EmptyTitle>
               <EmptyDescription>
-                Skills live as SKILL.md files under project, shared, or user-global .agents/skills/&lt;name&gt;/
-                directories.
+                Skills live as SKILL.md files under project, shared, or
+                user-global .agents/skills/&lt;name&gt;/ directories.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -66,7 +89,12 @@ const filtered = computed(() => {
               <EmptyTitle>No skills match "{{ search }}"</EmptyTitle>
             </EmptyHeader>
           </Empty>
-          <SkillCard v-for="skill in filtered" v-else :key="skill.name" :skill="skill" />
+          <SkillCard
+            v-for="skill in filtered"
+            v-else
+            :key="skill.name"
+            :skill="skill"
+          />
         </div>
       </CardContent>
     </Card>

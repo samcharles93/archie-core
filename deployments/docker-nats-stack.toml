@@ -16,8 +16,6 @@ bot_user = "archie"
 diff_cap_lines = 0
 work_dir = "~/.local/share/archie/work"
 state_dir = "~/.local/share/archie"   # NATS store, task logs
-# db_path (default ~/.local/share/archie/archie.db) only locates pre-PostgreSQL
-# files for `archie-state-store import`.
 # The State Store's PostgreSQL connection (required; Postgres-only epic).
 # `docker compose up -d postgres` provides this local default; point it at
 # your own Postgres 18 server otherwise.
@@ -124,6 +122,6 @@ gate = [
 # Every env var named here must be present in the environment of the host
 # archied process, normally through its configured supervisor or launch shell.
 [chat.telegram]
-token_env = "TELEGRAM_BOT_TOKEN"
+token = { engine = "env", key = "TELEGRAM_BOT_TOKEN" }
 # Empty list denies everyone.
 allowed_user_ids = []

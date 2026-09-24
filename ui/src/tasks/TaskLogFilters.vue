@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { LOG_LEVELS } from "@/lib/log";
 
 import type { LogFilters } from "./task-run";
@@ -28,7 +35,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{ filter: [next: LogFilters] }>();
 
-const levelOptions = computed(() => LOG_LEVELS.map((level) => ({ value: level.value || ALL, label: level.label })));
+const levelOptions = computed(() =>
+  LOG_LEVELS.map((level) => ({
+    value: level.value || ALL,
+    label: level.label,
+  })),
+);
 const levelValue = computed(() => props.filters.level || ALL);
 const stageValue = computed(() => props.filters.stage || ALL);
 
@@ -47,16 +59,26 @@ function setStage(value: unknown): void {
 
 <template>
   <div class="flex flex-wrap items-center gap-3 border-b border-border pb-3">
-    <span class="text-sm font-medium">{{ attempt > 0 ? `Attempt ${attempt}` : "Current attempt" }}</span>
+    <span class="text-sm font-medium">{{
+      attempt > 0 ? `Attempt ${attempt}` : "Current attempt"
+    }}</span>
 
     <div class="inline-flex items-center gap-2">
-      <Select :model-value="levelValue" aria-label="Filter log entries by level" @update:model-value="setLevel">
+      <Select
+        :model-value="levelValue"
+        aria-label="Filter log entries by level"
+        @update:model-value="setLevel"
+      >
         <SelectTrigger size="sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            <SelectItem v-for="option in levelOptions" :key="option.value" :value="option.value">
+            <SelectItem
+              v-for="option in levelOptions"
+              :key="option.value"
+              :value="option.value"
+            >
               {{ option.label }}
             </SelectItem>
           </SelectGroup>
@@ -65,14 +87,20 @@ function setStage(value: unknown): void {
     </div>
 
     <div class="inline-flex items-center gap-2">
-      <Select :model-value="stageValue" aria-label="Filter log entries by stage" @update:model-value="setStage">
+      <Select
+        :model-value="stageValue"
+        aria-label="Filter log entries by stage"
+        @update:model-value="setStage"
+      >
         <SelectTrigger size="sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
             <SelectItem :value="ALL">All stages</SelectItem>
-            <SelectItem v-for="stage in stages" :key="stage" :value="stage">{{ stage }}</SelectItem>
+            <SelectItem v-for="stage in stages" :key="stage" :value="stage">{{
+              stage
+            }}</SelectItem>
           </SelectGroup>
         </SelectContent>
       </Select>

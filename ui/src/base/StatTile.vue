@@ -3,7 +3,14 @@ import { TrendingDown, TrendingUp } from "@lucide/vue";
 import { computed } from "vue";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import Sparkline from "./Sparkline.vue";
 
 /**
@@ -31,9 +38,15 @@ const props = withDefaults(
   { series: () => [], goodDirection: "up" },
 );
 
-const dir = computed(() => (props.trend == null ? null : props.trend >= 0 ? "up" : "down"));
-const good = computed(() => (dir.value == null ? null : dir.value === props.goodDirection));
-const trendIcon = computed(() => (dir.value === "up" ? TrendingUp : TrendingDown));
+const dir = computed(() =>
+  props.trend == null ? null : props.trend >= 0 ? "up" : "down",
+);
+const good = computed(() =>
+  dir.value == null ? null : dir.value === props.goodDirection,
+);
+const trendIcon = computed(() =>
+  dir.value === "up" ? TrendingUp : TrendingDown,
+);
 const trendLabel = computed(() => `${Math.abs(props.trend ?? 0).toFixed(1)}%`);
 </script>
 
@@ -41,7 +54,9 @@ const trendLabel = computed(() => `${Math.abs(props.trend ?? 0).toFixed(1)}%`);
   <Card>
     <CardHeader>
       <CardTitle>{{ props.label }}</CardTitle>
-      <CardDescription v-if="props.compare">{{ props.compare }}</CardDescription>
+      <CardDescription v-if="props.compare">{{
+        props.compare
+      }}</CardDescription>
       <CardAction v-if="dir">
         <Badge :variant="good ? 'ok' : 'danger'">
           <component :is="trendIcon" />
@@ -51,7 +66,10 @@ const trendLabel = computed(() => `${Math.abs(props.trend ?? 0).toFixed(1)}%`);
     </CardHeader>
     <CardContent>
       <div class="text-3xl font-semibold tracking-[-0.03em]">
-        {{ props.value }}<span v-if="props.unit" class="ml-1 text-lg text-fg-muted">{{ props.unit }}</span>
+        {{ props.value
+        }}<span v-if="props.unit" class="ml-1 text-lg text-fg-muted">{{
+          props.unit
+        }}</span>
       </div>
       <Sparkline
         v-if="props.series.length > 1"

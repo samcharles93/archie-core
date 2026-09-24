@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { ago } from "@/lib/format";
-import { useControlPlaneStore, type ResourceRevision } from "@/stores/control-plane";
+import {
+  useControlPlaneStore,
+  type ResourceRevision,
+} from "@/stores/control-plane";
 
 /**
  * A resource's audit trail, and the way back to any earlier value.
@@ -57,20 +60,35 @@ async function restore(revision: ResourceRevision): Promise<void> {
       {{ open ? "Hide history" : "History" }}
     </Button>
 
-    <p v-if="error" class="mt-2 text-sm text-destructive" role="alert">{{ error }}</p>
+    <p v-if="error" class="mt-2 text-sm text-destructive" role="alert">
+      {{ error }}
+    </p>
 
     <div v-else-if="open && !loading" class="mt-3">
-      <p v-if="!revisions.length" class="text-sm text-muted-foreground">No changes recorded yet.</p>
+      <p v-if="!revisions.length" class="text-sm text-muted-foreground">
+        No changes recorded yet.
+      </p>
       <ul v-else class="space-y-1">
         <li
           v-for="revision in revisions"
           :key="revision.version"
           class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-t border-border py-2 first:border-t-0"
         >
-          <Badge :variant="revision.version === state.resource?.version ? 'ok' : 'idle'">v{{ revision.version }}</Badge>
-          <span class="min-w-0 truncate text-sm text-fg-muted" :title="`${revision.actor} via ${revision.source}`">
-            {{ revision.actor }} <span class="text-fg-subtle">via {{ revision.source }}</span>
-            <span v-if="revision.at" class="text-fg-subtle"> · {{ ago(revision.at) }}</span>
+          <Badge
+            :variant="
+              revision.version === state.resource?.version ? 'ok' : 'idle'
+            "
+            >v{{ revision.version }}</Badge
+          >
+          <span
+            class="min-w-0 truncate text-sm text-fg-muted"
+            :title="`${revision.actor} via ${revision.source}`"
+          >
+            {{ revision.actor }}
+            <span class="text-fg-subtle">via {{ revision.source }}</span>
+            <span v-if="revision.at" class="text-fg-subtle">
+              · {{ ago(revision.at) }}</span
+            >
           </span>
           <Button
             v-if="revision.version !== state.resource?.version"

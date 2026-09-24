@@ -48,7 +48,7 @@ func TestReloadChannelReachesTheChannelsOwnSeam(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	write := func(userIDs string) {
-		content := "bot_user = \"testbot\"\n\n[chat.telegram]\ntoken_env = \"TEST_TG_TOKEN\"\nallowed_user_ids = " + userIDs + "\n"
+		content := "bot_user = \"testbot\"\n\n[chat.telegram]\ntoken = { engine = \"env\", key = \"TEST_TG_TOKEN\" }\nallowed_user_ids = " + userIDs + "\n"
 		if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +83,7 @@ func TestReloadCapabilityAndActionShareOneSource(t *testing.T) {
 	srv, err := compose(t.Context(), deps{
 		Config: ResolvedConfig{
 			TelegramToken: "token-123",
-			Telegram:      config.TelegramConfig{TokenEnv: "TEST_TG_TOKEN", AllowedUserIDs: []int64{1}},
+			Telegram:      config.TelegramConfig{Token: config.SecretRef{Engine: "env", Key: "TEST_TG_TOKEN"}, AllowedUserIDs: []int64{1}},
 			WebhookAddr:   "127.0.0.1:0",
 			Webhook:       config.WebhookRoute{Path: "/smoke"},
 		},

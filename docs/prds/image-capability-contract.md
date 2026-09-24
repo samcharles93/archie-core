@@ -204,7 +204,7 @@ Validation (`internal/infrastructure/configuration/validate.go`, alongside
 - A `Hosted` entry with `Enabled = true` must have `Class` non-empty and
   either `APIKeyEnv` or a resolvable `APIKey` — the same shape check
   `Provider` (chat) already gets, not a new invention.
-- No cross-field surprise: an *absent* `[image]` section is valid and
+- No cross-field surprise: an _absent_ `[image]` section is valid and
   produces zero registered providers, matching the epic's non-goal
   ("silently selecting a paid hosted provider" must never happen by
   omission either).
@@ -222,7 +222,7 @@ whole point of the contract being provider-neutral.
   provider that ignores cancellation is a provider bug, not a contract gap
   — mirrors every other Lifecycle-less call in the codebase (chat's
   `runtime.Chat`).
-- `ImageData` size limits are enforced by the *caller* (the future routing
+- `ImageData` size limits are enforced by the _caller_ (the future routing
   bead) before constructing a request, using a configured max — not by this
   contract, which has no config surface for "current caller's limit". This
   package only defines `ErrInputTooLarge` so a provider that discovers an
@@ -280,14 +280,14 @@ this epic's call to make on someone else's project's timeline. Instead:
 **Provider error mapping** (every ai-sdk/HTTP error translated at the
 adapter boundary, never leaked as-is):
 
-| ai-sdk / HTTP condition | contract error |
-|---|---|
-| `image.ErrNoProvider`, `image.ErrAuthFailed`, missing/invalid credential, backend unreachable | `ErrUnavailable` |
-| `image.ErrEditNotSupported`, request needs a `Capability` the provider didn't declare | `ErrUnsupported` |
-| input image over configured byte limit (checked before the call, per "Timeouts, size limits, cancellation" above) | `ErrInputTooLarge` |
-| `ctx.Err() == context.DeadlineExceeded` | `ErrTimeout` |
-| `ctx.Err() == context.Canceled` | `ErrCanceled` |
-| `image.ErrRateLimited`, `image.ErrContentFiltered`, any other 4xx/5xx | wrapped verbatim under `ErrUnavailable` with the provider's own message as detail — a rate limit or content filter is "unavailable for this request", not a new sentinel the caller needs to branch on differently |
+| ai-sdk / HTTP condition                                                                                           | contract error                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `image.ErrNoProvider`, `image.ErrAuthFailed`, missing/invalid credential, backend unreachable                     | `ErrUnavailable`                                                                                                                                                                                                   |
+| `image.ErrEditNotSupported`, request needs a `Capability` the provider didn't declare                             | `ErrUnsupported`                                                                                                                                                                                                   |
+| input image over configured byte limit (checked before the call, per "Timeouts, size limits, cancellation" above) | `ErrInputTooLarge`                                                                                                                                                                                                 |
+| `ctx.Err() == context.DeadlineExceeded`                                                                           | `ErrTimeout`                                                                                                                                                                                                       |
+| `ctx.Err() == context.Canceled`                                                                                   | `ErrCanceled`                                                                                                                                                                                                      |
+| `image.ErrRateLimited`, `image.ErrContentFiltered`, any other 4xx/5xx                                             | wrapped verbatim under `ErrUnavailable` with the provider's own message as detail — a rate limit or content filter is "unavailable for this request", not a new sentinel the caller needs to branch on differently |
 
 **Testing**: `httptest.Server` fixtures for the edit client (request
 multipart shape, response decoding, 4xx/5xx mapping); a fake `ai-sdk/image.Provider`
@@ -412,12 +412,12 @@ video-specific.
 
 **Per-channel state, checked directly rather than assumed:**
 
-| channel | image delivery | evidence |
-|---|---|---|
-| Telegram | **already works** | `internal/channels/telegram/media.go`'s `telegramMediaSender.dispatch` already branches on `att.Type` and calls `bot.SendPhoto` for `"image"` (`SendVideo` for `"video"` is the same function) |
-| Dashboard (webui) | **tracked gap, not new** | `internal/webui/api_chat.go`'s `chatStreamSink.Media` has no inline rendering path yet and degrades to a link/error string — already tracked as archie-core-1786748942243-6-f109697e. This epic does not need to fix it, but #501's acceptance criterion ("unsupported paths report a clear limitation") is already met by the existing degrade-to-text behavior; closing the dashboard gap is that bead's job, not this one's |
-| Email | **no attachment sender exists** | `grep MediaAttachment internal/channels/email` returns nothing. Out of scope for this epic per #496's non-goals (no channel-abstraction rework) — email delivery of a generated image degrades the same way the dashboard does which is acceptable under #501's "or unsupported paths report a clear limitation" clause |
-| Webhook | not applicable | webhook is an inbound intake channel (`internal/channels/webhook`), not an outbound chat reply target — no `/image` command can originate there in the first place |
+| channel           | image delivery                  | evidence                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telegram          | **already works**               | `internal/channels/telegram/media.go`'s `telegramMediaSender.dispatch` already branches on `att.Type` and calls `bot.SendPhoto` for `"image"` (`SendVideo` for `"video"` is the same function)                                                                                                                                                                                                                                  |
+| Dashboard (webui) | **tracked gap, not new**        | `internal/webui/api_chat.go`'s `chatStreamSink.Media` has no inline rendering path yet and degrades to a link/error string — already tracked as archie-core-1786748942243-6-f109697e. This epic does not need to fix it, but #501's acceptance criterion ("unsupported paths report a clear limitation") is already met by the existing degrade-to-text behaviour; closing the dashboard gap is that bead's job, not this one's |
+| Email             | **no attachment sender exists** | `grep MediaAttachment internal/channels/email` returns nothing. Out of scope for this epic per #496's non-goals (no channel-abstraction rework) — email delivery of a generated image degrades the same way the dashboard does which is acceptable under #501's "or unsupported paths report a clear limitation" clause                                                                                                         |
+| Webhook           | not applicable                  | webhook is an inbound intake channel (`internal/channels/webhook`), not an outbound chat reply target — no `/image` command can originate there in the first place                                                                                                                                                                                                                                                              |
 
 **The only new work `internal/tools/minimax` didn't already need**: the
 autonomous-tool call site. `/image` (previous section) calls a provider
@@ -444,20 +444,20 @@ whichever change originally proved it out.
 Every file a full implementation touches, so no bead re-derives this by
 grep:
 
-| concern | file | change |
-|---|---|---|
-| domain contract | `internal/domain/image/{contract,registry}.go` | done (#497) |
-| config schema + validation | `internal/infrastructure/configuration/{types,validate}.go` | done (#497); extended here only if ComfyUI's `Workflow` field needs a new validation rule (path exists, non-empty when `Local.Enabled`) |
-| hosted provider | `internal/infrastructure/image/openai/*.go` (or per `Class`) | new (#498) |
-| local provider | `internal/infrastructure/image/comfyui/*.go` | new (#499) |
-| `/image` command spec | `internal/domain/messaging/commands.go` | new entry in `localCommandSpecs` |
-| `/image` routing | `internal/gateway/gateway.go` (`Router.Images`, `handleImage`) | new (#500) |
-| autonomous tool | `internal/tools/image/tool.go` | new (#501) |
-| tool registration | `internal/app/archied/bootstrap.go` (`registerImageTool`, beside `registerMinimaxTool`) | new (#501) |
-| `Registry` wiring | `internal/app/archied/bootstrap.go` (construct `image.Registry`, register configured providers, hand to `Router.Images`) | new — this is the "nothing to wire until a real provider exists" step the original contract doc deferred |
-| Telegram delivery | `internal/channels/telegram/media.go` | none — already handles `"image"` |
-| Dashboard delivery | `internal/webui/api_chat.go` | none in this epic — tracked separately (archie-core-1786748942243-6-f109697e) |
-| docs | `docs/` user-facing guide (#502) | new, against this design |
+| concern                    | file                                                                                                                     | change                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| domain contract            | `internal/domain/image/{contract,registry}.go`                                                                           | done (#497)                                                                                                                             |
+| config schema + validation | `internal/infrastructure/configuration/{types,validate}.go`                                                              | done (#497); extended here only if ComfyUI's `Workflow` field needs a new validation rule (path exists, non-empty when `Local.Enabled`) |
+| hosted provider            | `internal/infrastructure/image/openai/*.go` (or per `Class`)                                                             | new (#498)                                                                                                                              |
+| local provider             | `internal/infrastructure/image/comfyui/*.go`                                                                             | new (#499)                                                                                                                              |
+| `/image` command spec      | `internal/domain/messaging/commands.go`                                                                                  | new entry in `localCommandSpecs`                                                                                                        |
+| `/image` routing           | `internal/gateway/gateway.go` (`Router.Images`, `handleImage`)                                                           | new (#500)                                                                                                                              |
+| autonomous tool            | `internal/tools/image/tool.go`                                                                                           | new (#501)                                                                                                                              |
+| tool registration          | `internal/app/archied/bootstrap.go` (`registerImageTool`, beside `registerMinimaxTool`)                                  | new (#501)                                                                                                                              |
+| `Registry` wiring          | `internal/app/archied/bootstrap.go` (construct `image.Registry`, register configured providers, hand to `Router.Images`) | new — this is the "nothing to wire until a real provider exists" step the original contract doc deferred                                |
+| Telegram delivery          | `internal/channels/telegram/media.go`                                                                                    | none — already handles `"image"`                                                                                                        |
+| Dashboard delivery         | `internal/webui/api_chat.go`                                                                                             | none in this epic — tracked separately (archie-core-1786748942243-6-f109697e)                                                           |
+| docs                       | `docs/` user-facing guide (#502)                                                                                         | new, against this design                                                                                                                |
 
 ## Execution: multi-agent team breakdown
 
@@ -468,12 +468,12 @@ re-explained, only its row. Lenses are picked from
 `operator`, `maintainer`) by what each slice actually risks getting wrong,
 not all five by default.
 
-| sub-feature | issue | implementer scope (call-site rows) | suggested lenses | why |
-|---|---|---|---|---|
-| Hosted provider | #498 | `internal/infrastructure/image/openai/*.go` (generate via ai-sdk, edit via direct HTTP client) | `lens-contract`, `lens-operator` | contract: the error-mapping table must actually produce the sentinels it claims, not leak ai-sdk/HTTP errors raw; operator: a live paid API's rate-limit/timeout/auth-failure paths are exactly the 3am-unattended-host case this lens exists for |
-| Local GPU provider | #499 | `internal/infrastructure/image/comfyui/*.go` (submit/poll against ComfyUI) | `lens-operator`, `lens-deletionist` | operator: backend-down, workflow-missing, and stuck-job failure modes on a host the operator's GPU actually runs; deletionist: a second, unevidenced "recipe" added later without real-hardware proof is exactly the speculative scaffolding this lens rejects |
-| `/image` routing | #500 | `internal/domain/messaging/commands.go`, `internal/gateway/gateway.go` (`Router.Images`, `handleImage`) | `lens-boundary`, `lens-maintainer` | boundary: a new `Router` field and its dependency on `image.Registry` must respect the same layering `Models`/`Tasks`/`Controller` already do; maintainer: this is the first local command with an explicit ask-once clarification exchange, not a single-shot reply — legibility for the next person who adds a command matters here |
-| Delivery + autonomous tool | #501 | `internal/tools/image/tool.go`, `internal/app/archied/bootstrap.go` (`registerImageTool`) | `lens-deletionist`, `lens-contract` | deletionist: the whole point of this section is "reuse `generate_video`'s pipeline, do not rebuild it" — this lens is the check that the implementation actually did that; contract: the new tool's `MultimodalResult`/`MediaRef{Type: "image"}` output must match the shape `multimodalMediaRefs` already decodes, not a near-miss |
+| sub-feature                | issue | implementer scope (call-site rows)                                                                      | suggested lenses                    | why                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hosted provider            | #498  | `internal/infrastructure/image/openai/*.go` (generate via ai-sdk, edit via direct HTTP client)          | `lens-contract`, `lens-operator`    | contract: the error-mapping table must actually produce the sentinels it claims, not leak ai-sdk/HTTP errors raw; operator: a live paid API's rate-limit/timeout/auth-failure paths are exactly the 3am-unattended-host case this lens exists for                                                                                     |
+| Local GPU provider         | #499  | `internal/infrastructure/image/comfyui/*.go` (submit/poll against ComfyUI)                              | `lens-operator`, `lens-deletionist` | operator: backend-down, workflow-missing, and stuck-job failure modes on a host the operator's GPU actually runs; deletionist: a second, unevidenced "recipe" added later without real-hardware proof is exactly the speculative scaffolding this lens rejects                                                                        |
+| `/image` routing           | #500  | `internal/domain/messaging/commands.go`, `internal/gateway/gateway.go` (`Router.Images`, `handleImage`) | `lens-boundary`, `lens-maintainer`  | boundary: a new `Router` field and its dependency on `image.Registry` must respect the same layering `Models`/`Tasks`/`Controller` already do; maintainer: this is the first local command with an explicit ask-once clarification exchange, not a single-shot reply — legibility for the next person who adds a command matters here |
+| Delivery + autonomous tool | #501  | `internal/tools/image/tool.go`, `internal/app/archied/bootstrap.go` (`registerImageTool`)               | `lens-deletionist`, `lens-contract` | deletionist: the whole point of this section is "reuse `generate_video`'s pipeline, do not rebuild it" — this lens is the check that the implementation actually did that; contract: the new tool's `MultimodalResult`/`MediaRef{Type: "image"}` output must match the shape `multimodalMediaRefs` already decodes, not a near-miss   |
 
 Run `/council --lenses <picked>` once a row's implementation is gate-clean
 (`task check` passing), before opening its PR — same timing as any other

@@ -118,15 +118,15 @@ does not show up as a broken page.
 
 ## Phase 2 — Shared primitives
 
-| Was | Is |
-|---|---|
-| `base/pill.jsx` | `Badge`, with five status variants (`ok`, `warn`, `danger`, `info`, `idle`) over the palette's status tokens |
-| `base/statTile.jsx` | `base/StatTile.vue`: full `Card` composition (`CardHeader`, `CardTitle`, `CardDescription`, `CardAction`, `CardContent`), `base/Sparkline.vue`, and the `goodDirection` trend logic |
-| `base/icons.jsx` | **Not ported as a module.** Its string-keyed lookup is the pattern shadcn-vue's rules name as wrong, so icons come from `@lucide/vue` at the call site |
-| `base/gauge.jsx` | `base/Gauge.vue` and `base/SegmentBar.vue`, both ported. The gauge's `aria-label` announces the rounded percentage, which closes `86au` |
-| `base/log-row.jsx` | `base/LogRow.vue` over `lib/log.ts` (`LOG_LEVELS`, `levelKind`, `shortTime`, `fmtValue`) |
-| `base/format.jsx` | `lib/format.ts` (`ago`, `compact`) |
-| `base/task-meta.jsx` | `lib/task-meta.ts`; Vue's reactivity replaces the manual boot-time re-render the Preact module needed |
+| Was                  | Is                                                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base/pill.jsx`      | `Badge`, with five status variants (`ok`, `warn`, `danger`, `info`, `idle`) over the palette's status tokens                                                                        |
+| `base/statTile.jsx`  | `base/StatTile.vue`: full `Card` composition (`CardHeader`, `CardTitle`, `CardDescription`, `CardAction`, `CardContent`), `base/Sparkline.vue`, and the `goodDirection` trend logic |
+| `base/icons.jsx`     | **Not ported as a module.** Its string-keyed lookup is the pattern shadcn-vue's rules name as wrong, so icons come from `@lucide/vue` at the call site                              |
+| `base/gauge.jsx`     | `base/Gauge.vue` and `base/SegmentBar.vue`, both ported. The gauge's `aria-label` announces the rounded percentage, which closes `86au`                                             |
+| `base/log-row.jsx`   | `base/LogRow.vue` over `lib/log.ts` (`LOG_LEVELS`, `levelKind`, `shortTime`, `fmtValue`)                                                                                            |
+| `base/format.jsx`    | `lib/format.ts` (`ago`, `compact`)                                                                                                                                                  |
+| `base/task-meta.jsx` | `lib/task-meta.ts`; Vue's reactivity replaces the manual boot-time re-render the Preact module needed                                                                               |
 
 Two decisions worth not re-litigating:
 

@@ -29,7 +29,11 @@ Then:
 
 1. `git merge --no-ff $BR` (or apply the lane's handoff patch if the lane ran in
    a managed worktree).
-2. `task build --force`, then `task check`, once, alone. Nothing else runs on this machine while it does. The force-build is required until archie-core-hhgw lands: `task build`'s sources are Go-only (Taskfile.yml:325), so a ui/dist-only change does not retrigger it and a stale embedded dashboard would ship (Wave 0R audit c10).
+2. `task build --force`, then `task check`, once, alone. Nothing else runs on
+   this machine while it does. The force-build is required until
+   archie-core-hhgw lands: `task build`'s sources are Go-only
+   (Taskfile.yml:325), so a ui/dist-only change does not retrigger it and a
+   stale embedded dashboard would ship (Wave 0R audit c10).
 3. On failure: one fix pass back to that lane's retained writer with the real
    output pasted in, not a summary. On a second failure, `git reset --hard` the
    merge, requeue the lane, and move to the next branch. Do not stack a third

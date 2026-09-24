@@ -27,7 +27,9 @@ const run = useTaskRun();
 const attempts = computed(() => run.attempts?.attempts ?? []);
 
 const selected = computed(() =>
-  attempts.value.findIndex((a) => Number(a.attempt) === Number(run.attemptNumber)),
+  attempts.value.findIndex(
+    (a) => Number(a.attempt) === Number(run.attemptNumber),
+  ),
 );
 
 const loaded = computed(() => attempts.value.length > 1);

@@ -33,7 +33,7 @@ func seedChannels(cfg config.Config) any {
 		Operator: chat.Operator, Workspace: chat.Workspace, UnrestrictedFilesystem: chat.UnrestrictedFilesystem, ShowToolCalls: chat.ShowToolCalls, MaxSteps: chat.MaxSteps, Models: chat.Models,
 		Email:       emailSettings{ListenAddr: chat.Email.ListenAddr, RelayAddr: chat.Email.RelayAddr},
 		WebhookAddr: chat.WebhookAddr,
-		Telegram:    telegramSettings{AllowedUserIDs: chat.Telegram.AllowedUserIDs, Token: chat.Telegram.Token, TokenEnv: chat.Telegram.TokenEnv, CredentialConfigured: chat.Telegram.TokenEnv != "" || chat.Telegram.Token != (config.SecretRef{})},
+		Telegram:    telegramSettings{AllowedUserIDs: chat.Telegram.AllowedUserIDs, Token: chat.Telegram.Token, CredentialConfigured: chat.Telegram.Token != (config.SecretRef{})},
 		Webhook:     webhookChannelSettings{Path: chat.Webhook.Path, Secret: chat.Webhook.Secret, CredentialConfigured: chat.Webhook.Secret != (config.SecretRef{}), Template: chat.Webhook.Template, DeliverTo: chat.Webhook.DeliverTo},
 		RateLimit:   rateLimitSettings{Window: channelDuration(chat.RateLimit.Window), MaxRequests: chat.RateLimit.MaxRequests},
 	}

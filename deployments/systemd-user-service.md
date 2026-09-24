@@ -106,6 +106,7 @@ loginctl enable-linger "$USER"
 ```
 
 Verify linger status:
+
 ```bash
 loginctl show-user "$USER" | grep Linger
 # Output: Linger=yes
@@ -116,26 +117,31 @@ loginctl show-user "$USER" | grep Linger
 ## 4. Service Commands
 
 Reload systemd daemon files:
+
 ```bash
 systemctl --user daemon-reload
 ```
 
 Enable and start the service immediately:
+
 ```bash
 systemctl --user enable --now archie-state-store archie-gateway archie-messaging archie-ui archied
 ```
 
 Check service status:
+
 ```bash
 systemctl --user status archied
 ```
 
 Tail live daemon logs:
+
 ```bash
 journalctl --user -u archied -f
 ```
 
 Restart or stop the service:
+
 ```bash
 systemctl --user restart archied
 systemctl --user stop archied
@@ -254,5 +260,4 @@ docker compose pull agent
 ```
 
 `state_dir` and other paths are native host paths. Point `state_dir` at the
-intended state directory (embedded NATS store, task logs); `db_path` only
-locates pre-PostgreSQL files for `archie-state-store import`.
+intended state directory (embedded NATS store, task logs).

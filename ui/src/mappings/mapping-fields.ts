@@ -5,9 +5,17 @@
  */
 
 /** The JSON shapes a bound field can claim, matching mapping.FieldType in Go. */
-export type FieldType = "string" | "number" | "bool" | "object" | "array" | "any";
+export type FieldType =
+  "string" | "number" | "bool" | "object" | "array" | "any";
 
-export const FIELD_TYPES: FieldType[] = ["string", "number", "bool", "object", "array", "any"];
+export const FIELD_TYPES: FieldType[] = [
+  "string",
+  "number",
+  "bool",
+  "object",
+  "array",
+  "any",
+];
 
 const FIELD_TYPE_SET: ReadonlySet<string> = new Set(FIELD_TYPES);
 
@@ -42,7 +50,9 @@ export function fieldTypeFromValue(value: unknown): FieldType {
 
 /** Narrows a control's value back to a FieldType, refusing anything else. */
 export function asFieldType(value: unknown): FieldType {
-  return typeof value === "string" && FIELD_TYPE_SET.has(value) ? (value as FieldType) : "any";
+  return typeof value === "string" && FIELD_TYPE_SET.has(value)
+    ? (value as FieldType)
+    : "any";
 }
 
 export function pathAppendKey(path: string, key: string): string {

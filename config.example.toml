@@ -14,13 +14,11 @@
 
 # work_dir = "~/.local/share/archie/work"   # default
 # state_dir = "~/.local/share/archie"       # default; embedded NATS store, task logs, disk probe
-# db_path  = "~/.local/share/archie/archie.db" # default; locates pre-PostgreSQL SQLite files for the import only
 
 # The PostgreSQL connection archie-state-store, archied and archie-gateway
 # serve from. Required: each fails closed without it.
-# An install with SQLite stores under db_path runs `archie-state-store import`
-# once, with archie stopped, before it starts. `docker compose up -d postgres` starts
-# a matching local postgres:18 with this default URL.
+# `docker compose up -d postgres` starts a matching local postgres:18 with this
+# default URL.
 # database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 
 # skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
@@ -166,10 +164,8 @@ class = "ollama"
 # shell snippets). The check command must write a releaseupdate.Snapshot JSON
 # document to stdout; configure the installer as well to show Approve/Defer.
 # [chat.telegram]
-# Preferred: resolve the bot token through a configured secret engine.
+# The bot token from @BotFather, resolved through a configured secret engine.
 # token = { engine = "bws", key = "TELEGRAM_BOT_TOKEN" }
-# Legacy compatibility: read the token from this environment variable.
-# token_env = "TELEGRAM_BOT_TOKEN"      # env var holding the bot token from @BotFather
 # Run by archie-messaging, which serves /update, so these commands execute on
 # whichever host runs that process.
 # update_check_command = ["/usr/local/bin/archie-update-check"]
@@ -236,12 +232,11 @@ class = "ollama"
 # parallel_tool_calls = false
 
 # Publish artifacts (review reports, design docs) to the collaborative editor.
-# An empty base_url disables publishing entirely. The token is runtime config:
-# set WORKSPACE_INGEST_TOKEN in the daemon's environment or use a secret ref.
+# An empty base_url disables publishing entirely. token defaults to the
+# WORKSPACE_INGEST_TOKEN environment variable.
 [artifacts]
 # base_url = "https://offloaded.dev"
 # token = { engine = "env", key = "WORKSPACE_INGEST_TOKEN" }
-# token_env = "WORKSPACE_INGEST_TOKEN"
 
 # archied's own liveness surface, always on. GET /healthz and /health answer
 # 200 once the daemon is serving (503 while it is still booting), and
@@ -303,23 +298,6 @@ listen = "127.0.0.1:8484"
 # one implemented so far.
 # [memory]
 # engine = "builtin"        # "builtin" is the only engine implemented so far
-
-# Image generation capability (internal/domain/image). No provider is
-# implemented yet -- this section defines the contract/config surface only
-# (archie-core-1786748942147-2-47cd5bd1). Absent is valid and registers no
-# provider. default names the provider /image uses without asking; leaving
-# it unset means /image always asks which mechanism to use. Every provider
-# is off by default -- a hosted provider spends real API credits per call,
-# and a local one can saturate the host GPU, so both require an explicit
-# enabled = true, never an inferred one from the presence of a key alone.
-# [image.hosted.openai]
-# enabled     = false
-# class       = "openai"
-# api_key_env = "OPENAI_API_KEY"
-#
-# [image.local.sdxl]
-# enabled = false
-# backend = "sdxl-turbo"
 
 # Notifications for human-in-the-loop moments
 # (approval requests, gate failures, parked tasks).

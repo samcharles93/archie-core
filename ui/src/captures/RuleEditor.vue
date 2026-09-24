@@ -4,7 +4,14 @@ import { Plus, X } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { PayloadCondition, Rule } from "./event-types";
 
 /**
@@ -30,24 +37,55 @@ function asOp(value: unknown): PayloadCondition["op"] {
   <div class="flex flex-col gap-4">
     <div class="flex flex-col gap-2">
       <Label>Headers</Label>
-      <div v-for="(h, i) in rule.headers || []" :key="`h${i}`" class="flex items-center gap-2">
-        <Input v-model="h.name" class="font-mono" aria-label="Header name" placeholder="X-GitHub-Event" />
+      <div
+        v-for="(h, i) in rule.headers || []"
+        :key="`h${i}`"
+        class="flex items-center gap-2"
+      >
+        <Input
+          v-model="h.name"
+          class="font-mono"
+          aria-label="Header name"
+          placeholder="X-GitHub-Event"
+        />
         <span class="text-fg-subtle">=</span>
         <Input v-model="h.value" class="font-mono" aria-label="Header value" />
-        <Button variant="ghost" size="icon-sm" aria-label="Remove header condition" @click="headers().splice(i, 1)">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Remove header condition"
+          @click="headers().splice(i, 1)"
+        >
           <X />
         </Button>
       </div>
-      <Button variant="outline" size="sm" class="w-fit" @click="headers().push({ name: '', value: '' })">
+      <Button
+        variant="outline"
+        size="sm"
+        class="w-fit"
+        @click="headers().push({ name: '', value: '' })"
+      >
         <Plus /> Header
       </Button>
     </div>
 
     <div class="flex flex-col gap-2">
       <Label>Payload</Label>
-      <div v-for="(p, i) in rule.payload || []" :key="`p${i}`" class="flex items-center gap-2">
-        <Input v-model="p.path" class="font-mono" aria-label="Payload path" placeholder="action" />
-        <Select :model-value="p.op" @update:model-value="(value) => (p.op = asOp(value))">
+      <div
+        v-for="(p, i) in rule.payload || []"
+        :key="`p${i}`"
+        class="flex items-center gap-2"
+      >
+        <Input
+          v-model="p.path"
+          class="font-mono"
+          aria-label="Payload path"
+          placeholder="action"
+        />
+        <Select
+          :model-value="p.op"
+          @update:model-value="(value) => (p.op = asOp(value))"
+        >
           <SelectTrigger size="sm" class="w-28 shrink-0" aria-label="Condition">
             <SelectValue />
           </SelectTrigger>
@@ -58,13 +96,28 @@ function asOp(value: unknown): PayloadCondition["op"] {
             </SelectGroup>
           </SelectContent>
         </Select>
-        <Input v-if="p.op === 'equals'" v-model="p.value" class="font-mono" aria-label="Payload value" />
+        <Input
+          v-if="p.op === 'equals'"
+          v-model="p.value"
+          class="font-mono"
+          aria-label="Payload value"
+        />
         <span v-else class="w-full" />
-        <Button variant="ghost" size="icon-sm" aria-label="Remove payload condition" @click="payload().splice(i, 1)">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Remove payload condition"
+          @click="payload().splice(i, 1)"
+        >
           <X />
         </Button>
       </div>
-      <Button variant="outline" size="sm" class="w-fit" @click="payload().push({ path: '', op: 'equals', value: '' })">
+      <Button
+        variant="outline"
+        size="sm"
+        class="w-fit"
+        @click="payload().push({ path: '', op: 'equals', value: '' })"
+      >
         <Plus /> Payload condition
       </Button>
     </div>

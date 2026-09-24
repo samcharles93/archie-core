@@ -1,4 +1,4 @@
-# archie-core Workflows & Skills  --  Product Requirements Document
+# archie-core Workflows & Skills -- Product Requirements Document
 
 **Author:** Archie
 **Date:** 2026-07-18
@@ -40,20 +40,20 @@ project:
 # Available skills (directories or individual files)
 skills:
   paths:
-    - .archie/skills/          # project-local skills
-    - ~/.archie/skills/        # per-user skills
-    - github.com/org/shared-skills@v1  # remote skill repo
+    - .archie/skills/ # project-local skills
+    - ~/.archie/skills/ # per-user skills
+    - github.com/org/shared-skills@v1 # remote skill repo
   skills:
-    - go-testing               # named skill from any path
+    - go-testing # named skill from any path
     - security-audit
 
 # Execution engines in preference order
 engines:
-  - type: claude                # Claude Code CLI
+  - type: claude # Claude Code CLI
     model: sonnet
-  - type: codex                 # OpenAI Codex
-  - type: pi                    # Pi agent harness
-  - type: raw                   # Direct LLM without agent wrapper
+  - type: codex # OpenAI Codex
+  - type: pi # Pi agent harness
+  - type: raw # Direct LLM without agent wrapper
 
 # Sandbox definition (what the Docker container provides)
 sandbox:
@@ -90,7 +90,7 @@ gates:
     description: "No vet warnings"
   deadcode:
     run: task deadcode
-    optional: true                # non-blocking gate
+    optional: true # non-blocking gate
     description: "Dead code check (advisory)"
 
 # Quality pipeline  --  ordered sequence of gate groups
@@ -105,7 +105,7 @@ quality:
 
 # Commit conventions
 commit:
-  format: conventional             # conventional commits
+  format: conventional # conventional commits
   signoff: false
   template: "feat({scope}): {description}"
 
@@ -142,15 +142,15 @@ commands:
 
 ### 1.3 Design decisions (with rationale)
 
-| Decision | Rationale |
-|---|---|
-| YAML over TOML/JSON | Already dominant in CI (GitHub Actions, GitLab CI, Taskfile). Human-readable with comments. |
-| Single file over multi-file | Task discovery (like `Taskfile.yml`), devcontainer conventions. Avoids directory sprawl. |
-| Gates as named checkpoints | GitHub Actions job model. Gates can be composed into quality pipelines, selected individually, or skipped with `--skip`. |
-| Engines as ordered preference list | Supports deterministic fallback between available engines. Each engine declares its own tool surface. |
-| Skills as paths + references | Matches devcontainer features (paths resolve to directories) and skills.sh (namespaced references). |
-| Commands section for direct invocation | Arnie can `archie run test` without an agent turn. Thin wrapper over the sandbox. |
-| Quality pipeline groups gates | Pre-commit vs pre-push vs pre-merge distinction. Some gates are required, some advisory. |
+| Decision                               | Rationale                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| YAML over TOML/JSON                    | Already dominant in CI (GitHub Actions, GitLab CI, Taskfile). Human-readable with comments.                              |
+| Single file over multi-file            | Task discovery (like `Taskfile.yml`), devcontainer conventions. Avoids directory sprawl.                                 |
+| Gates as named checkpoints             | GitHub Actions job model. Gates can be composed into quality pipelines, selected individually, or skipped with `--skip`. |
+| Engines as ordered preference list     | Supports deterministic fallback between available engines. Each engine declares its own tool surface.                    |
+| Skills as paths + references           | Matches devcontainer features (paths resolve to directories) and skills.sh (namespaced references).                      |
+| Commands section for direct invocation | Arnie can `archie run test` without an agent turn. Thin wrapper over the sandbox.                                        |
+| Quality pipeline groups gates          | Pre-commit vs pre-push vs pre-merge distinction. Some gates are required, some advisory.                                 |
 
 ---
 
@@ -179,9 +179,9 @@ description: >
 version: 1.0.0
 metadata:
   archie:
-    gates: [test]                    # gates this skill requires
-    tools: [go, golangci-lint]       # sandbox tools it needs
-    engine: any                      # engine preference
+    gates: [test] # gates this skill requires
+    tools: [go, golangci-lint] # sandbox tools it needs
+    engine: any # engine preference
 compatibility: Requires Go 1.22+
 ---
 ```
@@ -201,13 +201,13 @@ Skills can carry archie-specific frontmatter under `metadata.archie`:
 ```yaml
 metadata:
   archie:
-    gates: [test, lint]              # must-pass gates before skill runs
-    tools: [go, docker]              # sandbox tools required
-    engine: any                      # preferred engine
-    model: gpt-4o                    # preferred model
-    budget_usd: 2.00                 # max spend ceiling
-    timeout: 600                     # max seconds
-    worktree: true                   # create isolated worktree
+    gates: [test, lint] # must-pass gates before skill runs
+    tools: [go, docker] # sandbox tools required
+    engine: any # preferred engine
+    model: gpt-4o # preferred model
+    budget_usd: 2.00 # max spend ceiling
+    timeout: 600 # max seconds
+    worktree: true # create isolated worktree
 ```
 
 ### 2.4 Skill sources (inspired by devcontainer features + Dagger modules)
@@ -241,12 +241,12 @@ Engine interface:
 
 ### 3.2 Supported engines
 
-| Engine | Type | What it provides |
-|---|---|---|
-| `claude` | Claude Code CLI | Full agent loop, tool use, worktrees, subagents |
-| `codex` | OpenAI Codex CLI | Agentic coding with sandbox |
-| `pi` | Pi agent harness | Minimalist coding agent, stdio protocol |
-| `raw` | Direct LLM call | Single-turn prompt, no agent loop. For simple scripts. |
+| Engine   | Type             | What it provides                                       |
+| -------- | ---------------- | ------------------------------------------------------ |
+| `claude` | Claude Code CLI  | Full agent loop, tool use, worktrees, subagents        |
+| `codex`  | OpenAI Codex CLI | Agentic coding with sandbox                            |
+| `pi`     | Pi agent harness | Minimalist coding agent, stdio protocol                |
+| `raw`    | Direct LLM call  | Single-turn prompt, no agent loop. For simple scripts. |
 
 ### 3.3 Engine selection logic
 
@@ -302,15 +302,15 @@ metadata:
   archie:
     gates:
       test:
-        run: go test -short ./...      # override: faster test for this skill
-      lint: skip                        # skip lint for this skill
+        run: go test -short ./... # override: faster test for this skill
+      lint: skip # skip lint for this skill
 ```
 
 Three override modes: `override` (replace command), `skip` (omit gate), `add` (add new gate requirement).
 
 ### 4.4 Skill templates (scaffolding)
 
-Skills can carry an `assets/` directory with templates. When archie-core initializes a new project, it can apply skill templates:
+Skills can carry an `assets/` directory with templates. When archie-core initialises a new project, it can apply skill templates:
 
 ```
 skill-name/
@@ -342,45 +342,50 @@ The export produces a `SKILL.md` with scheduler metadata. The blueprint's prompt
 
 ## 5. Comparison to Existing Systems
 
-| Feature | archie-core | GitHub Actions | Dagger | Taskfile | devcontainer | External Skills |
-|---|---|---|---|---|---|---|
-| Language | YAML | YAML | Go/Python/TS | YAML | JSON | Markdown |
-| Gates | Named + composable | Steps in jobs | Functions | Tasks | Lifecycle scripts | N/A |
-| Engine abstraction | First-class | GitHub only | Dagger Engine | Shell only | None | Provider |
-| Skills | agentskills.io spec | Composite actions | Dagger Modules | Includes | Features | SKILL.md |
-| Worktree isolation | Built-in | No | Containers | No | Container | No |
-| Blueprint export | To external cron | No | No | No | No | Native |
-| Multi-engine fallback | Yes (ordered list) | No | No | No | No | Provider config |
-| Progressive disclosure | Yes (skill spec) | No | No | No | Feature metadata | Yes |
+| Feature                | archie-core         | GitHub Actions    | Dagger         | Taskfile   | devcontainer      | External Skills |
+| ---------------------- | ------------------- | ----------------- | -------------- | ---------- | ----------------- | --------------- |
+| Language               | YAML                | YAML              | Go/Python/TS   | YAML       | JSON              | Markdown        |
+| Gates                  | Named + composable  | Steps in jobs     | Functions      | Tasks      | Lifecycle scripts | N/A             |
+| Engine abstraction     | First-class         | GitHub only       | Dagger Engine  | Shell only | None              | Provider        |
+| Skills                 | agentskills.io spec | Composite actions | Dagger Modules | Includes   | Features          | SKILL.md        |
+| Worktree isolation     | Built-in            | No                | Containers     | No         | Container         | No              |
+| Blueprint export       | To external cron    | No                | No             | No         | No                | Native          |
+| Multi-engine fallback  | Yes (ordered list)  | No                | No             | No         | No                | Provider config |
+| Progressive disclosure | Yes (skill spec)    | No                | No             | No         | Feature metadata  | Yes             |
 
 ---
 
 ## 6. Implementation Phases
 
 ### Phase 1: Core workflow file
+
 - `archie.yaml` parser and schema validation
 - Gate runner (test, lint, format, vet)
 - `archie run <command>` CLI
 - Sandbox Docker integration
 
 ### Phase 2: Skills
+
 - SKILL.md discovery and progressive disclosure
 - Skill metadata with gate/tool/engine requirements
 - `archie skills list/install/search`
 
 ### Phase 3: Engine abstraction
+
 - Engine interface definition
 - Claude Code adapter
 - Raw LLM adapter
 - Engine fallback chain
 
 ### Phase 4: Advanced features
+
 - Worktree isolation
 - Skill chaining (dependency DAG)
 - Gate overrides
 - Blueprint export
 
 ### Phase 5: Ecosystem
+
 - Public skill registry
 - `archie init --skill <name>` scaffolding
 - Community skill contributions

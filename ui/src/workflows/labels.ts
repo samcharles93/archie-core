@@ -18,7 +18,10 @@ export function workflowLabel(name: string | undefined | null): string {
 
 /** A percentage, or 0 when there is no whole to divide by. Accepts the absent
  * case because the stats endpoint omits a field it has no data for. */
-export function pct(part: number | undefined | null, whole: number | undefined | null): number {
+export function pct(
+  part: number | undefined | null,
+  whole: number | undefined | null,
+): number {
   if (!whole || !part) return 0;
   return Math.round((part / whole) * 100);
 }

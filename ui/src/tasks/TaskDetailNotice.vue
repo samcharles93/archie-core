@@ -5,7 +5,12 @@ import { RouterLink } from "vue-router";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 /**
  * A run page that cannot be opened, said plainly. There are two ways in: the
@@ -40,7 +45,9 @@ const copy = computed(() =>
   <div>
     <div class="mb-5 flex flex-wrap items-start justify-between gap-5">
       <div>
-        <h1 class="text-3xl font-semibold tracking-[-0.03em]">{{ copy.title }}</h1>
+        <h1 class="text-3xl font-semibold tracking-[-0.03em]">
+          {{ copy.title }}
+        </h1>
         <p class="mt-2 text-sm text-fg-muted">{{ copy.sub }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">

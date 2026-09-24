@@ -94,7 +94,7 @@ func reloadLoop(ctx context.Context, ch <-chan os.Signal, c *ReloadController, l
 // handlers re-read on every request. MaxRetries is the worked example:
 // its only consumer is api_tasks.go:380,383, reading per-request
 // s.Cfg.Get(), and nothing in the daemon reads it -- so it reloads.
-// Chat.Telegram.TokenEnv is the counter-example: webui reads it per
+// Chat.Telegram.Token is the counter-example: webui reads it per
 // request AND a telegram bot built at startup consumes it, so it is
 // NOT reloadable, and treating "webui reads it" as sufficient would
 // display a new token while the bot uses the old one.
@@ -140,9 +140,6 @@ var reloadableFields = map[string]bool{
 	// per-task half of this list is pinned mechanically; this webui-only
 	// entry is pinned by TestChangedNonReloadableFields.
 	"MaxRetries": true,
-	// [agent] is a decode-only compatibility shim; changes have no runtime
-	// consumer and therefore require neither reload nor restart.
-	"LegacyAgent": true,
 	// Tools.Policy (MaxResultChars/SpillDir) is carried into TaskConfig by
 	// ForTask (config.go) and applied fresh per dispatch via
 	// agentworker.applyToolLimits. See reloadableSubFields["Tools"].
@@ -160,7 +157,7 @@ var reloadableFields = map[string]bool{
 // forge client itself is startup-built, so Type/Token/TokenEnv stay
 // requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
-	"Containers": {"LegacyEnabled": true, "VolumeTTL": true},
+	"Containers": {"VolumeTTL": true},
 	"Forge":      {"Host": true},
 	// Policy is carried into TaskConfig by ForTask (config.go); MCPServers,
 	// WebFetch and Minimax are not and stay requires-restart.

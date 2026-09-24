@@ -38,7 +38,6 @@ var deletionGate = []bannedCategory{
 		"modernc.org/sqlite",
 		"github.com/jackc/pgx",
 		modulePath + "internal/infrastructure/postgres",
-		modulePath + "internal/infrastructure/legacyread",
 	}},
 	{"daemon runtime", []string{
 		modulePath + "internal/daemon",

@@ -21,7 +21,11 @@ test("session retry awaits every load before settling", async () => {
 
   const done = retry();
   await Promise.resolve();
-  assert.deepEqual(order, ["first"], "the retry settled before the second read finished");
+  assert.deepEqual(
+    order,
+    ["first"],
+    "the retry settled before the second read finished",
+  );
   release?.();
   await done;
   assert.deepEqual(order, ["first", "second"]);

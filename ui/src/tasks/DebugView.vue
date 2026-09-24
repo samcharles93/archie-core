@@ -18,7 +18,6 @@ defineProps<{
   state: DebugState | null | undefined;
   attempt: number | null;
 }>();
-
 </script>
 
 <template>
@@ -29,7 +28,9 @@ defineProps<{
     detail="archied did not answer for this task's debug view. Live updates will try again when the daemon reconnects."
   />
   <div v-else>
-    <p class="mb-3 text-sm text-fg-muted">The stored record and every event, verbatim.</p>
+    <p class="mb-3 text-sm text-fg-muted">
+      The stored record and every event, verbatim.
+    </p>
     <JsonBlock :value="state" />
   </div>
 </template>

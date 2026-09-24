@@ -31,7 +31,11 @@ onMounted(loadMappings);
       </Button>
     </div>
 
-    <MappingActionError v-if="actionError" class="mb-4" :failure="actionError" />
+    <MappingActionError
+      v-if="actionError"
+      class="mb-4"
+      :failure="actionError"
+    />
 
     <MappingsTable />
 

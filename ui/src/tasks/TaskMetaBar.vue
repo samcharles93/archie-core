@@ -20,13 +20,17 @@ const run = useTaskRun();
 
 // The server owns the status vocabulary and answers with the same five kinds
 // the Badge draws, which is what makes the cast honest rather than a guess.
-const taskKind = computed<StatusKind>(() => statusKind(run.task?.status ?? "") as StatusKind);
+const taskKind = computed<StatusKind>(
+  () => statusKind(run.task?.status ?? "") as StatusKind,
+);
 const taskStatusLabel = computed(() => statusLabel(run.task?.status ?? ""));
 </script>
 
 <template>
   <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
-    <span v-if="run.taskList === undefined" class="text-fg-muted">loading…</span>
+    <span v-if="run.taskList === undefined" class="text-fg-muted"
+      >loading…</span
+    >
     <template v-else-if="run.task">
       <Badge :variant="taskKind">{{ taskStatusLabel }}</Badge>
     </template>

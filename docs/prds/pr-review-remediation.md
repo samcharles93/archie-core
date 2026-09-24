@@ -86,14 +86,14 @@ The daemon resolves `PRNumber` → the task that owns it. An unmatched PR (not
 an archie task) is dropped with a counter — a public webhook must not be able
 to start an agent against an arbitrary repository. A PR whose task is merged,
 closed or archived is dropped through the same counter: the reaction is only
-ever work against a PR archie itself opened *and still owns*.
+ever work against a PR archie itself opened _and still owns_.
 
 That lookup does not exist. `pr_number` is written by
 `internal/infrastructure/postgres/store.go` and never read in a `WHERE` clause, so this needs a
 `TaskStore` method keyed on `(owner, repo, pr_number)`, a matching
 `StateStoreService` RPC (a Go interface method on a store facade without one
 is forbidden, `CLAUDE.md`), and an index on those three columns. It is the
-authorization boundary, so it is sequenced as its own step below rather than
+authorisation boundary, so it is sequenced as its own step below rather than
 carried along with the envelope.
 
 **Identity is derived from the resolved task, never carried in the reaction.**
@@ -202,12 +202,12 @@ point 2) — but every other constraint holds: HMAC (already in the receiver),
 per-source rate limiting (add when the receiver gains a second event family),
 and blast radius bounded by the existing gate/sandbox/worktree enforcement,
 **plus** the new archie-owned-task check (decision 3), which is the actual
-authorization boundary: a review event only ever causes work against a PR
+authorisation boundary: a review event only ever causes work against a PR
 archie itself opened and still owns.
 
 Accepting other bots' comments (decision 5) does not widen that boundary: an
 author is never a reason to act, only the owned-task check is. It does widen
-the *spend* surface, which the round cap bounds.
+the _spend_ surface, which the round cap bounds.
 
 ### 7. Sequencing
 
@@ -220,7 +220,7 @@ the *spend* surface, which the round cap bounds.
    stream. This step is first because nothing after it can be exercised
    without it.
 2. `PullRequestReviewReader` + GitHub/Gitea implementations + `ReplyToReview`.
-   *(Landed.)*
+   _(Landed.)_
 3. `ReviewCommentEnvelope` + the kinded idempotency key.
 4. **The owned-task guard**: `(owner, repo, pr_number)` lookup, its
    `StateStoreService` RPC, its index, and the drop-with-counter path for an
@@ -233,7 +233,7 @@ the *spend* surface, which the round cap bounds.
 8. Tests + `task check`.
 
 Steps 6 and 7 are the producers and come last on purpose. Building a producer
-before its consumer and its authorization guard yields a path that publishes
+before its consumer and its authorisation guard yields a path that publishes
 into nothing, and becomes an unguarded intake the moment a stream appears.
 
 ## Out of scope

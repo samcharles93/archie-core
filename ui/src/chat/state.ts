@@ -3,7 +3,12 @@ import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { api } from "@/lib/api";
 import { channelID } from "./channel";
 import { matchesFor } from "./commands";
-import { resolveTurn, retryChatTurn, type ChatTurn, type RetryOptions } from "./turn";
+import {
+  resolveTurn,
+  retryChatTurn,
+  type ChatTurn,
+  type RetryOptions,
+} from "./turn";
 
 /**
  * The chat panel's shared state.
@@ -130,7 +135,9 @@ export const isCommandMenuOpen = ref(false);
 export const currentModels = computed(() => {
   const grouped = selectorData.value.models_by_provider || {};
   const provider = selectedProvider.value;
-  return provider && grouped[provider] ? grouped[provider] : selectorData.value.models || [];
+  return provider && grouped[provider]
+    ? grouped[provider]
+    : selectorData.value.models || [];
 });
 
 /**
@@ -166,7 +173,9 @@ function abortActiveTurn(): void {
 }
 
 export async function refreshSessions(): Promise<void> {
-  const data = await api.chatSessions<ChatSelectorData & { sessions?: ChatSession[] }>();
+  const data = await api.chatSessions<
+    ChatSelectorData & { sessions?: ChatSession[] }
+  >();
   const sessionList = data.sessions || [];
   sessions.value = sessionList;
   selectorData.value = data;
@@ -177,7 +186,9 @@ export async function refreshSessions(): Promise<void> {
   selectedModel.value = data.active_model || "";
 
   commandSpecs.value = (data.commands || []).map((item) =>
-    typeof item === "string" ? { command: item, usage: item, description: "" } : item,
+    typeof item === "string"
+      ? { command: item, usage: item, description: "" }
+      : item,
   );
 
   if (!currentSession.value && sessionList[0]) {
@@ -195,13 +206,17 @@ export async function selectSession(id: string): Promise<void> {
   messages.value = [];
   streamingTurn.value = null;
 
-  selectedPersona.value = data.active_personas?.[id] || data.active_persona || "";
+  selectedPersona.value =
+    data.active_personas?.[id] || data.active_persona || "";
 
   try {
     // Resuming is the server's own command, so the transcript read below is of
     // a conversation the server considers current rather than a stale one.
     await api.chatMessage(channelID(), `/resume ${id}`);
-    const [msgs, turns] = await Promise.all([api.chatMessages<ChatMessage[]>(id), api.chatTurns<ChatTurnView[]>(id)]);
+    const [msgs, turns] = await Promise.all([
+      api.chatMessages<ChatMessage[]>(id),
+      api.chatTurns<ChatTurnView[]>(id),
+    ]);
     const byAssistantMessage = new Map<string, ChatTurnView>();
     for (const turn of turns || []) {
       const assistantID = turn.assistant_message_id || turn.AssistantMessageID;
@@ -212,10 +227,13 @@ export async function selectSession(id: string): Promise<void> {
     messages.value = (msgs || []).map((message) => {
       const messageID = message.message_id || message.MessageID;
       const turn = messageID ? byAssistantMessage.get(messageID) : undefined;
-      return turn ? { ...message, tool_calls: turn.tool_calls || turn.ToolCalls || [] } : message;
+      return turn
+        ? { ...message, tool_calls: turn.tool_calls || turn.ToolCalls || [] }
+        : message;
     });
   } catch (err) {
-    statusText.value = (err as Error).message || "Could not load session messages";
+    statusText.value =
+      (err as Error).message || "Could not load session messages";
   }
 }
 
@@ -231,7 +249,10 @@ export async function runSessionCommand(command: string): Promise<void> {
   if (!currentSession.value) return;
   try {
     statusText.value = "Working…";
-    const result = await api.chatMessage<{ session_id?: string; reply?: string }>(channelID(), command);
+    const result = await api.chatMessage<{
+      session_id?: string;
+      reply?: string;
+    }>(channelID(), command);
     if (result.session_id) currentSession.value = result.session_id;
     statusText.value = result.reply || "Session updated";
     await refreshSessions();
@@ -274,7 +295,10 @@ export async function setProvider(provider: string): Promise<void> {
   selectedProvider.value = provider;
   if (!provider) return;
   try {
-    const result = await api.chatMessage<{ reply?: string }>(channelID(), `/model --provider ${provider}`);
+    const result = await api.chatMessage<{ reply?: string }>(
+      channelID(),
+      `/model --provider ${provider}`,
+    );
     statusText.value = result.reply || "Provider updated";
     await refreshSessions();
   } catch (err) {
@@ -286,7 +310,10 @@ export async function setModel(model: string): Promise<void> {
   selectedModel.value = model;
   if (!model) return;
   try {
-    const result = await api.chatMessage<{ reply?: string }>(channelID(), `/model ${model}`);
+    const result = await api.chatMessage<{ reply?: string }>(
+      channelID(),
+      `/model ${model}`,
+    );
     statusText.value = result.reply || "Model updated";
     await refreshSessions();
   } catch (err) {
@@ -329,7 +356,8 @@ function currentPage(): string {
 
 export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
   const explicitText = retryOpts?.textOverride;
-  const rawValue = explicitText !== undefined ? explicitText : composerText.value;
+  const rawValue =
+    explicitText !== undefined ? explicitText : composerText.value;
   const { text, turn, isRetry } = resolveTurn(retryOpts, rawValue);
   if (!text || isSending.value) return;
 
@@ -384,20 +412,26 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
       const frames = buffer.split("\n\n");
       buffer = frames.pop() || "";
       for (const frame of frames) {
-        const line = frame.split("\n").find((part) => part.startsWith("data: "));
+        const line = frame
+          .split("\n")
+          .find((part) => part.startsWith("data: "));
         if (!line) continue;
         const event = JSON.parse(line.slice(6)) as ChatStreamFrame;
         if (event.session_id) currentSession.value = event.session_id;
         if (event.type === "delta") {
           streamedText += event.text;
-          streamingTurn.value = streamingTurn.value ? { ...streamingTurn.value, text: streamedText } : null;
+          streamingTurn.value = streamingTurn.value
+            ? { ...streamingTurn.value, text: streamedText }
+            : null;
         }
         // A navigate result is appended to the same list as the tool calls: it
         // is one more thing the turn did, and it renders as a chip rather than
         // a tool line.
         if (event.type === "tool" || event.type === "navigate") {
           activeTools = [...activeTools, event];
-          streamingTurn.value = streamingTurn.value ? { ...streamingTurn.value, tools: activeTools } : null;
+          streamingTurn.value = streamingTurn.value
+            ? { ...streamingTurn.value, tools: activeTools }
+            : null;
         }
         if (event.type === "done") {
           finished = true;
@@ -410,14 +444,23 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
 
     if (!finished) throw new Error("chat stream ended before completion");
 
-    messages.value = [...messages.value, { from: "assistant", text: streamedText, tool_calls: activeTools }];
+    messages.value = [
+      ...messages.value,
+      { from: "assistant", text: streamedText, tool_calls: activeTools },
+    ];
     streamingTurn.value = null;
     statusText.value = "Ready";
     await refreshSessions();
   } catch (err) {
     const failed = err as Error;
     if (failed.name === "AbortError" && !timedOut) {
-      streamingTurn.value = { text: "Turn stopped.", tools: activeTools, isError: false, turn, isRetry };
+      streamingTurn.value = {
+        text: "Turn stopped.",
+        tools: activeTools,
+        isError: false,
+        turn,
+        isRetry,
+      };
       statusText.value = "Stopped";
     } else {
       streamingTurn.value = {

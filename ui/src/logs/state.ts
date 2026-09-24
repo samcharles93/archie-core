@@ -4,7 +4,12 @@ import { api, subscribeLogs } from "@/lib/api";
 import type { LogEntry } from "@/lib/log";
 import type { StatusKind } from "@/lib/status";
 import type { StreamState } from "@/lib/stream-state";
-import { entryKey, matchesFilters, mergeEntries, type LogFilters } from "./log-entries";
+import {
+  entryKey,
+  matchesFilters,
+  mergeEntries,
+  type LogFilters,
+} from "./log-entries";
 import { logsEmptyDetail, logsEmptyTitle } from "./logs-empty";
 
 /**
@@ -25,7 +30,11 @@ interface LogHistory {
   disabled?: boolean;
 }
 
-export const filters = reactive<LogFilters>({ level: "", component: "", q: "" });
+export const filters = reactive<LogFilters>({
+  level: "",
+  component: "",
+  q: "",
+});
 
 /** The components the filter can name: those the server found, plus any the
  * live stream has shown since. */
@@ -58,7 +67,8 @@ export const meta = computed(() => {
   if (readError.value) return "Cannot read logs";
   if (loading.value) return "Refreshing…";
   if (durableUnavailable.value) return "Live only";
-  if (truncated.value) return `showing the most recent matches from ${logFile.value}`;
+  if (truncated.value)
+    return `showing the most recent matches from ${logFile.value}`;
   return logFile.value;
 });
 
@@ -71,8 +81,12 @@ export const streamKind = computed<StatusKind>(() => {
 });
 
 /** Which of the nothing-to-show situations the list is in. */
-export const emptyTitle = computed(() => logsEmptyTitle(durableUnavailable.value, streamState.value));
-export const emptyDetail = computed(() => logsEmptyDetail(durableUnavailable.value, streamState.value));
+export const emptyTitle = computed(() =>
+  logsEmptyTitle(durableUnavailable.value, streamState.value),
+);
+export const emptyDetail = computed(() =>
+  logsEmptyDetail(durableUnavailable.value, streamState.value),
+);
 
 export async function loadLogs(): Promise<void> {
   loading.value = true;
@@ -109,7 +123,11 @@ function handleEntry(raw: unknown): void {
 
   liveEntries.set(entryKey(entry), entry);
   const component = entry.fields?.component;
-  if (typeof component === "string" && component && !componentOptions.value.includes(component)) {
+  if (
+    typeof component === "string" &&
+    component &&
+    !componentOptions.value.includes(component)
+  ) {
     componentOptions.value = [...componentOptions.value, component];
   }
   liveTick.value += 1;

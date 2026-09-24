@@ -15,7 +15,11 @@ const text = computed(() => prettyPrint(props.raw));
 
 <template>
   <section class="min-w-0">
-    <h3 class="mb-2 text-xs font-semibold tracking-[0.05em] text-fg-subtle uppercase">{{ label }}</h3>
+    <h3
+      class="mb-2 text-xs font-semibold tracking-[0.05em] text-fg-subtle uppercase"
+    >
+      {{ label }}
+    </h3>
     <!--
       Wrap rather than scroll sideways: a captured payload is mostly long
       unbroken tokens (URLs, hashes, base64), and one of those on a single line
@@ -25,7 +29,6 @@ const text = computed(() => prettyPrint(props.raw));
     <pre
       v-else
       class="rounded-sm border border-border-strong bg-muted p-3 font-mono text-xs whitespace-pre-wrap wrap-break-word"
-      ><HighlightedJson :text="text" /></pre
-    >
+    ><HighlightedJson :text="text" /></pre>
   </section>
 </template>

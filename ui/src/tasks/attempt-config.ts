@@ -17,7 +17,11 @@ export function selectConfigEvent(
   attempt: number | null,
 ): TaskEvent | null {
   return (
-    (events || []).find((ev) => ev && ev.kind === "config_captured" && Number(ev.attempt) === Number(attempt)) ||
-    null
+    (events || []).find(
+      (ev) =>
+        ev &&
+        ev.kind === "config_captured" &&
+        Number(ev.attempt) === Number(attempt),
+    ) || null
   );
 }

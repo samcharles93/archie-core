@@ -2,9 +2,20 @@
 import { computed } from "vue";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import BindingRow from "./BindingRow.vue";
 import type { EventType } from "@/captures/event-types";
 import type { Binding, MappingOption } from "./binding-draft";
@@ -32,7 +43,9 @@ const rows = computed(() => props.bindings ?? []);
 // that, where a blanket "cannot reach archied" would be false about a daemon
 // that answered.
 const failureTitle = computed(() =>
-  props.failure?.kind === "unconfigured" ? "Bindings are not configured" : "Cannot reach archied",
+  props.failure?.kind === "unconfigured"
+    ? "Bindings are not configured"
+    : "Cannot reach archied",
 );
 </script>
 
@@ -48,7 +61,8 @@ const failureTitle = computed(() =>
     <EmptyHeader>
       <EmptyTitle>No bindings yet</EmptyTitle>
       <EmptyDescription>
-        Create one from a saved field mapping to turn a captured webhook into a workflow.
+        Create one from a saved field mapping to turn a captured webhook into a
+        workflow.
       </EmptyDescription>
     </EmptyHeader>
   </Empty>
@@ -70,7 +84,9 @@ const failureTitle = computed(() =>
         <TableBody>
           <template v-if="loading">
             <TableRow v-for="row in 3" :key="row">
-              <TableCell v-for="col in 7" :key="col"><Skeleton class="h-4 w-full" /></TableCell>
+              <TableCell v-for="col in 7" :key="col"
+                ><Skeleton class="h-4 w-full"
+              /></TableCell>
             </TableRow>
           </template>
           <template v-else>

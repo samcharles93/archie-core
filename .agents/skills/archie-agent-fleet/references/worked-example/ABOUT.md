@@ -22,13 +22,13 @@ briefs — none of the archie specifics here transfer.
 Seven tracker items, one shared shape, four lanes, a review pass after every
 wave, a serial merge train.
 
-| File | Note |
-|------|------|
-| `00-orchestrator.md` | The filled orchestrator prompt. Section 2 is the project's ground truth, section 5a the review-is-the-constraint doctrine, section 10 the review cadence. |
-| `lanes.json` | Lane briefs carrying intent, traps and `file:line` premises. Read one to see the level of detail a brief needs. |
-| `prompts/wave1.md` | The shared shape, plus an investigation whose verdict gated another lane. |
-| `prompts/wave4-merge-train.md` | The serial merge procedure with the project's own hazards in it. |
-| `agents/` | The three agent definitions with project invariants inlined. |
+| File                           | Note                                                                                                                                                      |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-orchestrator.md`           | The filled orchestrator prompt. Section 2 is the project's ground truth, section 5a the review-is-the-constraint doctrine, section 10 the review cadence. |
+| `lanes.json`                   | Lane briefs carrying intent, traps and `file:line` premises. Read one to see the level of detail a brief needs.                                           |
+| `prompts/wave1.md`             | The shared shape, plus an investigation whose verdict gated another lane.                                                                                 |
+| `prompts/wave4-merge-train.md` | The serial merge procedure with the project's own hazards in it.                                                                                          |
+| `agents/`                      | The three agent definitions with project invariants inlined.                                                                                              |
 
 No scripts are copied here. This run's `wave0.js`, `wave2.js`, `review.js` and
 `gate-evidence.sh` became `templates/recon.js`, `templates/lanes.js`,

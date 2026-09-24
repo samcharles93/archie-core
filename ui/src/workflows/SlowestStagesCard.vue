@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatMs, pct, workflowLabel } from "./labels";
 import { maxStageMs, slowestStages, type StageStats } from "./stages";
 import WorkflowBar from "./WorkflowBar.vue";
@@ -18,7 +31,9 @@ const maxMs = computed(() => maxStageMs(props.stages));
   <Card>
     <CardHeader>
       <CardTitle>Slowest stages</CardTitle>
-      <CardDescription>Average duration, this workflow's stages</CardDescription>
+      <CardDescription
+        >Average duration, this workflow's stages</CardDescription
+      >
     </CardHeader>
     <CardContent>
       <Table>

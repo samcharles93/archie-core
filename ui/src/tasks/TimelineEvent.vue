@@ -28,7 +28,9 @@ const line = computed(() => describeTimelineEvent(props.event));
     />
     <div>
       <div class="text-sm font-medium">{{ line.title }}</div>
-      <div v-if="line.detail" class="mt-0.5 text-xs text-fg-muted">{{ line.detail }}</div>
+      <div v-if="line.detail" class="mt-0.5 text-xs text-fg-muted">
+        {{ line.detail }}
+      </div>
       <div class="mt-0.5 text-xs text-fg-subtle">{{ ago(event.at) }}</div>
     </div>
   </li>

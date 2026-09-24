@@ -131,8 +131,8 @@ func TestPageURLsAreTheStaticSitePaths(t *testing.T) {
 }
 
 // TestNavMirrorsTheLayout: the tree is derived from the directory structure, so a
-// page added under a directory appears in the sidebar without a second edit -- the
-// property MkDocs had, and the one a hand-maintained nav loses.
+// page added under a directory appears in the sidebar without a second edit or a
+// hand-maintained navigation entry.
 func TestNavMirrorsTheLayout(t *testing.T) {
 	nav := navFor([]page{
 		{URL: "/docs/", Title: "Archie"},

@@ -30,7 +30,9 @@ const list = ref<HTMLElement | null>(null);
 // The same list the topbar's SearchBar and Nav read: navEntries flattens the
 // nav tree and drops what this composition cannot back, so the palette can
 // never offer a destination the server cannot serve.
-const allEntries = computed(() => navEntries(props.hidden).filter((entry) => !entry.soon));
+const allEntries = computed(() =>
+  navEntries(props.hidden).filter((entry) => !entry.soon),
+);
 
 // Substring, not prefix: an operator who remembers "where do channels live"
 // types a word from the description, not the start of the label.
@@ -38,7 +40,9 @@ const matches = computed(() => {
   const needle = query.value.trim().toLowerCase();
   if (!needle) return allEntries.value;
   return allEntries.value.filter((entry) =>
-    `${entry.label} ${entry.description} ${entry.path}`.toLowerCase().includes(needle),
+    `${entry.label} ${entry.description} ${entry.path}`
+      .toLowerCase()
+      .includes(needle),
   );
 });
 watch(query, () => {
@@ -78,7 +82,10 @@ function isEditableTarget(event: KeyboardEvent): boolean {
   const el = event.target;
   return (
     el instanceof HTMLElement &&
-    (el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")
+    (el.isContentEditable ||
+      el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT")
   );
 }
 
@@ -110,7 +117,8 @@ function onKeydown(event: KeyboardEvent): void {
   }
   if (event.key === "ArrowDown") {
     event.preventDefault();
-    if (matches.value.length) selection.value = Math.min(selection.value + 1, matches.value.length - 1);
+    if (matches.value.length)
+      selection.value = Math.min(selection.value + 1, matches.value.length - 1);
     return;
   }
   if (event.key === "ArrowUp") {
@@ -137,13 +145,18 @@ function choose(entry: NavEntry): void {
 watch([selection, matches], async () => {
   if (!open.value) return;
   await nextTick();
-  list.value?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
+  list.value
+    ?.querySelector('[aria-selected="true"]')
+    ?.scrollIntoView?.({ block: "nearest" });
 });
 </script>
 
 <template>
   <div v-if="open" class="fixed inset-0 isolate z-50" @mousedown.self="close">
-    <div class="bg-black/10 supports-backdrop-filter:backdrop-blur-xs absolute inset-0" aria-hidden="true" />
+    <div
+      class="bg-black/10 supports-backdrop-filter:backdrop-blur-xs absolute inset-0"
+      aria-hidden="true"
+    />
     <div
       role="dialog"
       aria-label="Command palette"
@@ -159,7 +172,9 @@ watch([selection, matches], async () => {
           aria-label="Filter sections"
           aria-expanded="true"
           aria-controls="command-palette-list"
-          :aria-activedescendant="matches[selection] ? optionId(selection) : undefined"
+          :aria-activedescendant="
+            matches[selection] ? optionId(selection) : undefined
+          "
           class="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           placeholder="Jump to a section…"
           @keydown="onKeydown"
@@ -184,10 +199,18 @@ watch([selection, matches], async () => {
           @mousemove="selection = index"
           @click="choose(entry)"
         >
-          <span class="truncate text-sm text-foreground">{{ entry.label }}</span>
-          <span v-if="entry.description" class="text-fg-muted truncate text-xs">{{ entry.description }}</span>
+          <span class="truncate text-sm text-foreground">{{
+            entry.label
+          }}</span>
+          <span
+            v-if="entry.description"
+            class="text-fg-muted truncate text-xs"
+            >{{ entry.description }}</span
+          >
         </button>
-        <p v-if="!matches.length" class="text-fg-muted px-2.5 py-3 text-sm">No matching section.</p>
+        <p v-if="!matches.length" class="text-fg-muted px-2.5 py-3 text-sm">
+          No matching section.
+        </p>
       </div>
     </div>
   </div>

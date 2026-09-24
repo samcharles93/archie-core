@@ -2,7 +2,13 @@
 import { computed } from "vue";
 
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 
 /**
@@ -18,13 +24,22 @@ const emit = defineEmits<{ clear: [] }>();
 
 const copy = computed(() => {
   if (props.kind === "error") {
-    return { title: "Cannot reach archied", description: props.detail || "The daemon did not answer." };
+    return {
+      title: "Cannot reach archied",
+      description: props.detail || "The daemon did not answer.",
+    };
   }
   if (props.kind === "empty") {
-    return { title: "No tasks yet", description: "Tasks appear here once archied picks up an issue to work." };
+    return {
+      title: "No tasks yet",
+      description: "Tasks appear here once archied picks up an issue to work.",
+    };
   }
   if (props.kind === "no-match") {
-    return { title: "No matching tasks", description: "Try a different search or status filter." };
+    return {
+      title: "No matching tasks",
+      description: "Try a different search or status filter.",
+    };
   }
   return { title: "Loading tasks…", description: "" };
 });
@@ -44,7 +59,9 @@ const copy = computed(() => {
       <EmptyDescription>{{ copy.description }}</EmptyDescription>
     </EmptyHeader>
     <EmptyContent v-if="props.kind === 'no-match'">
-      <Button variant="ghost" size="sm" @click="emit('clear')">Clear filters</Button>
+      <Button variant="ghost" size="sm" @click="emit('clear')"
+        >Clear filters</Button
+      >
     </EmptyContent>
   </Empty>
 </template>

@@ -4,8 +4,11 @@
  * remains available on the older browsers and plain-HTTP origins Archie
  * supports.
  */
-export function randomUUID(cryptoAPI: Crypto | undefined = globalThis.crypto): string {
-  if (typeof cryptoAPI?.randomUUID === "function") return cryptoAPI.randomUUID();
+export function randomUUID(
+  cryptoAPI: Crypto | undefined = globalThis.crypto,
+): string {
+  if (typeof cryptoAPI?.randomUUID === "function")
+    return cryptoAPI.randomUUID();
 
   const bytes = new Uint8Array(16);
   if (typeof cryptoAPI?.getRandomValues === "function") {

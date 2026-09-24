@@ -58,9 +58,14 @@ const installProgress = ref<string[]>([]);
 const installResult = ref<string | null>(null);
 const installError = ref<string | null>(null);
 
-const updateable = computed(() => components.value.filter((c) => c.status === "update_available"));
+const updateable = computed(() =>
+  components.value.filter((c) => c.status === "update_available"),
+);
 
-const statusKind: Record<ComponentVersion["status"], "ok" | "warn" | "danger" | "idle"> = {
+const statusKind: Record<
+  ComponentVersion["status"],
+  "ok" | "warn" | "danger" | "idle"
+> = {
   ok: "ok",
   update_available: "warn",
   drift: "danger",
@@ -80,13 +85,15 @@ async function load(): Promise<void> {
   try {
     const [report, update] = await Promise.all([
       api.version<{ components: ComponentVersion[] }>(),
-      api.updateSnapshot<{ snapshot: UpdateSnapshot; can_install: boolean }>().catch((err) => {
-        if (err instanceof ApiError && err.status === 501) {
-          notConfigured.value = true;
-          return null;
-        }
-        throw err;
-      }),
+      api
+        .updateSnapshot<{ snapshot: UpdateSnapshot; can_install: boolean }>()
+        .catch((err) => {
+          if (err instanceof ApiError && err.status === 501) {
+            notConfigured.value = true;
+            return null;
+          }
+          throw err;
+        }),
     ]);
     components.value = report.components;
     if (update) {
@@ -104,7 +111,11 @@ async function load(): Promise<void> {
 // the endpoint re-checks freshness and answers 409 when releases moved.
 function installableSnapshot(): UpdateSnapshot | null {
   if (!snapshot.value) return null;
-  if (snapshot.value.components?.some((c) => c.available && c.available !== c.installed)) {
+  if (
+    snapshot.value.components?.some(
+      (c) => c.available && c.available !== c.installed,
+    )
+  ) {
     return snapshot.value;
   }
   return null;
@@ -118,7 +129,10 @@ async function install(): Promise<void> {
   installProgress.value = [];
   installResult.value = null;
   try {
-    const result = await api.updateInstall<{ progress?: string[]; result?: { installed?: Record<string, string> } }>(snap);
+    const result = await api.updateInstall<{
+      progress?: string[];
+      result?: { installed?: Record<string, string> };
+    }>(snap);
     installProgress.value = result.progress ?? [];
     const installed = result.result?.installed;
     installResult.value = installed
@@ -138,7 +152,9 @@ onMounted(load);
 </script>
 
 <template>
-  <p v-if="notConfigured" class="text-sm text-fg-muted">Update checks not configured.</p>
+  <p v-if="notConfigured" class="text-sm text-fg-muted">
+    Update checks not configured.
+  </p>
   <Card v-else>
     <CardHeader>
       <CardTitle>Versions</CardTitle>
@@ -158,30 +174,53 @@ onMounted(load);
           </TableHeader>
           <TableBody>
             <TableRow v-for="component in components" :key="component.id">
-              <TableCell class="font-medium">{{ component.label || component.id }}</TableCell>
-              <TableCell class="font-mono text-fg-muted">{{ component.running_version || component.installed_claim || "—" }}</TableCell>
-              <TableCell class="font-mono text-fg-muted">{{ component.latest_available || "—" }}</TableCell>
+              <TableCell class="font-medium">{{
+                component.label || component.id
+              }}</TableCell>
+              <TableCell class="font-mono text-fg-muted">{{
+                component.running_version || component.installed_claim || "—"
+              }}</TableCell>
+              <TableCell class="font-mono text-fg-muted">{{
+                component.latest_available || "—"
+              }}</TableCell>
               <TableCell>
-                <Badge :variant="statusKind[component.status]">{{ statusLabel[component.status] }}</Badge>
+                <Badge :variant="statusKind[component.status]">{{
+                  statusLabel[component.status]
+                }}</Badge>
               </TableCell>
             </TableRow>
           </TableBody>
         </Table>
 
-        <div v-if="canInstall && updateable.length" class="mt-4 flex flex-col gap-2">
+        <div
+          v-if="canInstall && updateable.length"
+          class="mt-4 flex flex-col gap-2"
+        >
           <Button :disabled="installing" @click="install">
-            {{ installing ? "Installing…" : `Install ${updateable.map((c) => c.label || c.id).join(", ")}` }}
+            {{
+              installing
+                ? "Installing…"
+                : `Install ${updateable.map((c) => c.label || c.id).join(", ")}`
+            }}
           </Button>
           <p v-if="installing" class="text-xs text-fg-muted">
-            The build runs on this host and the restart is verified out of band; the page can be left.
+            The build runs on this host and the restart is verified out of band;
+            the page can be left.
           </p>
         </div>
 
-        <div v-if="installProgress.length" class="mt-3 rounded-sm border border-border bg-muted p-3 font-mono text-xs">
+        <div
+          v-if="installProgress.length"
+          class="mt-3 rounded-sm border border-border bg-muted p-3 font-mono text-xs"
+        >
           <p v-for="(line, i) in installProgress" :key="i">{{ line }}</p>
         </div>
-        <p v-if="installResult" class="mt-2 text-sm text-ok">{{ installResult }}</p>
-        <p v-if="installError" class="mt-2 text-sm text-danger">{{ installError }}</p>
+        <p v-if="installResult" class="mt-2 text-sm text-ok">
+          {{ installResult }}
+        </p>
+        <p v-if="installError" class="mt-2 text-sm text-danger">
+          {{ installError }}
+        </p>
       </template>
     </CardContent>
   </Card>

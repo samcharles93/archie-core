@@ -3,7 +3,14 @@ import { ref } from "vue";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { requestDangerous } from "./state";
 import type { DangerCheckpoint } from "./types";
 
@@ -18,8 +25,10 @@ const props = defineProps<{ checkpoints: DangerCheckpoint[] }>();
 
 const checkpoint = ref("");
 
-const number = (cp: DangerCheckpoint): number | undefined => cp.Number ?? cp.number;
-const label = (cp: DangerCheckpoint): string => cp.Label ?? cp.label ?? "checkpoint";
+const number = (cp: DangerCheckpoint): number | undefined =>
+  cp.Number ?? cp.number;
+const label = (cp: DangerCheckpoint): string =>
+  cp.Label ?? cp.label ?? "checkpoint";
 </script>
 
 <template>
@@ -31,13 +40,21 @@ const label = (cp: DangerCheckpoint): string => cp.Label ?? cp.label ?? "checkpo
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem v-for="cp in props.checkpoints" :key="String(number(cp))" :value="String(number(cp))">
+          <SelectItem
+            v-for="cp in props.checkpoints"
+            :key="String(number(cp))"
+            :value="String(number(cp))"
+          >
             {{ number(cp) }} — {{ label(cp) }}
           </SelectItem>
         </SelectGroup>
       </SelectContent>
     </Select>
-    <Button variant="outline" :disabled="!checkpoint" @click="requestDangerous('rollback', checkpoint)">
+    <Button
+      variant="outline"
+      :disabled="!checkpoint"
+      @click="requestDangerous('rollback', checkpoint)"
+    >
       Request rollback
     </Button>
   </Field>

@@ -1,10 +1,21 @@
 import { defineStore } from "pinia";
-import { computed, onUnmounted, reactive, ref, watch, type ComputedRef } from "vue";
+import {
+  computed,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+  type ComputedRef,
+} from "vue";
 
 import { setAuthenticationStateHandler, subscribeEvents } from "@/lib/api";
 import type { StatusKind } from "@/lib/status";
 import type { StreamState } from "@/lib/stream-state";
-import { resourcesForEvent, type LiveEvent, type LiveResource } from "./live-events";
+import {
+  resourcesForEvent,
+  type LiveEvent,
+  type LiveResource,
+} from "./live-events";
 
 export const useLiveUpdatesStore = defineStore("live-updates", () => {
   const streamState = ref<StreamState | "connecting">("connecting");
@@ -55,12 +66,17 @@ export const useLiveUpdatesStore = defineStore("live-updates", () => {
 });
 
 /** Re-read one mounted projection when SSE says its backend resource changed. */
-export function useLiveResource(resource: LiveResource | null, load: () => void, debounceMs = 100): void {
+export function useLiveResource(
+  resource: LiveResource | null,
+  load: () => void,
+  debounceMs = 100,
+): void {
   const live = useLiveUpdatesStore();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const revision = () => resource === null
-    ? live.connectionRevision
-    : [live.revisions[resource], live.connectionRevision];
+  const revision = () =>
+    resource === null
+      ? live.connectionRevision
+      : [live.revisions[resource], live.connectionRevision];
   const stop = watch(revision, () => {
     clearTimeout(timer);
     timer = setTimeout(load, debounceMs);

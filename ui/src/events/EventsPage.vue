@@ -35,7 +35,9 @@ const route = useRoute();
 const router = useRouter();
 
 const tabs = computed(() => availableTabs(sections.value));
-const active = computed(() => activeTab(String(route.query.tab ?? ""), tabs.value));
+const active = computed(() =>
+  activeTab(String(route.query.tab ?? ""), tabs.value),
+);
 
 function show(id: unknown): void {
   const next = String(id);
@@ -55,7 +57,9 @@ watch(active, (tab) => show(tab), { immediate: true });
     <PageHeader title="Events" />
     <Tabs class="gap-4" :model-value="active" @update:model-value="show">
       <TabsList variant="line" class="w-full justify-start">
-        <TabsTrigger v-for="tab in tabs" :key="tab.id" :value="tab.id">{{ tab.label }}</TabsTrigger>
+        <TabsTrigger v-for="tab in tabs" :key="tab.id" :value="tab.id">{{
+          tab.label
+        }}</TabsTrigger>
       </TabsList>
       <TabsContent v-for="tab in tabs" :key="tab.id" :value="tab.id">
         <component :is="PANELS[tab.id]" />

@@ -10,7 +10,18 @@
  * belongs to, so a late response for an attempt the operator has already left
  * lands under its own key and is never shown against another attempt.
  */
-import { computed, inject, onMounted, provide, reactive, ref, watch, type ComputedRef, type InjectionKey, type Ref } from "vue";
+import {
+  computed,
+  inject,
+  onMounted,
+  provide,
+  reactive,
+  ref,
+  watch,
+  type ComputedRef,
+  type InjectionKey,
+  type Ref,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
@@ -107,25 +118,41 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
       : null,
   );
   const currentAttempt = computed<number | null>(() =>
-    Number(attempts.value?.current_attempt) > 0 ? Number(attempts.value?.current_attempt) : null,
+    Number(attempts.value?.current_attempt) > 0
+      ? Number(attempts.value?.current_attempt)
+      : null,
   );
   // The wire spells "the task's current attempt" as 0, which is not an attempt
   // number: a task with no run at all must not address attempt 0.
-  const attemptNumber = computed<number | null>(() => requestedAttempt.value ?? currentAttempt.value);
+  const attemptNumber = computed<number | null>(
+    () => requestedAttempt.value ?? currentAttempt.value,
+  );
   const selectedAttempt = computed(() =>
-    (attempts.value?.attempts || []).find((a) => Number(a.attempt) === Number(attemptNumber.value)),
+    (attempts.value?.attempts || []).find(
+      (a) => Number(a.attempt) === Number(attemptNumber.value),
+    ),
   );
   const stageNames = computed(() => [
-    ...new Set((selectedAttempt.value?.stages || []).map((stage) => stage.name).filter(Boolean) as string[]),
+    ...new Set(
+      (selectedAttempt.value?.stages || [])
+        .map((stage) => stage.name)
+        .filter(Boolean) as string[],
+    ),
   ]);
 
   const retryMeta = computed(() => actionFor("retry"));
-  const canRetry = computed(() => Boolean(retryMeta.value && (task.value?.actions || []).includes("retry")));
+  const canRetry = computed(() =>
+    Boolean(retryMeta.value && (task.value?.actions || []).includes("retry")),
+  );
 
   const logKey = computed(() =>
-    id.value == null || attemptNumber.value == null ? null : logCacheKey(id.value, attemptNumber.value, filters.value),
+    id.value == null || attemptNumber.value == null
+      ? null
+      : logCacheKey(id.value, attemptNumber.value, filters.value),
   );
-  const changeKey = computed(() => (id.value == null ? null : attemptKey(id.value, attemptNumber.value)));
+  const changeKey = computed(() =>
+    id.value == null ? null : attemptKey(id.value, attemptNumber.value),
+  );
   const debugKey = changeKey;
 
   const logState = computed<LogState | null | undefined>(() =>
@@ -370,6 +397,7 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
 /** The run state provided by the nearest TaskDetailPage. */
 export function useTaskRun(): TaskRun {
   const run = inject(TASK_RUN);
-  if (!run) throw new Error("useTaskRun() must be called under a TaskDetailPage");
+  if (!run)
+    throw new Error("useTaskRun() must be called under a TaskDetailPage");
   return run;
 }

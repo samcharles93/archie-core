@@ -1,4 +1,5 @@
-export type LiveResource = "tasks" | "captures" | "curators" | "skills" | "updates";
+export type LiveResource =
+  "tasks" | "captures" | "curators" | "skills" | "updates";
 
 export interface LiveEvent {
   id?: number;
@@ -35,7 +36,8 @@ export function resourcesForEvent(raw: unknown): LiveResource[] {
   const event = raw as LiveEvent | null;
   const kind = event?.kind ?? "";
   const resources = new Set<LiveResource>();
-  if (event?.task_id || kind.startsWith("task_") || taskKinds.has(kind)) resources.add("tasks");
+  if (event?.task_id || kind.startsWith("task_") || taskKinds.has(kind))
+    resources.add("tasks");
   if (kind === "capture") resources.add("captures");
   if (kind.startsWith("curator_")) resources.add("curators");
   if (kind === "curator_action") resources.add("skills");

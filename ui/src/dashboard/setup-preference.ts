@@ -19,7 +19,9 @@ export interface SetupPanelState {
 // setupPanelState distinguishes the only two states worth rendering: there is
 // setup work left (the checklist), or there is not (nothing — a configured
 // daemon is the absence of a problem, not a card announcing it).
-export function setupPanelState(setup: Setup | null | undefined): SetupPanelState {
+export function setupPanelState(
+  setup: Setup | null | undefined,
+): SetupPanelState {
   const remaining = (setup?.steps ?? []).filter((step) => !step.done);
   if (!setup?.steps?.length || !remaining.length) {
     return { kind: "omit", remaining: [] };

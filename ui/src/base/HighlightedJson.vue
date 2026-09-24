@@ -17,7 +17,12 @@ const tokens = computed(() => tokenizeJson(props.text));
 
 <template>
   <template v-if="tokens">
-    <span v-for="(token, i) in tokens" :key="i" :class="tokenClass(token.kind)">{{ token.text }}</span>
+    <span
+      v-for="(token, i) in tokens"
+      :key="i"
+      :class="tokenClass(token.kind)"
+      >{{ token.text }}</span
+    >
   </template>
   <template v-else>{{ props.text }}</template>
 </template>

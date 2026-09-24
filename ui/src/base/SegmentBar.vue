@@ -14,9 +14,12 @@ const props = defineProps<{
   segments: Array<{ label: string; value: number; kind?: StatusKind }>;
 }>();
 
-const total = computed(() => props.segments.reduce((a, s) => a + (s.value || 0), 0) || 1);
+const total = computed(
+  () => props.segments.reduce((a, s) => a + (s.value || 0), 0) || 1,
+);
 
-const partWidth = (value: number) => `${((value / total.value) * 100).toFixed(1)}%`;
+const partWidth = (value: number) =>
+  `${((value / total.value) * 100).toFixed(1)}%`;
 const fill = (kind?: StatusKind) => STATUS_FILL[kind ?? "idle"];
 </script>
 

@@ -2,7 +2,6 @@ package archied
 
 import (
 	"log/slog"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -13,7 +12,6 @@ import (
 
 func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 	cfg := config.Config{
-		DBPath:      filepath.Join(t.TempDir(), "tasks.db"),
 		DatabaseURL: pgtest.URL(t),
 		Services:    config.Services{config.ServiceNameGateway: {Target: "127.0.0.1:1"}},
 	}

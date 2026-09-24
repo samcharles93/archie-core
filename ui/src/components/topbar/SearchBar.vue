@@ -13,7 +13,9 @@ const field = ref<{ $el: HTMLInputElement } | null>(null);
 const query = ref("");
 const open = ref(false);
 
-const entries = computed(() => navEntries(props.hidden).filter((entry) => !entry.soon));
+const entries = computed(() =>
+  navEntries(props.hidden).filter((entry) => !entry.soon),
+);
 
 // Jumping between sections, deliberately not a data search: each section owns
 // its own filtering, and one box that means something different on every page
@@ -21,7 +23,9 @@ const entries = computed(() => navEntries(props.hidden).filter((entry) => !entry
 const hit = computed(() => {
   const wanted = query.value.trim().toLowerCase();
   if (!wanted) return undefined;
-  return entries.value.find((entry) => entry.label.toLowerCase().startsWith(wanted));
+  return entries.value.find((entry) =>
+    entry.label.toLowerCase().startsWith(wanted),
+  );
 });
 
 async function toggle() {
@@ -62,7 +66,10 @@ function onKeydown(event: KeyboardEvent) {
       <Search :size="16" />
     </button>
     <div class="relative" :class="open ? 'block' : 'hidden lg:block'">
-      <Search :size="15" class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2" />
+      <Search
+        :size="15"
+        class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2"
+      />
       <Input
         ref="field"
         v-model="query"

@@ -150,17 +150,13 @@ func merge(o Options, p projection) Options {
 	return o
 }
 
-// resolveTelegramToken reads whichever credential source is configured. A
-// secret ref takes precedence over token_env, so a deployment that moved to
-// a secret engine is not silently served by a stale environment variable.
+// resolveTelegramToken resolves the configured bot token; an unset
+// reference means the channel is off.
 func resolveTelegramToken(cfg config.TelegramConfig, secrets *secret.Registry) (string, error) {
-	if cfg.Token != (secret.SecretRef{}) {
-		return secrets.Resolve(cfg.Token)
+	if cfg.Token == (secret.SecretRef{}) {
+		return "", nil
 	}
-	if cfg.TokenEnv != "" {
-		return os.Getenv(cfg.TokenEnv), nil
-	}
-	return "", nil
+	return secrets.Resolve(cfg.Token)
 }
 
 func resolveWebhookSecret(route config.WebhookRoute, secrets *secret.Registry) (string, error) {

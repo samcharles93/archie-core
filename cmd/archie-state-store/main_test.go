@@ -89,7 +89,7 @@ func buildBinary(t *testing.T, dir string) string {
 // while keeping the process minimal: the standalone binary takes its gRPC
 // listen address from -listen or [services.state].listen, never from the
 // target, so the config only needs the fields validation requires plus the
-// db_path and database_url it owns. The
+// database_url it owns. The
 // forge token resolves from an env var, so no real credential is needed.
 func writeMinimalConfig(t *testing.T, dir string) string {
 	t.Helper()
@@ -101,7 +101,6 @@ func writeConfigFor(t *testing.T, dir, url string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config.toml")
 	content := fmt.Sprintf(`bot_user = "archie-bot"
-db_path = %q
 database_url = %q
 [forge]
 type = "github"
@@ -110,7 +109,7 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 [[repos]]
 owner = "acme"
 name = "widget"
-`, filepath.Join(dir, "archie.db"), url)
+`, url)
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -437,7 +436,7 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 
 	t.Run("serves_from_postgres_only", func(t *testing.T) {
 		// The binary serves every store from database_url: no SQLite file
-		// appears beside the configured db_path.
+		// appears in its directory.
 		for _, name := range []string{"archie.db", "archie.db-tasks.sqlite", "archie.db-eda.sqlite"} {
 			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 				t.Fatalf("state store created %s; it serves from Postgres only", name)
@@ -472,7 +471,7 @@ func TestStateStoreRealProcessDeadline(t *testing.T) {
 }
 
 // TestStateStoreRealProcessRestartRecovery starts the process, writes a task,
-// stops it (SIGTERM), restarts it on the same config/db_path, and verifies the
+// stops it (SIGTERM), restarts it on the same config, and verifies the
 // task and its events were recovered from the on-disk SQLite -- the
 // restart/recovery path the runbook relies on when archie-state-store is
 // restarted as a service.

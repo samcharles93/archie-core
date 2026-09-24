@@ -23,13 +23,18 @@ const counts = computed(() => {
 
 const total = computed(() => props.tasks.length);
 const working = computed(() => counts.value.running ?? 0);
-const delivered = computed(() => (counts.value.merged ?? 0) + (counts.value.pr_open ?? 0));
+const delivered = computed(
+  () => (counts.value.merged ?? 0) + (counts.value.pr_open ?? 0),
+);
 
 // "Needs you" is the server's grouping, not a local pair of ids: the same set
 // backs the ?status=needs_you filter, so the tile and the filter cannot drift.
 const needsYou = computed(() => {
   const attention = attentionStatusIds();
-  return Object.entries(counts.value).reduce((sum, [status, n]) => (attention.has(status) ? sum + n : sum), 0);
+  return Object.entries(counts.value).reduce(
+    (sum, [status, n]) => (attention.has(status) ? sum + n : sum),
+    0,
+  );
 });
 </script>
 
@@ -38,12 +43,16 @@ const needsYou = computed(() => {
     <StatTile
       label="Total tasks"
       :value="total"
-      :compare="total ? 'Everything archied has ever picked up' : 'No tasks yet'"
+      :compare="
+        total ? 'Everything archied has ever picked up' : 'No tasks yet'
+      "
     />
     <StatTile
       label="Working now"
       :value="working"
-      :compare="total ? `${working} of ${total} in progress` : 'Nothing running'"
+      :compare="
+        total ? `${working} of ${total} in progress` : 'Nothing running'
+      "
     />
     <StatTile
       label="Needs you"
@@ -54,7 +63,11 @@ const needsYou = computed(() => {
     <StatTile
       label="Delivered"
       :value="delivered"
-      :compare="total ? `${Math.round((delivered / total) * 100)}% of all tasks` : 'No tasks yet'"
+      :compare="
+        total
+          ? `${Math.round((delivered / total) * 100)}% of all tasks`
+          : 'No tasks yet'
+      "
     />
   </div>
 </template>

@@ -1,10 +1,27 @@
 <script setup lang="ts">
 import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import MappingRow from "./MappingRow.vue";
-import { listLoading, loadError, mappings, requestDelete, startEdit } from "./state";
+import {
+  listLoading,
+  loadError,
+  mappings,
+  requestDelete,
+  startEdit,
+} from "./state";
 
 /**
  * The saved mappings, in all four states: still loading, unreadable, none yet,
@@ -30,7 +47,10 @@ import { listLoading, loadError, mappings, requestDelete, startEdit } from "./st
   <Empty v-else-if="!mappings.length">
     <EmptyHeader>
       <EmptyTitle>No mappings yet</EmptyTitle>
-      <EmptyDescription>Create one from a captured event to reuse its fields in a future playbook binding.</EmptyDescription>
+      <EmptyDescription
+        >Create one from a captured event to reuse its fields in a future
+        playbook binding.</EmptyDescription
+      >
     </EmptyHeader>
   </Empty>
 

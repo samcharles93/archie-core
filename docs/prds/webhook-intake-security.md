@@ -83,14 +83,14 @@ the request-rate level.
 key-name heuristic `internal/gateway/stream.go`'s `sensitiveParameterKey`
 already uses for tool-call parameters (matches `token`, `secret`, `password`,
 `passwd`, `api_key`, `apikey`, `authorization`, `credential`, `cookie`,
-`private_key` against normalized JSON keys) and replace matching values with
+`private_key` against normalised JSON keys) and replace matching values with
 the same `[redacted]` marker. This is best-effort, not a guarantee -- a
 sender that names a secret field something the heuristic misses will still
 have it captured. Document that limitation where captured payloads are
 displayed, rather than implying the redaction is complete.
 
 **Visibility:** captured payloads, redacted or not, are visible only to an
-authenticated dashboard operator -- the same authorization boundary as every
+authenticated dashboard operator -- the same authorisation boundary as every
 other webui surface, not a separate or lower bar.
 
 ## What this does not decide

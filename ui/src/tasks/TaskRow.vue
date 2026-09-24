@@ -41,7 +41,9 @@ import TaskRowActions from "./TaskRowActions.vue";
  * link semantics and a keyboard path of its own: every control inside it has to
  * stop the event on its way out, or activating a button would also navigate.
  */
-const props = withDefaults(defineProps<{ task: Task; showRepo?: boolean }>(), { showRepo: true });
+const props = withDefaults(defineProps<{ task: Task; showRepo?: boolean }>(), {
+  showRepo: true,
+});
 
 const emit = defineEmits<{ done: [taskId: Task["id"]] }>();
 
@@ -58,7 +60,9 @@ const parkClassLabels: Record<string, string> = {
   transient: "transient",
   terminal: "terminal",
 };
-const parkClassLabel = computed(() => parkClassLabels[props.task.park_class ?? ""] ?? "");
+const parkClassLabel = computed(
+  () => parkClassLabels[props.task.park_class ?? ""] ?? "",
+);
 const parkClassTitle = computed(() => {
   switch (props.task.park_class) {
     case "transient":
@@ -164,11 +168,15 @@ function open() {
         </Badge>
       </span>
     </TableCell>
-    <TableCell class="text-fg-muted">{{ props.task.workflow || "—" }}</TableCell>
+    <TableCell class="text-fg-muted">{{
+      props.task.workflow || "—"
+    }}</TableCell>
     <TableCell class="text-fg-muted">{{ props.task.stage || "—" }}</TableCell>
     <TableCell
       class="text-fg-muted"
-      :title="props.task.created_at ? `Created ${ago(props.task.created_at)}` : ''"
+      :title="
+        props.task.created_at ? `Created ${ago(props.task.created_at)}` : ''
+      "
     >
       {{ ago(props.task.updated_at) }}
     </TableCell>

@@ -35,7 +35,9 @@ const labels: Record<ApplyState, string> = {
       <div class="flex items-center gap-2 text-xs">
         <Badge :variant="variants[row.state]">{{ labels[row.state] }}</Badge>
         <span class="font-mono">{{ row.process }}</span>
-        <span v-if="row.state !== 'not-reporting'" class="text-muted-foreground">version {{ row.version }}</span>
+        <span v-if="row.state !== 'not-reporting'" class="text-muted-foreground"
+          >version {{ row.version }}</span
+        >
       </div>
       <p v-if="row.error" class="text-xs text-destructive">{{ row.error }}</p>
     </div>

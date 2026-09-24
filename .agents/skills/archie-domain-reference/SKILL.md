@@ -17,12 +17,12 @@ target packages now exist and are production-wired (`internal/domain/messaging`,
 (`internal/domain/agent`, `internal/domain/identity`, `internal/policy`). Never
 blend the two.
 
-| Label | Meaning | Evidence rule |
-| --- | --- | --- |
-| **CURRENT** | Behavior present in live code and tests | Cite defining type/function and production caller or test. |
-| **APPROVED TARGET** | Normative rule in approved foundation document | Cite exact PRD. Do not claim implemented. |
-| **OPEN/CANDIDATE** | Deferred API, owner, package, migration, or behavior | Preserve open question. |
-| **ARCHIVED** | Historical context under `docs/archive/` | Use only for archaeology. |
+| Label               | Meaning                                               | Evidence rule                                              |
+| ------------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
+| **CURRENT**         | Behaviour present in live code and tests              | Cite defining type/function and production caller or test. |
+| **APPROVED TARGET** | Normative rule in approved foundation document        | Cite exact PRD. Do not claim implemented.                  |
+| **OPEN/CANDIDATE**  | Deferred API, owner, package, migration, or behaviour | Preserve open question.                                    |
+| **ARCHIVED**        | Historical context under `docs/archive/`              | Use only for archaeology.                                  |
 
 Start design notes with status sentences:
 
@@ -41,16 +41,16 @@ rg -n '^\*\*Status:\*\*|^## Decisions still required' docs/architecture
 
 ## Use the canonical actor vocabulary
 
-| Term | Archie meaning | State and owner |
-| --- | --- | --- |
-| **Identity** | Durable actor reference for ownership, attribution, routing, commands, events, audit. | **APPROVED TARGET:** `internal/domain/identity`. **CURRENT:** configured names and empty strings act as identifiers. |
-| **User** | Person represented as `user` kind of Identity. | **APPROVED TARGET:** Identity domain. |
-| **Agent** | Persistent assistant with acting IdentityID, specialization, instructions, capability context, memory. | **CONFIRMED TARGET:** Agent and Identity separate aggregates; `internal/domain/agent` confirmed in `migration-decisions.md`. |
-| **Model invocation** | One call through LLM provider/runtime. Replaceable execution machinery. | **CURRENT:** runtime packages. **TARGET:** infrastructure behind Agent-owned behavior. |
-| **System identity** | One permanent actor for startup, migration, supervision, rollback. | **APPROVED TARGET:** a real IdentityID. |
+| Term                 | Archie meaning                                                                                         | State and owner                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Identity**         | Durable actor reference for ownership, attribution, routing, commands, events, audit.                  | **APPROVED TARGET:** `internal/domain/identity`. **CURRENT:** configured names and empty strings act as identifiers.         |
+| **User**             | Person represented as `user` kind of Identity.                                                         | **APPROVED TARGET:** Identity domain.                                                                                        |
+| **Agent**            | Persistent assistant with acting IdentityID, specialisation, instructions, capability context, memory. | **CONFIRMED TARGET:** Agent and Identity separate aggregates; `internal/domain/agent` confirmed in `migration-decisions.md`. |
+| **Model invocation** | One call through LLM provider/runtime. Replaceable execution machinery.                                | **CURRENT:** runtime packages. **TARGET:** infrastructure behind Agent-owned behaviour.                                      |
+| **System identity**  | One permanent actor for startup, migration, supervision, rollback.                                     | **APPROVED TARGET:** a real IdentityID.                                                                                      |
 
 Apply: record acting Agent identity and initiating user identity separately;
-never authorize because two mutable strings match; never rename Agent when only
+never authorise because two mutable strings match; never rename Agent when only
 model/provider/display name changes; never pool two Agents' memory.
 
 ```bash
@@ -59,17 +59,17 @@ rg -n 'type IdentityConfig|type IdentityRunner|Identity string|BotUser string' i
 
 ## Use the canonical interaction vocabulary
 
-| Term | Archie meaning | State and owner |
-| --- | --- | --- |
-| **Channel** | External interaction source (Telegram, email, webhook, forge). | **CURRENT:** `internal/channels` extends `gateway.Gateway`. **TARGET:** infrastructure adapter for Messaging. |
-| **Adapter** | Boundary code translating external payloads into owned contracts. | **TARGET RULE:** infrastructure implements domain-owned interfaces. |
-| **Gateway** | Current technical interface/router and package — not approved domain vocabulary. | **CURRENT ONLY:** `internal/gateway`, `internal/channels`. |
-| **ChannelBindingID** | Stable reference connecting Agent to channel binding. | **APPROVED TARGET INPUT:** part of Conversation identity. |
-| **Message** | Immutable application record with MessageID and typed content. Platform IDs are external correlations. | **CURRENT:** `internal/domain/messaging.Message`/`MessageID`; `gateway.MessageEvent` is a richer event type beside it. |
-| **Conversation** | AgentID + UserIdentityID + ChannelBindingID + ExternalConversationID + ThreadID. | **CONFIRMED TARGET, partly current:** `internal/domain/messaging.Conversation`/`ConversationID` exist; the gateway session store still lacks canonical Agent/user IDs. |
-| **Conversation branch** | Child conversation from one immutable parent message. | **CONFIRMED TARGET.** No current implementation. |
-| **Work Intake** | Admission, validation, routing boundary between interaction and durable workflow-backed work. | **CONFIRMED TARGET, current package:** `internal/domain/workintake` exists. |
-| **Accepted work request** | Channel-neutral handoff after Work Intake accepts proposed outcome. | **TARGET HANDOFF:** Agent System consumes it, selects Workflow version, creates WorkflowExecution. |
+| Term                      | Archie meaning                                                                                         | State and owner                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Channel**               | External interaction source (Telegram, email, webhook, forge).                                         | **CURRENT:** `internal/channels` extends `gateway.Gateway`. **TARGET:** infrastructure adapter for Messaging.                                                          |
+| **Adapter**               | Boundary code translating external payloads into owned contracts.                                      | **TARGET RULE:** infrastructure implements domain-owned interfaces.                                                                                                    |
+| **Gateway**               | Current technical interface/router and package — not approved domain vocabulary.                       | **CURRENT ONLY:** `internal/gateway`, `internal/channels`.                                                                                                             |
+| **ChannelBindingID**      | Stable reference connecting Agent to channel binding.                                                  | **APPROVED TARGET INPUT:** part of Conversation identity.                                                                                                              |
+| **Message**               | Immutable application record with MessageID and typed content. Platform IDs are external correlations. | **CURRENT:** `internal/domain/messaging.Message`/`MessageID`; `gateway.MessageEvent` is a richer event type beside it.                                                 |
+| **Conversation**          | AgentID + UserIdentityID + ChannelBindingID + ExternalConversationID + ThreadID.                       | **CONFIRMED TARGET, partly current:** `internal/domain/messaging.Conversation`/`ConversationID` exist; the gateway session store still lacks canonical Agent/user IDs. |
+| **Conversation branch**   | Child conversation from one immutable parent message.                                                  | **CONFIRMED TARGET.** No current implementation.                                                                                                                       |
+| **Work Intake**           | Admission, validation, routing boundary between interaction and durable workflow-backed work.          | **CONFIRMED TARGET, current package:** `internal/domain/workintake` exists.                                                                                            |
+| **Accepted work request** | Channel-neutral handoff after Work Intake accepts proposed outcome.                                    | **TARGET HANDOFF:** Agent System consumes it, selects Workflow version, creates WorkflowExecution.                                                                     |
 
 Do not equate an inbound Message with work. An Agent may answer, use
 capabilities, retain information, or propose work without creating a
@@ -92,14 +92,14 @@ rg -n 'type Message struct|type MessageEvent struct|ToLegacy|type Conversation s
 
 ## Use the canonical execution vocabulary
 
-| Term | Archie meaning | Current representation |
-| --- | --- | --- |
-| **Workflow** | Reusable, versioned definition. | `workflow.Workflow` is named `[]Stage` without durable version model. |
-| **WorkflowExecution** | One durable execution of one Workflow version. | `task.Task` is migration baseline. |
-| **WorkflowStep** | One defined operation. | `workflow.Stage` is closest definition. |
-| **StepExecution** | Durable record of one step's execution and outcome. | Missing; `task.Task.Stage` is one mutable string. |
-| **Attempt** | Retry within same WorkflowExecution. | `task.Task.Attempt`/`RetryCount` must become explicit attempt history. |
-| **Agent step execution** | One bounded model-backed WorkflowStep invocation. | `agentexec.Request`/`Result` correlate TaskID, Attempt, Stage, protocol version. |
+| Term                     | Archie meaning                                      | Current representation                                                           |
+| ------------------------ | --------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Workflow**             | Reusable, versioned definition.                     | `workflow.Workflow` is named `[]Stage` without durable version model.            |
+| **WorkflowExecution**    | One durable execution of one Workflow version.      | `task.Task` is migration baseline.                                               |
+| **WorkflowStep**         | One defined operation.                              | `workflow.Stage` is closest definition.                                          |
+| **StepExecution**        | Durable record of one step's execution and outcome. | Missing; `task.Task.Stage` is one mutable string.                                |
+| **Attempt**              | Retry within same WorkflowExecution.                | `task.Task.Attempt`/`RetryCount` must become explicit attempt history.           |
+| **Agent step execution** | One bounded model-backed WorkflowStep invocation.   | `agentexec.Request`/`Result` correlate TaskID, Attempt, Stage, protocol version. |
 
 Use `WorkflowExecution` in domain contracts, architecture, generated reference.
 Retain `task` only for Task build tool, forge product nouns in adapters,
@@ -129,17 +129,17 @@ rg -n 'Status[A-Za-z]+|func \(s \*Store\) Transition|func \(s \*Store\) Requeue|
 
 ## Keep memory scope separate from conversation scope
 
-| Scope | Address and visibility |
-| --- | --- |
-| **Global shared** | Intentionally visible across Archie. |
-| **Agent-wide** | Owned by one Agent, private by default even across users. |
-| **User-wide** | One user across authorized Agents. |
-| **Agent-user relationship** | Addressed by both AgentID and User IdentityID. |
+| Scope                       | Address and visibility                                    |
+| --------------------------- | --------------------------------------------------------- |
+| **Global shared**           | Intentionally visible across Archie.                      |
+| **Agent-wide**              | Owned by one Agent, private by default even across users. |
+| **User-wide**               | One user across authorised Agents.                        |
+| **Agent-user relationship** | Addressed by both AgentID and User IdentityID.            |
 
 Conversation branch is not a fifth memory scope. Scope mechanics **OPEN** beyond
 these constraints.
 
-Current `MemoryProvider` initializes with session ID, contains no explicit
+Current `MemoryProvider` initialises with session ID, contains no explicit
 AgentID, User IdentityID, or scope parameter. Built-in provider separates
 `MEMORY.md` and `USER.md` under one directory — not the four-scope target model.
 
@@ -149,12 +149,12 @@ rg -n 'type MemoryProvider|Initialize\(|type Config struct|MEMORY.md|USER.md|Age
 
 ## Distinguish extension terms
 
-| Term | Meaning |
-| --- | --- |
-| **Plugin** | Removable module with identity, metadata, compatibility, lifecycle. Generic `plugin.Plugin` must remain metadata-only. |
-| **Capability family** | One cohesive typed behavior owned by its domain or approved manager/registry. |
-| **Engine** | Typed, lifecycle-managed capability family with owning Registry or Manager. |
-| **Host** | Current cross-family lifecycle/manifest coordinator in `internal/plugin`. Must not become service locator. |
+| Term                  | Meaning                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Plugin**            | Removable module with identity, metadata, compatibility, lifecycle. Generic `plugin.Plugin` must remain metadata-only. |
+| **Capability family** | One cohesive typed behaviour owned by its domain or approved manager/registry.                                         |
+| **Engine**            | Typed, lifecycle-managed capability family with owning Registry or Manager.                                            |
+| **Host**              | Current cross-family lifecycle/manifest coordinator in `internal/plugin`. Must not become service locator.             |
 
 Give plugin only narrow typed registrars and explicitly supplied contracts.
 
@@ -164,15 +164,15 @@ go test ./internal/plugin -run 'Test(EngineFamilyInspectionRejectsInvalidShapes|
 
 ## Distinguish ownership and boundary terms
 
-| Term | Archie-specific rule |
-| --- | --- |
-| **Domain** | Own one cohesive responsibility: vocabulary, state, rules, operations, commands, events, policies, runtime settings, required service contracts. |
-| **Command** | Request an action. Receiving domain owns contract and decides result. |
-| **Domain event** | Record something that happened. Publishing domain owns schema. |
-| **Event bus** | Broker-neutral delivery/lifecycle contract. `internal/eventbus` exists and is production-wired. |
-| **Observability event** | `internal/events.Event` projection input. Bounded in-process bus may drop. Not authoritative state. |
-| **Policy** | Typed rule evaluated through shared mechanics. Consuming domain owns vocabulary. |
-| **Infrastructure** | Implements domain-owned ports, translates DBs, brokers, SDKs, files, containers. |
+| Term                        | Archie-specific rule                                                                                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Domain**                  | Own one cohesive responsibility: vocabulary, state, rules, operations, commands, events, policies, runtime settings, required service contracts.               |
+| **Command**                 | Request an action. Receiving domain owns contract and decides result.                                                                                          |
+| **Domain event**            | Record something that happened. Publishing domain owns schema.                                                                                                 |
+| **Event bus**               | Broker-neutral delivery/lifecycle contract. `internal/eventbus` exists and is production-wired.                                                                |
+| **Observability event**     | `internal/events.Event` projection input. Bounded in-process bus may drop. Not authoritative state.                                                            |
+| **Policy**                  | Typed rule evaluated through shared mechanics. Consuming domain owns vocabulary.                                                                               |
+| **Infrastructure**          | Implements domain-owned ports, translates DBs, brokers, SDKs, files, containers.                                                                               |
 | **Application composition** | Chooses implementations, translates config, connects contracts, orders startup/shutdown. Current and target: `internal/app`; `cmd/*` stays process-input-only. |
 
 As of 2026-09-18, `internal/domain`, `internal/eventbus`,
@@ -186,54 +186,54 @@ for p in internal/domain internal/eventbus internal/policy internal/infrastructu
 
 ## Distinguish forge, repository, workspace, gate, and agent boundaries
 
-| Term | Owns | Must not own |
-| --- | --- | --- |
-| **Forge** | External code-host ops: issues, comments, labels, PRs, reactions. | Workflow lifecycle, canonical identity, work admission. |
-| **Repository** | External source repo identity and repo-specific policy. | Mutable execution workspace or WorkflowExecution identity. |
-| **Worktree/workspace** | Isolated files, branch, diff, commit, push, cleanup for one execution. | Agent/domain identity or forge issue lifecycle. |
-| **Gate** | Deterministic evidence and constraints over execution. | Prompt advice model may waive. |
-| **Agent execution boundary** | Versioned, validated data entering/leaving one unprivileged stage. | Daemon internals, forge tokens, direct git, workflow orchestration. |
+| Term                         | Owns                                                                   | Must not own                                                        |
+| ---------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Forge**                    | External code-host ops: issues, comments, labels, PRs, reactions.      | Workflow lifecycle, canonical identity, work admission.             |
+| **Repository**               | External source repo identity and repo-specific policy.                | Mutable execution workspace or WorkflowExecution identity.          |
+| **Worktree/workspace**       | Isolated files, branch, diff, commit, push, cleanup for one execution. | Agent/domain identity or forge issue lifecycle.                     |
+| **Gate**                     | Deterministic evidence and constraints over execution.                 | Prompt advice model may waive.                                      |
+| **Agent execution boundary** | Versioned, validated data entering/leaving one unprivileged stage.     | Daemon internals, forge tokens, direct git, workflow orchestration. |
 
 Model never runs git directly. Worktree operations are daemon-owned.
 
-## Map current names before adding or migrating behavior
+## Map current names before adding or migrating behaviour
 
-| Current name/path | Target meaning | Migration warning |
-| --- | --- | --- |
-| `config.IdentityConfig.Name` | Canonical IdentityID plus separate bindings | Do not preserve mutable display name as ID. |
-| `config.IdentityConfig.BotUser` | Forge/Git or channel external binding | Not Conversation or Agent identity. |
-| `daemon.IdentityRunner` | Composition of identity-correlated capabilities | Currently service bundle, not Identity aggregate. |
-| `gateway.MessageEvent` | Canonical Messaging Message | Choose one immutable typed contract; `internal/domain/messaging.Message` is the target. |
-| gateway session context | Conversation metadata | Add canonical Agent/user/binding ownership. |
-| forge `Issue` or future Jira item | Channel message or external artifact | Preserve native reference in adapter. |
-| gateway `/spawn` and `TaskCreator` | Proposed/accepted work handoff | Work Intake admits; Agent System creates execution. |
-| `store.Task` | WorkflowExecution | Preserve every field intentionally; the type now lives at `internal/domain/workflow/task.Task`. |
-| `workflow.Workflow` | Versioned Workflow definition | Add identity/version ownership before parity. |
-| `workflow.Stage` | WorkflowStep definition | A definition is not execution history. |
-| mutable `Task.Stage` | Derived position plus StepExecution records | Deletion requires proven history parity. |
-| `task.Task.Attempt`, `RetryCount` | Attempt history and retry evidence | Keep worker delivery retries distinct. |
-| `workflow.TaskContext` | Execution state plus narrow step ports | Remove global config/service bag. |
-| `events.Event` and `Bus` | Projections fed by authoritative domain events | Current drops acceptable for observability, not state. |
-| `cmd/archied` wiring | `internal/app/archied` composition | Keep `cmd/*` process-input-only. |
-| NATS/RPC/store/forge/worktree | Infrastructure adapters | Process boundaries don't decide domain ownership. |
+| Current name/path                  | Target meaning                                  | Migration warning                                                                               |
+| ---------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `config.IdentityConfig.Name`       | Canonical IdentityID plus separate bindings     | Do not preserve mutable display name as ID.                                                     |
+| `config.IdentityConfig.BotUser`    | Forge/Git or channel external binding           | Not Conversation or Agent identity.                                                             |
+| `daemon.IdentityRunner`            | Composition of identity-correlated capabilities | Currently service bundle, not Identity aggregate.                                               |
+| `gateway.MessageEvent`             | Canonical Messaging Message                     | Choose one immutable typed contract; `internal/domain/messaging.Message` is the target.         |
+| gateway session context            | Conversation metadata                           | Add canonical Agent/user/binding ownership.                                                     |
+| forge `Issue` or future Jira item  | Channel message or external artifact            | Preserve native reference in adapter.                                                           |
+| gateway `/spawn` and `TaskCreator` | Proposed/accepted work handoff                  | Work Intake admits; Agent System creates execution.                                             |
+| `store.Task`                       | WorkflowExecution                               | Preserve every field intentionally; the type now lives at `internal/domain/workflow/task.Task`. |
+| `workflow.Workflow`                | Versioned Workflow definition                   | Add identity/version ownership before parity.                                                   |
+| `workflow.Stage`                   | WorkflowStep definition                         | A definition is not execution history.                                                          |
+| mutable `Task.Stage`               | Derived position plus StepExecution records     | Deletion requires proven history parity.                                                        |
+| `task.Task.Attempt`, `RetryCount`  | Attempt history and retry evidence              | Keep worker delivery retries distinct.                                                          |
+| `workflow.TaskContext`             | Execution state plus narrow step ports          | Remove global config/service bag.                                                               |
+| `events.Event` and `Bus`           | Projections fed by authoritative domain events  | Current drops acceptable for observability, not state.                                          |
+| `cmd/archied` wiring               | `internal/app/archied` composition              | Keep `cmd/*` process-input-only.                                                                |
+| NATS/RPC/store/forge/worktree      | Infrastructure adapters                         | Process boundaries don't decide domain ownership.                                               |
 
 `migration-decisions.md` leaves memory, tools, workspaces, gates, storage,
 events, web UI, containers, RPC, release management, scheduling pending.
 
-## Recognize terminology-driven bugs
+## Recognise terminology-driven bugs
 
-| Incorrect shortcut | Resulting bug |
-| --- | --- |
-| "A forge issue is a Task" | Chat needs synthetic issues; uniqueness/dedup stay forge-shaped. |
-| "Agent and Identity are same config object" | Model/persona changes alter attribution; mutable string equality becomes access control. |
-| "Every Message is work" | Conversational turns forced through durable workflow lifecycle. |
-| "Accepted request is already a WorkflowExecution" | Intake bypasses version selection and constructs invalid state. |
-| "Stage is StepExecution" | Overwriting one string destroys step outcomes and audit history. |
-| "NATS retry is another Attempt" | Transport availability changes domain retry counts. |
-| "Event bus owns events" | Broker subjects become domain vocabulary; meaning drifts by consumer. |
-| "Branch is a memory scope" | Returning to parent hides/duplicates durable learning. |
-| "Engine means another generic plugin hook" | Capability ownership becomes untyped; plugins gain service-locator access. |
-| "Configuration owns the feature" | Cross-concern config becomes de facto domain. |
+| Incorrect shortcut                                | Resulting bug                                                                            |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| "A forge issue is a Task"                         | Chat needs synthetic issues; uniqueness/dedup stay forge-shaped.                         |
+| "Agent and Identity are same config object"       | Model/persona changes alter attribution; mutable string equality becomes access control. |
+| "Every Message is work"                           | Conversational turns forced through durable workflow lifecycle.                          |
+| "Accepted request is already a WorkflowExecution" | Intake bypasses version selection and constructs invalid state.                          |
+| "Stage is StepExecution"                          | Overwriting one string destroys step outcomes and audit history.                         |
+| "NATS retry is another Attempt"                   | Transport availability changes domain retry counts.                                      |
+| "Event bus owns events"                           | Broker subjects become domain vocabulary; meaning drifts by consumer.                    |
+| "Branch is a memory scope"                        | Returning to parent hides/duplicates durable learning.                                   |
+| "Engine means another generic plugin hook"        | Capability ownership becomes untyped; plugins gain service-locator access.               |
+| "Configuration owns the feature"                  | Cross-concern config becomes de facto domain.                                            |
 
 Reject in review: a second parallel model without bounded cutover; status string
 copied into consumer; mutable display name as durable ID; service bag passed

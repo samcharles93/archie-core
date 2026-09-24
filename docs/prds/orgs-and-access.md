@@ -29,17 +29,18 @@ by the policies over it, never by the event that started it.
   Signing in and verifying credentials stay separate from identity; identity
   is who acts. Memberships, roles, grants and audit records all reference the
   identity ID.
+
 - **Instance admin.** Operates the installation: orgs, the sign-in provider,
   instance policies. Instance admins see an org's resources only as members
   of it.
 
 ## What belongs where
 
-| Level | Owns |
-|---|---|
-| Instance | the shipped workflow catalogue, instance policies |
-| Org | members, identities and their grants, secrets, agent profiles, workspaces, org workflows and their enabled state |
-| Workspace | sources, event types, mappings, bindings, runs, captures, run events and logs, chat sessions, memory |
+| Level     | Owns                                                                                                             |
+| --------- | ---------------------------------------------------------------------------------------------------------------- |
+| Instance  | the shipped workflow catalogue, instance policies                                                                |
+| Org       | members, identities and their grants, secrets, agent profiles, workspaces, org workflows and their enabled state |
+| Workspace | sources, event types, mappings, bindings, runs, captures, run events and logs, chat sessions, memory             |
 
 Every owned record carries its `org_id`, and workspace records also carry their
 `workspace_id`. An identity, secret or profile is used in a workspace only
@@ -112,12 +113,12 @@ instance (+ network rules) ─▶ org ─▶ workspace ─▶ identity + workflo
 Archie ships these org roles as policies. A member may hold a different role in
 each workspace.
 
-| Role | Can |
-|---|---|
-| Owner | everything in the org, including members, identities, policies and deleting the org |
-| Admin | everything except deleting the org and changing owners |
-| Developer | create and edit workspace resources and org workflows; run workflows; read logs |
-| Viewer | read everything except secret values |
+| Role      | Can                                                                                 |
+| --------- | ----------------------------------------------------------------------------------- |
+| Owner     | everything in the org, including members, identities, policies and deleting the org |
+| Admin     | everything except deleting the org and changing owners                              |
+| Developer | create and edit workspace resources and org workflows; run workflows; read logs     |
+| Viewer    | read everything except secret values                                                |
 
 ### Approvals
 

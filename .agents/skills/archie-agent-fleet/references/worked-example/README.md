@@ -15,15 +15,15 @@ parent `archie-agent-fleet` skill. A run in another repository uses that skill's
 
 ## Files
 
-| File | What it is |
-|------|------------|
-| `00-orchestrator.md` | The prompt you give pi. It owns the waves, the ceilings and the verification rules. |
-| *(the scripts)* | This run's `wave0.js`, `wave2.js`, `review.js` and `gate-evidence.sh` are **not copied here**: they live on as `templates/recon.js`, `templates/lanes.js`, `templates/review.js` and `scripts/gate-evidence.sh` under `~/.agents/skills/high-throughput-programming/`, which are normative. The snapshot's copies were stale, so they were deleted rather than duplicated. |
-| `lanes.json` | Lane definitions: worktree paths, branches, beads, scoped test commands, briefs. Fill in the model id. |
-| `prompts/wave1.md` | fwmp shape-first writer, and the xrux verdict probe. |
-| `prompts/wave4-merge-train.md` | The serial merge procedure and the landing checks. |
-| `prompts/wave5-eju6.md` | The end-to-end restart test. |
-| `agents/cp-recon.md`, `agents/cp-writer.md`, `agents/cp-reviewer.md` | Project-scope agent definitions, as the run used them from `.pi/agents/`; these committed copies sit beside this file. |
+| File                                                                 | What it is                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-orchestrator.md`                                                 | The prompt you give pi. It owns the waves, the ceilings and the verification rules.                                                                                                                                                                                                                                                                                        |
+| _(the scripts)_                                                      | This run's `wave0.js`, `wave2.js`, `review.js` and `gate-evidence.sh` are **not copied here**: they live on as `templates/recon.js`, `templates/lanes.js`, `templates/review.js` and `scripts/gate-evidence.sh` under `~/.agents/skills/high-throughput-programming/`, which are normative. The snapshot's copies were stale, so they were deleted rather than duplicated. |
+| `lanes.json`                                                         | Lane definitions: worktree paths, branches, beads, scoped test commands, briefs. Fill in the model id.                                                                                                                                                                                                                                                                     |
+| `prompts/wave1.md`                                                   | fwmp shape-first writer, and the xrux verdict probe.                                                                                                                                                                                                                                                                                                                       |
+| `prompts/wave4-merge-train.md`                                       | The serial merge procedure and the landing checks.                                                                                                                                                                                                                                                                                                                         |
+| `prompts/wave5-eju6.md`                                              | The end-to-end restart test.                                                                                                                                                                                                                                                                                                                                               |
+| `agents/cp-recon.md`, `agents/cp-writer.md`, `agents/cp-reviewer.md` | Project-scope agent definitions, as the run used them from `.pi/agents/`; these committed copies sit beside this file.                                                                                                                                                                                                                                                     |
 
 ## Start it
 
@@ -94,7 +94,7 @@ writers here. Two limits bite first:
    that has to land alone first. Five workers each adding a field to one struct
    cost eight cleanup commits on this repo in July.
 2. **The machine.** 16 cores, 117 Go packages, and `task check` also runs the
-   dashboard tests. One full gate saturates the host, so the gate is serialized
+   dashboard tests. One full gate saturates the host, so the gate is serialised
    into the merge train and writers run package-scoped tests.
 
 The throughput comes from recon and review: 25 recon children, then a review

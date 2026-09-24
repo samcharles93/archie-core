@@ -33,8 +33,8 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
 ## Decision documents
 
-| Scope                                                                                         | Authoritative document                                                                   |
-| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Scope                                                                                         | Authoritative document                                                                      |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Repository layout, domains, composition, deployments, and optional material                   | [architecture/organisation.md](../architecture/organisation.md)                             |
 | Dependency direction, domain contracts, infrastructure, commands, events, and wire contracts  | [architecture/dependencies-and-contracts.md](../architecture/dependencies-and-contracts.md) |
 | External configuration, runtime settings, and dissolution of `internal/config`                | [architecture/configuration.md](../architecture/configuration.md)                           |

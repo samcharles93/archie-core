@@ -11,7 +11,8 @@
 /** How the generic renderer decides what control a field gets. A structured
  * field (repositories, models, providers) is owned by its own editor and
  * never appears in a generic row. */
-export type ConfigFieldType = "string" | "int" | "bool" | "duration" | "enum" | "structured";
+export type ConfigFieldType =
+  "string" | "int" | "bool" | "duration" | "enum" | "structured";
 
 export interface ConfigField {
   /** The dotted path this value lives at in the running config. */

@@ -9,13 +9,20 @@ const snapshot = await import("../src/lib/task-meta-snapshot.ts");
 // first-paint snapshot against it means a one-sided rename of any vocabulary
 // fails on whichever side was not updated.
 const fixture = JSON.parse(
-  await readFile(new URL("../../internal/webui/testdata/task_meta.json", import.meta.url), "utf8"),
+  await readFile(
+    new URL("../../internal/webui/testdata/task_meta.json", import.meta.url),
+    "utf8",
+  ),
 );
 
 // The server emits an unset optional field (needs_you, confirm) as its zero
 // value; the snapshot omits it.
 const dropZero = (rows: Record<string, unknown>[]) =>
-  rows.map((row) => Object.fromEntries(Object.entries(row).filter(([, v]) => v !== false && v !== "")));
+  rows.map((row) =>
+    Object.fromEntries(
+      Object.entries(row).filter(([, v]) => v !== false && v !== ""),
+    ),
+  );
 
 test("the status snapshot matches the served catalog", () => {
   assert.deepEqual(snapshot.DEFAULT_STATUSES, dropZero(fixture.statuses));

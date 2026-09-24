@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { groupActivity, groupKey } = await import("../src/dashboard/activity-group.ts");
+const { groupActivity, groupKey } =
+  await import("../src/dashboard/activity-group.ts");
 
 import type { ActivityEvent } from "../src/dashboard/state.ts";
 
-function ev(kind: string, taskID: number | undefined, detail: string, at = 1000): ActivityEvent {
+function ev(
+  kind: string,
+  taskID: number | undefined,
+  detail: string,
+  at = 1000,
+): ActivityEvent {
   return { kind, task_id: taskID, detail, at };
 }
 

@@ -23,9 +23,13 @@ export interface LoadFailure {
 }
 
 function failureFor(err: unknown): LoadFailure {
-  const message = err instanceof Error && err.message ? err.message : String(err);
+  const message =
+    err instanceof Error && err.message ? err.message : String(err);
   const status = err instanceof ApiError ? err.status : undefined;
-  return { kind: status === 501 || status === 503 ? "unconfigured" : "failed", message };
+  return {
+    kind: status === 501 || status === 503 ? "unconfigured" : "failed",
+    message,
+  };
 }
 
 /**
@@ -87,7 +91,8 @@ export function useBindings() {
       await load();
       return true;
     } catch (err) {
-      saveFailure.value = err instanceof Error && err.message ? err.message : String(err);
+      saveFailure.value =
+        err instanceof Error && err.message ? err.message : String(err);
       return false;
     } finally {
       saving.value = false;

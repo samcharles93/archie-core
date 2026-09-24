@@ -2,9 +2,21 @@
 import { Inbox, TriangleAlert } from "@lucide/vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import CaptureRow from "./CaptureRow.vue";
 import { captures, enabled, error, loading } from "./state";
 
@@ -17,7 +29,8 @@ import { captures, enabled, error, loading } from "./state";
 // The receiver's path, held as a string rather than typed into the template:
 // its source segment is angle-bracketed, which a template parser reads as a
 // tag.
-const webhookHint = "Point a webhook at /webhooks/capture/<source> and it will show up here.";
+const webhookHint =
+  "Point a webhook at /webhooks/capture/<source> and it will show up here.";
 </script>
 
 <template>
@@ -59,7 +72,11 @@ const webhookHint = "Point a webhook at /webhooks/capture/<source> and it will s
       </TableRow>
     </TableHeader>
     <TableBody>
-      <CaptureRow v-for="capture in captures" :key="capture.id" :capture="capture" />
+      <CaptureRow
+        v-for="capture in captures"
+        :key="capture.id"
+        :capture="capture"
+      />
     </TableBody>
   </Table>
 </template>

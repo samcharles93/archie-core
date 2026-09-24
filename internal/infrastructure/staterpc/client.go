@@ -288,9 +288,6 @@ func (c *Client) InsertCapture(ctx context.Context, ce storecontract.CapturedEve
 	return r.Id, nil
 }
 
-// ListCaptures calls StreamCaptures, not the deprecated unary ListCaptures
-// RPC: a batch of large capture bodies in one unary response can exceed
-// gRPC's 4MiB message cap (docs/prds/state-store-contract.md).
 // PutConfigSnapshot publishes the dashboard's configuration projection. The
 // server admits it on the administrative token only; a task-scoped grant
 // cannot reach it (see TaskGrants).
@@ -360,6 +357,8 @@ func (c *Client) ListApplyStatus(ctx context.Context) ([]storecontract.ApplyStat
 	return statuses, nil
 }
 
+// ListCaptures streams one capture per message; see StreamCaptures in
+// server.go.
 func (c *Client) ListCaptures(ctx context.Context, limit int) ([]storecontract.CapturedEvent, error) {
 	stream, err := c.client.StreamCaptures(ctx, &pb.StreamCapturesRequest{Limit: int64(limit)})
 	if err != nil {
@@ -532,8 +531,7 @@ func (c *Client) DeletePlaybookDispatches(ctx context.Context, playbookID string
 	return unmapError(err)
 }
 
-// ListUndispatchedCaptures calls StreamUndispatchedCaptures; see ListCaptures
-// above.
+// ListUndispatchedCaptures streams for the same reason as ListCaptures.
 func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storecontract.CapturedEvent, error) {
 	stream, err := c.client.StreamUndispatchedCaptures(ctx, &pb.StreamUndispatchedCapturesRequest{Sources: sources, Limit: int64(limit)})
 	if err != nil {

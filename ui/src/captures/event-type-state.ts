@@ -2,7 +2,13 @@ import { ref } from "vue";
 
 import { api } from "@/lib/api";
 import { captures } from "./state";
-import { cleanRule, parseHeaderLines, type EventType, type Proposal, type Rule } from "./event-types";
+import {
+  cleanRule,
+  parseHeaderLines,
+  type EventType,
+  type Proposal,
+  type Rule,
+} from "./event-types";
 
 /**
  * The inspector's event types: the named ones, and the groups of unidentified
@@ -78,11 +84,29 @@ export function nameProposal(p: Proposal): void {
 }
 
 export function pasteExample(source = ""): void {
-  open({ mode: "paste", id: null, source, name: "", rule: { headers: [], payload: [] }, headersText: "", body: "", exampleHeaders: {} });
+  open({
+    mode: "paste",
+    id: null,
+    source,
+    name: "",
+    rule: { headers: [], payload: [] },
+    headersText: "",
+    body: "",
+    exampleHeaders: {},
+  });
 }
 
 export function editEventType(t: EventType): void {
-  open({ mode: "edit", id: t.id, source: t.source, name: t.name, rule: copyRule(t.rule), headersText: "", body: "", exampleHeaders: {} });
+  open({
+    mode: "edit",
+    id: t.id,
+    source: t.source,
+    name: t.name,
+    rule: copyRule(t.rule),
+    headersText: "",
+    body: "",
+    exampleHeaders: {},
+  });
 }
 
 export function closeDraft(): void {
@@ -95,9 +119,13 @@ export async function saveDraft(): Promise<void> {
   saving.value = true;
   try {
     if (d.mode === "edit" && d.id) {
-      await api.eventTypeUpdate(d.id, { name: d.name, rule: cleanRule(d.rule) });
+      await api.eventTypeUpdate(d.id, {
+        name: d.name,
+        rule: cleanRule(d.rule),
+      });
     } else {
-      const headers = d.mode === "paste" ? parseHeaderLines(d.headersText) : d.exampleHeaders;
+      const headers =
+        d.mode === "paste" ? parseHeaderLines(d.headersText) : d.exampleHeaders;
       await api.eventTypeCreate({
         source: d.source,
         name: d.name,

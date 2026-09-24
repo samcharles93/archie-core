@@ -40,10 +40,18 @@ const when = computed(() => (props.event.at ? ago(props.event.at) : "\u2014"));
     @keydown.enter.prevent="open"
     @keydown.space.prevent="open"
   >
-    <TableCell class="font-medium">{{ props.event.kind || props.event.type || "event" }}</TableCell>
-    <TableCell class="font-mono">{{ taskID > 0 ? `#${taskID}` : "—" }}</TableCell>
+    <TableCell class="font-medium">{{
+      props.event.kind || props.event.type || "event"
+    }}</TableCell>
+    <TableCell class="font-mono">{{
+      taskID > 0 ? `#${taskID}` : "—"
+    }}</TableCell>
     <TableCell class="w-[55%] max-w-0">
-      <span class="block truncate" :title="detail.truncated ? detail.full : undefined">{{ detail.text }}</span>
+      <span
+        class="block truncate"
+        :title="detail.truncated ? detail.full : undefined"
+        >{{ detail.text }}</span
+      >
     </TableCell>
     <TableCell>{{ when }}</TableCell>
   </TableRow>

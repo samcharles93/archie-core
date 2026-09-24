@@ -21,10 +21,10 @@ contributor material with no signal that it is not for them.
 
 One source tree, two published sets, two artifacts, two URL bases.
 
-| Set | Holds | Served under | Artifact |
-|---|---|---|---|
-| Public | `index.md`, `guides/` | `/docs/` | `docs/data/generated/docs.json` |
-| Development | `architecture/`, `prds/` | `/dev/` | `docs/data/generated/dev-docs.json` |
+| Set         | Holds                    | Served under | Artifact                            |
+| ----------- | ------------------------ | ------------ | ----------------------------------- |
+| Public      | `index.md`, `guides/`    | `/docs/`     | `docs/data/generated/docs.json`     |
+| Development | `architecture/`, `prds/` | `/dev/`      | `docs/data/generated/dev-docs.json` |
 
 `archive/`, `inspiration/`, `news/` and `github-token.md` stay out of both, for
 the reasons the generator already records.

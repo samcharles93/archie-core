@@ -55,7 +55,11 @@ export function workflowRows(
     claimed.add(definition.id);
     rows.push({
       ...definition,
-      ...(stats.get(definition.id) || { workflow: definition.id, runs: 0, merged: 0 }),
+      ...(stats.get(definition.id) || {
+        workflow: definition.id,
+        runs: 0,
+        merged: 0,
+      }),
     });
   }
 

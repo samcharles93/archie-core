@@ -20,6 +20,11 @@ export function sectionRows(section: ConfigSection): ConfigField[] {
 }
 
 /** sectionsFor returns the sections this page renders, in catalog order. */
-export function sectionsFor(schema: ConfigSection[] | undefined, ids: string[]): ConfigSection[] {
-  return (schema ?? []).filter((s) => ids.includes(s.id) && sectionRows(s).length > 0);
+export function sectionsFor(
+  schema: ConfigSection[] | undefined,
+  ids: string[],
+): ConfigSection[] {
+  return (schema ?? []).filter(
+    (s) => ids.includes(s.id) && sectionRows(s).length > 0,
+  );
 }

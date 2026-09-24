@@ -16,7 +16,9 @@ export function slowestStages(stages: StageStats[]): StageStats[] {
 /** Only the stages that have failed, and by how much. A stage that has never
  * errored is not a zero-length row here, it is absent. */
 export function failingStages(stages: StageStats[]): StageStats[] {
-  return [...stages].filter((s) => s.errors > 0).sort((a, b) => b.errors - a.errors);
+  return [...stages]
+    .filter((s) => s.errors > 0)
+    .sort((a, b) => b.errors - a.errors);
 }
 
 /** The largest duration in the set, used to scale the bars. */

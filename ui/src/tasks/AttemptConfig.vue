@@ -33,7 +33,10 @@ const recognised = computed(() => schema.value === configSchema());
 </script>
 
 <template>
-  <PanelLoading v-if="events === undefined" label="Loading this task's events…" />
+  <PanelLoading
+    v-if="events === undefined"
+    label="Loading this task's events…"
+  />
   <PanelError
     v-else-if="events === null"
     title="Could not load this task's events"
@@ -53,7 +56,9 @@ const recognised = computed(() => schema.value === configSchema());
     </div>
     <JsonBlock v-if="recognised" :value="document" />
     <template v-else>
-      <p class="mb-2 text-sm text-warn">Unknown schema{{ schema ? ` (${schema})` : "" }} — shown verbatim.</p>
+      <p class="mb-2 text-sm text-warn">
+        Unknown schema{{ schema ? ` (${schema})` : "" }} — shown verbatim.
+      </p>
       <JsonBlock :value="event.data" />
     </template>
   </div>

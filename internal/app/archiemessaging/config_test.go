@@ -48,7 +48,7 @@ target = "127.0.0.1:8999"
 target_token = "tok-123"
 
 [chat.telegram]
-token_env = "TEST_TG_TOKEN"
+token = { engine = "env", key = "TEST_TG_TOKEN" }
 allowed_user_ids = [12345]
 `
 	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {

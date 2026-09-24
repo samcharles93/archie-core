@@ -21,24 +21,48 @@ const prNumber = computed(() => props.capture.pr_number);
   <section>
     <div class="flex flex-wrap items-baseline justify-between gap-3">
       <span class="text-sm font-medium">
-        {{ capture.captured_after ? `Captured after ${capture.captured_after}` : "Captured"
+        {{
+          capture.captured_after
+            ? `Captured after ${capture.captured_after}`
+            : "Captured"
         }}<span v-if="capture.stage"> in stage {{ capture.stage }}</span>
       </span>
-      <span class="text-xs text-fg-muted">{{ capture.captured_at ? ago(capture.captured_at) : "" }}</span>
+      <span class="text-xs text-fg-muted">{{
+        capture.captured_at ? ago(capture.captured_at) : ""
+      }}</span>
     </div>
-    <div class="mt-2 mb-3 flex flex-wrap items-center gap-3 text-xs text-fg-muted">
+    <div
+      class="mt-2 mb-3 flex flex-wrap items-center gap-3 text-xs text-fg-muted"
+    >
       <span class="font-mono">
-        <a v-if="links.repo" class="text-link hover:underline" :href="links.repo" target="_blank" rel="noreferrer">
+        <a
+          v-if="links.repo"
+          class="text-link hover:underline"
+          :href="links.repo"
+          target="_blank"
+          rel="noreferrer"
+        >
           {{ capture.owner }}/{{ capture.repo }}
         </a>
-        <template v-else>{{ capture.owner || "" }}/{{ capture.repo || "" }}</template>
+        <template v-else
+          >{{ capture.owner || "" }}/{{ capture.repo || "" }}</template
+        >
       </span>
       <span v-if="capture.branch" class="font-mono">
-        {{ capture.branch }}<span v-if="capture.base"> → {{ capture.base }}</span>
+        {{ capture.branch
+        }}<span v-if="capture.base"> → {{ capture.base }}</span>
       </span>
-      <span v-if="capture.head_sha" class="font-mono">{{ String(capture.head_sha).slice(0, 8) }}</span>
+      <span v-if="capture.head_sha" class="font-mono">{{
+        String(capture.head_sha).slice(0, 8)
+      }}</span>
       <template v-if="prNumber">
-        <a v-if="links.pr" class="text-link hover:underline" :href="links.pr" target="_blank" rel="noreferrer">
+        <a
+          v-if="links.pr"
+          class="text-link hover:underline"
+          :href="links.pr"
+          target="_blank"
+          rel="noreferrer"
+        >
           PR #{{ prNumber }}
         </a>
         <span v-else class="font-mono">PR #{{ prNumber }}</span>

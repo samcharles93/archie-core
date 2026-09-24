@@ -2,10 +2,23 @@
 import { computed, ref, watchEffect } from "vue";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { workflowLabel } from "./labels";
@@ -35,7 +48,8 @@ const notice = ref("");
 // The definitions arrive after the first render, so the default can only be
 // applied once they do.
 watchEffect(() => {
-  if (!workflow.value && defaultWorkflow.value) workflow.value = defaultWorkflow.value;
+  if (!workflow.value && defaultWorkflow.value)
+    workflow.value = defaultWorkflow.value;
 });
 
 async function submit() {
@@ -67,7 +81,9 @@ async function submit() {
   <Card class="mb-4">
     <CardHeader>
       <CardTitle>Start work</CardTitle>
-      <CardDescription>This enters Archie's normal admitted task queue.</CardDescription>
+      <CardDescription
+        >This enters Archie's normal admitted task queue.</CardDescription
+      >
     </CardHeader>
     <CardContent>
       <form @submit.prevent="submit">
@@ -78,7 +94,12 @@ async function submit() {
           </Field>
           <Field>
             <FieldLabel for="wf-repository">Repository</FieldLabel>
-            <Input id="wf-repository" v-model="repository" placeholder="owner/repository" required />
+            <Input
+              id="wf-repository"
+              v-model="repository"
+              placeholder="owner/repository"
+              required
+            />
           </Field>
           <Field>
             <FieldLabel for="wf-workflow">Workflow</FieldLabel>
@@ -101,7 +122,12 @@ async function submit() {
           </Field>
           <Field>
             <FieldLabel for="wf-instructions">Instructions</FieldLabel>
-            <Textarea id="wf-instructions" v-model="instructions" :rows="3" required />
+            <Textarea
+              id="wf-instructions"
+              v-model="instructions"
+              :rows="3"
+              required
+            />
           </Field>
           <Field orientation="horizontal">
             <Button type="submit" :disabled="submitting">Start work</Button>

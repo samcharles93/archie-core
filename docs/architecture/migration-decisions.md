@@ -114,7 +114,7 @@ memory, curator, workflow, forge, and Gateway runtime values. The target owner
 is a standalone UI application process; `internal/webui` remains its HTTP
 transport adapter, while Gateway, State Store, configuration, Work Intake,
 Messaging, and other capability owners expose the contracts behind those
-routes. The migration preserves retained route schemas, auth/CSRF behavior,
+routes. The migration preserves retained route schemas, auth/CSRF behaviour,
 task/capture/mapping/binding/session continuity, SSE replay semantics, and
 committed generated SPA assets. Prerequisites are the ratified UI boundary,
 route-owner inventory, narrow remote adapters, configuration/auth/readiness
@@ -200,16 +200,16 @@ hold no direct database handles, daemon state, or model runtimes.
 satisfy from its own process. Each is resolved by where the fact it needs is
 actually owned, not by where it used to be built:
 
-| Seam | Resolution |
-|---|---|
-| `Version` | Sourced from the Gateway via `ChatSnapshot.Version`. The Messaging Service never stamps or infers a build version; `cmd/archie-messaging` deliberately takes no version ldflags, so it cannot report a partial upgrade as a matched one. |
-| `Updates` (`/update`) | Built in the Messaging Service from `[chat.telegram].update_check_command` / `update_install_command` — its own configuration. `Enrich` is dropped: `componentInstallTypeEnricher` reads `[nats]`, which this service must not decode, so the check command's own reported install type stands unmodified. |
-| `UpdateReportPath` | A local state file under `work_dir`, keyed by the same `sha256(bot_user)[:8]` scheme the daemon used, so a pending report is found rather than written afresh. |
-| `ReleaseAnnouncements` | **Deliberately left nil**, for the same reason as `RunningVersions`. `releaseannounce.Announcer` announces nothing unless each `Component` carries a parseable version, and the only versions this service can obtain are the Gateway's own build stamps, not archied's. Wiring the announcer without them yields a no-op that reads as configured, so it stays unwired until component self-reporting exists. |
-| `SetShowToolCalls` | Projected from `[chat].show_tool_calls`. |
-| `Reload` | Local: re-resolves the token and allowlist from this service's own config file and overlay. Reload was never a daemon fact. |
-| `RunningVersions` | **Deliberately left nil.** It exists to turn an installer's claim into a checked one, and only a component's own compiled-in build can vouch for it. The Messaging Service knows neither archied's build nor the observed archie-agent version (`daemon.AgentStatus`), and the Gateway's own `gatewayVersion` is a different binary's stamp — reporting it as the daemon's would manufacture exactly the false success the check exists to catch. Update reports therefore relay as unverified claims until a component self-report contract exists. |
-| `Dangerous` | Stays nil. No daemon composition ever set it; `/rollback` and `/stop` reported "not configured" before the extraction and still do. |
+| Seam                   | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Version`              | Sourced from the Gateway via `ChatSnapshot.Version`. The Messaging Service never stamps or infers a build version; `cmd/archie-messaging` deliberately takes no version ldflags, so it cannot report a partial upgrade as a matched one.                                                                                                                                                                                                                                                                                                             |
+| `Updates` (`/update`)  | Built in the Messaging Service from `[chat.telegram].update_check_command` / `update_install_command` — its own configuration. `Enrich` is dropped: `componentInstallTypeEnricher` reads `[nats]`, which this service must not decode, so the check command's own reported install type stands unmodified.                                                                                                                                                                                                                                           |
+| `UpdateReportPath`     | A local state file under `work_dir`, keyed by the same `sha256(bot_user)[:8]` scheme the daemon used, so a pending report is found rather than written afresh.                                                                                                                                                                                                                                                                                                                                                                                       |
+| `ReleaseAnnouncements` | **Deliberately left nil**, for the same reason as `RunningVersions`. `releaseannounce.Announcer` announces nothing unless each `Component` carries a parseable version, and the only versions this service can obtain are the Gateway's own build stamps, not archied's. Wiring the announcer without them yields a no-op that reads as configured, so it stays unwired until component self-reporting exists.                                                                                                                                       |
+| `SetShowToolCalls`     | Projected from `[chat].show_tool_calls`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `Reload`               | Local: re-resolves the token and allowlist from this service's own config file and overlay. Reload was never a daemon fact.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `RunningVersions`      | **Deliberately left nil.** It exists to turn an installer's claim into a checked one, and only a component's own compiled-in build can vouch for it. The Messaging Service knows neither archied's build nor the observed archie-agent version (`daemon.AgentStatus`), and the Gateway's own `gatewayVersion` is a different binary's stamp — reporting it as the daemon's would manufacture exactly the false success the check exists to catch. Update reports therefore relay as unverified claims until a component self-report contract exists. |
+| `Dangerous`            | Stays nil. No daemon composition ever set it; `/rollback` and `/stop` reported "not configured" before the extraction and still do.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 The Messaging Service consequently reads `work_dir`, `bot_user`, `[chat]` and
 `[health]` in addition to the PRD's `[chat.*]` / `[services.gateway]` list.
@@ -223,15 +223,15 @@ pass today. `cmd/archie-messaging/architecture_test.go` does not exist, and the
 check that section specifies -- `go list -deps ./cmd/archie-messaging` links
 zero banned runtime packages -- reported four at the time (the task store was
 then `internal/store` over `modernc.org/sqlite`; the gate now bans
-`modernc.org/sqlite`, `github.com/jackc/pgx`, `internal/infrastructure/postgres`
-and `internal/infrastructure/legacyread` in its place):
+`modernc.org/sqlite`, `github.com/jackc/pgx` and
+`internal/infrastructure/postgres` in its place):
 
-| banned package | PRD category |
-| --- | --- |
-| `modernc.org/sqlite` | State Store |
-| `internal/store` | State Store |
-| `internal/domain/workflow` | Workflow engine |
-| `internal/agentexec` | Workflow engine, via `internal/domain/workflow/agent.go` |
+| banned package             | PRD category                                             |
+| -------------------------- | -------------------------------------------------------- |
+| `modernc.org/sqlite`       | State Store                                              |
+| `internal/store`           | State Store                                              |
+| `internal/domain/workflow` | Workflow engine                                          |
+| `internal/agentexec`       | Workflow engine, via `internal/domain/workflow/agent.go` |
 
 All four arrive through one import: `internal/app/archiemessaging/run.go`
 imports `internal/app/controlplane`, whose own dependency set is exactly those
@@ -294,7 +294,7 @@ originally left are answered, in both cases by measuring rather than by preferen
 
 - The client did NOT become two packages. `WatchWorkflowExecutionSettings` and
   `WatchPersonas` stayed on `internal/app/controlplane`'s `Client`, which now
-  *embeds* the new one, so the daemon's validated watch is still defined once and
+  _embeds_ the new one, so the daemon's validated watch is still defined once and
   the read path still has one implementation -- which is what the second package
   was for -- with one fewer package to keep in step.
 - The schedules and workflow documents stayed put, and
@@ -473,7 +473,7 @@ memory model in general or a future non-file engine's model:
   sidesteps collisions from identities that differ only in characters a
   filesystem treats as equivalent.
 - **Record ID:** assigned once at `Write`, independent of content, so a later
-  edit elsewhere in the file can never orphan a `Forget`. Realized as a
+  edit elsewhere in the file can never orphan a `Forget`. Realised as a
   leading marker line (`<!--mem:<ulid>-->`) on the block `builtin.Store.Add`
   writes; `Query`/`List` strip it back out of `Record.Content` before
   returning, and `Forget(id)` locates the block by that unique marker via the
@@ -561,7 +561,7 @@ Store contracts and does not receive `config.Holder`, daemon pointers, SQL or
 store implementations, workflow registries, forge/channel/model runtimes, or
 resolved secrets. The current `internal/webui` implementation remains inside
 `archied` until the ratified migration gates prove route parity, adapter
-selection, failure/readiness behavior, and deletion of the shared-holder and
+selection, failure/readiness behaviour, and deletion of the shared-holder and
 direct-access paths. The extraction cutover removes the in-process UI
 listener in the same change; there is no dual-live UI authority.
 
@@ -708,12 +708,11 @@ These shared mechanisms do not acquire ownership of domain meaning. Domains
 continue to own their commands, events, policies, settings, and consequences.
 
 The Go documentation generator, its output placement, and drift checking are
-defined in `generated-documentation.md`. The VitePress site and its Pages
-deployment were removed on 2026-09-12 as an unnecessary build step; `docs/` is
-repository documentation only. The rendering and publishing surface is an open
-decision, and so are the renderer's page templates and any developer commands
-or CI sequence that would accompany one. Adapting the generator and implementing
-Archie's normalized documentation model remain migration work rather than open
+defined in `generated-documentation.md`. The external Astro website consumes
+the committed documentation and release JSON artifacts and serves them under
+`offloaded.dev/docs/`. This repository owns the source and artifact checks; the
+website repository owns rendering and deployment. The generators and
+Archie's normalised documentation model remain migration work rather than open
 product architecture.
 
 **Amended 2026-09-15.** `internal/infrastructure/servicediscovery/nats`
@@ -741,7 +740,6 @@ The final migration plan must order:
 
 Each legacy package requires objective removal criteria. No compatibility path
 may become an indefinite second implementation.
-
 
 ## Completion criteria
 

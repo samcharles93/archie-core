@@ -2,7 +2,14 @@
 import { computed } from "vue";
 
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { statusList } from "@/lib/task-meta";
 
 /**
@@ -25,7 +32,10 @@ const emit = defineEmits<{
 const selected = computed(() => props.status || ALL_STATUSES);
 
 function selectStatus(value: unknown) {
-  emit("update:status", typeof value === "string" && value !== ALL_STATUSES ? value : "");
+  emit(
+    "update:status",
+    typeof value === "string" && value !== ALL_STATUSES ? value : "",
+  );
 }
 </script>
 
@@ -40,14 +50,21 @@ function selectStatus(value: unknown) {
       @update:model-value="emit('update:search', String($event))"
     />
     <Select :model-value="selected" @update:model-value="selectStatus">
-      <SelectTrigger aria-label="Filter by status" class="w-45 max-[480px]:w-full">
+      <SelectTrigger
+        aria-label="Filter by status"
+        class="w-45 max-[480px]:w-full"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
           <SelectItem :value="ALL_STATUSES">All statuses</SelectItem>
           <SelectItem value="needs_you">Needs you</SelectItem>
-          <SelectItem v-for="entry in statusList()" :key="entry.id" :value="entry.id">
+          <SelectItem
+            v-for="entry in statusList()"
+            :key="entry.id"
+            :value="entry.id"
+          >
             {{ entry.label }}
           </SelectItem>
         </SelectGroup>

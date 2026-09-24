@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { configError } from "./state";
 
 /**
@@ -16,8 +21,12 @@ import { configError } from "./state";
     <CardContent>
       <Empty>
         <EmptyHeader>
-          <EmptyTitle>{{ configError ? "Cannot reach archied" : "No configuration loaded" }}</EmptyTitle>
-          <EmptyDescription v-if="configError">{{ configError }}</EmptyDescription>
+          <EmptyTitle>{{
+            configError ? "Cannot reach archied" : "No configuration loaded"
+          }}</EmptyTitle>
+          <EmptyDescription v-if="configError">{{
+            configError
+          }}</EmptyDescription>
           <EmptyDescription v-else>
             archied is running without a config file wired into the dashboard.
           </EmptyDescription>

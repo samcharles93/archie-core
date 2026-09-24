@@ -19,6 +19,8 @@ import { RUN_TABS } from "./task-run";
 
 <template>
   <TabsList variant="line" class="w-full justify-start">
-    <TabsTrigger v-for="tab in RUN_TABS" :key="tab.id" :value="tab.id">{{ tab.label }}</TabsTrigger>
+    <TabsTrigger v-for="tab in RUN_TABS" :key="tab.id" :value="tab.id">{{
+      tab.label
+    }}</TabsTrigger>
   </TabsList>
 </template>

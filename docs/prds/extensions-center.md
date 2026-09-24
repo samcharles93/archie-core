@@ -1,9 +1,9 @@
-# Extensions center
+# Extensions centre
 
 **Status:** Draft
 
 Epic: `archie-core-1786637490708-35-38424ead` / GitHub `#56` ("Replace Skills
-with a bundled Extensions center").
+with a bundled Extensions centre").
 
 Skills, Workflows, and Tools/MCP already exist as separate, working
 inventories with their own APIs (`api_skills.go`, `api_workflows.go`,
@@ -131,7 +131,7 @@ that writes through the existing `UpdateConfig` seam (`api_config.go`) —
 this document does not add a second config-write endpoint. New
 `ui/src/extensions/` (colocated `.js`/`.css` per CLAUDE.md's frontend rule)
 as an index/dashboard that **links to**, not replaces, the existing
-`ui/src/skills/` and `ui/src/workflows/` detail views — Extensions center is
+`ui/src/skills/` and `ui/src/workflows/` detail views — Extensions centre is
 where an operator sees everything and toggles enablement; the family-specific
 pages remain where they inspect a family's own detail.
 
@@ -140,27 +140,27 @@ pages remain where they inspect a family's own detail.
 
 ## Call site inventory
 
-| concern | file | change |
-|---|---|---|
-| Plugin metadata type | `internal/plugin/plugin.go` | none — already handles this |
+| concern                                                       | file                                                                            | change                                              |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Plugin metadata type                                          | `internal/plugin/plugin.go`                                                     | none — already handles this                         |
 | Family controllers (curator/health/image/workflow registries) | `internal/domain/curator/registry.go`, `internal/domain/health/health.go`, etc. | none — pattern already proven, reused not rewritten |
-| Unified inventory | `internal/domain/extensions/inventory.go` | new |
-| Composition wiring | `internal/app/archied/server.go` (near existing optional fields) | new |
-| Config enablement fields | `internal/config/config.go` | new fields per family |
-| Config docs | `config.example.toml` | new field documentation |
-| API surface | `internal/webui/api_extensions.go` | new |
-| Existing skills/workflows APIs | `internal/webui/api_skills.go`, `api_workflows.go` | none — linked from, not replaced |
-| Config save path | `internal/webui/api_config.go` (`UpdateConfig`) | reused, not duplicated |
-| UI | `ui/src/extensions/` | new |
-| Existing UI detail views | `ui/src/skills/`, `ui/src/workflows/` | none — linked from Extensions center |
+| Unified inventory                                             | `internal/domain/extensions/inventory.go`                                       | new                                                 |
+| Composition wiring                                            | `internal/app/archied/server.go` (near existing optional fields)                | new                                                 |
+| Config enablement fields                                      | `internal/config/config.go`                                                     | new fields per family                               |
+| Config docs                                                   | `config.example.toml`                                                           | new field documentation                             |
+| API surface                                                   | `internal/webui/api_extensions.go`                                              | new                                                 |
+| Existing skills/workflows APIs                                | `internal/webui/api_skills.go`, `api_workflows.go`                              | none — linked from, not replaced                    |
+| Config save path                                              | `internal/webui/api_config.go` (`UpdateConfig`)                                 | reused, not duplicated                              |
+| UI                                                            | `ui/src/extensions/`                                                            | new                                                 |
+| Existing UI detail views                                      | `ui/src/skills/`, `ui/src/workflows/`                                           | none — linked from Extensions centre                |
 
 ## Execution: multi-agent team breakdown
 
-| sub-feature | issue | implementer scope | suggested council lenses | why |
-|---|---|---|---|---|
-| Unified inventory type + composition | file as child of `#56` | `internal/domain/extensions/inventory.go`, wiring in `server.go` | `lens-boundary`, `lens-deletionist` | boundary: aggregator must not duplicate family-owned state; deletionist: must not become a new domain that shadows existing registries |
-| Config enablement fields | file as child of `#56` | `config.go` per-family `Enabled` fields, `config.example.toml` | `lens-contract` | config field is a wire contract other tooling (`docsgen`) generates from |
-| API + UI surface | file as child of `#56` | `api_extensions.go`, `ui/src/extensions/` | `lens-maintainer` | new user-facing state machine (available/enabled/active/degraded/skipped/pending-restart) must be legible to an operator with no prior context |
+| sub-feature                          | issue                  | implementer scope                                                | suggested council lenses            | why                                                                                                                                            |
+| ------------------------------------ | ---------------------- | ---------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unified inventory type + composition | file as child of `#56` | `internal/domain/extensions/inventory.go`, wiring in `server.go` | `lens-boundary`, `lens-deletionist` | boundary: aggregator must not duplicate family-owned state; deletionist: must not become a new domain that shadows existing registries         |
+| Config enablement fields             | file as child of `#56` | `config.go` per-family `Enabled` fields, `config.example.toml`   | `lens-contract`                     | config field is a wire contract other tooling (`docsgen`) generates from                                                                       |
+| API + UI surface                     | file as child of `#56` | `api_extensions.go`, `ui/src/extensions/`                        | `lens-maintainer`                   | new user-facing state machine (available/enabled/active/degraded/skipped/pending-restart) must be legible to an operator with no prior context |
 
 ## File and link the beads
 

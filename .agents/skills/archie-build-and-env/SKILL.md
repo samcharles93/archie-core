@@ -13,14 +13,14 @@ All volatile observations are snapshots from **2026-09-18** (HEAD `2e1e1549`).
 
 ## Name the surfaces
 
-| Term | Meaning here |
-|---|---|
-| Repository root | Directory containing `go.mod`, `Taskfile.yml`, and `CLAUDE.md`. |
-| Runtime module | Root Go module `github.com/samcharles93/archie-core`. |
-| Tools module | Independent nested Go module under `tools/`. |
-| Docs | Markdown under `docs/`, read directly; no build, no renderer. |
-| Cold cache | Dependency cache not yet containing required modules/packages. |
-| Restricted sandbox | May allow file reads but deny loopback listeners, container engine, or writes to default caches. |
+| Term               | Meaning here                                                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Repository root    | Directory containing `go.mod`, `Taskfile.yml`, and `CLAUDE.md`.                                                   |
+| Runtime module     | Root Go module `github.com/samcharles93/archie-core`.                                                             |
+| Tools module       | Independent nested Go module under `tools/`.                                                                      |
+| Docs               | Markdown and generated JSON under `docs/`; an external Astro website renders and deploys the generated artifacts. |
+| Cold cache         | Dependency cache not yet containing required modules/packages.                                                    |
+| Restricted sandbox | May allow file reads but deny loopback listeners, container engine, or writes to default caches.                  |
 
 No root `README*` or `CONTRIBUTING*` file exists. Begin with:
 
@@ -55,15 +55,15 @@ cannot type-check them and deletes a genuinely used `internal/secret` import,
 so `.golangci.yml` excludes those exact files from the formatter set. Their
 runtime loading remains covered by `internal/secret/engines_test.go`.
 
-| Surface | Repository declaration | Installed snapshot | Interpretation |
-|---|---|---|---|
-| Runtime Go | `go 1.27.0` in `go.mod` | Go 1.27.0, linux/amd64 | Requires at least declared Go level. |
-| Tools Go | `go 1.27.0` in `tools/go.mod` | Same Go 1.27.0 binary | Toolchain must satisfy both modules. |
-| Task | Taskfile schema `version: "3"` | Task 3.48.0 | Installed version is environment fact. |
-| gofumpt | Generated protobuf formatting; pinned in `Dockerfile` | v0.11.0 | Not the ordinary source formatter. |
-| golangci-lint | v2 config in `.golangci.yml`; pinned in `Dockerfile` | 2.13.2 | Owns ordinary formatting and lint checks. |
-| Node | `ui/` frontend build | 26.9.0 / npm 11.19.1 | No `engines`/`packageManager` field. Docs need no Node. |
-| Containers | Compose commands in `Taskfile.yml` | Podman-backed, unusable in this sandbox | Verify CLI, Compose plugin, daemon/socket separately. |
+| Surface       | Repository declaration                                | Installed snapshot                      | Interpretation                                          |
+| ------------- | ----------------------------------------------------- | --------------------------------------- | ------------------------------------------------------- |
+| Runtime Go    | `go 1.27.0` in `go.mod`                               | Go 1.27.0, linux/amd64                  | Requires at least declared Go level.                    |
+| Tools Go      | `go 1.27.0` in `tools/go.mod`                         | Same Go 1.27.0 binary                   | Toolchain must satisfy both modules.                    |
+| Task          | Taskfile schema `version: "3"`                        | Task 3.48.0                             | Installed version is environment fact.                  |
+| gofumpt       | Generated protobuf formatting; pinned in `Dockerfile` | v0.11.0                                 | Not the ordinary source formatter.                      |
+| golangci-lint | v2 config in `.golangci.yml`; pinned in `Dockerfile`  | 2.13.2                                  | Owns ordinary formatting and lint checks.               |
+| Node          | `ui/` frontend build                                  | 26.9.0 / npm 11.19.1                    | No `engines`/`packageManager` field. Docs need no Node. |
+| Containers    | Compose commands in `Taskfile.yml`                    | Podman-backed, unusable in this sandbox | Verify CLI, Compose plugin, daemon/socket separately.   |
 
 ## Prepare writable caches in a restricted sandbox
 
@@ -92,7 +92,7 @@ env GOTMPDIR="$ARCHIE_GOTMPDIR" GOCACHE="$ARCHIE_GOCACHE" \
   go test ./internal/config/... -count=1
 ```
 
-Populate cold cache only with network authorized:
+Populate cold cache only with network authorised:
 
 ```bash
 env ... go mod download; env ... go -C tools mod download
@@ -112,16 +112,16 @@ golangci-lint run ./...
 
 ## Understand exactly what Task runs
 
-| Task | Exact effect |
-|---|---|
-| `task fmt` | `go fix ./...`, then `golangci-lint fmt` — both may rewrite source. |
-| `task vet` | `go vet ./...` in the runtime module. |
-| `task lint` | `golangci-lint run ./...`. |
-| `task build` | Builds both commands into `bin/`. |
-| `task test` | `go test -short ./...` in the runtime module, test cache on. `task test:full` is the uncached run including wall-clock-bound tests. |
-| `task check` | `fmt` + `proto:lint` + `proto:check` + `docs:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
-| `task clean` | Recursively removes `bin/`; destructive. |
-| `task docker-build` | `docker compose build agent` only. |
+| Task                | Exact effect                                                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `task fmt`          | `go fix ./...`, then `golangci-lint fmt` — both may rewrite source.                                                                 |
+| `task vet`          | `go vet ./...` in the runtime module.                                                                                               |
+| `task lint`         | `golangci-lint run ./...`.                                                                                                          |
+| `task build`        | Builds both commands into `bin/`.                                                                                                   |
+| `task test`         | `go test -short ./...` in the runtime module, test cache on. `task test:full` is the uncached run including wall-clock-bound tests. |
+| `task check`        | `fmt` + `proto:lint` + `proto:check` + `docs:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`.                 |
+| `task clean`        | Recursively removes `bin/`; destructive.                                                                                            |
+| `task docker-build` | `docker compose build agent` only.                                                                                                  |
 
 `task check` is the definitive gate but omits race tests, `task vuln`, and
 `task docker-build`. Its docs step, `docs:check`, verifies committed generated
@@ -138,7 +138,7 @@ on work that is correct but unstaged, and both read as a broken generator:
   they differ. `task check` never rebuilds the bundle: run `task ui` after any
   `ui/src` change and commit the result with that change.
 
-Run only in an authorized writable worktree. For a read-only ordinary-source
+Run only in an authorised writable worktree. For a read-only ordinary-source
 preview, use `golangci-lint fmt --diff`.
 
 ## Verify the tools module separately
@@ -217,17 +217,17 @@ omit patch/digest; Ubuntu base images omit digests; agent installs multiple
 
 ## Separate environment failures from code failures
 
-| Signature | Classify and branch |
-|---|---|
-| `go: creating work dir: mkdir /work/tmp/...: read-only file system` | Set task-specific `GOTMPDIR`. |
-| `open .../.cache/go-build/...: read-only file system` | Set writable `GOCACHE`. |
-| `open .../pkg/mod/cache/...tmp: read-only file system` | Set writable `GOMODCACHE` and `GOPATH`. |
-| `listen ...: socket: operation not permitted` | Re-run on host with loopback sockets. |
-| `Unable to start NATS Server in Go Routine` after ~10s | Test whether local listeners permitted. |
-| `cannot auto-sign commit` | Ambient `commit.gpgSign=true`; fixtures set `gpgsign=false`. |
-| `EAI_AGAIN` for `registry.npmjs.org` | Dependency retrieval failed. |
-| `Podman configuration ... read-only file system` | Container backend cannot initialize. |
-| `TestRunWrapsExternalCommand ... Run() = "\n"` | Focused code failure in `internal/skillscript`. |
+| Signature                                                           | Classify and branch                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `go: creating work dir: mkdir /work/tmp/...: read-only file system` | Set task-specific `GOTMPDIR`.                                |
+| `open .../.cache/go-build/...: read-only file system`               | Set writable `GOCACHE`.                                      |
+| `open .../pkg/mod/cache/...tmp: read-only file system`              | Set writable `GOMODCACHE` and `GOPATH`.                      |
+| `listen ...: socket: operation not permitted`                       | Re-run on host with loopback sockets.                        |
+| `Unable to start NATS Server in Go Routine` after ~10s              | Test whether local listeners permitted.                      |
+| `cannot auto-sign commit`                                           | Ambient `commit.gpgSign=true`; fixtures set `gpgsign=false`. |
+| `EAI_AGAIN` for `registry.npmjs.org`                                | Dependency retrieval failed.                                 |
+| `Podman configuration ... read-only file system`                    | Container backend cannot initialise.                         |
+| `TestRunWrapsExternalCommand ... Run() = "\n"`                      | Focused code failure in `internal/skillscript`.              |
 
 For hermetic test diagnosis:
 
@@ -237,15 +237,15 @@ env GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree/... ./internal/workt
 
 ## Use the complete validation matrix
 
-| Evidence | Command | Current snapshot |
-|---|---|---|
-| Focused Go behavior | `go test ./pkg/... -run '^TestName$' -count=1 -v` | Use first. |
-| Root unit/integration suite | `go test ./... -count=1` | Restricted sandbox fails listener-dependent packages. |
-| Root race suite | `go test -race ./... -count=1` | Not run by `task check`. |
-| Vet | `go vet ./...` | Passed on 2026-09-18. |
-| Lint | `golangci-lint run ./...` | Not re-run on 2026-09-18; a focused `--enable-only=dupl ./internal/...` run reported 0 issues. Re-run before quoting a total. |
-| Build | `go build -o /tmp/... ./cmd/archied` and `cmd/archie-agent` | Both passed on 2026-09-18. |
-| Tools tests | `go -C tools test -mod=readonly ./... -count=1` | Passed on 2026-09-18. |
-| Generated contract parity | Temp docsgen output + `cmp --silent` | Passed for 11 schemas on 2026-09-18, after regenerating a file stale since `4b340d2b`. |
-| Container build | `task docker-build` | Not verified in restricted environment. |
-| Repository gate | `task check` | See `archie-diagnostics-and-tooling` for the dated snapshot. |
+| Evidence                    | Command                                                     | Current snapshot                                                                                                              |
+| --------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Focused Go behaviour        | `go test ./pkg/... -run '^TestName$' -count=1 -v`           | Use first.                                                                                                                    |
+| Root unit/integration suite | `go test ./... -count=1`                                    | Restricted sandbox fails listener-dependent packages.                                                                         |
+| Root race suite             | `go test -race ./... -count=1`                              | Not run by `task check`.                                                                                                      |
+| Vet                         | `go vet ./...`                                              | Passed on 2026-09-18.                                                                                                         |
+| Lint                        | `golangci-lint run ./...`                                   | Not re-run on 2026-09-18; a focused `--enable-only=dupl ./internal/...` run reported 0 issues. Re-run before quoting a total. |
+| Build                       | `go build -o /tmp/... ./cmd/archied` and `cmd/archie-agent` | Both passed on 2026-09-18.                                                                                                    |
+| Tools tests                 | `go -C tools test -mod=readonly ./... -count=1`             | Passed on 2026-09-18.                                                                                                         |
+| Generated contract parity   | Temp docsgen output + `cmp --silent`                        | Passed for 11 schemas on 2026-09-18, after regenerating a file stale since `4b340d2b`.                                        |
+| Container build             | `task docker-build`                                         | Not verified in restricted environment.                                                                                       |
+| Repository gate             | `task check`                                                | See `archie-diagnostics-and-tooling` for the dated snapshot.                                                                  |

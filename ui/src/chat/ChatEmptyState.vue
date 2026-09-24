@@ -8,7 +8,11 @@ const emit = defineEmits<{ prompt: [text: string] }>();
 
 // Prompts an operator might actually ask, rather than demonstrations of the
 // feature.
-const PROMPTS = ["Summarise active tasks", "Show running agents", "Check system status"];
+const PROMPTS = [
+  "Summarise active tasks",
+  "Show running agents",
+  "Check system status",
+];
 </script>
 
 <template>
@@ -18,8 +22,12 @@ const PROMPTS = ["Summarise active tasks", "Show running agents", "Check system 
       class="mx-auto mb-3 grid size-9 place-items-center rounded-xl border border-border-strong font-bold text-link"
       >A</span
     >
-    <h2 class="text-lg font-semibold tracking-[-0.02em]">What are we working on?</h2>
-    <p class="mt-2 mb-4 text-sm text-fg-muted">Ask Archie anything, or start with one of these prompts.</p>
+    <h2 class="text-lg font-semibold tracking-[-0.02em]">
+      What are we working on?
+    </h2>
+    <p class="mt-2 mb-4 text-sm text-fg-muted">
+      Ask Archie anything, or start with one of these prompts.
+    </p>
     <div class="grid gap-2">
       <button
         v-for="prompt in PROMPTS"

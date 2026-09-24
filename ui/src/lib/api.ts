@@ -45,7 +45,9 @@ async function errorMessage(res: Response): Promise<string> {
 let authenticationStateHandler: ((required: boolean) => void) | undefined;
 
 /** Let the app shell own authentication state without coupling requests to UI. */
-export function setAuthenticationStateHandler(handler: (required: boolean) => void): void {
+export function setAuthenticationStateHandler(
+  handler: (required: boolean) => void,
+): void {
   authenticationStateHandler = handler;
 }
 
@@ -70,11 +72,16 @@ export type ActionErrorKind = "session-expired" | "refused" | "broken";
 // timeout); 401 additionally means the session -- archied's own token cookie,
 // or an upstream forward-auth proxy sitting in front of it -- has expired
 // rather than that the action was rejected or the daemon is unwell.
-export function classifyActionError(err: unknown): { kind: ActionErrorKind; message: string } {
+export function classifyActionError(err: unknown): {
+  kind: ActionErrorKind;
+  message: string;
+} {
   const status = err instanceof ApiError ? err.status : undefined;
-  const message = err instanceof Error && err.message ? err.message : "Action failed";
+  const message =
+    err instanceof Error && err.message ? err.message : "Action failed";
   if (status === 401) return { kind: "session-expired", message };
-  if (status !== undefined && status >= 400 && status < 500) return { kind: "refused", message };
+  if (status !== undefined && status >= 400 && status < 500)
+    return { kind: "refused", message };
   return { kind: "broken", message };
 }
 
@@ -103,10 +110,22 @@ interface RequestOptions {
 // form post inexpressible. Sending the header on every mutation, rather than
 // only where a payload happens to exist, is what keeps a bodyless DELETE or
 // approve from being refused.
-async function request<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, timeoutMs = DEFAULT_TIMEOUT_MS, parse = true } = opts;
+async function request<T = unknown>(
+  path: string,
+  opts: RequestOptions = {},
+): Promise<T> {
+  const {
+    method = "GET",
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    parse = true,
+  } = opts;
   const headers: Record<string, string> = { Accept: "application/json" };
-  const init: RequestInit = { method, headers, signal: AbortSignal.timeout(timeoutMs) };
+  const init: RequestInit = {
+    method,
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  };
   if (method !== "GET") {
     headers["Content-Type"] = "application/json";
     headers["X-Archie-CSRF"] = "1";
@@ -122,25 +141,35 @@ export const api = {
   summary: <T = unknown>() => request<T>("/api/summary"),
   tasks: <T = unknown>() => request<T>("/api/tasks"),
   taskMeta: <T = unknown>() => request<T>("/api/task-meta"),
-  task: <T = unknown>(id: string) => request<T>(`/api/tasks/${encodeURIComponent(id)}`),
-  taskAttempts: <T = unknown>(id: string) => request<T>(`/api/tasks/${encodeURIComponent(id)}/attempts`),
+  task: <T = unknown>(id: string) =>
+    request<T>(`/api/tasks/${encodeURIComponent(id)}`),
+  taskAttempts: <T = unknown>(id: string) =>
+    request<T>(`/api/tasks/${encodeURIComponent(id)}/attempts`),
   taskChanges: <T = unknown>(id: string, params?: QueryParams) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/changes` + qs(params)),
   taskDebug: <T = unknown>(id: string, params?: QueryParams) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/debug` + qs(params)),
   taskAction: <T = unknown>(id: string, action: string) =>
-    request<T>(`/api/tasks/${encodeURIComponent(id)}/action`, { method: "POST", body: { action } }),
+    request<T>(`/api/tasks/${encodeURIComponent(id)}/action`, {
+      method: "POST",
+      body: { action },
+    }),
   setup: <T = unknown>() => request<T>("/api/setup"),
   capabilities: <T = unknown>() => request<T>("/api/capabilities"),
   workflows: <T = unknown>() => request<T>("/api/workflows"),
-  workRequest: <T = unknown>(workRequest: Payload) => request<T>("/api/work-requests", { method: "POST", body: workRequest }),
+  workRequest: <T = unknown>(workRequest: Payload) =>
+    request<T>("/api/work-requests", { method: "POST", body: workRequest }),
   skills: <T = unknown>() => request<T>("/api/skills"),
   channels: <T = unknown>() => request<T>("/api/channels"),
   curators: <T = unknown>() => request<T>("/api/curators"),
   channelReload: <T = unknown>(id: string) =>
-    request<T>(`/api/channels/${encodeURIComponent(id)}/reload`, { method: "POST", body: {} }),
+    request<T>(`/api/channels/${encodeURIComponent(id)}/reload`, {
+      method: "POST",
+      body: {},
+    }),
   config: <T = unknown>() => request<T>("/api/config"),
-  logs: <T = unknown>(params?: QueryParams) => request<T>("/api/logs" + qs(params)),
+  logs: <T = unknown>(params?: QueryParams) =>
+    request<T>("/api/logs" + qs(params)),
   taskLogs: <T = unknown>(id: string, params?: QueryParams) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/logs` + qs(params)),
   // A download is a navigation, not a fetch: the browser must own the
@@ -148,48 +177,98 @@ export const api = {
   // a whole log in memory. The URL builder is the client-side contract, and
   // log-row keeps it beside the panel that uses it.
   taskLogDownloadURL: (id: string, attempt?: number | null) =>
-    `/api/tasks/${encodeURIComponent(id)}/logs/download` + (attempt == null ? "" : `?attempt=${attempt}`),
+    `/api/tasks/${encodeURIComponent(id)}/logs/download` +
+    (attempt == null ? "" : `?attempt=${attempt}`),
   // Versions + updates. The install's synchronous phase (clone + build +
   // install) legitimately runs for minutes; its timeout is therefore minutes,
   // not the 15s default, and the watchdog owns everything after the restart.
   version: <T = unknown>() => request<T>("/api/version"),
   updateSnapshot: <T = unknown>() => request<T>("/api/chat/update"),
   updateInstall: <T = unknown>(snapshot: unknown) =>
-    request<T>("/api/chat/update/install", { method: "POST", body: { snapshot }, timeoutMs: 15 * 60_000 }),
-  captures: <T = unknown>(limit?: number) => request<T>("/api/captures" + qs({ limit })),
+    request<T>("/api/chat/update/install", {
+      method: "POST",
+      body: { snapshot },
+      timeoutMs: 15 * 60_000,
+    }),
+  captures: <T = unknown>(limit?: number) =>
+    request<T>("/api/captures" + qs({ limit })),
   eventTypes: <T = unknown>() => request<T>("/api/event-types"),
-  eventTypeCreate: <T = unknown>(eventType: Payload) => request<T>("/api/event-types", { method: "POST", body: eventType }),
+  eventTypeCreate: <T = unknown>(eventType: Payload) =>
+    request<T>("/api/event-types", { method: "POST", body: eventType }),
   eventTypeUpdate: <T = unknown>(id: string, eventType: Payload) =>
-    request<T>(`/api/event-types/${encodeURIComponent(id)}`, { method: "PUT", body: eventType }),
-  eventTypeDelete: (id: string) => request<void>(`/api/event-types/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
+    request<T>(`/api/event-types/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: eventType,
+    }),
+  eventTypeDelete: (id: string) =>
+    request<void>(`/api/event-types/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      parse: false,
+    }),
   mappings: <T = unknown>() => request<T>("/api/mappings"),
-  mappingCreate: <T = unknown>(mapping: Payload) => request<T>("/api/mappings", { method: "POST", body: mapping }),
+  mappingCreate: <T = unknown>(mapping: Payload) =>
+    request<T>("/api/mappings", { method: "POST", body: mapping }),
   mappingUpdate: <T = unknown>(id: string, mapping: Payload) =>
-    request<T>(`/api/mappings/${encodeURIComponent(id)}`, { method: "PATCH", body: mapping }),
+    request<T>(`/api/mappings/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: mapping,
+    }),
   // A delete answers 204, so there is no body to parse.
-  mappingDelete: (id: string) => request<void>(`/api/mappings/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
+  mappingDelete: (id: string) =>
+    request<void>(`/api/mappings/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      parse: false,
+    }),
   // capture_id is an int64 on the wire (mappingPreviewRequest), so it is sent
   // as a number: a JSON string is rejected as an invalid request body.
   mappingPreview: <T = unknown>(captureId: number, fields: unknown) =>
-    request<T>("/api/mappings/preview", { method: "POST", body: { capture_id: captureId, fields } }),
+    request<T>("/api/mappings/preview", {
+      method: "POST",
+      body: { capture_id: captureId, fields },
+    }),
   bindings: <T = unknown>() => request<T>("/api/bindings"),
-  bindingCreate: <T = unknown>(binding: Payload) => request<T>("/api/bindings", { method: "POST", body: binding }),
+  bindingCreate: <T = unknown>(binding: Payload) =>
+    request<T>("/api/bindings", { method: "POST", body: binding }),
   bindingUpdate: <T = unknown>(id: string, binding: Payload) =>
-    request<T>(`/api/bindings/${encodeURIComponent(id)}`, { method: "PATCH", body: binding }),
-  bindingDelete: (id: string) => request<void>(`/api/bindings/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
-  bindingApprove: <T = unknown>(id: string) => request<T>(`/api/bindings/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+    request<T>(`/api/bindings/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: binding,
+    }),
+  bindingDelete: (id: string) =>
+    request<void>(`/api/bindings/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      parse: false,
+    }),
+  bindingApprove: <T = unknown>(id: string) =>
+    request<T>(`/api/bindings/${encodeURIComponent(id)}/approve`, {
+      method: "POST",
+    }),
   sources: <T = unknown>() => request<T>("/api/sources"),
-  sourceCreate: <T = unknown>(path: string) => request<T>("/api/sources", { method: "POST", body: { path } }),
+  sourceCreate: <T = unknown>(path: string) =>
+    request<T>("/api/sources", { method: "POST", body: { path } }),
   sourceSigning: <T = unknown>(path: string, signed: boolean) =>
-    request<T>(`/api/sources/${encodeURIComponent(path)}/signing`, { method: "POST", body: { signed } }),
+    request<T>(`/api/sources/${encodeURIComponent(path)}/signing`, {
+      method: "POST",
+      body: { signed },
+    }),
   sourceApproveUnsigned: <T = unknown>(path: string) =>
-    request<T>(`/api/sources/${encodeURIComponent(path)}/approve-unsigned`, { method: "POST" }),
+    request<T>(`/api/sources/${encodeURIComponent(path)}/approve-unsigned`, {
+      method: "POST",
+    }),
   sourceSecret: <T = unknown>(path: string) =>
-    request<T>(`/api/sources/${encodeURIComponent(path)}/secret`, { method: "POST" }),
+    request<T>(`/api/sources/${encodeURIComponent(path)}/secret`, {
+      method: "POST",
+    }),
   chatSessions: <T = unknown>() => request<T>("/api/chat/sessions"),
-  chatMessages: <T = unknown>(id: string) => request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
-  chatTurns: <T = unknown>(id: string) => request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),
-  chatCancel: <T = unknown>(sessionID: string) => request<T>("/api/chat/cancel", { method: "POST", body: { session_id: sessionID } }),
+  chatMessages: <T = unknown>(id: string) =>
+    request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
+  chatTurns: <T = unknown>(id: string) =>
+    request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),
+  chatCancel: <T = unknown>(sessionID: string) =>
+    request<T>("/api/chat/cancel", {
+      method: "POST",
+      body: { session_id: sessionID },
+    }),
   // The page the operator was on when they asked, so a chat answer can be
   // about what they were looking at. History routing makes that the pathname.
   chatMessage: <T = unknown>(channelID: string, text: string) =>
@@ -203,19 +282,32 @@ export const api = {
       },
     }),
   chatPersona: <T = unknown>(sessionID: string, name: string) =>
-    request<T>("/api/chat/persona", { method: "POST", body: { session_id: sessionID, name } }),
+    request<T>("/api/chat/persona", {
+      method: "POST",
+      body: { session_id: sessionID, name },
+    }),
   chatDangerous: <T = unknown>() => request<T>("/api/chat/dangerous"),
   chatDangerousRequest: <T = unknown>(kind: string, spec: unknown) =>
-    request<T>(`/api/chat/dangerous/${encodeURIComponent(kind)}`, { method: "POST", body: { spec } }),
+    request<T>(`/api/chat/dangerous/${encodeURIComponent(kind)}`, {
+      method: "POST",
+      body: { spec },
+    }),
   chatDangerousDecision: <T = unknown>(id: string, decision: string) =>
-    request<T>(`/api/chat/dangerous/${encodeURIComponent(id)}/decision`, { method: "POST", body: { decision } }),
+    request<T>(`/api/chat/dangerous/${encodeURIComponent(id)}/decision`, {
+      method: "POST",
+      body: { decision },
+    }),
   // A server-sent event stream cannot be parsed as JSON and outlives a normal
   // request, so the caller owns the abort controller and the timeout, and
   // reads the body itself. Only the URL, headers, and failure shape are shared.
   chatStream: (payload: unknown, opts: { signal?: AbortSignal } = {}) =>
     send("/api/chat/stream", {
       method: "POST",
-      headers: { Accept: "text/event-stream", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      headers: {
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+        "X-Archie-CSRF": "1",
+      },
       body: JSON.stringify(payload),
       signal: opts.signal,
     }),

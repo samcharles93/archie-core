@@ -45,7 +45,7 @@ the messaging behaviour Archie requires, including publication, subscription,
 delivery outcomes, and required lifecycle semantics.
 
 It MUST remain broker-neutral. NATS subjects, JetStream configuration, consumer
-groups, acknowledgements, reconnection, and serialization belong under
+groups, acknowledgements, reconnection, and serialisation belong under
 `internal/infrastructure/eventbus/nats` unless Archie explicitly requires a
 semantic guarantee in the shared contract.
 
@@ -56,7 +56,7 @@ messages; it does not own their meaning.
 
 Canonical worker and service wire contracts and their authoritative generation
 inputs are owned by the domain or capability that defines their meaning. They
-MUST NOT be centralized in `internal/infrastructure/spec` or another generic
+MUST NOT be centralised in `internal/infrastructure/spec` or another generic
 schema package.
 
 Infrastructure owns:

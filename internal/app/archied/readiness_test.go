@@ -2,7 +2,6 @@ package archied
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -12,14 +11,14 @@ import (
 )
 
 func TestDiskProbePath_PrefersStateDir(t *testing.T) {
-	cfg := config.Config{StateDir: "/var/lib/archie", DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
+	cfg := config.Config{StateDir: "/var/lib/archie", WorkDir: "/srv/archie"}
 	if got := diskProbePath(cfg); got != "/var/lib/archie" {
 		t.Fatalf("diskProbePath = %q, want /var/lib/archie", got)
 	}
 }
 
 func TestDiskProbePath_FallsBackToWorkDir(t *testing.T) {
-	cfg := config.Config{DBPath: "/data/archie/tasks.db", WorkDir: "/srv/archie"}
+	cfg := config.Config{WorkDir: "/srv/archie"}
 	if got := diskProbePath(cfg); got != "/srv/archie" {
 		t.Fatalf("diskProbePath = %q, want /srv/archie", got)
 	}
@@ -54,7 +53,6 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 
 	cfg := config.Config{
 		BotUser:      "archie-bot",
-		DBPath:       filepath.Join(t.TempDir(), "tasks.db"),
 		PollInterval: config.Duration(60_000_000_000), // 60s, satisfies validate
 		Dispatch:     config.Dispatch{Trigger: "assignee"},
 		Forge:        config.Forge{Type: "none"},

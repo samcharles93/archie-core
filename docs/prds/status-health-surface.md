@@ -22,7 +22,7 @@ elsewhere (`/model` already lists active provider/model).
 - `/tasks`: new command, `gateway.ChatTaskSummary` extended with
   `Stage`/`Attempt`/`ParkReason`/`UpdatedAt` (all already persisted on
   `store.Task`, zero new instrumentation), sorted actionable-first.
-- `/status`: itemized per-status task counts replaced with one aggregate
+- `/status`: itemised per-status task counts replaced with one aggregate
   `Queue: N in flight (...)` line (running/waiting/parked only -- queued and
   terminal states excluded as not a health concern). Runtime
   (provider/model) is temporarily left in place; see "Runtime (provider/model)"
@@ -34,7 +34,7 @@ work" but is never wired to a real implementation in any composition-root
 call site (`bootstrap.go`, `telegram_setup.go`) -- it always answers "Agent
 listing is not configured." in production. That is a standalone bug
 (`archie-core-mxls`), not folded into this work: deciding whether to wire
-it, repurpose it, or delete it in favor of `/tasks` is Sam's call, not
+it, repurpose it, or delete it in favour of `/tasks` is Sam's call, not
 something to resolve by implication here.
 
 ## Phase 2 -- health checks, verified against the actual tree
@@ -89,7 +89,7 @@ under "Truthful or absent".
   would include containers this pool does not own. A cap of zero means
   unlimited, so `/status` renders the count alone rather than "1/0 active".
 - **Last poll.** `daemon.Daemon.LastPollAt()` reports when the most recent poll
-  pass *began*; both poll paths (`poll` for single-identity `Run`,
+  pass _began_; both poll paths (`poll` for single-identity `Run`,
   `pollForIdentity` for `runIdentities`) stamp it. A pass that hangs leaves the
   stamp stale, which is the signal -- stamping completion instead would leave a
   wedged poller looking healthy.

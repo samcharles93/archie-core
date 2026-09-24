@@ -283,10 +283,6 @@ func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) 
 	return client, token
 }
 
-func taskDBPath(configuredPath string) string {
-	return configuredPath + "-tasks.sqlite"
-}
-
 func manualRequeueTask(ctx context.Context, st storecontract.TaskStore, taskID int64) error {
 	task, err := st.TaskByID(ctx, taskID)
 	if err != nil {

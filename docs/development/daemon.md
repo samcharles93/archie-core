@@ -15,8 +15,8 @@ Authority: `docs/architecture/agent-system.md`. The status vocabulary lives in
    later is a migration.
 2. Alias it in `internal/domain/workflow/task/task.go` and
    `internal/domain/workflow/task_aliases.go`.
-3. Add it to the default catalog in `ui/src/lib/task-meta.ts`. The server
-   catalog replaces the defaults when it loads, but the defaults render first.
+3. Add it to the default catalogue in `ui/src/lib/task-meta.ts`. The server
+   catalogue replaces the defaults when it loads, but the defaults render first.
 4. Find every hand-written status list in SQL:
    `grep -rn "'merged'" internal/infrastructure/postgres/queries`.
    `ClearTerminalTasks` must match `taskstate.Terminal`, which

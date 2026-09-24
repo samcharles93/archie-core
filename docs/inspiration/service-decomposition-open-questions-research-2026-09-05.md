@@ -26,7 +26,7 @@ Repositioning note: the PRD's own text floats a hypothesis ("Gateway
 Service's `ChatContract` should exist before UI Service is extracted").
 This document **confirms that hypothesis with code archaeology and
 strengthens it**, and it is the single most important finding: archie-core's
-Gateway is both the *stickiest* capability and the one with an already-
+Gateway is both the _stickiest_ capability and the one with an already-
 clean seam and already-isolated data. The generic "extract a leaf /
 read-only thing first" advice does not apply here, and I say so with the
 reason why.
@@ -35,13 +35,13 @@ reason why.
 
 ## Summary of the five recommendations
 
-| # | Question | Recommendation (one line) |
-|---|---|---|
-| 1 | Extraction order | **Gateway Service first**, then State Store, then UI, then Messaging, then Execution/Runner/Scheduler, then Curator (optional) — preceded by an in-process "contract seams" phase (modular monolith) that is #2's real prerequisite. |
-| 2 | Contract definition mechanism | **buf v2 + protoc-gen-go + protoc-gen-go-grpc** (grpc-go, not connect-go), one committed `proto/<service>/v1/` tree generating into `internal/contracts/<service>/v1/`, directory-versioned, `buf breaking` gated in `task check` and mirrored into CI. |
-| 3 | In-process vs. out-of-process during migration | **Multiplexed in-process is the migration default**: one wire-safe Go contract interface per service, a local adapter and a generated gRPC client adapter, composition (not `ServiceRegistry`) picks which one, and the flip to a real process is a same-commit deletion of the in-process path — no dual-live window. |
-| 4 | State Store's contract shape | **One State Store service owns a single SQLite file behind narrow typed contracts** (the existing `internal/store` split already does the ownership; the gap is enforcement). No physical database-per-service at this scale, and no distributed-transaction problem, because there is still one store. Gateway keeps its own already-separate session SQLite. |
-| 5 | Helm chart / Operator scoping | **Three charts** (a `library` chart of the shared contract templates, one `archie` chart for the 7 core services, one `archie-curator` chart + a Curator Operator) — and the smallest first milestone is a **single Curator CR that the Operator reconciles into a Deployment + Service, with Gateway resolving `curator` via the `ServiceRegistry`**. |
+| #   | Question                                       | Recommendation (one line)                                                                                                                                                                                                                                                                                                                                      |
+| --- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Extraction order                               | **Gateway Service first**, then State Store, then UI, then Messaging, then Execution/Runner/Scheduler, then Curator (optional) — preceded by an in-process "contract seams" phase (modular monolith) that is #2's real prerequisite.                                                                                                                           |
+| 2   | Contract definition mechanism                  | **buf v2 + protoc-gen-go + protoc-gen-go-grpc** (grpc-go, not connect-go), one committed `proto/<service>/v1/` tree generating into `internal/contracts/<service>/v1/`, directory-versioned, `buf breaking` gated in `task check` and mirrored into CI.                                                                                                        |
+| 3   | In-process vs. out-of-process during migration | **Multiplexed in-process is the migration default**: one wire-safe Go contract interface per service, a local adapter and a generated gRPC client adapter, composition (not `ServiceRegistry`) picks which one, and the flip to a real process is a same-commit deletion of the in-process path — no dual-live window.                                         |
+| 4   | State Store's contract shape                   | **One State Store service owns a single SQLite file behind narrow typed contracts** (the existing `internal/store` split already does the ownership; the gap is enforcement). No physical database-per-service at this scale, and no distributed-transaction problem, because there is still one store. Gateway keeps its own already-separate session SQLite. |
+| 5   | Helm chart / Operator scoping                  | **Three charts** (a `library` chart of the shared contract templates, one `archie` chart for the 7 core services, one `archie-curator` chart + a Curator Operator) — and the smallest first milestone is a **single Curator CR that the Operator reconciles into a Deployment + Service, with Gateway resolving `curator` via the `ServiceRegistry`**.         |
 
 ---
 
@@ -67,10 +67,10 @@ The PRD's three cited couplings are real; I re-checked the call sites:
    direct route to the gateway today — it must detour through a UI HTTP
    handler to apply a pause/resume/abandon action.
 2. **UI reaches directly into gateway internals.**
-   `internal/webui/api_chat.go`'s `ChatService` is *literally* `Router
-   *gateway.Router`, `Sessions gateway.SessionStore`, `Turns
-   *gateway.Turns` plus `Models gateway.ModelManager` and `Personas
-   *gateway.PersonaRegistry`, and it calls `chat.Sessions.(gateway.TurnHistory)`
+   `internal/webui/api_chat.go`'s `ChatService` is _literally_ `Router
+*gateway.Router`, `Sessions gateway.SessionStore`, `Turns
+*gateway.Turns` plus `Models gateway.ModelManager` and `Personas
+*gateway.PersonaRegistry`, and it calls `chat.Sessions.(gateway.TurnHistory)`
    at line 198 and `chat.Router.Route`/`ResolveSessionKey` at 256/261.
    This is not "a UI calling a Gateway API" — it is the UI holding the
    Gateway's internal objects and calling their methods in-process.
@@ -87,22 +87,22 @@ Two further facts the PRD does not foreground but that decide the order:
   (`StatusReader`, `TaskCreator`, `TaskLister`, `TaskController`,
   `AgentReader`) that `internal/app/archied` adapts. This is a ready seam.
 - **The Gateway already owns an isolated session store.**
-  `internal/gateway/session_store_sqlite.go` is a *separate* SQLite DB
+  `internal/gateway/session_store_sqlite.go` is a _separate_ SQLite DB
   (`OpenSQLiteSessionStore`, own `sqliteSessionSchema`) from
   `internal/store`. Chat session/turn/message data is **already** separate
   from task/work-intake data.
 
 ### What the research says about sequencing
 
-The canonical guidance is Fowler / Dehghani's *How to break a Monolith
-into Microservices*. Its explicit sequencing principles are: **warm up
+The canonical guidance is Fowler / Dehghani's _How to break a Monolith
+into Microservices_. Its explicit sequencing principles are: **warm up
 with a simple and fairly decoupled capability**; **minimise dependency
 back to the monolith**; **split sticky capabilities early**; **decouple
 vertically and release the data early**; **decouple what is important to
 the business and changes frequently**; **go macro first, then micro**;
 **migrate in atomic evolutionary steps**. The popular-strangler-fig
 commentary (YuSMP, Md Sanwar Hossain, CloudRPS) adds a pragmatic
-variant: improve the monolith into a *modular monolith* first, create a
+variant: improve the monolith into a _modular monolith_ first, create a
 routing facade, extract the **low-coupling / leaf / read-heavy** context
 first, defer auth and the core "sticky" engines to later, and treat the
 first extraction as an **operations dry-run** (build pipeline, contract
@@ -136,7 +136,7 @@ So the deciding question is not "which is the safest to cut first?" It is
 stands up the product's primary contract?" The answer is the Gateway.
 
 This **confirms** the PRD hypothesis, and adds a reason the PRD did not
-state: the Gateway is extractable *now*, on its own, with zero store
+state: the Gateway is extractable _now_, on its own, with zero store
 migration, because it is already store-decoupled and already owns its
 session DB. UI is **not** extractable first — it is trapped behind the
 Gateway's internals and can only become a thin client once
@@ -217,7 +217,7 @@ Install as a Gateway plugin (its current shape is already a contract /
 registrar / registry family) and prove the latest-order discovery path +
 the optional-service `NotInstalled` semantic. This is deliberately last:
 it is the proof-of-optionality and the Q5 exercise, not a load-bearing
-first step. (The K8s Operator to *deploy* it is Q5's concern and can be
+first step. (The K8s Operator to _deploy_ it is Q5's concern and can be
 built on the Q1 timeline once the base chart exists.)
 
 ### What this doesn't settle
@@ -229,9 +229,9 @@ built on the Q1 timeline once the base chart exists.)
   collapses into Phase 1 for the Gateway.
 - **Whether Gateway should also host a "chat gateway" that owns the
   Session Store contract** vs. delegating chat state to a future concern.
-  Decided *not* to move session data into State Store here — it is already
+  Decided _not_ to move session data into State Store here — it is already
   isolated and Gateway-owned; moving it would be churn with no benefit.
-- **Exact cadence / whether Curator can be extracted earlier.** It *can*,
+- **Exact cadence / whether Curator can be extracted earlier.** It _can_,
   but only as the operator/optionality exercise; keeping it last avoids
   spending the "warm-up learning budget" on an optional component when the
   base services are not yet on the contract.
@@ -239,6 +239,7 @@ built on the Q1 timeline once the base chart exists.)
 ---
 
 <a id="2"></a>
+
 ## Question #2 — Contract definition mechanism
 
 ### The question
@@ -278,7 +279,7 @@ Helm chart service names). Generated Go is **committed** at
 (`go_package_prefix`) plus `paths=source_relative`. This satisfies
 `docs/architecture/dependencies-and-contracts.md:55`'s "Wire contracts and
 generation" rule — wire contracts are partitioned per owning domain, never
-centralized in a generic schema package.
+centralised in a generic schema package.
 
 ### Versioning: directory versioning, enforced by `buf breaking`
 
@@ -327,6 +328,7 @@ local `main` ref to diff against; CI needs `fetch-depth: 0` or an explicit
 ---
 
 <a id="3"></a>
+
 ## Question #3 — In-process vs. out-of-process during migration
 
 ### The question
@@ -356,7 +358,7 @@ architecture-wide.
    the interface. If a type can't become a proto message, it can't appear
    in the contract signature.
 2. **Two adapters per contract.** A **local adapter** (in-process, calls
-   straight through, zero serialization — not a test fake, a real
+   straight through, zero serialisation — not a test fake, a real
    production adapter) and a **generated gRPC client adapter**. Both
    satisfy the same interface, verified with a compile-time assertion in
    the existing repo idiom: `var _ store.WorkflowStore = (*Client)(nil)`
@@ -377,7 +379,7 @@ architecture-wide.
    `mode = "inproc" | "remote"` config value, defaulting to `inproc`.
 4. **Per-contract conformance suite.** Reuse the existing conformance-test
    idiom — `runSessionStoreSuite(t, newStore func(t *testing.T)
-   SessionStore)` at `internal/gateway/sessionstore_conformance_test.go:65`
+SessionStore)` at `internal/gateway/sessionstore_conformance_test.go:65`
    — and run it against both the local adapter and a real gRPC server over
    `bufconn`. This is the "always test the wire shape" discipline, kept for
    tests only; production traffic in `inproc` mode never touches gRPC.
@@ -436,7 +438,7 @@ was needed — Q1 already anticipated exactly this shape.
 - `internal/servicediscovery/servicediscovery.go:8-14,71-81` —
   `ErrNotInstalled` semantics and the `ServiceRegistry` interface.
 - `internal/storerpc/storerpc.go:136` — `var _ store.WorkflowStore =
-  (*Client)(nil)`, the compile-time contract-conformance idiom reused for
+(*Client)(nil)`, the compile-time contract-conformance idiom reused for
   the local/remote adapter pair; `internal/forgerpc`, `internal/worktreerpc`,
   and `internal/infrastructure/agenttransport/nats/transport.go:101,111`
   as the existing one-contract-two-transports precedent in production.
@@ -445,8 +447,8 @@ was needed — Q1 already anticipated exactly this shape.
   local-vs-remote adapter testing.
 - `internal/webui/api_chat.go:22-26` — `ChatService`'s struct fields
   (`Router *gateway.Router`, `Sessions gateway.SessionStore`, `Turns
-  *gateway.Turns`, `Models gateway.ModelManager`, `Personas
-  *gateway.PersonaRegistry`) — the concrete seam Q2/Q3's `ChatContract`
+*gateway.Turns`, `Models gateway.ModelManager`, `Personas
+*gateway.PersonaRegistry`) — the concrete seam Q2/Q3's `ChatContract`
   needs to cross.
 - `internal/installtype/installtype.go` — precedent that deployment-shape
   facts are stated config, never runtime-probed.
@@ -467,16 +469,16 @@ was needed — Q1 already anticipated exactly this shape.
   `proto/gateway/v1/chat.proto` (package `gateway.v1`, service
   `ChatService`) passed once request/response types followed the
   `XRequest`/`XResponse` naming buf's STANDARD lint enforces. `buf
-  generate` (v2, managed `go_package_prefix`, `paths=source_relative`)
+generate` (v2, managed `go_package_prefix`, `paths=source_relative`)
   produced `chat.pb.go` (206 lines) and `chat_grpc.pb.go` (121 lines),
   which compiled cleanly against `google.golang.org/grpc v1.83.2` in a
   scratch module. `buf breaking --against
-  '.git#branch=main,subdir=.'` after deleting an RPC and renaming a field
+'.git#branch=main,subdir=.'` after deleting an RPC and renaming a field
   correctly reported "Previously present RPC Send deleted," "field 2 user
   deleted," "field 3 changed name," exit 100 — confirming the mechanism
   works against a real git ref. A parallel connect-go run (installing
   `protoc-gen-connect-go` v1.19.1; note the `github.com/connectrpc/
-  connect-go` module path is dead, use `connectrpc.com/connect`) generated
+connect-go` module path is dead, use `connectrpc.com/connect`) generated
   a sibling `net/http`-based package, confirming the resolver-plumbing gap
   cited above. `gofumpt -l` on the freshly generated output was clean, so
   `task fmt`'s `gofumpt -w .` won't fight regenerated code.
@@ -524,8 +526,8 @@ The research (microservices.io, Microsoft Learn data-sovereignty, AWS
 Prescriptive Guidance) is emphatic that the database-per-service pattern is
 **about ownership and enforcement, not about physically provisioning one
 database cluster per service.** microservices.io names three ways to keep a
-service's data private — *private-tables-per-service*,
-*schema-per-service*, and *database-server-per-service* — and says the
+service's data private — _private-tables-per-service_,
+_schema-per-service_, and _database-server-per-service_ — and says the
 first two have "the lowest overhead," and that a shared MySQL instance with
 per-service logical databases and per-service credentials is a legitimate
 instance of the pattern. Microsoft's guidance and the ownership-over-
@@ -540,7 +542,7 @@ The decisive variable everywhere is **team topology**, not technology.
 DevStarSJ's 2026 comparison gives the rule of thumb: 1–5 engineers →
 shared DB (monolith is fine); 5–20 → shared DB with strict ownership
 boundaries; 20–50 → hybrid; 50+ → database per service. The argument,
-across all sources, is that database-per-service's *benefits* are team
+across all sources, is that database-per-service's _benefits_ are team
 autonomy, independent deploy cadence, and failure blast-radius isolation —
 three things that are **largely absent for a solo maintainer**. You still
 pay the full "distributed data tax" (no cross-service joins → sagas or
@@ -563,9 +565,9 @@ its own already-separate session SQLite (it is Gateway-private chat state
 and already isolated; moving it is churn).
 
 This is "less isolation, less migration risk" chosen deliberately — it is
-the *honest* choice for a solo maintainer per the team-topology rule of
+the _honest_ choice for a solo maintainer per the team-topology rule of
 thumb, and it matches the store's existing interface decomposition (the
-ownership is already correct — the *enforcement* is the gap: webui and
+ownership is already correct — the _enforcement_ is the gap: webui and
 workflow import `internal/store` directly across a would-be service
 boundary).
 
@@ -578,7 +580,7 @@ would introduce the distributed-data tax — cross-store joins for the
 dashboard's combined task/event/capture views, sagas for intake→workflow
 transitions, m×n data-store operations — with no corresponding autonomy
 gain for a single maintainer. It is also the single most common source of
-a *distributed monolith*, which the sources call the failure mode to
+a _distributed monolith_, which the sources call the failure mode to
 avoid.
 
 ### Concrete migration path from the current single SQLite store
@@ -623,9 +625,9 @@ avoid.
   recommendation is to not pre-split.
 - **Whether the Gateway's session store stays Gateway-owned or moves to
   State Store.** Decided: stays Gateway-owned (already isolated, high
- -frequency chat state; moving it has no benefit).
+  -frequency chat state; moving it has no benefit).
 - **The exact gRPC contract schema / versioning.** That is #2's
-  mechanism. The contract *surface* is decided here; the wire schema is
+  mechanism. The contract _surface_ is decided here; the wire schema is
   not.
 - **Migration of the `storerpc` NATS path.** The `archie-agent` container
   still calls `storerpc` today. Under the PRD the Execution/Runner
@@ -672,38 +674,38 @@ disappears. Two facts shape the chart design:
 ### Decision: three charts (library + core services + Curator-with-Operator)
 
 - **`archie-library`** — a Helm **library chart** (`type: library`,
-   only `_*.tpl` files). Holds the shared resource templates: the
-   Deployment template, the Service template, readiness/liveness probe
-   helper, container-port naming, the label/selector block
-   (`app.kubernetes.io/name`, `instance`, `managed-by`, `component`), and
-   the `ServiceRegistry`-relevant named ports (`grpc`, `http`, `ssr`,
-   `nats`). This keeps the per-service charts declarative and consistent.
+  only `_*.tpl` files). Holds the shared resource templates: the
+  Deployment template, the Service template, readiness/liveness probe
+  helper, container-port naming, the label/selector block
+  (`app.kubernetes.io/name`, `instance`, `managed-by`, `component`), and
+  the `ServiceRegistry`-relevant named ports (`grpc`, `http`, `ssr`,
+  `nats`). This keeps the per-service charts declarative and consistent.
 - **`archie`** — the chart for the **7 core services**: UI, Gateway,
-   Messaging, Scheduler, Execution Environment, Runner, State Store. One
-   `values.yaml` with a `services:` map; each service resolves to a small
-   template from the library chart. It also lands the base **ConfigMaps
-   / Secrets** that replace `config.toml` (a phased concern flagged in the
-   discovery research — the chart should *reference* config as a separate
-   concern, not block on relocating it). It must make each service's
-   `Service` a **named-port** Service so gRPC resolution works, and each
-   a **ClusterIP** Service (no headless needed for the base sync path; a
-   headless/SRV Service is an optional addition the Gateway resolver can
-   consume but is not required for the DNS A-record flow).
+  Messaging, Scheduler, Execution Environment, Runner, State Store. One
+  `values.yaml` with a `services:` map; each service resolves to a small
+  template from the library chart. It also lands the base **ConfigMaps
+  / Secrets** that replace `config.toml` (a phased concern flagged in the
+  discovery research — the chart should _reference_ config as a separate
+  concern, not block on relocating it). It must make each service's
+  `Service` a **named-port** Service so gRPC resolution works, and each
+  a **ClusterIP** Service (no headless needed for the base sync path; a
+  headless/SRV Service is an optional addition the Gateway resolver can
+  consume but is not required for the DNS A-record flow).
 - **`archie-curator`** — the chart for the **optional Curator**, plus the
-   **Curator Operator**. Operator chart installs the CRD, the
-   controller Deployment (with the ServiceAccount / ClusterRole /
-   ClusterRoleBinding the reconciler needs), and the RBAC markers; the
-   Curator chart installs the sample `Curator` CR. Because Curator is
-   optional, this chart is **not** deployed by default with `archie` — the
-   whole point is that a customer installs it later and the fleet
-   auto-aligns.
+  **Curator Operator**. Operator chart installs the CRD, the
+  controller Deployment (with the ServiceAccount / ClusterRole /
+  ClusterRoleBinding the reconciler needs), and the RBAC markers; the
+  Curator chart installs the sample `Curator` CR. Because Curator is
+  optional, this chart is **not** deployed by default with `archie` — the
+  whole point is that a customer installs it later and the fleet
+  auto-aligns.
 
 ### What the Curator Operator's reconcile loop actually needs to do
 
 This is a textbook Kubebuilder / Operator-SDK controller. The reconcile
 loop (per the Kubebuilder book and the multi-resource reconciliation
 pattern) is **level-triggered, not status-triggered**: it must always
-converge the *whole* desired set, never react to a specific event. Per
+converge the _whole_ desired set, never react to a specific event. Per
 `Curator` CR, the loop:
 
 1. **Fetch the CR.** `r.Get(ctx, req.NamespacedName, &curator)`; treat
@@ -828,7 +830,7 @@ from here, as the task asks):
   identical; the choice of kubebuilder scaffolding vs. Operator SDK is a
   tooling preference that does not change the M1 scope. Kubebuilder is the
   documented norm and is assumed here.
-- **Whether the Operator should manage the *base* services too.** The
+- **Whether the Operator should manage the _base_ services too.** The
   first milestone only has an Operator for Curator (the optional one).
   A "fleet Operator" that reconciles all services is a larger, later
   idea; the base services can be plain chart templates for now.
@@ -837,19 +839,19 @@ from here, as the task asks):
 
 ## Sources (primary, fetched during this pass)
 
-- Zhamak Dehghani, *How to break a Monolith into Microservices* (Martin
+- Zhamak Dehghani, _How to break a Monolith into Microservices_ (Martin
   Fowler site) — https://martinfowler.com/articles/break-monolith-into-microservices.html
-- microservices.io, *Pattern: Database per service* —
+- microservices.io, _Pattern: Database per service_ —
   https://microservices.io/patterns/data/database-per-service.html
-- Microsoft Learn, *.NET microservices: Data sovereignty per microservice* —
+- Microsoft Learn, _.NET microservices: Data sovereignty per microservice_ —
   https://learn.microsoft.com/en-us/dotnet/architecture/microservices/architect-microservice-container-applications/data-sovereignty-per-microservice
-- Kubebuilder Book, *Getting Started* —
+- Kubebuilder Book, _Getting Started_ —
   https://www.kubebuilder.io/getting-started.html
-- Kubebuilder Book, *Resources Managed by the Operator* —
+- Kubebuilder Book, _Resources Managed by the Operator_ —
   https://book-v3.book.kubebuilder.io/reference/watching-resources/operator-managed
-- Kubebuilder Book, *Owned Resources* —
+- Kubebuilder Book, _Owned Resources_ —
   https://kubebuilder.io/reference/watching-resources/secondary-owned-resources
-- Helm, *Charts* — https://helm.sh/docs/topics/charts/
+- Helm, _Charts_ — https://helm.sh/docs/topics/charts/
 - (Supporting synthesis from the deep-search lanes: YuSMP strangler-fig
   guide, Md Sanwar Hossain strangler-fig, CloudRPS strangler-fig,
   Mobisoft first-microservice-to-extract, StackAuthority

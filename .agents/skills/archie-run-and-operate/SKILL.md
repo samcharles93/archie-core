@@ -11,14 +11,14 @@ history.
 
 ## Define the process shapes
 
-| Term | Meaning here |
-|---|---|
-| `archied` | Resident orchestrator. Owns config, forge credentials, worktrees, gateways, dashboard, optional NATS/Docker orchestration. |
-| `archie-agent` | Long-running NATS worker. Consumes per-stage `archie.agent.>` requests and full-task `archie.taskrun.>` requests. Not a stdin/stdout worker. |
-| Stage request | One autonomous workflow stage sent on `archie.agent.<task-id>.request`. |
-| Full-task handoff | A whole workflow sent on core NATS subject `archie.taskrun.<task-id>` to a task container. |
-| Work directory | `work_dir`: task clones plus memory and candidate index artifacts. |
-| State directory | `state_dir` (default `~/.local/share/archie`): embedded NATS store, task logs. Task, event, capture and conversation data live in the PostgreSQL database `database_url` names. `db_path` only locates pre-PostgreSQL files for `archie-state-store import`. |
+| Term              | Meaning here                                                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `archied`         | Resident orchestrator. Owns config, forge credentials, worktrees, gateways, dashboard, optional NATS/Docker orchestration.                                                      |
+| `archie-agent`    | Long-running NATS worker. Consumes per-stage `archie.agent.>` requests and full-task `archie.taskrun.>` requests. Not a stdin/stdout worker.                                    |
+| Stage request     | One autonomous workflow stage sent on `archie.agent.<task-id>.request`.                                                                                                         |
+| Full-task handoff | A whole workflow sent on core NATS subject `archie.taskrun.<task-id>` to a task container.                                                                                      |
+| Work directory    | `work_dir`: task clones plus memory and candidate index artifacts.                                                                                                              |
+| State directory   | `state_dir` (default `~/.local/share/archie`): embedded NATS store, task logs. Task, event, capture and conversation data live in the PostgreSQL database `database_url` names. |
 
 ## Apply the operational safety boundary
 
@@ -43,32 +43,28 @@ There is no config-only or dry-run flag.
 
 ### `archied`
 
-| Flag | Exact behavior |
-|---|---|
-| `-config <path>` | Load base TOML. Default: `$XDG_CONFIG_HOME/archie/config.toml`, or `~/.config/archie/config.toml`. |
-| `-config-overlay <path>` | Decode a second TOML file into the base config before defaults and validation. |
-| `-once` | Run startup plus one poll/process cycle, then exit. This changes state. |
-| `-requeue <task-id>` | Requeue a parked/waiting task, then exit unless `-once` is also set. This changes state. |
+| Flag                     | Exact behaviour                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `-config <path>`         | Load base TOML. Default: `$XDG_CONFIG_HOME/archie/config.toml`, or `~/.config/archie/config.toml`. |
+| `-config-overlay <path>` | Decode a second TOML file into the base config before defaults and validation.                     |
+| `-once`                  | Run startup plus one poll/process cycle, then exit. This changes state.                            |
+| `-requeue <task-id>`     | Requeue a parked/waiting task, then exit unless `-once` is also set. This changes state.           |
 
 ### `archie-agent`
 
-| Flag or environment | Exact behavior |
-|---|---|
-| `-nats-url <url>` | Select NATS; falls back to `NATS_URL`. One of them is required. |
-| `-consumer <name>` | Set the durable JetStream consumer name; default `archie-agent`. |
-| `NATS_TOKEN` | Optional NATS token read directly by the worker. |
+| Flag or environment | Exact behaviour                                                 |
+| ------------------- | --------------------------------------------------------------- |
+| `-nats-url <url>`   | Select NATS; falls back to `NATS_URL`. One of them is required. |
+| `NATS_TOKEN`        | Optional NATS token read directly by the worker.                |
 
 Both linked binaries may also display Go's `-quickchecks` flag from
 `testing/quick`; it is not an Archie operations control.
 
-## Select the execution mode deliberately
+## Execution mode
 
-| Config shape | What runs | Operational status on 2026-09-18 |
-|---|---|---|
-| `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims through the State Store, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
-| `agent.mode = "subprocess"` | `archied` starts `agent.command` per stage and expects one JSON invocation on stdin, one response on stdout. | **Open/broken with default command.** `cmd/archie-agent` is a long-running NATS worker and never calls `agentexec.ServeOne`. |
-| `agent.mode = "nats"`, `[nats]`, containers disabled | `archied` runs the workflow; each autonomous stage goes to a separately started `archie-agent`. | **Implemented but operator-assembled.** Launch and supervise a worker separately. |
-| `agent.mode = "nats"`, `[nats]`, `containers.enabled = true` | `archied` publishes task discovery through JetStream, prepares a worktree, spawns one agent container, sends the whole workflow on `archie.taskrun.<id>`. | **Host daemon + Compose NATS path.** `deployments/docker-nats-stack.toml` demonstrates it. |
+| Config shape                                       | What runs                                                                                                                                                                                                |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[nats]` absent (embedded) or `url` set (external) | `archied` polls and claims through the State Store, prepares a worktree, spawns one task-scoped agent container and sends the whole workflow on `archie.taskrun.<id>`. There is no other execution mode. |
 
 ## Run a local foreground daemon
 
@@ -108,12 +104,12 @@ Do not use this to test subprocess mode.
 
 ## Run the repository Compose stack
 
-| Repository command | Actual scope |
-|---|---|
-| `task docker-build` | Build only the `agent` image from `Dockerfile`. |
-| `task docker-up` | Start the Compose-managed NATS service. The profiled agent entry is not started. |
-| `task docker-logs` | Follow the NATS service logs. |
-| `task docker-down` | Run `docker compose down`. Does not request volume deletion. |
+| Repository command  | Actual scope                                                                     |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `task docker-build` | Build only the `agent` image from `Dockerfile`.                                  |
+| `task docker-up`    | Start the Compose-managed NATS service. The profiled agent entry is not started. |
+| `task docker-logs`  | Follow the NATS service logs.                                                    |
+| `task docker-down`  | Run `docker compose down`. Does not request volume deletion.                     |
 
 Prefer the narrow start:
 
@@ -150,21 +146,21 @@ are spawned by the host `archied` process through `/var/run/docker.sock`.
 
 ## Locate output and durable state
 
-| Output or state | Current destination |
-|---|---|
-| Daemon logs | JSON on host stderr; the configured host supervisor captures them. |
-| Agent logs | JSON on worker/container stderr. Task containers use `AutoRemove`. |
-| Tasks and events | PostgreSQL (`database_url`), served by `archie-state-store`. |
-| Chat sessions and messages | PostgreSQL (`database_url`), served by `archie-gateway`. |
-| Default task worktree | `<work_dir>/<owner>-<repo>/issue-<number>`; default root `~/.local/share/archie/work`. |
-| Identity worktree | `<work_dir>/identity-<identity>/<owner>-<repo>/issue-<number>`. |
-| Container worktree | Host worktree bind-mounted read/write at `/data/worktree`; `task.json` written under `.git/` so the agent's commit cannot sweep it onto the task branch. |
-| Built-in memory | `<work_dir>/memory/MEMORY.md` and `<work_dir>/memory/USER.md`. |
-| Telegram update state | `<work_dir>/telegram-update-deferrals.json` plus hashed `release-announcements-*.json`. |
-| Codesearch candidates | Defaults derive as `<work_dir>/indexes` and `<work_dir>/workspace-indexes.db`; no `indexing.Manager` construction found in daemon composition root. |
-| Optional repository volume | `archie-repo-<owner>-<repo>` mounted at `/data/repo`. |
-| Ecosystem cache volumes | `archie-cache-go`, `archie-cache-node`, etc., mounted below `/data/cache`. No code sets tool cache env vars to those mount paths. |
-| NATS data | Compose declares `nats_data:/data`; NATS command does not set a store directory. |
+| Output or state            | Current destination                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daemon logs                | JSON on host stderr; the configured host supervisor captures them.                                                                                       |
+| Agent logs                 | JSON on worker/container stderr. Task containers use `AutoRemove`.                                                                                       |
+| Tasks and events           | PostgreSQL (`database_url`), served by `archie-state-store`.                                                                                             |
+| Chat sessions and messages | PostgreSQL (`database_url`), served by `archie-gateway`.                                                                                                 |
+| Default task worktree      | `<work_dir>/<owner>-<repo>/issue-<number>`; default root `~/.local/share/archie/work`.                                                                   |
+| Identity worktree          | `<work_dir>/identity-<identity>/<owner>-<repo>/issue-<number>`.                                                                                          |
+| Container worktree         | Host worktree bind-mounted read/write at `/data/worktree`; `task.json` written under `.git/` so the agent's commit cannot sweep it onto the task branch. |
+| Built-in memory            | `<work_dir>/memory/MEMORY.md` and `<work_dir>/memory/USER.md`.                                                                                           |
+| Telegram update state      | `<work_dir>/telegram-update-deferrals.json` plus hashed `release-announcements-*.json`.                                                                  |
+| Codesearch candidates      | Defaults derive as `<work_dir>/indexes` and `<work_dir>/workspace-indexes.db`; no `indexing.Manager` construction found in daemon composition root.      |
+| Optional repository volume | `archie-repo-<owner>-<repo>` mounted at `/data/repo`.                                                                                                    |
+| Ecosystem cache volumes    | `archie-cache-go`, `archie-cache-node`, etc., mounted below `/data/cache`. No code sets tool cache env vars to those mount paths.                        |
+| NATS data                  | Compose declares `nats_data:/data`; NATS command does not set a store directory.                                                                         |
 
 Compose runs NATS only; `archied` and all configured state paths remain on the
 host. The host daemon talks to the local Docker socket directly and bind-mounts
@@ -175,12 +171,12 @@ each task worktree into the agent container it creates.
 The `ARCHIE_TASKS` JetStream stream uses file storage and work-queue retention
 for `archie.task.>` and `archie.agent.>`.
 
-| Plane | Subjects and behavior |
-|---|---|
-| Discovery | `archie.task.bug`, `.feature`, `.bootstrap`, or `.default`; daemon durable consumer `archie-daemon`, 5-min ack wait, max 3 deliveries. |
-| Per-stage requests | `archie.agent.<id>.request`; worker durable consumer defaults to `archie-agent`, 30-min ack wait, max 3 deliveries; response address in `X-Archie-Reply`. |
-| Container task | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/.git/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`. |
-| Privileged RPC | Store operations go to the gRPC State Store (`internal/infrastructure/staterpc`, task-scoped grants); forge and worktree operations return to `archied` over core NATS subjects in `internal/forgerpc` and `internal/worktreerpc`. |
+| Plane              | Subjects and behaviour                                                                                                                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery          | `archie.task.bug`, `.feature`, `.bootstrap`, or `.default`; daemon durable consumer `archie-daemon`, 5-min ack wait, max 3 deliveries.                                                                                             |
+| Per-stage requests | `archie.agent.<id>.request`; worker durable consumer defaults to `archie-agent`, 30-min ack wait, max 3 deliveries; response address in `X-Archie-Reply`.                                                                          |
+| Container task     | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/.git/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`.                                |
+| Privileged RPC     | Store operations go to the gRPC State Store (`internal/infrastructure/staterpc`, task-scoped grants); forge and worktree operations return to `archied` over core NATS subjects in `internal/forgerpc` and `internal/worktreerpc`. |
 
 Set `containers.network` explicitly. `deployments/docker-nats-stack.toml` uses
 `archie-core_default`. Auto-detection inspects the daemon container; on failure,
@@ -196,10 +192,6 @@ It forwards only configured provider-key variables.
 Open limitations until code/tests prove otherwise:
 
 - `subprocess` + default `archie-agent` is protocol-incompatible.
-- A deployed overlay previously using legacy `token_env` still converts: the
-  structured `forge.token` secret reference wins when both are present and
-  `config.Forge.TokenEnv` is otherwise converted by
-  `internal/infrastructure/configuration/defaults.go`.
 - Container RPC uses root forge/worktree for every identity.
 - Container orphan recovery lacks daemon-instance label.
 - `max_uptime` only bounds `Pool.Acquire` create/start; no lifetime timer.
@@ -221,9 +213,3 @@ secrets); task counts via safe GET; take backups with `archie-state-store backup
 
 No complete rollback command exists, no versioned image tags. Restoring a binary
 does not undo forge changes, task transitions, or data-format changes.
-
-## Treat carina facts as unverified external state
-
-Repository guidance (2026-09-18): two instances on `carina` with distinct
-`bot_user` values. No live process list, config, image digest, service manager,
-or deployment was verified. Do not invent SSH, systemd, or service commands.

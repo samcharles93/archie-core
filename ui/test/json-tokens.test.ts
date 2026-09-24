@@ -9,7 +9,11 @@ test("a valid JSON document tokenizes into typed spans", () => {
   const kinds = tokens.map((t) => t.kind);
   assert.ok(tokens.some((t) => t.kind === "key" && t.text === '"name"'));
   assert.ok(tokens.some((t) => t.kind === "string" && t.text === '"archie"'));
-  assert.ok(tokens.some((t) => t.kind === "number" && t.text === "3" || t.text.endsWith("3")));
+  assert.ok(
+    tokens.some(
+      (t) => (t.kind === "number" && t.text === "3") || t.text.endsWith("3"),
+    ),
+  );
   assert.ok(tokens.some((t) => t.kind === "punct" && t.text.includes("{")));
 });
 

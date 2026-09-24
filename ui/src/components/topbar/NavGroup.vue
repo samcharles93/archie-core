@@ -13,7 +13,11 @@ import type { NavEntry } from "@/lib/nav";
 import NavItem from "./NavItem.vue";
 import NavTrigger from "./NavTrigger.vue";
 
-const props = defineProps<{ label: string; items: NavEntry[]; activePath: string }>();
+const props = defineProps<{
+  label: string;
+  items: NavEntry[];
+  activePath: string;
+}>();
 
 const holds = (path: string) => props.activePath === path;
 
@@ -61,7 +65,9 @@ function closeMenuSoon() {
     >
       <template v-for="item in items" :key="item.path">
         <DropdownMenuSeparator v-if="item.dividerBefore" />
-        <DropdownMenuLabel v-if="item.dividerBefore">{{ item.dividerBefore }}</DropdownMenuLabel>
+        <DropdownMenuLabel v-if="item.dividerBefore">{{
+          item.dividerBefore
+        }}</DropdownMenuLabel>
         <NavItem :entry="item" :current="holds(item.path)" />
       </template>
     </DropdownMenuContent>

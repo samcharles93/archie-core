@@ -29,29 +29,166 @@ import WorkflowsPage from "@/workflows/WorkflowsPage.vue";
 //   navPath     the navigation entry this route keeps current
 //   soon        visible, greyed and non-navigable
 const routes = [
-  { path: "/", name: "dashboard", component: DashboardPage, meta: { label: "Dashboard", description: "What Archie is working on, what needs you, and token spend." } },
-  { path: "/tasks", name: "tasks", component: TasksPage, meta: { label: "Tasks", description: "Issues Archie has picked up, and where each one stands." } },
-  { path: "/tasks/:id", name: "task-detail", component: TaskDetailPage, meta: { label: "Task run", nav: false, navPath: "/tasks" } },
-  { path: "/workflows", name: "workflows", component: WorkflowsPage, meta: { label: "Workflows", description: "The routed workflows and their run history.", section: "workflows" } },
-  { path: "/skills", name: "skills", component: SkillsPage, meta: { label: "Skills", description: "The SKILL.md capabilities Archie can activate.", section: "skills" } },
-  { path: "/curators", name: "curators", component: CuratorsPage, meta: { label: "Curators", description: "Scheduled passes that curate Archie's memory and captures.", section: "curators" } },
-  { path: "/events", name: "events", component: EventsPage, meta: { label: "Events", description: "Captured inbound events, how their fields map, and which workflow they start." } },
+  {
+    path: "/",
+    name: "dashboard",
+    component: DashboardPage,
+    meta: {
+      label: "Dashboard",
+      description:
+        "What Archie is working on, what needs you, and token spend.",
+    },
+  },
+  {
+    path: "/tasks",
+    name: "tasks",
+    component: TasksPage,
+    meta: {
+      label: "Tasks",
+      description: "Issues Archie has picked up, and where each one stands.",
+    },
+  },
+  {
+    path: "/tasks/:id",
+    name: "task-detail",
+    component: TaskDetailPage,
+    meta: { label: "Task run", nav: false, navPath: "/tasks" },
+  },
+  {
+    path: "/workflows",
+    name: "workflows",
+    component: WorkflowsPage,
+    meta: {
+      label: "Workflows",
+      description: "The routed workflows and their run history.",
+      section: "workflows",
+    },
+  },
+  {
+    path: "/skills",
+    name: "skills",
+    component: SkillsPage,
+    meta: {
+      label: "Skills",
+      description: "The SKILL.md capabilities Archie can activate.",
+      section: "skills",
+    },
+  },
+  {
+    path: "/curators",
+    name: "curators",
+    component: CuratorsPage,
+    meta: {
+      label: "Curators",
+      description: "Scheduled passes that curate Archie's memory and captures.",
+      section: "curators",
+    },
+  },
+  {
+    path: "/events",
+    name: "events",
+    component: EventsPage,
+    meta: {
+      label: "Events",
+      description:
+        "Captured inbound events, how their fields map, and which workflow they start.",
+    },
+  },
   // The three former destinations, kept as bookmarks rather than removed: a
   // link, a bookmark or an agent that learned these URLs still lands somewhere
   // that works. `nav: false` is what the page registry's test reads to skip
   // them -- they are addressed by URL, not offered as destinations.
-  { path: "/captures", name: "captures", redirect: "/events?tab=inspector", meta: { label: "Inspector", nav: false } },
-  { path: "/mappings", name: "mappings", redirect: "/events?tab=mappings", meta: { label: "Mappings", nav: false } },
-  { path: "/bindings", name: "bindings", redirect: "/events?tab=bindings", meta: { label: "Bindings", nav: false } },
-  { path: "/system/status", name: "system-status", component: SystemStatusPage, meta: { label: "Status", description: "Update state, configuration sources, and the listen address.", section: "settings" } },
-  { path: "/logs", name: "logs", component: LogsPage, meta: { label: "Logs", description: "The daemon log stream, filterable by level and component.", section: "logs" } },
-  { path: "/system/appearance", name: "system-appearance", component: SystemAppearancePage, meta: { label: "Appearance", description: "Theme and display preferences." } },
-  { path: "/system/tasks", name: "system-tasks", component: SystemTasksPage, meta: { label: "Task settings", description: "Work lifecycle: statuses, operator actions, and budgets.", section: "settings" } },
-  { path: "/system/models", name: "system-models", component: SystemModelsPage, meta: { label: "Models", description: "Model roles and the providers backing them.", section: "settings" } },
-  { path: "/system/repos", name: "system-repos", component: SystemReposPage, meta: { label: "Repositories", description: "Repositories Archie watches, and their per-repo gate overrides.", section: "settings" } },
-  { path: "/system/identities", name: "system-identities", component: SystemIdentitiesPage, meta: { label: "Identities", description: "Persistent actors and lifecycle.", section: "settings" } },
-  { path: "/channels", name: "channels", component: ChannelsPage, meta: { label: "Channels", description: "Inbound chat and notification channels, and their state.", section: "channels" } },
-  { path: "/system/advanced", name: "system-advanced", component: SystemAdvancedPage, meta: { label: "Advanced", description: "Identity, storage, sandboxing, and dangerous actions.", section: "settings" } },
+  {
+    path: "/system/status",
+    name: "system-status",
+    component: SystemStatusPage,
+    meta: {
+      label: "Status",
+      description:
+        "Update state, configuration sources, and the listen address.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/logs",
+    name: "logs",
+    component: LogsPage,
+    meta: {
+      label: "Logs",
+      description: "The daemon log stream, filterable by level and component.",
+      section: "logs",
+    },
+  },
+  {
+    path: "/system/appearance",
+    name: "system-appearance",
+    component: SystemAppearancePage,
+    meta: {
+      label: "Appearance",
+      description: "Theme and display preferences.",
+    },
+  },
+  {
+    path: "/system/tasks",
+    name: "system-tasks",
+    component: SystemTasksPage,
+    meta: {
+      label: "Task settings",
+      description: "Work lifecycle: statuses, operator actions, and budgets.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/system/models",
+    name: "system-models",
+    component: SystemModelsPage,
+    meta: {
+      label: "Models",
+      description: "Model roles and the providers backing them.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/system/repos",
+    name: "system-repos",
+    component: SystemReposPage,
+    meta: {
+      label: "Repositories",
+      description:
+        "Repositories Archie watches, and their per-repo gate overrides.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/system/identities",
+    name: "system-identities",
+    component: SystemIdentitiesPage,
+    meta: {
+      label: "Identities",
+      description: "Persistent actors and lifecycle.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/channels",
+    name: "channels",
+    component: ChannelsPage,
+    meta: {
+      label: "Channels",
+      description: "Inbound chat and notification channels, and their state.",
+      section: "channels",
+    },
+  },
+  {
+    path: "/system/advanced",
+    name: "system-advanced",
+    component: SystemAdvancedPage,
+    meta: {
+      label: "Advanced",
+      description: "Identity, storage, sandboxing, and dangerous actions.",
+      section: "settings",
+    },
+  },
   { path: "/settings", redirect: "/system/status", meta: { nav: false } },
 ];
 

@@ -8,10 +8,11 @@
 
 The bridge-tool pattern is **implemented and tested** in
 `internal/tools/disclosure.go` (`tool_search`, `tool_describe`, `tool_call`
-+ `ContextPressureGate` + `DisclosureMode`, section 17.14/17.15) — but it is
-**never wired into the daemon**. `BridgeTools` and `ContextPressureGate` are
-referenced only in `disclosure_test.go`. This task is therefore a **wiring**
-task, not a feature build.
+
+- `ContextPressureGate` + `DisclosureMode`, section 17.14/17.15) — but it is
+  **never wired into the daemon**. `BridgeTools` and `ContextPressureGate` are
+  referenced only in `disclosure_test.go`. This task is therefore a **wiring**
+  task, not a feature build.
 
 Wire the existing bridge into the per-chat-turn toolset:
 

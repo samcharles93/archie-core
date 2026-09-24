@@ -9,7 +9,7 @@
 
 ## Question
 
-Should `config.example.toml` and `deployments/*.toml` be *generated*, so they
+Should `config.example.toml` and `deployments/*.toml` be _generated_, so they
 cannot drift from the config code?
 
 ## Decision
@@ -19,7 +19,7 @@ of the schema, and generating either would destroy the thing that makes it
 useful. Three verified reasons, in order of weight:
 
 1. **`config.example.toml`'s value is its comments.** It documents **137 keys**
-   (measured: active *and* commented-out), and those hand-written comments are
+   (measured: active _and_ commented-out), and those hand-written comments are
    the file's purpose — `docs/architecture/configuration.md` states outright
    that "`config.example.toml` carries documentation users are meant to
    hand-edit". TOML round-tripping does not preserve comments, which is exactly
@@ -68,7 +68,7 @@ keys, and expose it so tests can assert emptiness.
 startup policy is "a missing credential disables a capability; only an invalid
 config stops the daemon". A stray key is far more likely to be an operator typo
 in a file they are otherwise happy with than a reason to refuse to boot, and
-`[web]` is documented as landing in a *different* binary
+`[web]` is documented as landing in a _different_ binary
 (`internal/app/archieui`), so a key unknown to one process is legitimately known
 to another. Failing closed here would break working deployments on upgrade.
 
@@ -97,7 +97,7 @@ deferred, not rejected.
 - No reflection-based schema over `config.Config`.
 - No new type list inside `docsgen`.
 - No change to `archied setup`'s template: `configtemplate.Example` stays the
-  verbatim embedded example, hand-maintained, and `setup` continues to *edit* it
+  verbatim embedded example, hand-maintained, and `setup` continues to _edit_ it
   via `tomlwrite` rather than regenerate it.
 
 ## A withdrawn premise, recorded so it is not reused

@@ -38,22 +38,22 @@ design questions.
 
 Each package review records:
 
-| Decision | Required result |
-|---|---|
-| Owned behaviour | The cohesive job the code performs |
-| Domain ownership | The owner of the behaviour and vocabulary |
-| Final location | Its target path |
-| Public contracts | The smallest interfaces, commands, and events exposed |
-| Required services | Domain-defined interfaces implemented by infrastructure |
-| State ownership | The owner of each mutable record and transition |
-| Dependencies | Allowed imports and dependencies to remove |
-| Duplication | Code to consolidate, delete, or keep separate |
-| Plugin status | Core domain, shared contract, infrastructure, plugin, or extra |
-| Process boundary | In-process, or the concrete reason for isolation |
-| Configuration | Settings owned by the domain or plugin |
-| Policy | Definitions, evaluators, consequences, and shared mechanics used |
-| Documentation | Authoritative definitions and generated reference |
-| Migration constraints | Behaviour and data that must remain correct |
+| Decision              | Required result                                                  |
+| --------------------- | ---------------------------------------------------------------- |
+| Owned behaviour       | The cohesive job the code performs                               |
+| Domain ownership      | The owner of the behaviour and vocabulary                        |
+| Final location        | Its target path                                                  |
+| Public contracts      | The smallest interfaces, commands, and events exposed            |
+| Required services     | Domain-defined interfaces implemented by infrastructure          |
+| State ownership       | The owner of each mutable record and transition                  |
+| Dependencies          | Allowed imports and dependencies to remove                       |
+| Duplication           | Code to consolidate, delete, or keep separate                    |
+| Plugin status         | Core domain, shared contract, infrastructure, plugin, or extra   |
+| Process boundary      | In-process, or the concrete reason for isolation                 |
+| Configuration         | Settings owned by the domain or plugin                           |
+| Policy                | Definitions, evaluators, consequences, and shared mechanics used |
+| Documentation         | Authoritative definitions and generated reference                |
+| Migration constraints | Behaviour and data that must remain correct                      |
 
 ## Interview method
 

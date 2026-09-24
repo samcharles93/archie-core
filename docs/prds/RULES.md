@@ -11,7 +11,7 @@ These rules apply to every file in `docs/prds/`.
 - Use the shortest direct sentence. Write “When upgraded, existing instances
   are migrated to the database,” not a description of an importer seeding
   absent resources.
-- State each fact once. Do not repeat a heading, summarize a list before showing
+- State each fact once. Do not repeat a heading, summarise a list before showing
   it, or restate a decision afterward.
 - Every sentence must add a decision, requirement, constraint, evidence, or
   verification step. Delete narration and explanations of obvious text.
@@ -19,10 +19,10 @@ These rules apply to every file in `docs/prds/`.
   open until the maintainer or repository evidence settles them.
 - Do not create a process for a logical boundary. Add one only when it must
   deploy, scale, start, secure, or fail separately.
-- Describe working behavior, not explanatory UI around missing behavior. State
+- Describe working behaviour, not explanatory UI around missing behaviour. State
   what users can do and how success is proved.
 - Before approval, use independent read-only reviewers to check a cross-cutting
-  PRD for missing behavior and exaggerated claims. Verify and synthesize their
+  PRD for missing behaviour and exaggerated claims. Verify and synthesise their
   findings; do not copy their prose.
 - Before requesting approval, review every sentence for complexity, repetition,
   and unsupported scope.

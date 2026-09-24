@@ -29,13 +29,13 @@ navigation. There is no way to send someone to Repositories.
 
 Five top-level nav items. Dashboard is a link; the rest are dropdowns.
 
-| Group | Items |
-|---|---|
-| Dashboard | (link, `/`) |
-| Work | Tasks, Workflows |
-| Agent | Skills, Curators |
-| Events | Inspector, Mappings, Bindings |
-| System | Status, Logs, Appearance; **Settings:** Task settings, Models, Repositories, Channels, Advanced |
+| Group     | Items                                                                                           |
+| --------- | ----------------------------------------------------------------------------------------------- |
+| Dashboard | (link, `/`)                                                                                     |
+| Work      | Tasks, Workflows                                                                                |
+| Agent     | Skills, Curators                                                                                |
+| Events    | Inspector, Mappings, Bindings                                                                   |
+| System    | Status, Logs, Appearance; **Settings:** Task settings, Models, Repositories, Channels, Advanced |
 
 Items are renamed because the group now carries the context: "Event inspector"
 becomes "Inspector" under Events, and so on. A group renders only if at least
@@ -55,17 +55,17 @@ Configuration dissolves into real routes. Anchors into one long page were
 rejected: they leave the 4021px page intact and a deep link lands the reader
 mid-scroll with no context above it.
 
-| Was | Becomes | Content |
-|---|---|---|
-| `/settings` | `/system/status` | Update status, configuration sources, daemon listen address |
-| -- | `/system/appearance` | Theme, and the density/motion preferences that follow it |
-| `/settings` | `/system/tasks` | Work lifecycle: statuses, operator actions, budgets |
-| `/settings` | `/system/models` | Model roles, providers |
-| `/settings` | `/system/repos` | Repositories and their per-repo gate overrides |
-| `/settings` | `/system/advanced` | Identity, storage and sandboxing, dangerous actions |
-| `/captures` | `/captures` | unchanged; label becomes "Inspector" |
-| `/mappings` | `/mappings` | unchanged; label becomes "Mappings" |
-| `/bindings` | `/bindings` | unchanged; label becomes "Bindings" |
+| Was         | Becomes              | Content                                                     |
+| ----------- | -------------------- | ----------------------------------------------------------- |
+| `/settings` | `/system/status`     | Update status, configuration sources, daemon listen address |
+| --          | `/system/appearance` | Theme, and the density/motion preferences that follow it    |
+| `/settings` | `/system/tasks`      | Work lifecycle: statuses, operator actions, budgets         |
+| `/settings` | `/system/models`     | Model roles, providers                                      |
+| `/settings` | `/system/repos`      | Repositories and their per-repo gate overrides              |
+| `/settings` | `/system/advanced`   | Identity, storage and sandboxing, dangerous actions         |
+| `/captures` | `/captures`          | unchanged; label becomes "Inspector"                        |
+| `/mappings` | `/mappings`          | unchanged; label becomes "Mappings"                         |
+| `/bindings` | `/bindings`          | unchanged; label becomes "Bindings"                         |
 
 `/settings` is kept as a permanent redirect to `/system/status`. It is the URL
 in existing bookmarks, in `dashboardPages` (`internal/gateway/dashboard_tools.go`,

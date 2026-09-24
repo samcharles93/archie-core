@@ -15,7 +15,7 @@ sections. Keep facts, decisions, and open questions visibly separate.
 
 ## Architecture decision record
 
-````markdown
+```markdown
 # <Decision title>
 
 **Status:** Proposed | Approved | Superseded by <link>
@@ -34,8 +34,8 @@ sections. Keep facts, decisions, and open questions visibly separate.
 
 ## Current evidence
 
-| Claim | Evidence |
-|---|---|
+| Claim              | Evidence                              |
+| ------------------ | ------------------------------------- |
 | <CURRENT behavior> | `<path>` — `<symbol/test/config key>` |
 
 ## Constraints and invariants
@@ -44,15 +44,15 @@ sections. Keep facts, decisions, and open questions visibly separate.
 
 ## Consumers and boundaries
 
-| Consumer | Contract used | Failure effect |
-|---|---|---|
-| <entry point/package/process> | <interface/command/event/data> | <effect> |
+| Consumer                      | Contract used                  | Failure effect |
+| ----------------------------- | ------------------------------ | -------------- |
+| <entry point/package/process> | <interface/command/event/data> | <effect>       |
 
 ## Options considered
 
-| Option | Benefits | Costs and risks | Evidence | Result |
-|---|---|---|---|---|
-| <option> | <benefit> | <cost> | <measurement/source> | Accepted / Rejected |
+| Option   | Benefits  | Costs and risks | Evidence             | Result              |
+| -------- | --------- | --------------- | -------------------- | ------------------- |
+| <option> | <benefit> | <cost>          | <measurement/source> | Accepted / Rejected |
 
 ## Consequences
 
@@ -72,18 +72,18 @@ operational effects.>
 
 ## Open questions
 
-| Question | Owner | Evidence required | Decision deadline/gate |
-|---|---|---|---|
-| <OPEN question> | <owner> | <measurement> | <gate> |
+| Question        | Owner   | Evidence required | Decision deadline/gate |
+| --------------- | ------- | ----------------- | ---------------------- |
+| <OPEN question> | <owner> | <measurement>     | <gate>                 |
 
 ## Validation
 
 - `<exact command>` — expected <observable result>
-````
+```
 
 ## Migration plan and parity matrix
 
-````markdown
+```markdown
 # <Capability> migration plan
 
 **Status:** Proposed | Approved | In progress | Complete
@@ -99,24 +99,24 @@ change.>
 
 ## Current-path inventory
 
-| Operation | Entry point | Owner today | State/data touched | Consumers | Disposition |
-|---|---|---|---|---|---|
-| <operation> | `<path.Symbol>` | <owner/none> | <state> | <consumers> | Keep / Adapt / Merge / Delete |
+| Operation   | Entry point     | Owner today  | State/data touched | Consumers   | Disposition                   |
+| ----------- | --------------- | ------------ | ------------------ | ----------- | ----------------------------- |
+| <operation> | `<path.Symbol>` | <owner/none> | <state>            | <consumers> | Keep / Adapt / Merge / Delete |
 
 ## Parity matrix
 
-| Behavior | Current evidence | Target owner/path | Required parity | Test or observation | Status |
-|---|---|---|---|---|---|
-| <behavior> | `<test/symbol/log>` | <target> | <exact result> | `<command>` | OPEN |
+| Behavior   | Current evidence    | Target owner/path | Required parity | Test or observation | Status |
+| ---------- | ------------------- | ----------------- | --------------- | ------------------- | ------ |
+| <behavior> | `<test/symbol/log>` | <target>          | <exact result>  | `<command>`         | OPEN   |
 
 Include success, validation failure, retry, cancellation, crash recovery,
 authorization, persistence, event emission, and shutdown where applicable.
 
 ## Dependency and data movement
 
-| From | To | Adapter/backfill | Consistency rule | Rollback |
-|---|---|---|---|---|
-| <source> | <target> | <mechanism> | <invariant> | <method> |
+| From     | To       | Adapter/backfill | Consistency rule | Rollback |
+| -------- | -------- | ---------------- | ---------------- | -------- |
+| <source> | <target> | <mechanism>      | <invariant>      | <method> |
 
 ## Slices and gates
 
@@ -141,9 +141,9 @@ authorization, persistence, event emission, and shutdown where applicable.
 
 ## Deletion gates
 
-| Legacy path | Replacement proof | Consumer-zero proof | Data proof | Removal test |
-|---|---|---|---|---|
-| `<path.Symbol>` | <proof> | <search/inventory> | <proof> | `<command>` |
+| Legacy path     | Replacement proof | Consumer-zero proof | Data proof | Removal test |
+| --------------- | ----------------- | ------------------- | ---------- | ------------ |
+| `<path.Symbol>` | <proof>           | <search/inventory>  | <proof>    | `<command>`  |
 
 ## Rollback and stop conditions
 
@@ -153,10 +153,10 @@ authorization, persistence, event emission, and shutdown where applicable.
 
 ## Remaining open decisions
 
-| Decision | Owner | Evidence needed | Blocks |
-|---|---|---|---|
-| <OPEN> | <owner> | <evidence> | <slice/cutover> |
-````
+| Decision | Owner   | Evidence needed | Blocks          |
+| -------- | ------- | --------------- | --------------- |
+| <OPEN>   | <owner> | <evidence>      | <slice/cutover> |
+```
 
 ## Incident or dead-end record
 
@@ -185,9 +185,9 @@ Observed: <result>
 
 ## Investigation chronology
 
-| Time/order | Hypothesis | Prediction | Evidence | Result |
-|---|---|---|---|---|
-| 1 | <hypothesis> | <expected observation> | `<command/log/test>` | Confirmed / Rejected |
+| Time/order | Hypothesis   | Prediction             | Evidence             | Result               |
+| ---------- | ------------ | ---------------------- | -------------------- | -------------------- |
+| 1          | <hypothesis> | <expected observation> | `<command/log/test>` | Confirmed / Rejected |
 
 ## Root cause
 
@@ -195,9 +195,9 @@ Observed: <result>
 
 ## Attempted or rejected fixes
 
-| Fix | Why plausible | Evidence against it | Status |
-|---|---|---|---|
-| <approach> | <reason> | <test/runtime evidence> | Rejected / Reverted |
+| Fix        | Why plausible | Evidence against it     | Status              |
+| ---------- | ------------- | ----------------------- | ------------------- |
+| <approach> | <reason>      | <test/runtime evidence> | Rejected / Reverted |
 
 ## Resolution and invariant
 
@@ -213,7 +213,7 @@ Observed: <result>
 
 ## Feature ownership and deprecation record
 
-````markdown
+```markdown
 # <Feature/capability> ownership
 
 **Status:** Current | Migrating | Deprecated | Removed
@@ -229,31 +229,31 @@ Observed: <result>
 
 ## Complete path
 
-| Layer | Path/symbol | Responsibility |
-|---|---|---|
-| Entry | `<path.Symbol>` | <role> |
-| Domain | `<path.Symbol>` | <role> |
-| State | `<path.Symbol>` | <role> |
-| Adapter | `<path.Symbol>` | <role> |
-| Composition | `<path.Symbol>` | <role> |
+| Layer       | Path/symbol     | Responsibility |
+| ----------- | --------------- | -------------- |
+| Entry       | `<path.Symbol>` | <role>         |
+| Domain      | `<path.Symbol>` | <role>         |
+| State       | `<path.Symbol>` | <role>         |
+| Adapter     | `<path.Symbol>` | <role>         |
+| Composition | `<path.Symbol>` | <role>         |
 
 ## Consumers
 
-| Consumer | Contract | Configuration | Test evidence |
-|---|---|---|---|
-| <consumer> | <interface/event/data> | <key or none> | `<test>` |
+| Consumer   | Contract               | Configuration | Test evidence |
+| ---------- | ---------------------- | ------------- | ------------- |
+| <consumer> | <interface/event/data> | <key or none> | `<test>`      |
 
 ## Invariants and failures
 
-| Invariant | Enforcement | Failure behavior | Test |
-|---|---|---|---|
-| <invariant> | `<path.Symbol>` | <result> | `<test>` |
+| Invariant   | Enforcement     | Failure behavior | Test     |
+| ----------- | --------------- | ---------------- | -------- |
+| <invariant> | `<path.Symbol>` | <result>         | `<test>` |
 
 ## Duplicate and superseded paths
 
-| Path | Same operation? | Disposition | Deletion gate |
-|---|---|---|---|
-| `<path.Symbol>` | Yes / No, because <reason> | Keep / Delegate / Migrate / Delete | <proof> |
+| Path            | Same operation?            | Disposition                        | Deletion gate |
+| --------------- | -------------------------- | ---------------------------------- | ------------- |
+| `<path.Symbol>` | Yes / No, because <reason> | Keep / Delegate / Migrate / Delete | <proof>       |
 
 ## Change checklist
 
@@ -263,11 +263,11 @@ Observed: <result>
 - [ ] Add failure-path and architecture tests.
 - [ ] Prove the replacement before deleting the old path.
 - [ ] Update generated reference from owned definitions.
-````
+```
 
 ## Operational runbook
 
-````markdown
+```markdown
 # Operate <service/capability>
 
 **Status:** Current
@@ -293,9 +293,9 @@ Observed: <result>
 
 ## Health and outputs
 
-| Signal | Location/command | Healthy result | Unhealthy branch |
-|---|---|---|---|
-| <signal> | `<command/path>` | <result> | <action> |
+| Signal   | Location/command | Healthy result | Unhealthy branch |
+| -------- | ---------------- | -------------- | ---------------- |
+| <signal> | `<command/path>` | <result>       | <action>         |
 
 ## Rollback
 
@@ -305,19 +305,19 @@ Observed: <result>
 
 ## Known failure modes
 
-| Symptom | First measurement | Likely seam | Next runbook |
-|---|---|---|---|
-| <symptom> | `<command>` | <boundary> | <sibling skill/doc> |
+| Symptom   | First measurement | Likely seam | Next runbook        |
+| --------- | ----------------- | ----------- | ------------------- |
+| <symptom> | `<command>`       | <boundary>  | <sibling skill/doc> |
 
 ## Provenance
 
 - External fact observed by <who/how> on YYYY-MM-DD.
 - Re-check: `<one-line command>`
-````
+```
 
 ## Documentation change review
 
-````markdown
+```markdown
 # Documentation review: <scope>
 
 **Date:** YYYY-MM-DD
@@ -326,15 +326,15 @@ Observed: <result>
 
 ## Classification
 
-| Claim/change | State | Owner | Evidence |
-|---|---|---|---|
-| <claim> | CURRENT / APPROVED TARGET / OPEN / HISTORICAL / GENERATED / EXTERNAL | <owner> | `<path.Symbol/test/command>` |
+| Claim/change | State                                                                | Owner   | Evidence                     |
+| ------------ | -------------------------------------------------------------------- | ------- | ---------------------------- |
+| <claim>      | CURRENT / APPROVED TARGET / OPEN / HISTORICAL / GENERATED / EXTERNAL | <owner> | `<path.Symbol/test/command>` |
 
 ## Findings
 
-| Severity | Location | Problem | Evidence | Required correction |
-|---|---|---|---|---|
-| Blocking / Important / Minor | <heading/path> | <problem> | <evidence> | <fix> |
+| Severity                     | Location       | Problem   | Evidence   | Required correction |
+| ---------------------------- | -------------- | --------- | ---------- | ------------------- |
+| Blocking / Important / Minor | <heading/path> | <problem> | <evidence> | <fix>               |
 
 ## Authority and duplication checks
 
@@ -354,15 +354,15 @@ Observed: <result>
 
 ## Validation evidence
 
-| Command | Expected | Observed |
-|---|---|---|
+| Command           | Expected | Observed |
+| ----------------- | -------- | -------- |
 | `<exact command>` | <result> | <result> |
 
 ## Residual uncertainty
 
 <List unverified external facts, unavailable environments, or still-open
 decisions. Never convert them into implied acceptance.>
-````
+```
 
 ## PRD: open capability design with multi-agent execution
 
@@ -390,7 +390,7 @@ The three failure modes this template exists to prevent:
   existing call site that already proves the pattern (`internal/tools/minimax/tool.go`,
   not "a tool like the video one").
 
-````markdown
+```markdown
 # <Capability> capability design
 
 Epic: `<bd id>` / GitHub `#<epic number>` ("<epic title>").
@@ -435,8 +435,8 @@ One section per sibling bead the epic lists as separate scope. Each one:
 
 ## Call site inventory
 
-| concern | file | change |
-|---|---|---|
+| concern   | file     | change                                                             |
+| --------- | -------- | ------------------------------------------------------------------ |
 | <concern> | `<path>` | done (`#<issue>`) / new (`#<issue>`) / none — already handles this |
 
 Every file any sub-feature touches, old or new, in one table — so an
@@ -449,9 +449,9 @@ One row per sub-feature section above. This is what turns the design into
 something a `/council`-style review or a cheaper/faster implementer model
 can run against directly instead of needing the full design re-explained.
 
-| sub-feature | issue | implementer scope | suggested council lenses | why |
-|---|---|---|---|---|
-| <name> | `#<issue>` | <the call-site inventory rows this bead owns> | `lens-<key>`, `lens-<key>` | <one clause: what that lens actually catches for this slice — e.g. lens-contract for a new provider error-mapping table, lens-operator for a backend-down failure path, lens-deletionist when the section's whole point is "don't rebuild what exists", lens-boundary for a new domain/infra split, lens-maintainer for a new user-facing state machine> |
+| sub-feature | issue      | implementer scope                             | suggested council lenses   | why                                                                                                                                                                                                                                                                                                                                                      |
+| ----------- | ---------- | --------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <name>      | `#<issue>` | <the call-site inventory rows this bead owns> | `lens-<key>`, `lens-<key>` | <one clause: what that lens actually catches for this slice — e.g. lens-contract for a new provider error-mapping table, lens-operator for a backend-down failure path, lens-deletionist when the section's whole point is "don't rebuild what exists", lens-boundary for a new domain/infra split, lens-maintainer for a new user-facing state machine> |
 
 Pick lenses from the five in `.claude/workflows/council.js`
 (`boundary`, `contract`, `deletionist`, `operator`, `maintainer`) by what the
@@ -482,4 +482,4 @@ if the epic didn't pre-file its sub-issues):
 - Add the suggested lenses from the Execution table as a line on the issue
   itself, so picking it up needs no round-trip back to this doc to know
   which `/council` lenses to run before it's done.
-````
+```

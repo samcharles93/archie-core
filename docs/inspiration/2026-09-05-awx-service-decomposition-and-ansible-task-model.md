@@ -1,6 +1,6 @@
 # Sam's message, verbatim (2026-09-05)
 
-Source: chat message pasting an AWX forum post (AWX modernization series,
+Source: chat message pasting an AWX forum post (AWX modernisation series,
 "Refactoring AWX into a Pluggable, Service-Oriented Architecture") plus a
 terminal transcript and a follow-up message including Ansible's
 `ansible/playbook/task.py`. Preserved verbatim below for later reference.
@@ -10,25 +10,28 @@ reproduced, since this file is text-only.
 ---
 
 [01:09:53] sam@helix /work/clones
+
 > git clone https://github.com/ansible/ansible.git
-Cloning into 'ansible'...
-remote: Enumerating objects: 644471, done.
-remote: Counting objects: 100% (21/21), done.
-remote: Compressing objects: 100% (21/21), done.
-remote: Total 644471 (delta 5), reused 2 (delta 0), pack-reused 644450 (from 3)
-Receiving objects: 100% (644471/644471), 251.86 MiB | 9.60 MiB/s, done.
-Resolving deltas: 100% (427812/427812), done.
-[01:12:50] sam@helix /work/clones
+> Cloning into 'ansible'...
+> remote: Enumerating objects: 644471, done.
+> remote: Counting objects: 100% (21/21), done.
+> remote: Compressing objects: 100% (21/21), done.
+> remote: Total 644471 (delta 5), reused 2 (delta 0), pack-reused 644450 (from 3)
+> Receiving objects: 100% (644471/644471), 251.86 MiB | 9.60 MiB/s, done.
+> Resolving deltas: 100% (427812/427812), done.
+> [01:12:50] sam@helix /work/clones
 > git clone https://github.com/ansible/awx.git
-Cloning into 'awx'...
-remote: Enumerating objects: 331428, done.
-remote: Counting objects: 100% (399/399), done.
-remote: Compressing objects: 100% (256/256), done.
-remote: Total 331428 (delta 259), reused 153 (delta 143), pack-reused 331029 (from 3)
-Receiving objects: 100% (331428/331428), 346.81 MiB | 12.94 MiB/s, done.
-Resolving deltas: 100% (254095/254095), done.
-[01:14:59] sam@helix /work/clones
+> Cloning into 'awx'...
+> remote: Enumerating objects: 331428, done.
+> remote: Counting objects: 100% (399/399), done.
+> remote: Compressing objects: 100% (256/256), done.
+> remote: Total 331428 (delta 259), reused 153 (delta 143), pack-reused 331029 (from 3)
+> Receiving objects: 100% (331428/331428), 346.81 MiB | 12.94 MiB/s, done.
+> Resolving deltas: 100% (254095/254095), done.
+> [01:14:59] sam@helix /work/clones
+
 ---
+
 [Image #2]
 
 Hi folks,
@@ -86,9 +89,9 @@ Links in this AWX update series
     Refactoring AWX into a Pluggable, Service-Oriented Architecture (this post)
     Upcoming changes to AWX Operator installation methods
     AWX UI and credential types transitioning to the new pluggable architecture
-    AWX modernization: Moving forward
-    AWX modernization: Ansible UI
-    AWX modernization: Ansible Jewel
+    AWX modernisation: Moving forward
+    AWX modernisation: Ansible UI
+    AWX modernisation: Ansible Jewel
 
 Useful links
 
@@ -96,7 +99,9 @@ Useful links
     2024-07-01 Streamlining AWX Releases
     The Forum: AWX topics
     The Forum: Newsletter Category
+
 ---
+
 Taking a look at this, How could we reframe ourselves to capture some of this market?
 
 Archie is already a beast of a project, I think that it would be an excellent idea to think about cleaning up, simplifying, and unifying many of it's layers down to cleaner interfaces and even if it's starting at the most basic layers such as splitting the UI from the backend, turning the agent into a core runner, or even having 2 separate agent definitions, an AI agent and an agent runner. or. even better, an agent runner which utilises an open source project like Pi as the AI harness instead of having to code our own one.
@@ -106,18 +111,19 @@ I have Pi running now, with an immensely fast and capable model (deepseek-v4-fla
 the idea of everything being pluggable services - making the entire solution modular, is exactly the goal I've had from the start. and it's already heading that way, but it's missing some guidance, assistance and care. I believe that a multi-agent system could help me get there, where I talk to an agent like claude, which spawns subagents to start implementation in isolation, and another agent monitors the work, assists, and carefully merges as the migration is in progress.
 
 [01:23:10] sam@helix /work/apps/archie-core
+
 > tree
-(directory tree of archie-core omitted here -- see repository working tree at
-the time of writing for the full listing; top-level shape was: AGENTS.md,
-ARCHITECTURE.md, cmd/{archie-agent,archied,archie-playbooks}, deployments/,
-docs/{architecture,archive,data,guides,prds,public}, examples/, extras/,
-internal/{agentexec,app,channels,config,container,daemon,domain,eventbus,
-events,forge,forgerpc,gate,gateway,indexing,infrastructure,installtype,
-logging,memory,natsrpc,pairing,plugin,ratelimit,releaseannounce,
-releaseupdate,secret,skill,skillscript,storage,store,storerpc,taskrun,
-taskstate,tools,webhookguard,webui,worktree,worktreerpc,yaegiutil}, scripts/,
-tools/, ui/{dist,src,test})
-[01:23:12] sam@helix /work/apps/archie-core
+> (directory tree of archie-core omitted here -- see repository working tree at
+> the time of writing for the full listing; top-level shape was: AGENTS.md,
+> ARCHITECTURE.md, cmd/{archie-agent,archied,archie-playbooks}, deployments/,
+> docs/{architecture,archive,data,guides,prds,public}, examples/, extras/,
+> internal/{agentexec,app,channels,config,container,daemon,domain,eventbus,
+> events,forge,forgerpc,gate,gateway,indexing,infrastructure,installtype,
+> logging,memory,natsrpc,pairing,plugin,ratelimit,releaseannounce,
+> releaseupdate,secret,skill,skillscript,storage,store,storerpc,taskrun,
+> taskstate,tools,webhookguard,webui,worktree,worktreerpc,yaegiutil}, scripts/,
+> tools/, ui/{dist,src,test})
+> [01:23:12] sam@helix /work/apps/archie-core
 
 ---
 

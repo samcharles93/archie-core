@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { sessionTitle } from "./session";
 import { currentSession, selectSession, sessions } from "./state";
 
@@ -26,7 +33,11 @@ import { currentSession, selectSession, sessions } from "./state";
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem v-for="session in sessions" :key="session.session_id" :value="session.session_id">
+          <SelectItem
+            v-for="session in sessions"
+            :key="session.session_id"
+            :value="session.session_id"
+          >
             {{ sessionTitle(session) }}
           </SelectItem>
         </SelectGroup>

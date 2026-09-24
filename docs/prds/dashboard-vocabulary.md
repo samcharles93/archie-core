@@ -21,7 +21,7 @@ the status and action vocabularies for exactly this reason.
 ids from the `Change*` constants and the stamp from `events.ConfigCapturedSchema`.
 
 The dashboard renders `ui/src/lib/task-meta-snapshot.ts` until the served
-catalog arrives, or when archied is unreachable. `loadTaskMeta` replaces only
+catalogue arrives, or when archied is unreachable. `loadTaskMeta` replaces only
 the keys the payload carries, so a server without the new keys leaves the
 snapshot in place. `changeStatusLabel` and `configSchema` in
 `ui/src/lib/task-meta.ts` are the only readers; an unknown status renders as

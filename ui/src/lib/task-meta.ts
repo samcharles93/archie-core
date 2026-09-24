@@ -36,12 +36,18 @@ export type { ActionMeta, ChangeStatusMeta, StatusMeta };
 
 const statuses = shallowRef<StatusMeta[]>([...DEFAULT_STATUSES]);
 const actions = shallowRef<ActionMeta[]>([...DEFAULT_ACTIONS]);
-const changeStatuses = shallowRef<ChangeStatusMeta[]>([...DEFAULT_CHANGE_STATUSES]);
+const changeStatuses = shallowRef<ChangeStatusMeta[]>([
+  ...DEFAULT_CHANGE_STATUSES,
+]);
 const configSchemaRef = shallowRef<string>(DEFAULT_CONFIG_SCHEMA);
 
-const statusById = computed(() => new Map(statuses.value.map((s) => [s.id, s])));
+const statusById = computed(
+  () => new Map(statuses.value.map((s) => [s.id, s])),
+);
 const actionById = computed(() => new Map(actions.value.map((a) => [a.id, a])));
-const changeStatusById = computed(() => new Map(changeStatuses.value.map((c) => [c.id, c])));
+const changeStatusById = computed(
+  () => new Map(changeStatuses.value.map((c) => [c.id, c])),
+);
 
 // loadTaskMeta upgrades the dashboard from the server catalog. It never throws:
 // a failed fetch keeps the defaults so the UI still renders.
@@ -55,7 +61,8 @@ export async function loadTaskMeta(): Promise<void> {
     } | null>();
     if (Array.isArray(data?.statuses)) statuses.value = data.statuses;
     if (Array.isArray(data?.actions)) actions.value = data.actions;
-    if (Array.isArray(data?.change_statuses)) changeStatuses.value = data.change_statuses;
+    if (Array.isArray(data?.change_statuses))
+      changeStatuses.value = data.change_statuses;
     if (data?.config_schema) configSchemaRef.value = data.config_schema;
   } catch {
     // archied unreachable or not yet serving this route; keep the defaults.

@@ -11,7 +11,10 @@ const stats = computed(() => workflows.value?.workflows ?? []);
 
 const totals = computed(() => ({
   runs: stats.value.reduce((a, w) => a + (w.runs || 0), 0),
-  merged: stats.value.reduce((a, w) => a + (w.merged || 0) + (w.pr_open || 0), 0),
+  merged: stats.value.reduce(
+    (a, w) => a + (w.merged || 0) + (w.pr_open || 0),
+    0,
+  ),
 }));
 
 const pct = computed(() => {
@@ -38,10 +41,14 @@ const pct = computed(() => {
           here -- Throughput's Needs-you tile already speaks for them, from
           the statuses themselves.
         -->
-        <div class="grid grid-cols-1 gap-6 min-[720px]:grid-cols-[auto_minmax(0,1fr)]">
+        <div
+          class="grid grid-cols-1 gap-6 min-[720px]:grid-cols-[auto_minmax(0,1fr)]"
+        >
           <div class="flex flex-col justify-center">
             <span class="text-3xl font-semibold">{{ pct }}%</span>
-            <span class="text-xs text-fg-muted">pass rate · {{ totals.runs }} runs</span>
+            <span class="text-xs text-fg-muted"
+              >pass rate · {{ totals.runs }} runs</span
+            >
           </div>
           <ul class="flex flex-col">
             <li
@@ -49,8 +56,18 @@ const pct = computed(() => {
               :key="i"
               class="flex items-center justify-between gap-3 border-b border-hairline py-1.5 text-sm last:border-b-0"
             >
-              <span class="truncate text-fg-muted">{{ w.workflow || "workflow" }}</span>
-              <Badge :variant="(w.merged || 0) === (w.runs || 0) ? 'ok' : (w.parked || 0) > 0 ? 'warn' : 'info'">
+              <span class="truncate text-fg-muted">{{
+                w.workflow || "workflow"
+              }}</span>
+              <Badge
+                :variant="
+                  (w.merged || 0) === (w.runs || 0)
+                    ? 'ok'
+                    : (w.parked || 0) > 0
+                      ? 'warn'
+                      : 'info'
+                "
+              >
                 {{ w.merged || 0 }}/{{ w.runs || 0 }}
               </Badge>
             </li>

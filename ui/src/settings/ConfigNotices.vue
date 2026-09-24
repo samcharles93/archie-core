@@ -14,6 +14,9 @@ const lastError = computed(() => config.value?.reload?.last_error ?? "");
 
 <template>
   <Alert v-if="lastError" class="mb-4">
-    <AlertDescription>The last config reload failed; the running config is unchanged: {{ lastError }}</AlertDescription>
+    <AlertDescription
+      >The last config reload failed; the running config is unchanged:
+      {{ lastError }}</AlertDescription
+    >
   </Alert>
 </template>

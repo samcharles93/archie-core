@@ -2,7 +2,6 @@ package configuration
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,29 +41,6 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 	}
 }
 
-func TestLegacyContainersEnabledCannotSelectExecutionTopology(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := fmt.Sprintf("bot_user = \"widget\"\n[forge]\ntype = \"none\"\n[containers]\nenabled = %t\n", enabled)
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			doc, err := New(nil).File(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if doc.Config.Containers.LegacyEnabled != enabled {
-				t.Errorf("LegacyEnabled = %v, want decoded %v", doc.Config.Containers.LegacyEnabled, enabled)
-			}
-			if doc.Config.Containers.Image != defaultContainerImage {
-				t.Errorf("Image = %q, want mandatory default %q", doc.Config.Containers.Image, defaultContainerImage)
-			}
-		})
-	}
-}
-
 func TestLoadExpandsConfiguredHomePaths(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -75,7 +51,6 @@ func TestLoadExpandsConfiguredHomePaths(t *testing.T) {
 	contents := `
 bot_user = "widget"
 work_dir = "~/archie/work"
-db_path = "~/archie/archie.db"
 state_dir = "~/archie/state"
 
 [chat]
@@ -98,7 +73,6 @@ name = "app"
 		want string
 	}{
 		"work_dir":       {got: cfg.WorkDir, want: filepath.Join(home, "archie", "work")},
-		"db_path":        {got: cfg.DBPath, want: filepath.Join(home, "archie", "archie.db")},
 		"state_dir":      {got: cfg.StateDir, want: filepath.Join(home, "archie", "state")},
 		"chat.workspace": {got: cfg.Chat.Workspace, want: filepath.Join(home, "archie", "workspace")},
 	}
@@ -111,15 +85,13 @@ name = "app"
 	}
 }
 
-// state_dir defaults to archie's directory under the data home, independent
-// of db_path, which only locates legacy files for the one-time import.
+// state_dir defaults to archie's directory under the data home.
 func TestStateDirDefaultsToTheDataHome(t *testing.T) {
 	dataHome := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := `
 bot_user = "widget"
-db_path = "/elsewhere/archie.db"
 
 [[repos]]
 owner = "acme"
@@ -195,57 +167,10 @@ func TestResolveSelectsFileFormatsAndDirectories(t *testing.T) {
 	}
 }
 
-// TestLoadForgeTokenEnvBackwardCompat guards against a real production
-// incident: the secrets-engine migration replaced [forge]'s flat
-// token_env string with a {engine, key} struct, but TOML silently ignores
-// unknown fields — so deployed configs still using the old token_env key
-// had their token config dropped entirely and finalize() defaulted to
-// demanding ARCHIE_GITHUB_TOKEN, crash-looping a gitea-backed daemon.
-func TestLoadForgeTokenEnvBackwardCompat(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	contents := "bot_user = \"widget\"\n" +
-		"[forge]\ntype = \"gitea\"\nhost = \"https://git.example.test\"\ntoken_env = \"MY_GITEA_TOKEN\"\n" +
-		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := loadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "MY_GITEA_TOKEN"}) {
-		t.Errorf("Forge.Token = %#v, want {env MY_GITEA_TOKEN} (from legacy token_env)", cfg.Forge.Token)
-	}
-}
-
-// TestLoadForgeTokenTakesPrecedenceOverTokenEnv verifies the new-style
-// [forge.token] wins when both the legacy token_env and the new token
-// struct are present (e.g. mid-migration configs).
-func TestLoadForgeTokenTakesPrecedenceOverTokenEnv(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	contents := "bot_user = \"widget\"\n" +
-		"[forge]\ntype = \"gitea\"\ntoken_env = \"OLD_TOKEN\"\n" +
-		"[forge.token]\nengine = \"env\"\nkey = \"NEW_TOKEN\"\n" +
-		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := loadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "NEW_TOKEN"}) {
-		t.Errorf("Forge.Token = %#v, want {env NEW_TOKEN} (new-style token wins)", cfg.Forge.Token)
-	}
-}
-
-func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
+func TestLoadTelegramTokenSecretRef(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
 		"[chat.telegram]\ntoken = { engine = \"bws\", key = \"TELEGRAM_BOT_TOKEN\" }\n" +
-		"token_env = \"TELEGRAM_LEGACY_TOKEN\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
@@ -258,9 +183,6 @@ func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
 	want := secret.SecretRef{Engine: "bws", Key: "TELEGRAM_BOT_TOKEN"}
 	if cfg.Chat.Telegram.Token != want {
 		t.Errorf("Telegram.Token = %#v, want %#v", cfg.Chat.Telegram.Token, want)
-	}
-	if cfg.Chat.Telegram.TokenEnv != "TELEGRAM_LEGACY_TOKEN" {
-		t.Errorf("Telegram.TokenEnv = %q, want TELEGRAM_LEGACY_TOKEN", cfg.Chat.Telegram.TokenEnv)
 	}
 }
 
@@ -312,11 +234,6 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 			body:        fileConfigPrefix + "[capture]\nretention = \"-1h\"\n",
 			wantLoadErr: true,
 		},
-		{
-			name:        "image default naming no provider",
-			body:        fileConfigPrefix + "[image]\ndefault = \"not-a-real-provider\"\n",
-			wantLoadErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -338,38 +255,6 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 			}
 			if err := Validate(&doc.Config); err == nil {
 				t.Fatal("Validate = nil, want the value rejected there")
-			}
-		})
-	}
-}
-
-func TestLoadLegacyAgentSectionWithoutApplyingExecutionDefaults(t *testing.T) {
-	tests := []struct {
-		name        string
-		agent       string
-		wantMode    string
-		wantCommand string
-		wantEnv     []string
-	}{
-		{name: "absent section stays empty"},
-		{
-			name: "legacy values decode without validation", agent: "\n[agent]\nmode = \"removed-mode\"\ncommand = \"/opt/old-agent\"\nenv = [\"TOKEN=value\"]\n",
-			wantMode: "removed-mode", wantCommand: "/opt/old-agent", wantEnv: []string{"TOKEN=value"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"widget\"\n" + tt.agent + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			cfg, err := loadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.LegacyAgent.Mode != tt.wantMode || cfg.LegacyAgent.Command != tt.wantCommand || strings.Join(cfg.LegacyAgent.Env, ",") != strings.Join(tt.wantEnv, ",") {
-				t.Fatalf("legacy agent config = %#v", cfg.LegacyAgent)
 			}
 		})
 	}
@@ -547,7 +432,7 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			contents := "bot_user = \"widget\"\n" +
 				"[nats]\nurl = \"nats://localhost:4222\"\n" +
-				"[containers]\nenabled = true\nimage = \"archie-agent:test\"\n" + tt.ttl +
+				"[containers]\nimage = \"archie-agent:test\"\n" + tt.ttl +
 				"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
@@ -573,7 +458,7 @@ func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
 		"[nats]\nurl = \"nats://localhost:4222\"\n" +
-		"[containers]\nenabled = true\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
+		"[containers]\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
@@ -614,16 +499,16 @@ func TestOverlay(t *testing.T) {
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "config.toml")
 	base := "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n" +
-		"[agent]\nmode = \"inprocess\"\n" +
+		"[log]\nlevel = \"warn\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 	if err := os.WriteFile(basePath, []byte(base), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	overlayPath := filepath.Join(dir, "config.docker.toml")
-	overlay := "work_dir = \"/var/lib/archie/work\"\n[agent]\nmode = \"nats\"\n" +
+	overlay := "work_dir = \"/var/lib/archie/work\"\n[log]\nlevel = \"debug\"\n" +
 		"[nats]\nurl = \"nats://nats:4222\"\n" +
-		"[containers]\nenabled = true\nimage = \"archie-agent:latest\"\n"
+		"[containers]\nimage = \"archie-agent:latest\"\n"
 	if err := os.WriteFile(overlayPath, []byte(overlay), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -636,8 +521,8 @@ func TestOverlay(t *testing.T) {
 	if cfg.WorkDir != "/var/lib/archie/work" {
 		t.Errorf("WorkDir: got %q, want overlay value", cfg.WorkDir)
 	}
-	if cfg.LegacyAgent.Mode != "nats" {
-		t.Errorf("LegacyAgent.Mode: got %q, want %q", cfg.LegacyAgent.Mode, "nats")
+	if cfg.Log.Level != "debug" {
+		t.Errorf("Log.Level: got %q, want %q", cfg.Log.Level, "debug")
 	}
 	// Fields the overlay omits keep the base value.
 	if cfg.BotUser != "widget" {
@@ -652,8 +537,8 @@ func TestOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseOnly.LegacyAgent.Mode != "inprocess" {
-		t.Errorf("LegacyAgent.Mode with empty overlay: got %q, want %q", baseOnly.LegacyAgent.Mode, "inprocess")
+	if baseOnly.Log.Level != "warn" {
+		t.Errorf("Log.Level with empty overlay: got %q, want %q", baseOnly.Log.Level, "warn")
 	}
 }
 
@@ -694,28 +579,6 @@ func TestResolveFileOverlayPreservesOmittedMapEntryFields(t *testing.T) {
 				}
 				if got.TargetToken != "secret" {
 					t.Errorf("services.state.target_token = %q, want the base's secret: a file overlay must not clear a field it does not name", got.TargetToken)
-				}
-			},
-		},
-		{
-			// An enabled hosted provider must keep its class and key env: the
-			// overlay naming only base_url would otherwise clear them and fail
-			// validation after the load.
-			name: "image.hosted entry keeps the fields it does not name",
-			base: "[image.hosted.minimax]\nenabled = true\nclass = \"minimax\"\n" +
-				"api_key_env = \"MINIMAX_API_KEY\"\n",
-			overlay: "[image.hosted.minimax]\nbase_url = \"https://api.example\"\n",
-			check: func(t *testing.T, cfg config.Config) {
-				t.Helper()
-				got := cfg.Image.Hosted["minimax"]
-				want := config.ImageHostedProvider{
-					Enabled:   true,
-					Class:     "minimax",
-					APIKeyEnv: "MINIMAX_API_KEY",
-					BaseURL:   "https://api.example",
-				}
-				if got != want {
-					t.Errorf("image.hosted.minimax = %+v, want %+v", got, want)
 				}
 			},
 		},
@@ -993,7 +856,7 @@ ecosystem = "go"
 func TestIdentitiesConfigFallsBackToLegacyWhenEmpty(t *testing.T) {
 	cfg, err := loadBytes([]byte(`
 bot_user = "solo"
-forge = { type = "github", host = "https://github.test", token_env = "GH_TOKEN" }
+forge = { type = "github", host = "https://github.test", token = { engine = "env", key = "GH_TOKEN" } }
 
 [[repos]]
 owner = "acme"
@@ -1014,7 +877,7 @@ func TestIdentitiesConfigRejectsEmptyName(t *testing.T) {
 	_, err := loadBytes([]byte(`
 [[identities]]
 bot_user = "no-name"
-forge = { type = "github", token_env = "X" }
+forge = { type = "github", token = { engine = "env", key = "X" } }
 `))
 	if err == nil {
 		t.Error("expected error for identity with empty name")

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import MappingFieldRow from "./MappingFieldRow.vue";
 import { draft, removeField, updateField, type PreviewFailure } from "./state";
 
@@ -18,12 +24,20 @@ const preview = computed(() => draft.value.preview);
 /** Preview failures are keyed by field name: the daemon reports a failure by
  * name, and a field is what the operator renamed. */
 const failureByField = computed(
-  () => new Map<string, PreviewFailure>((preview.value?.failures || []).map((failure) => [failure.field_name, failure])),
+  () =>
+    new Map<string, PreviewFailure>(
+      (preview.value?.failures || []).map((failure) => [
+        failure.field_name,
+        failure,
+      ]),
+    ),
 );
 </script>
 
 <template>
-  <p v-if="!fields.length" class="py-3 text-sm text-fg-muted">Click a value in the payload to bind a field.</p>
+  <p v-if="!fields.length" class="py-3 text-sm text-fg-muted">
+    Click a value in the payload to bind a field.
+  </p>
 
   <Table v-else>
     <TableHeader>

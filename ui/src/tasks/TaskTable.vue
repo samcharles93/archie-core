@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import TaskRow, { type Task } from "./TaskRow.vue";
 
 /**
@@ -10,7 +17,10 @@ import TaskRow, { type Task } from "./TaskRow.vue";
  * The `state` slot is drawn in the body's place so the columns stay announced
  * while the table has no rows to show.
  */
-const props = withDefaults(defineProps<{ tasks: Task[]; showRepo?: boolean }>(), { showRepo: true });
+const props = withDefaults(
+  defineProps<{ tasks: Task[]; showRepo?: boolean }>(),
+  { showRepo: true },
+);
 
 const emit = defineEmits<{ done: [taskId: Task["id"]] }>();
 

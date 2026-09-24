@@ -82,8 +82,7 @@ external account MUST NOT change ownership or historical attribution.
 Secret-bearing channel bindings remain configuration concerns rather than
 identity data. In particular, `[chat.telegram].token` is a
 `secret.SecretRef` resolved by the application through the configured secret
-registry; the older `token_env` field remains a compatibility fallback. Neither
-form changes the identity that owns or performs a chat action.
+registry. It does not change the identity that owns or performs a chat action.
 
 ## Persistence
 
@@ -211,7 +210,7 @@ recovery protocol.
 
 Identity is not authentication and is not access control.
 
-The current architecture does not require authentication or authorization. Those
+The current architecture does not require authentication or authorisation. Those
 capabilities MAY be introduced later if deployment or product needs justify
 them. They MUST remain separate from the identity model.
 
@@ -276,8 +275,7 @@ separately. Until a surface carries both, the verbs stay withheld. This is the
 reason the four verbs are absent from the dashboard's in-browser tools, and it is
 why releasing them is a change to this boundary rather than a change to the tools.
 
-
-The current implementation uses identity equality as an authorization check for
+The current implementation uses identity equality as an authorisation check for
 chat task approval and cancellation. This conflicts with the approved rule that
 identity is attribution rather than authentication or access control and must be
 reassigned to an appropriate task-ownership or future access policy.
@@ -330,7 +328,7 @@ Editable without a rebuild.
 `Persona` field of `SystemPromptConfig` (`internal/gateway/prompt.go`) into a
 `<soul purpose="identity_and_style" trust="data">` block, XML-escaped through
 the same `xml` template helper used for tool and env metadata, and placed
-*before* `<instruction_precedence>` in `archie.md.tpl`. Escaping means SOUL
+_before_ `<instruction_precedence>` in `archie.md.tpl`. Escaping means SOUL
 text can never forge a live `<core_rules>`, `<instruction_precedence>`,
 `<tools>` or `<env>` tag -- an attempt renders as inert escaped text
 (`&lt;core_rules&gt;...`), and `<instruction_precedence>` explicitly tells the
