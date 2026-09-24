@@ -1745,7 +1745,7 @@ func (x *Event) GetPrincipalId() string {
 	return ""
 }
 
-// CapturedEvent mirrors internal/store.CapturedEvent.
+// CapturedEvent mirrors storecontract.CapturedEvent.
 type CapturedEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -2178,7 +2178,7 @@ func (x *Binding) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// WorkflowStat mirrors internal/store.WorkflowStat.
+// WorkflowStat mirrors storecontract.WorkflowStat.
 type WorkflowStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Workflow      string                 `protobuf:"bytes,1,opt,name=workflow,proto3" json:"workflow,omitempty"`
@@ -2279,7 +2279,7 @@ func (x *WorkflowStat) GetTotalTokens() int64 {
 	return 0
 }
 
-// StageStat mirrors internal/store.StageStat.
+// StageStat mirrors storecontract.StageStat.
 type StageStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Workflow      string                 `protobuf:"bytes,1,opt,name=workflow,proto3" json:"workflow,omitempty"`
@@ -2356,7 +2356,7 @@ func (x *StageStat) GetErrors() int64 {
 	return 0
 }
 
-// DayTokens mirrors internal/store.DayTokens.
+// DayTokens mirrors storecontract.DayTokens.
 type DayTokens struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Day           string                 `protobuf:"bytes,1,opt,name=day,proto3" json:"day,omitempty"`
@@ -7421,7 +7421,7 @@ type RecordDispatchRequest struct {
 	BindingId      string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	BindingVersion int64                  `protobuf:"varint,2,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
 	CaptureId      string                 `protobuf:"bytes,3,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
-	// task_id addresses the SQLite-owned task tables, which are not migrating.
+	// task_id addresses the tasks table.
 	TaskId        int64 `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

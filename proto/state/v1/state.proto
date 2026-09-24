@@ -4,12 +4,12 @@ package state.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// StateStore is the single gRPC service fronting archie.db (one store, one
-// file). See docs/prds/state-store-contract.md for the ownership split: the
+// StateStore is the single gRPC service fronting archie's PostgreSQL database.
+// See docs/prds/state-store-contract.md for the ownership split: the
 // workflow-domain Store view (Update/Transition/InsertEvent) is consumer-owned
-// in internal/domain/workflow, while the rest of this surface stays
-// producer-owned in internal/store. Both are served by the same service and
-// the same *store.Store implementation; the proto bypasses the Go
+// in internal/domain/workflow, while the rest of this surface is
+// producer-owned in internal/domain/storecontract. Both are served by the same
+// service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 service StateStoreService {
   // Administrative task credential lifecycle. Worker credentials cannot call these.
@@ -298,7 +298,7 @@ message Event {
   string principal_id = 14;
 }
 
-// CapturedEvent mirrors internal/store.CapturedEvent.
+// CapturedEvent mirrors storecontract.CapturedEvent.
 message CapturedEvent {
   string id = 1;
   google.protobuf.Timestamp received_at = 2;
@@ -349,7 +349,7 @@ message Binding {
   google.protobuf.Timestamp updated_at = 12;
 }
 
-// WorkflowStat mirrors internal/store.WorkflowStat.
+// WorkflowStat mirrors storecontract.WorkflowStat.
 message WorkflowStat {
   string workflow = 1;
   int64 runs = 2;
@@ -361,7 +361,7 @@ message WorkflowStat {
   int64 total_tokens = 8;
 }
 
-// StageStat mirrors internal/store.StageStat.
+// StageStat mirrors storecontract.StageStat.
 message StageStat {
   string workflow = 1;
   string stage = 2;
@@ -370,7 +370,7 @@ message StageStat {
   int64 errors = 5;
 }
 
-// DayTokens mirrors internal/store.DayTokens.
+// DayTokens mirrors storecontract.DayTokens.
 message DayTokens {
   string day = 1;
   int64 tokens = 2;
@@ -716,7 +716,7 @@ message RecordDispatchRequest {
   string binding_id = 1;
   int64 binding_version = 2;
   string capture_id = 3;
-  // task_id addresses the SQLite-owned task tables, which are not migrating.
+  // task_id addresses the tasks table.
   int64 task_id = 4;
 }
 message RecordDispatchResponse {}
