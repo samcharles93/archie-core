@@ -5,6 +5,54 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-09-25
+
+### archied
+
+- **Archie now stores everything in PostgreSQL 18, and `database_url` is
+  required.** Tasks, events, captures, bindings, settings and chat
+  conversations are served from the database `database_url` names; the State
+  Store, archied and the Gateway refuse to start without it, and refuse a
+  server older than PostgreSQL 18. `docker compose up -d postgres` starts a
+  matching local database with the default URL in `config.example.toml`.
+- **Existing SQLite data is not carried over.** This release reads no SQLite
+  file and ships no importer, so an upgraded install starts with empty task,
+  event and conversation history. `db_path` is gone; `state_dir` (default
+  `~/.local/share/archie`) now holds the embedded NATS store and task logs.
+- **Backups are whole-database snapshots.** `archie-state-store backup` and
+  `restore` work on the PostgreSQL database through `pg_dump`/`pg_restore`,
+  which must be on `PATH`. There is no automatic schema rollback: the way back
+  from an upgrade is restoring the snapshot taken before it.
+- **Events carry a type, and bindings pick one.** Archie infers an event type
+  from captured payloads; the Inspector shows proposed and unidentified
+  events and lets you name them. Mappings are per event type and show how
+  many captures they match, a source can feed several bindings, and a binding
+  chooses an event type plus an optional filter. An unidentified event does
+  not dispatch.
+- **Sources own webhook signing.** Each source gets a UUIDv7 path and its own
+  signing secret, or can be explicitly approved to accept unsigned events. A
+  new binding starts pending approval.
+- **EDA playbooks can run module actions and take workflow inputs.** Action
+  playbooks run at most once per event through the dispatch ledger, a binding
+  can pass inputs to its workflow, the repository is optional, and a workflow
+  can name an agent profile. `archie-playbooks lint -eda-dir` checks a
+  directory, and `archie-playbooks serve` publishes the same findings to your
+  editor as a language server.
+- **Config keys removed.** `[agent]`, `[oidc]`, `[image]`,
+  `containers.enabled`, `db_path`, and the `token_env` form of `[forge]`,
+  `[artifacts]` and `[chat.telegram]` no longer exist. Write each credential as
+  `token = { engine = "env", key = "NAME" }`. A leftover key is reported at
+  startup as unrecognised rather than failing the load.
+- **Dashboard.** Old `#/path` links and the `/captures`, `/mappings` and
+  `/bindings` addresses no longer redirect; use the Events page tabs. The live
+  stream moved to `/api/stream`, so reloading `/events` serves the page.
+
+### archie-agent
+
+- The Postgres-backed wire formats, event types and workflow inputs are part
+  of this image; a host that runs the agent should `docker compose pull agent`
+  to pick it up.
+
 ## [1.40.0] - 2026-09-23
 
 ### archied
