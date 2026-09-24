@@ -356,11 +356,8 @@ func (b *boot) artifactSender() artifactsync.Sender {
 		return nil
 	}
 	if token == "" {
-		token = b.secrets.Getenv(cfg.TokenEnv)
-	}
-	if token == "" {
-		b.log.Warn("artifact publishing disabled: no service token; set the token secret or its environment variable",
-			"base_url", cfg.BaseURL, "token_env", cfg.TokenEnv)
+		b.log.Warn("artifact publishing disabled: the service token resolved empty",
+			"base_url", cfg.BaseURL, "token_engine", cfg.Token.Engine)
 		return nil
 	}
 	return artifactsync.NewClient(cfg.BaseURL, token)

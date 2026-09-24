@@ -892,25 +892,15 @@ func updateThreadID(update *models.Update) int {
 }
 
 // ConfigSchema returns the JSON Schema for the Telegram channel config.
-// The bot token may be supplied either directly as token_env (an
-// environment variable name) or as token (a secret reference object with
-// engine/key); token takes precedence when both are set, matching
-// resolveTelegramToken's own precedence.
+// The bot token is a secret reference object with engine/key.
 func (g *Gateway) ConfigSchema() json.RawMessage {
 	return json.RawMessage(`{
   "type": "object",
-  "anyOf": [
-    { "required": ["token_env"] },
-    { "required": ["token"] }
-  ],
+  "required": ["token"],
   "properties": {
-    "token_env": {
-      "type": "string",
-      "description": "Environment variable holding the Telegram bot token from @BotFather"
-    },
     "token": {
       "type": "object",
-      "description": "Secret reference for the bot token, resolved through the configured secret engine. Takes precedence over token_env.",
+      "description": "Secret reference for the Telegram bot token from @BotFather, resolved through the configured secret engine.",
       "properties": {
         "engine": { "type": "string" },
         "key": { "type": "string" }
@@ -925,18 +915,14 @@ func (g *Gateway) ConfigSchema() json.RawMessage {
 }`)
 }
 
-// ValidateConfig checks the Telegram channel configuration. A token is
-// required, supplied either as token (a secret reference) or token_env
-// (an environment variable name) -- either credential source is valid,
-// matching resolveTelegramToken's precedence in the daemon's boot path.
+// ValidateConfig checks the Telegram channel configuration. A token
+// secret reference is required.
 func (g *Gateway) ValidateConfig(cfg map[string]any) error {
 	if cfg == nil {
 		return fmt.Errorf("telegram config is required")
 	}
-	tokenEnv, _ := cfg["token_env"].(string)
-	_, hasTokenRef := cfg["token"]
-	if tokenEnv == "" && !hasTokenRef {
-		return fmt.Errorf("telegram.token or telegram.token_env is required")
+	if _, ok := cfg["token"]; !ok {
+		return fmt.Errorf("telegram.token is required")
 	}
 	return nil
 }

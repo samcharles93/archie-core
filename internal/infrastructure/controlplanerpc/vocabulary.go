@@ -33,7 +33,6 @@ type ChannelSettings struct {
 type TelegramSettings struct {
 	AllowedUserIDs       []int64          `json:"allowed_user_ids"`
 	Token                config.SecretRef `json:"token_ref"`
-	TokenEnv             string           `json:"token_env,omitempty"`
 	CredentialConfigured bool             `json:"credential_configured"`
 }
 

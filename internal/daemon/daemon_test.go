@@ -1960,7 +1960,7 @@ func configWithCanarySecrets() config.Config {
 		BotEmail: "archie@example.com",
 		Label:    "archie",
 		Forge: config.Forge{
-			Type: "gitea", Host: "gitea.example.com", TokenEnv: "GITEA_TOKEN",
+			Type: "gitea", Host: "gitea.example.com",
 			Token:         secret.SecretRef{Engine: "bws", Key: canaryForgeToken},
 			WebhookSecret: secret.SecretRef{Engine: "bws", Key: canaryWebhookSecret},
 			Intake:        "webhook",
@@ -1984,7 +1984,7 @@ func configWithCanarySecrets() config.Config {
 		Notify:   config.Notify{Webhook: "https://hooks.example.com/notify"},
 		Tools:    config.ToolsConfig{Policy: config.ToolPolicy{MaxResultChars: 12000, SpillDir: "/tmp/spill"}},
 		NATS:     config.NATSConfig{Mode: "external", URL: "nats://127.0.0.1:4222", TokenEnv: canaryNATSTokenEnv},
-		Chat:     config.ChatConfig{Operator: "sam", Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN", Token: secret.SecretRef{Engine: "bws", Key: canaryTelegramToken}}},
+		Chat:     config.ChatConfig{Operator: "sam", Telegram: config.TelegramConfig{Token: secret.SecretRef{Engine: "bws", Key: canaryTelegramToken}}},
 		Services: config.Services{config.ServiceNameState: {Target: "127.0.0.1:50051", TargetToken: canaryStateStoreToken}},
 		ModelLimits: map[string]config.ModelLimits{
 			"openai/gpt-4": {ContextWindow: 128000, MaxOutputTokens: 4096},

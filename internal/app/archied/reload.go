@@ -94,7 +94,7 @@ func reloadLoop(ctx context.Context, ch <-chan os.Signal, c *ReloadController, l
 // handlers re-read on every request. MaxRetries is the worked example:
 // its only consumer is api_tasks.go:380,383, reading per-request
 // s.Cfg.Get(), and nothing in the daemon reads it -- so it reloads.
-// Chat.Telegram.TokenEnv is the counter-example: webui reads it per
+// Chat.Telegram.Token is the counter-example: webui reads it per
 // request AND a telegram bot built at startup consumes it, so it is
 // NOT reloadable, and treating "webui reads it" as sufficient would
 // display a new token while the bot uses the old one.

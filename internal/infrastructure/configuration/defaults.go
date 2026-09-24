@@ -281,22 +281,16 @@ func applyForgeDefaults(cfg *config.Config) {
 	if cfg.Forge.Host == "" {
 		cfg.Forge.Host = defaultForgeHost
 	}
-	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" && cfg.Forge.TokenEnv != "" {
-		cfg.Forge.Token = config.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
-	}
 	if cfg.Forge.Intake == "" {
 		cfg.Forge.Intake = config.ForgeIntakePoll
 	}
 }
 
-// applyArtifactsDefaults fills the artifacts section, promoting the
-// token_env fallback to a secret reference when no explicit one was given.
+// applyArtifactsDefaults reads the artifacts token from WORKSPACE_INGEST_TOKEN
+// when no secret reference is given.
 func applyArtifactsDefaults(cfg *config.Config) {
-	if cfg.Artifacts.TokenEnv == "" {
-		cfg.Artifacts.TokenEnv = "WORKSPACE_INGEST_TOKEN"
-	}
 	if cfg.Artifacts.Token == (config.SecretRef{}) {
-		cfg.Artifacts.Token = config.SecretRef{Engine: "env", Key: cfg.Artifacts.TokenEnv}
+		cfg.Artifacts.Token = config.SecretRef{Engine: "env", Key: "WORKSPACE_INGEST_TOKEN"}
 	}
 }
 

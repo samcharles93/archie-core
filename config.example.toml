@@ -166,10 +166,8 @@ class = "ollama"
 # shell snippets). The check command must write a releaseupdate.Snapshot JSON
 # document to stdout; configure the installer as well to show Approve/Defer.
 # [chat.telegram]
-# Preferred: resolve the bot token through a configured secret engine.
+# The bot token from @BotFather, resolved through a configured secret engine.
 # token = { engine = "bws", key = "TELEGRAM_BOT_TOKEN" }
-# Legacy compatibility: read the token from this environment variable.
-# token_env = "TELEGRAM_BOT_TOKEN"      # env var holding the bot token from @BotFather
 # Run by archie-messaging, which serves /update, so these commands execute on
 # whichever host runs that process.
 # update_check_command = ["/usr/local/bin/archie-update-check"]
@@ -236,12 +234,11 @@ class = "ollama"
 # parallel_tool_calls = false
 
 # Publish artifacts (review reports, design docs) to the collaborative editor.
-# An empty base_url disables publishing entirely. The token is runtime config:
-# set WORKSPACE_INGEST_TOKEN in the daemon's environment or use a secret ref.
+# An empty base_url disables publishing entirely. token defaults to the
+# WORKSPACE_INGEST_TOKEN environment variable.
 [artifacts]
 # base_url = "https://offloaded.dev"
 # token = { engine = "env", key = "WORKSPACE_INGEST_TOKEN" }
-# token_env = "WORKSPACE_INGEST_TOKEN"
 
 # archied's own liveness surface, always on. GET /healthz and /health answer
 # 200 once the daemon is serving (503 while it is still booting), and

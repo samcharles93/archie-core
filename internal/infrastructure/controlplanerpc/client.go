@@ -95,7 +95,7 @@ func RuntimeChatConfigFrom(ctx context.Context, reader ResourceReader, base conf
 			Operator: settings.Operator, ShowToolCalls: settings.ShowToolCalls, MaxSteps: settings.MaxSteps,
 			Models: settings.Models, Email: config.EmailConfig{ListenAddr: settings.Email.ListenAddr, RelayAddr: settings.Email.RelayAddr}, WebhookAddr: settings.WebhookAddr,
 			Webhook:                config.WebhookRoute{Path: settings.Webhook.Path, Secret: settings.Webhook.Secret, Template: settings.Webhook.Template, DeliverTo: settings.Webhook.DeliverTo},
-			Telegram:               config.TelegramConfig{AllowedUserIDs: settings.Telegram.AllowedUserIDs, Token: settings.Telegram.Token, TokenEnv: settings.Telegram.TokenEnv, UpdateCheckCommand: check, UpdateInstallCommand: install},
+			Telegram:               config.TelegramConfig{AllowedUserIDs: settings.Telegram.AllowedUserIDs, Token: settings.Telegram.Token, UpdateCheckCommand: check, UpdateInstallCommand: install},
 			RateLimit:              config.RateLimitConfig{Window: time.Duration(settings.RateLimit.Window), MaxRequests: settings.RateLimit.MaxRequests},
 			UnrestrictedFilesystem: settings.UnrestrictedFilesystem, Workspace: settings.Workspace,
 		}

@@ -192,10 +192,9 @@ const (
 
 // Forge configures the code forge integration.
 type Forge struct {
-	Type     string    `toml:"type" yaml:"type"`
-	Host     string    `toml:"host" yaml:"host"`
-	Token    SecretRef `toml:"token" yaml:"token"`
-	TokenEnv string    `toml:"token_env" yaml:"token_env"`
+	Type  string    `toml:"type" yaml:"type"`
+	Host  string    `toml:"host" yaml:"host"`
+	Token SecretRef `toml:"token" yaml:"token"`
 	// Intake selects how forge issues become work: "poll" (default),
 	// "webhook", or "both". Webhook intake reacts to forge events the moment
 	// they arrive instead of up to poll_interval later.
@@ -534,9 +533,6 @@ type ArtifactsConfig struct {
 	BaseURL string `toml:"base_url" yaml:"base_url"`
 	// Token is the service credential the editor's ingest route requires.
 	Token SecretRef `toml:"token" yaml:"token"`
-	// TokenEnv names the environment variable holding the token when Token
-	// is unset. Defaults to WORKSPACE_INGEST_TOKEN.
-	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
 // IdentityConfig is a per-identity configuration subset. Each identity
@@ -1046,12 +1042,9 @@ type TelegramConfig struct {
 	// bot to a group does not grant that group's members access. Empty
 	// denies everyone.
 	AllowedUserIDs []int64 `toml:"allowed_user_ids" yaml:"allowed_user_ids"`
-	// Token references the bot token through the configured secret engine.
-	// It takes precedence over TokenEnv when both are set.
+	// Token references the bot token from @BotFather through the configured
+	// secret engine. Empty disables the Telegram channel.
 	Token SecretRef `toml:"token" yaml:"token"`
-	// TokenEnv names the env var holding the bot token from @BotFather.
-	// Empty disables the Telegram channel.
-	TokenEnv string `toml:"token_env" yaml:"token_env"`
 	// UpdateCheckCommand writes a releaseupdate.Snapshot JSON document to
 	// stdout. UpdateInstallCommand applies an already-approved update. Both
 	// are argv arrays, never shell snippets.

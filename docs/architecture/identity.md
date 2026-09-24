@@ -82,8 +82,7 @@ external account MUST NOT change ownership or historical attribution.
 Secret-bearing channel bindings remain configuration concerns rather than
 identity data. In particular, `[chat.telegram].token` is a
 `secret.SecretRef` resolved by the application through the configured secret
-registry; the older `token_env` field remains a compatibility fallback. Neither
-form changes the identity that owns or performs a chat action.
+registry. It does not change the identity that owns or performs a chat action.
 
 ## Persistence
 

@@ -122,10 +122,9 @@ func (s *Service) add(name string, ch channels.Channel, cfg map[string]any) erro
 }
 
 // telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
-// from the typed config, carrying whichever credential source is set
-// (token takes precedence, matching resolveTelegramToken).
+// from the typed config.
 func telegramValidateConfigMap(cfg config.TelegramConfig) map[string]any {
-	m := map[string]any{"token_env": cfg.TokenEnv}
+	m := map[string]any{}
 	if cfg.Token != (secret.SecretRef{}) {
 		m["token"] = map[string]any{"engine": cfg.Token.Engine, "key": cfg.Token.Key}
 	}

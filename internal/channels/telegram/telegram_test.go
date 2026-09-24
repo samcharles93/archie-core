@@ -633,23 +633,16 @@ func TestLaunchDropsPendingUpdatesBeforePolling(t *testing.T) {
 	}
 }
 
-func TestValidateConfigAcceptsTokenEnv(t *testing.T) {
-	g := New("token", nil, slog.Default())
-	if err := g.ValidateConfig(map[string]any{"token_env": "TELEGRAM_BOT_TOKEN"}); err != nil {
-		t.Errorf("ValidateConfig with token_env set = %v, want nil", err)
-	}
-}
-
 func TestValidateConfigAcceptsTokenRef(t *testing.T) {
 	g := New("token", nil, slog.Default())
 	if err := g.ValidateConfig(map[string]any{"token": map[string]any{"engine": "env", "key": "TELEGRAM_BOT_TOKEN"}}); err != nil {
-		t.Errorf("ValidateConfig with a token secret ref set = %v, want nil: chat.telegram.token is an equally valid credential source to token_env", err)
+		t.Errorf("ValidateConfig with a token secret ref set = %v, want nil", err)
 	}
 }
 
-func TestValidateConfigRejectsNeitherCredential(t *testing.T) {
+func TestValidateConfigRejectsMissingToken(t *testing.T) {
 	g := New("token", nil, slog.Default())
 	if err := g.ValidateConfig(map[string]any{}); err == nil {
-		t.Error("ValidateConfig with neither token nor token_env set = nil, want an error")
+		t.Error("ValidateConfig with no token set = nil, want an error")
 	}
 }

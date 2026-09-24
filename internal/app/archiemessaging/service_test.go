@@ -19,7 +19,7 @@ func TestServiceStartsConfiguredChannels(t *testing.T) {
 		Config: ResolvedConfig{
 			TelegramToken: "token-123",
 			Telegram: config.TelegramConfig{
-				TokenEnv:       "TEST_TG_TOKEN",
+				Token:          config.SecretRef{Engine: "env", Key: "TEST_TG_TOKEN"},
 				AllowedUserIDs: []int64{123},
 			},
 			Email: config.EmailConfig{
@@ -79,7 +79,7 @@ func TestComposeRejectsInvalidChannelConfig(t *testing.T) {
 	_, err = compose(t.Context(), deps{
 		Config: ResolvedConfig{
 			TelegramToken: "token-123",
-			// Neither token_env nor a token ref: telegram.ValidateConfig refuses.
+			// No token ref: telegram.ValidateConfig refuses.
 		},
 		Log:  slog.Default(),
 		Chat: &dummyChatContract{},

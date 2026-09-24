@@ -35,10 +35,9 @@ func configWithFakeSecrets() *config.Holder {
 		BotEmail:  "archie@example.com",
 		Label:     "archie",
 		Forge: config.Forge{
-			Type:     "gitea",
-			Host:     "gitea.example.com",
-			TokenEnv: "GITEA_TOKEN",
-			Token:    secret.SecretRef{Engine: "env", Key: fakeForgeToken},
+			Type:  "gitea",
+			Host:  "gitea.example.com",
+			Token: secret.SecretRef{Engine: "env", Key: fakeForgeToken},
 		},
 		Models: map[string]string{"builder": "openai/gpt-4"},
 		Providers: map[string]config.Provider{
@@ -58,7 +57,7 @@ func configWithFakeSecrets() *config.Holder {
 		},
 		NATS: config.NATSConfig{URL: "nats://127.0.0.1:4222", TokenEnv: "NATS_TOKEN"},
 		Chat: config.ChatConfig{
-			Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+			Telegram: config.TelegramConfig{Token: secret.SecretRef{Engine: "env", Key: "TELEGRAM_TOKEN"}},
 		},
 	})
 }
@@ -109,7 +108,7 @@ func TestBuildConfigViewPublishesPerIdentityForges(t *testing.T) {
 			},
 			{
 				Name:  "github-bot",
-				Forge: config.Forge{Type: "github", Host: "https://github.example", TokenEnv: fakeForgeToken},
+				Forge: config.Forge{Type: "github", Host: "https://github.example", Token: secret.SecretRef{Engine: "env", Key: fakeForgeToken}},
 				Repos: []config.Repo{{Owner: "beta", Name: "app"}},
 			},
 		},

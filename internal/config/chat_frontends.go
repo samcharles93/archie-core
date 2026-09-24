@@ -34,7 +34,7 @@ func (c ChatConfig) FrontEnds() []ChatFrontEnd {
 		{
 			ID:         "telegram",
 			Name:       "Telegram",
-			Configured: c.Telegram.Token != (SecretRef{}) || strings.TrimSpace(c.Telegram.TokenEnv) != "",
+			Configured: c.Telegram.Token != (SecretRef{}),
 		},
 		{
 			ID:         "email",

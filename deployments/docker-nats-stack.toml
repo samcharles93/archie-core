@@ -124,6 +124,6 @@ gate = [
 # Every env var named here must be present in the environment of the host
 # archied process, normally through its configured supervisor or launch shell.
 [chat.telegram]
-token_env = "TELEGRAM_BOT_TOKEN"
+token = { engine = "env", key = "TELEGRAM_BOT_TOKEN" }
 # Empty list denies everyone.
 allowed_user_ids = []

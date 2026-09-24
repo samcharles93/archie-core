@@ -11,7 +11,7 @@ import (
 func TestArtifactsConfigDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
-		"[forge]\ntype = \"gitea\"\nhost = \"https://git.example.test\"\ntoken_env = \"T\"\n"
+		"[forge]\ntype = \"gitea\"\nhost = \"https://git.example.test\"\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -22,8 +22,8 @@ func TestArtifactsConfigDefaults(t *testing.T) {
 	if cfg.Artifacts.BaseURL != "" {
 		t.Errorf("BaseURL = %q, want empty so the sender stays disabled", cfg.Artifacts.BaseURL)
 	}
-	if cfg.Artifacts.TokenEnv != "WORKSPACE_INGEST_TOKEN" {
-		t.Errorf("TokenEnv = %q, want the documented fallback", cfg.Artifacts.TokenEnv)
+	if want := (config.SecretRef{Engine: "env", Key: "WORKSPACE_INGEST_TOKEN"}); cfg.Artifacts.Token != want {
+		t.Errorf("Token = %+v, want the documented fallback %+v", cfg.Artifacts.Token, want)
 	}
 }
 
@@ -31,8 +31,7 @@ func TestArtifactsConfigPreservesExplicitValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
 		"[artifacts]\nbase_url = \"https://offloaded.dev\"\n" +
-		"token = { engine = \"env\", key = \"ARCHIE_GITHUB_TOKEN\" }\n" +
-		"token_env = \"OTHER_TOKEN\"\n"
+		"token = { engine = \"env\", key = \"ARCHIE_GITHUB_TOKEN\" }\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +44,5 @@ func TestArtifactsConfigPreservesExplicitValues(t *testing.T) {
 	}
 	if want := (config.SecretRef{Engine: "env", Key: "ARCHIE_GITHUB_TOKEN"}); cfg.Artifacts.Token != want {
 		t.Errorf("Token = %+v, want %+v", cfg.Artifacts.Token, want)
-	}
-	if cfg.Artifacts.TokenEnv != "OTHER_TOKEN" {
-		t.Errorf("TokenEnv = %q, want the explicit value", cfg.Artifacts.TokenEnv)
 	}
 }

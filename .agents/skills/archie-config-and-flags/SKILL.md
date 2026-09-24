@@ -119,8 +119,6 @@ Do not expose these helper flags as daemon settings.
 | `dispatch.labels.*` | Missing keys default independently to `agent:*`. | production-wired |
 | `models.<role>` | Workflow stages read requested role then fall back to `builder`; triage judge falls back `triage` to `planner`. | production-wired |
 | `providers.<name>.class`, `api_key_env`, `base_url` | Builds ai-sdk catalog. `base_url` rejects parse errors, userinfo, query, and fragment. | production-wired |
-| `agent.mode` | Default `nats` when containers enabled, otherwise `inprocess`; validates `inprocess`, `subprocess`, or `nats`. | production-wired |
-| `agent.command`, `agent.env` | Command defaults `archie-agent`; env entries must be nonblank names without `=`. | partially-wired |
 | `budgets.max_steps`, `max_tokens`, `wall_clock`, `gate_max_failures` | No loader defaults; `Budgets` documents zero as disabling. | production-wired |
 | `diff_cap_lines` | Zero replaced by `400` in `finalize`; `StageDiffCap` treats `<= 0` as disabled. TOML zero cannot disable; negative value does. | production-wired |
 | `web.listen` | Empty becomes `127.0.0.1:8484`; literal `off` disables. No authentication. | production-wired |
@@ -154,10 +152,6 @@ looking at before reporting one:
    from the stored resource, on purpose. Check for that comment before filing a
    defect.
 
-The default `agent.command = "archie-agent"` is not verified subprocess
-operation. `SubprocessRunner` expects one JSON invocation on stdin and one JSON
-response on stdout; `cmd/archie-agent` is a long-running NATS worker.
-
 ### Repository settings
 
 | Keys | Effective behavior | Status |
@@ -175,7 +169,6 @@ response on stdout; `cmd/archie-agent` is a long-running NATS worker.
 
 | Key | Effective behavior |
 | --- | --- |
-| `enabled` | Requires non-empty `image`, `agent.mode = "nats"`, and non-empty `nats.url`. |
 | `image` | Required only when enabled. |
 | `max_concurrency` | Zero means no limit; used by general task dispatcher and container pool. |
 | `max_uptime` | Default `60m` only when enabled; caps container lifetime. |
@@ -188,7 +181,7 @@ response on stdout; `cmd/archie-agent` is a long-running NATS worker.
 | Keys | Effective behavior |
 | --- | --- |
 | `chat.models` | Optional interactive catalog; empty falls back to workflow model references. |
-| `chat.telegram.token_env` | Empty disables Telegram; non-empty names env variable; empty value is fatal. |
+| `chat.telegram.token` | Unset disables Telegram; otherwise a secret reference resolved at channel start. |
 | `chat.telegram.allowed_user_ids` | Empty denies every sender; IDs match Telegram sender IDs, not chat IDs. |
 | `chat.telegram.update_check_command`, `update_install_command` | Argv arrays; check enables update status; install further enables approved installation. |
 | `chat.email.listen_addr`, `relay_addr` | Empty listen disables SMTP; relay configures outbound replies. |
@@ -225,20 +218,17 @@ diff cap, notification, and forge host. `TaskConfig.ToConfig` reconstructs
 only those fields. Forge tokens, provider values, NATS credential references,
 repos, and infrastructure settings do not enter `TaskConfig`.
 
-At top-level `[forge]`, prefer `token = {engine = "env", key = "NAME"}`. The
-`token_env = "NAME"` form is converted only when structured reference is empty;
-structured reference wins when both appear. This compatibility rule exists
-because an earlier migration silently dropped deployed `token_env` values and
-crash-looped the daemon. `finalize` does not apply that conversion inside each
-identity: identity forges require explicit structured `token`.
+Every credential except `nats.token_env` is a `{engine, key}` secret
+reference; the flat `token_env` aliases for forge, artifacts and Telegram are
+removed. A stale alias in a file is reported at startup as an unrecognised key
+(`bootstrap.go`), not silently ignored.
 
 | Source | Archied | Subprocess | Agent container / standalone worker |
 | --- | --- | --- | --- |
 | Forge `token = {engine="env", key="X"}` | Resolves `X`; empty is fatal. | Not forwarded. | Not forwarded; forge ops proxy to daemon. |
 | Provider `api_key_env = "X"` | Runtime reads `X`. | Auto-allowlists selected provider's `X`. | Daemon forwards each present provider variable under original name. |
 | `nats.token_env = "X"` | Reads `X`; empty fatal when configured. | Not agent subprocess setting. | Daemon maps to fixed `NATS_TOKEN`; worker also reads `NATS_URL`. |
-| Telegram `token_env = "X"` | Reads `X`. | Not forwarded. | Not forwarded. |
-| `agent.env = ["X"]` | Names validated. | Copies present `X` from daemon env. | Not used by container construction. |
+| Telegram `token = {engine="env", key="X"}` | Resolves `X`. | Not forwarded. | Not forwarded. |
 
 `internal/app/archied` creates `secret.NewRegistry`, which registers only the
 `env` engine. Non-env `SecretRef` values are not production-wired.

@@ -43,7 +43,7 @@ func telegramChannel(t *testing.T, srv *Service) *telegram.Gateway {
 func telegramConfig(t *testing.T, cfg ResolvedConfig, chat messaging.ChatContract) *telegram.Gateway {
 	t.Helper()
 	cfg.TelegramToken = "token-123"
-	cfg.Telegram.TokenEnv = "TEST_TG_TOKEN"
+	cfg.Telegram.Token = config.SecretRef{Engine: "env", Key: "TEST_TG_TOKEN"}
 	cfg.Telegram.AllowedUserIDs = []int64{7}
 	srv, err := compose(t.Context(), deps{Config: cfg, Log: slog.New(slog.DiscardHandler), Chat: chat})
 	if err != nil {
@@ -173,7 +173,7 @@ func TestTelegramReloadRereadsTokenAndAllowlist(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	write := func(userIDs string) {
-		content := "bot_user = \"testbot\"\n\n[chat.telegram]\ntoken_env = \"TEST_TG_TOKEN\"\nallowed_user_ids = " + userIDs + "\n"
+		content := "bot_user = \"testbot\"\n\n[chat.telegram]\ntoken = { engine = \"env\", key = \"TEST_TG_TOKEN\" }\nallowed_user_ids = " + userIDs + "\n"
 		if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -213,7 +213,7 @@ func TestTelegramReloadRereadsTokenAndAllowlist(t *testing.T) {
 func TestTelegramReloadRefusesAnEmptyToken(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	content := "bot_user = \"testbot\"\n\n[chat.telegram]\ntoken_env = \"TEST_TG_TOKEN\"\nallowed_user_ids = [1]\n"
+	content := "bot_user = \"testbot\"\n\n[chat.telegram]\ntoken = { engine = \"env\", key = \"TEST_TG_TOKEN\" }\nallowed_user_ids = [1]\n"
 	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

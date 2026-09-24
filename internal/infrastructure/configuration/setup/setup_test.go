@@ -314,8 +314,8 @@ func TestRun_TelegramWithAllowedUserIDs(t *testing.T) {
 		t.Fatalf("Commit: %v", err)
 	}
 	cfg := generateAndLoad(t, edits)
-	if cfg.Chat.Telegram.TokenEnv != "ARCHIE_TELEGRAM_TOKEN" {
-		t.Errorf("chat.telegram.token_env = %q, want ARCHIE_TELEGRAM_TOKEN", cfg.Chat.Telegram.TokenEnv)
+	if want := (config.SecretRef{Engine: "env", Key: "ARCHIE_TELEGRAM_TOKEN"}); cfg.Chat.Telegram.Token != want {
+		t.Errorf("chat.telegram.token = %+v, want %+v", cfg.Chat.Telegram.Token, want)
 	}
 	if len(cfg.Chat.Telegram.AllowedUserIDs) != 2 || cfg.Chat.Telegram.AllowedUserIDs[0] != 111 || cfg.Chat.Telegram.AllowedUserIDs[1] != 222 {
 		t.Errorf("chat.telegram.allowed_user_ids = %v, want [111 222]", cfg.Chat.Telegram.AllowedUserIDs)

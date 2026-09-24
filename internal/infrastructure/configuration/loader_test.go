@@ -171,57 +171,10 @@ func TestResolveSelectsFileFormatsAndDirectories(t *testing.T) {
 	}
 }
 
-// TestLoadForgeTokenEnvBackwardCompat guards against a real production
-// incident: the secrets-engine migration replaced [forge]'s flat
-// token_env string with a {engine, key} struct, but TOML silently ignores
-// unknown fields — so deployed configs still using the old token_env key
-// had their token config dropped entirely and finalize() defaulted to
-// demanding ARCHIE_GITHUB_TOKEN, crash-looping a gitea-backed daemon.
-func TestLoadForgeTokenEnvBackwardCompat(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	contents := "bot_user = \"widget\"\n" +
-		"[forge]\ntype = \"gitea\"\nhost = \"https://git.example.test\"\ntoken_env = \"MY_GITEA_TOKEN\"\n" +
-		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := loadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "MY_GITEA_TOKEN"}) {
-		t.Errorf("Forge.Token = %#v, want {env MY_GITEA_TOKEN} (from legacy token_env)", cfg.Forge.Token)
-	}
-}
-
-// TestLoadForgeTokenTakesPrecedenceOverTokenEnv verifies the new-style
-// [forge.token] wins when both the legacy token_env and the new token
-// struct are present (e.g. mid-migration configs).
-func TestLoadForgeTokenTakesPrecedenceOverTokenEnv(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	contents := "bot_user = \"widget\"\n" +
-		"[forge]\ntype = \"gitea\"\ntoken_env = \"OLD_TOKEN\"\n" +
-		"[forge.token]\nengine = \"env\"\nkey = \"NEW_TOKEN\"\n" +
-		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := loadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "NEW_TOKEN"}) {
-		t.Errorf("Forge.Token = %#v, want {env NEW_TOKEN} (new-style token wins)", cfg.Forge.Token)
-	}
-}
-
-func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
+func TestLoadTelegramTokenSecretRef(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
 		"[chat.telegram]\ntoken = { engine = \"bws\", key = \"TELEGRAM_BOT_TOKEN\" }\n" +
-		"token_env = \"TELEGRAM_LEGACY_TOKEN\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
@@ -234,9 +187,6 @@ func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
 	want := secret.SecretRef{Engine: "bws", Key: "TELEGRAM_BOT_TOKEN"}
 	if cfg.Chat.Telegram.Token != want {
 		t.Errorf("Telegram.Token = %#v, want %#v", cfg.Chat.Telegram.Token, want)
-	}
-	if cfg.Chat.Telegram.TokenEnv != "TELEGRAM_LEGACY_TOKEN" {
-		t.Errorf("Telegram.TokenEnv = %q, want TELEGRAM_LEGACY_TOKEN", cfg.Chat.Telegram.TokenEnv)
 	}
 }
 
@@ -910,7 +860,7 @@ ecosystem = "go"
 func TestIdentitiesConfigFallsBackToLegacyWhenEmpty(t *testing.T) {
 	cfg, err := loadBytes([]byte(`
 bot_user = "solo"
-forge = { type = "github", host = "https://github.test", token_env = "GH_TOKEN" }
+forge = { type = "github", host = "https://github.test", token = { engine = "env", key = "GH_TOKEN" } }
 
 [[repos]]
 owner = "acme"
@@ -931,7 +881,7 @@ func TestIdentitiesConfigRejectsEmptyName(t *testing.T) {
 	_, err := loadBytes([]byte(`
 [[identities]]
 bot_user = "no-name"
-forge = { type = "github", token_env = "X" }
+forge = { type = "github", token = { engine = "env", key = "X" } }
 `))
 	if err == nil {
 		t.Error("expected error for identity with empty name")

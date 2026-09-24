@@ -55,9 +55,9 @@ pr      = "archie:pr"
 parked  = "archie:parked"
 
 [models]
-triage  = "openai/gpt-4o"
-planner = "openai/gpt-4o"
-builder = "openai/gpt-4o"
+triage  = "openai/gpt-6-luna"
+planner = "openai/gpt-6-luna"
+builder = "openai/gpt-6-luna"
 
 [providers.openai]
 class = "openai"

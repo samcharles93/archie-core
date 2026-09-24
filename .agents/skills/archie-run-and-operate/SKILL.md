@@ -192,10 +192,6 @@ It forwards only configured provider-key variables.
 Open limitations until code/tests prove otherwise:
 
 - `subprocess` + default `archie-agent` is protocol-incompatible.
-- A deployed overlay previously using legacy `token_env` still converts: the
-  structured `forge.token` secret reference wins when both are present and
-  `config.Forge.TokenEnv` is otherwise converted by
-  `internal/infrastructure/configuration/defaults.go`.
 - Container RPC uses root forge/worktree for every identity.
 - Container orphan recovery lacks daemon-instance label.
 - `max_uptime` only bounds `Pool.Acquire` create/start; no lifetime timer.

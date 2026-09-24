@@ -145,8 +145,6 @@ For environment failures:
   launch environment rather than Compose.
 - `containerEnv` translates configured NATS token name into `NATS_TOKEN` and
   forwards configured provider key variables.
-- Top-level `[forge] token_env` is converted to an env `SecretRef` by
-  `finalize`; explicit `[forge.token]` wins.
 
 Do not print secret values.
 
