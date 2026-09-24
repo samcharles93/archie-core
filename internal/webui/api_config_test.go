@@ -56,8 +56,7 @@ func configWithFakeSecrets() *config.Holder {
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "widget", Base: "main", Gate: [][]string{{"task", "check"}}},
 		},
-		LegacyAgent: config.LegacyAgent{Mode: "subprocess", Command: "/usr/local/bin/archie-agent", Env: []string{"HOME"}},
-		NATS:        config.NATSConfig{URL: "nats://127.0.0.1:4222", TokenEnv: "NATS_TOKEN"},
+		NATS: config.NATSConfig{URL: "nats://127.0.0.1:4222", TokenEnv: "NATS_TOKEN"},
 		Chat: config.ChatConfig{
 			Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
 		},

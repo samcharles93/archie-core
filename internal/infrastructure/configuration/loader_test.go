@@ -2,7 +2,6 @@ package configuration
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,29 +36,6 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 			}
 			if cfg.Dispatch.AckReaction != tt.wantAck {
 				t.Errorf("AckReaction: got %q, want %q", cfg.Dispatch.AckReaction, tt.wantAck)
-			}
-		})
-	}
-}
-
-func TestLegacyContainersEnabledCannotSelectExecutionTopology(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := fmt.Sprintf("bot_user = \"widget\"\n[forge]\ntype = \"none\"\n[containers]\nenabled = %t\n", enabled)
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			doc, err := New(nil).File(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if doc.Config.Containers.LegacyEnabled != enabled {
-				t.Errorf("LegacyEnabled = %v, want decoded %v", doc.Config.Containers.LegacyEnabled, enabled)
-			}
-			if doc.Config.Containers.Image != defaultContainerImage {
-				t.Errorf("Image = %q, want mandatory default %q", doc.Config.Containers.Image, defaultContainerImage)
 			}
 		})
 	}
@@ -312,11 +288,6 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 			body:        fileConfigPrefix + "[capture]\nretention = \"-1h\"\n",
 			wantLoadErr: true,
 		},
-		{
-			name:        "image default naming no provider",
-			body:        fileConfigPrefix + "[image]\ndefault = \"not-a-real-provider\"\n",
-			wantLoadErr: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -338,38 +309,6 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 			}
 			if err := Validate(&doc.Config); err == nil {
 				t.Fatal("Validate = nil, want the value rejected there")
-			}
-		})
-	}
-}
-
-func TestLoadLegacyAgentSectionWithoutApplyingExecutionDefaults(t *testing.T) {
-	tests := []struct {
-		name        string
-		agent       string
-		wantMode    string
-		wantCommand string
-		wantEnv     []string
-	}{
-		{name: "absent section stays empty"},
-		{
-			name: "legacy values decode without validation", agent: "\n[agent]\nmode = \"removed-mode\"\ncommand = \"/opt/old-agent\"\nenv = [\"TOKEN=value\"]\n",
-			wantMode: "removed-mode", wantCommand: "/opt/old-agent", wantEnv: []string{"TOKEN=value"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"widget\"\n" + tt.agent + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			cfg, err := loadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.LegacyAgent.Mode != tt.wantMode || cfg.LegacyAgent.Command != tt.wantCommand || strings.Join(cfg.LegacyAgent.Env, ",") != strings.Join(tt.wantEnv, ",") {
-				t.Fatalf("legacy agent config = %#v", cfg.LegacyAgent)
 			}
 		})
 	}
@@ -547,7 +486,7 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			contents := "bot_user = \"widget\"\n" +
 				"[nats]\nurl = \"nats://localhost:4222\"\n" +
-				"[containers]\nenabled = true\nimage = \"archie-agent:test\"\n" + tt.ttl +
+				"[containers]\nimage = \"archie-agent:test\"\n" + tt.ttl +
 				"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
@@ -573,7 +512,7 @@ func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
 		"[nats]\nurl = \"nats://localhost:4222\"\n" +
-		"[containers]\nenabled = true\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
+		"[containers]\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
@@ -614,16 +553,16 @@ func TestOverlay(t *testing.T) {
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "config.toml")
 	base := "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n" +
-		"[agent]\nmode = \"inprocess\"\n" +
+		"[log]\nlevel = \"warn\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 	if err := os.WriteFile(basePath, []byte(base), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	overlayPath := filepath.Join(dir, "config.docker.toml")
-	overlay := "work_dir = \"/var/lib/archie/work\"\n[agent]\nmode = \"nats\"\n" +
+	overlay := "work_dir = \"/var/lib/archie/work\"\n[log]\nlevel = \"debug\"\n" +
 		"[nats]\nurl = \"nats://nats:4222\"\n" +
-		"[containers]\nenabled = true\nimage = \"archie-agent:latest\"\n"
+		"[containers]\nimage = \"archie-agent:latest\"\n"
 	if err := os.WriteFile(overlayPath, []byte(overlay), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -636,8 +575,8 @@ func TestOverlay(t *testing.T) {
 	if cfg.WorkDir != "/var/lib/archie/work" {
 		t.Errorf("WorkDir: got %q, want overlay value", cfg.WorkDir)
 	}
-	if cfg.LegacyAgent.Mode != "nats" {
-		t.Errorf("LegacyAgent.Mode: got %q, want %q", cfg.LegacyAgent.Mode, "nats")
+	if cfg.Log.Level != "debug" {
+		t.Errorf("Log.Level: got %q, want %q", cfg.Log.Level, "debug")
 	}
 	// Fields the overlay omits keep the base value.
 	if cfg.BotUser != "widget" {
@@ -652,8 +591,8 @@ func TestOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseOnly.LegacyAgent.Mode != "inprocess" {
-		t.Errorf("LegacyAgent.Mode with empty overlay: got %q, want %q", baseOnly.LegacyAgent.Mode, "inprocess")
+	if baseOnly.Log.Level != "warn" {
+		t.Errorf("Log.Level with empty overlay: got %q, want %q", baseOnly.Log.Level, "warn")
 	}
 }
 
@@ -694,28 +633,6 @@ func TestResolveFileOverlayPreservesOmittedMapEntryFields(t *testing.T) {
 				}
 				if got.TargetToken != "secret" {
 					t.Errorf("services.state.target_token = %q, want the base's secret: a file overlay must not clear a field it does not name", got.TargetToken)
-				}
-			},
-		},
-		{
-			// An enabled hosted provider must keep its class and key env: the
-			// overlay naming only base_url would otherwise clear them and fail
-			// validation after the load.
-			name: "image.hosted entry keeps the fields it does not name",
-			base: "[image.hosted.minimax]\nenabled = true\nclass = \"minimax\"\n" +
-				"api_key_env = \"MINIMAX_API_KEY\"\n",
-			overlay: "[image.hosted.minimax]\nbase_url = \"https://api.example\"\n",
-			check: func(t *testing.T, cfg config.Config) {
-				t.Helper()
-				got := cfg.Image.Hosted["minimax"]
-				want := config.ImageHostedProvider{
-					Enabled:   true,
-					Class:     "minimax",
-					APIKeyEnv: "MINIMAX_API_KEY",
-					BaseURL:   "https://api.example",
-				}
-				if got != want {
-					t.Errorf("image.hosted.minimax = %+v, want %+v", got, want)
 				}
 			},
 		},

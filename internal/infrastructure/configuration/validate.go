@@ -106,9 +106,6 @@ func validateBootstrap(cfg *config.Config) error {
 	if err := validateMemory(cfg); err != nil {
 		return err
 	}
-	if err := validateImage(cfg); err != nil {
-		return err
-	}
 	if err := validateCurators(cfg); err != nil {
 		return err
 	}
@@ -137,43 +134,6 @@ func validateDatabaseOwned(cfg *config.Config) error {
 		return err
 	}
 	return validateRepositoryContents(cfg)
-}
-
-// validateImage rejects an enabled hosted provider with no class or no
-// resolvable credential, and a Default naming a provider that is not both
-// present and enabled -- either would let /image silently fall back to
-// "always ask" (harmless) or fail at call time with a confusing error
-// (not harmless). An absent [image] section is valid and registers no
-// provider, matching the epic's non-goal that a paid provider must never
-// activate by omission.
-func validateImage(cfg *config.Config) error {
-	for name, p := range cfg.Image.Hosted {
-		if !p.Enabled {
-			continue
-		}
-		if p.Class == "" {
-			return fmt.Errorf("%w: image.hosted.%s.class is required when enabled", ErrInvalidInput, name)
-		}
-		if p.APIKeyEnv == "" && p.APIKey == (config.SecretRef{}) {
-			return fmt.Errorf("%w: image.hosted.%s requires api_key_env or api_key when enabled", ErrInvalidInput, name)
-		}
-	}
-	for name, p := range cfg.Image.Local {
-		if p.Enabled && p.Backend == "" {
-			return fmt.Errorf("%w: image.local.%s.backend is required when enabled", ErrInvalidInput, name)
-		}
-	}
-	if cfg.Image.Default != "" {
-		hosted, hostedOK := cfg.Image.Hosted[cfg.Image.Default]
-		local, localOK := cfg.Image.Local[cfg.Image.Default]
-		switch {
-		case hostedOK && hosted.Enabled, localOK && local.Enabled:
-			// found and enabled
-		default:
-			return fmt.Errorf("%w: image.default %q must name an enabled provider under image.hosted or image.local", ErrInvalidInput, cfg.Image.Default)
-		}
-	}
-	return nil
 }
 
 // validateCurators rejects a curator definition with no interval. The

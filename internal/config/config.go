@@ -182,16 +182,6 @@ type Provider struct {
 	BaseURL   string    `toml:"base_url" yaml:"base_url" json:"base_url"`
 }
 
-// LegacyAgent decodes the removed [agent] section so existing operator files
-// continue to load during migration. Its fields have no runtime consumers:
-// autonomous work always uses a task-scoped archie-agent container over NATS.
-// Remove the section from new and updated configurations.
-type LegacyAgent struct {
-	Mode    string   `toml:"mode" yaml:"mode"`
-	Command string   `toml:"command" yaml:"command"`
-	Env     []string `toml:"env" yaml:"env"`
-}
-
 // Forge intake modes for Forge.Intake. Poll is the default; webhook reacts to
 // forge events as they arrive instead of (or in addition to) polling.
 const (
@@ -280,40 +270,6 @@ func (d Dispatch) LabelValues() []string {
 		}
 	}
 	return out
-}
-
-// ImageConfig configures the image generation capability
-// (internal/domain/image). See docs/prds/image-capability-contract.md.
-type ImageConfig struct {
-	// Default selects which registered provider name /image uses when the
-	// request/session has not already picked one. Empty means /image must
-	// always ask which mechanism to use -- a valid, and the default, state.
-	Default string `toml:"default" yaml:"default" json:"default"`
-	// Hosted configures hosted (paid) providers, keyed by provider name.
-	Hosted map[string]ImageHostedProvider `toml:"hosted" yaml:"hosted" json:"hosted"`
-	// Local configures local GPU recipes, keyed by provider name.
-	Local map[string]ImageLocalProvider `toml:"local" yaml:"local" json:"local"`
-}
-
-// ImageHostedProvider configures one hosted image provider. Mirrors
-// MinimaxConfig's cost guard: Enabled defaults false, since a hosted
-// provider spends real API credits per call and must never activate from
-// the mere presence of a key.
-type ImageHostedProvider struct {
-	Enabled   bool      `toml:"enabled" yaml:"enabled" json:"enabled"`
-	Class     string    `toml:"class" yaml:"class" json:"class"`
-	APIKeyEnv string    `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
-	APIKey    SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
-	BaseURL   string    `toml:"base_url" yaml:"base_url" json:"base_url,omitempty"`
-}
-
-// ImageLocalProvider configures one local GPU image recipe. Enabled
-// defaults false too: a local backend can saturate the host GPU/CPU, its
-// own kind of unwanted cost, so it gets the same explicit gate as a hosted
-// provider rather than an on-by-default treatment.
-type ImageLocalProvider struct {
-	Enabled bool   `toml:"enabled" yaml:"enabled" json:"enabled"`
-	Backend string `toml:"backend" yaml:"backend" json:"backend"`
 }
 
 // MemoryConfig holds memory engine configuration.
@@ -523,12 +479,10 @@ type Config struct {
 	// model ref ("provider/model").
 	Models map[string]string `toml:"models" yaml:"models"`
 
-	Providers   map[string]Provider `toml:"providers" yaml:"providers"`
-	LegacyAgent LegacyAgent         `toml:"agent" yaml:"agent"`
+	Providers map[string]Provider `toml:"providers" yaml:"providers"`
 
 	Budgets    Budgets         `toml:"budgets" yaml:"budgets"`
 	Web        Web             `toml:"web" yaml:"web"`
-	Oidc       Oidc            `toml:"oidc" yaml:"oidc"`
 	Health     Health          `toml:"health" yaml:"health"`
 	Log        Log             `toml:"log" yaml:"log"`
 	Notify     Notify          `toml:"notify" yaml:"notify"`
@@ -540,10 +494,6 @@ type Config struct {
 
 	// Memory holds memory provider configuration (from config.memory.yaml).
 	Memory MemoryConfig `toml:"memory" yaml:"memory"`
-
-	// Image configures the image generation capability. Absent is valid
-	// and registers no provider.
-	Image ImageConfig `toml:"image" yaml:"image" json:"image"`
 
 	// Tools holds MCP server and tool policy configuration (from config.tools.yaml).
 	Tools ToolsConfig `toml:"tools" yaml:"tools"`
@@ -721,7 +671,6 @@ func (c Config) Clone() Config {
 	c.ModelLimits = maps.Clone(c.ModelLimits)
 	c.Providers = maps.Clone(c.Providers)
 	c.Dispatch.Labels = cloneStringMap(c.Dispatch.Labels)
-	c.LegacyAgent.Env = append([]string(nil), c.LegacyAgent.Env...)
 	c.Repos = cloneRepos(c.Repos)
 	c.Identities = cloneIdentities(c.Identities)
 	c.Chat.Models = append([]string(nil), c.Chat.Models...)
@@ -730,8 +679,6 @@ func (c Config) Clone() Config {
 	c.Chat.Telegram.UpdateInstallCommand = append([]string(nil), c.Chat.Telegram.UpdateInstallCommand...)
 	c.Bindings.PreviousEncryptionKeys = append([]SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
-	c.Image.Hosted = maps.Clone(c.Image.Hosted)
-	c.Image.Local = maps.Clone(c.Image.Local)
 	// Services is a map of structs, so the header is shared by the value copy
 	// above and yaml.Unmarshal writes keys into whatever map it is handed. Without
 	// this line an overlay -- or a dashboard PATCH -- rewrites the PUBLISHED
@@ -883,10 +830,6 @@ type BindingsConfig struct {
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.
 type ContainerConfig struct {
-	// LegacyEnabled decodes the removed containers.enabled switch so existing
-	// operator files keep loading. It has no runtime consumer: autonomous
-	// workflows always require managed task containers.
-	LegacyEnabled bool `toml:"enabled" yaml:"enabled"`
 	// Image is the Docker image to run (e.g. "ghcr.io/sam/archie-agent:latest").
 	Image string `toml:"image" yaml:"image"`
 	// MaxConcurrency limits simultaneous daemon tasks and containers.
@@ -1150,19 +1093,6 @@ type Notify struct {
 	// Webhook receives JSON POSTs for events that need a human (e.g.
 	// feasibility PRDs awaiting go/no-go). Empty disables.
 	Webhook string `toml:"webhook" json:"webhook" yaml:"webhook"`
-}
-
-// Oidc configures verification of identity-provider tokens. An empty issuer
-// disables it, and the dashboard keeps its shared-token gate -- which attributes
-// a request to a credential, not to a person.
-type Oidc struct {
-	// Issuer is the provider's issuer URL. Discovery and the signing keys are
-	// read from it, so archie holds no key material of its own.
-	Issuer string `toml:"issuer" yaml:"issuer"`
-	// Audience is the resource identifier archie accepts tokens for. Required
-	// when an issuer is set: without it a token the provider minted for another
-	// service would authenticate here.
-	Audience string `toml:"audience" yaml:"audience"`
 }
 
 // Web configures the observability dashboard.

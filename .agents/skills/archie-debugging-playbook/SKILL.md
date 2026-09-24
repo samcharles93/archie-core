@@ -145,8 +145,6 @@ For environment failures:
   launch environment rather than Compose.
 - `containerEnv` translates configured NATS token name into `NATS_TOKEN` and
   forwards configured provider key variables.
-- `SubprocessRunner` forwards default compatibility variables, configured
-  `[agent].env` names, and only the requested provider key.
 - Top-level `[forge] token_env` is converted to an env `SecretRef` by
   `finalize`; explicit `[forge.token]` wins.
 

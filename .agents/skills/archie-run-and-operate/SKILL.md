@@ -55,20 +55,16 @@ There is no config-only or dry-run flag.
 | Flag or environment | Exact behavior |
 |---|---|
 | `-nats-url <url>` | Select NATS; falls back to `NATS_URL`. One of them is required. |
-| `-consumer <name>` | Set the durable JetStream consumer name; default `archie-agent`. |
 | `NATS_TOKEN` | Optional NATS token read directly by the worker. |
 
 Both linked binaries may also display Go's `-quickchecks` flag from
 `testing/quick`; it is not an Archie operations control.
 
-## Select the execution mode deliberately
+## Execution mode
 
-| Config shape | What runs | Operational status on 2026-09-18 |
-|---|---|---|
-| `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims through the State Store, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
-| `agent.mode = "subprocess"` | `archied` starts `agent.command` per stage and expects one JSON invocation on stdin, one response on stdout. | **Open/broken with default command.** `cmd/archie-agent` is a long-running NATS worker and never calls `agentexec.ServeOne`. |
-| `agent.mode = "nats"`, `[nats]`, containers disabled | `archied` runs the workflow; each autonomous stage goes to a separately started `archie-agent`. | **Implemented but operator-assembled.** Launch and supervise a worker separately. |
-| `agent.mode = "nats"`, `[nats]`, `containers.enabled = true` | `archied` publishes task discovery through JetStream, prepares a worktree, spawns one agent container, sends the whole workflow on `archie.taskrun.<id>`. | **Host daemon + Compose NATS path.** `deployments/docker-nats-stack.toml` demonstrates it. |
+| Config shape | What runs |
+|---|---|
+| `[nats]` absent (embedded) or `url` set (external) | `archied` polls and claims through the State Store, prepares a worktree, spawns one task-scoped agent container and sends the whole workflow on `archie.taskrun.<id>`. There is no other execution mode. |
 
 ## Run a local foreground daemon
 

@@ -25,14 +25,9 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 			MCPServers: []MCPServer{{Headers: map[string]string{"A": "b"}, Args: []string{"x"}}},
 			WebFetch:   WebFetchConfig{Enabled: &enabled},
 		},
-		Chat:        ChatConfig{Telegram: TelegramConfig{AllowedUserIDs: []int64{1}}},
-		LegacyAgent: LegacyAgent{Env: []string{"HOME"}},
-		Extra:       map[string]any{"custom": 1},
-		Bindings:    BindingsConfig{PreviousEncryptionKeys: []SecretRef{{Engine: "env", Key: "K0"}}},
-		Image: ImageConfig{
-			Hosted: map[string]ImageHostedProvider{"openai": {Enabled: true}},
-			Local:  map[string]ImageLocalProvider{"sdxl": {Enabled: true}},
-		},
+		Chat:     ChatConfig{Telegram: TelegramConfig{AllowedUserIDs: []int64{1}}},
+		Extra:    map[string]any{"custom": 1},
+		Bindings: BindingsConfig{PreviousEncryptionKeys: []SecretRef{{Engine: "env", Key: "K0"}}},
 		Services: Services{
 			ServiceNameState: {Target: "127.0.0.1:9090", TargetToken: "secret"},
 		},
@@ -49,14 +44,11 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	got.Tools.MCPServers[0].Headers["A"] = "changed"
 	got.Tools.MCPServers[0].Args[0] = "changed"
 	got.Chat.Telegram.AllowedUserIDs[0] = 99
-	got.LegacyAgent.Env[0] = "changed"
 	got.Extra["custom"] = 2
 	got.Bindings.PreviousEncryptionKeys[0] = SecretRef{Engine: "env", Key: "changed"}
 	*got.Tools.WebFetch.Enabled = false
 	*got.DiffCapLines = 1
 	*got.Identities[0].DiffCapLines = 2
-	got.Image.Hosted["openai"] = ImageHostedProvider{Enabled: false}
-	got.Image.Local["sdxl"] = ImageLocalProvider{Enabled: false}
 	got.Services[ServiceNameState] = ServiceConnection{Target: "changed"}
 
 	if orig.Models["builder"] != "m" {
@@ -80,9 +72,6 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	if orig.Chat.Telegram.AllowedUserIDs[0] != 1 {
 		t.Error("Telegram.AllowedUserIDs is shared")
 	}
-	if orig.LegacyAgent.Env[0] != "HOME" {
-		t.Error("Agent.Env is shared")
-	}
 	if orig.Extra["custom"] != 1 {
 		t.Error("Extra map is shared")
 	}
@@ -97,12 +86,6 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if !*orig.Tools.WebFetch.Enabled {
 		t.Error("WebFetch.Enabled pointer is shared")
-	}
-	if !orig.Image.Hosted["openai"].Enabled {
-		t.Error("Image.Hosted map is shared")
-	}
-	if !orig.Image.Local["sdxl"].Enabled {
-		t.Error("Image.Local map is shared")
 	}
 	if orig.Services[ServiceNameState].TargetToken != "secret" {
 		t.Error("Services map is shared")

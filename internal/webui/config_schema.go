@@ -84,8 +84,8 @@ type ConfigSection struct {
 // writing:
 //   - reloadableFields lists BotUser, BotEmail, Label, DiffCapLines, Budgets,
 //     Models -- all reloadable.
-//   - reloadableSubFields["Containers"] allows only LegacyEnabled and
-//     VolumeTTL -- every other Containers field (Image, MaxConcurrency,
+//   - reloadableSubFields["Containers"] allows only VolumeTTL --
+//     every other Containers field (Image, MaxConcurrency,
 //     MaxUptime, PullPolicy, Network) requires a restart.
 //   - reloadableSubFields["Forge"] allows only Host -- Forge.Type requires a
 //     restart even though the dashboard already renders it as editable.

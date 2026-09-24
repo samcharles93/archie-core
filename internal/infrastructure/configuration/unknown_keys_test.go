@@ -9,8 +9,7 @@ import (
 
 // minimalValidConfigTOML is enough to pass Validate on its own, so these tests
 // isolate the unknown-key behaviour from unrelated validation failures.
-const minimalValidConfigTOML = "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n" +
-	"[agent]\nmode = \"inprocess\"\n"
+const minimalValidConfigTOML = "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n"
 
 // TestUnknownKeysAreReported pins plan-config-drift.md step 1: a
 // misspelled key must not parse, validate and silently do nothing. Today

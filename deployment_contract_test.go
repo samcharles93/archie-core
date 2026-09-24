@@ -30,10 +30,6 @@ func TestExternalNATSProfileLoadsWithManagedWorkers(t *testing.T) {
 	if doc.Config.Containers.Image == "" {
 		t.Error("managed worker image is empty")
 	}
-	legacy := doc.Config.LegacyAgent
-	if legacy.Mode != "" || legacy.Command != "" || len(legacy.Env) != 0 {
-		t.Errorf("legacy agent selector decoded from supported profile: %#v", doc.Config.LegacyAgent)
-	}
 }
 
 func TestInstallerUsesNativeDaemonAndManagedWorkerImage(t *testing.T) {

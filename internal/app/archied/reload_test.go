@@ -198,19 +198,6 @@ func TestChangedNonReloadableFields(t *testing.T) {
 		t.Fatalf("reloadable-only: got %v, want []", got)
 	}
 
-	// The removed [agent] section remains decode-only for old files. Changing
-	// it has no running consumer and must not claim a restart will apply it.
-	legacyOnly := base
-	legacyOnly.LegacyAgent = config.LegacyAgent{Mode: "subprocess"}
-	if got := changedNonReloadableFields(base, legacyOnly); len(got) != 0 {
-		t.Fatalf("legacy agent change: got %v, want []", got)
-	}
-	legacyContainers := base
-	legacyContainers.Containers.LegacyEnabled = true
-	if got := changedNonReloadableFields(base, legacyContainers); len(got) != 0 {
-		t.Fatalf("legacy containers.enabled change: got %v, want []", got)
-	}
-
 	// Containers sub-field granularity: Image change warns, MaxConcurrency
 	// and VolumeTTL changes do not.
 	c1 := base
