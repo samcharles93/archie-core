@@ -27,3 +27,13 @@ func ImportComplete(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
 	}
 	return done, nil
 }
+
+// RecordFreshInstall writes the completion record for a database that starts
+// with no legacy data to import, so a legacy file that appears later cannot
+// block it from serving. It leaves an existing record untouched.
+func RecordFreshInstall(ctx context.Context, pool *pgxpool.Pool) error {
+	if err := postgresdb.New(pool).InsertFreshInstallCompletion(ctx); err != nil {
+		return fmt.Errorf("postgres: fresh install completion: %w", err)
+	}
+	return nil
+}

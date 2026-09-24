@@ -213,7 +213,7 @@ func TestStateStoreDataSurvivesRestart(t *testing.T) {
 // this would mean archie.db is opened by two processes at once.
 func TestOpenStoresNeverOwnsTaskDB(t *testing.T) {
 	b := newBootstrap()
-	b.cfg = config.Config{DBPath: filepath.Join(t.TempDir(), "archie")}
+	b.cfg = config.Config{DBPath: filepath.Join(t.TempDir(), "archie"), DatabaseURL: pgtest.URL(t)}
 	if err := b.openStores(t.Context()); err != nil {
 		t.Fatalf("openStores: %v", err)
 	}

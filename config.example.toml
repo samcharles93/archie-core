@@ -15,9 +15,10 @@
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db" # prefix for independent task and conversation SQLite files
 
-# The standalone State Store's PostgreSQL connection. Required: the store
-# fails closed rather than fall back to SQLite, so leave this unset only if
-# you do not run archie-state-store. `docker compose up -d postgres` starts
+# The PostgreSQL connection archie-state-store, archied and archie-gateway
+# serve from. Required: each fails closed rather than fall back to SQLite.
+# An install with SQLite stores under db_path runs `archie-state-store import`
+# once, with archie stopped, before it starts. `docker compose up -d postgres` starts
 # a matching local postgres:18 with this default URL.
 # database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 

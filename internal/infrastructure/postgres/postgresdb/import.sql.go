@@ -20,6 +20,16 @@ func (q *Queries) ImportCompleted(ctx context.Context) (bool, error) {
 	return exists, err
 }
 
+const insertFreshInstallCompletion = `-- name: InsertFreshInstallCompletion :exec
+INSERT INTO import_completion (id, sources, report) VALUES (1, '', 'fresh install: no legacy data')
+ON CONFLICT (id) DO NOTHING
+`
+
+func (q *Queries) InsertFreshInstallCompletion(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, insertFreshInstallCompletion)
+	return err
+}
+
 const insertImportCompletion = `-- name: InsertImportCompletion :exec
 
 INSERT INTO import_completion (id, sources, report) VALUES (1, $1, $2)

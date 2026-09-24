@@ -429,17 +429,13 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 		}
 	})
 
-	t.Run("single_owner_sqlite", func(t *testing.T) {
-		// The binary owns one task SQLite file (db_path + "-tasks.sqlite");
-		// the consumer called only gRPC methods and never opened a store file.
-		// The config anchor path itself must not be opened directly (no dual
-		// store ownership, §12 step 8).
-		taskFile := filepath.Join(dir, "archie.db-tasks.sqlite")
-		if _, err := os.Stat(taskFile); err != nil {
-			t.Fatalf("state store did not own %s: %v", taskFile, err)
-		}
-		if _, err := os.Stat(filepath.Join(dir, "archie.db")); err == nil {
-			t.Fatalf("config anchor path was opened directly; dual store ownership violated §12 step 8")
+	t.Run("serves_from_postgres_only", func(t *testing.T) {
+		// The binary serves every store from database_url: no SQLite file
+		// appears beside the configured db_path.
+		for _, name := range []string{"archie.db", "archie.db-tasks.sqlite", "archie.db-eda.sqlite"} {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				t.Fatalf("state store created %s; it serves from Postgres only", name)
+			}
 		}
 	})
 }

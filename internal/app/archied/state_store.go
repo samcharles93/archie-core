@@ -1,7 +1,7 @@
 // state_store.go composes the standalone archie-state-store process. It mirrors
 // gateway.go / cmd/archie-gateway: the binary is a thin main that passes
-// process inputs into RunStateStore, which owns the single archie.db SQLite
-// file, registers every StateStore gRPC handler (the same service .4.2 serves
+// process inputs into RunStateStore, which serves the task and event-capture
+// stores from Postgres, registers every StateStore gRPC handler (the same service .4.2 serves
 // in-process on the daemon), and shuts down cleanly on ctx cancellation.
 //
 // See docs/prds/state-store-contract.md (rev. 2c) -- the single authoritative
@@ -66,11 +66,10 @@ type StateStoreOptions struct {
 	ReadyAddr string
 }
 
-// RunStateStore owns the single archie.db SQLite file, registers every
-// StateStore gRPC handler, and serves until ctx is cancelled. It opens only
-// the task store -- the gateway's session SQLite is owned by the separate
-// archie-gateway process and is deliberately untouched (state-store-contract
-// rev. 2c §12 step 8). The store service owns its own DB lifecycle, so
+// RunStateStore serves the task and event-capture stores from Postgres,
+// registers every StateStore gRPC handler, and serves until ctx is cancelled.
+// The conversation store belongs to the separate archie-gateway process. The
+// store service owns its own DB lifecycle, so
 // b.cleanup() is the sole owner closing b.st here (in-process owner).
 func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	b := newBootstrap()
@@ -186,7 +185,8 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 
 // openStateStore composes the State Store process's persistence: it resolves
 // secrets (for the binding cipher), opens and migrates the process-scoped
-// PostgreSQL pool (fail closed), and opens the task and event-capture stores.
+// PostgreSQL pool (fail closed), and serves the task and event-capture stores
+// from it.
 // It does NOT open gateway chat sessions -- those live in the separate
 // archie-gateway process on their own store and are out of state-store scope.
 func (b *boot) openStateStore(ctx context.Context) error {
@@ -207,12 +207,8 @@ func (b *boot) openStateStore(ctx context.Context) error {
 	if err := b.openStateStorePool(ctx); err != nil {
 		return err
 	}
-	if err := b.openTaskStore(ctx, taskDBPath(cfg.DBPath)); err != nil {
-		return err
-	}
-	if err := b.openEDAStore(cfg, bindingCipher); err != nil {
-		return err
-	}
+	b.openTaskStore()
+	b.openEDAStore(bindingCipher)
 	return nil
 }
 
@@ -249,8 +245,8 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if b.taskLogs != nil {
 		deps.TaskLogs = b.taskLogs
 	}
-	// The event-capture contracts are served by the PocketBase store, not the
-	// task store: those tables moved. BindingTaskCreator stays below on the
+	// The event-capture contracts are served by the event-capture store, not
+	// the task store. BindingTaskCreator stays below on the
 	// task store, because creating a task is the one thing it still does.
 	if b.eda != nil {
 		deps.Captures = b.eda

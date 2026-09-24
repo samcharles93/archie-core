@@ -145,11 +145,8 @@ func makeUpdateService(s chatSetup) *releaseupdate.Service {
 	return updates
 }
 
-func makeTelegramSessionStore(cfg config.Config) (gateway.SessionStore, error) {
-	return gateway.OpenSQLiteSessionStore(conversationDBPath(cfg.DBPath))
-}
-
-// conversationDBPath keeps conversation state in its own SQLite database.
+// conversationDBPath is the legacy SQLite conversation database the one-time
+// import reads.
 func conversationDBPath(taskDBPath string) string {
 	return taskDBPath + "-conversations.sqlite"
 }

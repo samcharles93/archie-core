@@ -120,6 +120,30 @@ file values would restore the second source of truth the control plane exists to
 remove. The cost is that a bad stored value stops the daemon starting, and the
 value can only be corrected through the daemon's own API.
 
+### Upgrading an install from SQLite
+
+The State Store, the daemon and the Gateway serve from `database_url` only. An
+install that still holds the SQLite stores (`<db_path>-tasks.sqlite`,
+`<db_path>-eda.sqlite`, `<db_path>-conversations.sqlite`) upgrades in three
+steps:
+
+1. Stop every archie process.
+2. Run `archie-state-store import`. It moves all three stores into Postgres in
+   one transaction, verifies the rows, and records completion. The SQLite files
+   are read, never written.
+3. Start archie.
+
+Each serving process checks this at boot, after migrating the schema. With no
+completion record and a non-empty legacy file it refuses to start and names the
+files and the import command, rather than serve empty tables over existing
+data. There is no override. With no legacy data it is a fresh install: it writes
+the completion record itself, so a legacy file that appears later is ignored.
+A database that recorded a fresh start refuses a later import.
+
+The Gateway holds a Postgres serve-ownership claim for its whole life, so a
+second Gateway against the same database refuses to start (its turn recovery
+would fail the first one's in-flight turns). The State Store holds its own.
+
 ### Recovery: offline commands on the State Store
 
 Nothing skips the control plane at boot, and the only writer for a resource is
