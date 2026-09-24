@@ -16,6 +16,12 @@ func quietContext() context.Context { return context.Background() }
 // routePathRe matches one route entry's path in the dashboard's route table.
 var routePathRe = regexp.MustCompile(`path:\s*"([^"]+)"`)
 
+// lineCommentRe strips // comments, so prose about a route never reads as one.
+var lineCommentRe = regexp.MustCompile(`(?m)^\s*//.*$`)
+
+// navFalseRe marks a route that is not a navigation entry.
+var navFalseRe = regexp.MustCompile(`nav:\s*false`)
+
 // dashboardRoutesFromSource reads the dashboard's route table out of the UI
 // source.
 //
@@ -42,15 +48,21 @@ func dashboardRoutesFromSource(t *testing.T) []string {
 		block = block[:end]
 	}
 
-	// One route per line. A detail route (nav: false) is addressed by URL but is
-	// not a navigation entry, so the registry does not carry it.
+	// Each route runs from its path to the next route's path, however it is
+	// formatted. A detail route (nav: false) is addressed by URL but is not a
+	// navigation entry, so the registry does not carry it.
 	var paths []string
-	for line := range strings.SplitSeq(block, "\n") {
-		match := routePathRe.FindStringSubmatch(line)
-		if match == nil || strings.Contains(line, "nav: false") {
+	block = lineCommentRe.ReplaceAllString(block, "")
+	matches := routePathRe.FindAllStringSubmatchIndex(block, -1)
+	for i, m := range matches {
+		end := len(block)
+		if i+1 < len(matches) {
+			end = matches[i+1][0]
+		}
+		if navFalseRe.MatchString(block[m[1]:end]) {
 			continue
 		}
-		paths = append(paths, match[1])
+		paths = append(paths, block[m[2]:m[3]])
 	}
 	if len(paths) == 0 {
 		t.Fatalf("%s: parsed no routes", path)

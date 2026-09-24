@@ -72,6 +72,22 @@ jobs:
       - name: Install protobuf tools
         run: bash tools/proto.sh install
 
+      # The backup/restore tests shell out to pg_dump/pg_restore against a
+      # postgres:18 testcontainer; the runner's stock client is older and
+      # refuses the server version.
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> $GITHUB_PATH
+
       - name: Ensure contract baseline ref
         run: |
           if ! git show-ref --verify --quiet refs/heads/main; then

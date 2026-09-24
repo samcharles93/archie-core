@@ -1,0 +1,4 @@
+# Generated output: only its generator writes it, and the gate byte-checks it.
+docs/data/generated/
+internal/contracts/
+ui/dist/

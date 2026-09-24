@@ -137,7 +137,14 @@
           "type": "integer"
         }
       },
-      "required": ["version", "task_id", "attempt", "stage", "status", "usage"],
+      "required": [
+        "version",
+        "task_id",
+        "attempt",
+        "stage",
+        "status",
+        "usage"
+      ],
       "type": "object"
     },
     "Budget": {
@@ -196,7 +203,9 @@
           "type": "object"
         }
       },
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "type": "object"
     },
     "Command": {
@@ -216,7 +225,10 @@
           "type": "string"
         }
       },
-      "required": ["name", "argv"],
+      "required": [
+        "name",
+        "argv"
+      ],
       "type": "object"
     },
     "Gate": {
@@ -284,7 +296,10 @@
           "type": "integer"
         }
       },
-      "required": ["type", "file_id"],
+      "required": [
+        "type",
+        "file_id"
+      ],
       "type": "object"
     },
     "MessageEvent": {
@@ -343,7 +358,12 @@
           "type": "string"
         }
       },
-      "required": ["type", "channel_id", "platform", "sender_id"],
+      "required": [
+        "type",
+        "channel_id",
+        "platform",
+        "sender_id"
+      ],
       "type": "object"
     },
     "PluginSpec": {
@@ -357,7 +377,10 @@
           "type": "string"
         }
       },
-      "required": ["name", "src"],
+      "required": [
+        "name",
+        "src"
+      ],
       "type": "object"
     },
     "Protection": {

@@ -18,8 +18,7 @@ import TasksPage from "@/tasks/TasksPage.vue";
 import WorkflowsPage from "@/workflows/WorkflowsPage.vue";
 
 // internal/gateway/dashboard_tools.go mirrors this table; its test parses this
-// file, so keep one route per line with `path: "..."` on a single line, and
-// `nav: false` on any entry the registry should skip.
+// file, so mark any entry the registry should skip with `nav: false`.
 //
 // meta:
 //   label       the navigation label, short because its group carries the context
@@ -94,10 +93,6 @@ const routes = [
         "Captured inbound events, how their fields map, and which workflow they start.",
     },
   },
-  // The three former destinations, kept as bookmarks rather than removed: a
-  // link, a bookmark or an agent that learned these URLs still lands somewhere
-  // that works. `nav: false` is what the page registry's test reads to skip
-  // them -- they are addressed by URL, not offered as destinations.
   {
     path: "/system/status",
     name: "system-status",

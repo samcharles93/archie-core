@@ -153,7 +153,15 @@ func TestTaskMetaPayloadMatchesFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v\nrun: go test ./internal/webui -run TestTaskMetaPayloadMatchesFixture -update", fixture, err)
 	}
-	if !bytes.Equal(served, committed) {
+	var servedCompact, committedCompact bytes.Buffer
+	if err := json.Compact(&servedCompact, served); err != nil {
+		t.Fatalf("compact served payload: %v", err)
+	}
+	if err := json.Compact(&committedCompact, committed); err != nil {
+		t.Fatalf("compact %s: %v", fixture, err)
+	}
+	// Whitespace is formatting, not contract: compare the documents.
+	if !bytes.Equal(servedCompact.Bytes(), committedCompact.Bytes()) {
 		t.Errorf("GET /api/task-meta no longer matches %s.\n"+
 			"The fixture pins the dashboard's freeze-dried snapshot (ui/src/base/task-meta.jsx);\n"+
 			"ui/test/task-meta-catalogue.test.js fails until both sides agree.\n"+
