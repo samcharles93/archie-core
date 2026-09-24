@@ -15,7 +15,6 @@ package captureintake
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -92,10 +91,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	armed, ok := rc.armedBindings(w, r, source)
-	if !ok {
-		return
-	}
+	armed := rc.armedBindings(r, source)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytesOrFallback(rc.MaxBodyBytes))
 	body, err := io.ReadAll(r.Body)
@@ -106,19 +102,22 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// HMAC verification -- only when exactly one binding is armed for this
-	// source. Mirrors channels/webhook/webhook.go's header precedence:
+	// HMAC verification against each binding armed for this source: a
+	// signature valid for any of their secrets authenticates the event. Mirrors channels/webhook/webhook.go's header precedence:
 	// GitHub-style X-Hub-Signature-256 first, X-Signature-256 fallback.
 	// Empty header + non-empty secret is never valid (VerifyHMAC's own
 	// guard), so an absent signature with an armed binding lands here as
 	// authenticated=false rather than authenticated=true.
+	sig := r.Header.Get("X-Hub-Signature-256")
+	if sig == "" {
+		sig = r.Header.Get("X-Signature-256")
+	}
 	authenticated := false
-	if len(armed) == 1 {
-		sig := r.Header.Get("X-Hub-Signature-256")
-		if sig == "" {
-			sig = r.Header.Get("X-Signature-256")
+	for _, b := range armed {
+		if webhookguard.VerifyHMAC(body, sig, b.Secret) {
+			authenticated = true
+			break
 		}
-		authenticated = webhookguard.VerifyHMAC(body, sig, armed[0].Secret)
 	}
 
 	headers, _ := json.Marshal(r.Header)
@@ -173,30 +172,17 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // read. A lookup error is logged and treated as "no armed binding" -- the
 // dispatch loop's auth check is the actual gate, so failing closed here would
 // amplify a transient store hiccup into a capture outage for every
-// sender-not-yet-bound flow. If a future phase wants fail-closed semantics,
-// that is a separate decision and should not silently land here.
-//
-// Two armed bindings for one source would race over every inbound webhook for
-// that source: the write-time overlap check should make this state
-// impossible, but the dispatch loop needs a single binding per capture, so
-// the overlap surfaces as 409 at capture time (belt-and-braces TOCTOU guard
-// -- see the store's ApproveBinding).
-func (rc *Receiver) armedBindings(w http.ResponseWriter, r *http.Request, source string) ([]binding.Binding, bool) {
+// sender-not-yet-bound flow.
+func (rc *Receiver) armedBindings(r *http.Request, source string) []binding.Binding {
 	if rc.Bindings == nil {
-		return nil, true
+		return nil
 	}
 	armed, err := rc.Bindings.ArmedBindingsForSource(r.Context(), source)
 	if err != nil {
 		rc.logger().Warn("armed bindings lookup", "source", source, "err", err)
-		return nil, true
+		return nil
 	}
-	if len(armed) > 1 {
-		http.Error(w,
-			fmt.Sprintf("multiple armed bindings for source %q -- overlap rejected", source),
-			http.StatusConflict)
-		return nil, false
-	}
-	return armed, true
+	return armed
 }
 
 func (rc *Receiver) logger() *slog.Logger {

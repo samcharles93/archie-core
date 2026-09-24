@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
+	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
@@ -142,6 +143,11 @@ func TestPastedTypeIdentifiesLaterCaptures(t *testing.T) {
 		t.Errorf("unmatched capture event type = %q, want unidentified", byBody[`{"ref":"main"}`])
 	}
 
+	mid, err := s.InsertMapping(t.Context(), mapping.Mapping{Name: "m", EventTypeID: id})
+	if err != nil {
+		t.Fatalf("InsertMapping() error = %v", err)
+	}
+	armedBinding(t, s, "gh", mid)
 	undispatched, err := s.ListUndispatchedCaptures(t.Context(), []string{"gh"}, 10)
 	if err != nil {
 		t.Fatalf("ListUndispatchedCaptures() error = %v", err)

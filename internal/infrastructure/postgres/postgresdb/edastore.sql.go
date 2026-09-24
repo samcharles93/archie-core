@@ -11,7 +11,7 @@ import (
 )
 
 const armedBindingsForSource = `-- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at, filter
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC
 `
 
@@ -37,6 +37,7 @@ func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]
 			&i.Secret,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Filter,
 		); err != nil {
 			return nil, err
 		}
@@ -147,7 +148,7 @@ func (q *Queries) EventTypesForSource(ctx context.Context, source string) ([]Eve
 }
 
 const getBinding = `-- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at, filter
 FROM bindings WHERE id = $1
 `
 
@@ -167,6 +168,7 @@ func (q *Queries) GetBinding(ctx context.Context, id string) (Binding, error) {
 		&i.Secret,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Filter,
 	)
 	return i, err
 }
@@ -192,27 +194,38 @@ func (q *Queries) GetEventType(ctx context.Context, id string) (EventType, error
 }
 
 const getMapping = `-- name: GetMapping :one
-SELECT id, name, source_hint, fields, created_at, updated_at
+SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type,
+	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
+	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
 FROM mappings WHERE id = $1
 `
 
-func (q *Queries) GetMapping(ctx context.Context, id string) (Mapping, error) {
+type GetMappingRow struct {
+	Mapping       Mapping
+	MatchCount    int64
+	LastMatchedAt time.Time
+}
+
+func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, error) {
 	row := q.db.QueryRow(ctx, getMapping, id)
-	var i Mapping
+	var i GetMappingRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.SourceHint,
-		&i.Fields,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.Mapping.ID,
+		&i.Mapping.Name,
+		&i.Mapping.SourceHint,
+		&i.Mapping.Fields,
+		&i.Mapping.CreatedAt,
+		&i.Mapping.UpdatedAt,
+		&i.Mapping.EventType,
+		&i.MatchCount,
+		&i.LastMatchedAt,
 	)
 	return i, err
 }
 
 const insertBinding = `-- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, workflow, owner, repo, version, status, secret)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)
+INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, secret)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10)
 `
 
 type InsertBindingParams struct {
@@ -220,6 +233,7 @@ type InsertBindingParams struct {
 	Name     string
 	Source   string
 	Mapping  string
+	Filter   string
 	Workflow string
 	Owner    string
 	Repo     string
@@ -233,6 +247,7 @@ func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) er
 		arg.Name,
 		arg.Source,
 		arg.Mapping,
+		arg.Filter,
 		arg.Workflow,
 		arg.Owner,
 		arg.Repo,
@@ -323,14 +338,15 @@ func (q *Queries) InsertEventType(ctx context.Context, arg InsertEventTypeParams
 }
 
 const insertMapping = `-- name: InsertMapping :exec
-INSERT INTO mappings (id, name, source_hint, fields)
-VALUES ($1, $2, $3, $4)
+INSERT INTO mappings (id, name, source_hint, event_type, fields)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertMappingParams struct {
 	ID         string
 	Name       string
 	SourceHint string
+	EventType  string
 	Fields     string
 }
 
@@ -339,8 +355,24 @@ func (q *Queries) InsertMapping(ctx context.Context, arg InsertMappingParams) er
 		arg.ID,
 		arg.Name,
 		arg.SourceHint,
+		arg.EventType,
 		arg.Fields,
 	)
+	return err
+}
+
+const insertMappingMatch = `-- name: InsertMappingMatch :exec
+INSERT INTO mapping_matches (mapping, capture) VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type InsertMappingMatchParams struct {
+	Mapping string
+	Capture string
+}
+
+func (q *Queries) InsertMappingMatch(ctx context.Context, arg InsertMappingMatchParams) error {
+	_, err := q.db.Exec(ctx, insertMappingMatch, arg.Mapping, arg.Capture)
 	return err
 }
 
@@ -395,7 +427,7 @@ func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) 
 }
 
 const listBindings = `-- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, secret, created_at, updated_at, filter
 FROM bindings ORDER BY created_at DESC
 `
 
@@ -421,6 +453,7 @@ func (q *Queries) ListBindings(ctx context.Context) ([]Binding, error) {
 			&i.Secret,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Filter,
 		); err != nil {
 			return nil, err
 		}
@@ -503,26 +536,37 @@ func (q *Queries) ListEventTypes(ctx context.Context) ([]EventType, error) {
 }
 
 const listMappings = `-- name: ListMappings :many
-SELECT id, name, source_hint, fields, created_at, updated_at
+SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type,
+	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
+	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
 FROM mappings ORDER BY created_at DESC
 `
 
-func (q *Queries) ListMappings(ctx context.Context) ([]Mapping, error) {
+type ListMappingsRow struct {
+	Mapping       Mapping
+	MatchCount    int64
+	LastMatchedAt time.Time
+}
+
+func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
 	rows, err := q.db.Query(ctx, listMappings)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Mapping
+	var items []ListMappingsRow
 	for rows.Next() {
-		var i Mapping
+		var i ListMappingsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.SourceHint,
-			&i.Fields,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Mapping.ID,
+			&i.Mapping.Name,
+			&i.Mapping.SourceHint,
+			&i.Mapping.Fields,
+			&i.Mapping.CreatedAt,
+			&i.Mapping.UpdatedAt,
+			&i.Mapping.EventType,
+			&i.MatchCount,
+			&i.LastMatchedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -535,13 +579,16 @@ func (q *Queries) ListMappings(ctx context.Context) ([]Mapping, error) {
 }
 
 const listUndispatchedCaptures = `-- name: ListUndispatchedCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, event_type
-FROM captures
-WHERE source = ANY($1::text[])
-  -- An unidentified capture is never dispatched.
-  AND event_type <> ''
-  AND id NOT IN (SELECT capture FROM binding_dispatches)
-ORDER BY received_at DESC
+SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.event_type
+FROM captures c
+WHERE c.source = ANY($1::text[])
+  AND c.event_type <> ''
+  AND EXISTS (
+	SELECT 1 FROM bindings b JOIN mappings m ON m.id = b.mapping
+	WHERE b.source = c.source AND b.status = 'armed' AND m.event_type = c.event_type
+	  AND NOT EXISTS (SELECT 1 FROM binding_dispatches d WHERE d.binding = b.id AND d.capture = c.id)
+  )
+ORDER BY c.received_at DESC
 LIMIT $2
 `
 
@@ -550,6 +597,9 @@ type ListUndispatchedCapturesParams struct {
 	EntryLimit int32
 }
 
+// A capture is undispatched while some armed binding on its source, whose
+// mapping belongs to the capture's event type, has not dispatched it. An
+// unidentified capture has no event type, so it is never listed.
 func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispatchedCapturesParams) ([]Capture, error) {
 	rows, err := q.db.Query(ctx, listUndispatchedCaptures, arg.Sources, arg.EntryLimit)
 	if err != nil {
@@ -648,9 +698,9 @@ func (q *Queries) TaskToolCalls(ctx context.Context, taskID int64) ([]TaskToolCa
 
 const updateBinding = `-- name: UpdateBinding :execrows
 UPDATE bindings
-SET name = $2, source = $3, mapping = $4, workflow = $5, owner = $6, repo = $7,
-    version = version + 1, status = $8,
-    secret = CASE WHEN $9::text = '' THEN secret ELSE $9 END,
+SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,
+    version = version + 1, status = $9,
+    secret = CASE WHEN $10::text = '' THEN secret ELSE $10 END,
     updated_at = now()
 WHERE id = $1
 `
@@ -660,6 +710,7 @@ type UpdateBindingParams struct {
 	Name     string
 	Source   string
 	Mapping  string
+	Filter   string
 	Workflow string
 	Owner    string
 	Repo     string
@@ -676,6 +727,7 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (i
 		arg.Name,
 		arg.Source,
 		arg.Mapping,
+		arg.Filter,
 		arg.Workflow,
 		arg.Owner,
 		arg.Repo,
@@ -708,7 +760,7 @@ func (q *Queries) UpdateEventType(ctx context.Context, arg UpdateEventTypeParams
 
 const updateMapping = `-- name: UpdateMapping :execrows
 UPDATE mappings
-SET name = $2, source_hint = $3, fields = $4, updated_at = now()
+SET name = $2, source_hint = $3, event_type = $4, fields = $5, updated_at = now()
 WHERE id = $1
 `
 
@@ -716,6 +768,7 @@ type UpdateMappingParams struct {
 	ID         string
 	Name       string
 	SourceHint string
+	EventType  string
 	Fields     string
 }
 
@@ -724,6 +777,7 @@ func (q *Queries) UpdateMapping(ctx context.Context, arg UpdateMappingParams) (i
 		arg.ID,
 		arg.Name,
 		arg.SourceHint,
+		arg.EventType,
 		arg.Fields,
 	)
 	if err != nil {

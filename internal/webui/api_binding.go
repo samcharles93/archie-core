@@ -16,6 +16,7 @@ type bindingRequest struct {
 	Name      string          `json:"name"`
 	Matcher   binding.Matcher `json:"matcher"`
 	MappingID string          `json:"mapping_id"`
+	Filter    string          `json:"filter"`
 	Workflow  string          `json:"workflow"`
 	// Owner and Repo optionally pin the binding to one configured repo,
 	// for multi-repo deployments. Both empty is valid (falls back to the
@@ -67,6 +68,7 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		Name:      req.Name,
 		Matcher:   req.Matcher,
 		MappingID: req.MappingID,
+		Filter:    req.Filter,
 		Workflow:  req.Workflow,
 		Owner:     req.Owner,
 		Repo:      req.Repo,
@@ -77,12 +79,11 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !s.checkBindingFilter(w, r, b) {
+		return
+	}
 	id, err := s.Bindings.InsertBinding(r.Context(), b)
 	if err != nil {
-		if errors.Is(err, storecontract.ErrBindingOverlap) {
-			http.Error(w, "binding source overlaps an existing binding", http.StatusConflict)
-			return
-		}
 		s.Log.Error("insert binding", "err", err)
 		http.Error(w, "create binding failed", http.StatusInternalServerError)
 		return
@@ -154,6 +155,7 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		Name:      req.Name,
 		Matcher:   req.Matcher,
 		MappingID: req.MappingID,
+		Filter:    req.Filter,
 		Workflow:  req.Workflow,
 		Owner:     req.Owner,
 		Repo:      req.Repo,
@@ -163,12 +165,13 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !s.checkBindingFilter(w, r, b) {
+		return
+	}
 	if err := s.Bindings.UpdateBinding(r.Context(), b); err != nil {
 		switch {
 		case errors.Is(err, storecontract.ErrBindingNotFound):
 			http.Error(w, "binding not found", http.StatusNotFound)
-		case errors.Is(err, storecontract.ErrBindingOverlap):
-			http.Error(w, "binding source overlaps an existing binding", http.StatusConflict)
 		default:
 			s.Log.Error("update binding", "err", err, "id", id)
 			http.Error(w, "update binding failed", http.StatusInternalServerError)
@@ -229,8 +232,6 @@ func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "binding not found", http.StatusNotFound)
 		case errors.Is(err, storecontract.ErrBindingTransition):
 			http.Error(w, "binding cannot be approved from its current state", http.StatusConflict)
-		case errors.Is(err, storecontract.ErrBindingOverlap):
-			http.Error(w, "binding source overlaps an existing binding", http.StatusConflict)
 		default:
 			s.Log.Error("approve binding", "err", err, "id", id)
 			http.Error(w, "approve binding failed", http.StatusInternalServerError)
@@ -245,6 +246,30 @@ func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	updated.Secret = ""
 	writeJSON(w, updated)
+}
+
+// checkBindingFilter refuses a binding whose mapping does not exist or whose
+// filter does not compile against the mapping's parameters.
+func (s *Server) checkBindingFilter(w http.ResponseWriter, r *http.Request, b binding.Binding) bool {
+	if s.Mappings == nil {
+		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
+		return false
+	}
+	m, err := s.Mappings.GetMapping(r.Context(), b.MappingID)
+	if err != nil {
+		s.Log.Error("get mapping for binding", "err", err, "mapping", b.MappingID)
+		http.Error(w, "get mapping failed", http.StatusInternalServerError)
+		return false
+	}
+	if m == nil {
+		http.Error(w, "binding: mapping not found: "+b.MappingID, http.StatusBadRequest)
+		return false
+	}
+	if _, err := binding.CompileFilter(b.Filter, m.Fields); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 // stripBindingSecrets zeroes the Secret field on every binding in the slice

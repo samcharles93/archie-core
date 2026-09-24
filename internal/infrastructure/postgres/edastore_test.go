@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
-	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -89,42 +88,6 @@ func TestPlaybookDispatchIsIdempotent(t *testing.T) {
 	}
 	if err := s.RecordPlaybookDispatch(t.Context(), "p1", "v1", "e1", "a1"); !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 		t.Errorf("second RecordPlaybookDispatch() error = %v, want ErrAlreadyDispatched", err)
-	}
-}
-
-// Hazard 3: "one binding per source" is a schema constraint, so concurrent
-// inserts for one source produce exactly one success and one ErrBindingOverlap
-// rather than two bindings that a single SQLite writer would have serialised.
-func TestConcurrentInsertBindingSameSource(t *testing.T) {
-	s := edaFor(t)
-	type result struct{ err error }
-	start := make(chan struct{})
-	results := make(chan result, 2)
-	for range 2 {
-		go func() {
-			<-start
-			_, err := s.InsertBinding(t.Context(), binding.Binding{
-				Name: "n", Matcher: binding.Matcher{Source: "sentry"}, Workflow: "implement",
-			})
-			results <- result{err: err}
-		}()
-	}
-	close(start)
-
-	var succeeded, overlapped int
-	for range 2 {
-		outcome := <-results
-		switch {
-		case outcome.err == nil:
-			succeeded++
-		case errors.Is(outcome.err, storecontract.ErrBindingOverlap):
-			overlapped++
-		default:
-			t.Fatalf("concurrent InsertBinding error = %v", outcome.err)
-		}
-	}
-	if succeeded != 1 || overlapped != 1 {
-		t.Fatalf("concurrent inserts = %d succeeded, %d overlapped; want 1 each", succeeded, overlapped)
 	}
 }
 
@@ -219,13 +182,9 @@ func TestBindingLifecycle(t *testing.T) {
 	}
 }
 
-// A capture round-trips its payload verbatim, and a dispatched capture drops
-// out of the undispatched listing.
-func TestCaptureRoundTripAndUndispatched(t *testing.T) {
+// A capture round-trips its payload verbatim.
+func TestCaptureRoundTrip(t *testing.T) {
 	s := edaFor(t)
-	if _, err := s.InsertEventType(t.Context(), eventtype.EventType{Source: "sentry", Name: "any"}); err != nil {
-		t.Fatalf("InsertEventType() error = %v", err)
-	}
 	body := `{"action":"created"}`
 	if _, err := s.InsertCapture(t.Context(), storecontract.CapturedEvent{
 		Source: "sentry", Body: body, Headers: `{"X-Hook":"1"}`, ContentType: "application/json",
@@ -238,19 +197,6 @@ func TestCaptureRoundTripAndUndispatched(t *testing.T) {
 	}
 	if list[0].Body != body {
 		t.Errorf("Body round-trip = %q, want %q", list[0].Body, body)
-	}
-
-	undispatched, err := s.ListUndispatchedCaptures(t.Context(), []string{"sentry"}, 10)
-	if err != nil || len(undispatched) != 1 {
-		t.Fatalf("ListUndispatchedCaptures() = %d (err %v), want 1", len(undispatched), err)
-	}
-	// Dispatch it; the capture must no longer be undispatched.
-	if err := s.RecordDispatch(t.Context(), "b1", 1, list[0].ID, 42); err != nil {
-		t.Fatalf("RecordDispatch() error = %v", err)
-	}
-	undispatched, err = s.ListUndispatchedCaptures(t.Context(), []string{"sentry"}, 10)
-	if err != nil || len(undispatched) != 0 {
-		t.Fatalf("ListUndispatchedCaptures() after dispatch = %d (err %v), want 0", len(undispatched), err)
 	}
 }
 

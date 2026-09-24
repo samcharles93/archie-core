@@ -73,6 +73,7 @@ const (
 	StateStoreService_ListMappings_FullMethodName               = "/state.v1.StateStoreService/ListMappings"
 	StateStoreService_UpdateMapping_FullMethodName              = "/state.v1.StateStoreService/UpdateMapping"
 	StateStoreService_DeleteMapping_FullMethodName              = "/state.v1.StateStoreService/DeleteMapping"
+	StateStoreService_RecordMappingMatch_FullMethodName         = "/state.v1.StateStoreService/RecordMappingMatch"
 	StateStoreService_InsertEventType_FullMethodName            = "/state.v1.StateStoreService/InsertEventType"
 	StateStoreService_UpdateEventType_FullMethodName            = "/state.v1.StateStoreService/UpdateEventType"
 	StateStoreService_DeleteEventType_FullMethodName            = "/state.v1.StateStoreService/DeleteEventType"
@@ -201,6 +202,9 @@ type StateStoreServiceClient interface {
 	ListMappings(ctx context.Context, in *ListMappingsRequest, opts ...grpc.CallOption) (*ListMappingsResponse, error)
 	UpdateMapping(ctx context.Context, in *UpdateMappingRequest, opts ...grpc.CallOption) (*UpdateMappingResponse, error)
 	DeleteMapping(ctx context.Context, in *DeleteMappingRequest, opts ...grpc.CallOption) (*DeleteMappingResponse, error)
+	// RecordMappingMatch counts one event a mapping resolved; the same
+	// (mapping, capture) twice counts once.
+	RecordMappingMatch(ctx context.Context, in *RecordMappingMatchRequest, opts ...grpc.CallOption) (*RecordMappingMatchResponse, error)
 	// EventType (docs/prds/event-automation.md, "Event types"). Insert and
 	// Update refuse an overlapping or malformed type.
 	InsertEventType(ctx context.Context, in *InsertEventTypeRequest, opts ...grpc.CallOption) (*InsertEventTypeResponse, error)
@@ -799,6 +803,16 @@ func (c *stateStoreServiceClient) DeleteMapping(ctx context.Context, in *DeleteM
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) RecordMappingMatch(ctx context.Context, in *RecordMappingMatchRequest, opts ...grpc.CallOption) (*RecordMappingMatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordMappingMatchResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecordMappingMatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) InsertEventType(ctx context.Context, in *InsertEventTypeRequest, opts ...grpc.CallOption) (*InsertEventTypeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InsertEventTypeResponse)
@@ -1088,6 +1102,9 @@ type StateStoreServiceServer interface {
 	ListMappings(context.Context, *ListMappingsRequest) (*ListMappingsResponse, error)
 	UpdateMapping(context.Context, *UpdateMappingRequest) (*UpdateMappingResponse, error)
 	DeleteMapping(context.Context, *DeleteMappingRequest) (*DeleteMappingResponse, error)
+	// RecordMappingMatch counts one event a mapping resolved; the same
+	// (mapping, capture) twice counts once.
+	RecordMappingMatch(context.Context, *RecordMappingMatchRequest) (*RecordMappingMatchResponse, error)
 	// EventType (docs/prds/event-automation.md, "Event types"). Insert and
 	// Update refuse an overlapping or malformed type.
 	InsertEventType(context.Context, *InsertEventTypeRequest) (*InsertEventTypeResponse, error)
@@ -1288,6 +1305,9 @@ func (UnimplementedStateStoreServiceServer) UpdateMapping(context.Context, *Upda
 }
 func (UnimplementedStateStoreServiceServer) DeleteMapping(context.Context, *DeleteMappingRequest) (*DeleteMappingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteMapping not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RecordMappingMatch(context.Context, *RecordMappingMatchRequest) (*RecordMappingMatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordMappingMatch not implemented")
 }
 func (UnimplementedStateStoreServiceServer) InsertEventType(context.Context, *InsertEventTypeRequest) (*InsertEventTypeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertEventType not implemented")
@@ -2319,6 +2339,24 @@ func _StateStoreService_DeleteMapping_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_RecordMappingMatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordMappingMatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecordMappingMatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecordMappingMatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecordMappingMatch(ctx, req.(*RecordMappingMatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_InsertEventType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertEventTypeRequest)
 	if err := dec(in); err != nil {
@@ -2832,6 +2870,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteMapping",
 			Handler:    _StateStoreService_DeleteMapping_Handler,
+		},
+		{
+			MethodName: "RecordMappingMatch",
+			Handler:    _StateStoreService_RecordMappingMatch_Handler,
 		},
 		{
 			MethodName: "InsertEventType",

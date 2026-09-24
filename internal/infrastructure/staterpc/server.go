@@ -73,10 +73,13 @@ type Deps struct {
 	// ChannelStatus is the channel runtime state the process hosting the channels
 	// reports. Optional: nil disables the pair with codes.Unavailable, which is
 	// the honest answer for a store service no messaging process is writing to.
-	ChannelStatus      storecontract.ChannelStatusStore
-	ApplyStatus        storecontract.ApplyStatusStore
-	Mappings           storecontract.MappingStore
-	EventTypes         storecontract.EventTypeStore
+	ChannelStatus storecontract.ChannelStatusStore
+	ApplyStatus   storecontract.ApplyStatusStore
+	Mappings      storecontract.MappingStore
+	EventTypes    storecontract.EventTypeStore
+	// MappingMatches counts the events each mapping resolved. Optional: nil
+	// answers RecordMappingMatch with codes.Unavailable.
+	MappingMatches     storecontract.MappingMatchRecorder
 	Bindings           storecontract.BindingStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator
@@ -567,6 +570,16 @@ func (s *server) DeleteMapping(ctx context.Context, r *pb.DeleteMappingRequest) 
 		return nil, s.logErr("DeleteMapping", err)
 	}
 	return &pb.DeleteMappingResponse{}, nil
+}
+
+func (s *server) RecordMappingMatch(ctx context.Context, r *pb.RecordMappingMatchRequest) (*pb.RecordMappingMatchResponse, error) {
+	if s.deps.MappingMatches == nil {
+		return nil, status.Error(codes.Unavailable, "mapping match recorder unavailable")
+	}
+	if err := s.deps.MappingMatches.RecordMappingMatch(ctx, r.MappingId, r.CaptureId); err != nil {
+		return nil, s.logErr("RecordMappingMatch", err)
+	}
+	return &pb.RecordMappingMatchResponse{}, nil
 }
 
 // Binding

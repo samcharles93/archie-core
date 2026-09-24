@@ -398,11 +398,9 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 // binding_version on the new row in a second statement.
 //
 // A crash between the two writes leaves the task without provenance
-// (binding_id == 0); the binding_dispatches ledger row written by the
-// dispatch loop still records the (binding, capture, task) triple, so
-// a future repair pass could backfill. This is the same
-// best-effort-provenance pattern the rest of the task lifecycle uses
-// for fields added after the row's primary insert.
+// (binding_id == 0). This is the same best-effort-provenance pattern the
+// rest of the task lifecycle uses for fields added after the row's primary
+// insert.
 func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int) (*workflow.Task, error) {
 	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity)
 	if err != nil {

@@ -48,7 +48,7 @@ func TestDispatchBindingsCreatesTaskFromArmedCapture(t *testing.T) {
 		t.Errorf("task.Status = %q, want %q", got.Status, workflow.StatusQueued)
 	}
 
-	assertDispatchRecorded(t, s, bindingID, got.ID)
+	assertDispatchRecorded(t, s, bindingID)
 }
 
 // TestDispatchBindingsUsesBindingRepoPinWithMultipleConfiguredRepos is the
@@ -78,7 +78,7 @@ func TestDispatchBindingsUsesBindingRepoPinWithMultipleConfiguredRepos(t *testin
 	if tasks[0].Owner != "acme" || tasks[0].Repo != "widget" {
 		t.Fatalf("task owner/repo = %s/%s, want acme/widget (the binding's own pin, not a guess)", tasks[0].Owner, tasks[0].Repo)
 	}
-	assertDispatchRecorded(t, s, bindingID, tasks[0].ID)
+	assertDispatchRecorded(t, s, bindingID)
 }
 
 // TestDispatchBindingsRefusesUnpinnedBindingWithMultipleConfiguredRepos
@@ -367,23 +367,16 @@ func newDispatchDaemonWithRepos(t *testing.T, s *dispatchStores, repos []config.
 	}
 }
 
-// assertDispatchRecorded reads the dedup ledger directly: the
-// (binding, capture) unique index is what guarantees no double
-// dispatch. Going through the SQL table rather than the public
-// BindingStore surface keeps the assertion focused on the contract
-// Phase E actually writes to, not on a ListDispatches helper that
-// may not exist.
-func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string, taskID int64) {
+// assertDispatchRecorded reads the dedup ledger directly: the (binding,
+// capture) unique index is what guarantees no double dispatch. The dispatch
+// is claimed before its task exists, so the row carries no task id.
+func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string) {
 	t.Helper()
 	var gotBindingID string
-	var gotTaskID int64
 	if err := s.EdaStore.App().DB().NewQuery(
-		"SELECT binding, task_id FROM binding_dispatches WHERE binding = {:binding}").
+		"SELECT binding FROM binding_dispatches WHERE binding = {:binding}").
 		Bind(map[string]any{"binding": bindingID}).
-		Row(&gotBindingID, &gotTaskID); err != nil {
+		Row(&gotBindingID); err != nil {
 		t.Fatalf("binding_dispatches row missing: %v", err)
-	}
-	if gotBindingID != bindingID || gotTaskID != taskID {
-		t.Fatalf("binding_dispatches row = (%q, %d), want (%q, %d)", gotBindingID, gotTaskID, bindingID, taskID)
 	}
 }

@@ -34,7 +34,8 @@ type Matcher struct {
 // Binding is the runtime-editable entity that ties a matcher, a payload
 // mapping, and a workflow together. Bindings live in the store, not in
 // config.toml, so operators can author them from the dashboard while the
-// daemon runs.
+// daemon runs. Any number of bindings may share a source: each one applies to
+// the event type its mapping belongs to.
 //
 // Version is bumped on every UpdateBinding so a later edit cannot
 // silently rewrite the historical provenance of a task that already
@@ -46,7 +47,10 @@ type Binding struct {
 	Name      string  `json:"name"`
 	Matcher   Matcher `json:"matcher"`
 	MappingID string  `json:"mapping_id"`
-	Workflow  string  `json:"workflow"`
+	// Filter is an optional CEL expression over the mapping's parameters
+	// (CompileFilter). An event it excludes is not dispatched.
+	Filter   string `json:"filter,omitempty"`
+	Workflow string `json:"workflow"`
 	// Owner and Repo pin a binding to a specific configured repo, so a
 	// multi-repo deployment can dispatch correctly. Both empty means "no
 	// pin" -- resolveBindingRepo falls back to the single-configured-repo

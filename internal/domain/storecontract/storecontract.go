@@ -178,6 +178,13 @@ type MappingStore interface {
 	DeleteMapping(ctx context.Context, id string) error
 }
 
+// MappingMatchRecorder counts the events each mapping resolved, which the
+// store reports as Mapping.MatchCount and LastMatchedAt. Recording the same
+// (mapping, capture) twice counts once.
+type MappingMatchRecorder interface {
+	RecordMappingMatch(ctx context.Context, mappingID, captureID string) error
+}
+
 // EventTypeStore persists event types (docs/prds/event-automation.md, "Event
 // types"). Insert and Update refuse a type whose rule overlaps another on the
 // same source with eventtype.ErrOverlap, and a malformed one with
@@ -219,7 +226,8 @@ type BindingDispatcher interface {
 		bindingVersion int64,
 		captureID string,
 		// taskID addresses the SQLite-owned task tables, which are not
-		// migrating: it stays an integer on purpose.
+		// migrating: it stays an integer on purpose. The binding dispatch
+		// loop claims before it enqueues, so it records 0.
 		taskID int64,
 	) error
 	ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]CapturedEvent, error)

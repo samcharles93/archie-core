@@ -29,6 +29,7 @@ type Binding struct {
 	Secret    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Filter    string
 }
 
 type BindingDispatch struct {
@@ -144,6 +145,13 @@ type Mapping struct {
 	Fields     string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	EventType  string
+}
+
+type MappingMatch struct {
+	Mapping   string
+	Capture   string
+	MatchedAt time.Time
 }
 
 type Message struct {

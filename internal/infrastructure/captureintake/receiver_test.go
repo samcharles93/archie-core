@@ -75,13 +75,8 @@ func captureTestServer(t *testing.T) testReceiver {
 }
 
 // stubBindingStore injects a configurable armed-binding lookup result so
-// handleCapture tests can exercise the single-binding HMAC path and the
-// belt-and-braces 409-on-multiple path without seeding the real store
-// (which would either run into the overlap-rejection guard or require
-// bypassing the draft -> pending_approval -> armed lifecycle). The 409
-// path exists exactly for the case where the write-time check was
-// bypassed somehow, so simulating that case directly is the most honest
-// way to cover it.
+// handleCapture tests can exercise the HMAC path without seeding the real
+// store through the draft -> pending_approval -> armed lifecycle.
 type stubBindingStore struct {
 	armedBySource map[string][]binding.Binding
 	lookupErr     error
@@ -529,37 +524,47 @@ func TestHandleCaptureWithNoSignatureMarksUnauthenticated(t *testing.T) {
 	}
 }
 
-// TestHandleCaptureWithMultipleArmedBindingsReturns409 covers the
-// belt-and-braces TOCTOU guard: two armed bindings for the same source
-// would race over every inbound webhook for that source, so the
-// capture-time handler returns 409 Conflict instead of silently picking
-// a winner. The store's overlap check should make this impossible in
-// practice; the 409 is the safety net. The stub injects the state
-// directly to exercise that safety net.
-func TestHandleCaptureWithMultipleArmedBindingsReturns409(t *testing.T) {
-	srv := captureTestServer(t)
-	srv.Bindings = &stubBindingStore{
-		armedBySource: map[string][]binding.Binding{
-			"github": {
-				{ID: "rbind0000000001", Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "abcdefghijklmnop"},
-				{ID: "rbind0000000002", Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "qrstuvwxyz123456"},
-			},
-		},
+// TestHandleCaptureWithSeveralArmedBindings: several bindings may share a
+// source, and an event signed with any one of their secrets is authenticated.
+func TestHandleCaptureWithSeveralArmedBindings(t *testing.T) {
+	tests := []struct {
+		name   string
+		secret string
+		want   bool
+	}{
+		{"first binding's secret", "abcdefghijklmnop", true},
+		{"second binding's secret", "qrstuvwxyz123456", true},
+		{"no binding's secret", "not-the-real-secret-aaaaaaaaa", false},
 	}
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/capture/github", strings.NewReader(`{}`))
-	w := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := captureTestServer(t)
+			srv.Bindings = &stubBindingStore{
+				armedBySource: map[string][]binding.Binding{
+					"github": {
+						{ID: "rbind0000000001", Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "abcdefghijklmnop"},
+						{ID: "rbind0000000002", Matcher: binding.Matcher{Source: "github"}, Status: binding.StatusArmed, Secret: "qrstuvwxyz123456"},
+					},
+				},
+			}
+			body := `{}`
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/capture/github", strings.NewReader(body))
+			req.Header.Set("X-Hub-Signature-256", hmacSHA256(tt.secret, body))
+			w := httptest.NewRecorder()
 
-	srv.Handler().ServeHTTP(w, req)
+			srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d (multiple armed bindings must surface as 409 at capture time)", w.Code, http.StatusConflict)
-	}
-	got, err := srv.store.ListCaptures(t.Context(), 10)
-	if err != nil {
-		t.Fatalf("ListCaptures: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("captured rows = %d, want 0 (a 409 must never persist a row)", len(got))
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusAccepted)
+			}
+			got, err := srv.store.ListCaptures(t.Context(), 10)
+			if err != nil {
+				t.Fatalf("ListCaptures: %v", err)
+			}
+			if len(got) != 1 || got[0].Authenticated != tt.want {
+				t.Fatalf("captured = %+v, want 1 row with Authenticated=%v", got, tt.want)
+			}
+		})
 	}
 }
 
