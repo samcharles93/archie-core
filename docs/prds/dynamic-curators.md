@@ -71,7 +71,7 @@ served by one registered engine whose `Manifest()` is the stored definition and
 whose `Pass` composes `instructions` with the built tool set.
 
 This is the curator domain's missing half, not a standalone tool: it lands in
-`internal/domain/curator` (entity + engine), `internal/store` (persistence),
+`internal/domain/curator` (entity + engine), `internal/infrastructure/postgres` (persistence),
 `internal/webui` (CRUD), and `internal/app/archied` (seed + apply wiring).
 
 ## Definition sources and the merge rule
@@ -147,7 +147,7 @@ without a restart.
 
 ## Sequencing: persistence and the State Store
 
-The State Store is a standalone process that solely owns `archie.db`; the daemon
+The State Store is a standalone process that solely owns the task database; the daemon
 and Gateway never open it (`TestOpenStoresNeverOwnsTaskDB` guards this), and
 `proto/state/v1/state.proto` is one gRPC service fronting every ratified store
 contract. AGENTS.md forbids adding a Go interface method without a matching RPC.
@@ -162,7 +162,7 @@ That fixes the order:
 Phases 1 and 2 are genuinely independent of the wire boundary, so they are not
 blocked on it. Phase 3 is where the boundary is unavoidable: a definition the
 WebUI can edit must be reachable from the WebUI, and the WebUI reaches the store
-through the State Store, not by opening `archie.db`. Splitting the RPCs into a
+through the State Store, not by opening the database. Splitting the RPCs into a
 later change would leave a table nothing can read -- rejected. Deferring the
 whole phase is the same rejection, later.
 

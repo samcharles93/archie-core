@@ -43,13 +43,13 @@ systemctl --user start archied
 ```
 
 The templates use the extracted Gateway Service by default. Start
-`archie-gateway` before `archied`; it owns the conversation SQLite file and
+`archie-gateway` before `archied`; it owns the conversation tables and
 serves the `ChatContract` gRPC API on the configured target.
 
-The State Store service (`archie-state-store`) owns the single `archie.db` task
-SQLite file and serves the `StateStore` gRPC contract. After the in-process
-store path was deleted, BOTH `archied` and `archie-gateway` dial it via
-`[services.state].target` and never open `archie.db` themselves
+The State Store service (`archie-state-store`) owns the task data in the
+PostgreSQL database `database_url` names and serves the `StateStore` gRPC
+contract. BOTH `archied` and `archie-gateway` dial it via
+`[services.state].target` and never open the task tables themselves
 (`docs/prds/state-store-contract.md` §12 step 7). The templates set
 `[services.state]` accordingly: a host-only agent reaches a loopback bind
 (`127.0.0.1:9090`) with no token, while a container-mode agent needs the
@@ -117,10 +117,10 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9091/healthz        # 
 curl -s http://127.0.0.1:9091/health/detailed                                # state_db component -> 200, or 503 when degraded
 ```
 
-A running State Store owns exactly one task SQLite file (`<db_path>-tasks.sqlite`);
-`archied` and `archie-gateway` never open `archie.db` directly, so a second
-store process on the same `db_path`, or a consumer that opens the task file,
-indicates dual-store ownership (`docs/prds/state-store-contract.md` §12 step 7/8).
+A running State Store holds the `state-store` ownership lock on its database;
+`archied` and `archie-gateway` never open the task tables directly, so a second
+store process on the same `database_url` refuses to start, and a consumer that
+opens the task tables indicates dual-store ownership (`docs/prds/state-store-contract.md` §12 step 7/8).
 The readiness probe is the single-writer check the runbook has against a
 degraded store: a `503` from `/health/detailed` means `archied` should be
 started only after the store is healthy.

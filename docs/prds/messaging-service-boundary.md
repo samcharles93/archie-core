@@ -16,7 +16,7 @@ The Messaging Service (`cmd/archie-messaging`, composed via `internal/app/archie
 It is a peer service to the UI Service and the daemon:
 - It serves external chat participants across configured communication platforms.
 - It consumes Gateway's `messaging.ChatContract` exclusively for chat turn execution, streaming, session queries, cancellation, persona selection, and task control actions.
-- It holds no direct database connections (`*store.Store` or SQLite), owns no LLM execution or model provider credentials, and has no dependency on the daemon runtime or the UI HTTP server.
+- It holds no direct database connections, owns no LLM execution or model provider credentials, and has no dependency on the daemon runtime or the UI HTTP server.
 
 ## Boundary and Ownership
 
@@ -24,7 +24,7 @@ It is a peer service to the UI Service and the daemon:
 |---|---|---|---|
 | **Channel transports** | Telegram bot long-polling, Email IMAP/SMTP loops, Inbound Webhook HTTP listener | Gateway `ChatContract` | Direct LLM providers, model runtimes, tokenizer libraries |
 | **Turn dispatch** | Inbound message packaging, typing indicators, live streaming updates | `ChatContract.Route`, `ChatContract.Stream` | `gateway.Router`, `runtime.Runtime`, agent prompt builders |
-| **Sessions & History** | Platform-to-session key mapping, conversation thread ID translation | `ChatContract.GetSession`, `RecentMessages`, `RecentTurns` | `*store.Store`, `SessionStore` SQLite handles, direct database files |
+| **Sessions & History** | Platform-to-session key mapping, conversation thread ID translation | `ChatContract.GetSession`, `RecentMessages`, `RecentTurns` | store implementations, `SessionStore` database handles |
 | **Control & Actions** | Platform command parsing (`/status`, `/tasks`, `/cancel`, `/stop`, `/persona`) | `ChatContract.Snapshot`, `ApplyTaskAction`, `Cancel`, `SetPersona` | `daemon.Daemon`, workflow execution engine, worktree operations |
 | **Task Approvals** | Channel interactive keyboards, approval callbacks | `ChatContract.ApplyTaskAction` | Direct task status mutations, forge comment posters |
 | **Configuration** | Platform bot tokens, allowed sender/user IDs, webhook listen ports | `[chat.*]` channel configs, Gateway target/token | `config.Holder`, forge tokens, repo configs, agent container specs |
@@ -66,7 +66,7 @@ It does not read or decode `[forge]`, `[repos]`, `[models]`, `[providers]`, `[ru
 ## Deletion Gate and Verification
 
 The extraction is guarded by `cmd/archie-messaging/architecture_test.go`, verifying that `go list -deps ./cmd/archie-messaging` links zero banned runtime packages:
-- `modernc.org/sqlite` and `internal/store` (State Store)
+- `modernc.org/sqlite`, `github.com/jackc/pgx`, `internal/infrastructure/postgres` and `internal/infrastructure/legacyread` (State Store)
 - `internal/daemon`, `internal/app/archied`, `internal/container`, `internal/worktree` (Daemon runtime)
 - `internal/domain/workflow`, `internal/agentexec`, `internal/taskrun` (Workflow engine)
 - `internal/forge`, `internal/forgerpc` (Forge client)

@@ -106,7 +106,7 @@ Do not expose these helper flags as daemon settings.
 
 | Keys | Default, validation, and consumer | Status |
 | --- | --- | --- |
-| `work_dir`, `db_path` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; explicit `~` paths are home-expanded. `db_path` is a prefix: tasks/events use `<db_path>-tasks.sqlite` and conversations use `<db_path>-conversations.sqlite`. | production-wired |
+| `work_dir`, `state_dir`, `db_path` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; explicit `~` paths are home-expanded. `state_dir` holds the embedded NATS store and endpoint file, task logs and the readiness disk target. `db_path` only locates the legacy `<db_path>-tasks.sqlite`, `-eda.sqlite` and `-conversations.sqlite` files for `archie-state-store import` and the boot gate. | production-wired |
 | `skills_dir` | Empty falls back to `work_dir` for startup workflow registry. | partially-wired |
 | `plugin_dir` | Empty disables daemon plugin loading; configured directory loaded in `internal/app/archied`. | production-wired |
 | `poll_interval` | Default `60s`; root poll loop uses it, identities may override only interval. | production-wired |
@@ -125,7 +125,7 @@ Do not expose these helper flags as daemon settings.
 | `diff_cap_lines` | Zero replaced by `400` in `finalize`; `StageDiffCap` treats `<= 0` as disabled. TOML zero cannot disable; negative value does. | production-wired |
 | `web.listen` | Empty becomes `127.0.0.1:8484`; literal `off` disables. No authentication. | production-wired |
 | `notify.webhook` | Empty disables; feasibility workflow POSTs human-decision notifications when set. | production-wired |
-| `nats.url`, `token_env` | Empty URL keeps SQLite path. Configured token variable must be non-empty. | production-wired |
+| `nats.url`, `token_env` | Empty URL keeps the in-process path. Configured token variable must be non-empty. | production-wired |
 | `containers.*` | See dedicated table below. | production-wired |
 | `chat.*` | See channel table below. | production-wired |
 | `memory.provider`, `provider_config` | Feature YAML decodes these; `internal/app/archied` always starts built-in file provider at `work_dir/memory`. | decoded-but-unwired |

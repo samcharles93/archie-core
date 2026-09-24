@@ -41,7 +41,7 @@ Three further defects fall out of the same split:
    nothing, and a webhook populates it with nothing either — a route path names
    a source, not a person, so `webhook.go` leaves `SenderID` empty and carries
    the route in `Inbound.BudgetKey` for rate limiting. `sender_id` is persisted
-   (`session_store_sqlite.go`), so whatever a channel puts there reaches the
+   (`session_store_postgres.go`), so whatever a channel puts there reaches the
    consumers that read it.
 
 `agent-system.md` says the write-scope selection and cross-scope sharing
@@ -230,7 +230,7 @@ and would leak user A's extracted facts to user B through the same agent;
 user-wide would pool facts across agents; and a session id cannot survive the
 session ending, which is the whole requirement.
 
-This needs data the tree does not persist: the SQLite `messages` table
+This needs data the tree does not persist: the `messages` table
 gains `sender_id`, and `curator.SessionSummary` / `ConversationMessage` gain the
 agent and participant. The participant is derived from the session's own
 user-role messages: exactly one distinct non-empty sender writes; zero (a

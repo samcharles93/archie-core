@@ -194,8 +194,9 @@ Every WorkflowExecution is handed wholesale over core NATS to a task-scoped
 
 The behaviour is divided across technical packages:
 
-- `internal/store` defines the current `Task` execution record and status
-  strings and persists mutable state and transition history.
+- `internal/domain/workflow` defines the current `Task` execution record and
+  status strings; `internal/infrastructure/postgres` persists mutable state
+  and transition history behind `internal/domain/storecontract`.
 - `internal/daemon` discovers, claims, schedules, retries, recovers, processes,
   waits for human input, and reconciles pull requests.
 - `internal/domain/workflow` routes work, executes stages, mutates tasks, applies
@@ -205,7 +206,7 @@ The behaviour is divided across technical packages:
 - `internal/gate` and repository configuration define execution constraints.
 - `internal/gateway` duplicates task status strings and applies task-control
   rules.
-- forge, worktree, NATS, SQLite, containers, and agent runtimes are concrete
+- forge, worktree, NATS, PostgreSQL, containers, and agent runtimes are concrete
   dependencies mixed into orchestration.
 
 ## Current `task` meanings and required replacements
@@ -217,7 +218,7 @@ each meaning deliberately; a global text replacement is prohibited.
 | -------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Forge issue or external task                       | `internal/forge`, daemon polling                                | Channel message                                          | Preserve the channel's native reference and payload. Translate it into an Agent System request without importing forge or issue semantics into Workflow.                                                                                                                                                                                                                          |
 | Jira issue or other external work item             | Messaging infrastructure adapter                                | Channel message or external artifact                     | The external system retains its own vocabulary inside its integration. Its record may lead to an accepted work request but is not a Workflow or WorkflowExecution.                                                                                                                                                                                                                |
-| Persisted `store.Task` row                         | `internal/store`                                                | WorkflowExecution                                        | Own identity, Workflow ID and version, lifecycle, source-message reference, outputs, attempts, and outcome. Persistence implements the Agent System repository contract.                                                                                                                                                                                                          |
+| Persisted `workflow.Task` row                      | `internal/infrastructure/postgres`                              | WorkflowExecution                                        | Own identity, Workflow ID and version, lifecycle, source-message reference, outputs, attempts, and outcome. Persistence implements the Agent System repository contract.                                                                                                                                                                                                          |
 | Task status and transition history                 | `store.Status*`, `transitions`                                | WorkflowExecution lifecycle and domain events            | Enforce legal transitions atomically. Domain events and state changes cannot diverge. Remove duplicated status strings from consumers.                                                                                                                                                                                                                                            |
 | Claimed or queued task                             | `ClaimNext`, `ClaimByIssue`, `RecoverStale`                     | Scheduled WorkflowExecution                              | Claim by WorkflowExecution ID and expected version/state. Crash recovery and leases must not silently create a new execution.                                                                                                                                                                                                                                                     |
 | `workflow.TaskContext`                             | `internal/domain/workflow`                                             | WorkflowExecution context                                | Replace the mutable service bag with execution state plus narrow step-required contracts. Complete application configuration and unrelated services are forbidden.                                                                                                                                                                                                                |

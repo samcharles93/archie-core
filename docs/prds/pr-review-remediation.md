@@ -89,7 +89,7 @@ closed or archived is dropped through the same counter: the reaction is only
 ever work against a PR archie itself opened *and still owns*.
 
 That lookup does not exist. `pr_number` is written by
-`internal/store/store.go` and never read in a `WHERE` clause, so this needs a
+`internal/infrastructure/postgres/store.go` and never read in a `WHERE` clause, so this needs a
 `TaskStore` method keyed on `(owner, repo, pr_number)`, a matching
 `StateStoreService` RPC (a Go interface method on a store facade without one
 is forbidden, `CLAUDE.md`), and an index on those three columns. It is the
@@ -97,7 +97,7 @@ authorization boundary, so it is sequenced as its own step below rather than
 carried along with the envelope.
 
 **Identity is derived from the resolved task, never carried in the reaction.**
-The task row already stores `identity` (`internal/store/store.go`), and it is
+The task row already stores `identity` (`internal/infrastructure/postgres/store.go`), and it is
 the resolved task's identity that selects the forge client, worktree manager,
 repo config and `bot_user` for the remediation run and the `ReplyToReview`
 reply, through the existing `forgeFor`/`treesFor`/`repoFor` helpers. That is

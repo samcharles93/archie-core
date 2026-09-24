@@ -88,7 +88,7 @@ reconciliation, parking/retry/exhaustion, and crash recovery. Read
 `Store.Transition(ctx, taskID, from, to, detail)` now guards on `from`
 (`WHERE id=? AND status=?`, returning `store.ErrStaleTransition` on mismatch)
 and runs the status update plus the transition-history insert in one
-transaction (`internal/store/store.go`). The sentinel crosses the State Store
+transaction (`internal/infrastructure/postgres/store.go`). The sentinel crosses the State Store
 gRPC boundary via `mapError`/`unmapError` in
 `internal/infrastructure/staterpc/values.go`; its canonical message string is
 part of the wire contract. Earlier non-atomic behavior is the settled fix,
@@ -101,7 +101,7 @@ not an open design.
 | The model never runs git | Keep clone, branch, commit, push, diff, and cleanup in deterministic workspace/worktree steps. | CURRENT: `docs/architecture/agent-system.md`; `internal/worktree/` |
 | Deterministic constraints outrank prompts | Enforce gates, protected paths, read-only stages, test protection, and change caps outside model instructions. | CURRENT: `docs/architecture/agent-system.md`; `internal/gate/`; `internal/domain/workflow/` |
 | Agent execution is a data boundary | Send bounded, versioned input; validate correlated output before applying it. | CURRENT foundation: `internal/agentexec/protocol.go`; `docs/architecture/agent-system.md` |
-| Every workflow ends explicitly | Preserve terminal outcome or visible park. Preserve crash recovery of interrupted `running` work. | CURRENT: `internal/domain/workflow/workflow.go`; `internal/store/store.go` |
+| Every workflow ends explicitly | Preserve terminal outcome or visible park. Preserve crash recovery of interrupted `running` work. | CURRENT: `internal/domain/workflow/workflow.go`; `internal/infrastructure/postgres/store.go` |
 | Generic plugins stay metadata-only | Keep `plugin.Plugin` at `Name()`/`Version()`. Behavior on typed capability interface with owning `Registry`/`Manager`. | CURRENT-enforced rule: `internal/plugin/architecture_test.go` |
 | Capability engines own lifecycle | Give resource-owning engines explicit start/health/stop semantics and failure isolation. | APPROVED rule: `docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict` |
 | Trust is explicit | Treat trusted operator-installed in-process code, repository code, out-of-process integrations, and container-isolated code as different trust classes. | APPROVED rule: `docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict` |
@@ -202,7 +202,7 @@ Source: `docs/architecture/configuration.md`.
 | Capability-specific plugin behavior | Owning domain's typed registry/manager | Never add behavior to `plugin.Plugin`. |
 | Broker-neutral publication/subscription mechanics | `internal/eventbus` | Keep message meaning and schemas with their domain. |
 | Shared policy evaluation/evidence mechanics | No current package. `internal/policy` was the planned location; as of 2026-09-18 policy lives inside playbook bindings (`playbooks/`, `internal/domain/eda/playbook`) and `internal/gate/`. | Keep policy vocabulary, evaluators, and consequences with consuming domain. |
-| NATS, SQLite, forge, config decoding, external SDK adapters | `internal/infrastructure/<capability>` | Implement a narrow owner-defined contract; translate at boundary. |
+| NATS, PostgreSQL, forge, config decoding, external SDK adapters | `internal/infrastructure/<capability>` | Implement a narrow owner-defined contract; translate at boundary. |
 | Construction, cross-domain connection, startup/shutdown | `internal/app/archied` or `internal/app/agentworker` | Keep `cmd/*` thin; define health and shutdown order. |
 | Deploy assembly | `deployments/<assembly>` | Do not move application behavior into deployment files. |
 | Unreviewed memory/tools/workspace/gate/storage/web/RPC/scheduling | **OPEN** | Run `archie-architecture-planning-campaign`. |
@@ -213,7 +213,7 @@ Source: `docs/architecture/configuration.md`.
 | --- | --- |
 | `TaskContext` is a mutable service bag with config, services, policy, scratch state. | Design narrow step inputs and staged removal. |
 | Workflow lifecycle split across store, daemon, workflow, gateway, worker. | Trace every writer and reader before changing status. |
-| State changes and transition history were non-atomic and `from` was advisory — **settled** in `internal/store`: `Transition` guards on `status=?` and writes status plus history in one transaction. | Keep every status writer behind `Transition`; do not reintroduce a raw `UPDATE tasks SET status`. |
+| State changes and transition history were non-atomic and `from` was advisory — **settled** in `internal/infrastructure/postgres`: `Transition` guards on the current status and writes status plus history in one transaction. | Keep every status writer behind `Transition`; do not reintroduce a raw `UPDATE tasks SET status`. |
 | In-process and container paths put orchestration on different sides of process boundary. | Decide which path survives before extending both. |
 | Identity uses strings; task uniqueness/NATS dedup omit identity. | Don't promise multi-identity ownership until canonical IDs migrate. |
 | Container RPC uses root forge/worktree, not task owner's identity. | Known trust/correctness defect — not identity-isolated. |

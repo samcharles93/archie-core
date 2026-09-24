@@ -222,10 +222,10 @@ structures found in legacy packages.
   breaks `errors.Is` on the client without changing behavior visibly --
   treat those message constants as part of the wire contract.
 - The State Store is a standalone process (`cmd/archie-state-store`, run via
-  `archied.RunStateStore`) -- the daemon and Gateway never own `archie.db` or
-  serve this service in-process; `boot.openStateStore` in
-  `internal/app/archied/state_store.go` is the only caller of
-  `openProductionTaskStore`. Never add a second listener for the same
+  `archied.RunStateStore`) -- the daemon and Gateway never own the task
+  tables or serve this service in-process; `boot.openStateStore` in
+  `internal/app/archied/state_store.go` is the only place the task store
+  is built. Never add a second listener for the same
   service, and never reintroduce an in-process serving path in the
   daemon/Gateway (`TestOpenStoresNeverOwnsTaskDB` guards this).
 - Per-task credentials are scoped, not just authenticated: `daemon.

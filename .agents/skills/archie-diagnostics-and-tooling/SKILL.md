@@ -189,9 +189,9 @@ no dead-code analyzer.
 ## Collect test, race, coverage, and runtime evidence
 
 ```sh
-go test ./internal/store -count=1 -coverprofile=/tmp/archie-store.cover
+go test ./internal/infrastructure/postgres -count=1 -coverprofile=/tmp/archie-store.cover
 go tool cover -func=/tmp/archie-store.cover
-go test -race ./internal/store -count=1
+go test -race ./internal/infrastructure/postgres -count=1
 ```
 
 As of 2026-09-18, the package reported 78.6% statement coverage and passed its
