@@ -34,7 +34,6 @@ const settings: NavSpec = {
         "/settings/curators",
         "/settings/schedules",
         "/settings/scheduling-policy",
-        "/settings/advanced",
       ],
     },
     {
@@ -44,11 +43,17 @@ const settings: NavSpec = {
         "/settings/repositories",
         "/settings/identities",
         "/settings/tools",
+        "/settings/plugins",
       ],
     },
     {
       label: "Runtime",
-      paths: ["/settings/task-execution", "/settings/status"],
+      paths: [
+        "/settings/task-execution",
+        "/settings/container-runtime",
+        "/settings/status",
+        "/settings/advanced",
+      ],
     },
     { paths: ["/settings/history"] },
   ],

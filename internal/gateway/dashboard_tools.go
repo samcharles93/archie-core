@@ -46,7 +46,9 @@ var dashboardPages = []DashboardPage{
 	{Path: "/settings/scheduling-policy", Label: "Scheduling policy", Description: "How Archie finds work and labels its state on the forge."},
 	{Path: "/settings/tools", Label: "Tools & MCP", Description: "The tools agents can call, and the MCP servers that add more."},
 	{Path: "/settings/history", Label: "History", Description: "Every settings change: who made it, when, and what it was before."},
-	{Path: "/settings/advanced", Label: "Advanced", Description: "Identity, storage, sandboxing, and dangerous actions."},
+	{Path: "/settings/plugins", Label: "Plugins", Description: "Directories Archie loads extensions from at startup."},
+	{Path: "/settings/container-runtime", Label: "Container runtime", Description: "The containers agents run in."},
+	{Path: "/settings/advanced", Label: "Advanced", Description: "Actions that stop or roll back archied."},
 }
 
 // DashboardPages returns a copy of the dashboard page registry.

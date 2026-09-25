@@ -10,6 +10,8 @@ import ToolsPage from "@/settings/ToolsPage.vue";
 import HistoryPage from "@/settings/HistoryPage.vue";
 import PersonasPage from "@/settings/PersonasPage.vue";
 import SchedulesPage from "@/settings/SchedulesPage.vue";
+import PluginsPage from "@/settings/PluginsPage.vue";
+import ContainerRuntimePage from "@/settings/ContainerRuntimePage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -245,6 +247,30 @@ const routes = [
     },
   },
   {
+    path: "/settings/plugins",
+    name: "settings-plugins",
+    component: PluginsPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Plugins",
+      description: "Directories Archie loads extensions from at startup.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/container-runtime",
+    name: "settings-container-runtime",
+    component: ContainerRuntimePage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Container runtime",
+      description: "The containers agents run in.",
+      section: "settings",
+    },
+  },
+  {
     path: "/settings/advanced",
     name: "system-advanced",
     component: SystemAdvancedPage,
@@ -252,7 +278,7 @@ const routes = [
       navPath: "/settings",
       settings: true,
       label: "Advanced",
-      description: "Identity, storage, sandboxing, and dangerous actions.",
+      description: "Actions that stop or roll back archied.",
       section: "settings",
     },
   },
