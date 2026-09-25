@@ -1,6 +1,6 @@
 # External agent harnesses
 
-**Status:** Draft
+**Status:** Approved
 **Authority:** `docs/architecture/agent-system.md` (agent execution as a data
 boundary); settles the harness non-goal deferred by
 `docs/prds/service-decomposition.md`.

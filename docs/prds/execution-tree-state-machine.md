@@ -1,6 +1,6 @@
 # Execution tree and enforced state machine
 
-**Status:** Draft
+**Status:** Approved
 **Authority:** `docs/architecture/agent-system.md` (canonical workflow model);
 settles the "enforced WorkflowExecution state machine" item in
 `docs/architecture/migration-decisions.md` section 4.
