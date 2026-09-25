@@ -3,6 +3,8 @@
 **Status:** Draft
 **Beads issue:** `archie-core-h019.5` (parent `archie-core-h019`)
 
+> Superseded by `docs/prds/pr-review-agent.md`.
+
 Decides the half of calibration `docs/prds/adversarial-self-review.md` left
 open: "the adversarial-confirmation mechanism that keeps a finding from
 surfacing on a single reviewer's say-so."

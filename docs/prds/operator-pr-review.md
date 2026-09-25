@@ -3,6 +3,8 @@
 **Status:** Draft
 **Beads issue:** `archie-core-h019.8`
 
+> Superseded by `docs/prds/pr-review-agent.md`.
+
 This PRD reuses the adversarial-self-review contract
 (`docs/prds/adversarial-self-review.md`) and the `workflow.Reviewer` /
 `workflow.ReviewReport` types from `internal/domain/workflow`. It decides
