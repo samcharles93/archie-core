@@ -2,6 +2,8 @@
 
 **Status:** Draft
 
+> Superseded by `docs/prds/store.md`.
+
 Epic: `archie-core-1786637490708-35-38424ead` / GitHub `#56` ("Replace Skills
 with a bundled Extensions centre").
 
