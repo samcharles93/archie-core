@@ -95,5 +95,5 @@ decisions into SFCs using shadcn-vue primitives and existing tokens. Mock data
 in a prototype proves nothing — verify the pattern against real task/log/diff
 shapes before building around it. A prototype proposing new information
 architecture (e.g. splitting the task view into a master-detail pane) is an
-open design question: it needs a decisive 1-page doc in `docs/prds/` before
-structural work lands, per AGENTS.md.
+open design question for the maintainer. Web UI design is not tracked in
+`docs/prds/`; record the decision on the bead and in `docs/design/`.

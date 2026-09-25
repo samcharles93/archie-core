@@ -1,14 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect } from "vue";
+import { computed, ref, useId, watchEffect } from "vue";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,6 +24,8 @@ interface Definition {
 }
 
 const props = defineProps<{ definitions: Definition[] }>();
+const uid = useId();
+const emit = defineEmits<{ started: [taskId: number] }>();
 
 /** Starting work enters Archie's normal admitted task queue, not a side door. */
 
@@ -64,6 +59,7 @@ async function submit() {
       instructions: instructions.value,
     });
     notice.value = `Queued task #${result.task_id}.`;
+    emit("started", result.task_id);
     identity.value = "";
     repository.value = "";
     workflow.value = defaultWorkflow.value;
@@ -78,63 +74,53 @@ async function submit() {
 </script>
 
 <template>
-  <Card class="mb-4">
-    <CardHeader>
-      <CardTitle>Start work</CardTitle>
-      <CardDescription
-        >This enters Archie's normal admitted task queue.</CardDescription
-      >
-    </CardHeader>
-    <CardContent>
-      <form @submit.prevent="submit">
-        <FieldGroup>
-          <Field>
-            <FieldLabel for="wf-identity">Identity</FieldLabel>
-            <Input id="wf-identity" v-model="identity" required />
-          </Field>
-          <Field>
-            <FieldLabel for="wf-repository">Repository</FieldLabel>
-            <Input
-              id="wf-repository"
-              v-model="repository"
-              placeholder="owner/repository"
-              required
-            />
-          </Field>
-          <Field>
-            <FieldLabel for="wf-workflow">Workflow</FieldLabel>
-            <Select v-model="workflow" required>
-              <SelectTrigger id="wf-workflow">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem v-for="d in enabled" :key="d.id" :value="d.id">
-                    {{ workflowLabel(d.name || d.id) }}
-                  </SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel for="wf-title">Task title</FieldLabel>
-            <Input id="wf-title" v-model="title" required />
-          </Field>
-          <Field>
-            <FieldLabel for="wf-instructions">Instructions</FieldLabel>
-            <Textarea
-              id="wf-instructions"
-              v-model="instructions"
-              :rows="3"
-              required
-            />
-          </Field>
-          <Field orientation="horizontal">
-            <Button type="submit" :disabled="submitting">Start work</Button>
-            <p v-if="notice" class="text-sm text-fg-muted">{{ notice }}</p>
-          </Field>
-        </FieldGroup>
-      </form>
-    </CardContent>
-  </Card>
+  <form @submit.prevent="submit">
+    <FieldGroup>
+      <Field>
+        <FieldLabel :for="`${uid}-identity`">Identity</FieldLabel>
+        <Input :id="`${uid}-identity`" v-model="identity" required />
+      </Field>
+      <Field>
+        <FieldLabel :for="`${uid}-repository`">Repository</FieldLabel>
+        <Input
+          :id="`${uid}-repository`"
+          v-model="repository"
+          placeholder="owner/repository"
+          required
+        />
+      </Field>
+      <Field>
+        <FieldLabel :for="`${uid}-workflow`">Workflow</FieldLabel>
+        <Select v-model="workflow" required>
+          <SelectTrigger :id="`${uid}-workflow`">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem v-for="d in enabled" :key="d.id" :value="d.id">
+                {{ workflowLabel(d.name || d.id) }}
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field>
+        <FieldLabel :for="`${uid}-title`">Task title</FieldLabel>
+        <Input :id="`${uid}-title`" v-model="title" required />
+      </Field>
+      <Field>
+        <FieldLabel :for="`${uid}-instructions`">Instructions</FieldLabel>
+        <Textarea
+          :id="`${uid}-instructions`"
+          v-model="instructions"
+          :rows="3"
+          required
+        />
+      </Field>
+      <Field orientation="horizontal">
+        <Button type="submit" :disabled="submitting">Start work</Button>
+        <p v-if="notice" class="text-sm text-fg-muted">{{ notice }}</p>
+      </Field>
+    </FieldGroup>
+  </form>
 </template>

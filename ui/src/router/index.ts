@@ -63,7 +63,7 @@ const routes = [
     },
   },
   {
-    path: "/skills",
+    path: "/settings/skills",
     name: "skills",
     component: SkillsPage,
     meta: {
@@ -73,7 +73,7 @@ const routes = [
     },
   },
   {
-    path: "/curators",
+    path: "/settings/curators",
     name: "curators",
     component: CuratorsPage,
     meta: {
@@ -93,7 +93,7 @@ const routes = [
     },
   },
   {
-    path: "/system/status",
+    path: "/settings/status",
     name: "system-status",
     component: SystemStatusPage,
     meta: {
@@ -114,7 +114,7 @@ const routes = [
     },
   },
   {
-    path: "/system/appearance",
+    path: "/settings/appearance",
     name: "system-appearance",
     component: SystemAppearancePage,
     meta: {
@@ -123,17 +123,17 @@ const routes = [
     },
   },
   {
-    path: "/system/tasks",
+    path: "/settings/task-execution",
     name: "system-tasks",
     component: SystemTasksPage,
     meta: {
-      label: "Task settings",
+      label: "Task execution",
       description: "Work lifecycle: statuses, operator actions, and budgets.",
       section: "settings",
     },
   },
   {
-    path: "/system/models",
+    path: "/settings/models",
     name: "system-models",
     component: SystemModelsPage,
     meta: {
@@ -143,7 +143,7 @@ const routes = [
     },
   },
   {
-    path: "/system/repos",
+    path: "/settings/repositories",
     name: "system-repos",
     component: SystemReposPage,
     meta: {
@@ -154,7 +154,7 @@ const routes = [
     },
   },
   {
-    path: "/system/identities",
+    path: "/settings/identities",
     name: "system-identities",
     component: SystemIdentitiesPage,
     meta: {
@@ -164,7 +164,7 @@ const routes = [
     },
   },
   {
-    path: "/channels",
+    path: "/settings/channels",
     name: "channels",
     component: ChannelsPage,
     meta: {
@@ -174,7 +174,7 @@ const routes = [
     },
   },
   {
-    path: "/system/advanced",
+    path: "/settings/advanced",
     name: "system-advanced",
     component: SystemAdvancedPage,
     meta: {
@@ -183,7 +183,20 @@ const routes = [
       section: "settings",
     },
   },
-  { path: "/settings", redirect: "/system/status", meta: { nav: false } },
+  { path: "/settings", redirect: "/settings/status", meta: { nav: false } },
+  // Paths from before Settings existed, kept for bookmarks and chat history.
+  ...Object.entries({
+    "/system/status": "/settings/status",
+    "/system/appearance": "/settings/appearance",
+    "/system/tasks": "/settings/task-execution",
+    "/system/models": "/settings/models",
+    "/system/repos": "/settings/repositories",
+    "/system/identities": "/settings/identities",
+    "/system/advanced": "/settings/advanced",
+    "/channels": "/settings/channels",
+    "/skills": "/settings/skills",
+    "/curators": "/settings/curators",
+  }).map(([path, redirect]) => ({ path, redirect, meta: { nav: false } })),
 ];
 
 export { routes };

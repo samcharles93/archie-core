@@ -191,8 +191,7 @@ no horizontal page scroll at either width.
 
 ## Phase 4 — Navigation restructure
 
-Approved in `docs/prds/dashboard-navigation-groups.md`; build it during the
-port rather than porting the flat bar first.
+Build it during the port rather than porting the flat bar first.
 
 - [x] Five top-level items: Dashboard, Work, Agent, Events, System.
 - [x] Rename under their group: Inspector, Mappings, Bindings.

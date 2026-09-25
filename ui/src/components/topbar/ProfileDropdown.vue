@@ -26,13 +26,8 @@ import {
       </DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuItem as-child>
-        <RouterLink to="/system/appearance" class="w-full cursor-pointer"
+        <RouterLink to="/settings/appearance" class="w-full cursor-pointer"
           >Appearance</RouterLink
-        >
-      </DropdownMenuItem>
-      <DropdownMenuItem as-child>
-        <RouterLink to="/system/status" class="w-full cursor-pointer"
-          >Status</RouterLink
         >
       </DropdownMenuItem>
     </DropdownMenuContent>

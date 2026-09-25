@@ -2,7 +2,13 @@
 import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Empty,
   EmptyDescription,
@@ -57,7 +63,17 @@ onMounted(async () => {
 
     <!-- Starting work needs a definition to start: with none served, the form
          could only be submitted to fail. -->
-    <StartWorkForm v-if="definitions.length" :definitions="definitions" />
+    <Card v-if="definitions.length" class="mb-4">
+      <CardHeader>
+        <CardTitle>Start work</CardTitle>
+        <CardDescription
+          >This enters Archie's normal admitted task queue.</CardDescription
+        >
+      </CardHeader>
+      <CardContent>
+        <StartWorkForm :definitions="definitions" />
+      </CardContent>
+    </Card>
 
     <Card v-if="error">
       <CardContent>

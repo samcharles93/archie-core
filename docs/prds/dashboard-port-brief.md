@@ -3,8 +3,7 @@
 **Status:** Approved
 **Date:** 2026-09-20
 **Beads:** `archie-core-tavn` (epic), `archie-core-ocfm` (navigation)
-**Reads with:** `docs/prds/vue-migration-checklist.md` (the item-by-item),
-`docs/prds/dashboard-navigation-groups.md` (the approved nav design)
+**Reads with:** `docs/prds/vue-migration-checklist.md` (the item-by-item)
 
 This is the standard the port is held to. The checklist says what to port; this
 says how, and what counts as done. It exists because the first attempt ported

@@ -63,8 +63,8 @@ function closeMenuSoon() {
       @pointerenter="openMenu"
       @pointerleave="closeMenuSoon"
     >
-      <template v-for="item in items" :key="item.path">
-        <DropdownMenuSeparator v-if="item.dividerBefore" />
+      <template v-for="(item, index) in items" :key="item.path">
+        <DropdownMenuSeparator v-if="item.dividerBefore && index > 0" />
         <DropdownMenuLabel v-if="item.dividerBefore">{{
           item.dividerBefore
         }}</DropdownMenuLabel>
