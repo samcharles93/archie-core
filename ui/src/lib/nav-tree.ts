@@ -35,7 +35,7 @@ export type NavSpec =
   | {
       kind: "group";
       label: string;
-      sections: { label: string; paths: string[] }[];
+      sections: { label?: string; paths: string[] }[];
     };
 
 /**
@@ -75,7 +75,7 @@ export function buildNav(
         .filter(visible)
         .map(entryFor)
         .map((entry, i) =>
-          i === 0 ? { ...entry, dividerBefore: section.label } : entry,
+          i === 0 ? { ...entry, dividerBefore: section.label ?? "" } : entry,
         ),
     );
     if (items.length > 0) tree.push({ kind: "group", label: spec.label, items });

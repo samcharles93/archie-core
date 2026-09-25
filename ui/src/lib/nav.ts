@@ -48,6 +48,7 @@ const settings: NavSpec = {
       label: "Runtime",
       paths: ["/settings/task-execution", "/settings/status"],
     },
+    { paths: ["/settings/history"] },
   ],
 };
 

@@ -7,6 +7,7 @@ import EventsPage from "@/events/EventsPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
 import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
 import ToolsPage from "@/settings/ToolsPage.vue";
+import HistoryPage from "@/settings/HistoryPage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -226,6 +227,19 @@ const routes = [
       settings: true,
       label: "Advanced",
       description: "Identity, storage, sandboxing, and dangerous actions.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/history",
+    name: "settings-history",
+    component: HistoryPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      wide: true,
+      label: "History",
+      description: "Every settings change: who made it, when, and what it was before.",
       section: "settings",
     },
   },

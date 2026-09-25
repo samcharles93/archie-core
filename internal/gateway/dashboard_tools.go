@@ -43,6 +43,7 @@ var dashboardPages = []DashboardPage{
 	{Path: "/settings/identities", Label: "Identities", Description: "Persistent actors and lifecycle."},
 	{Path: "/settings/scheduling-policy", Label: "Scheduling policy", Description: "How Archie finds work and labels its state on the forge."},
 	{Path: "/settings/tools", Label: "Tools & MCP", Description: "The tools agents can call, and the MCP servers that add more."},
+	{Path: "/settings/history", Label: "History", Description: "Every settings change: who made it, when, and what it was before."},
 	{Path: "/settings/advanced", Label: "Advanced", Description: "Identity, storage, sandboxing, and dangerous actions."},
 }
 

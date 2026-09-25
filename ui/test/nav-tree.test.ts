@@ -72,3 +72,25 @@ test("jump targets add unlisted pages to what the bar reaches", () => {
 test("a spec naming a missing route fails loudly", () => {
   assert.throws(() => buildNav(table, [{ kind: "link", path: "/nope" }]), /\/nope/);
 });
+
+test("an unlabelled section marks its first item with an empty divider", () => {
+  const nav = buildNav(table, [
+    {
+      kind: "group",
+      label: "Settings",
+      sections: [
+        { label: "Agents", paths: ["/settings/models"] },
+        { paths: ["/logs"] },
+      ],
+    },
+  ]);
+  const group = nav.tree[0];
+  assert.ok(group && group.kind === "group");
+  assert.deepEqual(
+    group.items.map((i) => [i.path, i.dividerBefore]),
+    [
+      ["/settings/models", "Agents"],
+      ["/logs", ""],
+    ],
+  );
+});

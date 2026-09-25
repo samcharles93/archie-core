@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
-import AuditTable from "@/base/AuditTable.vue";
 import PageHeader from "@/base/PageHeader.vue";
 import { DurationInput, parseGoDuration } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
@@ -64,6 +64,7 @@ const labelMissing = computed(
 <template>
   <div>
     <PageHeader title="Scheduling policy">
+      <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
     <p class="-mt-4 mb-8 text-sm text-fg-muted">
@@ -140,6 +141,5 @@ const labelMissing = computed(
       </SettingRow>
     </template>
 
-    <AuditTable class="mt-10" :resources="resources" />
   </div>
 </template>

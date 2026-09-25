@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { Globe, Mail, Send } from "@lucide/vue";
 
-import AuditTable from "@/base/AuditTable.vue";
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
 import { DurationInput } from "@/components/ui/duration-input";
@@ -124,6 +124,7 @@ const replyModes = [
 <template>
   <div>
     <PageHeader title="Channels">
+      <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
     <p class="-mt-4 mb-8 text-sm text-fg-muted">Where people can talk to Archie, and how those chats run.</p>
@@ -267,6 +268,5 @@ const replyModes = [
       </section>
     </template>
 
-    <AuditTable class="mt-10" :resources="resources" />
   </div>
 </template>

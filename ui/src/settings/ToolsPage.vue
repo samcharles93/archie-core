@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { Plus } from "@lucide/vue";
 
-import AuditTable from "@/base/AuditTable.vue";
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
 import { ByteSizeInput } from "@/components/ui/byte-size-input";
@@ -62,6 +62,7 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
 <template>
   <div>
     <PageHeader title="Tools & MCP">
+      <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
     <p class="-mt-4 mb-8 text-sm text-fg-muted">
@@ -146,6 +147,5 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       </SettingRow>
     </template>
 
-    <AuditTable class="mt-10" :resources="resources" />
   </div>
 </template>

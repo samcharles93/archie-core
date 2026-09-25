@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AuditTable from "@/base/AuditTable.vue";
+import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
@@ -15,7 +15,9 @@ onMounted(controlPlane.load);
 
 <template>
   <div>
-    <PageHeader title="Models" />
+    <PageHeader title="Models">
+      <HistoryLink :kinds="resources.map((r) => r.kind)" />
+    </PageHeader>
 
     <p v-if="catalogError" class="text-sm text-destructive" role="alert">
       {{ catalogError }}
@@ -28,6 +30,5 @@ onMounted(controlPlane.load);
         descriptor.kind === 'provider-settings' ? 'providers' : 'roles'
       "
     />
-    <AuditTable :resources="resources" />
   </div>
 </template>

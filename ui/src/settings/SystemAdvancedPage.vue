@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AuditTable from "@/base/AuditTable.vue";
+import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
@@ -23,7 +23,9 @@ onMounted(load);
 
 <template>
   <div>
-    <PageHeader title="Advanced" />
+    <PageHeader title="Advanced">
+      <HistoryLink :kinds="resources.map((r) => r.kind)" />
+    </PageHeader>
 
     <p v-if="catalogError" class="text-sm text-destructive" role="alert">
       {{ catalogError }}
@@ -33,7 +35,6 @@ onMounted(load);
       :key="descriptor.kind"
       :descriptor="descriptor"
     />
-    <AuditTable :resources="resources" />
     <ConfigCard title="Managed elsewhere">
       <div class="flex flex-wrap gap-2">
         <Button as-child variant="outline"
