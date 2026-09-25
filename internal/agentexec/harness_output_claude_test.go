@@ -23,7 +23,7 @@ func TestClaudeCodeHarnessOutputFixtures(t *testing.T) {
 				{Tool: "Bash", Detail: "hello"},
 				{Tool: "Bash", Detail: errorDetail, Failed: true},
 			},
-			wantUsage:   Usage{PromptTokens: 6, CompletionTokens: 248, TotalTokens: 254, CachedTokens: 78105, CacheCreationTokens: 24309},
+			wantUsage:   Usage{PromptTokens: 102420, CompletionTokens: 248, TotalTokens: 102668, CachedTokens: 78105, CacheCreationTokens: 24309},
 			wantSession: "9c22c15c-80ef-42c6-a503-8d087ec47d92",
 		},
 		{
@@ -32,7 +32,7 @@ func TestClaudeCodeHarnessOutputFixtures(t *testing.T) {
 				{Tool: "Bash", Detail: "hello"},
 				{Tool: "Bash", Detail: errorDetail, Failed: true},
 			},
-			wantUsage:   Usage{PromptTokens: 6, CompletionTokens: 121, TotalTokens: 127, CachedTokens: 78105, CacheCreationTokens: 24309},
+			wantUsage:   Usage{PromptTokens: 102420, CompletionTokens: 121, TotalTokens: 102541, CachedTokens: 78105, CacheCreationTokens: 24309},
 			wantSession: "9c22c15c-80ef-42c6-a503-8d087ec47d92",
 		},
 		{
@@ -41,7 +41,7 @@ func TestClaudeCodeHarnessOutputFixtures(t *testing.T) {
 				{Tool: "Bash", Detail: "hello"},
 				{Tool: "Bash", Detail: errorDetail, Failed: true},
 			},
-			wantUsage:   Usage{PromptTokens: 6, CompletionTokens: 248, TotalTokens: 254, CachedTokens: 78105, CacheCreationTokens: 24309},
+			wantUsage:   Usage{PromptTokens: 102420, CompletionTokens: 248, TotalTokens: 102668, CachedTokens: 78105, CacheCreationTokens: 24309},
 			wantSession: "9c22c15c-80ef-42c6-a503-8d087ec47d92",
 		},
 	}
@@ -120,7 +120,7 @@ func TestClaudeCodeHarnessOutputToolResultContent(t *testing.T) {
 			if !reflect.DeepEqual(calls, wantCalls) {
 				t.Errorf("tool calls = %#v, want %#v", calls, wantCalls)
 			}
-			wantUsage := Usage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5, CachedTokens: 5, CacheCreationTokens: 7}
+			wantUsage := Usage{PromptTokens: 14, CompletionTokens: 3, TotalTokens: 17, CachedTokens: 5, CacheCreationTokens: 7}
 			if got := output.Usage(); got != wantUsage {
 				t.Errorf("usage = %#v, want %#v", got, wantUsage)
 			}

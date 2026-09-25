@@ -55,13 +55,8 @@ func (o *claudeCodeHarnessOutput) Line(line []byte, report ToolCallReporter) {
 
 func (o *claudeCodeHarnessOutput) assistant(raw json.RawMessage, _ ToolCallReporter) {
 	var message struct {
-		ID    string `json:"id"`
-		Usage *struct {
-			InputTokens              int `json:"input_tokens"`
-			OutputTokens             int `json:"output_tokens"`
-			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-		} `json:"usage"`
+		ID      string          `json:"id"`
+		Usage   json.RawMessage `json:"usage"`
 		Content []struct {
 			Type  string `json:"type"`
 			ID    string `json:"id"`
@@ -72,13 +67,8 @@ func (o *claudeCodeHarnessOutput) assistant(raw json.RawMessage, _ ToolCallRepor
 	if json.Unmarshal(raw, &message) != nil {
 		return
 	}
-	if message.Usage != nil && (message.ID == "" || o.markMessage(message.ID)) {
-		o.messageUsage = addUsage(o.messageUsage, usageFromFields(
-			message.Usage.InputTokens,
-			message.Usage.OutputTokens,
-			message.Usage.CacheReadInputTokens,
-			message.Usage.CacheCreationInputTokens,
-		))
+	if usage, ok := decodeClaudeUsage(message.Usage); ok && (message.ID == "" || o.markMessage(message.ID)) {
+		o.messageUsage = addUsage(o.messageUsage, usage)
 	}
 	for _, block := range message.Content {
 		if block.Type == "tool_use" && block.ID != "" && block.Name != "" {
@@ -147,9 +137,14 @@ func decodeClaudeUsage(raw json.RawMessage) (Usage, bool) {
 	return usageFromFields(fields.InputTokens, fields.OutputTokens, fields.CacheReadInputTokens, fields.CacheCreationInputTokens), true
 }
 
+// usageFromFields folds cache reads and writes into PromptTokens, as the
+// built-in loop's Anthropic provider does: Claude's input_tokens excludes
+// them, and budgets must count a harness run the way they count a built-in
+// one.
 func usageFromFields(input, output, cacheRead, cacheCreation int) Usage {
+	prompt := input + cacheRead + cacheCreation
 	return Usage{
-		PromptTokens: input, CompletionTokens: output, TotalTokens: input + output,
+		PromptTokens: prompt, CompletionTokens: output, TotalTokens: prompt + output,
 		CachedTokens: cacheRead, CacheCreationTokens: cacheCreation,
 	}
 }
