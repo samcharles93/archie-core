@@ -141,8 +141,12 @@ type ConfigView struct {
 	// Chat carries the dashboard's own chat-page settings. They are
 	// daemon configuration the page cannot otherwise see: a process that
 	// renders a published snapshot has no [chat] section to read.
-	Chat       ChatView       `json:"chat"`
-	Provenance []ConfigOrigin `json:"provenance"`
+	Chat ChatView `json:"chat"`
+	// Catalog lists the providers the model catalog found usable (their key
+	// is set in the environment, or they are configured), with their models,
+	// so Settings can offer to enable one and pick role models from it.
+	Catalog    []CatalogProviderView `json:"catalog"`
+	Provenance []ConfigOrigin        `json:"provenance"`
 	// Reload reports the most recent config reload outcome. Omitted when
 	// the reload status is unavailable.
 	Reload *config.ReloadStatus `json:"reload,omitempty"`
@@ -337,6 +341,19 @@ type ConfigViewInput struct {
 	Provenance []ConfigOrigin
 	// Reload is the most recent reload outcome, or nil when unavailable.
 	Reload *config.ReloadStatus
+	// Catalog is the usable-provider catalog the configuration owner loaded.
+	Catalog []CatalogProviderView
+}
+
+// CatalogProviderView is one usable provider from the model catalog. It
+// names the environment variable its key was found in, never the key.
+type CatalogProviderView struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Class     string   `json:"class"`
+	APIKeyEnv string   `json:"api_key_env,omitempty"`
+	BaseURL   string   `json:"base_url,omitempty"`
+	Models    []string `json:"models"`
 }
 
 // BuildConfigView renders the dashboard's secret-free configuration
@@ -393,6 +410,7 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			Listen:                cfg.Web.Listen,
 			TrustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
 		},
+		Catalog: append([]CatalogProviderView{}, in.Catalog...),
 		Chat: ChatView{
 			ShowToolCalls:     cfg.Chat.ShowToolCalls,
 			Operator:          strings.TrimSpace(cfg.Chat.Operator),

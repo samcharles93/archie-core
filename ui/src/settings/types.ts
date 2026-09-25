@@ -68,7 +68,18 @@ export interface ProviderView {
   configured: boolean;
 }
 
+/** A provider the model catalog found usable, with its model ids. */
+export interface CatalogProvider {
+  id: string;
+  name: string;
+  class: string;
+  api_key_env?: string;
+  base_url?: string;
+  models: string[];
+}
+
 export interface ConfigView {
+  catalog?: CatalogProvider[];
   repositories?: RepoView[];
   models?: Record<string, string>;
   providers?: Record<string, ProviderView>;

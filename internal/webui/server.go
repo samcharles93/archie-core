@@ -1,10 +1,4 @@
-// Package webui is archied's dashboard: a control room over the daemon's
-// task board, activity stream and configuration.
-//
-// The Go side owns serving and the JSON API only; the frontend lives in the
-// repo-root ui/ package, which exposes the built assets as an embedded FS.
-// Handlers are split by concern -- one file per API area -- so a section can
-// be added without growing a single file without end.
+// Package webui implements the dashboard's HTTP API and serves the embedded SPA.
 package webui
 
 import (

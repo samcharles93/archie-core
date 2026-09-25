@@ -1481,6 +1481,7 @@ func (b *boot) configViewInput(ctx context.Context) webui.ConfigViewInput {
 	in := webui.ConfigViewInput{
 		Config:     b.cfgHolder.Get(),
 		Provenance: b.configOrigins(),
+		Catalog:    catalogView(b.catalog),
 	}
 	if b.lastReload != nil {
 		status := b.lastReload()
