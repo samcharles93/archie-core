@@ -45,6 +45,9 @@ type Request struct {
 	WorkflowDefinition string `json:"workflow_definition"`
 	// Tools is the agent profile's tool allowlist; empty allows every tool.
 	Tools []string `json:"tools,omitempty"`
+	// Harness, set for a Kit profile, runs every agent stage on the Kit's
+	// CLI instead of the built-in loop.
+	Harness *agentexec.HarnessSpec `json:"harness,omitempty"`
 }
 
 // Validate rejects a full-task request that cannot be correlated to a real

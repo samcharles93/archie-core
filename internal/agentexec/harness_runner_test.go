@@ -35,6 +35,7 @@ capture)
   out=$(sed -n 's/.*"-captures","\([^"]*\)".*/\1/p' "$cfg")
   echo '{"tool":"record_finding","args":{"title":"found it"}}' >> "$out"
   echo '{"tool":"record_finding","args":{"severity":"forged, no title"}}' >> "$out" ;;
+claude) echo '{"type":"system","subtype":"init","session_id":"C42"}' ;;
 fix-on-resume) if [ -f .attempted ]; then echo ok > fixed.txt; else touch .attempted; fi ;;
 esac
 echo "session=S123"
@@ -249,13 +250,21 @@ func TestHarnessGateResumesTheSession(t *testing.T) {
 			t.Fatalf("status %q after %d iterations, want parked after 3", res.Status, res.Iterations)
 		}
 	})
-	t.Run("without a resume verb there is one iteration", func(t *testing.T) {
+	t.Run("a gate retry without a resume verb is refused before any invocation", func(t *testing.T) {
 		f := newFixture(t, "fix-on-resume")
 		f.req.Gate = gate
 		f.req.Harness.Resume = nil
+		if _, err := NewHarnessRunner(nil).Run(t.Context(), f.workspace, f.req, nil); err == nil || len(f.invocations(t)) != 0 {
+			t.Fatalf("err %v after %d invocations, want a refusal before the harness ran", err, len(f.invocations(t)))
+		}
+	})
+	t.Run("a single-attempt gate needs no resume verb", func(t *testing.T) {
+		f := newFixture(t, "edit")
+		f.req.Gate = Gate{Commands: gate.Commands, MaxConsecutiveFailures: 1}
+		f.req.Harness.Resume = nil
 		res, _ := f.run(t, t.Context())
-		if res.Status != StatusParked || res.Iterations != 1 || len(f.invocations(t)) != 1 {
-			t.Fatalf("status %q after %d iterations and %d invocations, want parked after 1", res.Status, res.Iterations, len(f.invocations(t)))
+		if res.Status != StatusParked || res.Iterations != 1 {
+			t.Fatalf("status %q after %d iterations, want parked after 1", res.Status, res.Iterations)
 		}
 	})
 }
@@ -266,10 +275,53 @@ func TestHarnessRequestValidation(t *testing.T) {
 	if _, err := NewHarnessRunner(nil).Run(t.Context(), f.workspace, f.req, nil); err == nil {
 		t.Fatal("a prompt verb with no {{.Prompt}} placeholder ran; the mission would be silently dropped")
 	}
+	f.req.Harness.Prompt = []string{"-p", "{{.Prompt}}"}
+	f.req.Harness.Adapter = "no-such-cli"
+	if _, err := NewHarnessRunner(nil).Run(t.Context(), f.workspace, f.req, nil); err == nil {
+		t.Fatal("an unknown output adapter ran; its output would be read by nothing")
+	}
 	f.req.Harness = nil
 	if _, err := NewHarnessRunner(nil).Run(t.Context(), f.workspace, f.req, nil); err == nil {
 		t.Fatal("a request without a harness spec ran on the harness runner")
 	}
+}
+
+func TestHarnessReadsOutputWithTheNamedAdapter(t *testing.T) {
+	f := newFixture(t, "claude")
+	f.req.Harness.Adapter = AdapterClaudeCode
+	f.req.Gate = Gate{Commands: []Command{{Name: "never", Argv: []string{"false"}}}, MaxConsecutiveFailures: 2}
+	if _, err := NewHarnessRunner(nil).Run(t.Context(), f.workspace, f.req, nil); err != nil {
+		t.Fatal(err)
+	}
+	inv := f.invocations(t)
+	if len(inv) != 2 || !strings.HasPrefix(inv[1], "--resume C42 ") {
+		t.Fatalf("invocations %q, want a resume of the session the Claude Code adapter read", inv)
+	}
+}
+
+func TestClaudeCodeAdapterRegistersTheMCPServer(t *testing.T) {
+	a, ok := LookupHarnessAdapter(AdapterClaudeCode)
+	if !ok || !slices.ContainsFunc(a.MCPConfig, func(s string) bool { return strings.Contains(s, mcpConfigPlaceholder) }) {
+		t.Fatalf("adapter %+v: capture tools could never reach a Claude Code stage", a)
+	}
+}
+
+func TestHarnessStagesRunEveryStageOnTheTasksHarness(t *testing.T) {
+	inner := &namedRunner{}
+	r := HarnessStages{Runner: inner, Spec: HarnessSpec{Adapter: AdapterClaudeCode}}
+	if _, err := r.Run(t.Context(), "", Request{Stage: "review"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if inner.got.Harness == nil || inner.got.Harness.Adapter != AdapterClaudeCode {
+		t.Fatalf("stage ran with harness %+v, want the task's", inner.got.Harness)
+	}
+}
+
+type namedRunner struct{ got Request }
+
+func (r *namedRunner) Run(_ context.Context, _ string, req Request, _ ToolCallReporter) (Result, error) {
+	r.got = req
+	return Result{}, nil
 }
 
 // assertChildDead checks the harness's own child process did not outlive

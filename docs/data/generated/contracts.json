@@ -255,6 +255,10 @@
       "additionalProperties": false,
       "description": "HarnessSpec is how to drive a Kit's agent headlessly: its launch argv (image entrypoint and cmd) and the agent-sessions@1 verb tails appended to it.",
       "properties": {
+        "adapter": {
+          "description": "Adapter names the output adapter reading the CLI's stream; empty is\na CLI with none.",
+          "type": "string"
+        },
         "continue": {
           "items": {
             "type": "string"

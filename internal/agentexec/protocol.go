@@ -104,7 +104,10 @@ type HarnessSpec struct {
 	User string `json:"user,omitempty"`
 	// Env is the invocation's entire environment. Nothing is inherited from
 	// the worker, whose environment carries its credentials.
-	Env      []string `json:"env,omitempty"`
+	Env []string `json:"env,omitempty"`
+	// Adapter names the output adapter reading the CLI's stream; empty is
+	// a CLI with none.
+	Adapter  string   `json:"adapter,omitempty"`
 	Launch   []string `json:"launch"`
 	Prompt   []string `json:"prompt"`
 	Resume   []string `json:"resume,omitempty"`

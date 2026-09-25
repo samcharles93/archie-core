@@ -216,6 +216,26 @@ func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []s
 	runner.AllowTools = allow
 }
 
+// stageRunners builds the runner every agent stage uses, and the reviewer.
+func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, log *slog.Logger) (agentexec.Runner, workflow.Reviewer, error) {
+	if req.Harness != nil {
+		// The built-in loop has no route to a model from a Kit container, so
+		// the review stage parks rather than running on it.
+		return agentexec.HarnessStages{Runner: agentexec.NewHarnessRunner(nil), Spec: *req.Harness}, nil, nil
+	}
+	var agent agentexec.Runner
+	if mcpSet != nil && mcpSet.registry != nil {
+		agent = agentexec.NewLoopRunner(agentexec.NewRuntime(req.Providers), log, mcpSet.registry)
+	} else {
+		agent = newRunner(req.Providers, log)
+	}
+	if agent == nil {
+		return nil, nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
+	}
+	applyToolLimits(agent, req.Cfg.ToolPolicy, req.Tools)
+	return agent, newReviewerFor(req), nil
+}
+
 // routeTask remains available for routing-only callers. Production execution
 // compiles the request's pinned YAML directly.
 func routeTask(req taskrun.Request, registry workflow.Registry) workflow.Workflow {
@@ -265,17 +285,10 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		log.Warn("mcp providers had errors, continuing with available tools", "err", mcpErr)
 	}
 
-	// Build a runner with MCP-discovered tools when available.
-	var agent agentexec.Runner
-	if mcpSet != nil && mcpSet.registry != nil {
-		agent = agentexec.NewLoopRunner(agentexec.NewRuntime(req.Providers), log, mcpSet.registry)
-	} else {
-		agent = newRunner(req.Providers, log)
+	agent, reviewer, err := stageRunners(req, mcpSet, newRunner, log)
+	if err != nil {
+		return nil, err
 	}
-	if agent == nil {
-		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
-	}
-	applyToolLimits(agent, req.Cfg.ToolPolicy, req.Tools)
 	agent = persistentRunner{Runner: agent, enabled: req.Repo.PersistentStorage}
 
 	// A workflow run in this process publishes to an in-process *events.Bus
@@ -303,7 +316,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Store:    dependencies.store,
 		Trees:    trees,
 		Agent:    agent,
-		Reviewer: newReviewerFor(req),
+		Reviewer: reviewer,
 		Bus:      bus,
 		Log:      log,
 	}

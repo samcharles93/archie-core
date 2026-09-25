@@ -60,7 +60,7 @@ type HarnessRunner struct {
 }
 
 // NewHarnessRunner returns a runner using newOutput to read each
-// invocation. A nil newOutput reads nothing: no tool calls, usage or session.
+// invocation. A nil newOutput reads with the adapter the request names.
 func NewHarnessRunner(newOutput func() HarnessOutput) *HarnessRunner {
 	return &HarnessRunner{newOutput: newOutput}
 }
@@ -107,7 +107,7 @@ func (r *HarnessRunner) run(ctx context.Context, workspace string, req Request, 
 	session := ""
 	for {
 		res.Iterations++
-		out := r.output()
+		out := r.output(req.Harness.Adapter)
 		exitErr := invoke(runCtx, workspace, req.Harness, harnessArgv(req.Harness, verb, prompt, session, mcpConfig), out, report)
 		if id := out.SessionID(); id != "" {
 			session = id
@@ -160,11 +160,14 @@ func settle(runCtx context.Context, workspace string, before repoState, req Requ
 	return res, false, nil
 }
 
-func (r *HarnessRunner) output() HarnessOutput {
-	if r.newOutput == nil {
-		return silentOutput{}
+func (r *HarnessRunner) output(adapter string) HarnessOutput {
+	if r.newOutput != nil {
+		return r.newOutput()
 	}
-	return r.newOutput()
+	if a, ok := LookupHarnessAdapter(adapter); ok {
+		return a.NewOutput()
+	}
+	return silentOutput{}
 }
 
 func validateHarness(req Request) error {
@@ -177,6 +180,12 @@ func validateHarness(req Request) error {
 	}
 	if !slices.ContainsFunc(h.Prompt, func(s string) bool { return strings.Contains(s, promptPlaceholder) }) {
 		return fmt.Errorf("harness prompt verb must carry %s, or the mission is never passed", promptPlaceholder)
+	}
+	if _, ok := LookupHarnessAdapter(h.Adapter); h.Adapter != "" && !ok {
+		return fmt.Errorf("harness output adapter %q is unknown", h.Adapter)
+	}
+	if req.Gate.MaxConsecutiveFailures > 1 && len(h.Resume) == 0 && len(h.Continue) == 0 {
+		return errors.New("stage retries its gate but the harness declares no resume or continue verb")
 	}
 	if len(h.Resume) > 0 && !slices.ContainsFunc(h.Resume, func(s string) bool { return strings.Contains(s, sessionPlaceholder) }) {
 		return fmt.Errorf("harness resume verb must carry %s", sessionPlaceholder)
