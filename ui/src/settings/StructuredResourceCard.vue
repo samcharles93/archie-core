@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { StatusPill } from "@/components/ui/status-pill";
 import {
-  cloneControlPlaneValue,
   useControlPlaneStore,
   type ResourceDescriptor,
 } from "@/stores/control-plane";
@@ -19,7 +16,6 @@ const props = defineProps<{
 }>();
 const store = useControlPlaneStore();
 const state = computed(() => store.stateFor(props.descriptor.kind));
-const draft = ref<unknown>({});
 
 // The schema the descriptor derives from its document type: the editor reads
 // it for labels, hints, formatted placeholders and the shape of a new row. A
@@ -27,25 +23,24 @@ const draft = ref<unknown>({});
 // rendering the value alone.
 const schema = computed(() => parseSchema(props.descriptor.schema_json));
 
-watch(
-  () => state.value.resource,
-  (resource) => {
-    if (resource) draft.value = cloneControlPlaneValue(resource.value);
+// Edits land in the store's draft; the Settings save bar saves every edited
+// resource together.
+const draft = computed({
+  get: () => store.drafts[props.descriptor.kind]?.value,
+  set: (value) => {
+    const current = store.drafts[props.descriptor.kind];
+    if (current) current.value = value;
   },
-  { immediate: true },
-);
-
-async function save(): Promise<void> {
-  await store.replace(
-    props.descriptor.kind,
-    cloneControlPlaneValue(draft.value),
-  );
-}
+});
+const edited = computed(() => store.changesFor(props.descriptor.kind).length > 0);
 </script>
 
 <template>
-  <ConfigCard :title="descriptor.title">
-    <form class="space-y-5" @submit.prevent="save">
+  <ConfigCard :title="descriptor.title" :edited="edited">
+    <template v-if="descriptor.apply_mode === 'restart-required'" #action>
+      <StatusPill tone="warn">Applies after restart</StatusPill>
+    </template>
+    <div v-if="draft !== undefined" class="space-y-5">
       <StructuredValueEditor
         v-model="draft"
         :path="rootPath ?? descriptor.kind"
@@ -55,24 +50,6 @@ async function save(): Promise<void> {
       <p v-if="state.error" class="text-sm text-destructive" role="alert">
         {{ state.error }}
       </p>
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <Badge :variant="state.stream === 'live' ? 'ok' : 'warn'">{{
-            state.stream === "live" ? "Live" : "Connecting"
-          }}</Badge>
-          <Badge
-            v-if="descriptor.apply_mode === 'restart-required'"
-            variant="warn"
-            >Restart required</Badge
-          >
-          <span v-if="state.resource" class="text-xs text-muted-foreground"
-            >Version {{ state.resource.version }}</span
-          >
-        </div>
-        <Button type="submit" :disabled="state.saving || state.loading">
-          <Spinner v-if="state.saving" data-icon="inline-start" /> Save changes
-        </Button>
-      </div>
-    </form>
+    </div>
   </ConfigCard>
 </template>

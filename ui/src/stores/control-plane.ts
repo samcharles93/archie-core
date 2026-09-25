@@ -2,6 +2,8 @@ import { defineStore } from "pinia";
 import { computed, onScopeDispose, reactive, ref, watch } from "vue";
 import { useLiveUpdatesStore } from "./live-updates.ts";
 
+import { diffValues, saveInOrder, type Change } from "../settings/changes.ts";
+
 export interface ResourceDescriptor {
   kind: string;
   title: string;
@@ -226,6 +228,11 @@ export function commandBody(value: unknown, expectedVersion: number): string {
   return JSON.stringify({ value, expected_version: expectedVersion });
 }
 
+interface Draft {
+  base: ControlPlaneResource;
+  value: unknown;
+}
+
 export const useControlPlaneStore = defineStore("control-plane", () => {
   const catalog = ref<ResourceDescriptor[]>([]);
   const catalogError = ref("");
@@ -259,6 +266,43 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
       state.resource = resource;
     state.error = undefined;
     state.conflict = false;
+    if (changesFor(resource.kind).length === 0) resetDraft(resource.kind);
+  }
+
+  // An edit in progress, against the version it started from. A save sends
+  // that version, so a change made elsewhere meanwhile is a conflict rather
+  // than silently overwritten.
+  const drafts = reactive<Record<string, Draft>>({});
+
+  function resetDraft(kind: string): void {
+    const resource = stateFor(kind).resource;
+    if (resource)
+      drafts[kind] = { base: resource, value: cloneControlPlaneValue(resource.value) };
+  }
+
+  function changesFor(kind: string): Change[] {
+    const draft = drafts[kind];
+    return draft ? diffValues(draft.base.value, draft.value) : [];
+  }
+
+  const dirtyKinds = computed(() =>
+    genericResources.value
+      .map(({ kind }) => kind)
+      .filter((kind) => changesFor(kind).length > 0),
+  );
+
+  async function saveDraft(kind: string): Promise<boolean> {
+    const draft = drafts[kind];
+    if (!draft) return true;
+    const saved = await replace(kind, cloneControlPlaneValue(draft.value), draft.base.version);
+    if (saved) resetDraft(kind);
+    else if (stateFor(kind).conflict && stateFor(kind).resource)
+      drafts[kind] = { base: stateFor(kind).resource!, value: draft.value };
+    return saved;
+  }
+
+  function saveDrafts() {
+    return saveInOrder(dirtyKinds.value, saveDraft);
   }
 
   async function loadResource(kind: string): Promise<void> {
@@ -334,7 +378,11 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
-  async function replace(kind: string, value: unknown): Promise<boolean> {
+  async function replace(
+    kind: string,
+    value: unknown,
+    expectedVersion?: number,
+  ): Promise<boolean> {
     const state = stateFor(kind);
     if (!state.resource || state.saving) return false;
     state.saving = true;
@@ -343,7 +391,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     try {
       const response = await request<ResourceResponse>(
         `/api/control-plane/resources/${encodeURIComponent(kind)}/commands/replace`,
-        { method: "POST", body: commandBody(value, state.resource.version) },
+        { method: "POST", body: commandBody(value, expectedVersion ?? state.resource.version) },
       );
       apply(response.resource);
       await loadApplyStatus();
@@ -393,6 +441,11 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
 
   return {
     applyStatusFor,
+    changesFor,
+    dirtyKinds,
+    drafts,
+    resetDraft,
+    saveDrafts,
     catalog,
     catalogError,
     states,

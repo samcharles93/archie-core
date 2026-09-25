@@ -16,7 +16,7 @@ onMounted(controlPlane.load);
 
 <template>
   <div>
-    <PageHeader title="Task settings" />
+    <PageHeader title="Task execution" />
 
     <p v-if="catalogError" class="text-sm text-destructive" role="alert">
       {{ catalogError }}

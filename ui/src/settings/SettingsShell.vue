@@ -1,13 +1,33 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onBeforeUnmount, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { hidden } from "@/lib/capabilities";
 import { settingsNav } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { useControlPlaneStore } from "@/stores/control-plane";
+import RestartPendingBanner from "./RestartPendingBanner.vue";
+import SettingsSaveBar from "./SettingsSaveBar.vue";
 
 const route = useRoute();
 const items = computed(() => settingsNav(hidden.value));
+
+// Drafts live in the store, so moving between Settings pages keeps them;
+// leaving Settings, or the page, with edits unsaved asks first.
+const store = useControlPlaneStore();
+const dirty = () => store.dirtyKinds.length > 0;
+const removeGuard = useRouter().beforeEach((to) => {
+  if (to.meta.settings || !dirty()) return true;
+  return window.confirm("Leave Settings with unsaved changes?");
+});
+const warnUnload = (event: BeforeUnloadEvent) => {
+  if (dirty()) event.preventDefault();
+};
+onMounted(() => window.addEventListener("beforeunload", warnUnload));
+onBeforeUnmount(() => {
+  removeGuard();
+  window.removeEventListener("beforeunload", warnUnload);
+});
 </script>
 
 <template>
@@ -41,7 +61,9 @@ const items = computed(() => settingsNav(hidden.value));
       </ul>
     </nav>
     <div class="min-w-0 max-w-[960px] flex-1">
+      <RestartPendingBanner />
       <slot />
+      <SettingsSaveBar />
     </div>
   </div>
 </template>
