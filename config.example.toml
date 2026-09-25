@@ -445,6 +445,11 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # [containers.profiles.network-investigator]
 # image = "archie-agent-net:local"  # docker compose build agent-net; empty uses [containers].image
 # tools = []                        # allowlist over MCP, script and plugin tools; empty allows all
+# A Kit profile runs every agent stage on an external CLI packaged as a Kit v3
+# image: the workload Kit, then mixins, each pinned by digest.
+# [containers.profiles.claude]
+# kit = ["docker/claude-code-kit@sha256:<digest>"]
+# adapter = "claude-code"          # output adapter; empty runs without capture tools or usage
 
 # At least one [[repos]] entry is required before archied will poll
 # anything -- it is deliberately left commented rather than shipped active:

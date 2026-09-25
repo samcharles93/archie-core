@@ -857,6 +857,13 @@ type ContainerConfig struct {
 type AgentProfile struct {
 	// Image is the container image; empty means [containers].image.
 	Image string `toml:"image" yaml:"image"`
+	// Kit makes this a harness profile: the workload Kit, then its mixins,
+	// each pinned by digest. The task container is the workload's image and
+	// every agent stage runs on its CLI. Exclusive with Image.
+	Kit []string `toml:"kit" yaml:"kit"`
+	// Adapter names the output adapter reading the Kit's CLI; empty runs it
+	// with no capture tools and no usage.
+	Adapter string `toml:"adapter" yaml:"adapter"`
 	// Tools allowlists the tools archie adds to the agent (MCP servers,
 	// repository scripts and skill plugins) by name. Empty allows them all.
 	// The agent loop's own file tools are always present, read-only when a
@@ -874,17 +881,32 @@ func (c ContainerConfig) Profile(name string) (AgentProfile, error) {
 	if !ok {
 		return AgentProfile{}, fmt.Errorf("agent profile %q is not configured", name)
 	}
-	if p.Image == "" {
+	if p.Image == "" && !p.IsKit() {
 		p.Image = c.Image
 	}
 	return p, nil
 }
 
-// ValidateProfiles rejects a profile with an empty name or an empty tool name.
+// IsKit reports whether the profile runs a Kit harness.
+func (p AgentProfile) IsKit() bool { return len(p.Kit) > 0 }
+
+// ValidateProfiles rejects a profile with an empty name, an empty tool
+// name, or a Kit that is not pinned by digest or also names an image.
 func (c ContainerConfig) ValidateProfiles() error {
 	for name, p := range c.Profiles {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("containers.profiles: a profile name must not be empty")
+		}
+		switch {
+		case p.IsKit() && p.Image != "":
+			return fmt.Errorf("containers.profiles.%s: image and kit are exclusive; a Kit profile runs the Kit's image", name)
+		case !p.IsKit() && p.Adapter != "":
+			return fmt.Errorf("containers.profiles.%s: adapter needs a kit", name)
+		}
+		for _, ref := range p.Kit {
+			if !strings.Contains(ref, "@sha256:") {
+				return fmt.Errorf("containers.profiles.%s.kit: %q must be pinned by digest", name, ref)
+			}
 		}
 		for _, tool := range p.Tools {
 			if strings.TrimSpace(tool) == "" {

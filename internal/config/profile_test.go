@@ -39,3 +39,28 @@ func TestContainerProfileResolution(t *testing.T) {
 		t.Error("ValidateProfiles accepted an empty tool name")
 	}
 }
+
+func TestKitProfiles(t *testing.T) {
+	const pinned = "docker/claude-code-kit@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	c := ContainerConfig{Image: "archie-agent:1", Profiles: map[string]AgentProfile{
+		"claude": {Kit: []string{pinned}, Adapter: "claude-code"},
+	}}
+	p, err := c.Profile("claude")
+	if err != nil || p.Image != "" || !p.IsKit() {
+		t.Fatalf("Profile() = %+v, %v; a Kit profile must not inherit the agent image", p, err)
+	}
+	for name, bad := range map[string]AgentProfile{
+		"image and kit":         {Image: "archie-agent:1", Kit: []string{pinned}},
+		"unpinned kit":          {Kit: []string{"docker/claude-code-kit:latest"}},
+		"unpinned mixin":        {Kit: []string{pinned, "me/setup:1"}},
+		"adapter without a kit": {Adapter: "claude-code"},
+	} {
+		c := ContainerConfig{Profiles: map[string]AgentProfile{"p": bad}}
+		if err := c.ValidateProfiles(); err == nil {
+			t.Errorf("%s: ValidateProfiles accepted %+v", name, bad)
+		}
+	}
+	if err := c.ValidateProfiles(); err != nil {
+		t.Fatalf("a digest-pinned Kit profile was refused: %v", err)
+	}
+}
