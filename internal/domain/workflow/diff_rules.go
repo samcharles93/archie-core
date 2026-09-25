@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 )
 
 // DiffRulesStepName is the registered workflow step type that applies a
@@ -377,83 +378,19 @@ type diffLine struct {
 	Text string
 }
 
-// addedDiffLines walks a unified diff and returns the lines it ADDS, each with
-// the path of the file it lands in and its line number in the new file.
+// addedDiffLines returns the lines a unified diff ADDS, each with the path of
+// the file it lands in and its line number in the file the change produces.
 //
-// Only added lines are returned: a removed line has no position in the file the
-// change produces, and a context line is not something the change did, so
-// neither can be something a repository rule should report against.
+// The diff is parsed by internal/domain/workflow/prreview, which owns the one
+// parser this repository reads diffs with -- the review pipeline positions its
+// findings by it. This maps that parser's result into the shape the rules
+// matcher reads, so a rule and a review comment can never disagree about which
+// line a change introduced.
 func addedDiffLines(diff string) []diffLine {
-	var (
-		lines  []diffLine
-		path   string
-		newLn  int
-		inHunk bool
-	)
-	for raw := range strings.SplitSeq(diff, "\n") {
-		switch {
-		case strings.HasPrefix(raw, "diff --git "):
-			// A new file's patch starts: nothing may be attributed to the
-			// previous file until its own +++ header is read.
-			path, inHunk = "", false
-		case strings.HasPrefix(raw, "@@"):
-			start, ok := hunkNewStart(raw)
-			inHunk = ok
-			newLn = start
-		case !inHunk:
-			// Outside a hunk only the file headers say anything; index lines,
-			// permissions and the like are noise here. This is also what keeps
-			// a body line that begins with the header marker ("+++ x", the
-			// added line "++ x") from being read as a header.
-			if after, ok := strings.CutPrefix(raw, "+++ "); ok {
-				path = diffTargetPath(after)
-			}
-		case raw == "":
-			// The trailing empty element of the split, at most.
-		case raw[0] == '\\':
-			// git's "\ No newline at end of file": a marker, not a line.
-		case raw[0] == '-':
-			// A removed line: no position in the new file.
-		case raw[0] == '+':
-			lines = append(lines, diffLine{Path: path, Line: newLn, Text: raw[1:]})
-			newLn++
-		default:
-			// A context line: it advances the new-file position without
-			// itself being part of the change.
-			newLn++
-		}
+	added := prreview.AddedLines(prreview.ParseDiff(diff))
+	lines := make([]diffLine, 0, len(added))
+	for _, line := range added {
+		lines = append(lines, diffLine{Path: line.Path, Line: line.Line, Text: line.Text})
 	}
 	return lines
-}
-
-// hunkNewStart reads the new-file start line out of a hunk header such as
-// "@@ -1,4 +1,5 @@ func main() {". Both counts are optional in the format, and
-// the trailing section heading may contain anything.
-func hunkNewStart(header string) (int, bool) {
-	_, after, ok := strings.Cut(header, " +")
-	if !ok {
-		return 0, false
-	}
-	rest := after
-	end := strings.IndexAny(rest, ", @")
-	if end < 0 {
-		return 0, false
-	}
-	start, err := strconv.Atoi(rest[:end])
-	if err != nil {
-		return 0, false
-	}
-	return start, true
-}
-
-// diffTargetPath reads the path out of a "+++ " header: "b/main.go" in git's
-// own output, quoted when the path carries something git has to escape, and
-// tab-separated from a timestamp in a plain unified diff.
-func diffTargetPath(header string) string {
-	path := strings.TrimSpace(header)
-	if tab := strings.IndexByte(path, '\t'); tab >= 0 {
-		path = path[:tab]
-	}
-	path = strings.Trim(path, `"`)
-	return strings.TrimPrefix(strings.TrimPrefix(path, "b/"), "a/")
 }

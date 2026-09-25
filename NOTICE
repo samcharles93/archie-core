@@ -1,0 +1,13 @@
+NOTICE
+
+This product includes software derived from PR-AF
+(https://github.com/Agent-Field/pr-af), Copyright AgentField,
+licensed under the Apache License, Version 2.0.
+
+Derived portions: internal/domain/workflow/prreview -- the unified diff
+parser, change clustering, blast radius, evidence extraction, scoring,
+deduplication, line mapping and review-event selection.
+
+PR-AF declares the Apache License, Version 2.0 in its pyproject.toml and
+ships no license file. A copy of the License is available at
+https://www.apache.org/licenses/LICENSE-2.0
