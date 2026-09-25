@@ -29,6 +29,13 @@ func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Co
 		b.reportApplied(ctx, versions, wrapped)
 		return config.Config{}, wrapped
 	}
+	// The State Store persists source references, while openStores resolved
+	// only the file snapshot. Layering provider-settings restores the source
+	// references, so resolve the effective map before any runtime consumes it.
+	if err := resolveProviderSecrets(&cfg, b.secrets, b.log); err != nil {
+		b.reportApplied(ctx, versions, err)
+		return config.Config{}, err
+	}
 	b.reportApplied(ctx, versions, nil)
 	return cfg, nil
 }

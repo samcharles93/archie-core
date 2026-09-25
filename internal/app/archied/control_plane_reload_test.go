@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // controlPlaneStub answers Query from a fixed resource map. queryErr, when
@@ -109,6 +111,24 @@ func newReloadBoot(t *testing.T, stub *controlPlaneStub) *boot {
 	}
 	b.cfgHolder = config.NewHolder(b.cfg)
 	return b
+}
+
+func TestRuntimeConfigResolvesStoredProviderReference(t *testing.T) {
+	t.Setenv("ARCHIE_TEST_STORED_PROVIDER", "provider-secret")
+	resources := databaseOwnedResources()
+	resources[controlplane.ProviderSettingsKind] = map[string]any{"main": map[string]any{
+		"class": "openai", "api_key_ref": map[string]any{"engine": "env", "key": "ARCHIE_TEST_STORED_PROVIDER"},
+	}}
+	b := newReloadBoot(t, &controlPlaneStub{values: resources})
+	b.secrets = secret.NewRegistry()
+	if err := b.loadRuntimeConfig(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := b.cfgHolder.Get().Providers["main"]
+	if got.APIKey != (secret.SecretRef{}) || got.APIKeyEnv != providerSecretEnvName("root", "main") {
+		t.Fatalf("effective provider credential = %+v, want a resolved process-local env name", got)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv(got.APIKeyEnv) })
 }
 
 // TestReloadConfigKeepsDatabaseOwnedSettings is archie-core-ju85. The SIGHUP
