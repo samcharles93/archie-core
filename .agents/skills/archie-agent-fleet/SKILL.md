@@ -136,6 +136,13 @@ commit. This costs an hour to rediscover.
   file checksum can invalidate: an empty commit moves the stamp while `task
 build` still reports the binary up to date, shipping the old value. Tracked as
   `archie-core-pdq2`.
+- **The lane gate cannot see `tools/` or the contract schema.** `tools/` is
+  a separate Go module that reaches `internal/` through `docsgen`, and
+  `docs/data/generated/contracts.json` is generated from wire types such as
+  `agentexec.Request`. A lane that adds an import to a package `tools/`
+  reaches, or changes a wire type, passes its own gate and fails
+  `task check` on a missing `tools/go.sum` entry or a stale schema. Such a
+  lane runs `go -C tools mod tidy` and `task docs:generate` and commits both.
 - **Untracked files in the shared checkout are other sessions'.** prdlint
   scratch (`docs/prds/rules.jsonl`), editor state, and gate-written artifacts
   appear and vanish under a lane. Never chase, add, stage or commit them: a
