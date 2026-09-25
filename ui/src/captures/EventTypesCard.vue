@@ -160,7 +160,7 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
       >
         <p class="text-sm font-medium">No event types yet</p>
         <p class="mt-1 max-w-md text-sm text-fg-muted">
-          Create an event type to map a webhook's fields and bind it to a workflow.
+          Create an event type to map incoming events.
         </p>
       </div>
     </CardContent>
