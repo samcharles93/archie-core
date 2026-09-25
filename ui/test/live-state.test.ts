@@ -5,7 +5,8 @@ import test from "node:test";
 const { resourcesForEvent } = await import("../src/stores/live-events.ts");
 
 const passiveRefreshSurfaces = [
-  "../src/dashboard/DashboardActions.vue",
+  "../src/dashboard/DashboardHero.vue",
+  "../src/dashboard/NeedsYouCard.vue",
   "../src/tasks/TasksPage.vue",
   "../src/tasks/TaskHeader.vue",
   "../src/tasks/TasksState.vue",

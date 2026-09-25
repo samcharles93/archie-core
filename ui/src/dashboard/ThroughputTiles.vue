@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import StatTile from "@/base/StatTile.vue";
+import { StatStrip } from "@/components/ui/stat-strip";
 import { compact } from "@/lib/format";
 import { attentionStatusIds } from "@/lib/task-meta";
 import { summary } from "./state";
@@ -10,73 +10,33 @@ import { summary } from "./state";
 
 const counts = computed(() => summary.value?.statuses ?? {});
 const tokensByDay = computed(() => summary.value?.tokens_by_day ?? []);
-const series = computed(() => tokensByDay.value.map((d) => d.tokens || 0));
-
-const done = computed(
-  () => (counts.value.merged || 0) + (counts.value.pr_open || 0),
-);
-// "Needs you" is the server's grouping, not a local pair of ids: it is the
-// same attentionStatusIds() source TasksSummary and the needs_you filter read,
-// so a status that joins the grouping on the backend is counted here without
-// a frontend change.
+const used = computed(() => tokensByDay.value.reduce((a, d) => a + (d.tokens || 0), 0));
+const done = computed(() => (counts.value.merged || 0) + (counts.value.pr_open || 0));
+// "Needs you" is the server's grouping (attentionStatusIds), the same one the
+// Tasks page's needs_you filter reads.
 const attention = computed(() => {
-  const attentionStatuses = attentionStatusIds();
-  return Object.entries(counts.value).reduce(
-    (sum, [status, n]) =>
-      attentionStatuses.has(status) ? sum + (n || 0) : sum,
-    0,
-  );
+  const ids = attentionStatusIds();
+  return Object.entries(counts.value).reduce((sum, [s, n]) => (ids.has(s) ? sum + (n || 0) : sum), 0);
 });
-const total = computed(() =>
-  Object.values(counts.value).reduce((a, b) => a + b, 0),
-);
-const used = computed(() => series.value.reduce((a, b) => a + b, 0));
+const total = computed(() => Object.values(counts.value).reduce((a, b) => a + b, 0));
 
-/**
- * trendPct compares the newer half of a series with the older half. Below four
- * points there is no trend to read, only noise, so it returns null and the
- * tile shows no arrow.
- */
-function trendPct(values: number[]): number | null {
-  if (values.length < 4) return null;
-  const mid = Math.floor(values.length / 2);
-  const older = values.slice(0, mid).reduce((a, b) => a + b, 0);
-  const newer = values.slice(mid).reduce((a, b) => a + b, 0);
-  if (!older) return null;
-  return ((newer - older) / older) * 100;
-}
+const cells = computed(() => [
+  { label: "Working now", value: counts.value.running || 0, sub: `${counts.value.queued || 0} waiting to start` },
+  {
+    label: "Needs you",
+    value: attention.value,
+    sub: attention.value ? "Parked or awaiting a reply" : "Nothing is blocked",
+    tone: attention.value ? ("warn" as const) : undefined,
+  },
+  {
+    label: "Delivered",
+    value: done.value,
+    sub: total.value ? `${Math.round((done.value / total.value) * 100)}% of all tasks` : "No tasks yet",
+  },
+  { label: "Tokens used", value: compact(used.value), sub: `Across ${tokensByDay.value.length} days` },
+]);
 </script>
 
 <template>
-  <div class="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
-    <StatTile
-      label="Working now"
-      :value="counts.running || 0"
-      :compare="`${counts.queued || 0} waiting to start`"
-      :series="series"
-    />
-    <StatTile
-      label="Needs you"
-      :value="attention"
-      :compare="attention ? 'Parked or awaiting a reply' : 'Nothing is blocked'"
-      good-direction="down"
-    />
-    <StatTile
-      label="Delivered"
-      :value="done"
-      :compare="
-        total
-          ? `${Math.round((done / total) * 100)}% of all tasks`
-          : 'No tasks yet'
-      "
-    />
-    <StatTile
-      label="Tokens used"
-      :value="compact(used)"
-      :compare="`Across ${tokensByDay.length || 0} days`"
-      :trend="trendPct(series)"
-      good-direction="down"
-      :series="series"
-    />
-  </div>
+  <StatStrip :cells="cells" />
 </template>

@@ -63,7 +63,9 @@ export async function loadDashboard(): Promise<void> {
         api.summary<Summary>(),
         api.setup<Setup>().catch(() => null),
         api.workflows<{ workflows?: WorkflowStat[] }>().catch(() => null),
-        api.tasks<DashboardTask[]>().catch(() => []),
+        // Not defaulted to []: an empty list reads as "nothing needs you",
+        // which a failed fetch must never claim.
+        api.tasks<DashboardTask[]>(),
       ]);
     const map = new Map<string, number>();
     for (const task of nextTasks) {
