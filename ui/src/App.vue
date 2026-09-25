@@ -5,6 +5,7 @@ import { onMounted, ref } from "vue";
 import ChatLauncher from "@/chat/ChatLauncher.vue";
 import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
+import SettingsShell from "@/settings/SettingsShell.vue";
 import {
   Alert,
   AlertAction,
@@ -93,7 +94,10 @@ onMounted(() => {
           open tab stays open on the next (W11).
         -->
         <RouterView v-slot="{ Component, route }">
-          <component :is="Component" :key="route.path" />
+          <SettingsShell v-if="route.meta.settings">
+            <component :is="Component" :key="route.path" />
+          </SettingsShell>
+          <component :is="Component" v-else :key="route.path" />
         </RouterView>
       </main>
     </div>

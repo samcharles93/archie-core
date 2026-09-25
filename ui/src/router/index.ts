@@ -67,6 +67,8 @@ const routes = [
     name: "skills",
     component: SkillsPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Skills",
       description: "The SKILL.md capabilities Archie can activate.",
       section: "skills",
@@ -77,6 +79,8 @@ const routes = [
     name: "curators",
     component: CuratorsPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Curators",
       description: "Scheduled passes that curate Archie's memory and captures.",
       section: "curators",
@@ -97,6 +101,8 @@ const routes = [
     name: "system-status",
     component: SystemStatusPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Status",
       description:
         "Update state, configuration sources, and the listen address.",
@@ -118,6 +124,8 @@ const routes = [
     name: "system-appearance",
     component: SystemAppearancePage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Appearance",
       description: "Theme and display preferences.",
     },
@@ -127,6 +135,8 @@ const routes = [
     name: "system-tasks",
     component: SystemTasksPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Task execution",
       description: "Work lifecycle: statuses, operator actions, and budgets.",
       section: "settings",
@@ -137,6 +147,8 @@ const routes = [
     name: "system-models",
     component: SystemModelsPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Models",
       description: "Model roles and the providers backing them.",
       section: "settings",
@@ -147,6 +159,8 @@ const routes = [
     name: "system-repos",
     component: SystemReposPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Repositories",
       description:
         "Repositories Archie watches, and their per-repo gate overrides.",
@@ -158,6 +172,8 @@ const routes = [
     name: "system-identities",
     component: SystemIdentitiesPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Identities",
       description: "Persistent actors and lifecycle.",
       section: "settings",
@@ -168,6 +184,8 @@ const routes = [
     name: "channels",
     component: ChannelsPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Channels",
       description: "Inbound chat and notification channels, and their state.",
       section: "channels",
@@ -178,12 +196,21 @@ const routes = [
     name: "system-advanced",
     component: SystemAdvancedPage,
     meta: {
+      navPath: "/settings",
+      settings: true,
       label: "Advanced",
       description: "Identity, storage, sandboxing, and dangerous actions.",
       section: "settings",
     },
   },
-  { path: "/settings", redirect: "/settings/status", meta: { nav: false } },
+  {
+    path: "/settings",
+    redirect: "/settings/models",
+    meta: {
+      label: "Settings",
+      description: "Everything you configure: agents, integrations, runtime.",
+    },
+  },
   // Paths from before Settings existed, kept for bookmarks and chat history.
   ...Object.entries({
     "/system/status": "/settings/status",

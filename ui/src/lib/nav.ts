@@ -17,34 +17,37 @@ const specs: NavSpec[] = [
   { kind: "link", path: "/tasks" },
   { kind: "link", path: "/workflows" },
   { kind: "link", path: "/events" },
-  {
-    kind: "group",
-    label: "Settings",
-    sections: [
-      {
-        label: "Agents",
-        paths: [
-          "/settings/models",
-          "/settings/skills",
-          "/settings/curators",
-          "/settings/advanced",
-        ],
-      },
-      {
-        label: "Integrations",
-        paths: [
-          "/settings/channels",
-          "/settings/repositories",
-          "/settings/identities",
-        ],
-      },
-      {
-        label: "Runtime",
-        paths: ["/settings/task-execution", "/settings/status"],
-      },
-    ],
-  },
+  { kind: "link", path: "/settings" },
 ];
+
+// The Settings sidebar, grouped by what is being configured.
+const settings: NavSpec = {
+  kind: "group",
+  label: "Settings",
+  sections: [
+    {
+      label: "Agents",
+      paths: [
+        "/settings/models",
+        "/settings/skills",
+        "/settings/curators",
+        "/settings/advanced",
+      ],
+    },
+    {
+      label: "Integrations",
+      paths: [
+        "/settings/channels",
+        "/settings/repositories",
+        "/settings/identities",
+      ],
+    },
+    {
+      label: "Runtime",
+      paths: ["/settings/task-execution", "/settings/status"],
+    },
+  ],
+};
 
 // Reached from the Dashboard's Logs button and the account menu, and by
 // Jump to, but not from the bar.
@@ -56,7 +59,13 @@ export function navTree(hidden: string[] = []): NavNode[] {
 
 /** navEntries lists every destination Jump to can reach. */
 export function navEntries(hidden: string[] = []) {
-  return buildNav(table, specs, hidden, unlisted).jumpTargets;
+  return buildNav(table, [...specs, settings], hidden, unlisted).jumpTargets;
+}
+
+/** settingsNav is the Settings sidebar; each section labels its first item. */
+export function settingsNav(hidden: string[] = []) {
+  const [group] = buildNav(table, [settings], hidden).tree;
+  return group?.kind === "group" ? group.items : [];
 }
 
 /**
