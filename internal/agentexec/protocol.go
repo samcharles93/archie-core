@@ -88,6 +88,20 @@ type Request struct {
 	// directory. Each entry carries the name and source so the agent
 	// can register them as tools. PRD section 5 Layer 1.
 	Plugins []PluginSpec `json:"plugins,omitempty"`
+	// Harness, when set, runs the stage on an external coding-agent CLI
+	// instead of the built-in loop. The worker in a Kit container is the
+	// daemon's own archie-agent build, so it always understands this field.
+	Harness *HarnessSpec `json:"harness,omitempty"`
+}
+
+// HarnessSpec is how to drive a Kit's agent headlessly: its launch argv
+// (image entrypoint and cmd) and the agent-sessions@1 verb tails appended
+// to it. Prompt must carry {{.Prompt}}; Resume, when set, {{.SessionID}}.
+type HarnessSpec struct {
+	Launch   []string `json:"launch"`
+	Prompt   []string `json:"prompt"`
+	Resume   []string `json:"resume,omitempty"`
+	Continue []string `json:"continue,omitempty"`
 }
 
 // PluginSpec is a bundled Yaegi plugin passed from daemon to agent.
