@@ -13,15 +13,22 @@ interface SecretRef {
 
 // resolved stays unset until something actually resolves the reference: a
 // filled-in engine and key says nothing about whether the secret exists.
-withDefaults(defineProps<{ resolved?: boolean; disabled?: boolean; idPrefix: string }>(), {
-  resolved: undefined,
-});
+// fallback names where the key comes from when no reference is set (a
+// provider's environment variable).
+withDefaults(
+  defineProps<{ resolved?: boolean; disabled?: boolean; idPrefix: string; fallback?: string }>(),
+  { resolved: undefined, fallback: undefined },
+);
 const model = defineModel<SecretRef>({ required: true });
 const editing = ref(false);
 </script>
 
 <template>
-  <div v-if="!editing">
+  <div v-if="!editing && !model.engine && !model.key" class="flex h-9 items-center gap-3 text-sm">
+    <span class="min-w-0 truncate" :class="fallback ? 'font-mono text-xs text-fg-muted' : 'text-fg-subtle'">{{ fallback ?? "Not set" }}</span>
+    <Button variant="outline" size="sm" :disabled="disabled" @click="editing = true">Set reference</Button>
+  </div>
+  <div v-else-if="!editing">
     <SecretReference
       :engine="model.engine || 'unset'"
       :secret-key="model.key || 'unset'"

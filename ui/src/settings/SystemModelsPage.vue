@@ -6,6 +6,13 @@ import { Plus, Trash2 } from "@lucide/vue";
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import HistoryLink from "./HistoryLink.vue";
@@ -30,17 +37,26 @@ const errors = computed(() =>
   ["provider-settings", "model-role-assignments"].map((k) => store.stateFor(k).error).filter(Boolean),
 );
 
+// The roles the daemon reads; others come from workflow steps that name one.
+const KNOWN_ROLES = ["builder", "planner", "triage", "embedding"];
+// Provider classes the runtime SDK registers.
+const CLASSES = ["openai", "anthropic", "azure", "cohere", "deepseek", "gemini", "groq", "mistral", "ollama", "perplexity", "xai"];
+
+const roleNames = computed(() => [
+  ...KNOWN_ROLES,
+  ...Object.keys(roles.value ?? {}).filter((r) => !KNOWN_ROLES.includes(r)),
+]);
+// An unset role is an absent key: the server refuses an empty model.
+function setRole(role: string, model: string) {
+  if (!roles.value) return;
+  if (model.trim()) roles.value[role] = model.trim();
+  else delete roles.value[role];
+}
+
 // A role references "provider/model", and the server refuses anything else.
 const roleValid = (model: string) => /^[^/\s]+\/\S+$/.test(model);
 const providerKnown = (model: string) => !!providers.value?.[model.split("/")[0]!];
 
-// Providers are keyed by name, so a rename moves the entry.
-function renameProvider(from: string, to: string) {
-  const p = providers.value;
-  if (!p || !to || to === from || p[to]) return;
-  p[to] = p[from]!;
-  delete p[from];
-}
 const newProvider = ref("");
 function addProvider() {
   const name = newProvider.value.trim();
@@ -52,7 +68,7 @@ const newRole = ref("");
 function addRole() {
   const name = newRole.value.trim();
   if (!roles.value || !name || name in roles.value) return;
-  roles.value[name] = "";
+  roles.value[name] = "provider/model";
   newRole.value = "";
 }
 const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase";
@@ -70,20 +86,28 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
 
     <template v-if="roles">
       <h2 :class="eyebrow">Roles</h2>
-      <SettingRow v-for="(_, role) in roles" :key="role" :label="String(role)" :for="`role-${role}`">
+      <SettingRow v-for="role in roleNames" :key="role" :label="role" :for="`role-${role}`">
         <div class="flex items-center gap-2">
           <Input
             :id="`role-${role}`"
-            v-model="roles[role]"
+            :model-value="roles[role] ?? ''"
             class="max-w-md font-mono"
-            placeholder="provider/model"
-            :aria-invalid="!roleValid(roles[role] ?? '') || undefined"
+            placeholder="unset"
+            :aria-invalid="(roles[role] && !roleValid(roles[role])) || undefined"
+            @update:model-value="(v) => setRole(role, String(v))"
           />
-          <Button variant="ghost" size="icon" :aria-label="`Remove role ${role}`" @click="delete roles[role]"><Trash2 /></Button>
+          <Button
+            v-if="!KNOWN_ROLES.includes(role)"
+            variant="ghost"
+            size="icon"
+            :aria-label="`Remove role ${role}`"
+            @click="delete roles[role]"
+            ><Trash2
+          /></Button>
         </div>
-        <p v-if="!roleValid(roles[role] ?? '')" class="mt-1.5 text-xs text-danger">Write it as provider/model.</p>
-        <p v-else-if="providers && !providerKnown(roles[role] ?? '')" class="mt-1.5 text-xs text-warn">
-          No provider named {{ (roles[role] ?? "").split("/")[0] }} below.
+        <p v-if="roles[role] && !roleValid(roles[role])" class="mt-1.5 text-xs text-danger">Use provider/model.</p>
+        <p v-else-if="roles[role] && providers && !providerKnown(roles[role])" class="mt-1.5 text-xs text-warn">
+          No provider named {{ roles[role].split("/")[0] }}.
         </p>
       </SettingRow>
       <div class="flex gap-2 border-t border-border py-4">
@@ -101,25 +125,26 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
         :aria-label="String(name)"
       >
         <header class="flex items-center gap-2">
-          <Input
-            :model-value="String(name)"
-            class="max-w-56 font-mono font-medium"
-            :aria-label="`Provider name ${name}`"
-            @change="(e: Event) => renameProvider(String(name), (e.target as HTMLInputElement).value.trim())"
-          />
+          <h3 class="font-mono text-[15px] font-medium">{{ name }}</h3>
           <Button variant="ghost" size="icon" class="ml-auto" :aria-label="`Remove provider ${name}`" @click="delete providers[name]"><Trash2 /></Button>
         </header>
-        <SettingRow label="Class" :for="`prov-${name}-class`">
-          <Input :id="`prov-${name}-class`" v-model="provider.class" class="max-w-56 font-mono" />
+        <SettingRow label="Class">
+          <Select v-model="provider.class">
+            <SelectTrigger class="w-48 font-mono" :aria-label="`Class for ${name}`"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="c in CLASSES.includes(provider.class) ? CLASSES : [provider.class, ...CLASSES]" :key="c" :value="c">{{ c }}</SelectItem>
+            </SelectContent>
+          </Select>
         </SettingRow>
         <SettingRow label="Base URL" :for="`prov-${name}-url`">
           <Input :id="`prov-${name}-url`" v-model="provider.base_url" class="max-w-md font-mono" />
         </SettingRow>
         <SettingRow label="API key">
-          <p v-if="provider.api_key_env && !provider.api_key_ref.key" class="mb-2 text-xs text-fg-muted">
-            Key passed as <span class="font-mono text-foreground">{{ provider.api_key_env }}</span>.
-          </p>
-          <SecretRefField v-model="provider.api_key_ref" :id-prefix="`prov-${name}-key`" />
+          <SecretRefField
+            v-model="provider.api_key_ref"
+            :id-prefix="`prov-${name}-key`"
+            :fallback="provider.api_key_env ? `env ${provider.api_key_env}` : undefined"
+          />
         </SettingRow>
       </section>
       <div class="flex gap-2">
