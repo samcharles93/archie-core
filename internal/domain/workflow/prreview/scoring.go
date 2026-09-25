@@ -130,24 +130,23 @@ type ScoreInputs struct {
 	BlastRadiusFiles int
 }
 
-// Score deduplicates exact duplicates, scores what is left, drops the findings
-// under their severity's confidence floor and ranks the rest by score. The same
-// findings always produce the same scores and the same order.
+// Score drops the findings under their severity's confidence floor, scores
+// what is left, merges the duplicates among the survivors and ranks the rest by
+// score. The same findings always produce the same scores and the same order.
+//
+// The floor comes before the merge and the merge keeps the higher-scoring
+// duplicate, so which findings were handed in decides the result and the order
+// they were handed in does not: a discarded finding must not be able to shadow
+// a kept one.
 func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 	scored := make([]ScoredFinding, 0, len(findings))
-	seen := map[dedupKey]bool{}
 	for _, finding := range findings {
 		severity := normalizeSeverity(finding.Severity)
-		key := dedupKey{file: finding.File, lineStart: finding.LineStart, lineEnd: finding.LineEnd, severity: severity}
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
 		if finding.Confidence < confidenceFloor(severity) {
 			continue
 		}
 		score, applied := scoreOf(finding, severity, inputs)
-		scored = append(scored, ScoredFinding{
+		candidate := ScoredFinding{
 			Dimension:   finding.Dimension,
 			File:        finding.File,
 			LineStart:   finding.LineStart,
@@ -162,22 +161,40 @@ func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 			Score:       score,
 			Multipliers: applied,
 			Blocking:    finding.Blocking,
-		})
+		}
+		if duplicate := indexOfDuplicate(scored, candidate); duplicate >= 0 {
+			if candidate.Score > scored[duplicate].Score {
+				scored[duplicate] = candidate
+			}
+			continue
+		}
+		scored = append(scored, candidate)
 	}
 
 	slices.SortStableFunc(scored, func(a, b ScoredFinding) int { return cmp.Compare(b.Score, a.Score) })
 	return scored
 }
 
-// dedupKey is what makes two findings the same finding: one place, one
-// severity. The wording is not part of it -- two reviewers describing one
-// defect are one comment -- and a different severity at the same place is a
-// different claim about it.
-type dedupKey struct {
-	file      string
-	lineStart int
-	lineEnd   int
-	severity  Severity
+// indexOfDuplicate returns the position of the scoring already kept that
+// candidate duplicates, or -1 when it is a finding of its own. Two findings are
+// one finding when they are the same claim about one place: the same severity,
+// in the same file, over lines that overlap. The wording is not part of it --
+// two reviewers describing one defect are one comment -- and a different
+// severity over the same lines is a different claim about them.
+func indexOfDuplicate(scored []ScoredFinding, candidate ScoredFinding) int {
+	for index, kept := range scored {
+		if kept.File == candidate.File && kept.Severity == candidate.Severity && linesOverlap(kept, candidate) {
+			return index
+		}
+	}
+	return -1
+}
+
+// linesOverlap reports whether two findings' line ranges share a line. A range
+// that merely ends where the next begins does not overlap it: line 13 and the
+// range 10-12 are two places.
+func linesOverlap(a, b ScoredFinding) bool {
+	return a.LineStart <= b.LineEnd && b.LineStart <= a.LineEnd
 }
 
 // scoreOf applies the rubric: the severity's weight times the reviewer's

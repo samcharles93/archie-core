@@ -54,7 +54,7 @@ func TestParseDiffDescribesEachFile(t *testing.T) {
 		{
 			name: "a deleted file keeps the path it had",
 			diff: "diff --git a/pkg/gone.py b/pkg/gone.py\ndeleted file mode 100644\n--- a/pkg/gone.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-import os\n-x = 1\n",
-			want: []fileSummary{{Path: "pkg/gone.py", Status: "removed", Language: "python", Removed: 2, Hunks: 1}},
+			want: []fileSummary{{Path: "pkg/gone.py", Status: "deleted", Language: "python", Removed: 2, Hunks: 1}},
 		},
 		{
 			name: "a rename with changes",

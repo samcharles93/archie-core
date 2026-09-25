@@ -18,14 +18,15 @@ import (
 	"strings"
 )
 
-// FileStatus is what a change did to one file. The values are git's own
-// vocabulary for a change, which is also what a forge reports.
+// FileStatus is what a change did to one file. The values are the vocabulary
+// the repository already persists a change's status in, so a status read off a
+// diff and a status read off a capture are spelled the same word.
 type FileStatus string
 
 const (
 	FileAdded    FileStatus = "added"
 	FileModified FileStatus = "modified"
-	FileRemoved  FileStatus = "removed"
+	FileRemoved  FileStatus = "deleted"
 	FileRenamed  FileStatus = "renamed"
 )
 

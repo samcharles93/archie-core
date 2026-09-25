@@ -199,21 +199,135 @@ func TestScoreMergesExactDuplicates(t *testing.T) {
 	}
 }
 
+func TestScoreAppliesTheConfidenceFloorBeforeDeduplication(t *testing.T) {
+	t.Parallel()
+
+	// Both findings are the same defect in the same place, so the duplicate
+	// rule reads them as one finding: one is under important's confidence
+	// floor and one is over it.
+	below := scored(SeverityImportant, 0.29)
+	below.Title = "below floor"
+	above := scored(SeverityImportant, 0.8)
+	above.Title = "above floor"
+
+	tests := []struct {
+		name     string
+		findings []Finding
+	}{
+		{name: "a below-floor finding first does not suppress the above-floor one", findings: []Finding{below, above}},
+		{name: "an above-floor finding first survives the below-floor one", findings: []Finding{above, below}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Score(test.findings, ScoreInputs{})
+			if len(got) != 1 {
+				t.Fatalf("Score() returned %d findings, want the one above the confidence floor", len(got))
+			}
+			if got[0].Title != "above floor" {
+				t.Errorf("Score() kept %q, want %q", got[0].Title, "above floor")
+			}
+		})
+	}
+}
+
+func TestScoreMergesFindingsWhoseLinesOverlap(t *testing.T) {
+	t.Parallel()
+
+	// The same defect reported at 10-12 and at 10-13 by two reviewers, the
+	// second less sure of it than the first.
+	higher := scored(SeverityImportant, 0.8)
+	higher.LineStart = 10
+	higher.LineEnd = 12
+	higher.Title = "higher"
+	lower := scored(SeverityImportant, 0.6)
+	lower.LineStart = 10
+	lower.LineEnd = 13
+	lower.Title = "lower"
+
+	// 12 and 13 do not share a line, so these are two findings.
+	before := scored(SeverityImportant, 0.8)
+	before.LineStart = 12
+	before.LineEnd = 12
+	before.Title = "before the gap"
+	after := scored(SeverityImportant, 0.8)
+	after.LineStart = 13
+	after.LineEnd = 13
+	after.Title = "after the gap"
+
+	// The same lines carrying another severity are another claim about them.
+	other := scored(SeverityCritical, 0.8)
+	other.LineStart = 10
+	other.LineEnd = 13
+	other.Title = "another severity"
+
+	tests := []struct {
+		name     string
+		findings []Finding
+		want     []string
+	}{
+		{
+			name:     "an overlapping range collapses to the higher-scoring finding",
+			findings: []Finding{higher, lower},
+			want:     []string{"higher"},
+		},
+		{
+			name:     "input order does not decide which overlapping finding survives",
+			findings: []Finding{lower, higher},
+			want:     []string{"higher"},
+		},
+		{
+			name:     "ranges that touch but do not overlap are two findings",
+			findings: []Finding{before, after},
+			want:     []string{"after the gap", "before the gap"},
+		},
+		{
+			name:     "an overlapping range of another severity is another finding",
+			findings: []Finding{higher, other},
+			want:     []string{"another severity", "higher"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Score(test.findings, ScoreInputs{})
+			titles := make([]string, 0, len(got))
+			for _, finding := range got {
+				titles = append(titles, finding.Title)
+			}
+			// The ranking is asserted elsewhere; here the question is which
+			// findings survived, so the titles are compared as a set.
+			slices.Sort(titles)
+			wantStrings(t, titles, test.want)
+		})
+	}
+}
+
 func TestScoreRanksByScoreAndKeepsInputOrderOnTies(t *testing.T) {
 	t.Parallel()
 
+	// Every finding here covers a line of its own: the ties are two findings,
+	// not one reported twice.
 	low := scored(SeveritySuggestion, 0.5)
 	low.Title = "low"
 	low.LineStart = 1
+	low.LineEnd = 1
 	high := scored(SeverityCritical, 0.9)
 	high.Title = "high"
 	high.LineStart = 2
+	high.LineEnd = 2
 	firstTie := scored(SeverityImportant, 0.5)
 	firstTie.Title = "tie-first"
 	firstTie.LineStart = 3
+	firstTie.LineEnd = 3
 	secondTie := scored(SeverityImportant, 0.5)
 	secondTie.Title = "tie-second"
 	secondTie.LineStart = 4
+	secondTie.LineEnd = 4
 
 	findings := []Finding{low, high, firstTie, secondTie}
 
