@@ -30,11 +30,9 @@ func Serve(ctx context.Context, ln net.Listener, target string) error {
 			}
 			return err
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			join(ctx, client, target)
-		}()
+		})
 	}
 }
 
