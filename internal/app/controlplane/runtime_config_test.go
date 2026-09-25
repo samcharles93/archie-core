@@ -86,6 +86,26 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 	}
 }
 
+func TestRuntimeConfigRejectsStoredBootDerivedProviderName(t *testing.T) {
+	stored := []byte(`{"openai":{"class":"openai","api_key_env":"ARCHIE_PROVIDER_6986D5A05E1DF674_API_KEY"}}`)
+	if err := validateProviders(stored); err == nil {
+		t.Fatal("replace accepted a boot-derived provider name")
+	}
+	_, _, err := runtimeConfigFrom(t.Context(), providerSettingsReader{value: stored}, config.Config{})
+	if err == nil || !strings.Contains(err.Error(), "ARCHIE_PROVIDER_6986D5A05E1DF674_API_KEY") || !strings.Contains(err.Error(), "replace provider-settings") {
+		t.Fatalf("RuntimeConfig error = %v, want the stored derived name and repair action", err)
+	}
+}
+
+type providerSettingsReader struct{ value []byte }
+
+func (r providerSettingsReader) Query(_ context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
+	if kind != ProviderSettingsKind {
+		return 0, false, nil
+	}
+	return 2, true, decode(r.value)
+}
+
 // TestRuntimeConfigLayersTheStoredSchedulingLabel: the label pairs with the
 // dispatch trigger and layers with it. A policy that carries one replaces the
 // file document's label, so the store owns the half of the pairing it judged

@@ -104,6 +104,9 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 		}
 		out.Providers = make(map[string]config.Provider, len(providers))
 		for name, provider := range providers {
+			if err := rejectBootDerivedProviderEnv(name, provider); err != nil {
+				return err
+			}
 			out.Providers[name] = config.Provider{Class: provider.Class, APIKeyEnv: provider.APIKeyEnv, APIKey: provider.APIKey, BaseURL: provider.BaseURL}
 		}
 		return nil

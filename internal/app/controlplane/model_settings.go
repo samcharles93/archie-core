@@ -3,6 +3,7 @@ package controlplane
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -12,6 +13,8 @@ const (
 	ProviderSettingsKind     = "provider-settings"
 	ModelRoleAssignmentsKind = "model-role-assignments"
 )
+
+var bootDerivedProviderEnv = regexp.MustCompile(`^ARCHIE_PROVIDER_[0-9A-F]{16}_API_KEY$`)
 
 type providerDocument struct {
 	Class         string           `json:"class"`
@@ -39,6 +42,9 @@ func seedProviders(cfg config.Config) any {
 func validateProviders(input []byte) error {
 	return validateAs(input, func(providers map[string]providerDocument) error {
 		for name, provider := range providers {
+			if err := rejectBootDerivedProviderEnv(name, provider); err != nil {
+				return err
+			}
 			if strings.TrimSpace(name) == "" || strings.TrimSpace(provider.Class) == "" {
 				return fmt.Errorf("provider name and class are required")
 			}
@@ -51,6 +57,13 @@ func validateProviders(input []byte) error {
 		}
 		return nil
 	})
+}
+
+func rejectBootDerivedProviderEnv(name string, provider providerDocument) error {
+	if bootDerivedProviderEnv.MatchString(provider.APIKeyEnv) && provider.APIKey == (config.SecretRef{}) {
+		return fmt.Errorf("provider %q api_key_env %q is a boot-derived name; replace provider-settings with the operator's api_key_ref", name, provider.APIKeyEnv)
+	}
+	return nil
 }
 
 func validateModelRoles(input []byte) error {
