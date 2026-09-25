@@ -160,8 +160,7 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
       >
         <p class="text-sm font-medium">No event types yet</p>
         <p class="mt-1 max-w-md text-sm text-fg-muted">
-          Captures that share a source and payload shape are grouped into proposed types here. Name one to use it in a
-          mapping, or start from a pasted payload.
+          Create an event type to map a webhook's fields and bind it to a workflow.
         </p>
       </div>
     </CardContent>
