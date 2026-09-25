@@ -7,7 +7,7 @@ import CaptureDetail from "./CaptureDetail.vue";
 import CapturesCard from "./CapturesCard.vue";
 import EventTypesCard from "./EventTypesCard.vue";
 import { loadEventTypes } from "./event-type-state";
-import { load, selectById, selectNewest, selected, useCaptures } from "./state";
+import { captures, load, selectById, selectNewest, selected, useCaptures } from "./state";
 
 /**
  * Event inspector: recent inbound events, newest first, with the selected
@@ -90,8 +90,10 @@ watch(selected, (capture) => {
 </script>
 
 <template>
+  <!-- Split only when there is a capture to show beside the list. -->
   <div
-    class="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+    class="grid min-w-0 items-start gap-4"
+    :class="captures.length ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''"
   >
     <div ref="listColumn" class="min-w-0">
       <CapturesCard />

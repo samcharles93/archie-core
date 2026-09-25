@@ -18,8 +18,8 @@ export interface EventsTabSpec {
  * runs. */
 export const EVENTS_TABS: EventsTabSpec[] = [
   { id: "inspector", label: "Inspector", section: "captures" },
-  { id: "bindings", label: "Bindings", section: "bindings" },
   { id: "mappings", label: "Mappings", section: "mappings" },
+  { id: "bindings", label: "Bindings", section: "bindings" },
 ];
 
 /**

@@ -154,12 +154,16 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
         </TableBody>
       </Table>
 
-      <p
+      <div
         v-if="!proposals.length && !eventTypes.length"
-        class="text-sm text-fg-muted"
+        class="flex flex-col items-center py-4 text-center"
       >
-        No event types or proposals.
-      </p>
+        <p class="text-sm font-medium">No event types yet</p>
+        <p class="mt-1 max-w-md text-sm text-fg-muted">
+          Captures that share a source and payload shape are grouped into proposed types here. Name one to use it in a
+          mapping, or start from a pasted payload.
+        </p>
+      </div>
     </CardContent>
   </Card>
   <EventTypeDialog />
