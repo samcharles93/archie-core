@@ -419,6 +419,7 @@ message WorkflowStat {
   int64 avg_tokens = 6;
   double avg_steps = 7;
   int64 total_tokens = 8;
+  int64 completed = 9;
 }
 
 // StageStat mirrors storecontract.StageStat.

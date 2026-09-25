@@ -2555,6 +2555,7 @@ type WorkflowStat struct {
 	AvgTokens     int64                  `protobuf:"varint,6,opt,name=avg_tokens,json=avgTokens,proto3" json:"avg_tokens,omitempty"`
 	AvgSteps      float64                `protobuf:"fixed64,7,opt,name=avg_steps,json=avgSteps,proto3" json:"avg_steps,omitempty"`
 	TotalTokens   int64                  `protobuf:"varint,8,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
+	Completed     int64                  `protobuf:"varint,9,opt,name=completed,proto3" json:"completed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2641,6 +2642,13 @@ func (x *WorkflowStat) GetAvgSteps() float64 {
 func (x *WorkflowStat) GetTotalTokens() int64 {
 	if x != nil {
 		return x.TotalTokens
+	}
+	return 0
+}
+
+func (x *WorkflowStat) GetCompleted() int64 {
+	if x != nil {
+		return x.Completed
 	}
 	return 0
 }
@@ -9317,7 +9325,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe6\x01\n" +
+	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x84\x02\n" +
 	"\fWorkflowStat\x12\x1a\n" +
 	"\bworkflow\x18\x01 \x01(\tR\bworkflow\x12\x12\n" +
 	"\x04runs\x18\x02 \x01(\x03R\x04runs\x12\x16\n" +
@@ -9327,7 +9335,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"avg_tokens\x18\x06 \x01(\x03R\tavgTokens\x12\x1b\n" +
 	"\tavg_steps\x18\a \x01(\x01R\bavgSteps\x12!\n" +
-	"\ftotal_tokens\x18\b \x01(\x03R\vtotalTokens\"\x80\x01\n" +
+	"\ftotal_tokens\x18\b \x01(\x03R\vtotalTokens\x12\x1c\n" +
+	"\tcompleted\x18\t \x01(\x03R\tcompleted\"\x80\x01\n" +
 	"\tStageStat\x12\x1a\n" +
 	"\bworkflow\x18\x01 \x01(\tR\bworkflow\x12\x14\n" +
 	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x12\n" +

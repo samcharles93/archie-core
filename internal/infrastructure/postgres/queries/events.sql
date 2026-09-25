@@ -39,6 +39,7 @@ ORDER BY id;
 SELECT workflow,
        COUNT(*)::int AS runs,
        COUNT(*) FILTER (WHERE status = 'merged')::int AS merged,
+       COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
        COUNT(*) FILTER (WHERE status = 'pr_open')::int AS pr_open,
        COUNT(*) FILTER (WHERE status = 'parked')::int AS parked,
        CAST(AVG(tokens_used) AS bigint) AS avg_tokens,

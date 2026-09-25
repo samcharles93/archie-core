@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
@@ -46,6 +47,41 @@ func TestTaskProtoCarriesEveryDomainField(t *testing.T) {
 		wantField := v.Field(i).Interface()
 		if !reflect.DeepEqual(gotField, wantField) {
 			t.Errorf("Task.%s did not survive the proto round trip: got %v, want %v", name, gotField, wantField)
+		}
+	}
+}
+
+// TestWorkflowStatProtoCarriesEveryField is the same contract for the
+// per-workflow metric row, and the reason it exists is the same: the dashboard
+// reads these counts off the wire, so a count that only the producer knows
+// (Completed, the runs that finished with no pull request to open) would read
+// as zero everywhere without anything failing. Each field gets a value of its
+// own, so a mapping that assigns two of them from the same source -- or drops
+// one -- is caught by name.
+func TestWorkflowStatProtoCarriesEveryField(t *testing.T) {
+	want := storecontract.WorkflowStat{}
+	v := reflect.ValueOf(&want).Elem()
+	for i := range v.NumField() {
+		field := v.Field(i)
+		switch {
+		case field.Kind() == reflect.String:
+			field.SetString(v.Type().Field(i).Name + "-value")
+		case field.Kind() == reflect.Float64:
+			field.SetFloat(float64(i) + 0.5)
+		case field.CanInt():
+			field.SetInt(int64(i) + 1)
+		default:
+			t.Fatalf("field %s has kind %s, which this test does not know how to fill; extend it alongside the field", v.Type().Field(i).Name, field.Kind())
+		}
+	}
+
+	got := reflect.ValueOf(workflowStatValue(workflowStatProto(want)))
+	for i := range v.NumField() {
+		name := v.Type().Field(i).Name
+		gotField := got.Field(i).Interface()
+		wantField := v.Field(i).Interface()
+		if !reflect.DeepEqual(gotField, wantField) {
+			t.Errorf("WorkflowStat.%s did not survive the proto round trip: got %v, want %v", name, gotField, wantField)
 		}
 	}
 }

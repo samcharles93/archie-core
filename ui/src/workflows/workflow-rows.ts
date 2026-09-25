@@ -14,6 +14,7 @@ export interface WorkflowStats {
   workflow: string;
   runs?: number;
   merged?: number;
+  completed?: number;
   avg_tokens?: number;
   avg_steps?: number;
   origin?: string;
@@ -34,6 +35,7 @@ export interface WorkflowRow {
   workflow: string;
   runs?: number;
   merged?: number;
+  completed?: number;
   avg_tokens?: number;
   avg_steps?: number;
   origin?: string;
@@ -59,6 +61,7 @@ export function workflowRows(
         workflow: definition.id,
         runs: 0,
         merged: 0,
+        completed: 0,
       }),
     });
   }

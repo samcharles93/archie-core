@@ -22,6 +22,7 @@ export interface WorkflowStat {
   workflow?: string;
   runs?: number;
   merged?: number;
+  completed?: number;
   pr_open?: number;
   parked?: number;
 }

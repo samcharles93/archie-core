@@ -368,6 +368,7 @@ type WorkflowStat struct {
 	Workflow   string  `json:"workflow"`
 	Runs       int     `json:"runs"`
 	Merged     int     `json:"merged"`
+	Completed  int     `json:"completed"`
 	PROpen     int     `json:"pr_open"`
 	Parked     int     `json:"parked"`
 	AvgTokens  int     `json:"avg_tokens"`

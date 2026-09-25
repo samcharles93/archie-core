@@ -4,15 +4,21 @@ import { computed } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { workflows } from "./state";
+import { workflows, type WorkflowStat } from "./state";
 
 /** Sharer of runs: how much of the work that finished passed its gates. */
 const stats = computed(() => workflows.value?.workflows ?? []);
 
+// A run that finished without opening a pull request (a no-change build, a
+// triage that needed no code) is delivered like a merge or a PR in review, so
+// both totals count it: the pass rate would otherwise read every `completed`
+// row as a failed gate.
+const delivered = (w: WorkflowStat) => (w.merged || 0) + (w.completed || 0);
+
 const totals = computed(() => ({
   runs: stats.value.reduce((a, w) => a + (w.runs || 0), 0),
   merged: stats.value.reduce(
-    (a, w) => a + (w.merged || 0) + (w.pr_open || 0),
+    (a, w) => a + delivered(w) + (w.pr_open || 0),
     0,
   ),
 }));
@@ -61,14 +67,14 @@ const pct = computed(() => {
               }}</span>
               <Badge
                 :variant="
-                  (w.merged || 0) === (w.runs || 0)
+                  delivered(w) === (w.runs || 0)
                     ? 'ok'
                     : (w.parked || 0) > 0
                       ? 'warn'
                       : 'info'
                 "
               >
-                {{ w.merged || 0 }}/{{ w.runs || 0 }}
+                {{ delivered(w) }}/{{ w.runs || 0 }}
               </Badge>
             </li>
           </ul>

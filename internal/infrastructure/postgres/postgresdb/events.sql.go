@@ -295,6 +295,7 @@ const workflowStats = `-- name: WorkflowStats :many
 SELECT workflow,
        COUNT(*)::int AS runs,
        COUNT(*) FILTER (WHERE status = 'merged')::int AS merged,
+       COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
        COUNT(*) FILTER (WHERE status = 'pr_open')::int AS pr_open,
        COUNT(*) FILTER (WHERE status = 'parked')::int AS parked,
        CAST(AVG(tokens_used) AS bigint) AS avg_tokens,
@@ -310,6 +311,7 @@ type WorkflowStatsRow struct {
 	Workflow    string
 	Runs        int32
 	Merged      int32
+	Completed   int32
 	PrOpen      int32
 	Parked      int32
 	AvgTokens   int64
@@ -330,6 +332,7 @@ func (q *Queries) WorkflowStats(ctx context.Context) ([]WorkflowStatsRow, error)
 			&i.Workflow,
 			&i.Runs,
 			&i.Merged,
+			&i.Completed,
 			&i.PrOpen,
 			&i.Parked,
 			&i.AvgTokens,

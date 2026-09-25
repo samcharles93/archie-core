@@ -282,8 +282,8 @@ func bindingInputsValue(s string) map[string]binding.InputSource {
 func workflowStatProto(w storecontract.WorkflowStat) *pb.WorkflowStat {
 	return &pb.WorkflowStat{
 		Workflow: w.Workflow, Runs: int64(w.Runs), Merged: int64(w.Merged),
-		PrOpen: int64(w.PROpen), Parked: int64(w.Parked), AvgTokens: int64(w.AvgTokens),
-		AvgSteps: w.AvgSteps, TotalTokens: int64(w.TotalToken),
+		Completed: int64(w.Completed), PrOpen: int64(w.PROpen), Parked: int64(w.Parked),
+		AvgTokens: int64(w.AvgTokens), AvgSteps: w.AvgSteps, TotalTokens: int64(w.TotalToken),
 	}
 }
 
@@ -293,8 +293,8 @@ func workflowStatValue(w *pb.WorkflowStat) storecontract.WorkflowStat {
 	}
 	return storecontract.WorkflowStat{
 		Workflow: w.Workflow, Runs: int(w.Runs), Merged: int(w.Merged),
-		PROpen: int(w.PrOpen), Parked: int(w.Parked), AvgTokens: int(w.AvgTokens),
-		AvgSteps: w.AvgSteps, TotalToken: int(w.TotalTokens),
+		Completed: int(w.Completed), PROpen: int(w.PrOpen), Parked: int(w.Parked),
+		AvgTokens: int(w.AvgTokens), AvgSteps: w.AvgSteps, TotalToken: int(w.TotalTokens),
 	}
 }
 

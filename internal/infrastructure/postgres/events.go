@@ -108,6 +108,7 @@ func (s *Store) WorkflowStats(ctx context.Context) ([]storecontract.WorkflowStat
 			Workflow:   r.Workflow,
 			Runs:       int(r.Runs),
 			Merged:     int(r.Merged),
+			Completed:  int(r.Completed),
 			PROpen:     int(r.PrOpen),
 			Parked:     int(r.Parked),
 			AvgTokens:  int(r.AvgTokens),
