@@ -165,7 +165,6 @@ const replyModes = [
               <SecretRefField
                 v-model="chat.telegram.token_ref"
                 id-prefix="tg-token"
-                :resolved="chat.telegram.token_ref.key ? chat.telegram.credential_configured : undefined"
               />
             </SettingRow>
             <SettingRow label="Allowed users" hint="Telegram user IDs. Everyone else is ignored.">
@@ -209,7 +208,6 @@ const replyModes = [
               <SecretRefField
                 v-model="chat.webhook.secret_ref"
                 id-prefix="wh-secret"
-                :resolved="chat.webhook.secret_ref.key ? chat.webhook.credential_configured : undefined"
               />
             </SettingRow>
           </template>

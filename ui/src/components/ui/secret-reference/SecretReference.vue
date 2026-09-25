@@ -2,13 +2,18 @@
 import { CircleCheck, CircleAlert, Lock } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 
-defineProps<{
-  engine: string;
-  secretKey: string;
-  /** undefined while unknown; the resolved line is hidden. */
-  resolved?: boolean;
-  disabled?: boolean;
-}>();
+// resolved defaults to undefined, not false: Vue casts an omitted boolean prop
+// to false, which would claim "not found" for a reference nothing checked.
+withDefaults(
+  defineProps<{
+    engine: string;
+    secretKey: string;
+    /** undefined while unknown; the status line is hidden. */
+    resolved?: boolean;
+    disabled?: boolean;
+  }>(),
+  { resolved: undefined },
+);
 defineEmits<{ change: [] }>();
 </script>
 

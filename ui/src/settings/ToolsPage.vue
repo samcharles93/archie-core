@@ -106,7 +106,6 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
         <SecretRefField
           v-model="tools.minimax.api_key_ref"
           id-prefix="minimax-key"
-          :resolved="tools.minimax.credential_configured"
           :disabled="!tools.minimax.enabled"
         />
       </SettingRow>

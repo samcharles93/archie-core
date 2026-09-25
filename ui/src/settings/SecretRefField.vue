@@ -11,7 +11,11 @@ interface SecretRef {
   key: string;
 }
 
-defineProps<{ resolved?: boolean; disabled?: boolean; idPrefix: string }>();
+// resolved stays unset until something actually resolves the reference: a
+// filled-in engine and key says nothing about whether the secret exists.
+withDefaults(defineProps<{ resolved?: boolean; disabled?: boolean; idPrefix: string }>(), {
+  resolved: undefined,
+});
 const model = defineModel<SecretRef>({ required: true });
 const editing = ref(false);
 </script>

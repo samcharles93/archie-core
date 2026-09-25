@@ -22,6 +22,9 @@ Not editorial, not marketing, not playful. Every rule below serves that.
   registry (e.g. inspira-ui), then a new item in the sibling
   `archie-component-registry` repo, installed from its `public/r/<item>.json`.
   The CLI prompts to overwrite stock primitives an item depends on: answer no.
+  To update an installed registry item, delete its `components/ui/<item>/`
+  folder and add it again; never pass `--overwrite`, which also rewrites the
+  stock components listed in its `registryDependencies`.
   If `npm install` fails with `EALLOWSCRIPTS`, run the CLI with
   `NPM_CONFIG_USERCONFIG=/dev/null`.
 - Features live in `ui/src/<feature>/` with colocated `.js`/`.css`. Extract a
