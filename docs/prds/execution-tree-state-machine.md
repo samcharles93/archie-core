@@ -83,12 +83,17 @@ A StepExecution cannot reach `running` while its WorkflowExecution is not
 
 - The table lives in `taskstate` (no dependencies), so the store, daemon and
   gateway share one copy.
+- Every store method that changes `tasks.status` checks the table and writes
+  the audit and event rows, not only `Transition`. That includes the claim,
+  `ParkTask`, `Requeue`, `RetryTask`, `BeginRemediation` and `RecoverStale`
+  paths, several of which change status without an audit row.
 - The State Store rejects an illegal transition with a new sentinel,
   `ErrIllegalTransition`, carried across the wire through `mapError` like
   `ErrStaleTransition`. A stale `from` stays `ErrStaleTransition`.
 - Each transition is one transaction: guarded row update, audit row, domain
   event row. The events table is written by the store, not emitted beside it.
-  `KindStageStart` and `KindStageFinish` are produced by the step transition.
+  `KindStageStart` and `KindStageFinish` are produced by the step transition
+  and published to the bus after commit.
 - `workflow.Run` stops discarding persistence errors. A failed step write
   parks the execution; the step does not run unrecorded.
 
@@ -131,6 +136,7 @@ token.
 One new table, `step_executions`: `id`, `execution_id`, `attempt`,
 `parent_id`, `depth`, `kind`, `name`, `status`, `detail`, `tokens_used`,
 `started_at`, `finished_at`. Indexed on `(execution_id, attempt, id)`.
+Deleting an execution (archive, clearing terminal tasks) deletes its steps.
 Existing rows gain no backfilled steps. Their history stays in `transitions`
 and `events`.
 

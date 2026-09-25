@@ -46,9 +46,10 @@ Order of precedence, first match wins:
 2. the agent profile's `runner`;
 3. `builtin`, the ai-sdk agent loop.
 
-`runner` names a `[harnesses.<name>]` entry. An entry with no consumer
-(named by no stage and no profile) is a validation warning, and an unknown
-name is a validation error.
+`runner` names a `[harnesses.<name>]` entry. `archie-agent` reads the entry
+when it builds the stage's runner; that is the field's only consumer. An
+unknown name and an entry named by no stage and no profile are both
+validation errors.
 
 ```toml
 [harnesses.claude-sub]
@@ -95,7 +96,8 @@ to the harness by `archie-agent mcp`, a stdio MCP server started inside the
 container and registered through the adapter's invocation flags. It serves
 the stage's `CaptureTools` and the central tools the agent profile allows.
 It does not serve the `workspace` toolset, for the same reason the built-in
-runner withholds it.
+runner withholds it. The runner's `ToolLimits` bound the results it returns.
+The harness's own built-in tools are outside archie's limits.
 
 A harness that does not declare `mcp` can only run stages with no capture
 tools.
