@@ -107,7 +107,9 @@ async function restoreBefore(entry: AuditEntry): Promise<void> {
 
     <div class="mb-4 flex flex-wrap gap-2">
       <Select v-model="section">
-        <SelectTrigger class="w-60" aria-label="Section"><SelectValue /></SelectTrigger>
+        <SelectTrigger class="w-60" aria-label="Section">
+          <SelectValue>{{ section === ALL ? "All sections" : sectionOptions.find((o) => o.value === section)?.label ?? section }}</SelectValue>
+        </SelectTrigger>
         <SelectContent>
           <SelectItem :value="ALL">All sections</SelectItem>
           <SelectItem v-for="o in sectionOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
@@ -132,7 +134,7 @@ async function restoreBefore(entry: AuditEntry): Promise<void> {
     </div>
 
     <p v-if="error" class="text-sm text-danger" role="alert">{{ error }}</p>
-    <div v-else class="scroll-fade-x overflow-x-auto rounded-lg border border-border bg-card [scrollbar-width:none]">
+    <div v-else class="overflow-x-auto rounded-lg border border-border bg-card">
       <table class="w-full text-[13px]">
         <thead>
           <tr class="border-b border-border text-left text-[11px] tracking-[0.06em] text-fg-subtle uppercase">

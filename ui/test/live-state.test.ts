@@ -61,3 +61,11 @@ test("backend events invalidate only their owning projections", () => {
   assert.deepEqual(resourcesForEvent({ kind: "update_report" }), ["updates"]);
   assert.deepEqual(resourcesForEvent({ kind: "log" }), []);
 });
+
+test("a closed stream is retried with doubling delay, capped at 30s", async () => {
+  const { reconnectDelay } = await import("../src/lib/stream-state.ts");
+  assert.deepEqual(
+    [0, 1, 2, 3, 4, 5, 6, 10].map(reconnectDelay),
+    [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000],
+  );
+});
