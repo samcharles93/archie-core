@@ -84,13 +84,9 @@ type ConfigSection struct {
 // writing:
 //   - reloadableFields lists BotUser, BotEmail, Label, DiffCapLines, Budgets,
 //     Models -- all reloadable.
-//   - reloadableSubFields["Containers"] allows only VolumeTTL --
-//     every other Containers field (Image, MaxConcurrency,
-//     MaxUptime, PullPolicy, Network) requires a restart.
 //   - reloadableSubFields["Forge"] allows only Host -- Forge.Type requires a
 //     restart even though the dashboard already renders it as editable.
-//   - Web, SkillsDir, PluginDir, SecretEngineDir are absent from both
-//     allowlists entirely, so they require a restart.
+//   - Web is absent from both allowlists entirely, so it requires a restart.
 //   - WorkDir and DatabaseURL are locked (configuration.DeniedKeys), not merely
 //     restart-required -- the dashboard cannot change them at all.
 func configFieldDescriptors() []ConfigSection {
@@ -143,21 +139,12 @@ func configFieldDescriptors() []ConfigSection {
 		},
 		{
 			ID:          "storage",
-			Label:       "Storage & sandboxing",
-			Description: "Where archied keeps its state, and how it isolates task execution.",
+			Label:       "Storage",
+			Description: "Where archied keeps its state.",
 			Fields: []ConfigField{
 				{Key: "work_dir", Label: "Work directory", Type: FieldString, Editable: false},
 				{Key: "state_dir", Label: "State directory", Description: "Embedded NATS store, task logs and the readiness disk probe.", Type: FieldString, Editable: false},
 				{Key: "database_url", Label: "PostgreSQL URL", Description: "The State Store's database connection; set at boot, restart required.", Type: FieldString, Editable: false},
-				{Key: "skills_dir", Label: "Shared skills directory", Description: "Empty uses the work directory.", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "plugin_dir", Label: "Daemon plugin directory", Description: "Empty means no daemon plugins.", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "secret_engine_dir", Label: "Secret engine plugin directory", Description: "Empty means built-in secret engines only.", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "containers.image", Label: "Agent image", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "containers.max_concurrency", Label: "Max concurrent tasks", Description: "0 means unlimited.", Type: FieldInt, Editable: true, RestartRequired: true},
-				{Key: "containers.max_uptime", Label: "Container max lifetime", Type: FieldDuration, Editable: true, RestartRequired: true},
-				{Key: "containers.volume_ttl", Label: "Persistent volume retention", Type: FieldDuration, Editable: true},
-				{Key: "containers.pull_policy", Label: "How images are refreshed", Description: `"missing" pulls only when the image isn't present locally; "always" pulls before every run.`, Type: FieldEnum, Options: []string{"missing", "always"}, Editable: true, RestartRequired: true},
-				{Key: "containers.network", Label: "Docker network", Description: "Empty auto-detects the Docker network.", Type: FieldString, Editable: true, RestartRequired: true},
 			},
 		},
 		{
@@ -179,31 +166,22 @@ func configFieldDescriptors() []ConfigSection {
 // field safe to show."
 func configFieldValues(view ConfigView) map[string]any {
 	return map[string]any{
-		"bot_user":                   view.Identity.BotUser,
-		"bot_email":                  view.Identity.BotEmail,
-		"label":                      view.Identity.Label,
-		"forge.type":                 view.Identity.ForgeType,
-		"forge.host":                 view.Identity.ForgeHost,
-		"diff_cap_lines":             view.Identity.DiffCapLines,
-		"repos":                      view.Repositories,
-		"models":                     view.Models,
-		"providers":                  view.Providers,
-		"budgets.max_steps":          view.Budgets.MaxSteps,
-		"budgets.wall_clock":         view.Budgets.WallClock,
-		"budgets.gate_max_failures":  view.Budgets.GateMaxFailures,
-		"work_dir":                   view.Storage.WorkDir,
-		"state_dir":                  view.Storage.StateDir,
-		"database_url":               view.Storage.DatabaseURL,
-		"skills_dir":                 view.Storage.SkillsDir,
-		"plugin_dir":                 view.Storage.PluginDir,
-		"secret_engine_dir":          view.Storage.SecretEngineDir,
-		"containers.image":           view.Containers.Image,
-		"containers.max_concurrency": view.Containers.MaxConcurrency,
-		"containers.max_uptime":      view.Containers.MaxUptime,
-		"containers.volume_ttl":      view.Containers.VolumeTTL,
-		"containers.pull_policy":     view.Containers.PullPolicy,
-		"containers.network":         view.Containers.Network,
-		"web.listen":                 view.Web.Listen,
+		"bot_user":                  view.Identity.BotUser,
+		"bot_email":                 view.Identity.BotEmail,
+		"label":                     view.Identity.Label,
+		"forge.type":                view.Identity.ForgeType,
+		"forge.host":                view.Identity.ForgeHost,
+		"diff_cap_lines":            view.Identity.DiffCapLines,
+		"repos":                     view.Repositories,
+		"models":                    view.Models,
+		"providers":                 view.Providers,
+		"budgets.max_steps":         view.Budgets.MaxSteps,
+		"budgets.wall_clock":        view.Budgets.WallClock,
+		"budgets.gate_max_failures": view.Budgets.GateMaxFailures,
+		"work_dir":                  view.Storage.WorkDir,
+		"state_dir":                 view.Storage.StateDir,
+		"database_url":              view.Storage.DatabaseURL,
+		"web.listen":                view.Web.Listen,
 	}
 }
 

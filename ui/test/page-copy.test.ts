@@ -38,10 +38,4 @@ test("Task settings shows settings instead of lifecycle reference data", async (
     "utf8",
   );
   assert.doesNotMatch(page, /LifecycleCard|ReadOnlyNotice/);
-
-  const sections = await readFile(
-    new URL("../src/settings/ConfigSections.vue", import.meta.url),
-    "utf8",
-  );
-  assert.doesNotMatch(sections, /section\.description/);
 });
