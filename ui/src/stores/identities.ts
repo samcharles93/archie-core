@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { onScopeDispose, ref } from "vue";
+import { useLiveUpdatesStore } from "./live-updates";
 
 export interface Identity {
   id: string;
@@ -27,7 +28,8 @@ export const useIdentitiesStore = defineStore("identities", () => {
   const identities = ref<Identity[]>([]);
   const error = ref("");
   const busy = ref("");
-  let stream: EventSource | undefined;
+  const live = useLiveUpdatesStore();
+  let stop: (() => void) | undefined;
 
   async function load(): Promise<void> {
     try {
@@ -40,25 +42,11 @@ export const useIdentitiesStore = defineStore("identities", () => {
     }
   }
   function watch(): void {
-    if (stream) return;
+    if (stop) return;
     void load();
-    stream = new EventSource("/api/identities/watch");
-    stream.onmessage = (event) => {
-      try {
-        identities.value = (
-          JSON.parse(event.data) as { identities: Identity[] }
-        ).identities;
-        error.value = "";
-      } catch {
-        error.value = "Invalid live update";
-      }
-    };
-    stream.onerror = () => {
-      error.value = "Identity updates disconnected";
-    };
-    onScopeDispose(() => {
-      stream?.close();
-      stream = undefined;
+    stop = live.subscribe("identities", (data) => {
+      identities.value = (data as { identities: Identity[] }).identities;
+      error.value = "";
     });
   }
   async function create(
@@ -100,5 +88,6 @@ export const useIdentitiesStore = defineStore("identities", () => {
       busy.value = "";
     }
   }
+  onScopeDispose(() => stop?.());
   return { identities, error, busy, watch, create, command };
 });

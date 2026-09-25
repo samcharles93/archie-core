@@ -18,7 +18,18 @@ should look.
    comes from the server. Keep a local default only so the first render works,
    and keep it in step (`ui/src/lib/task-meta.ts`).
 5. Run `task ui`, `task test:ui` and `cd ui && npm run typecheck`. Commit the
-   regenerated `ui/dist/`; the Go binaries embed it.
+   regenerated `ui/dist/`; the Go binaries embed it. A fresh git worktree has
+   no ignored `ui/node_modules`: run `cd ui && npm ci` before these commands.
+6. **One long-lived browser connection:** `ui/src/lib/api.ts` has the only
+   `new EventSource`, owned by `stores/live-updates.ts`. Feature stores consume
+   topics with `live.subscribe(topic, callback)`; do not open a page-owned SSE
+   stream. Logs alone opt in while mounted, replacing that same EventSource
+   with `?topics=logs&since=<last cursor>`; a browser's `Last-Event-ID` only
+   survives its own automatic reconnect, not a newly constructed EventSource.
+   Task and log topics resume by cursor; control-plane, identity and apply-status
+   topics replay the latest snapshot. Test a fetch and same-origin navigation
+   after visiting Settings and Logs: the UI process serves HTTP/1.1 and six
+   persistent streams can starve every later browser request.
 
 ## Adding an API route
 
@@ -35,3 +46,10 @@ should look.
    `internal/app/archieui/compose.go`.
 5. Settings that live in a control-plane resource need no new route: the
    Advanced settings page edits every resource from its generated schema.
+6. For a new live topic, add one process-wide producer to `internal/webui`'s
+   `RunLive` and fan it through the `/api/stream` hub; `internal/app/archieui/run.go`
+   starts the producers with the process context. Never create an upstream
+   watch or poller in an HTTP handler. A slow client must reconnect for cursor
+   and snapshot repair rather than silently lose an update. Prove the producer
+   with several browser clients against the real peer, not just a scripted
+   stream; `live_hub_test.go` is the example.

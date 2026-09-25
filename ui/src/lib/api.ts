@@ -2,8 +2,9 @@
 // through api.* below, and every api.* method goes through send(), so the CSRF
 // header, the Content-Type, the request timeout, and the error shape live in
 // this one file.
-import { streamStateFor, type StreamState } from "./stream-state";
-import { randomUUID } from "./uuid";
+import { streamStateFor, type StreamState } from "./stream-state.ts";
+import { streamURL } from "./stream-url.ts";
+import { randomUUID } from "./uuid.ts";
 
 // DEFAULT_TIMEOUT_MS bounds a request so a daemon that accepts the connection
 // but never answers cannot leave the UI in a loading state with no way back.
@@ -318,37 +319,27 @@ export const api = {
  * Reconnection is the browser's job via EventSource, but a closed stream is
  * surfaced to the caller so the UI can show it rather than silently freezing.
  */
-export function subscribeEvents(
-  onEvent: (event: unknown) => void,
-  onStateChange?: (state: StreamState) => void,
-): () => void {
-  const src = new EventSource("/api/stream");
-  src.onopen = () => onStateChange?.("live");
-  src.onerror = () => onStateChange?.("reconnecting");
-  src.onmessage = (e) => {
-    try {
-      onEvent(JSON.parse(e.data));
-    } catch {
-      /* a malformed frame should not kill the stream */
-    }
-  };
-  return () => src.close();
+export interface StreamFrame {
+  topic: string;
+  data: unknown;
 }
 
-export function subscribeLogs(
-  onEntry: (entry: unknown) => void,
-  onStateChange?: (state: StreamState) => void,
+/** One EventSource per tab. Re-creating it on Logs entry/exit carries the
+ * last multi-topic cursor in ?since; native reconnects use Last-Event-ID. */
+export function subscribeEvents(
+  onFrame: (frame: StreamFrame, cursor: string) => void,
+  onStateChange: (state: StreamState) => void,
+  cursor = "",
+  logs = false,
 ): () => void {
-  const src = new EventSource("/api/logs/stream");
-  src.onopen = () => onStateChange?.("live");
-  // onerror fires both for a drop the browser will retry and for one it has
-  // given up on; readyState is what tells them apart.
-  src.onerror = () => onStateChange?.(streamStateFor(src.readyState));
+  const src = new EventSource(streamURL(cursor, logs));
+  src.onopen = () => onStateChange("live");
+  src.onerror = () => onStateChange(streamStateFor(src.readyState));
   src.onmessage = (event) => {
     try {
-      onEntry(JSON.parse(event.data));
+      onFrame(JSON.parse(event.data) as StreamFrame, event.lastEventId);
     } catch {
-      /* malformed log frame */
+      /* a malformed frame should not kill the stream */
     }
   };
   return () => src.close();

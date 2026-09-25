@@ -44,6 +44,15 @@ that reads it and the path the value takes to get there.
    not on it requires a restart.
 6. If the settings page shows it as a plain field, add it to
    `internal/webui/config_schema.go` and the view in `api_config.go`.
+7. A generic catalog resource (`replace` command, not domain-managed, no
+   query service) is watched **once per archie-ui process** by `webui.RunLive`,
+   then published to every browser through `/api/stream`. Do not add an
+   EventSource per resource to a settings store or a gRPC Watch per HTTP client.
+   The control-plane server polls `Resource` every 250ms per upstream Watch;
+   verify watch count is independent of client count and that late clients get
+   the hub's current value (`internal/webui/live_hub_test.go`, real server over
+   bufconn). Reopens resume after the last delivered version and charge failed
+   attempts; accepting a gRPC stream does not establish its health.
 
 ## Every new field
 

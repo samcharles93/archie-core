@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -171,6 +172,25 @@ func TestSSEStreamCatchUpPagesAcrossMultipleFetches(t *testing.T) {
 	}
 }
 
+// Every task frame identifies its topic so one EventSource can dispatch it
+// without interpreting the event's domain payload.
+func TestSSETaskFrameCarriesTopic(t *testing.T) {
+	stream, rec := newTestSSEStream("")
+	if !stream.send(events.Event{ID: 1, At: testAt, Kind: events.KindTaskQueued}) {
+		t.Fatal("send failed")
+	}
+	line := strings.Split(rec.Body.String(), "\n")[1]
+	var frame struct {
+		Topic string `json:"topic"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.Topic != "tasks" {
+		t.Fatalf("topic = %q, want tasks", frame.Topic)
+	}
+}
+
 // A target landing exactly on the last event of a full page must still be
 // recognised as reached, not mistaken for "page not yet exhausted, fetch
 // another".
@@ -226,6 +246,16 @@ func TestSSEStreamSendPageSkipsNoiseKindsButAdvancesSince(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "turn_completed") {
 		t.Error("SSE body contains a turn_completed frame, want it excluded entirely")
+	}
+}
+
+func TestSSEMultiTopicCursorHeaderWinsOverDeliberateReconnectURL(t *testing.T) {
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/stream?topics=logs&since="+streamCursors{Tasks: cursor(1), Logs: 4}.id(), nil)
+	request.Header.Set("Last-Event-ID", streamCursors{Tasks: cursor(2), Logs: 5}.id())
+	got := sseCursors(request)
+	if got.Tasks != cursor(2) || got.Logs != 5 {
+		t.Fatalf("cursors = %+v, want tasks 2 and logs 5 from native reconnect", got)
 	}
 }
 

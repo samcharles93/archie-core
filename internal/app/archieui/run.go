@@ -75,6 +75,9 @@ func Run(ctx context.Context, options Options) error {
 			log.Error("event pump stopped; the activity feed will only show history", "err", err)
 		}
 	}()
+	liveCtx, stopLive := context.WithCancel(ctx)
+	defer stopLive()
+	go srv.RunLive(liveCtx)
 
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", opts.Listen)
 	if err != nil {
