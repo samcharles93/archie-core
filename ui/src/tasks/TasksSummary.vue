@@ -2,6 +2,7 @@
 import { computed } from "vue";
 
 import StatTile from "@/base/StatTile.vue";
+import { delivered } from "@/lib/delivered";
 import { attentionStatusIds } from "@/lib/task-meta";
 import type { Task } from "./TaskRow.vue";
 
@@ -26,12 +27,7 @@ const working = computed(() => counts.value.running ?? 0);
 // Delivered counts everything whose work is out of archied's hands: merged,
 // in review, or finished with no change to make (completed, which is how a
 // no-change build and a no-code triage end).
-const delivered = computed(
-  () =>
-    (counts.value.merged ?? 0) +
-    (counts.value.completed ?? 0) +
-    (counts.value.pr_open ?? 0),
-);
+const done = computed(() => delivered(counts.value) + (counts.value.pr_open ?? 0));
 
 // "Needs you" is the server's grouping, not a local pair of ids: the same set
 // backs the ?status=needs_you filter, so the tile and the filter cannot drift.
@@ -68,10 +64,10 @@ const needsYou = computed(() => {
     />
     <StatTile
       label="Delivered"
-      :value="delivered"
+      :value="done"
       :compare="
         total
-          ? `${Math.round((delivered / total) * 100)}% of all tasks`
+          ? `${Math.round((done / total) * 100)}% of all tasks`
           : 'No tasks yet'
       "
     />

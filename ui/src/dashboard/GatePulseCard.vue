@@ -4,7 +4,8 @@ import { computed } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { workflows, type WorkflowStat } from "./state";
+import { delivered } from "@/lib/delivered";
+import { workflows } from "./state";
 
 /** Sharer of runs: how much of the work that finished passed its gates. */
 const stats = computed(() => workflows.value?.workflows ?? []);
@@ -13,8 +14,6 @@ const stats = computed(() => workflows.value?.workflows ?? []);
 // triage that needed no code) is delivered like a merge or a PR in review, so
 // both totals count it: the pass rate would otherwise read every `completed`
 // row as a failed gate.
-const delivered = (w: WorkflowStat) => (w.merged || 0) + (w.completed || 0);
-
 const totals = computed(() => ({
   runs: stats.value.reduce((a, w) => a + (w.runs || 0), 0),
   merged: stats.value.reduce(

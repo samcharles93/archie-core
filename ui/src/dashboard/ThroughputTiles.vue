@@ -2,6 +2,7 @@
 import { computed } from "vue";
 
 import { StatStrip } from "@/components/ui/stat-strip";
+import { delivered } from "@/lib/delivered";
 import { compact } from "@/lib/format";
 import { attentionStatusIds } from "@/lib/task-meta";
 import { summary } from "./state";
@@ -11,9 +12,9 @@ import { summary } from "./state";
 const counts = computed(() => summary.value?.statuses ?? {});
 const tokensByDay = computed(() => summary.value?.tokens_by_day ?? []);
 const used = computed(() => tokensByDay.value.reduce((a, d) => a + (d.tokens || 0), 0));
-const done = computed(
-  () => (counts.value.merged || 0) + (counts.value.completed || 0) + (counts.value.pr_open || 0),
-);
+// Delivered work is out of archied's hands: merged, finished with no change to
+// make (`completed`), or open in review.
+const done = computed(() => delivered(counts.value) + (counts.value.pr_open || 0));
 // "Needs you" is the server's grouping (attentionStatusIds), the same one the
 // Tasks page's needs_you filter reads.
 const attention = computed(() => {

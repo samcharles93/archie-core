@@ -17,6 +17,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { delivered } from "@/lib/delivered";
 import { useIdentitiesStore } from "@/stores/identities";
 import type { WorkflowDefinition, WorkflowStats } from "@/workflows/workflow-rows";
 
@@ -119,7 +120,7 @@ async function submit() {
           <span class="block truncate font-mono text-[13px] font-medium">{{ d.name || d.id }}</span>
           <span class="block text-xs text-fg-subtle">
             {{ statFor(d.id)?.runs || 0 }} runs<template v-if="statFor(d.id)?.runs">
-              · {{ Math.round(((statFor(d.id)?.merged || 0) / (statFor(d.id)?.runs || 1)) * 100) }}% merged</template
+              · {{ Math.round((delivered(statFor(d.id)) / (statFor(d.id)?.runs || 1)) * 100) }}% delivered</template
             >
           </span>
         </RadioGroupItem>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
+import { delivered } from "@/lib/delivered";
 import { compact } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { statusLabel } from "@/lib/task-meta";
@@ -86,7 +87,9 @@ async function restoreShipped() {
   if (await store.replace("workflow-definitions", cloneControlPlaneValue(shipped)))
     selected.value = shipped.definitions[0]?.id ?? "";
 }
-const rate = (merged = 0, total = 0) => (total ? merged / total : 0);
+// The share of a workflow's runs whose work is finished: merged, or ended
+// with nothing to merge (a no-change build, a no-code triage -- `completed`).
+const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 0);
 </script>
 
 <template>
@@ -116,9 +119,9 @@ const rate = (merged = 0, total = 0) => (total ? merged / total : 0);
             <span class="mt-1.5 flex items-center gap-2 text-xs text-fg-subtle">
               <span class="w-20 shrink-0">{{ row.runs || 0 }} runs</span>
               <span class="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
-                <span class="block h-full rounded-full bg-primary" :style="{ width: `${rate(row.merged, row.runs) * 100}%` }" />
+                <span class="block h-full rounded-full bg-primary" :style="{ width: `${rate(delivered(row), row.runs) * 100}%` }" />
               </span>
-              <span class="w-16 shrink-0 text-right font-mono">{{ row.merged || 0 }} of {{ row.runs || 0 }}</span>
+              <span class="w-16 shrink-0 text-right font-mono">{{ delivered(row) }} of {{ row.runs || 0 }}</span>
             </span>
           </button>
         </li>
