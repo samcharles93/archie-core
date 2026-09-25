@@ -139,3 +139,24 @@ func TestKitContainerFailingInstallHookIsRemoved(t *testing.T) {
 		t.Fatalf("a failed Kit start left %d container(s) behind", len(list.Items))
 	}
 }
+
+func TestKitContainerEndsTheInstallPhaseBetweenInstallAndStartup(t *testing.T) {
+	cli := kitClient(t)
+	s := kitSpec(t, kit.Hook{Argv: []string{"sh", "-c", "touch /tmp/installed"}, User: "0"})
+	var containerName string
+	var sawInstalled, sawStartup bool
+	s.InstallDone = func() {
+		containerName = s.Name
+		code, _, err := ExecIn(context.WithoutCancel(t.Context()), cli, containerName, "0", nil, []string{"test", "-e", "/tmp/installed"})
+		sawInstalled = err == nil && code == 0
+		code, _, err = ExecIn(context.WithoutCancel(t.Context()), cli, containerName, "0", nil, []string{"test", "-e", "/tmp/startup-uid"})
+		sawStartup = err == nil && code == 0
+	}
+	startKit(t, cli, s)
+	if containerName == "" {
+		t.Fatal("InstallDone was never called")
+	}
+	if !sawInstalled || sawStartup {
+		t.Fatalf("InstallDone ran with install done=%v and startup done=%v; want after install, before startup", sawInstalled, sawStartup)
+	}
+}

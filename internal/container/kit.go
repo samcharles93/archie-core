@@ -32,6 +32,10 @@ type KitSpec struct {
 	Binds     []string
 	Labels    map[string]string
 	Launch    kit.Launch
+	// InstallDone runs after the install hooks and before anything else, so
+	// the caller can end the install phase: the egress session moves to its
+	// runtime policy and install-phase credentials stop resolving.
+	InstallDone func()
 }
 
 // StartKit creates and starts a Kit container, then brings it to the state
@@ -78,6 +82,9 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 		if err := runHook(ctx, cli, created.ID, h); err != nil {
 			return fail(fmt.Errorf("install hook %d: %w", i+1, err))
 		}
+	}
+	if s.InstallDone != nil {
+		s.InstallDone()
 	}
 	for _, f := range s.Launch.Files {
 		if err := writeKitFile(ctx, cli, created.ID, s.Launch.Harness.User, f.Path, f.Content, f.Mode, f.Overwrite); err != nil {
