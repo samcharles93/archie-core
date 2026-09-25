@@ -132,6 +132,14 @@ A harness run is one `agent` StepExecution. Subagents the harness spawns
 internally are not recorded as children. Their usage is included in the
 step's `tokens_used` when the adapter reports it.
 
+## Agents never hold a harness
+
+An Agent reaches a harness only by invoking a Workflow whose stage names it.
+No Agent tool, chat tool or capability exposes a harness, its home or its
+credential. The stage boundary is what carries the container, the git and
+path checks, the gate and the budget; a harness outside a stage has none of
+them.
+
 ## Out of scope
 
 - Chat through a harness. The gateway chat loop stays on the built-in
