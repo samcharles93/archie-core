@@ -29,7 +29,7 @@ function glyph(visible: boolean): string {
 <template>
   <button
     type="button"
-    class="relative z-10 grid size-14 cursor-pointer place-items-center rounded-full bg-linear-to-br from-primary to-[var(--brand-alt)] text-primary-foreground shadow-[var(--shadow-md)] transition-[transform,box-shadow] duration-[140ms] hover:-translate-y-px hover:shadow-[0_12px_34px_var(--primary-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:translate-y-0"
+    class="relative z-10 grid size-14 cursor-pointer place-items-center rounded-full border border-border-strong bg-secondary text-primary shadow-[var(--shadow-md)] transition-transform duration-[140ms] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:translate-y-0"
     :aria-label="open ? 'Close chat' : 'Chat with Archie'"
     :title="open ? 'Close chat' : 'Chat with Archie'"
     :aria-expanded="open"
