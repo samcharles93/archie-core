@@ -91,3 +91,16 @@ func (r rules) allows(host string, port int) bool {
 	}
 	return false
 }
+
+// namesIP reports whether an allow entry names ip exactly. Only an explicit
+// IP entry opens an internal address; a wildcard or everything never does.
+func (r rules) namesIP(ip net.IP) bool {
+	for _, p := range r.allow {
+		if !p.everything && p.suffix == "" {
+			if named := net.ParseIP(p.host); named != nil && named.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
