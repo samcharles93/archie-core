@@ -28,6 +28,7 @@ commit) echo x > a.txt; git add a.txt; git -c user.email=a@b.c -c user.name=a co
 config) git config remote.origin.url https://attacker.invalid/repo.git ;;
 protected) echo broken >> widget_test.go ;;
 sleep) sleep 30 & echo $! > "$FAKE_LOG.child"; wait ;;
+env) env > "$FAKE_LOG.env" ;;
 fix-on-resume) if [ -f .attempted ]; then echo ok > fixed.txt; else touch .attempted; fi ;;
 esac
 echo "session=S123"
@@ -91,13 +92,12 @@ func newFixture(t *testing.T, scenario string) *fixture {
 		t.Fatal(err)
 	}
 	log := filepath.Join(t.TempDir(), "invocations")
-	t.Setenv("FAKE_SCENARIO", scenario)
-	t.Setenv("FAKE_LOG", log)
 	return &fixture{workspace: ws, log: log, req: Request{
 		Version: ProtocolVersion, TaskID: 1, Attempt: 1, Stage: "implement", Model: "harness",
 		Mission: "Write the notes file.",
 		Budget:  Budget{WallClock: 20 * time.Second},
 		Harness: &HarnessSpec{
+			Env:    []string{"PATH=" + os.Getenv("PATH"), "FAKE_SCENARIO=" + scenario, "FAKE_LOG=" + log},
 			Launch: []string{"/bin/sh", bin},
 			Prompt: []string{"-p", "{{.Prompt}}"},
 			Resume: []string{"--resume", "{{.SessionID}}"},
@@ -285,5 +285,62 @@ func assertChildDead(t *testing.T, pidFile string) {
 			t.Fatalf("harness child %d outlived the step", pid)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestHarnessNeverInheritsTheWorkerEnvironment(t *testing.T) {
+	f := newFixture(t, "env")
+	// The fake's own variables are in the worker's environment too, so an
+	// inherited environment would run the fake fully and expose the leak.
+	t.Setenv("FAKE_SCENARIO", "env")
+	t.Setenv("FAKE_LOG", f.log)
+	t.Setenv("STATE_STORE_TOKEN", "worker-secret")
+	t.Setenv("NATS_TOKEN", "worker-secret")
+	f.req.Harness.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"FAKE_SCENARIO=env", "FAKE_LOG=" + f.log,
+		"HTTPS_PROXY=http://archie:token@archie-egress:3128",
+	}
+	res, _ := f.run(t, t.Context())
+	if res.Status != StatusPassed {
+		t.Fatalf("status %q (%s)", res.Status, res.Detail)
+	}
+	raw, err := os.ReadFile(f.log + ".env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := string(raw)
+	if strings.Contains(env, "worker-secret") {
+		t.Fatalf("the harness saw the worker's credentials:\n%s", env)
+	}
+	if !strings.Contains(env, "HTTPS_PROXY=http://archie:token@archie-egress:3128") {
+		t.Fatalf("the harness did not get its declared environment:\n%s", env)
+	}
+}
+
+func TestHarnessUser(t *testing.T) {
+	tests := []struct {
+		user    string
+		uid     uint32
+		gid     uint32
+		wantErr bool
+	}{
+		{"1000", 1000, 1000, false},
+		{"1000:1001", 1000, 1001, false},
+		{"0", 0, 0, true},
+		{"root", 0, 0, true},
+		{"not-a-user-anywhere", 0, 0, true},
+	}
+	for _, tt := range tests {
+		cred, err := harnessCredential(tt.user)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("harnessCredential(%q) = %+v, want an error", tt.user, cred)
+			}
+			continue
+		}
+		if err != nil || cred.Uid != tt.uid || cred.Gid != tt.gid {
+			t.Errorf("harnessCredential(%q) = %+v, %v; want %d:%d", tt.user, cred, err, tt.uid, tt.gid)
+		}
 	}
 }

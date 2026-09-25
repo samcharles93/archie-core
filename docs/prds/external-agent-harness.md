@@ -151,8 +151,8 @@ carries.
   on every interface, are unreachable from it by any address.
 - **Relay.** One relay container, `archie-agent relay`, sits on the sandbox
   networks under a fixed alias and on the host-reachable network. It
-  forwards every connection to the proxy and can reach nothing else. It
-  holds no secrets.
+  forwards three fixed ports, to the proxy, NATS and the State Store, and can
+  reach nothing else. It holds no secrets.
 - **Proxy.** The proxy runs inside `archied`, listening on the host gateway
   of the host-reachable network. It terminates TLS with a per-daemon CA
   installed into the container at create, identifies the container by a
@@ -163,14 +163,32 @@ carries.
 
 ## Container layout
 
-- The task worktree is mounted at the Kit's workspace directory. Nothing else
-  from the host is mounted, except the read-only skills store.
-- Archie mounts its own `archie-agent` binary read-only, so published Kits
-  need not contain it. `archie-agent` drives the harness as a subprocess and
-  serves `archie-agent mcp`.
-- `volume@1` paths persist for the life of the WorkflowExecution, which
-  covers session resume across gate iterations and retries. They are not
-  shared between executions.
+A Kit task runs in one container, from the Kit composition's image, on the
+task's sandbox network. The worker and every harness invocation share it;
+they are separated by user, not by container, so a run's cost scales with
+the run and not with how many agents it fans out to.
+
+- **Worker.** Archie mounts its own `archie-agent` binary read-only and runs
+  it as the container's entrypoint, as root. It holds the task's NATS and
+  State Store credentials in its own environment and in root-only files,
+  runs the workflow, and serves `archie-agent mcp`. The Kit image's
+  entrypoint is not PID 1.
+- **Harness.** Every invocation runs as the Kit's user (the image's `User`,
+  default uid 1000) with an explicit environment: the Kit's variables, the
+  proxy environment and the credential sentinels, and nothing inherited from
+  the worker. That user cannot read the worker's environment or files, or
+  trace it. Sibling invocations in one run share the user and the worktree.
+- **Hooks.** `lifecycle@1` install and startup hooks run as the user each
+  declares, before the worker accepts work.
+- **Mounts.** The task worktree at the Kit's workspace directory, owned by the
+  Kit's user, and the read-only skills store. Nothing else from the host.
+- **Network.** The relay forwards three fixed ports on the sandbox network:
+  the egress proxy, NATS and the State Store. The worker reaches NATS and the
+  State Store with its credentials; a harness can open those ports but holds
+  no credential either accepts.
+- **Volumes.** `volume@1` paths persist for the life of the
+  WorkflowExecution, which covers session resume across gate iterations and
+  retries. They are not shared between executions.
 
 ## Archie tools inside the harness
 
@@ -262,6 +280,9 @@ of them.
 - Two tasks sharing an OAuth binding with `max_concurrent = 1` run one at a
   time; the second waits as `pending`.
 - Stopping a run kills the harness process and removes the container.
+- A harness invocation cannot read the worker's NATS or State Store
+  credential from its environment, its files or `/proc`.
+- A run fanning out to many agent invocations uses one container.
 - A Kit profile in org A cannot be selected, and its binding cannot be
   resolved, by a workflow in org B.
 - A harness run whose identity is not granted a Kit's required credential is

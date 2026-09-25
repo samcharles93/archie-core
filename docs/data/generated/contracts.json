@@ -261,6 +261,13 @@
           },
           "type": "array"
         },
+        "env": {
+          "description": "Env is the invocation's entire environment. Nothing is inherited from\nthe worker, whose environment carries its credentials.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "launch": {
           "items": {
             "type": "string"
@@ -278,6 +285,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "user": {
+          "description": "User is the Kit's user, a name or \"uid[:gid]\", that every invocation\nruns as. It is never root: the worker's credentials live in the same\ncontainer, readable only by the worker's user.",
+          "type": "string"
         }
       },
       "required": [

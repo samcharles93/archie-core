@@ -98,6 +98,13 @@ type Request struct {
 // (image entrypoint and cmd) and the agent-sessions@1 verb tails appended
 // to it. Prompt must carry {{.Prompt}}; Resume, when set, {{.SessionID}}.
 type HarnessSpec struct {
+	// User is the Kit's user, a name or "uid[:gid]", that every invocation
+	// runs as. It is never root: the worker's credentials live in the same
+	// container, readable only by the worker's user.
+	User string `json:"user,omitempty"`
+	// Env is the invocation's entire environment. Nothing is inherited from
+	// the worker, whose environment carries its credentials.
+	Env      []string `json:"env,omitempty"`
 	Launch   []string `json:"launch"`
 	Prompt   []string `json:"prompt"`
 	Resume   []string `json:"resume,omitempty"`

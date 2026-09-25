@@ -87,7 +87,7 @@ func (r *HarnessRunner) Run(ctx context.Context, workspace string, req Request, 
 	for {
 		res.Iterations++
 		out := r.output()
-		exitErr := invoke(runCtx, workspace, harnessArgv(req.Harness, verb, prompt, session), out, report)
+		exitErr := invoke(runCtx, workspace, req.Harness, harnessArgv(req.Harness, verb, prompt, session), out, report)
 		if id := out.SessionID(); id != "" {
 			session = id
 		}
@@ -197,11 +197,16 @@ func resumeVerb(h *HarnessSpec, sessionID string) []string {
 // invoke runs one harness invocation in its own process group, feeding
 // stdout to out line by line. Cancelling ctx kills the whole group, so a
 // CLI's children cannot outlive the step.
-func invoke(ctx context.Context, workspace string, argv []string, out HarnessOutput, report ToolCallReporter) error {
+func invoke(ctx context.Context, workspace string, h *HarnessSpec, argv []string, out HarnessOutput, report ToolCallReporter) error {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
 	cmd.WaitDelay = killGrace
+	// A nil Env would inherit the worker's environment and its credentials.
+	cmd.Env = append([]string{}, h.Env...)
 	setProcessGroup(cmd)
+	if err := runAsHarnessUser(cmd, h.User); err != nil {
+		return err
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
