@@ -397,10 +397,7 @@ func SummarizeFiles(files []FileChange) DiffStats {
 		}
 	}
 
-	codeFiles := stats.TotalFiles - stats.TestFilesChanged
-	if codeFiles < 1 {
-		codeFiles = 1
-	}
+	codeFiles := max(stats.TotalFiles-stats.TestFilesChanged, 1)
 	stats.TestToCodeRatio = float64(stats.TestFilesChanged) / float64(codeFiles)
 	return stats
 }

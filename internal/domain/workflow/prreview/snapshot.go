@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -118,10 +119,8 @@ func readBounded(fsys fs.FS, file string) ([]byte, error) {
 // appendUnique adds value to values unless it is already there, which keeps the
 // order each caller built.
 func appendUnique(values []string, value string) []string {
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
+	if slices.Contains(values, value) {
+		return values
 	}
 	return append(values, value)
 }
