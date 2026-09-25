@@ -53,6 +53,7 @@ func TestCommandBoundary(t *testing.T) {
 		"run":                    true,
 		"runCommand":             true,
 		"natsConnectionSettings": true,
+		"runRelay":               true,
 	}
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)

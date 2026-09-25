@@ -26,6 +26,9 @@ func run() int {
 }
 
 func runCommand(args []string, getenv func(string) string, stderr io.Writer, runWorker workerRunner) int {
+	if len(args) > 0 && args[0] == "relay" {
+		return runRelay(args[1:], stderr, agentworker.RunRelay)
+	}
 	flags := flag.NewFlagSet("archie-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	natsURLFlag := flags.String("nats-url", "", "NATS server URL (defaults to NATS_URL)")
@@ -80,4 +83,33 @@ func natsConnectionSettings(flagURL string, getenv func(string) string) (url, to
 		url = getenv("NATS_URL")
 	}
 	return url, getenv("NATS_TOKEN")
+}
+
+type relayServer func(ctx context.Context, listen, target string) error
+
+// runRelay is the sandbox egress relay: the container on both a sandbox's
+// isolated network and the host-reachable one, forwarding to the proxy.
+func runRelay(args []string, stderr io.Writer, serve relayServer) int {
+	flags := flag.NewFlagSet("archie-agent relay", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	listen := flags.String("listen", ":3128", "address sandbox containers connect to")
+	target := flags.String("to", "", "the egress proxy address every connection is forwarded to")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if *target == "" {
+		fmt.Fprintln(stderr, "error: -to is required")
+		flags.Usage()
+		return 1
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serve(ctx, *listen, *target); err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	return 0
 }
