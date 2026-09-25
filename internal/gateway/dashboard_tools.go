@@ -41,6 +41,7 @@ var dashboardPages = []DashboardPage{
 	{Path: "/settings/models", Label: "Models", Description: "Model roles and the providers backing them."},
 	{Path: "/settings/repositories", Label: "Repositories", Description: "Repositories Archie watches, and their per-repo gate overrides."},
 	{Path: "/settings/identities", Label: "Identities", Description: "Persistent actors and lifecycle."},
+	{Path: "/settings/scheduling-policy", Label: "Scheduling policy", Description: "How Archie finds work and labels its state on the forge."},
 	{Path: "/settings/advanced", Label: "Advanced", Description: "Identity, storage, sandboxing, and dangerous actions."},
 }
 

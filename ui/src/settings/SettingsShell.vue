@@ -62,7 +62,10 @@ onBeforeUnmount(() => {
     </nav>
     <div class="min-w-0 max-w-[960px] flex-1">
       <RestartPendingBanner />
-      <slot />
+      <!-- Room below the last setting, so it can be scrolled up to eye level. -->
+      <div class="pb-[40vh]">
+        <slot />
+      </div>
       <SettingsSaveBar />
     </div>
   </div>

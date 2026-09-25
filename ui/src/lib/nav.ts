@@ -31,6 +31,7 @@ const settings: NavSpec = {
         "/settings/models",
         "/settings/skills",
         "/settings/curators",
+        "/settings/scheduling-policy",
         "/settings/advanced",
       ],
     },

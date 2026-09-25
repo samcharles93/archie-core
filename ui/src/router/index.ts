@@ -5,6 +5,7 @@ import CuratorsPage from "@/curators/CuratorsPage.vue";
 import DashboardPage from "@/dashboard/DashboardPage.vue";
 import EventsPage from "@/events/EventsPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
+import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -189,6 +190,18 @@ const routes = [
       label: "Channels",
       description: "Inbound chat and notification channels, and their state.",
       section: "channels",
+    },
+  },
+  {
+    path: "/settings/scheduling-policy",
+    name: "settings-scheduling-policy",
+    component: SchedulingPolicyPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Scheduling policy",
+      description: "How Archie finds work and labels its state on the forge.",
+      section: "settings",
     },
   },
   {

@@ -159,17 +159,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export type ControlPlanePage =
-  "tasks" | "models" | "repositories" | "channels" | "advanced" | "workflows";
+  | "tasks"
+  | "models"
+  | "repositories"
+  | "channels"
+  | "scheduling"
+  | "advanced"
+  | "workflows";
 
 const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   tasks: ["workflow-execution-settings"],
   models: ["provider-settings", "model-role-assignments"],
   repositories: ["repository-policies"],
   channels: ["channel-settings"],
+  scheduling: ["scheduling-policy"],
   advanced: [
     "personas",
     "schedules",
-    "scheduling-policy",
     "tool-settings",
     "plugin-settings",
     "container-runtime-policies",
