@@ -13,8 +13,8 @@ import (
 
 func apiKey(service, phase string, required bool, name string, inject ...spec.Inject) spec.CredentialCapability {
 	return spec.CredentialCapability{
-		Credential: spec.Credential{Service: service, Phase: phase, APIKey: &spec.APIKey{Name: name, ProxyManaged: true, Inject: inject}},
-		Required:   required,
+		Service: service, Phase: phase, APIKey: &spec.APIKey{Name: name, ProxyManaged: true, Inject: inject},
+		Required: required,
 	}
 }
 
