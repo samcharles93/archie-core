@@ -35,10 +35,12 @@ var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 // its Kit's network policy. It starts in the install phase; the runner moves
 // it to runtime before the workload's entrypoint starts.
 type Session struct {
-	token   string
-	install rules
-	runtime rules
-	atRun   atomic.Bool
+	token      string
+	run        string
+	install    rules
+	runtime    rules
+	injections []injection
+	atRun      atomic.Bool
 }
 
 // Token is the secret the container presents as its proxy password.
@@ -61,6 +63,17 @@ func (s *Session) rules() rules {
 type ProxyOptions struct {
 	UpstreamRoots *x509.CertPool
 	Dial          func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Resolver supplies credentials for injection. Without one, a request
+	// that needs a required credential is refused.
+	Resolver Resolver
+}
+
+// SessionOptions describe one container's run: the run credential it acts
+// under, and its Kit's network policy and credential requests.
+type SessionOptions struct {
+	Run         string
+	Network     *spec.PhasedNetwork
+	Credentials []spec.CredentialCapability
 }
 
 // Proxy is the egress proxy sandbox containers reach through their relay.
@@ -71,9 +84,7 @@ type Proxy struct {
 	ca        *CA
 	dial      func(ctx context.Context, network, addr string) (net.Conn, error)
 	transport *http.Transport
-
-	// rewrite runs on every forwarded request after policy has admitted it.
-	rewrite func(*Session, *http.Request) error
+	resolver  Resolver
 
 	mu       sync.RWMutex
 	sessions map[string]*Session
@@ -82,7 +93,7 @@ type Proxy struct {
 type sessionKey struct{}
 
 func NewProxy(ca *CA, opts ProxyOptions) *Proxy {
-	p := &Proxy{ca: ca, dial: opts.Dial, sessions: map[string]*Session{}}
+	p := &Proxy{ca: ca, dial: opts.Dial, resolver: opts.Resolver, sessions: map[string]*Session{}}
 	p.transport = &http.Transport{
 		DialContext:         p.dialUpstream,
 		TLSClientConfig:     &tls.Config{RootCAs: opts.UpstreamRoots, MinVersion: tls.VersionTLS12},
@@ -92,16 +103,16 @@ func NewProxy(ca *CA, opts ProxyOptions) *Proxy {
 	return p
 }
 
-// Register opens a session for one container under its Kit's policy. A nil
-// policy allows no egress in either phase.
-func (p *Proxy) Register(policy *spec.PhasedNetwork) (*Session, error) {
+// Register opens a session for one container. A nil network policy allows
+// no egress in either phase.
+func (p *Proxy) Register(opts SessionOptions) (*Session, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, err
 	}
-	s := &Session{token: hex.EncodeToString(raw)}
-	if policy != nil {
-		s.install, s.runtime = compileRules(policy.Install), compileRules(policy.Runtime)
+	s := &Session{token: hex.EncodeToString(raw), run: opts.Run, injections: compileInjections(opts.Credentials)}
+	if opts.Network != nil {
+		s.install, s.runtime = compileRules(opts.Network.Install), compileRules(opts.Network.Runtime)
 	}
 	p.mu.Lock()
 	p.sessions[s.token] = s
@@ -222,13 +233,11 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request, s *Session)
 
 func (p *Proxy) forward(ctx context.Context, w http.ResponseWriter, r *http.Request, s *Session, scheme, host string, port int) {
 	target := net.JoinHostPort(host, strconv.Itoa(port))
-	// The hook runs before anything is sent, so a failed rewrite (a missing
-	// credential binding, say) never reaches upstream half-applied.
-	if p.rewrite != nil {
-		if err := p.rewrite(s, r); err != nil {
-			http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)
-			return
-		}
+	// Injection happens before anything is sent, so a credential that
+	// cannot be resolved never reaches upstream half-applied.
+	if err := p.inject(ctx, s, r, host, port); err != nil {
+		http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)
+		return
 	}
 	rp := &httputil.ReverseProxy{
 		Transport:     p.transport,

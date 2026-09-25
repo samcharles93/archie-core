@@ -10,31 +10,37 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
-
-	"github.com/docker/sandbox-kit-spec/v3/spec"
 )
 
 // harness wires a proxy to local upstreams: the proxy's dialer maps the
 // public names a policy uses onto httptest listeners, so the tests exercise
 // the real CONNECT, TLS termination and forwarding paths hermetically.
 type harness struct {
-	proxy    *Proxy
-	server   *httptest.Server
-	upstream *httptest.Server
-	plain    *httptest.Server
-	hits     atomic.Int32
-	lastAuth atomic.Value
-	caPool   *x509.CertPool
+	proxy       *Proxy
+	server      *httptest.Server
+	upstream    *httptest.Server
+	plain       *httptest.Server
+	hits        atomic.Int32
+	lastAuth    atomic.Value
+	lastInstall atomic.Value
+	caPool      *x509.CertPool
+
+	mu         sync.Mutex
+	secrets    map[string]string
+	resolved   []string
+	resolveErr error
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	h := &harness{}
+	h := &harness{secrets: map[string]string{}}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.hits.Add(1)
 		h.lastAuth.Store(r.Header.Get("Authorization"))
+		h.lastInstall.Store(r.Header.Get("X-Install"))
 		_, _ = io.WriteString(w, "upstream:"+r.Host+r.URL.Path)
 	})
 	h.upstream = httptest.NewTLSServer(handler)
@@ -56,6 +62,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h.proxy = NewProxy(ca, ProxyOptions{
 		UpstreamRoots: upstreamRoots,
+		Resolver:      ResolverFunc(h.resolve),
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			target, ok := routes[addr]
 			if !ok {
@@ -74,14 +81,7 @@ func newHarness(t *testing.T) *harness {
 
 func (h *harness) register(t *testing.T) *Session {
 	t.Helper()
-	s, err := h.proxy.Register(&spec.PhasedNetwork{
-		Install: &spec.NetworkRules{Allow: []string{"install.example.com"}},
-		Runtime: &spec.NetworkRules{Allow: []string{"api.example.com:443", "plain.example.com:80"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return h.registerWith(t)
 }
 
 func (h *harness) client(token string) *http.Client {
@@ -220,27 +220,6 @@ func TestProxyRefusesMismatchedSNI(t *testing.T) {
 	}
 	if h.hits.Load() != 0 {
 		t.Fatal("mismatched SNI reached upstream")
-	}
-}
-
-func TestProxyAppliesTheRewriteHook(t *testing.T) {
-	h := newHarness(t)
-	var seen atomic.Pointer[Session]
-	h.proxy.rewrite = func(s *Session, r *http.Request) error {
-		seen.Store(s)
-		r.Header.Set("Authorization", "Bearer injected")
-		return nil
-	}
-	s := h.register(t)
-	s.EnterRuntime()
-	if _, _, err := get(t, h.client(s.Token()), "https://api.example.com/"); err != nil {
-		t.Fatal(err)
-	}
-	if got := h.lastAuth.Load(); got != "Bearer injected" {
-		t.Fatalf("upstream Authorization %v, want the rewritten value", got)
-	}
-	if seen.Load() != s {
-		t.Fatal("rewrite hook did not receive the request's session")
 	}
 }
 

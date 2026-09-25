@@ -201,7 +201,7 @@ func TestSandboxNetworkReachesOnlyTheProxy(t *testing.T) {
 	// isolated sandbox network leaves it unassigned.
 	sandboxGateway := sandboxNet.Network.IPAM.Config[0].Subnet.Masked().Addr().Next().String()
 
-	session, err := proxy.Register(&spec.PhasedNetwork{Runtime: &spec.NetworkRules{Allow: []string{"api.example.com:443"}}})
+	session, err := proxy.Register(SessionOptions{Run: "integration", Network: &spec.PhasedNetwork{Runtime: &spec.NetworkRules{Allow: []string{"api.example.com:443"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
