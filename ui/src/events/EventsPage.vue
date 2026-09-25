@@ -91,9 +91,6 @@ const steps = [
         <StatusPill v-else>Capture off</StatusPill>
       </template>
     </PageHeader>
-    <p class="-mt-4 mb-6 text-sm text-fg-muted">
-      Webhooks come in, get mapped to event types, and bindings turn them into work.
-    </p>
     <ol class="mb-6 grid grid-cols-1 overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3" aria-label="How events become work">
       <li v-for="(step, i) in steps" :key="step.tab" class="relative border-border not-last:border-b sm:not-last:border-r sm:not-last:border-b-0">
         <button
