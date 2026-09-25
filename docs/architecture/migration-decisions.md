@@ -410,7 +410,8 @@ The migration must decide:
 
 - Workflow definition and version persistence;
 - the smallest accepted-work-request contract consumed from Work Intake;
-- the enforced WorkflowExecution state machine;
+- the enforced WorkflowExecution state machine (proposed in
+  `docs/prds/execution-tree-state-machine.md`);
 - atomic state and domain-event persistence;
 - migration of existing task rows and transition history;
 - disposition of current skill, Yaegi, and stage-plugin implementations;
