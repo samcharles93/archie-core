@@ -26,6 +26,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/taskstate"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -261,9 +262,9 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 				t.Fatalf("ClaimNext: (%v, %v)", task, err)
 			}
 
-			if err := st.Transition(context.Background(), task.ID, workflow.StatusRunning, tt.taskStatus, "setup"); err != nil {
-				t.Fatalf("Transition: %v", err)
-			}
+			// Seeded along the table's legal edges: a merge and a rejection
+			// are both observed on an open pull request.
+			taskstatetest.Seed(t.Context(), t, st, task.ID, task.Status, tt.taskStatus, "setup")
 			if tt.prNumber > 0 {
 				task.PRNumber = tt.prNumber
 				if err := st.Update(context.Background(), task); err != nil {
@@ -435,9 +436,7 @@ func TestParkRunningTaskGuardedAndLogging(t *testing.T) {
 			}
 
 			if tt.workerStatus != "" {
-				if err := s.Transition(ctx, task.ID, workflow.StatusRunning, tt.workerStatus, "worker completion"); err != nil {
-					t.Fatalf("Transition to workerStatus: %v", err)
-				}
+				taskstatetest.Seed(ctx, t, s, task.ID, task.Status, tt.workerStatus, "worker completion")
 			}
 
 			callCtx := ctx

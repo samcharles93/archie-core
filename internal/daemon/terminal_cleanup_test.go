@@ -27,6 +27,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -230,11 +231,9 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 				t.Fatalf("ClaimNext: (%v, %v)", claimed, err)
 			}
 
-			if tt.setupStatus != workflow.StatusRunning {
-				if err := st.Transition(ctx, claimed.ID, workflow.StatusRunning, tt.setupStatus, "status update"); err != nil {
-					t.Fatalf("Transition to %s: %v", tt.setupStatus, err)
-				}
-			}
+			// Seeded along the table's legal edges: a merged task reached
+			// `merged` through an open pull request, never from running.
+			taskstatetest.Seed(ctx, t, st, claimed.ID, claimed.Status, tt.setupStatus, "status update")
 
 			if tt.prNumber > 0 {
 				claimed.PRNumber = tt.prNumber
@@ -374,9 +373,21 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 			targetTrees := d.treesFor(task)
 			workDir := targetTrees.Dir(task.Owner, task.Repo, task.IssueNumber)
 
+			// The route the worker's completion report takes to its status,
+			// computed here because t.Fatalf is not callable from the
+			// subscription goroutine below.
+			route, err := taskstatetest.Path(workflow.StatusRunning, tt.workerStatus)
+			if err != nil {
+				t.Fatalf("no legal route to %s: %v", tt.workerStatus, err)
+			}
+
 			sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 				// Transition task in store as archie-agent would do over the gRPC State Store
-				_ = s.Transition(ctx, task.ID, workflow.StatusRunning, tt.workerStatus, "worker completion")
+				at := workflow.StatusRunning
+				for _, to := range route {
+					_ = s.Transition(ctx, task.ID, at, to, "worker completion")
+					at = to
+				}
 				resp, _ := json.Marshal(taskrun.Response{
 					Status: tt.workerStatus,
 				})

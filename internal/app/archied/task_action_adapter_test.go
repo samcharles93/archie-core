@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/taskstate"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 )
 
 // testTaskActor formats taskactions.Service's result the same way the real
@@ -55,9 +56,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusParked, "needs help"); err != nil {
-		t.Fatal(err)
-	}
+	taskstatetest.Seed(ctx, t, st, task.ID, workflow.StatusQueued, workflow.StatusParked, "needs help")
 
 	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
@@ -151,11 +150,7 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.initialStatus != workflow.StatusQueued {
-				if err := st.Transition(ctx, task.ID, workflow.StatusQueued, tc.initialStatus, "setup"); err != nil {
-					t.Fatal(err)
-				}
-			}
+			taskstatetest.Seed(ctx, t, st, task.ID, workflow.StatusQueued, tc.initialStatus, "setup")
 
 			_, err = adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, task.ID, tc.attemptAction)
 			if err == nil {
@@ -260,11 +255,7 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.initialStatus != workflow.StatusQueued {
-				if err := st.Transition(ctx, task.ID, workflow.StatusQueued, tc.initialStatus, "setup"); err != nil {
-					t.Fatal(err)
-				}
-			}
+			taskstatetest.Seed(ctx, t, st, task.ID, workflow.StatusQueued, tc.initialStatus, "setup")
 
 			result, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, task.ID, tc.action)
 			if err != nil {

@@ -23,6 +23,7 @@ import (
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/taskstate"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 )
 
 // recordingCloser captures the forge issue-closure calls an action makes.
@@ -152,9 +153,7 @@ func actionServer(t *testing.T, status, parkReason string) (*Server, *workflow.T
 	if err != nil || task == nil {
 		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
 	}
-	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusRunning, status, parkReason); err != nil {
-		t.Fatal(err)
-	}
+	taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusRunning, status, parkReason)
 
 	closer := &recordingCloser{}
 	bus := events.NewBus()
@@ -238,9 +237,7 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 				if err := srv.Store.RetryTask(ctx, task.ID, workflow.StatusParked, ""); err != nil {
 					t.Fatal(err)
 				}
-				if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusParked, "re-parked for test fixture"); err != nil {
-					t.Fatal(err)
-				}
+				taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, workflow.StatusParked, "re-parked for test fixture")
 			}
 
 			w := postAction(t, srv, task.ID, "retry")
@@ -564,11 +561,7 @@ func TestTaskListExposesLifecycleActions(t *testing.T) {
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue(%s) = (%+v, %v)", status, task, err)
 		}
-		if status != workflow.StatusQueued {
-			if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, status, "test"); err != nil {
-				t.Fatal(err)
-			}
-		}
+		taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, status, "test")
 		number++
 	}
 
@@ -621,11 +614,7 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 			if err != nil || task == nil {
 				t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 			}
-			if tc.from != workflow.StatusQueued {
-				if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, tc.from, "test"); err != nil {
-					t.Fatal(err)
-				}
-			}
+			taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, tc.from, "test")
 			closer := &recordingCloser{}
 			operatorActions(t, srv).issues = closer
 			bus := events.NewBus()
@@ -668,9 +657,7 @@ func TestArchiveRemovesOnlyOneTerminalTask(t *testing.T) {
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 		}
-		if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
-			t.Fatal(err)
-		}
+		taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done")
 	}
 	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
 	bus := events.NewBus()
@@ -723,9 +710,7 @@ func TestArchiveRemovesTheTaskLogDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
-	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
-		t.Fatal(err)
-	}
+	taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done")
 
 	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
@@ -754,9 +739,7 @@ func TestArchiveAuditFailurePreservesTaskAndFailsRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
-	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
-		t.Fatal(err)
-	}
+	taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done")
 	base := srv.Store
 	srv.Store = &archiveFailingStore{TaskStore: base, err: errors.New("audit unavailable")}
 

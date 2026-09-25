@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -51,9 +52,7 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := st.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await"); err != nil {
-				t.Fatal(err)
-			}
+			taskstatetest.Seed(ctx, t, st, task.ID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await")
 
 			if tc.viaChat {
 				runChatAction(t, ctx, st, tc.action, task.ID)

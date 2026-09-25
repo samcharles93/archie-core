@@ -82,6 +82,16 @@ func TestQueuedCannotReachMerged(t *testing.T) {
 	}
 }
 
+// The other pair written before the table existed, by every fixture that
+// needed a finished task: a merge is observed on an open pull request, never
+// straight from running. Named here so the next fixture that reaches for it is
+// a failure in the table's own test rather than a surprise at the store.
+func TestRunningCannotReachMerged(t *testing.T) {
+	if CanTransition(Running, Merged) {
+		t.Error("CanTransition(running, merged) = true; a merge is only observed on an open pull request")
+	}
+}
+
 // An unknown status must be illegal in both positions. A status written by a
 // newer version, or a typo, must not be able to start or end a transition.
 func TestUnknownStatusIsNeverATransition(t *testing.T) {

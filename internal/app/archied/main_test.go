@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -536,9 +537,7 @@ func TestManualRequeueTaskUsesPersistedStatus(t *testing.T) {
 			if err != nil || task == nil {
 				t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 			}
-			if err := st.Transition(t.Context(), task.ID, workflow.StatusQueued, status, ""); err != nil {
-				t.Fatal(err)
-			}
+			taskstatetest.Seed(t.Context(), t, st, task.ID, workflow.StatusQueued, status, "")
 			if err := manualRequeueTask(t.Context(), st, task.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -862,9 +861,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("spawned task = %+v", task)
 	}
 
-	if err := st.Transition(ctx, taskID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await approval"); err != nil {
-		t.Fatal(err)
-	}
+	taskstatetest.Seed(t.Context(), t, st, taskID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await approval")
 	task, err = st.TaskByID(ctx, taskID)
 	if err != nil || task == nil || task.Status != workflow.StatusWaitingHuman {
 		t.Fatalf("waiting task = (%+v, %v)", task, err)

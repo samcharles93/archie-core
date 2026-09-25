@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/taskstate"
+	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 )
 
 // TestWorkflowStatsCountsCompletedRuns pins the per-workflow count the
@@ -21,12 +22,9 @@ func TestWorkflowStatsCountsCompletedRuns(t *testing.T) {
 	merged := insertChatTask(t, q)
 	finish := func(id int64, to string) {
 		t.Helper()
-		if err := store.Transition(t.Context(), id, taskstate.Queued, taskstate.Running, ""); err != nil {
-			t.Fatalf("queued -> running: %v", err)
-		}
-		if err := store.Transition(t.Context(), id, taskstate.Running, to, ""); err != nil {
-			t.Fatalf("running -> %s: %v", to, err)
-		}
+		// Seeded along the table's edges: a merged task is merged on an open
+		// pull request, and the fixture used to write running -> merged.
+		taskstatetest.Seed(t.Context(), t, store, id, taskstate.Queued, to, "")
 	}
 	finish(finished.ID, taskstate.Completed)
 	finish(merged.ID, taskstate.Merged)
