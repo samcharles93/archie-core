@@ -14,7 +14,7 @@ const items = computed(() => settingsNav(hidden.value));
   <div class="flex gap-10 max-lg:flex-col max-lg:gap-4">
     <nav
       aria-label="Settings"
-      class="w-60 shrink-0 max-lg:-mx-4 max-lg:w-auto max-lg:overflow-x-auto max-lg:border-b max-lg:px-4"
+      class="w-60 shrink-0 max-lg:-mx-4 max-lg:w-auto max-lg:scroll-fade-x max-lg:overflow-x-auto max-lg:[scrollbar-width:none] max-lg:border-b max-lg:px-4"
     >
       <ul class="flex flex-col gap-0.5 lg:sticky lg:top-6 max-lg:flex-row max-lg:gap-1">
         <li v-for="(item, index) in items" :key="item.path" class="contents">
