@@ -110,3 +110,23 @@ func readCaptures(path string, specs []CaptureTool) (map[string][]json.RawMessag
 	}
 	return captures, scanner.Err()
 }
+
+// ServeCaptureFiles serves the capture tools listed in specPath, appending
+// accepted calls to capturesPath. The files are the ones prepareCaptures
+// writes, so this package owns their format end to end.
+func ServeCaptureFiles(ctx context.Context, specPath, capturesPath string, t mcp.Transport) error {
+	raw, err := os.ReadFile(specPath)
+	if err != nil {
+		return err
+	}
+	var specs []CaptureTool
+	if err := json.Unmarshal(raw, &specs); err != nil {
+		return fmt.Errorf("capture tool spec: %w", err)
+	}
+	sink, err := os.OpenFile(capturesPath, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	defer sink.Close()
+	return ServeCaptureMCP(ctx, specs, sink, t)
+}
