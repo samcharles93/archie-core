@@ -125,9 +125,13 @@ const rate = (merged = 0, total = 0) => (total ? merged / total : 0);
         </li>
       </ul>
 
-      <section class="min-w-0 rounded-lg border border-border bg-card px-5 py-4" aria-label="Workflow">
+      <section v-if="!selected" class="min-w-0 rounded-lg border border-border bg-card px-5 py-10 text-center" aria-label="Workflow">
+        <p class="font-medium">No workflows</p>
+        <p class="mt-1 text-sm text-fg-muted">Create one, or restore the shipped set.</p>
+      </section>
+      <section v-else class="min-w-0 rounded-lg border border-border bg-card px-5 py-4" aria-label="Workflow">
         <header class="mb-2 flex flex-wrap items-center gap-2">
-          <h2 class="font-mono text-[15px] font-medium">{{ selected || "No workflow" }}</h2>
+          <h2 class="font-mono text-[15px] font-medium">{{ selected }}</h2>
           <StatusPill v-if="current?.origin">{{ current.origin }}</StatusPill>
           <span v-if="current" class="ml-auto text-xs text-fg-subtle">{{ current.runs || 0 }} runs</span>
         </header>
