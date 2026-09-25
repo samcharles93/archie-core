@@ -77,7 +77,6 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <Button v-if="jobs?.length" size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">Work Archie starts on its own, on a timetable.</p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}
@@ -89,7 +88,6 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
           <CalendarClock class="size-5" aria-hidden="true" />
         </span>
         <p class="font-medium">No schedules yet</p>
-        <p class="mt-1 mb-4 text-sm text-fg-muted">A schedule starts a task on an interval, a cron line, or once.</p>
         <Button size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
       </div>
 
@@ -104,16 +102,16 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
           <span v-if="job.next_run" class="text-xs text-fg-subtle">Next run {{ new Date(job.next_run).toLocaleString() }}</span>
           <Button variant="ghost" size="icon" aria-label="Delete schedule" @click="jobs.splice(i, 1)"><Trash2 /></Button>
         </header>
-        <SettingRow label="ID" :for="`job-${i}-id`" hint="Unique. Runs are recorded against it.">
+        <SettingRow label="ID" :for="`job-${i}-id`">
           <Input :id="`job-${i}-id`" v-model="job.id" class="max-w-sm font-mono" :aria-invalid="!job.id.trim() || undefined" />
         </SettingRow>
-        <SettingRow label="Task title" :for="`job-${i}-title`" hint="The title of each task it starts. Empty uses the ID.">
+        <SettingRow label="Task title" :for="`job-${i}-title`" hint="Empty: the ID.">
           <Input :id="`job-${i}-title`" v-model="job.detail" class="max-w-md" />
         </SettingRow>
-        <SettingRow label="Instructions" :for="`job-${i}-text`" hint="What the task is asked to do.">
+        <SettingRow label="Instructions" :for="`job-${i}-text`">
           <Textarea :id="`job-${i}-text`" v-model="job.payload.text" :rows="3" />
         </SettingRow>
-        <SettingRow label="When" hint="An interval, a five-field cron line, or a single time.">
+        <SettingRow label="When">
           <div class="flex flex-wrap items-center gap-3">
             <SegmentedControl
               :model-value="whenKind(job)"
@@ -139,7 +137,7 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
             />
           </div>
         </SettingRow>
-        <SettingRow label="Overlap" hint="Sequential waits for the previous run to finish.">
+        <SettingRow label="Overlap">
           <SegmentedControl :model-value="job.pool ?? ''" label="Overlap" :options="pools" @update:model-value="(p: string) => (job.pool = p)" />
         </SettingRow>
       </section>

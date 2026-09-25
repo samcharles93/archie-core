@@ -33,21 +33,20 @@ const error = computed(() => store.stateFor(KIND).error);
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">Directories Archie loads extensions from at startup.</p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>
 
     <template v-if="dirs">
-      <SettingRow label="Plugin directory" for="pl-plugins" hint="Daemon plugins. Empty loads none.">
+      <SettingRow label="Plugin directory" for="pl-plugins">
         <Input id="pl-plugins" v-model="dirs.plugin_dir" class="max-w-md font-mono" />
       </SettingRow>
-      <SettingRow label="Module directory" for="pl-modules" hint="Workflow modules. Empty loads none.">
+      <SettingRow label="Module directory" for="pl-modules">
         <Input id="pl-modules" v-model="dirs.module_dir" class="max-w-md font-mono" />
       </SettingRow>
-      <SettingRow label="Secret engine directory" for="pl-secrets" hint="Secret engine plugins. Empty uses the built-in engines only.">
+      <SettingRow label="Secret engine directory" for="pl-secrets" hint="Empty: built-in engines only.">
         <Input id="pl-secrets" v-model="dirs.secret_engine_dir" class="max-w-md font-mono" />
       </SettingRow>
-      <SettingRow label="Skills directory" for="pl-skills" hint="Shared SKILL.md skills. Empty uses the work directory.">
+      <SettingRow label="Skills directory" for="pl-skills" hint="Empty: work directory.">
         <Input id="pl-skills" v-model="dirs.skills_dir" class="max-w-md font-mono" />
       </SettingRow>
     </template>

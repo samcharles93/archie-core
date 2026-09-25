@@ -51,20 +51,19 @@ const taskRuntime = seconds("max_task_runtime_seconds");
     <PageHeader title="Task execution">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">Limits every task runs under. Zero turns a limit off.</p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}
     </p>
 
     <template v-if="limits">
-      <SettingRow label="Task time limit" for="te-task" hint="A task still running after this long is parked.">
+      <SettingRow label="Task time limit" for="te-task" hint="Parked after this. 0 disables.">
         <DurationInput id="te-task" v-model="taskRuntime" :units="['m', 'h']" />
       </SettingRow>
-      <SettingRow label="Agent call time limit" for="te-call" hint="The longest one agent call inside a stage may run.">
+      <SettingRow label="Agent call time limit" for="te-call" hint="0 disables.">
         <DurationInput id="te-call" v-model="callRuntime" :units="['s', 'm', 'h']" />
       </SettingRow>
-      <SettingRow label="Model tool steps" hint="Model and tool round-trips one agent call may take.">
+      <SettingRow label="Model tool steps" hint="Per agent call. 0 disables.">
         <NumberField v-model="limits.max_model_tool_steps" :min="0" class="w-32">
           <NumberFieldContent>
             <NumberFieldDecrement />
@@ -73,7 +72,7 @@ const taskRuntime = seconds("max_task_runtime_seconds");
           </NumberFieldContent>
         </NumberField>
       </SettingRow>
-      <SettingRow label="Gate failures in a row" hint="Consecutive failed quality gates before the task is parked.">
+      <SettingRow label="Gate failures in a row" hint="In a row, then parked.">
         <NumberField v-model="limits.max_consecutive_gate_failures" :min="0" class="w-32">
           <NumberFieldContent>
             <NumberFieldDecrement />

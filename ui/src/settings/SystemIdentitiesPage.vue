@@ -65,7 +65,6 @@ const lifecycle = {
 <template>
   <div>
     <PageHeader title="Identities" />
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">The actors Archie acts as and on behalf of. Changes apply at once.</p>
 
     <p v-if="store.error" role="alert" class="mb-4 text-sm text-danger">{{ store.error }}</p>
 
@@ -129,7 +128,7 @@ const lifecycle = {
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Retire {{ retiring?.display_name }}?</AlertDialogTitle>
-          <AlertDialogDescription>A retired identity cannot act again, and this cannot be undone.</AlertDialogDescription>
+          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>

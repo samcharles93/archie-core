@@ -65,7 +65,6 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">Which model plays each role, and the providers that serve them.</p>
 
     <p v-for="e in [catalogError, ...errors].filter(Boolean)" :key="String(e)" class="mb-4 text-sm text-danger" role="alert">
       {{ e }}
@@ -112,16 +111,15 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
           />
           <Button variant="ghost" size="icon" class="ml-auto" :aria-label="`Remove provider ${name}`" @click="delete providers[name]"><Trash2 /></Button>
         </header>
-        <SettingRow label="Class" :for="`prov-${name}-class`" hint="The provider API it speaks (openai, anthropic, gemini, ollama, ...).">
+        <SettingRow label="Class" :for="`prov-${name}-class`">
           <Input :id="`prov-${name}-class`" v-model="provider.class" class="max-w-56 font-mono" />
         </SettingRow>
-        <SettingRow label="Base URL" :for="`prov-${name}-url`" hint="Empty uses the provider's own endpoint.">
+        <SettingRow label="Base URL" :for="`prov-${name}-url`">
           <Input :id="`prov-${name}-url`" v-model="provider.base_url" class="max-w-md font-mono" />
         </SettingRow>
-        <SettingRow label="API key" hint="Where Archie reads the key from.">
+        <SettingRow label="API key">
           <p v-if="provider.api_key_env && !provider.api_key_ref.key" class="mb-2 text-xs text-fg-muted">
-            Passed to agents as <span class="font-mono text-foreground">{{ provider.api_key_env }}</span>; no secret
-            reference is stored for it.
+            Key passed as <span class="font-mono text-foreground">{{ provider.api_key_env }}</span>.
           </p>
           <SecretRefField v-model="provider.api_key_ref" :id-prefix="`prov-${name}-key`" />
         </SettingRow>

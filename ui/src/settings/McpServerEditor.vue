@@ -106,7 +106,7 @@ const args = computed({
         Parallel tool calls
       </label>
       <span v-if="server.headers_configured" class="text-xs text-fg-subtle">
-        Request headers come from config.toml, matched by this name
+        Headers set in config.toml
       </span>
     </div>
   </div>

@@ -77,18 +77,17 @@ function addProfile() {
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">The containers agents run in.</p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>
 
     <template v-if="runtime">
-      <SettingRow label="Image" for="cr-image" hint="The agent image tasks run in by default.">
+      <SettingRow label="Image" for="cr-image">
         <Input id="cr-image" v-model="runtime.Image" class="font-mono" />
       </SettingRow>
-      <SettingRow label="Pull policy" hint="If missing pulls only when the image is not present locally.">
+      <SettingRow label="Pull policy">
         <SegmentedControl v-model="pullPolicy" label="Pull policy" :options="pullPolicies" />
       </SettingRow>
-      <SettingRow label="Max concurrency" hint="Tasks and containers at once. Tasks in one repository still run one at a time. 0 means no limit.">
+      <SettingRow label="Max concurrency" hint="0 = no limit.">
         <NumberField v-model="runtime.MaxConcurrency" :min="0" class="w-32">
           <NumberFieldContent>
             <NumberFieldDecrement />
@@ -97,18 +96,17 @@ function addProfile() {
           </NumberFieldContent>
         </NumberField>
       </SettingRow>
-      <SettingRow label="Max uptime" for="cr-uptime" hint="A container is recycled after running this long.">
+      <SettingRow label="Max uptime" for="cr-uptime">
         <DurationInput id="cr-uptime" v-model="runtime.MaxUptime" :units="['m', 'h']" />
       </SettingRow>
-      <SettingRow label="Volume retention" for="cr-ttl" hint="Per-repository storage and the Git object cache are cleaned up after this long.">
+      <SettingRow label="Volume retention" for="cr-ttl">
         <DurationInput id="cr-ttl" v-model="runtime.VolumeTTL" :units="['h']" />
       </SettingRow>
-      <SettingRow label="Network" for="cr-network" hint="Docker network agents join. Empty uses the daemon's own network, then the default bridge.">
+      <SettingRow label="Network" for="cr-network" hint="Empty: auto-detect.">
         <Input id="cr-network" v-model="runtime.Network" class="max-w-sm font-mono" />
       </SettingRow>
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Profiles</h2>
-      <p class="mb-3 text-xs text-fg-subtle">Named environments a workflow picks with <span class="font-mono">profile:</span>.</p>
       <section
         v-for="(profile, name) in runtime.Profiles ?? {}"
         :key="name"
@@ -119,10 +117,10 @@ function addProfile() {
           <h3 class="flex-1 font-mono text-sm font-medium">{{ name }}</h3>
           <Button variant="ghost" size="icon" :aria-label="`Remove profile ${name}`" @click="delete runtime.Profiles![name]"><Trash2 /></Button>
         </header>
-        <SettingRow label="Image" :for="`prof-${name}-image`" hint="Empty uses the default image.">
+        <SettingRow label="Image" :for="`prof-${name}-image`" hint="Empty: default image.">
           <Input :id="`prof-${name}-image`" v-model="profile.Image" class="font-mono" />
         </SettingRow>
-        <SettingRow label="Tools" hint="MCP servers, repository scripts and skills allowed by name. Empty allows all.">
+        <SettingRow label="Tools" hint="Empty allows all.">
           <TagsInput
             :model-value="profile.Tools ?? []"
             class="font-mono"

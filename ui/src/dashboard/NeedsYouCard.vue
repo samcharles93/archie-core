@@ -30,7 +30,7 @@ function meta(task: AttentionTask): string {
       <RouterLink to="/tasks?status=needs_you" class="ml-auto text-xs text-fg-muted hover:text-foreground">All tasks</RouterLink>
     </header>
     <p v-if="tasks === null" class="px-5 py-6 text-sm text-fg-subtle">Not loaded.</p>
-    <p v-else-if="!waiting.length" class="px-5 py-6 text-sm text-fg-muted">Nothing is waiting on you.</p>
+    <p v-else-if="!waiting.length" class="px-5 py-6 text-sm text-fg-muted">Nothing waiting.</p>
     <ul v-else class="divide-y divide-border">
       <li v-for="task in waiting" :key="task.id" class="flex flex-wrap items-center gap-3 px-5 py-3">
         <StatusPill tone="warn" class="shrink-0">{{ statusLabel(task.status ?? "") }}</StatusPill>

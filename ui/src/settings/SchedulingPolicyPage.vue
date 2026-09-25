@@ -67,9 +67,6 @@ const labelMissing = computed(
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">
-      How Archie finds issues to work on and marks their state on the forge.
-    </p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}
@@ -77,14 +74,13 @@ const labelMissing = computed(
 
     <template v-if="policy">
       <h2 class="mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Dispatch</h2>
-      <SettingRow label="Trigger" hint="Which open issues Archie picks up.">
+      <SettingRow label="Trigger">
         <SegmentedControl v-model="policy.dispatch.trigger" label="Trigger" :options="triggers" />
       </SettingRow>
       <SettingRow
         v-if="policy.dispatch.trigger !== 'assignee'"
         label="Label"
         for="sp-label"
-        hint="Issues carrying this label are picked up."
       >
         <Input
           id="sp-label"
@@ -97,12 +93,12 @@ const labelMissing = computed(
           Required: an empty label matches every open issue.
         </p>
       </SettingRow>
-      <SettingRow label="Ack reaction" for="sp-ack" hint="Reaction posted when an issue is picked up. Empty posts none.">
+      <SettingRow label="Ack reaction" for="sp-ack" hint="Empty: none.">
         <Input id="sp-ack" v-model="policy.dispatch.ack_reaction" class="max-w-xs font-mono" />
       </SettingRow>
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">State labels</h2>
-      <SettingRow label="Forge labels" hint="The label Archie sets on an issue in each state.">
+      <SettingRow label="Forge labels">
         <table class="w-full max-w-lg text-sm">
           <tbody>
             <tr v-for="state in states" :key="state.key" class="border-b border-border last:border-0">
@@ -126,7 +122,7 @@ const labelMissing = computed(
       </SettingRow>
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Retries and polling</h2>
-      <SettingRow label="Max retries" hint="Times a parked task is retried before it is marked dead.">
+      <SettingRow label="Max retries" hint="Then marked dead.">
         <NumberField v-model="policy.max_retries" :min="0" class="w-32">
           <NumberFieldContent>
             <NumberFieldDecrement />
@@ -135,7 +131,7 @@ const labelMissing = computed(
           </NumberFieldContent>
         </NumberField>
       </SettingRow>
-      <SettingRow label="Poll interval" for="sp-poll" hint="How often the forge is checked for new issues.">
+      <SettingRow label="Poll interval" for="sp-poll">
         <DurationInput id="sp-poll" v-model="policy.poll_interval" :units="['s', 'm', 'h']" />
         <p v-if="intervalInvalid" class="mt-1.5 text-xs text-danger">Must be longer than zero.</p>
       </SettingRow>

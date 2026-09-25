@@ -97,7 +97,6 @@ const rate = (merged = 0, total = 0) => (total ? merged / total : 0);
       </Button>
       <Button size="sm" @click="create"><Plus data-icon="inline-start" /> New workflow</Button>
     </PageHeader>
-    <p class="-mt-4 mb-6 text-sm text-fg-muted">How work runs. Success is merged tasks over all runs.</p>
 
     <p v-if="error" class="mb-4 text-sm text-danger" role="alert">Cannot reach archied: {{ error }}</p>
 
@@ -127,7 +126,6 @@ const rate = (merged = 0, total = 0) => (total ? merged / total : 0);
 
       <section v-if="!selected" class="min-w-0 rounded-lg border border-border bg-card px-5 py-10 text-center" aria-label="Workflow">
         <p class="font-medium">No workflows</p>
-        <p class="mt-1 text-sm text-fg-muted">Create one, or restore the shipped set.</p>
       </section>
       <section v-else class="min-w-0 rounded-lg border border-border bg-card px-5 py-4" aria-label="Workflow">
         <header class="mb-2 flex flex-wrap items-center gap-2">
@@ -145,14 +143,14 @@ const rate = (merged = 0, total = 0) => (total ? merged / total : 0);
             <WorkflowEditor v-model:selected="selected" />
           </TabsContent>
           <TabsContent value="performance" class="grid gap-4 pt-4">
-            <p v-if="!stages.length" class="text-sm text-fg-muted">No stage timings recorded for this workflow yet.</p>
+            <p v-if="!stages.length" class="text-sm text-fg-muted">No stage timings yet.</p>
             <template v-else>
               <SlowestStagesCard :stages="stages" />
               <StageFailuresCard :stages="stages" />
             </template>
           </TabsContent>
           <TabsContent value="runs" class="pt-4">
-            <p v-if="!workflowRuns.length" class="text-sm text-fg-muted">No tasks have run this workflow.</p>
+            <p v-if="!workflowRuns.length" class="text-sm text-fg-muted">No runs yet.</p>
             <ul v-else class="divide-y divide-border">
               <li v-for="t in workflowRuns" :key="t.id" class="flex items-center gap-3 py-2 text-sm">
                 <RouterLink :to="`/tasks/${t.id}`" class="min-w-0 flex-1 truncate hover:underline">{{ t.title || `Task ${t.id}` }}</RouterLink>

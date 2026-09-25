@@ -97,9 +97,9 @@ const opened = reactive({ telegram: false, email: false, webhook: false });
 const shown = (id: keyof typeof opened) => configured.value[id] || opened[id];
 
 const channels = [
-  { id: "telegram", title: "Telegram", icon: Send, purpose: "Talk to Archie and approve its work from your phone." },
-  { id: "email", title: "Email", icon: Mail, purpose: "Email Archie a task and get replies over SMTP." },
-  { id: "webhook", title: "Webhook", icon: Globe, purpose: "Another service pushes messages to Archie over HTTP." },
+  { id: "telegram", title: "Telegram", icon: Send },
+  { id: "email", title: "Email", icon: Mail },
+  { id: "webhook", title: "Webhook", icon: Globe },
 ] as const;
 
 const allowedUsers = computed({
@@ -127,7 +127,6 @@ const replyModes = [
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">Where people can talk to Archie, and how those chats run.</p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}
@@ -146,7 +145,6 @@ const replyModes = [
           </span>
           <div class="min-w-0 flex-1">
             <h2 :id="`ch-${channel.id}`" class="text-[15px] font-medium">{{ channel.title }}</h2>
-            <p class="truncate text-xs text-fg-subtle">{{ channel.purpose }}</p>
           </div>
           <StatusPill v-if="statusOf(channel.id)" :tone="statusOf(channel.id)!.tone" :dot="statusOf(channel.id)!.dot">
             {{ statusOf(channel.id)!.label }}
@@ -161,13 +159,13 @@ const replyModes = [
 
         <div v-if="shown(channel.id)" class="px-5 pb-2">
           <template v-if="channel.id === 'telegram'">
-            <SettingRow label="Bot token" hint="From @BotFather. Empty turns Telegram off.">
+            <SettingRow label="Bot token" hint="Empty disables Telegram.">
               <SecretRefField
                 v-model="chat.telegram.token_ref"
                 id-prefix="tg-token"
               />
             </SettingRow>
-            <SettingRow label="Allowed users" hint="Telegram user IDs. Everyone else is ignored.">
+            <SettingRow label="Allowed users" hint="Everyone else is ignored.">
               <TagsInput v-model="allowedUsers" aria-label="Allowed users" class="font-mono">
                 <TagsInputItem v-for="id in allowedUsers" :key="id" :value="id">
                   <TagsInputItemText />
@@ -179,30 +177,30 @@ const replyModes = [
           </template>
 
           <template v-else-if="channel.id === 'email'">
-            <SettingRow label="Listen address" for="em-listen" hint="host:port for inbound SMTP. Empty turns email off.">
+            <SettingRow label="Listen address" for="em-listen" hint="Empty disables email.">
               <Input id="em-listen" v-model="chat.email.listen_addr" class="max-w-sm font-mono" placeholder=":2525" />
             </SettingRow>
-            <SettingRow label="Relay address" for="em-relay" hint="SMTP relay replies are sent through.">
+            <SettingRow label="Relay address" for="em-relay">
               <Input id="em-relay" v-model="chat.email.relay_addr" class="max-w-sm font-mono" />
             </SettingRow>
           </template>
 
           <template v-else>
-            <SettingRow label="Listen address" for="wh-addr" hint="host:port the webhook gateway listens on. Empty turns it off.">
+            <SettingRow label="Listen address" for="wh-addr" hint="Empty disables the webhook.">
               <Input id="wh-addr" v-model="chat.webhook_addr" class="max-w-sm font-mono" placeholder=":8686" />
             </SettingRow>
-            <SettingRow label="Path" for="wh-path" hint="Empty means /webhook.">
+            <SettingRow label="Path" for="wh-path">
               <Input id="wh-path" v-model="chat.webhook.path" class="max-w-sm font-mono" placeholder="/webhook" />
             </SettingRow>
-            <SettingRow label="Message field" for="wh-template" hint="Dot path to the message text in the JSON body. Empty uses the whole body.">
+            <SettingRow label="Message field" for="wh-template" hint="Dot path. Empty: whole body.">
               <Input id="wh-template" v-model="chat.webhook.template" class="max-w-sm font-mono" placeholder="issue.title" />
             </SettingRow>
-            <SettingRow label="Replies" hint="Where Archie's answer goes.">
+            <SettingRow label="Replies">
               <SegmentedControl v-model="chat.webhook.deliver_to" label="Replies" :options="replyModes" />
             </SettingRow>
             <SettingRow
               label="Signing secret"
-              hint="HMAC-SHA256 secret. Unset accepts any unsigned POST."
+              hint="Unset accepts unsigned requests."
               :tone="chat.webhook.secret_ref.key ? 'default' : 'danger'"
             >
               <SecretRefField
@@ -218,20 +216,20 @@ const replyModes = [
         <h2 id="ch-defaults" class="text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">
           Chat session defaults · all channels
         </h2>
-        <SettingRow label="Workspace" for="cs-workspace" hint="Where the chat agent's file and shell tools work. Empty turns those tools off.">
+        <SettingRow label="Workspace" for="cs-workspace" hint="Empty disables file tools.">
           <Input id="cs-workspace" v-model="chat.workspace" class="max-w-md font-mono" />
         </SettingRow>
         <SettingRow
           label="Unrestricted filesystem"
-          hint="On: file tools can read and write anywhere this user can, not just the workspace."
+          hint="File tools can write anywhere."
           :tone="chat.unrestricted_filesystem ? 'danger' : 'default'"
         >
           <Switch v-model="chat.unrestricted_filesystem" aria-label="Unrestricted filesystem" />
         </SettingRow>
-        <SettingRow label="Show tool calls" hint="Narrate each tool call in the chat.">
+        <SettingRow label="Show tool calls">
           <Switch v-model="chat.show_tool_calls" aria-label="Show tool calls" />
         </SettingRow>
-        <SettingRow label="Max steps" hint="Model and tool round-trips per chat turn. 0 uses the default (100).">
+        <SettingRow label="Max steps" hint="0 = default (100).">
           <NumberField v-model="chat.max_steps" :min="0" class="w-32">
             <NumberFieldContent>
               <NumberFieldDecrement />
@@ -240,7 +238,7 @@ const replyModes = [
             </NumberFieldContent>
           </NumberField>
         </SettingRow>
-        <SettingRow label="Rate limit" hint="Per sender, per channel. Off unless both are above zero.">
+        <SettingRow label="Rate limit" hint="Per sender. Off while either is 0.">
           <div class="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
             <NumberField v-model="chat.rate_limit.max_requests" :min="0" class="w-28">
               <NumberFieldContent>
@@ -251,7 +249,7 @@ const replyModes = [
             <DurationInput v-model="chat.rate_limit.window" :units="['s', 'm', 'h']" />
           </div>
         </SettingRow>
-        <SettingRow label="Models" hint="Models offered in chat. Empty offers the ones assigned to workflow roles.">
+        <SettingRow label="Models" hint="Empty: role models.">
           <TagsInput v-model="models" aria-label="Models" class="font-mono">
             <TagsInputItem v-for="model in models" :key="model" :value="model">
               <TagsInputItemText />
@@ -260,7 +258,7 @@ const replyModes = [
             <TagsInputInput placeholder="provider/model" />
           </TagsInput>
         </SettingRow>
-        <SettingRow label="Operator" for="cs-operator" hint="The name of the person Archie works for, told to the chat agent.">
+        <SettingRow label="Operator" for="cs-operator">
           <Input id="cs-operator" v-model="chat.operator" class="max-w-sm" />
         </SettingRow>
       </section>

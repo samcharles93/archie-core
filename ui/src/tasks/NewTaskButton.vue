@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -31,7 +30,6 @@ function started(taskId: number) {
     <DialogContent class="sm:max-w-[640px]">
       <DialogHeader>
         <DialogTitle>New task</DialogTitle>
-        <DialogDescription>Enters Archie's admitted task queue.</DialogDescription>
       </DialogHeader>
       <NewTaskForm v-if="open" @started="started" @cancel="open = false" />
     </DialogContent>

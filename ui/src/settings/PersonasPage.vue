@@ -67,7 +67,6 @@ function rename(name: string | number) {
     <PageHeader title="Personas">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">The system prompts chat can run under. One is the default.</p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}
@@ -117,10 +116,10 @@ function rename(name: string | number) {
             ><Trash2 data-icon="inline-start" /> Delete</Button
           >
         </header>
-        <SettingRow label="Name" for="persona-name" hint="How chat refers to it.">
+        <SettingRow label="Name" for="persona-name">
           <Input id="persona-name" :model-value="current.name" class="max-w-sm font-mono" @update:model-value="rename" />
         </SettingRow>
-        <SettingRow label="Default persona" hint="Used when a chat does not pick one. Exactly one is the default.">
+        <SettingRow label="Default persona">
           <Switch
             :model-value="isDefault"
             :disabled="isDefault"

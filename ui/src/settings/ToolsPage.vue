@@ -65,9 +65,6 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
-    <p class="-mt-4 mb-8 text-sm text-fg-muted">
-      The tools agents can call, and the MCP servers that add more.
-    </p>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}
@@ -83,7 +80,7 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
           @remove="tools.mcp_servers.splice(i, 1)"
         />
         <p v-if="!tools.mcp_servers.length" class="text-sm text-fg-muted">
-          No MCP servers. Add one by the way it is reached.
+          No MCP servers.
         </p>
         <div class="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" @click="addServer('stdio')">
@@ -99,10 +96,10 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       </div>
 
       <h2 :class="[eyebrow, 'mt-10']">MiniMax</h2>
-      <SettingRow label="Enabled" hint="Offers the MiniMax tools to agents.">
+      <SettingRow label="Enabled">
         <Switch v-model="tools.minimax.enabled" aria-label="MiniMax enabled" />
       </SettingRow>
-      <SettingRow label="API key" hint="Where Archie reads the key from.">
+      <SettingRow label="API key">
         <SecretRefField
           v-model="tools.minimax.api_key_ref"
           id-prefix="minimax-key"
@@ -111,18 +108,18 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       </SettingRow>
 
       <h2 :class="[eyebrow, 'mt-10']">Web fetch</h2>
-      <SettingRow label="Enabled" hint="Lets agents fetch a URL.">
+      <SettingRow label="Enabled">
         <Switch v-model="webFetchOn" aria-label="Web fetch enabled" />
       </SettingRow>
-      <SettingRow label="Max download" for="wf-bytes" hint="How much of a response body is read.">
+      <SettingRow label="Max download" for="wf-bytes">
         <ByteSizeInput id="wf-bytes" v-model="tools.web_fetch.max_bytes" :disabled="!webFetchOn" />
       </SettingRow>
-      <SettingRow label="Timeout" for="wf-timeout" hint="One fetch, redirects included.">
+      <SettingRow label="Timeout" for="wf-timeout">
         <DurationInput id="wf-timeout" v-model="tools.web_fetch.timeout" :units="['s', 'm']" :disabled="!webFetchOn" />
       </SettingRow>
       <SettingRow
         label="Allow private networks"
-        hint="On: agents can fetch loopback and LAN addresses, including this daemon's own dashboard and the Docker API."
+        hint="Reaches this host's dashboard and Docker API."
         :tone="tools.web_fetch.allow_private_networks ? 'danger' : 'default'"
       >
         <Switch
@@ -133,7 +130,7 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       </SettingRow>
 
       <h2 :class="[eyebrow, 'mt-10']">Tool output</h2>
-      <SettingRow label="Max result length" for="tp-chars" :hint="`About ${Math.round(tools.policy.max_result_chars / 4).toLocaleString()} tokens per tool call.`">
+      <SettingRow label="Max result length" for="tp-chars" :hint="`≈ ${Math.round(tools.policy.max_result_chars / 4).toLocaleString()} tokens`">
         <InputGroup class="w-48">
           <InputGroupInput id="tp-chars" v-model.number="tools.policy.max_result_chars" type="number" min="0" class="font-mono" />
           <InputGroupAddon align="inline-end">
@@ -141,7 +138,7 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
           </InputGroupAddon>
         </InputGroup>
       </SettingRow>
-      <SettingRow label="Spill directory" for="tp-spill" hint="Longer results are written here and the agent gets the path. Empty truncates instead.">
+      <SettingRow label="Spill directory" for="tp-spill" hint="Empty: truncate.">
         <Input id="tp-spill" v-model="tools.policy.spill_dir" class="max-w-md font-mono" />
       </SettingRow>
     </template>

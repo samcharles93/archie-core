@@ -25,7 +25,7 @@ const pending = computed(() =>
   >
     <p class="font-medium text-warn">Restart pending</p>
     <p class="mt-0.5 text-fg-muted">
-      {{ pending.join(", ") }} saved; running processes pick them up when archied restarts.
+      {{ pending.join(", ") }}
     </p>
   </div>
 </template>

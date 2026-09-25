@@ -104,7 +104,6 @@ async function restoreBefore(entry: AuditEntry): Promise<void> {
 <template>
   <div>
     <PageHeader title="History" />
-    <p class="-mt-4 mb-6 text-sm text-fg-muted">Every settings change, newest first.</p>
 
     <div class="mb-4 flex flex-wrap gap-2">
       <Select v-model="section">
@@ -189,7 +188,7 @@ async function restoreBefore(entry: AuditEntry): Promise<void> {
           </tr>
           <tr v-if="!rows.length">
             <td colspan="7" class="px-4 py-8 text-center text-sm text-fg-muted">
-              {{ entries.length ? "No changes match these filters." : "No changes recorded yet." }}
+              {{ entries.length ? "No matching changes." : "No changes recorded yet." }}
             </td>
           </tr>
         </tbody>

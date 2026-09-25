@@ -75,7 +75,7 @@ async function save() {
         <SheetTitle>Review {{ count }} {{ count === 1 ? "change" : "changes" }}</SheetTitle>
         <SheetDescription>
           {{ sections.length }} {{ sections.length === 1 ? "section" : "sections" }},
-          each saved as its own version, in this order. A failure stops the rest.
+          saved in order; a failure stops the rest.
         </SheetDescription>
       </SheetHeader>
       <div class="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
@@ -83,7 +83,7 @@ async function save() {
           v-if="needsRestart"
           class="rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-sm text-warn"
         >
-          Some of these apply after archied restarts.
+          Some changes apply after restart.
         </p>
         <section
           v-for="section in sections"
