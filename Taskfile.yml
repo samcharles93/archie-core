@@ -222,8 +222,14 @@ tasks:
   build:
     desc: Build archie services and agent binaries
     vars:
-      GATEWAY_VERSION: dev
-      RUNTIME_VERSION: dev
+      GATEWAY_VERSION: '{{.GATEWAY_VERSION | default "dev"}}'
+      RUNTIME_VERSION: '{{.RUNTIME_VERSION | default "dev"}}'
+      SERVICE_LDFLAGS: >-
+        -X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}}
+        -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion={{.RUNTIME_VERSION}}
+        -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary
+        -X github.com/samcharles93/archie-core/internal/buildinfo.Version={{.GATEWAY_VERSION}}
+        -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime={{.RUNTIME_VERSION}}
     sources:
       - "**/*.go"
       - go.mod
@@ -237,11 +243,10 @@ tasks:
       - "{{.BIN_DIR}}/archie-messaging"
       - "{{.BIN_DIR}}/archie-agent"
     cmds:
-      - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archied ./cmd/archied
-      - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-gateway ./cmd/archie-gateway
-      - go build -ldflags "-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-state-store ./cmd/archie-state-store
-      - go build -ldflags "-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-ui ./cmd/archie-ui
-      - go build -ldflags "-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-messaging ./cmd/archie-messaging
+      # One flag set for every service, matching scripts/archie-update-install
+      # and the release workflow, so each binary reports the same version.
+      - for: [archied, archie-gateway, archie-state-store, archie-ui, archie-messaging]
+        cmd: go build -ldflags "{{.SERVICE_LDFLAGS}}" -o {{.BIN_DIR}}/{{.ITEM}} ./cmd/{{.ITEM}}
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:
