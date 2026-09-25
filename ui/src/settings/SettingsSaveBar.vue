@@ -56,7 +56,7 @@ async function save() {
 <template>
   <div
     v-if="count > 0"
-    class="sticky bottom-0 z-30 mt-6 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-3 shadow-[var(--shadow-md)]"
+    class="sticky bottom-4 z-30 mt-6 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-3 shadow-[var(--shadow-md)]"
     role="region"
     aria-label="Unsaved changes"
   >

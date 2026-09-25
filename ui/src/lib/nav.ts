@@ -41,6 +41,7 @@ const settings: NavSpec = {
         "/settings/channels",
         "/settings/repositories",
         "/settings/identities",
+        "/settings/tools",
       ],
     },
     {

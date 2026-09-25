@@ -72,9 +72,12 @@ test("control-plane resources belong to one settings narrative", () => {
     ["scheduling-policy"],
   );
   assert.deepEqual(
+    resourcesForPage(catalog, "tools").map(({ kind }) => kind),
+    ["tool-settings"],
+  );
+  assert.deepEqual(
     resourcesForPage(catalog, "advanced").map(({ kind }) => kind),
     [
-      "tool-settings",
       "plugin-settings",
       "container-runtime-policies",
     ],

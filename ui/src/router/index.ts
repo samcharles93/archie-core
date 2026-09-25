@@ -6,6 +6,7 @@ import DashboardPage from "@/dashboard/DashboardPage.vue";
 import EventsPage from "@/events/EventsPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
 import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
+import ToolsPage from "@/settings/ToolsPage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -201,6 +202,18 @@ const routes = [
       settings: true,
       label: "Scheduling policy",
       description: "How Archie finds work and labels its state on the forge.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/tools",
+    name: "settings-tools",
+    component: ToolsPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Tools & MCP",
+      description: "The tools agents can call, and the MCP servers that add more.",
       section: "settings",
     },
   },
