@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/empty";
 import { Badge } from "@/components/ui/badge";
 
-import AttemptSelector from "./AttemptSelector.vue";
 import PanelError from "./PanelError.vue";
 import PanelLoading from "./PanelLoading.vue";
 import StageRow from "./StageRow.vue";
@@ -122,10 +121,6 @@ const startedAt = computed(() => {
 
     <div v-else>
       <div class="mb-4 flex flex-wrap items-center gap-3">
-        <template v-if="attempts.length > 1">
-          <span class="text-sm text-fg-muted">Attempt</span>
-          <AttemptSelector />
-        </template>
         <Badge :variant="meta.kind">{{ meta.label }}</Badge>
         <span class="text-xs text-fg-muted">{{ startedAt }}</span>
         <span v-if="timeLimit" class="text-xs text-fg-muted">{{

@@ -16,6 +16,8 @@ export interface Task {
   source?: string;
   status?: string;
   park_class?: string;
+  park_reason?: string;
+  tokens_used?: number;
   workflow?: string;
   stage?: string;
   attempt?: number;
