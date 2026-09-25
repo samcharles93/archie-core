@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { connectionStatus } from "@/lib/connection";
 import { useLiveResource, useLiveUpdatesStore } from "@/stores/live-updates";
 
 interface HealthComponent {
@@ -24,13 +25,7 @@ const report = ref<HealthReport | null>(null);
 const error = ref<string | null>(null);
 const { streamState } = storeToRefs(useLiveUpdatesStore());
 
-const liveState = computed(() => {
-  if (streamState.value === "live")
-    return { label: "Connected", kind: "ok" as const };
-  if (streamState.value === "unavailable")
-    return { label: "Unavailable", kind: "danger" as const };
-  return { label: "Connecting", kind: "warn" as const };
-});
+const liveState = computed(() => connectionStatus(streamState.value));
 
 const names: Record<string, string> = {
   state_db: "State store",
@@ -70,7 +65,7 @@ onMounted(load);
           <TableRow>
             <TableCell class="font-medium">Live updates</TableCell>
             <TableCell class="w-px text-right">
-              <Badge :variant="liveState.kind">{{ liveState.label }}</Badge>
+              <Badge :variant="liveState.tone">{{ liveState.label }}</Badge>
             </TableCell>
           </TableRow>
           <TableRow

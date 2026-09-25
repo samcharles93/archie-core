@@ -64,9 +64,7 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 		"bot_user", "bot_email", "label", "forge.type", "forge.host", "diff_cap_lines",
 		"repos", "models", "providers",
 		"budgets.max_steps", "budgets.wall_clock", "budgets.gate_max_failures",
-		"work_dir", "state_dir", "database_url", "skills_dir", "plugin_dir", "secret_engine_dir",
-		"containers.image", "containers.max_concurrency", "containers.max_uptime",
-		"containers.volume_ttl", "containers.pull_policy", "containers.network",
+		"work_dir", "state_dir", "database_url",
 		"web.listen",
 	}
 	for _, key := range wantKeys {
@@ -87,31 +85,22 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 // defaulting to false ("this takes effect immediately") when it does not.
 func TestConfigFieldDescriptorsRestartRequiredIsDeliberate(t *testing.T) {
 	want := map[string]bool{
-		"bot_user":                   false,
-		"bot_email":                  false,
-		"label":                      false,
-		"forge.type":                 true, // reloadableSubFields["Forge"] allows only Host
-		"forge.host":                 false,
-		"diff_cap_lines":             false,
-		"repos":                      false,
-		"models":                     false,
-		"providers":                  false,
-		"budgets.max_steps":          false,
-		"budgets.wall_clock":         false,
-		"budgets.gate_max_failures":  false,
-		"work_dir":                   false, // locked, not merely restart-required
-		"state_dir":                  false, // locked, not merely restart-required
-		"database_url":               false, // locked, not merely restart-required
-		"skills_dir":                 true,  // absent from reloadableFields
-		"plugin_dir":                 true,
-		"secret_engine_dir":          true,
-		"containers.image":           true, // absent from reloadableSubFields["Containers"]
-		"containers.max_concurrency": true,
-		"containers.max_uptime":      true,
-		"containers.volume_ttl":      false, // reloadableSubFields["Containers"] allows VolumeTTL
-		"containers.pull_policy":     true,
-		"containers.network":         true,
-		"web.listen":                 true, // Web is absent from both allowlists entirely
+		"bot_user":                  false,
+		"bot_email":                 false,
+		"label":                     false,
+		"forge.type":                true, // reloadableSubFields["Forge"] allows only Host
+		"forge.host":                false,
+		"diff_cap_lines":            false,
+		"repos":                     false,
+		"models":                    false,
+		"providers":                 false,
+		"budgets.max_steps":         false,
+		"budgets.wall_clock":        false,
+		"budgets.gate_max_failures": false,
+		"work_dir":                  false, // locked, not merely restart-required
+		"state_dir":                 false, // locked, not merely restart-required
+		"database_url":              false, // locked, not merely restart-required
+		"web.listen":                true,  // Web is absent from both allowlists entirely
 	}
 	for _, section := range configFieldDescriptors() {
 		for _, f := range section.Fields {

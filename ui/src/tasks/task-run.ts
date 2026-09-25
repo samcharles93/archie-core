@@ -52,6 +52,7 @@ export interface TaskRecord {
   pr_number?: number;
   pr_url?: string;
   park_reason?: string;
+  tokens_used?: number;
   actions?: string[];
 }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -15,14 +16,15 @@ import {
  * The card owns its own bottom margin: the pages stack cards directly, with
  * nothing between them.
  */
-defineProps<{ title?: string; description?: string }>();
+defineProps<{ title?: string; description?: string; edited?: boolean }>();
 </script>
 
 <template>
-  <Card class="mb-4">
+  <Card class="mb-4" :class="edited && 'ring-primary/60'">
     <CardHeader v-if="title || description">
       <CardTitle v-if="title">{{ title }}</CardTitle>
       <CardDescription v-if="description">{{ description }}</CardDescription>
+      <CardAction v-if="$slots.action"><slot name="action" /></CardAction>
     </CardHeader>
     <CardContent>
       <slot />

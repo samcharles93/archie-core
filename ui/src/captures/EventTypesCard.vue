@@ -154,12 +154,15 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
         </TableBody>
       </Table>
 
-      <p
+      <div
         v-if="!proposals.length && !eventTypes.length"
-        class="text-sm text-fg-muted"
+        class="flex flex-col items-center py-4 text-center"
       >
-        No event types or proposals.
-      </p>
+        <p class="text-sm font-medium">No event types yet</p>
+        <p class="mt-1 max-w-md text-sm text-fg-muted">
+          Create one from a captured event.
+        </p>
+      </div>
     </CardContent>
   </Card>
   <EventTypeDialog />

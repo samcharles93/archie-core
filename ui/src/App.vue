@@ -5,6 +5,7 @@ import { onMounted, ref } from "vue";
 import ChatLauncher from "@/chat/ChatLauncher.vue";
 import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
+import SettingsShell from "@/settings/SettingsShell.vue";
 import {
   Alert,
   AlertAction,
@@ -64,10 +65,10 @@ onMounted(() => {
       so the chat launcher has to render outside this element.
     -->
     <div
-      class="flex min-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--workspace)] shadow-[var(--shadow-workspace)] backdrop-blur-[28px] backdrop-saturate-[1.2] max-lg:min-h-screen max-lg:rounded-none max-lg:border-0 max-lg:shadow-none"
+      class="flex min-h-[calc(100vh-2rem)] flex-col overflow-clip rounded-xl border border-[var(--hairline)] bg-[var(--workspace)] shadow-[var(--shadow-workspace)] backdrop-blur-[28px] backdrop-saturate-[1.2] max-lg:min-h-screen max-lg:rounded-none max-lg:border-0 max-lg:shadow-none"
     >
       <Topbar :hidden="hidden" />
-      <main class="w-full flex-1 overflow-x-hidden p-8 max-lg:p-4">
+      <main class="w-full flex-1 overflow-x-clip p-8 max-lg:p-4">
         <Alert v-if="authenticationRequired" variant="destructive" class="mb-4">
           <AlertTitle>Dashboard authentication required</AlertTitle>
           <AlertDescription>
@@ -93,7 +94,10 @@ onMounted(() => {
           open tab stays open on the next (W11).
         -->
         <RouterView v-slot="{ Component, route }">
-          <component :is="Component" :key="route.path" />
+          <SettingsShell v-if="route.meta.settings">
+            <component :is="Component" :key="route.path" />
+          </SettingsShell>
+          <component :is="Component" v-else :key="route.path" />
         </RouterView>
       </main>
     </div>

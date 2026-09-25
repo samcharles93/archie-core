@@ -8,10 +8,9 @@ import { Tabs } from "@/components/ui/tabs";
 import TabBar from "./TabBar.vue";
 import TaskDetailNotice from "./TaskDetailNotice.vue";
 import TaskHeader from "./TaskHeader.vue";
-import TaskMetaBar from "./TaskMetaBar.vue";
 import TaskNotes from "./TaskNotes.vue";
 import TaskRunPanels from "./TaskRunPanels.vue";
-import StageRail from "./StageRail.vue";
+import TaskRail from "./TaskRail.vue";
 import { parseTaskId } from "./task-run";
 import { provideTaskRun } from "./use-task-run";
 
@@ -48,22 +47,10 @@ const run = provideTaskRun(taskId);
   <TaskDetailNotice v-else-if="run.missing" kind="missing" :raw="rawId" />
   <div v-else>
     <TaskHeader :id="rawId" />
-    <TaskMetaBar />
     <TaskNotes :id="rawId" />
 
-    <div
-      class="grid items-start gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]"
-    >
-      <!--
-        The master pane: the attempt's stage rail, always on screen. It owns
-        its own loading, failure and empty states, so the inspector never has
-        to speak for it.
-      -->
-      <aside aria-label="Run stages">
-        <StageRail :state="run.attempts" />
-      </aside>
-
-      <Card>
+    <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <Card class="min-w-0">
         <CardContent>
           <Tabs
             class="gap-4"
@@ -75,6 +62,7 @@ const run = provideTaskRun(taskId);
           </Tabs>
         </CardContent>
       </Card>
+      <TaskRail />
     </div>
   </div>
 </template>

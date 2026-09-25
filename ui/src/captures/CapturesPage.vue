@@ -4,11 +4,10 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import CaptureDetail from "./CaptureDetail.vue";
-import CaptureStatus from "./CaptureStatus.vue";
 import CapturesCard from "./CapturesCard.vue";
 import EventTypesCard from "./EventTypesCard.vue";
 import { loadEventTypes } from "./event-type-state";
-import { load, selectById, selectNewest, selected, useCaptures } from "./state";
+import { captures, load, selectById, selectNewest, selected, useCaptures } from "./state";
 
 /**
  * Event inspector: recent inbound events, newest first, with the selected
@@ -91,13 +90,10 @@ watch(selected, (capture) => {
 </script>
 
 <template>
-  <!-- The stream's state belongs to this panel, not the page: the page carries
-       tabs whose other two have nothing to do with the capture stream. -->
-  <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
-    <CaptureStatus />
-  </div>
+  <!-- Split only when there is a capture to show beside the list. -->
   <div
-    class="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+    class="grid min-w-0 items-start gap-4"
+    :class="captures.length ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''"
   >
     <div ref="listColumn" class="min-w-0">
       <CapturesCard />

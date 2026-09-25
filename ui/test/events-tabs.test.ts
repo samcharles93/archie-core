@@ -7,11 +7,11 @@ const { EVENTS_TABS, activeTab, availableTabs } =
 test("every tab stays when the composition reports nothing", () => {
   assert.deepEqual(
     availableTabs(null).map((t) => t.id),
-    ["inspector", "bindings", "mappings"],
+    ["inspector", "mappings", "bindings"],
   );
   assert.deepEqual(
     availableTabs(undefined).map((t) => t.id),
-    ["inspector", "bindings", "mappings"],
+    ["inspector", "mappings", "bindings"],
   );
 });
 
@@ -32,7 +32,7 @@ test("a section the server never mentioned stays visible", () => {
   const ids = availableTabs({ captures: true }).map((t) => t.id);
   assert.deepEqual(
     ids,
-    ["inspector", "bindings", "mappings"],
+    ["inspector", "mappings", "bindings"],
     "an unreported section hid its tab",
   );
 });
@@ -79,8 +79,8 @@ test("the tabs are the three Events surfaces, in reading order", () => {
     EVENTS_TABS.map(({ id, section }) => [id, section]),
     [
       ["inspector", "captures"],
-      ["bindings", "bindings"],
       ["mappings", "mappings"],
+      ["bindings", "bindings"],
     ],
   );
 });

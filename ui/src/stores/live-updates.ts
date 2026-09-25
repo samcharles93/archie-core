@@ -10,7 +10,7 @@ import {
 
 import { setAuthenticationStateHandler, subscribeEvents, type StreamFrame } from "../lib/api.ts";
 import type { StatusKind } from "@/lib/status";
-import type { StreamState } from "@/lib/stream-state";
+import { reconnectDelay, type StreamState } from "../lib/stream-state.ts";
 import {
   resourcesForEvent,
   type LiveEvent,
@@ -51,12 +51,24 @@ export const useLiveUpdatesStore = defineStore("live-updates", () => {
     for (const listener of listeners.get(frame.topic) ?? []) listener(frame.data);
   }
 
+  // The browser retries a dropped stream itself, but a non-200 answer (the
+  // backend restarting behind a proxy) closes it for good; reopen it then, or
+  // the page reads "Disconnected" until a reload.
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryAttempt = 0;
+
   function connect(): void {
+    clearTimeout(retryTimer);
     unsubscribe?.();
     streamState.value = "connecting";
     unsubscribe = subscribeEvents(handleFrame, (state) => {
       streamState.value = state;
-      if (state === "live") connectionRevision.value += 1;
+      if (state === "live") {
+        retryAttempt = 0;
+        connectionRevision.value += 1;
+      } else if (state === "unavailable") {
+        retryTimer = setTimeout(connect, reconnectDelay(retryAttempt++));
+      }
     }, cursor, logsReaders > 0);
   }
 

@@ -164,7 +164,7 @@ tasks:
       - |
         set -eu
         for _ in $(seq 1 60); do
-          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q postgres)" 2>/dev/null || true)
+          status=$(docker inspect --format '{{`{{.State.Health.Status}}`}}' "$(docker compose ps -q postgres)" 2>/dev/null || true)
           if [ "$status" = "healthy" ]; then
             exit 0
           fi
@@ -176,6 +176,14 @@ tasks:
   dev:daemon:
     desc: Run archied with live reload
     cmds:
+      - |
+        # The daemon and Gateway read their settings from the State Store at
+        # boot and exit if it is not up yet; it starts only once PostgreSQL
+        # is healthy, so wait for its port ([services.state] in
+        # deployments/dev.toml) first.
+        for _ in $(seq 1 120); do nc -z 127.0.0.1 9091 && exit 0; sleep 1; done
+        echo "state store did not come up on 127.0.0.1:9091 within 120s" >&2
+        exit 1
       - air -build.args_bin="-config-overlay,deployments/dev.toml"
 
   dev:dashboard:
@@ -192,6 +200,14 @@ tasks:
   dev:gateway:
     desc: Run the development Gateway
     cmds:
+      - |
+        # The daemon and Gateway read their settings from the State Store at
+        # boot and exit if it is not up yet; it starts only once PostgreSQL
+        # is healthy, so wait for its port ([services.state] in
+        # deployments/dev.toml) first.
+        for _ in $(seq 1 120); do nc -z 127.0.0.1 9091 && exit 0; sleep 1; done
+        echo "state store did not come up on 127.0.0.1:9091 within 120s" >&2
+        exit 1
       - go run ./cmd/archie-gateway -config-overlay deployments/dev.toml
 
   dev:ui:

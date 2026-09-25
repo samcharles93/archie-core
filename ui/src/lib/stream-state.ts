@@ -22,3 +22,12 @@ export function streamStateFor(readyState: number): StreamState {
   if (readyState === 1) return "live";
   return "unavailable";
 }
+
+/**
+ * reconnectDelay is how long to wait before re-opening a stream the browser
+ * gave up on (a non-200 answer closes an EventSource for good): doubling from
+ * one second, capped at thirty.
+ */
+export function reconnectDelay(attempt: number): number {
+  return Math.min(1000 * 2 ** attempt, 30_000);
+}
