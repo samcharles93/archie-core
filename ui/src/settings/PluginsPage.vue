@@ -5,7 +5,6 @@ import { storeToRefs } from "pinia";
 import PageHeader from "@/base/PageHeader.vue";
 import { Input } from "@/components/ui/input";
 import { SettingRow } from "@/components/ui/setting-row";
-import { StatusPill } from "@/components/ui/status-pill";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import HistoryLink from "./HistoryLink.vue";
 
@@ -31,7 +30,6 @@ const error = computed(() => store.stateFor(KIND).error);
   <div>
     <PageHeader title="Plugins">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>

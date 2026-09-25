@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/number-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingRow } from "@/components/ui/setting-row";
-import { StatusPill } from "@/components/ui/status-pill";
 import {
   TagsInput,
   TagsInputInput,
@@ -75,7 +74,6 @@ function addProfile() {
   <div>
     <PageHeader title="Container runtime">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>

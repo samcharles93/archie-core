@@ -16,7 +16,6 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group";
 import { SettingRow } from "@/components/ui/setting-row";
-import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import McpServerEditor, { type McpServer } from "./McpServerEditor.vue";
@@ -63,7 +62,6 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
   <div>
     <PageHeader title="Tools & MCP">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">

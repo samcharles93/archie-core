@@ -21,7 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SettingRow } from "@/components/ui/setting-row";
-import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
 import {
   TagsInput,
@@ -77,7 +76,6 @@ const protectOf = (repo: Repo) => repo.protect ?? [];
   <div>
     <PageHeader title="Repositories">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>

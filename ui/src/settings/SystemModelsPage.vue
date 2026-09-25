@@ -7,7 +7,6 @@ import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingRow } from "@/components/ui/setting-row";
-import { StatusPill } from "@/components/ui/status-pill";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import HistoryLink from "./HistoryLink.vue";
 import SecretRefField from "./SecretRefField.vue";
@@ -63,7 +62,6 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
   <div>
     <PageHeader title="Models">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
 
     <p v-for="e in [catalogError, ...errors].filter(Boolean)" :key="String(e)" class="mb-4 text-sm text-danger" role="alert">

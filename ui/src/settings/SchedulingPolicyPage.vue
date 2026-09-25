@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/number-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingRow } from "@/components/ui/setting-row";
-import { StatusPill } from "@/components/ui/status-pill";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 
 const KIND = "scheduling-policy";
@@ -65,7 +64,6 @@ const labelMissing = computed(
   <div>
     <PageHeader title="Scheduling policy">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <StatusPill tone="warn">Applies after restart</StatusPill>
     </PageHeader>
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
