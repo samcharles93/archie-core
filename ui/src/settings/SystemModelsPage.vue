@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { Plus, Trash2 } from "@lucide/vue";
 
@@ -59,6 +59,32 @@ function setRole(role: string, model: string) {
   if (model.trim()) roles.value[role] = model.trim();
   else delete roles.value[role];
 }
+// Embedding runs through the SDK's embed package, which only these classes
+// implement (internal/infrastructure/embedding).
+const EMBED_CLASSES = ["openai", "openai-compatible", "gemini", "ollama", "cohere", "mistral"];
+const embeddingProviders = computed(() =>
+  Object.entries(providers.value ?? {})
+    .filter(([, p]) => EMBED_CLASSES.includes(p.class))
+    .map(([id]) => id),
+);
+// The provider is held locally until a model is typed: the role itself is
+// only stored once both halves exist.
+const embeddingProvider = ref("");
+const embeddingModel = ref("");
+watch(
+  () => roles.value?.embedding,
+  (value) => {
+    if (!value) return;
+    embeddingProvider.value = value.split("/")[0] ?? "";
+    embeddingModel.value = value.split("/").slice(1).join("/");
+  },
+  { immediate: true },
+);
+function setEmbedding(provider: string, model: string) {
+  embeddingProvider.value = provider;
+  embeddingModel.value = model;
+  setRole("embedding", provider && model ? `${provider}/${model}` : "");
+}
 const roleValid = (model: string) => /^[^/\s]+\/\S+$/.test(model);
 const providerKnown = (model: string) => configuredIds.value.includes(model.split("/")[0]!);
 
@@ -106,34 +132,42 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
         <option v-for="m in modelOptions" :key="m" :value="m" />
       </datalist>
       <div class="rounded-lg border border-border bg-card">
-        <Accordion type="multiple">
-          <AccordionItem v-for="role in roleNames" :key="role" :value="role" class="px-4">
-            <AccordionTrigger class="hover:no-underline">
-              <span class="flex min-w-0 flex-1 items-center gap-3">
-                <span class="w-28 text-left text-sm font-medium">{{ role }}</span>
-                <span class="truncate font-mono text-xs" :class="roles[role] ? 'text-fg-muted' : 'text-fg-subtle'">{{ roles[role] || "unset" }}</span>
-                <span v-if="roles[role] && !providerKnown(roles[role])" class="text-xs text-warn">provider not configured</span>
-              </span>
-            </AccordionTrigger>
-            <AccordionContent>
-              <div class="flex items-center gap-2 pb-1">
-                <Input
-                  :model-value="roles[role] ?? ''"
-                  list="role-models"
-                  class="max-w-md font-mono"
-                  placeholder="provider/model"
-                  :aria-label="`Model for ${role}`"
-                  :aria-invalid="(roles[role] && !roleValid(roles[role])) || undefined"
-                  @update:model-value="(v) => setRole(role, String(v))"
-                />
-                <Button v-if="!KNOWN_ROLES.includes(role)" variant="ghost" size="icon" :aria-label="`Remove role ${role}`" @click="delete roles[role]">
-                  <Trash2 />
-                </Button>
-              </div>
-              <p v-if="roles[role] && !roleValid(roles[role])" class="text-xs text-danger">Use provider/model.</p>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+        <div v-for="role in roleNames" :key="role" class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5 last-of-type:border-b-0">
+          <label :for="`role-${role}`" class="w-28 text-sm font-medium">{{ role }}</label>
+          <template v-if="role === 'embedding'">
+            <Select :model-value="embeddingProvider" @update:model-value="(v) => setEmbedding(String(v), embeddingModel)">
+              <SelectTrigger class="w-44 font-mono" aria-label="Embedding provider"><SelectValue placeholder="unset" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="id in embeddingProviders" :key="id" :value="id">{{ id }}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              :id="`role-${role}`"
+              :model-value="embeddingModel"
+              class="max-w-64 font-mono"
+              placeholder="model"
+              :disabled="!embeddingProvider"
+              @update:model-value="(v) => setEmbedding(embeddingProvider, String(v))"
+            />
+            <span v-if="!embeddingProviders.length" class="text-xs text-fg-subtle">Needs an openai, gemini, ollama, cohere or mistral provider.</span>
+          </template>
+          <template v-else>
+            <Input
+              :id="`role-${role}`"
+              :model-value="roles[role] ?? ''"
+              list="role-models"
+              class="max-w-md flex-1 font-mono"
+              placeholder="unset"
+              :aria-invalid="(roles[role] && !roleValid(roles[role])) || undefined"
+              @update:model-value="(v) => setRole(role, String(v))"
+            />
+            <span v-if="roles[role] && !roleValid(roles[role])" class="text-xs text-danger">Use provider/model.</span>
+            <span v-else-if="roles[role] && !providerKnown(roles[role])" class="text-xs text-warn">Provider not configured.</span>
+          </template>
+          <Button v-if="!KNOWN_ROLES.includes(role)" variant="ghost" size="icon" class="ml-auto" :aria-label="`Remove role ${role}`" @click="delete roles[role]">
+            <Trash2 />
+          </Button>
+        </div>
         <form class="flex gap-2 border-t border-border px-4 py-3" @submit.prevent="addRole">
           <Input v-model="newRole" class="max-w-56 font-mono" placeholder="role name" aria-label="New role" />
           <Button type="submit" variant="outline" size="sm" :disabled="!newRole.trim()"><Plus data-icon="inline-start" /> Add role</Button>
