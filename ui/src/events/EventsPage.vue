@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { StatusPill } from "@/components/ui/status-pill";
+import { enabled as captureEnabled, loading as captureLoading } from "@/captures/state";
 import { computed, watch, type Component } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -54,7 +56,15 @@ watch(active, (tab) => show(tab), { immediate: true });
 
 <template>
   <div>
-    <PageHeader title="Events" />
+    <PageHeader title="Events">
+      <template v-if="!captureLoading">
+        <StatusPill v-if="captureEnabled" dot="live">Listening</StatusPill>
+        <StatusPill v-else>Capture off</StatusPill>
+      </template>
+    </PageHeader>
+    <p class="-mt-4 mb-6 text-sm text-fg-muted">
+      Webhooks come in, get mapped to event types, and bindings turn them into work.
+    </p>
     <Tabs class="gap-4" :model-value="active" @update:model-value="show">
       <TabsList variant="line" class="w-full justify-start">
         <TabsTrigger v-for="tab in tabs" :key="tab.id" :value="tab.id">{{
