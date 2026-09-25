@@ -169,13 +169,13 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 
 func closeNoChangesIssue(ctx context.Context, tc *TaskContext) error {
 	if !tc.Task.IsForgeBacked() {
-		tc.Outcome = Outcome{Status: StatusMerged, Detail: "completed  --  no changes required"}
+		tc.Outcome = Outcome{Status: StatusCompleted, Detail: "completed  --  no changes required"}
 		return nil
 	}
 	if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
 		return err
 	}
-	tc.Outcome = Outcome{Status: StatusMerged, Detail: "completed  --  no changes required"}
+	tc.Outcome = Outcome{Status: StatusCompleted, Detail: "completed  --  no changes required"}
 	return nil
 }
 

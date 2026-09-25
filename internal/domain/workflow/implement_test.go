@@ -389,10 +389,10 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 	} else {
 		t.Log("CloseIssue called (no changes needed)")
 	}
-	if tc.Outcome.Status != StatusMerged {
-		t.Errorf("expected Outcome=Merged, got %s", tc.Outcome.Status)
+	if tc.Outcome.Status != StatusCompleted {
+		t.Errorf("expected Outcome=Completed, got %s", tc.Outcome.Status)
 	} else {
-		t.Log("Outcome set to Merged (workflow stops)")
+		t.Log("Outcome set to Completed (workflow stops)")
 	}
 
 	if len(f.commented) != 0 {
@@ -439,8 +439,8 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 	if f.closed != 0 || len(f.commented) != 0 {
 		t.Fatalf("chat no-op used synthetic issue: close=%d comments=%d", f.closed, len(f.commented))
 	}
-	if tc.Outcome.Status != StatusMerged {
-		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusMerged)
+	if tc.Outcome.Status != StatusCompleted {
+		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusCompleted)
 	}
 }
 

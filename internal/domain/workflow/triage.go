@@ -70,7 +70,7 @@ func Triage() Workflow {
 								return err
 							}
 						}
-						tc.Outcome = Outcome{Status: StatusMerged, Detail: "triaged: no code change needed  --  " + captured.Reasons}
+						tc.Outcome = Outcome{Status: StatusCompleted, Detail: "triaged: no code change needed  --  " + captured.Reasons}
 						return nil
 					}
 					// No fallback. The decide tool already refuses a call that

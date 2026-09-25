@@ -1344,8 +1344,13 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow
 	if latest == nil {
 		return
 	}
+	// Statuses whose forge side is settled, so the worktree holds nothing a
+	// later run needs: the PR merged, the PR was rejected, an operator refused
+	// the work, or the run finished without opening a PR at all (a no-change
+	// build, a triage that needed no code -- StatusCompleted). The PRNumber
+	// guard keeps the worktree when a PR exists for the reconciler.
 	switch latest.Status {
-	case workflow.StatusMerged, workflow.StatusRejected, workflow.StatusClosedWontDo:
+	case workflow.StatusMerged, workflow.StatusRejected, workflow.StatusClosedWontDo, workflow.StatusCompleted:
 		if latest.PRNumber == 0 {
 			if err := trees.Cleanup(task.Owner, task.Repo, task.IssueNumber); err != nil {
 				d.Log.Warn("terminal worktree cleanup failed", "task", task.ID, "err", err)

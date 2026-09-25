@@ -123,6 +123,20 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 			wantTreeExists: false,
 		},
 		{
+			name:           "root no-change completed task cleans worktree",
+			taskIdentity:   "",
+			setupStatus:    workflow.StatusCompleted,
+			prNumber:       0,
+			wantTreeExists: false,
+		},
+		{
+			name:           "multi-identity no-change completed task cleans identity worktree",
+			taskIdentity:   "winter",
+			setupStatus:    workflow.StatusCompleted,
+			prNumber:       0,
+			wantTreeExists: false,
+		},
+		{
 			name:           "parked task preserves worktree for post-mortem",
 			taskIdentity:   "",
 			setupStatus:    workflow.StatusParked,

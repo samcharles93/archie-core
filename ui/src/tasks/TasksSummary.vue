@@ -23,8 +23,14 @@ const counts = computed(() => {
 
 const total = computed(() => props.tasks.length);
 const working = computed(() => counts.value.running ?? 0);
+// Delivered counts everything whose work is out of archied's hands: merged,
+// in review, or finished with no change to make (completed, which is how a
+// no-change build and a no-code triage end).
 const delivered = computed(
-  () => (counts.value.merged ?? 0) + (counts.value.pr_open ?? 0),
+  () =>
+    (counts.value.merged ?? 0) +
+    (counts.value.completed ?? 0) +
+    (counts.value.pr_open ?? 0),
 );
 
 // "Needs you" is the server's grouping, not a local pair of ids: the same set

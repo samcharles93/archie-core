@@ -65,8 +65,8 @@ func TestTriageClosesWithoutCodeChange(t *testing.T) {
 	if f.closed != 1 {
 		t.Fatalf("CloseIssue calls = %d, want 1", f.closed)
 	}
-	if tc.Outcome.Status != StatusMerged {
-		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusMerged)
+	if tc.Outcome.Status != StatusCompleted {
+		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusCompleted)
 	}
 	if tc.Task.Workflow != "" {
 		t.Fatalf("Task.Workflow = %q, want unset (no requeue on the close path)", tc.Task.Workflow)
@@ -104,8 +104,8 @@ func TestTriageClosesChatTaskWithoutForgeCall(t *testing.T) {
 	if f.closed != 0 {
 		t.Fatalf("CloseIssue calls = %d, want 0 for a chat-spawned (non-forge-backed) task", f.closed)
 	}
-	if tc.Outcome.Status != StatusMerged {
-		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusMerged)
+	if tc.Outcome.Status != StatusCompleted {
+		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusCompleted)
 	}
 }
 
