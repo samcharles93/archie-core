@@ -1,0 +1,84 @@
+/*
+ * Archie "Graphite" theme tokens.
+ * Warm neutral greys carry the page; ONE low-chroma accent marks the active
+ * nav item, focus rings, "edited" markers and the primary action. Nothing else
+ * uses the accent. Map these onto whatever styling system the app already uses
+ * (Tailwind theme, CSS modules, styled-components…) rather than adding a
+ * parallel system.
+ */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+:root {
+  /* Surfaces (darkest → lightest) */
+  --bg:            #121314; /* page ground, input fill */
+  --bg-header:     #151618; /* app top bar */
+  --surface:       #16171a; /* cards, panels, list containers */
+  --surface-2:     #17181a; /* sticky save bar, drawer, table header */
+  --raised:        #1e2023; /* active nav item, secondary button, hover */
+  --raised-2:      #26282c; /* selected segment in a segmented control */
+
+  /* Lines */
+  --border-subtle: #202225; /* row dividers inside tables */
+  --border:        #232529; /* section dividers, header/sidebar edges */
+  --border-card:   #2a2c30; /* card and panel outlines */
+  --border-input:  #2e3034; /* inputs, toggles off-track */
+  --border-button: #34373c; /* secondary button outline */
+  --border-edited: #3a3f3c; /* outline of a section with unsaved edits */
+
+  /* Text */
+  --text:          #e8e6e1; /* primary */
+  --text-2:        #a6a39b; /* secondary, nav items, descriptions of sections */
+  --text-3:        #8f8c85; /* hints, captions, placeholders, table headers (≥4.5:1 on --surface) */
+  --text-on-accent:#101412; /* text on accent-filled buttons */
+
+  /* Accent — one at a time. Default sage; alternatives kept for a theme picker. */
+  --accent:        #86b5a0; /* sage (default) */
+  --accent-ring:   rgba(134, 181, 160, 0.15); /* focus halo */
+  /* --accent: #8aa4c2;  steel  */
+  /* --accent: #d4a373;  sand   */
+  /* --accent: #a397c9;  muted violet (closest to the old purple) */
+
+  /* Status */
+  --warn:          #d9a45b; /* "applies after restart", "connecting" dot */
+  --warn-text:     #e3c08f;
+  --warn-bg:       rgba(217, 164, 91, 0.08);
+  --warn-border:   rgba(217, 164, 91, 0.25);
+  --danger:        #d9776b; /* delete, invalid input border, dead state */
+  --danger-text:   #e0a39a;
+  --danger-bg:     rgba(217, 119, 107, 0.08);
+  --danger-border: #3a2a28;
+  --diff-add-bg:   rgba(134, 181, 160, 0.10);
+  --diff-add-text: #a9d1bf;
+  --diff-del-bg:   rgba(217, 119, 107, 0.08);
+  --diff-del-text: #e0a39a;
+
+  /* Agent state colours (label table swatches, and anywhere states are shown) */
+  --state-queued:  #8f8c85;
+  --state-working: #8aa4c2;
+  --state-waiting: #d9a45b;
+  --state-pr:      #86b5a0;
+  --state-parked:  #6f6c66;
+  --state-dead:    #d9776b;
+
+  /* Type */
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace; /* ALL config values, keys, durations, image refs */
+  --fs-page-title: 24px;  /* weight 600, letter-spacing -0.01em */
+  --fs-card-title: 15px;  /* weight 500 */
+  --fs-body:       14px;
+  --fs-control:    13px;  /* inputs, buttons, nav, labels (label weight 500) */
+  --fs-hint:       12px;  /* line-height 1.5 */
+  --fs-eyebrow:    11px;  /* uppercase, letter-spacing 0.06–0.08em, --text-3 */
+
+  /* Shape & spacing */
+  --radius-sm:   4px;   /* kbd hints */
+  --radius:      6px;   /* inputs, buttons, nav items */
+  --radius-md:   8px;   /* segmented control, callouts, diff cards */
+  --radius-lg:   10px;  /* cards, panels */
+  --radius-pill: 999px;
+  --control-h:   36px;  /* inputs, buttons, nav items */
+  --header-h:    56px;
+  --sidebar-w:   264px;
+  --content-max: 920px;
+  --row-label-w: 280px; /* left column of a setting row */
+}

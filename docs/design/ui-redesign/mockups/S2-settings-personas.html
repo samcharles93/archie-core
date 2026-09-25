@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings – personas</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none}
+.btn{height:36px;padding:0 16px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.tab{height:44px;display:flex;align-items:center;padding:0 2px;font-size:13px;color:#8f8c85;border-bottom:2px solid transparent}
+.lbl{font-size:13px;font-weight:500;color:#e8e6e1}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1040px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>
+Archie
+</div>
+<nav style="display: flex; gap: 4px; font-size: 13px">
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Dashboard</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Work</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Events</a>
+<a href="#" style="padding: 8px 12px; color: #e8e6e1; background: #1e2023; border-radius: 6px">System</a>
+</nav>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a6a39b; padding: 6px 10px; border: 1px solid #2a2c30; border-radius: 999px">
+<span style="width: 7px; height: 7px; border-radius: 50%; background: #86b5a0"></span>
+Connected · v1
+</div>
+</header>
+
+<div style="padding: 32px 48px 0; border-bottom: 1px solid #232529; flex-shrink: 0">
+<div style="font-size: 12px; color: #8f8c85">System / Advanced</div>
+<h1 style="margin: 6px 0 20px; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Advanced settings</h1>
+<nav style="display: flex; gap: 28px">
+<a class="tab" href="#" style="color: #e8e6e1; border-bottom-color: #86b5a0">Personas</a>
+<a class="tab" href="#">Schedules</a>
+<a class="tab" href="#">Scheduling policy</a>
+<a class="tab" href="#">Tools &amp; MCP</a>
+<a class="tab" href="#">Plugins</a>
+<a class="tab" href="#">Container runtime</a>
+</nav>
+</div>
+
+<div style="display: flex; flex-grow: 1; min-height: 0; padding: 32px 48px 40px; gap: 32px">
+<section aria-label="Persona list" style="width: 340px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px">
+<label style="flex-grow: 1; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid #2e3034; border-radius: 6px; color: #8f8c85">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+<input aria-label="Filter personas" placeholder="Filter personas" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: 13px 'IBM Plex Sans', sans-serif; width: 100%">
+</label>
+<button class="btn" aria-label="New persona" style="padding: 0 12px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New</button>
+</div>
+<div style="border: 1px solid #2a2c30; border-radius: 10px; overflow: hidden; background: #16171a">
+
+<a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-bottom: 1px solid #222428; background: #1e2023; box-shadow: inset 2px 0 0 #86b5a0">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">archie
+<span style="font-size: 11px; font-weight: 500; color: #86b5a0; border: 1px solid #86b5a0; border-radius: 999px; padding: 1px 8px">default</span>
+</span>
+<span style="font-size: 12px; color: #8f8c85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">You are Archie, a capable coding and project assistant. Be direct without being brusque…</span>
+</a>
+
+<a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-bottom: 1px solid #222428; background: transparent; box-shadow: none">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">helpful
+
+</span>
+<span style="font-size: 12px; color: #8f8c85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">You are a helpful, friendly AI assistant.</span>
+</a>
+
+<a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-bottom: 1px solid #222428; background: transparent; box-shadow: none">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">concise
+
+</span>
+<span style="font-size: 12px; color: #8f8c85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">You are a concise assistant. Keep responses brief and to the point.</span>
+</a>
+
+<a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-bottom: 1px solid #222428; background: transparent; box-shadow: none">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">technical
+
+</span>
+<span style="font-size: 12px; color: #8f8c85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">You are a technical expert. Provide detailed, accurate technical information.</span>
+</a>
+
+<a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-bottom: 1px solid #222428; background: transparent; box-shadow: none">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">creative
+
+</span>
+<span style="font-size: 12px; color: #8f8c85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">You are a creative assistant. Think outside the box and offer innovative solutions.</span>
+</a>
+
+<a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-bottom: 1px solid #222428; background: transparent; box-shadow: none">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">teacher
+
+</span>
+<span style="font-size: 12px; color: #8f8c85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">You are a patient teacher. Explain concepts clearly with examples.</span>
+</a>
+
+</div>
+<div class="hint">Personas are system prompts an agent can adopt. The default is used when a work item doesn't specify one.</div>
+</section>
+
+<section aria-label="Edit persona" style="flex-grow: 1; display: flex; flex-direction: column; border: 1px solid #2a2c30; border-radius: 10px; background: #16171a; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid #2a2c30">
+<h2 style="margin: 0; font-size: 18px; font-weight: 600">archie</h2>
+<span style="font-size: 11px; color: #86b5a0; border: 1px solid #86b5a0; border-radius: 999px; padding: 1px 8px">default</span>
+<div style="flex-grow: 1"></div>
+<button class="btn" style="background: transparent">Duplicate</button>
+<button class="btn" style="background: transparent; color: #d9776b; border-color: #3a2a28">Delete</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 24px; padding: 24px; flex-grow: 1">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label class="lbl" for="pname">Name</label>
+<input id="pname" class="inp" value="archie">
+<span class="hint">Lowercase, used as the persona key.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span class="lbl">Default persona</span>
+<label style="display: flex; align-items: center; gap: 10px; height: 36px; font-size: 13px; color: #a6a39b">
+<span style="width: 36px; height: 20px; border-radius: 999px; background: #86b5a0; position: relative; display: inline-block"><span style="position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #121314"></span></span>
+Use when no persona is specified
+</label>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
+<div style="display: flex; align-items: baseline"><label class="lbl" for="prompt">System prompt</label><span class="hint" style="margin-left: auto; font-family: 'IBM Plex Mono', monospace">312 chars · ~70 tokens</span></div>
+<textarea id="prompt" style="flex-grow: 1; min-height: 320px; box-sizing: border-box; padding: 16px; background: #121314; border: 1px solid #2e3034; border-radius: 8px; color: #e8e6e1; font: 400 13px/1.7 'IBM Plex Mono', monospace; resize: vertical; outline: none">You are Archie, a capable coding and project assistant. Be direct without being brusque, grounded in the actual workspace state, and use available tools when asked. Do not claim tools, files, memories, actions, or results you have not verified. Do not impersonate another assistant, provider, or vendor.</textarea>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px dashed #2e3034; border-radius: 8px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8f8c85" stroke-width="2"><path d="M4 12h12M12 6l6 6-6 6"></path></svg>
+<span style="font-size: 13px; color: #a6a39b; flex-grow: 1">Try this persona against a sample message before saving</span>
+<button class="btn">Open preview</button>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid #2a2c30; background: #17181a">
+<span style="font-size: 12px; color: #8f8c85">Saved · version 1 · <a href="#" style="color: #a6a39b; text-decoration: underline">History</a></span>
+<div style="flex-grow: 1"></div>
+<button class="btn" style="background: transparent; border-color: transparent; color: #a6a39b">Discard</button>
+<button class="btn btn-primary">Save persona</button>
+</div>
+</section>
+</div>
+</div>
+</body>
+</html>

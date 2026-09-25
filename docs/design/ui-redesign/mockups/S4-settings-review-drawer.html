@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings – review changes</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none;width:100%}
+.btn{height:36px;padding:0 16px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.acc{display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid #2a2c30;border-radius:10px;background:#16171a}
+.lbl{font-size:13px;font-weight:500;color:#e8e6e1}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.sum{font:12px 'IBM Plex Mono',monospace;color:#8f8c85}
+.field{display:flex;flex-direction:column;gap:6px}
+.chev{color:#8f8c85}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1080px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden; position: relative">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>
+Archie
+</div>
+<nav style="display: flex; gap: 4px; font-size: 13px">
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Dashboard</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Work</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Events</a>
+<a href="#" style="padding: 8px 12px; color: #e8e6e1; background: #1e2023; border-radius: 6px">System</a>
+</nav>
+</header>
+
+<main style="width: 880px; padding: 36px 0 0 64px; display: flex; flex-direction: column; gap: 12px">
+<h1 style="margin: 0 0 4px; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Advanced settings</h1>
+<p style="margin: 0 0 16px; font-size: 14px; color: #a6a39b">Collapsed sections show their current values at a glance.</p>
+
+<div class="acc"><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"></path></svg><span class="lbl" style="width: 180px">Personas</span><span class="sum" style="flex-grow: 1">6 personas · default archie</span></div>
+<div class="acc"><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"></path></svg><span class="lbl" style="width: 180px">Schedules</span><span class="sum" style="flex-grow: 1">none</span></div>
+<div class="acc" style="border-color: #3a3f3c"><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"></path></svg><span class="lbl" style="width: 180px">Scheduling policy</span><span class="sum" style="flex-grow: 1">trigger assignee · 3 retries · poll 30s</span><span style="font-size: 11px; color: #86b5a0">1 edited</span></div>
+<div class="acc"><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"></path></svg><span class="lbl" style="width: 180px">Tools &amp; MCP</span><span class="sum" style="flex-grow: 1">0 MCP · MiniMax on · web fetch on</span></div>
+<div class="acc"><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"></path></svg><span class="lbl" style="width: 180px">Plugins</span><span class="sum" style="flex-grow: 1">all directories default</span></div>
+
+<section style="border: 1px solid #3a3f3c; border-radius: 10px; background: #16171a">
+<div style="display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-bottom: 1px solid #232529">
+<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"></path></svg>
+<span class="lbl" style="flex-grow: 1">Container runtime</span>
+<span style="font-size: 11px; color: #86b5a0">2 edited</span>
+</div>
+<div style="padding: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px">
+<div class="field" style="grid-column: span 2"><label class="lbl" for="img">Image</label><input id="img" class="inp" value="ghcr.io/samcharles93/archie-agent:latest"></div>
+<div class="field"><label class="lbl" for="mc">Max concurrency</label><input id="mc" class="inp" value="6" style="border-color: #86b5a0"></div>
+<div class="field"><label class="lbl" for="mu">Max uptime</label><input id="mu" class="inp" value="2h" style="border-color: #86b5a0"></div>
+<div class="field"><label class="lbl" for="net">Network</label><input id="net" class="inp" value="archie-core_default"></div>
+<div class="field"><label class="lbl" for="pp">Pull policy</label><select id="pp" class="inp" style="font-family: 'IBM Plex Sans', sans-serif"><option>If missing</option><option>Always</option><option>Never</option></select></div>
+<div class="field"><label class="lbl" for="vt">Volume TTL</label><input id="vt" class="inp" value="72h"></div>
+<div class="field"><label class="lbl" for="pr">Profiles</label><input id="pr" class="inp" placeholder="None"></div>
+</div>
+</section>
+</main>
+
+<div style="position: absolute; left: 0; top: 56px; right: 0; bottom: 0; background: rgba(8,9,10,0.55)"></div>
+
+<aside aria-label="Review changes" style="position: absolute; top: 56px; right: 0; bottom: 0; width: 480px; box-sizing: border-box; background: #17181a; border-left: 1px solid #2a2c30; display: flex; flex-direction: column; box-shadow: -24px 0 48px rgba(0,0,0,0.35)">
+<div style="display: flex; align-items: center; padding: 20px 24px; border-bottom: 1px solid #2a2c30">
+<div style="flex-grow: 1"><h2 style="margin: 0; font-size: 17px; font-weight: 600">Review 3 changes</h2><div class="hint" style="margin-top: 2px">Saved together as config version 2</div></div>
+<button aria-label="Close" style="width: 36px; height: 36px; border: 0; background: transparent; color: #8f8c85; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+</div>
+<div style="flex-grow: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; gap: 10px; padding: 12px 14px; border-radius: 8px; background: rgba(217,164,91,0.08); border: 1px solid rgba(217,164,91,0.25); color: #e3c08f; font-size: 13px; line-height: 1.5">
+<svg style="flex-shrink: 0; margin-top: 2px" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>
+<span>All three need an archie-core restart. 2 agents are running; they'll finish before the restart.</span>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8f8c85">Scheduling policy</div>
+
+<div style="border: 1px solid #2a2c30; border-radius: 8px; overflow: hidden">
+<div style="display: flex; align-items: center; padding: 10px 14px; font-size: 13px; font-weight: 500"><span style="flex-grow: 1">Poll interval</span><a href="#" style="font-size: 12px; font-weight: 400; color: #8f8c85; text-decoration: underline">Revert</a></div>
+<div style="font: 12px/1.9 'IBM Plex Mono', monospace; border-top: 1px solid #232529">
+<div style="padding: 0 14px; background: rgba(217,119,107,0.08); color: #e0a39a">− 1m0s</div>
+<div style="padding: 0 14px; background: rgba(134,181,160,0.10); color: #a9d1bf">+ 30s</div>
+</div>
+</div>
+
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8f8c85">Container runtime</div>
+
+<div style="border: 1px solid #2a2c30; border-radius: 8px; overflow: hidden">
+<div style="display: flex; align-items: center; padding: 10px 14px; font-size: 13px; font-weight: 500"><span style="flex-grow: 1">Max concurrency</span><a href="#" style="font-size: 12px; font-weight: 400; color: #8f8c85; text-decoration: underline">Revert</a></div>
+<div style="font: 12px/1.9 'IBM Plex Mono', monospace; border-top: 1px solid #232529">
+<div style="padding: 0 14px; background: rgba(217,119,107,0.08); color: #e0a39a">− 4</div>
+<div style="padding: 0 14px; background: rgba(134,181,160,0.10); color: #a9d1bf">+ 6</div>
+</div>
+</div>
+
+<div style="border: 1px solid #2a2c30; border-radius: 8px; overflow: hidden">
+<div style="display: flex; align-items: center; padding: 10px 14px; font-size: 13px; font-weight: 500"><span style="flex-grow: 1">Max uptime</span><a href="#" style="font-size: 12px; font-weight: 400; color: #8f8c85; text-decoration: underline">Revert</a></div>
+<div style="font: 12px/1.9 'IBM Plex Mono', monospace; border-top: 1px solid #232529">
+<div style="padding: 0 14px; background: rgba(217,119,107,0.08); color: #e0a39a">− 1h0m0s</div>
+<div style="padding: 0 14px; background: rgba(134,181,160,0.10); color: #a9d1bf">+ 2h0m0s</div>
+</div>
+</div>
+
+</div>
+
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid #2a2c30">
+<button class="btn" style="background: transparent; border-color: transparent; color: #a6a39b">Discard all</button>
+<div style="flex-grow: 1"></div>
+<button class="btn">Save only</button>
+<button class="btn btn-primary">Save &amp; restart</button>
+</div>
+</aside>
+</div>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings – tools and MCP</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none;width:100%}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a;display:flex;flex-direction:column}
+.card-h{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid #232529}
+.card-b{padding:20px;display:flex;flex-direction:column;gap:18px}
+.lbl{font-size:13px;font-weight:500;color:#e8e6e1}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.field{display:flex;flex-direction:column;gap:6px}
+.sw{width:36px;height:20px;border-radius:999px;position:relative;display:inline-block;flex-shrink:0}
+.sw i{position:absolute;top:2px;width:16px;height:16px;border-radius:50%}
+.nav-item{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:6px;color:#a6a39b;font-size:13px}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1080px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>
+Archie
+</div>
+<nav style="display: flex; gap: 4px; font-size: 13px">
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Dashboard</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Tasks</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Workflows</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Events</a>
+<a href="#" style="padding: 8px 12px; color: #e8e6e1; background: #1e2023; border-radius: 6px">Settings</a>
+</nav>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a6a39b; padding: 6px 10px; border: 1px solid #2a2c30; border-radius: 999px">
+<span style="width: 7px; height: 7px; border-radius: 50%; background: #86b5a0"></span>
+Connected · v1
+</div>
+</header>
+
+<div style="display: flex; flex-grow: 1; min-height: 0">
+<aside style="width: 232px; flex-shrink: 0; box-sizing: border-box; padding: 24px 12px; border-right: 1px solid #232529; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8f8c85; padding: 0 12px 8px">Agents</div>
+<a class="nav-item" href="#">Personas</a>
+<a class="nav-item" href="#">Schedules</a>
+<a class="nav-item" href="#">Scheduling policy</a>
+<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8f8c85; padding: 18px 12px 8px">Integrations</div>
+<a class="nav-item" href="#">Channels</a>
+<a class="nav-item" href="#" style="background: #1e2023; color: #e8e6e1; box-shadow: inset 2px 0 0 #86b5a0">Tools &amp; MCP</a>
+<a class="nav-item" href="#">Plugins</a>
+<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8f8c85; padding: 18px 12px 8px">Runtime</div>
+<a class="nav-item" href="#">Container runtime</a>
+<div style="height: 1px; background: #232529; margin: 16px 12px"></div>
+<a class="nav-item" href="#">History</a>
+</aside>
+
+<main style="flex-grow: 1; padding: 36px 48px; overflow: hidden">
+<div style="display: flex; align-items: flex-end; gap: 16px; margin-bottom: 28px">
+<div style="flex-grow: 1">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Tools &amp; MCP</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">External tools, model providers and fetch limits available to agents.</p>
+</div>
+<button class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>Add MCP server</button>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px">
+
+<section class="card" style="grid-column: span 2">
+<div class="card-h">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1e2023; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a6a39b" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="1"></rect><rect x="3" y="14" width="18" height="6" rx="1"></rect><path d="M7 7h.01M7 17h.01"></path></svg></div>
+<div style="flex-grow: 1"><div class="lbl" style="font-size: 15px">MCP servers</div><div class="hint">Model Context Protocol servers agents can call.</div></div>
+</div>
+<div style="display: flex; align-items: center; gap: 20px; padding: 28px 20px">
+<div style="flex-grow: 1">
+<div style="font-size: 14px; color: #e8e6e1">No MCP servers yet</div>
+<div class="hint" style="margin-top: 4px">Add a stdio command or an HTTP endpoint. Agents see its tools on next restart.</div>
+</div>
+<button class="btn">stdio command</button>
+<button class="btn">HTTP / SSE endpoint</button>
+</div>
+</section>
+
+<section class="card">
+<div class="card-h">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1e2023; display: flex; align-items: center; justify-content: center; font: 600 13px 'IBM Plex Mono', monospace; color: #a6a39b">Mx</div>
+<div style="flex-grow: 1"><div class="lbl" style="font-size: 15px">MiniMax</div><div class="hint">Model provider</div></div>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a6a39b">Enabled<span class="sw" style="background: #86b5a0"><i style="right: 2px; background: #121314"></i></span></label>
+</div>
+<div class="card-b">
+<div class="field">
+<span class="lbl">API key</span>
+<div style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border: 1px solid #2e3034; border-radius: 6px; background: #121314">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8f8c85" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+<span style="font: 12px 'IBM Plex Mono', monospace; color: #8f8c85">bws</span>
+<span style="color: #4a4c50">/</span>
+<span style="font: 13px 'IBM Plex Mono', monospace">MINIMAX_API_KEY</span>
+<div style="flex-grow: 1"></div>
+<button class="btn" style="height: 28px; padding: 0 10px; font-size: 12px; background: transparent">Change</button>
+</div>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #86b5a0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 5 5 9-10"></path></svg>Credential resolved by Archie</div>
+</div>
+</div>
+</section>
+
+<section class="card">
+<div class="card-h">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1e2023; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a6a39b" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"></path></svg></div>
+<div style="flex-grow: 1"><div class="lbl" style="font-size: 15px">Web fetch</div><div class="hint">Let agents download pages and files</div></div>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a6a39b">Enabled<span class="sw" style="background: #86b5a0"><i style="right: 2px; background: #121314"></i></span></label>
+</div>
+<div class="card-b">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<div class="field"><label class="lbl" for="mb">Max download</label><div style="display: flex"><input id="mb" class="inp" value="2" style="border-radius: 6px 0 0 6px"><span style="display: flex; align-items: center; padding: 0 12px; border: 1px solid #2e3034; border-left: 0; border-radius: 0 6px 6px 0; font-size: 12px; color: #8f8c85">MB</span></div></div>
+<div class="field"><label class="lbl" for="to">Timeout</label><div style="display: flex"><input id="to" class="inp" value="30" style="border-radius: 6px 0 0 6px"><span style="display: flex; align-items: center; padding: 0 12px; border: 1px solid #2e3034; border-left: 0; border-radius: 0 6px 6px 0; font-size: 12px; color: #8f8c85">sec</span></div></div>
+</div>
+<label style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid #2a2c30; border-radius: 8px">
+<span class="sw" style="background: #2e3034; margin-top: 2px"><i style="left: 2px; background: #8f8c85"></i></span>
+<span><span class="lbl">Allow private networks</span><span class="hint" style="display: block">Off: requests to 10.x, 192.168.x and localhost are blocked.</span></span>
+</label>
+</div>
+</section>
+
+<section class="card" style="grid-column: span 2">
+<div class="card-h">
+<div style="flex-grow: 1"><div class="lbl" style="font-size: 15px">Tool output policy</div><div class="hint">Large tool results are truncated or spilled to disk.</div></div>
+</div>
+<div class="card-b" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+<div class="field"><label class="lbl" for="mrc">Max result length</label><div style="display: flex"><input id="mrc" class="inp" value="50,000" style="border-radius: 6px 0 0 6px"><span style="display: flex; align-items: center; padding: 0 12px; border: 1px solid #2e3034; border-left: 0; border-radius: 0 6px 6px 0; font-size: 12px; color: #8f8c85; white-space: nowrap">chars</span></div><span class="hint">About 12k tokens per tool call.</span></div>
+<div class="field"><label class="lbl" for="spill">Spill directory</label><input id="spill" class="inp" placeholder="Not set — results over the limit are truncated"><span class="hint">Full output is written here and the agent gets a path.</span></div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</div>
+</body>
+</html>

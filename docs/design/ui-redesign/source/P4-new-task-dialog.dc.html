@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New task dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn-sm{height:30px;padding:0 10px;font-size:12px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.btn-ghost{background:transparent;border-color:transparent;color:#a6a39b}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.lbl{font-size:13px;font-weight:500}
+.mono{font-family:'IBM Plex Mono',monospace}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #2e3034;color:#a6a39b;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.nav a{padding:8px 12px;color:#a6a39b;border-radius:6px}
+.inp{box-sizing:border-box;height:38px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none;width:100%}
+.field{display:flex;flex-direction:column;gap:6px}
+.opt{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid #2e3034;border-radius:8px;cursor:pointer}
+</style>
+</helmet>
+<div style="--accent: {{accent}}; width: 1440px; height: 900px; box-sizing: border-box; position: relative; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>Archie</div>
+<nav class="nav" style="display: flex; gap: 2px; font-size: 13px"><a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Workflows</a><a href="#">Events</a><a href="#">Settings</a></nav>
+<div style="flex-grow: 1"></div>
+<button class="btn btn-sm" style="border-color: {{accent}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New task</button>
+<span class="pill"><span class="dot" style="background: {{accent}}"></span>Connected</span>
+</header>
+<div style="padding: 32px 48px"><div style="font-size: 28px; font-weight: 600; color: #3a3c40">Good morning</div></div>
+
+<div style="position: absolute; inset: 0; background: rgba(8,9,10,0.6)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="nt-title" style="position: absolute; left: 50%; top: 88px; transform: translateX(-50%); width: 640px; box-sizing: border-box; background: #17181a; border: 1px solid #2a2c30; border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,0.5); display: flex; flex-direction: column">
+<div style="display: flex; align-items: flex-start; padding: 22px 24px 18px; border-bottom: 1px solid #232529">
+<div style="flex-grow: 1"><h2 id="nt-title" style="margin: 0; font-size: 18px; font-weight: 600">New task</h2><div class="hint" style="margin-top: 2px">Goes into Archie’s normal task queue.</div></div>
+<button aria-label="Close" style="width: 32px; height: 32px; border: 0; background: transparent; color: #8f8c85; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+</div>
+<div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 18px">
+<div class="field"><label class="lbl" for="repo">Repository</label><input id="repo" class="inp" value="samcharles93/archie-core"><span class="hint">owner/repository · recent: archie-core</span></div>
+<div class="field"><span class="lbl">Workflow</span>
+<div role="radiogroup" aria-label="Workflow" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{flows}}" as="f" hint-placeholder-count="6">
+<label class="opt" style="border-color: {{f.border}}; background: {{f.bg}}"><span style="font-size: 13px; font-weight: 500">{{f.name}}</span><span class="hint">{{f.sub}}</span></label>
+</sc-for>
+</div></div>
+<div class="field"><label class="lbl" for="ttl">Title</label><input id="ttl" class="inp" placeholder="What should Archie do?" style="font-family: 'IBM Plex Sans', sans-serif"></div>
+<div class="field"><label class="lbl" for="ins">Instructions</label><textarea id="ins" placeholder="Context, acceptance criteria, files to look at…" style="min-height: 120px; box-sizing: border-box; padding: 12px; background: #121314; border: 1px solid #2e3034; border-radius: 6px; color: #e8e6e1; font: 13px/1.6 'IBM Plex Sans', sans-serif; resize: vertical; outline: none"></textarea></div>
+<details style="font-size: 13px; color: #a6a39b"><summary style="cursor: pointer">Advanced · run as identity</summary></details>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-top: 1px solid #232529">
+<span class="hint"><span class="mono" style="padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘↵</span> to start</span>
+<div style="flex-grow: 1"></div>
+<button class="btn btn-ghost">Cancel</button>
+<button class="btn btn-primary">Start task</button>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#86b5a0","options":["#86b5a0","#8aa4c2","#d4a373","#a397c9"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#86b5a0';
+    const list = [['TDD', '3 runs · 0% merged'], ['Triage', '1 run · 100% merged'], ['Implement', 'no runs yet'], ['Remediate', 'no runs yet'], ['Feasibility check', 'no runs yet'], ['Bootstrap', 'no runs yet']];
+    return {
+      accent,
+      flows: list.map(([name, sub], i) => ({ name, sub, border: i === 0 ? accent : '#2e3034', bg: i === 0 ? '#1e2023' : 'transparent' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

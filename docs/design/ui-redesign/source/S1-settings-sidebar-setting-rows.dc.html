@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings – sidebar layout</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none}
+.inp:focus{border-color:var(--accent)}
+.btn{height:36px;padding:0 16px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.icon-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid transparent;background:transparent;color:#8f8c85;cursor:pointer}
+.icon-btn:hover{background:#1e2023;color:#e8e6e1}
+.nav-item{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:6px;color:#a6a39b;font-size:13px}
+.row{display:grid;grid-template-columns:280px minmax(0,1fr);gap:32px;padding:20px 0;border-top:1px solid #232529}
+.lbl{font-size:13px;font-weight:500;color:#e8e6e1}
+.hint{font-size:12px;color:#8f8c85;margin-top:4px;line-height:1.5}
+</style>
+</helmet>
+<div style="--accent: {{accent}}; width: 1440px; height: 1040px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; position: relative; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>
+Archie
+</div>
+<nav style="display: flex; gap: 4px; font-size: 13px">
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Dashboard</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Tasks</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Workflows</a>
+<a href="#" style="padding: 8px 12px; color: #a6a39b">Events</a>
+<a href="#" style="padding: 8px 12px; color: #e8e6e1; background: #1e2023; border-radius: 6px">Settings</a>
+</nav>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a6a39b; padding: 6px 10px; border: 1px solid #2a2c30; border-radius: 999px">
+<span style="width: 7px; height: 7px; border-radius: 50%; background: #d9a45b"></span>
+Connecting to archie-core…
+</div>
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; width: 240px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2c30; border-radius: 6px; color: #8f8c85; font-size: 13px">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+<input aria-label="Jump to" placeholder="Jump to…" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: inherit; width: 100%">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘K</span>
+</label>
+</header>
+
+<div style="display: flex; flex-grow: 1; min-height: 0">
+<aside style="width: 264px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid #232529; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8f8c85; padding: 0 12px 8px">Agents</div>
+<a class="nav-item" href="#">Personas<span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8f8c85">6</span></a>
+<a class="nav-item" href="#">Schedules<span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8f8c85">0</span></a>
+<a class="nav-item" href="#" style="background: #1e2023; color: #e8e6e1; box-shadow: inset 2px 0 0 {{accent}}">Scheduling policy<span style="margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: {{accent}}" title="Unsaved changes"></span></a>
+<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8f8c85; padding: 18px 12px 8px">Integrations</div>
+<a class="nav-item" href="#">Channels</a>
+<a class="nav-item" href="#">Tools &amp; MCP</a>
+<a class="nav-item" href="#">Plugins</a>
+<div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8f8c85; padding: 18px 12px 8px">Runtime</div>
+<a class="nav-item" href="#">Container runtime</a>
+<div style="height: 1px; background: #232529; margin: 16px 12px"></div>
+<a class="nav-item" href="#">History</a>
+<div style="flex-grow: 1"></div>
+<div style="font-size: 12px; color: #8f8c85; padding: 12px; line-height: 1.5; border: 1px solid #232529; border-radius: 8px">Config version 1 · last saved by <span style="color: #a6a39b">admin</span><br><a href="#" style="color: {{accent}}">View history</a></div>
+</aside>
+
+<main style="flex-grow: 1; overflow: hidden; padding: 40px 56px 120px">
+<div style="max-width: 920px">
+<div style="display: flex; align-items: flex-start; gap: 16px">
+<div style="flex-grow: 1">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Scheduling policy</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">How Archie picks up work items and labels them as they move through states.</p>
+</div>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #d9a45b; background: rgba(217,164,91,0.1); border: 1px solid rgba(217,164,91,0.25); padding: 4px 10px; border-radius: 999px">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>
+Applies after restart</span>
+</div>
+
+<h2 style="margin: 36px 0 4px; font-size: 13px; font-weight: 600; color: #a6a39b; text-transform: uppercase; letter-spacing: 0.06em">Dispatch</h2>
+<div class="row">
+<div><div class="lbl">Trigger</div><div class="hint">What causes a work item to be dispatched to an agent.</div></div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div role="radiogroup" aria-label="Trigger" style="display: inline-flex; align-self: flex-start; padding: 3px; background: #121314; border: 1px solid #2e3034; border-radius: 8px">
+<button style="height: 30px; padding: 0 14px; border: 0; border-radius: 5px; background: #26282c; color: #e8e6e1; font: 500 13px 'IBM Plex Sans', sans-serif">Assignee</button>
+<button style="height: 30px; padding: 0 14px; border: 0; border-radius: 5px; background: transparent; color: #8f8c85; font: 500 13px 'IBM Plex Sans', sans-serif">Label</button>
+</div>
+<div class="hint" style="margin: 0">Dispatches when Archie is assigned. Choose <span style="color: #a6a39b">Label</span> to set a trigger label instead.</div>
+</div>
+</div>
+<div class="row">
+<div><label class="lbl" for="ack">Ack reaction</label><div class="hint">Reaction posted when a work item is picked up.</div></div>
+<div><input id="ack" class="inp" value="eyes" style="width: 220px"></div>
+</div>
+
+<h2 style="margin: 36px 0 4px; font-size: 13px; font-weight: 600; color: #a6a39b; text-transform: uppercase; letter-spacing: 0.06em">State labels</h2>
+<div class="row">
+<div><div class="lbl">Labels by state</div><div class="hint">Label applied to the ticket as the agent moves between states.</div></div>
+<div style="border: 1px solid #2a2c30; border-radius: 8px; overflow: hidden">
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 44px; gap: 12px; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8f8c85; background: #17181a; border-bottom: 1px solid #2a2c30"><span>State</span><span>Label</span><span></span></div>
+<sc-for list="{{labels}}" as="l" hint-placeholder-count="6">
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 44px; gap: 12px; align-items: center; padding: 6px 12px; border-bottom: 1px solid #202225">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 2px; background: {{l.color}}"></span>{{l.state}}</span>
+<input class="inp" aria-label="{{l.state}} label" value="{{l.label}}" style="width: 100%; height: 32px">
+<button class="icon-btn" aria-label="Remove {{l.state}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg></button>
+</div>
+</sc-for>
+<button style="display: flex; align-items: center; gap: 6px; width: 100%; height: 38px; padding: 0 12px; border: 0; background: transparent; color: #a6a39b; font: 500 13px 'IBM Plex Sans', sans-serif; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>Add state</button>
+</div>
+</div>
+
+<h2 style="margin: 36px 0 4px; font-size: 13px; font-weight: 600; color: #a6a39b; text-transform: uppercase; letter-spacing: 0.06em">Retries &amp; polling</h2>
+<div class="row">
+<div><label class="lbl" for="retries">Max retries</label><div class="hint">Attempts before an item is labelled dead.</div></div>
+<div style="display: inline-flex; align-self: flex-start; border: 1px solid #2e3034; border-radius: 6px; overflow: hidden; width: fit-content">
+<button class="icon-btn" aria-label="Decrease" style="border-radius: 0">−</button>
+<input id="retries" class="inp" value="3" style="width: 56px; border: 0; border-radius: 0; text-align: center; border-left: 1px solid #2e3034; border-right: 1px solid #2e3034">
+<button class="icon-btn" aria-label="Increase" style="border-radius: 0">+</button>
+</div>
+</div>
+<div class="row">
+<div><label class="lbl" for="poll">Poll interval</label><div class="hint">How often the tracker is checked for new work.</div></div>
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="display: flex">
+<input id="poll" class="inp" value="30" style="width: 80px; border-radius: 6px 0 0 6px; border-color: {{accent}}">
+<select aria-label="Poll unit" class="inp" style="border-radius: 0 6px 6px 0; border-left: 0; font-family: 'IBM Plex Sans', sans-serif"><option>seconds</option><option>minutes</option></select>
+</div>
+<span style="font-size: 12px; color: #8f8c85">was <span style="font-family: 'IBM Plex Mono', monospace; text-decoration: line-through">1m0s</span></span>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+<div style="position: absolute; left: 264px; right: 0; bottom: 0; height: 72px; box-sizing: border-box; padding: 0 56px; display: flex; align-items: center; gap: 12px; background: #17181a; border-top: 1px solid #2a2c30">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: {{accent}}"></span>
+<span style="font-size: 13px">1 unsaved change</span>
+<span style="font-size: 13px; color: #8f8c85">· Poll interval</span>
+<div style="flex-grow: 1"></div>
+<button class="btn" style="background: transparent; border-color: transparent; color: #a6a39b">Discard</button>
+<button class="btn btn-primary">Save &amp; restart</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#86b5a0","options":["#86b5a0","#8aa4c2","#d4a373","#a397c9"]},"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#86b5a0',
+      labels: [
+        { state: 'queued', label: 'agent:queued', color: '#8f8c85' },
+        { state: 'working', label: 'agent:working', color: '#8aa4c2' },
+        { state: 'waiting', label: 'agent:waiting', color: '#d9a45b' },
+        { state: 'pr', label: 'agent:pr', color: '#86b5a0' },
+        { state: 'parked', label: 'agent:parked', color: '#6f6c66' },
+        { state: 'dead', label: 'agent:dead', color: '#d9776b' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

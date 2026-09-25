@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Events</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn-sm{height:30px;padding:0 10px;font-size:12px}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a;display:flex;flex-direction:column;min-width:0}
+.card-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #232529}
+.card-t{font-size:15px;font-weight:500}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.mono{font-family:'IBM Plex Mono',monospace}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #2e3034;color:#a6a39b;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.nav a{padding:8px 12px;color:#a6a39b;border-radius:6px}
+.nav a.on{color:#e8e6e1;background:#1e2023}
+.tab{height:44px;display:flex;align-items:center;gap:8px;font-size:13px;color:#8f8c85;border-bottom:2px solid transparent}
+.count{font:11px 'IBM Plex Mono',monospace;color:#8f8c85;background:#1e2023;border-radius:4px;padding:0 6px}
+</style>
+</helmet>
+<div style="--accent: {{accent}}; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>Archie</div>
+<nav class="nav" style="display: flex; gap: 2px; font-size: 13px"><a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Workflows</a><a href="#" class="on">Events</a><a href="#">Settings</a></nav>
+<div style="flex-grow: 1"></div>
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; width: 220px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2c30; border-radius: 6px; color: #8f8c85; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input aria-label="Jump to" placeholder="Jump to…" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: inherit; width: 100%"><span class="mono" style="font-size: 11px; padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘K</span></label>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New task</button>
+<span class="pill"><span class="dot" style="background: {{accent}}"></span>Connected</span>
+<span aria-label="Account" style="width: 28px; height: 28px; border-radius: 50%; background: #26282c; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a6a39b">A</span>
+</header>
+
+<main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px">
+<div>
+<div style="display: flex; align-items: flex-end; gap: 12px">
+<div style="flex-grow: 1"><h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Events</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">Webhooks come in, get mapped to event types, and bindings turn them into work.</p></div>
+<span class="pill" style="color: {{accent}}; border-color: {{accent}}"><span class="dot" style="background: {{accent}}"></span>Listening</span>
+</div>
+<nav style="display: flex; gap: 28px; margin-top: 16px; border-bottom: 1px solid #232529">
+<a class="tab" href="#" style="color: #e8e6e1; border-bottom-color: {{accent}}">Inspector</a>
+<a class="tab" href="#">Mappings <span class="count">0</span></a>
+<a class="tab" href="#">Bindings <span class="count">0</span></a>
+</nav>
+</div>
+
+<section class="card" style="flex-direction: row">
+<sc-for list="{{flow}}" as="f" hint-placeholder-count="3">
+<div style="flex: 1 1 0; display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-right: 1px solid #232529">
+<span class="mono" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid #34373c; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a6a39b; flex-shrink: 0">{{f.n}}</span>
+<div style="flex-grow: 1"><div style="font-size: 14px; font-weight: 500">{{f.title}}</div><div class="hint">{{f.sub}}</div></div>
+<span class="mono" style="font-size: 20px; color: #8f8c85">{{f.count}}</span>
+</div>
+</sc-for>
+</section>
+
+<div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px">
+<section class="card">
+<div class="card-h"><div style="flex-grow: 1"><div class="card-t">Recent captures</div><div class="hint">Headers and payloads are redacted before they’re stored.</div></div></div>
+<div style="padding: 40px 32px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center">
+<div style="width: 40px; height: 40px; border-radius: 10px; background: #1e2023; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a6a39b" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"></path></svg></div>
+<div style="font-size: 14px; font-weight: 500">No captures yet</div>
+<div class="hint">Point a webhook at this endpoint and it shows up here live.</div>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 4px 4px 4px 14px; border: 1px solid #2e3034; border-radius: 8px; background: #121314">
+<span class="mono" style="font-size: 13px">/webhooks/capture/<span style="color: {{accent}}">&lt;source&gt;</span></span>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"></path></svg>Copy</button>
+</div>
+</div>
+</section>
+
+<section class="card">
+<div class="card-h"><div style="flex-grow: 1"><div class="card-t">Event types</div><div class="hint">Named shapes that mappings produce.</div></div>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z"></path><path d="M12 12v6M9 15h6"></path></svg>From payload</button></div>
+<div style="padding: 40px 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+<div style="font-size: 14px; font-weight: 500">No event types or proposals</div>
+<div class="hint">Paste a sample payload and Archie proposes a type for it. Proposals from real captures appear here too.</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#86b5a0","options":["#86b5a0","#8aa4c2","#d4a373","#a397c9"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#86b5a0',
+      flow: [
+        { n: '1', title: 'Capture', sub: 'Webhooks received', count: '0' },
+        { n: '2', title: 'Map', sub: 'Payloads → event types', count: '0' },
+        { n: '3', title: 'Bind', sub: 'Event types → work', count: '0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

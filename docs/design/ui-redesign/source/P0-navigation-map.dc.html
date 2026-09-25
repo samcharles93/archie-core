@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Proposed navigation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8f8c85;font-weight:500}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.node{display:flex;align-items:baseline;gap:10px;font-size:14px;font-weight:500}
+.sub{font-size:12px;color:#8f8c85;font-weight:400}
+.kid{margin:6px 0 0 18px;padding-left:14px;border-left:1px solid #2e3034;display:flex;flex-direction:column;gap:6px;font-size:13px;color:#a6a39b}
+.mono{font-family:'IBM Plex Mono',monospace}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8f8c85;padding:10px 14px;border-bottom:1px solid #2a2c30}
+.tbl td{padding:10px 14px;border-bottom:1px solid #202225;vertical-align:top;line-height:1.45}
+</style>
+</helmet>
+<div style="--accent: {{accent}}; width: 1440px; height: 1120px; box-sizing: border-box; padding: 48px 56px; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; display: flex; flex-direction: column; gap: 28px">
+<div>
+<h1 style="margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em">Navigation: today → proposed</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">Five top-level places, each with one job. Anything you configure lives in Settings; anything you act on lives where the work is.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 24px">
+<section class="card" style="padding: 24px; display: flex; flex-direction: column; gap: 16px">
+<div class="eyebrow">Today</div>
+<div class="node" style="color: #a6a39b">Dashboard</div>
+<div><div class="node" style="color: #a6a39b">Work <span class="sub">dropdown</span></div>
+<div class="kid"><span>Tasks</span><span>Workflows <span class="sub">editor + start work + stats</span></span><span>Channels <span class="sub">settings + audit</span></span></div></div>
+<div><div class="node" style="color: #a6a39b">Events</div>
+<div class="kid"><span>Inspector · Bindings · Mappings</span></div></div>
+<div><div class="node" style="color: #a6a39b">System <span class="sub">dropdown</span></div>
+<div class="kid"><span>Advanced <span class="sub">6 cards, 6 save buttons</span></span></div></div>
+<p class="hint" style="margin: 8px 0 0">Dropdown contents are inferred from the screenshots; confirm against the router.</p>
+</section>
+
+<section class="card" style="padding: 24px">
+<div class="eyebrow" style="margin-bottom: 16px; color: {{accent}}">Proposed</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 32px">
+<div><div class="node">Dashboard <span class="sub">what needs me</span></div>
+<div class="kid"><span>Needs you queue</span><span>Live activity</span><span>Health: gates, tokens</span></div></div>
+<div><div class="node">Tasks <span class="sub">the work</span></div>
+<div class="kid"><span>Task list <span class="sub">filter by state</span></span><span>Task detail <span class="sub">log · files · config · debug</span></span><span>Attempts in a side rail</span></div></div>
+<div><div class="node">Workflows <span class="sub">how work runs</span></div>
+<div class="kid"><span>List with success + cost</span><span>Definition editor</span><span>Performance tab <span class="sub">stages, failures</span></span></div></div>
+<div><div class="node">Events <span class="sub">what comes in</span></div>
+<div class="kid"><span>Inspector</span><span>Bindings</span><span>Mappings</span></div></div>
+<div style="grid-column: span 2"><div class="node">Settings <span class="sub">everything you configure, one save flow</span></div>
+<div class="kid" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 24px">
+<span><span style="color: #e8e6e1">Agents</span><br>Personas · Schedules · Scheduling policy</span>
+<span><span style="color: #e8e6e1">Integrations</span><br>Channels · Tools &amp; MCP · Plugins</span>
+<span><span style="color: #e8e6e1">Runtime</span><br>Container runtime · History</span>
+</div></div>
+</div>
+<div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #232529; display: flex; gap: 24px; font-size: 13px; color: #a6a39b">
+<span><span style="color: #e8e6e1; font-weight: 500">Always in the top bar:</span> New task · ⌘K Jump to · connection status</span>
+</div>
+</section>
+</div>
+
+<section class="card" style="overflow: hidden">
+<table class="tbl">
+<thead><tr><th style="width: 290px">What</th><th style="width: 280px">Moves to</th><th>Why</th></tr></thead>
+<tbody>
+<sc-for list="{{moves}}" as="m" hint-placeholder-count="9">
+<tr><td style="color: #e8e6e1">{{m.what}}</td><td><span style="color: {{accent}}">→</span> {{m.to}}</td><td style="color: #a6a39b">{{m.why}}</td></tr>
+</sc-for>
+</tbody>
+</table>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#86b5a0","options":["#86b5a0","#8aa4c2","#d4a373","#a397c9"]},"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#86b5a0',
+      moves: [
+        { what: 'Start work card (Workflows)', to: 'New task dialog, from the top bar', why: 'Starting work is not editing a workflow. One entry point from any page, and from ⌘K.' },
+        { what: 'Channels (Work menu)', to: 'Settings › Integrations › Channels', why: 'It is configuration. It gets the same setting rows, secret fields and save flow as the rest.' },
+        { what: 'Audit table (Channels page)', to: 'Settings › History', why: 'One change log for every setting, filterable by section. Replaces six History links.' },
+        { what: 'Per workflow table', to: 'Workflows list columns', why: 'Runs, success and cost sit next to the workflow you are about to open.' },
+        { what: 'Slowest stages · Most failures', to: 'Workflow › Performance tab', why: 'Scoped to the selected workflow instead of mixing every workflow in one table.' },
+        { what: 'Connecting · Version pills on every card', to: 'One status in the top bar', why: 'Connection is global. Version shows once per page, in History.' },
+        { what: 'Settings "Managed elsewhere" row', to: 'Events tabs', why: 'Captured events, mappings and bindings already live there.' },
+        { what: 'Task "Attempt 2 is not recorded" column', to: 'Attempts list in the task side rail', why: 'Shows every attempt with its outcome; the empty column goes away.' },
+        { what: 'Dashboard stat cards and health', to: 'Stat strip + right rail', why: '"Needs you" becomes the first thing on the page, with actions inline.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

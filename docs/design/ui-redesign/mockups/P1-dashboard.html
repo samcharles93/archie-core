@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn-sm{height:30px;padding:0 10px;font-size:12px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.btn-ghost{background:transparent;border-color:transparent;color:#a6a39b}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a;display:flex;flex-direction:column;min-width:0}
+.card-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #232529}
+.card-t{font-size:15px;font-weight:500}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8f8c85;font-weight:500}
+.mono{font-family:'IBM Plex Mono',monospace}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #2e3034;color:#a6a39b;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.warn{color:#d9a45b;border-color:rgba(217,164,91,.3);background:rgba(217,164,91,.08)}
+.nav a{padding:8px 12px;color:#a6a39b;border-radius:6px}
+.nav a.on{color:#e8e6e1;background:#1e2023}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8f8c85;padding:10px 20px;border-bottom:1px solid #2a2c30}
+.tbl td{padding:10px 20px;border-bottom:1px solid #202225;vertical-align:middle}
+.chip{font:11px 'IBM Plex Mono',monospace;color:#8f8c85;background:#1e2023;border-radius:4px;padding:1px 6px;margin-left:6px}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1080px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden; position: relative">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>Archie</div>
+<nav class="nav" style="display: flex; gap: 2px; font-size: 13px"><a href="#" class="on">Dashboard</a><a href="#">Tasks</a><a href="#">Workflows</a><a href="#">Events</a><a href="#">Settings</a></nav>
+<div style="flex-grow: 1"></div>
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; width: 220px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2c30; border-radius: 6px; color: #8f8c85; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input aria-label="Jump to" placeholder="Jump to…" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: inherit; width: 100%"><span class="mono" style="font-size: 11px; padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘K</span></label>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New task</button>
+<span class="pill"><span class="dot" style="background: #86b5a0"></span>Connected</span>
+<span aria-label="Account" style="width: 28px; height: 28px; border-radius: 50%; background: #26282c; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a6a39b">A</span>
+</header>
+
+<main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px; min-height: 0">
+<div style="display: flex; align-items: flex-end; gap: 16px">
+<div style="flex-grow: 1">
+<h1 style="margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em">Good morning</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">Nothing is running. <span style="color: #d9a45b">3 tasks need you.</span></p>
+</div>
+<button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h13"></path></svg>Logs</button>
+</div>
+
+<section class="card" style="flex-direction: row">
+
+<div style="flex: 1 1 0; padding: 18px 22px; border-right: 1px solid #232529">
+<div class="hint">Working now</div>
+<div style="font-size: 30px; font-weight: 600; margin-top: 6px; color: #e8e6e1">0</div>
+<div class="hint" style="margin-top: 2px">0 waiting to start</div>
+</div>
+
+<div style="flex: 1 1 0; padding: 18px 22px; border-right: 1px solid #232529">
+<div class="hint">Needs you</div>
+<div style="font-size: 30px; font-weight: 600; margin-top: 6px; color: #d9a45b">3</div>
+<div class="hint" style="margin-top: 2px">Parked or awaiting a reply</div>
+</div>
+
+<div style="flex: 1 1 0; padding: 18px 22px; border-right: 1px solid #232529">
+<div class="hint">Delivered</div>
+<div style="font-size: 30px; font-weight: 600; margin-top: 6px; color: #e8e6e1">1</div>
+<div class="hint" style="margin-top: 2px">25% of all tasks</div>
+</div>
+
+<div style="flex: 1 1 0; padding: 18px 22px; border-right: 1px solid #232529">
+<div class="hint">Tokens used</div>
+<div style="font-size: 30px; font-weight: 600; margin-top: 6px; color: #e8e6e1">14.5M</div>
+<div class="hint" style="margin-top: 2px">Across 1 day</div>
+</div>
+
+</section>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; min-height: 0; flex-grow: 1">
+<div style="display: flex; flex-direction: column; gap: 24px; min-width: 0">
+<section class="card">
+<div class="card-h"><span class="card-t">Needs you</span><span class="pill warn">3</span><div style="flex-grow: 1"></div><a href="#" class="hint" style="text-decoration: underline">All tasks</a></div>
+
+<div style="display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #202225">
+<span class="pill warn" style="justify-self: start">Parked</span>
+<div style="min-width: 0">
+<a href="#" style="font-size: 14px; font-weight: 500">changes_captured key-set validation is top-level only</a>
+<div class="mono" style="font-size: 12px; color: #8f8c85; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">archie-core #868 · tdd · worktree prepare failed: fetch origin: http transport…</div>
+</div>
+<div style="display: flex; gap: 8px"><button class="btn btn-sm btn-ghost">Open</button><button class="btn btn-sm">Start new run</button></div>
+</div>
+
+<div style="display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #202225">
+<span class="pill warn" style="justify-self: start">Awaiting reply</span>
+<div style="min-width: 0">
+<a href="#" style="font-size: 14px; font-weight: 500">[Task title]</a>
+<div class="mono" style="font-size: 12px; color: #8f8c85; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">[repo #issue] · [workflow] · [last agent message]</div>
+</div>
+<div style="display: flex; gap: 8px"><button class="btn btn-sm btn-ghost">Open</button><button class="btn btn-sm">Reply</button></div>
+</div>
+
+<div style="display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #202225">
+<span class="pill warn" style="justify-self: start">Awaiting reply</span>
+<div style="min-width: 0">
+<a href="#" style="font-size: 14px; font-weight: 500">[Task title]</a>
+<div class="mono" style="font-size: 12px; color: #8f8c85; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">[repo #issue] · [workflow] · [last agent message]</div>
+</div>
+<div style="display: flex; gap: 8px"><button class="btn btn-sm btn-ghost">Open</button><button class="btn btn-sm">Reply</button></div>
+</div>
+
+</section>
+
+<section class="card" style="flex-grow: 1; overflow: hidden">
+<div class="card-h"><span class="card-t">Live activity</span><span class="pill" style="color: #86b5a0; border-color: #86b5a0"><span class="dot" style="background: #86b5a0"></span>live</span><div style="flex-grow: 1"></div>
+<div role="radiogroup" aria-label="Filter activity" style="display: inline-flex; padding: 2px; border: 1px solid #2e3034; border-radius: 7px"><button style="height: 26px; padding: 0 10px; border: 0; border-radius: 5px; background: #26282c; color: #e8e6e1; font: 500 12px 'IBM Plex Sans', sans-serif">All</button><button style="height: 26px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: #8f8c85; font: 500 12px 'IBM Plex Sans', sans-serif">Tasks</button><button style="height: 26px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: #8f8c85; font: 500 12px 'IBM Plex Sans', sans-serif">System</button></div>
+</div>
+<table class="tbl">
+<thead><tr><th>Event</th><th style="width: 70px">Task</th><th>Detail</th><th style="width: 110px">When</th></tr></thead>
+<tbody>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #6f6c66"></span>curator_run</td><td class="mono" style="font-size: 12px; color: #a6a39b">—</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">session-memory</td><td class="hint">19 mins ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #8aa4c2"></span>task_archive_requested</td><td class="mono" style="font-size: 12px; color: #a6a39b">#5</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">archive requested with no recorded actor</td><td class="hint">1 hr ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #d9776b"></span>task_abandoned</td><td class="mono" style="font-size: 12px; color: #a6a39b">#5</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">abandoned with no recorded actor</td><td class="hint">1 hr ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #6f6c66"></span>curator_run<span class="chip">×6</span></td><td class="mono" style="font-size: 12px; color: #a6a39b">—</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">session-memory</td><td class="hint">1 hr ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #8aa4c2"></span>stage_start<span class="chip">×4</span></td><td class="mono" style="font-size: 12px; color: #a6a39b">#5</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"></td><td class="hint">1 hr ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #8aa4c2"></span>stage_start<span class="chip">×5</span></td><td class="mono" style="font-size: 12px; color: #a6a39b">#4</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"></td><td class="hint">7 hrs ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #86b5a0"></span>agent_finish</td><td class="mono" style="font-size: 12px; color: #a6a39b">#4</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Problem surface for samcharles93/archie-core issue 836 ("Updater cannot detect o…</td><td class="hint">7 hrs ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #86b5a0"></span>agent_finish</td><td class="mono" style="font-size: 12px; color: #a6a39b">#4</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Root cause</td><td class="hint">7 hrs ago</td></tr>
+
+<tr><td class="mono" style="font-size: 12px"><span style="display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 8px; background: #8aa4c2"></span>stage_start<span class="chip">×6</span></td><td class="mono" style="font-size: 12px; color: #a6a39b">#4</td><td style="color: #a6a39b; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"></td><td class="hint">8 hrs ago</td></tr>
+
+</tbody>
+</table>
+</section>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 24px">
+<section class="card">
+<div class="card-h"><span class="card-t">Quality gates</span><div style="flex-grow: 1"></div><span class="hint">last 4 runs</span></div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span style="font-size: 30px; font-weight: 600">25%</span><span class="hint">pass rate</span></div>
+
+<div>
+<div style="display: flex; font-size: 13px; margin-bottom: 6px"><span class="mono">tdd</span><span style="margin-left: auto; color: #a6a39b" class="mono">0 / 3</span></div>
+<div style="height: 6px; border-radius: 3px; background: #26282c"><div style="height: 6px; border-radius: 3px; width: 2%; background: #d9776b"></div></div>
+</div>
+
+<div>
+<div style="display: flex; font-size: 13px; margin-bottom: 6px"><span class="mono">triage</span><span style="margin-left: auto; color: #a6a39b" class="mono">1 / 1</span></div>
+<div style="height: 6px; border-radius: 3px; background: #26282c"><div style="height: 6px; border-radius: 3px; width: 100%; background: #86b5a0"></div></div>
+</div>
+
+</div>
+</section>
+
+<section class="card">
+<div class="card-h"><span class="card-t">Token outlook</span></div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; gap: 24px">
+<div><div class="hint">Today</div><div style="font-size: 22px; font-weight: 600; margin-top: 2px">14.5M</div></div>
+<div><div class="hint">Next 30 days at this rate</div><div style="font-size: 22px; font-weight: 600; margin-top: 2px">≈ 434M</div></div>
+</div>
+<div aria-label="Tokens per day, last 7 days" style="display: flex; align-items: flex-end; gap: 6px; height: 64px">
+<div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 3px; border-radius: 3px; background: #26282c"></div><span class="mono" style="font-size: 10px; color: #8f8c85">M</span></div><div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 3px; border-radius: 3px; background: #26282c"></div><span class="mono" style="font-size: 10px; color: #8f8c85">T</span></div><div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 3px; border-radius: 3px; background: #26282c"></div><span class="mono" style="font-size: 10px; color: #8f8c85">W</span></div><div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 3px; border-radius: 3px; background: #26282c"></div><span class="mono" style="font-size: 10px; color: #8f8c85">T</span></div><div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 48px; border-radius: 3px; background: #86b5a0"></div><span class="mono" style="font-size: 10px; color: #8f8c85">F</span></div><div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 3px; border-radius: 3px; background: #26282c"></div><span class="mono" style="font-size: 10px; color: #8f8c85">S</span></div><div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 3px; border-radius: 3px; background: #26282c"></div><span class="mono" style="font-size: 10px; color: #8f8c85">S</span></div>
+</div>
+<div class="hint">Only 1 day of history. The projection steadies after a week of runs.</div>
+</div>
+</section>
+</div>
+</div>
+</main>
+
+<button aria-label="Chat with Archie" style="position: absolute; right: 24px; bottom: 24px; width: 48px; height: 48px; border-radius: 50%; border: 1px solid #34373c; background: #1e2023; color: #86b5a0; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(0,0,0,.4); cursor: pointer"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"></path></svg></button>
+</div>
+</body>
+</html>

@@ -145,6 +145,8 @@ type navNode struct {
 //   - archive/     superseded design. Publishing it competes with the current
 //     architecture for a reader's attention, which is the exact failure this
 //     repository already fights.
+//   - design/      design handoff bundles (prompts, mockups, theme tokens):
+//     inputs to building the UI, not pages to read.
 //   - inspiration/ research notes that discuss other products by name.
 //   - news/        release notes, which tools/newsgen owns and a renderer reads
 //     from releases.json.
@@ -167,7 +169,7 @@ type navNode struct {
 // renderer that reads an artifact cannot see why a page is absent from it, and
 // neither can the next person deciding where a new page belongs.
 var (
-	heldBackTrees   = map[string]bool{"archive": true, "inspiration": true, "news": true}
+	heldBackTrees   = map[string]bool{"archive": true, "design": true, "inspiration": true, "news": true}
 	heldBackPages   = map[string]bool{"github-token.md": true}
 	developmentTree = map[string]bool{"architecture": true, "prds": true, "development": true}
 )

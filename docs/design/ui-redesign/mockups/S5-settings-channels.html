@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings – channels</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn-sm{height:30px;padding:0 10px;font-size:12px}
+.btn-ghost{background:transparent;border-color:transparent;color:#a6a39b}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a;display:flex;flex-direction:column;min-width:0}
+.card-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #232529}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.lbl{font-size:13px;font-weight:500}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8f8c85;font-weight:500}
+.mono{font-family:'IBM Plex Mono',monospace}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #2e3034;color:#a6a39b;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.nav a{padding:8px 12px;color:#a6a39b;border-radius:6px}
+.nav a.on{color:#e8e6e1;background:#1e2023}
+.nav-item{display:flex;align-items:center;gap:10px;height:34px;padding:0 12px;border-radius:6px;color:#a6a39b;font-size:13px}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none;width:100%}
+.row{display:grid;grid-template-columns:260px minmax(0,1fr);gap:32px;padding:16px 20px;border-top:1px solid #232529}
+.sw{width:36px;height:20px;border-radius:999px;position:relative;display:inline-block;flex-shrink:0}
+.sw i{position:absolute;top:2px;width:16px;height:16px;border-radius:50%}
+.icon{width:32px;height:32px;border-radius:8px;background:#1e2023;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1300px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>Archie</div>
+<nav class="nav" style="display: flex; gap: 2px; font-size: 13px"><a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Workflows</a><a href="#">Events</a><a href="#" class="on">Settings</a></nav>
+<div style="flex-grow: 1"></div>
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; width: 220px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2c30; border-radius: 6px; color: #8f8c85; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input aria-label="Jump to" placeholder="Jump to…" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: inherit; width: 100%"><span class="mono" style="font-size: 11px; padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘K</span></label>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New task</button>
+<span class="pill"><span class="dot" style="background: #86b5a0"></span>Connected</span>
+<span aria-label="Account" style="width: 28px; height: 28px; border-radius: 50%; background: #26282c; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a6a39b">A</span>
+</header>
+
+<div style="display: flex; flex-grow: 1; min-height: 0">
+<aside style="width: 248px; flex-shrink: 0; box-sizing: border-box; padding: 24px 14px; border-right: 1px solid #232529; display: flex; flex-direction: column; gap: 2px">
+<div class="eyebrow" style="padding: 0 12px 8px">Agents</div>
+<a class="nav-item" href="#">Personas</a><a class="nav-item" href="#">Schedules</a><a class="nav-item" href="#">Scheduling policy</a>
+<div class="eyebrow" style="padding: 18px 12px 8px">Integrations</div>
+<a class="nav-item" href="#" style="background: #1e2023; color: #e8e6e1; box-shadow: inset 2px 0 0 #86b5a0">Channels<span class="dot" style="margin-left: auto; background: #86b5a0" title="1 running"></span></a>
+<a class="nav-item" href="#">Tools &amp; MCP</a><a class="nav-item" href="#">Plugins</a>
+<div class="eyebrow" style="padding: 18px 12px 8px">Runtime</div>
+<a class="nav-item" href="#">Container runtime</a>
+<div style="height: 1px; background: #232529; margin: 16px 12px"></div>
+<a class="nav-item" href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>History</a>
+</aside>
+
+<main style="flex-grow: 1; padding: 36px 56px; display: flex; flex-direction: column; gap: 24px; min-width: 0">
+<div style="display: flex; align-items: flex-start; gap: 16px; max-width: 980px">
+<div style="flex-grow: 1">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Channels</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">Where you talk to Archie, and how chat sessions behave.</p>
+</div>
+<span class="pill" style="color: #d9a45b; border-color: rgba(217,164,91,.3); background: rgba(217,164,91,.08)">Applies after restart</span>
+</div>
+
+<div style="max-width: 980px; display: flex; flex-direction: column; gap: 16px">
+<section class="card">
+<div class="card-h">
+<div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a6a39b" stroke-width="2"><path d="m22 3-9.5 18-2.5-8-8-2.5L22 3Z"></path></svg></div>
+<div style="flex-grow: 1"><div style="font-size: 15px; font-weight: 500">Telegram</div><div class="hint">Talk to Archie and approve its work from your phone.</div></div>
+<span class="pill" style="color: #86b5a0; border-color: #86b5a0"><span class="dot" style="background: #86b5a0"></span>Running</span>
+</div>
+<div class="row" style="border-top: 0">
+<div><div class="lbl">Bot token</div><div class="hint">Secret reference for the Telegram bot.</div></div>
+<div>
+<div style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border: 1px solid #2e3034; border-radius: 6px; background: #121314">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8f8c85" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+<span class="mono" style="font-size: 12px; color: #8f8c85">env</span><span style="color: #4a4c50">/</span><span class="mono" style="font-size: 13px">HEYARCHIE_TELEGRAM_BOT_TOKEN</span>
+<div style="flex-grow: 1"></div><button class="btn btn-sm" style="height: 26px; background: transparent">Change</button>
+</div>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #86b5a0; margin-top: 6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 5 5 9-10"></path></svg>Credential resolved by Archie</div>
+</div>
+</div>
+<div class="row">
+<div><div class="lbl">Allowed users</div><div class="hint">Telegram user IDs that may talk to Archie. Everyone else is ignored.</div></div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px; border: 1px solid #2e3034; border-radius: 6px; background: #121314; min-height: 38px; box-sizing: border-box">
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 10px; border-radius: 4px; background: #1e2023; font: 12px 'IBM Plex Mono', monospace">1312197967<button aria-label="Remove 1312197967" style="width: 20px; height: 20px; border: 0; background: transparent; color: #8f8c85; cursor: pointer">×</button></span>
+<input aria-label="Add user ID" placeholder="Add user ID…" style="flex-grow: 1; min-width: 140px; background: transparent; border: 0; outline: none; color: #e8e6e1; font: 12px 'IBM Plex Mono', monospace">
+</div>
+</div>
+</section>
+
+
+<section class="card" style="flex-direction: row; align-items: center; gap: 12px; padding: 16px 20px">
+<div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8f8c85" stroke-width="2"><path d="M3 6h18v12H3zM3 6l9 7 9-7"></path></svg></div>
+<div style="flex-grow: 1"><div style="font-size: 15px; font-weight: 500">Email</div><div class="hint">Listen for mail and relay replies.</div></div>
+<span class="pill">Not set up</span>
+<button class="btn btn-sm">Set up</button>
+</section>
+
+<section class="card" style="flex-direction: row; align-items: center; gap: 12px; padding: 16px 20px">
+<div class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8f8c85" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg></div>
+<div style="flex-grow: 1"><div style="font-size: 15px; font-weight: 500">Webhook</div><div class="hint">Deliver agent output to a URL, with a signing secret and template.</div></div>
+<span class="pill">Not set up</span>
+<button class="btn btn-sm">Set up</button>
+</section>
+
+
+<div class="eyebrow" style="margin-top: 16px">Chat session defaults · all channels</div>
+<section class="card">
+<div class="row" style="border-top: 0">
+<div><label class="lbl" for="ws">Workspace</label><div class="hint">Directory chat sessions start in.</div></div>
+<input id="ws" class="inp" value="/home/sam">
+</div>
+<div class="row">
+<div><div class="lbl">Filesystem access</div><div class="hint">Outside the workspace.</div></div>
+<div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid rgba(217,119,107,.35); background: rgba(217,119,107,.06); border-radius: 8px">
+<span class="sw" style="background: #d9776b; margin-top: 2px"><i style="right: 2px; background: #121314"></i></span>
+<span><span class="lbl">Unrestricted filesystem</span><span class="hint" style="display: block; color: #e0a39a">On: agents can read and write anywhere this user can.</span></span>
+</div>
+</div>
+<div class="row">
+<div><div class="lbl">Show tool calls</div><div class="hint">Post each tool call into the chat.</div></div>
+<label style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #a6a39b"><span class="sw" style="background: #86b5a0"><i style="right: 2px; background: #121314"></i></span>On</label>
+</div>
+<div class="row">
+<div><label class="lbl" for="ms">Max steps</label><div class="hint">Per chat turn. 0 = no limit.</div></div>
+<input id="ms" class="inp" value="0" style="width: 120px">
+</div>
+<div class="row">
+<div><div class="lbl">Rate limit</div><div class="hint">Off while either value is 0.</div></div>
+<div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #a6a39b"><input aria-label="Max requests" class="inp" value="0" style="width: 90px"> requests per <input aria-label="Window" class="inp" value="0" style="width: 80px"><select aria-label="Window unit" class="inp" style="width: 110px; font-family: 'IBM Plex Sans', sans-serif"><option>minutes</option></select></div>
+</div>
+<div class="row">
+<div><label class="lbl" for="md">Models</label><div class="hint">Models chat sessions may use.</div></div>
+<input id="md" class="inp" placeholder="Default">
+</div>
+<div class="row">
+<div><label class="lbl" for="op">Operator</label><div class="hint">Who Archie treats as its operator.</div></div>
+<input id="op" class="inp" placeholder="Not set">
+</div>
+</section>
+
+<div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8f8c85">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+Version 1 · 11 fields set by <span class="mono">system:migration</span> 8 hrs ago · <a href="#" style="color: #a6a39b; text-decoration: underline">View in History</a>
+</div>
+</div>
+</main>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Theme and components</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none;width:100%}
+.btn{height:36px;padding:0 16px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.h{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f8c85;margin:0 0 14px;font-weight:500}
+.panel{border:1px solid #2a2c30;border-radius:10px;background:#16171a;padding:24px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid}
+.dot{width:7px;height:7px;border-radius:50%}
+.sw{width:36px;height:20px;border-radius:999px;position:relative;display:inline-block}
+.sw i{position:absolute;top:2px;width:16px;height:16px;border-radius:50%}
+.lbl{font-size:13px;font-weight:500;color:#e8e6e1}
+.hint{font-size:12px;color:#8f8c85}
+</style>
+</helmet>
+<div style="--accent: {{accent}}; width: 1440px; height: 980px; box-sizing: border-box; padding: 48px 56px; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; display: flex; flex-direction: column; gap: 24px">
+<div>
+<h1 style="margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em">Graphite theme</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">Warm neutral greys carry the page; one low-chroma accent marks the active item, focus and primary action.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px">
+
+<section class="panel">
+<h2 class="h">Palette</h2>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{swatches}}" as="s" hint-placeholder-count="8">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="height: 44px; border-radius: 6px; background: {{s.hex}}; border: 1px solid #2e3034"></div>
+<span style="font-size: 12px">{{s.name}}</span>
+<span style="font: 11px 'IBM Plex Mono', monospace; color: #8f8c85">{{s.hex}}</span>
+</div>
+</sc-for>
+</div>
+<h2 class="h" style="margin-top: 24px">Type</h2>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 24px; font-weight: 600">IBM Plex Sans 600 · 24</span>
+<span style="font-size: 14px; color: #a6a39b">IBM Plex Sans 400 · 14 body</span>
+<span style="font: 13px 'IBM Plex Mono', monospace">IBM Plex Mono · values, keys, durations</span>
+</div>
+</section>
+
+<section class="panel">
+<h2 class="h">Buttons</h2>
+<div style="display: flex; gap: 10px; flex-wrap: wrap">
+<button class="btn btn-primary">Save &amp; restart</button>
+<button class="btn">Secondary</button>
+<button class="btn" style="background: transparent; border-color: transparent; color: #a6a39b">Discard</button>
+<button class="btn" style="background: transparent; color: #d9776b; border-color: #3a2a28">Delete</button>
+</div>
+<h2 class="h" style="margin-top: 24px">Status</h2>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<span class="pill" style="color: #a6a39b; border-color: #2e3034"><span class="dot" style="background: {{accent}}"></span>Connected</span>
+<span class="pill" style="color: #a6a39b; border-color: #2e3034"><span class="dot" style="background: #d9a45b"></span>Connecting…</span>
+<span class="pill" style="color: #d9a45b; border-color: rgba(217,164,91,0.3); background: rgba(217,164,91,0.08)">Applies after restart</span>
+<span class="pill" style="color: {{accent}}; border-color: {{accent}}">2 edited</span>
+<span class="pill" style="color: #e0a39a; border-color: rgba(217,119,107,0.35); background: rgba(217,119,107,0.08)">Invalid duration</span>
+</div>
+<h2 class="h" style="margin-top: 24px">Toggles &amp; choice</h2>
+<div style="display: flex; align-items: center; gap: 20px">
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px"><span class="sw" style="background: {{accent}}"><i style="right: 2px; background: #121314"></i></span>On</label>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a6a39b"><span class="sw" style="background: #2e3034"><i style="left: 2px; background: #8f8c85"></i></span>Off</label>
+<div style="display: inline-flex; padding: 3px; background: #121314; border: 1px solid #2e3034; border-radius: 8px">
+<button style="height: 28px; padding: 0 12px; border: 0; border-radius: 5px; background: #26282c; color: #e8e6e1; font: 500 12px 'IBM Plex Sans', sans-serif">Assignee</button>
+<button style="height: 28px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: #8f8c85; font: 500 12px 'IBM Plex Sans', sans-serif">Label</button>
+</div>
+</div>
+</section>
+
+<section class="panel" style="display: flex; flex-direction: column; gap: 16px">
+<h2 class="h" style="margin: 0">Inputs</h2>
+<div style="display: flex; flex-direction: column; gap: 6px"><label class="lbl" for="c1">Text</label><input id="c1" class="inp" value="archie-core_default"></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><label class="lbl" for="c2">Focused</label><input id="c2" class="inp" value="ghcr.io/…/archie-agent:latest" style="border-color: {{accent}}; box-shadow: 0 0 0 3px rgba(134,181,160,0.15)"></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><label class="lbl" for="c3">Duration with unit</label>
+<div style="display: flex"><input id="c3" class="inp" value="72" style="border-radius: 6px 0 0 6px"><select aria-label="Unit" class="inp" style="width: 110px; border-radius: 0 6px 6px 0; border-left: 0; font-family: 'IBM Plex Sans', sans-serif"><option>hours</option></select></div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><label class="lbl" for="c4">Error</label><input id="c4" class="inp" value="1hr" style="border-color: #d9776b"><span style="font-size: 12px; color: #e0a39a">Use a number and a unit, e.g. 1h or 90m</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Secret reference</span>
+<div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid #2e3034; border-radius: 6px">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8f8c85" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+<span style="font: 12px 'IBM Plex Mono', monospace; color: #8f8c85">bws /</span><span style="font: 13px 'IBM Plex Mono', monospace">MINIMAX_API_KEY</span>
+<span style="margin-left: auto; font-size: 12px; color: {{accent}}">resolved</span>
+</div></div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#86b5a0","options":["#86b5a0","#8aa4c2","#d4a373","#a397c9"]},"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#86b5a0';
+    return {
+      accent,
+      swatches: [
+        { name: 'Ground', hex: '#121314' },
+        { name: 'Surface', hex: '#16171a' },
+        { name: 'Raised', hex: '#1e2023' },
+        { name: 'Border', hex: '#2a2c30' },
+        { name: 'Text', hex: '#e8e6e1' },
+        { name: 'Muted', hex: '#8f8c85' },
+        { name: 'Accent', hex: accent },
+        { name: 'Warn', hex: '#d9a45b' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

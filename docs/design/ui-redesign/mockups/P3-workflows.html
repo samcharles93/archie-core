@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workflows</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn-sm{height:30px;padding:0 10px;font-size:12px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.btn-ghost{background:transparent;border-color:transparent;color:#a6a39b}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a;display:flex;flex-direction:column;min-width:0}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.lbl{font-size:13px;font-weight:500}
+.mono{font-family:'IBM Plex Mono',monospace}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #2e3034;color:#a6a39b;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.nav a{padding:8px 12px;color:#a6a39b;border-radius:6px}
+.nav a.on{color:#e8e6e1;background:#1e2023}
+.tab{height:44px;display:flex;align-items:center;font-size:13px;color:#8f8c85;border-bottom:2px solid transparent}
+.inp{box-sizing:border-box;height:36px;padding:0 12px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:400 13px 'IBM Plex Mono',monospace;outline:none;width:100%}
+.step{font:12px 'IBM Plex Mono',monospace;padding:6px 10px;border:1px solid #2e3034;border-radius:6px;background:#121314;white-space:nowrap}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1080px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>Archie</div>
+<nav class="nav" style="display: flex; gap: 2px; font-size: 13px"><a href="#">Dashboard</a><a href="#">Tasks</a><a href="#" class="on">Workflows</a><a href="#">Events</a><a href="#">Settings</a></nav>
+<div style="flex-grow: 1"></div>
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; width: 220px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2c30; border-radius: 6px; color: #8f8c85; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input aria-label="Jump to" placeholder="Jump to…" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: inherit; width: 100%"><span class="mono" style="font-size: 11px; padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘K</span></label>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New task</button>
+<span class="pill"><span class="dot" style="background: #86b5a0"></span>Connected</span>
+<span aria-label="Account" style="width: 28px; height: 28px; border-radius: 50%; background: #26282c; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a6a39b">A</span>
+</header>
+
+<main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px; min-height: 0">
+<div style="display: flex; align-items: flex-end; gap: 12px">
+<div style="flex-grow: 1">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Workflows</h1>
+<p style="margin: 6px 0 0; font-size: 14px; color: #a6a39b">The step sequences agents follow. Success rate is merged tasks over all runs.</p>
+</div>
+<button class="btn btn-ghost"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>Restore shipped</button>
+<button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New workflow</button>
+</div>
+
+<div style="display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 24px; flex-grow: 1; min-height: 0">
+<section class="card" style="overflow: hidden">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; padding: 10px 16px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8f8c85; border-bottom: 1px solid #2a2c30"><span>Workflow</span><span>Runs</span><span>Success</span><span style="text-align: right">Avg tok</span></div>
+
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #202225; background: #1e2023; box-shadow: inset 2px 0 0 #86b5a0">
+<span><span style="font-size: 14px; font-weight: 500; display: block">Bootstrap</span><span class="mono" style="font-size: 11px; color: #8f8c85">bootstrap</span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b">0</span>
+<span style="display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px">—</span><span style="height: 4px; border-radius: 2px; background: #26282c; width: 100%"><span style="display: block; height: 4px; border-radius: 2px; width: 0%; background: #86b5a0"></span></span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b; text-align: right">—</span>
+</a>
+
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #202225; background: transparent; box-shadow: none">
+<span><span style="font-size: 14px; font-weight: 500; display: block">Feasibility check</span><span class="mono" style="font-size: 11px; color: #8f8c85">feasibility</span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b">0</span>
+<span style="display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px">—</span><span style="height: 4px; border-radius: 2px; background: #26282c; width: 100%"><span style="display: block; height: 4px; border-radius: 2px; width: 0%; background: #86b5a0"></span></span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b; text-align: right">—</span>
+</a>
+
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #202225; background: transparent; box-shadow: none">
+<span><span style="font-size: 14px; font-weight: 500; display: block">Implement</span><span class="mono" style="font-size: 11px; color: #8f8c85">implement</span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b">0</span>
+<span style="display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px">—</span><span style="height: 4px; border-radius: 2px; background: #26282c; width: 100%"><span style="display: block; height: 4px; border-radius: 2px; width: 0%; background: #86b5a0"></span></span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b; text-align: right">—</span>
+</a>
+
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #202225; background: transparent; box-shadow: none">
+<span><span style="font-size: 14px; font-weight: 500; display: block">Remediate</span><span class="mono" style="font-size: 11px; color: #8f8c85">remediate</span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b">0</span>
+<span style="display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px">—</span><span style="height: 4px; border-radius: 2px; background: #26282c; width: 100%"><span style="display: block; height: 4px; border-radius: 2px; width: 0%; background: #86b5a0"></span></span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b; text-align: right">—</span>
+</a>
+
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #202225; background: transparent; box-shadow: none">
+<span><span style="font-size: 14px; font-weight: 500; display: block">TDD</span><span class="mono" style="font-size: 11px; color: #8f8c85">tdd</span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b">3</span>
+<span style="display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px">0 of 3</span><span style="height: 4px; border-radius: 2px; background: #26282c; width: 100%"><span style="display: block; height: 4px; border-radius: 2px; width: 2%; background: #d9776b"></span></span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b; text-align: right">4.7M</span>
+</a>
+
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 56px 110px 72px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #202225; background: transparent; box-shadow: none">
+<span><span style="font-size: 14px; font-weight: 500; display: block">Triage</span><span class="mono" style="font-size: 11px; color: #8f8c85">triage</span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b">1</span>
+<span style="display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px">1 of 1</span><span style="height: 4px; border-radius: 2px; background: #26282c; width: 100%"><span style="display: block; height: 4px; border-radius: 2px; width: 100%; background: #86b5a0"></span></span></span>
+<span class="mono" style="font-size: 12px; color: #a6a39b; text-align: right">282k</span>
+</a>
+
+</section>
+
+<section class="card" style="overflow: hidden">
+<div style="display: flex; align-items: center; gap: 12px; padding: 18px 24px 0">
+<h2 style="margin: 0; font-size: 18px; font-weight: 600">Bootstrap</h2>
+<span class="pill">shipped · edited</span>
+<div style="flex-grow: 1"></div>
+<span class="hint">0 runs yet</span>
+</div>
+<nav style="display: flex; gap: 28px; padding: 0 24px; border-bottom: 1px solid #232529">
+<a class="tab" href="#" style="color: #e8e6e1; border-bottom-color: #86b5a0">Definition</a>
+<a class="tab" href="#">Performance</a>
+<a class="tab" href="#">Runs</a>
+</nav>
+<div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; flex-grow: 1; min-height: 0">
+<div style="display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px">
+<div style="display: flex; flex-direction: column; gap: 6px"><label class="lbl" for="wid">ID</label><input id="wid" class="inp" value="bootstrap"></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Steps</span>
+<div style="display: flex; align-items: center; gap: 6px; height: 36px; flex-wrap: nowrap; overflow: hidden">
+<span class="step">prepare</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a4c50" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="step">apply</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a4c50" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="step">commit-push</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a4c50" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="step">diff-cap</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a4c50" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="step">open-pr</span>
+</div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1; min-height: 0">
+<div style="display: flex; align-items: baseline"><span class="lbl">YAML</span><span class="hint" style="margin-left: auto; color: #86b5a0">✓ Valid</span></div>
+<div class="mono" style="flex-grow: 1; display: grid; grid-template-columns: 44px minmax(0, 1fr); border: 1px solid #2e3034; border-radius: 8px; background: #121314; font-size: 13px; line-height: 1.75; overflow: hidden">
+<div style="padding: 14px 0; text-align: right; padding-right: 12px; color: #4f5156; border-right: 1px solid #232529; background: #141517; white-space: pre-line">1
+2
+3
+4
+5
+6
+7</div>
+<div style="padding: 14px 16px; white-space: pre"><span style="color: #a6a39b">id:</span> bootstrap
+<span style="color: #a6a39b">steps:</span>
+  - <span style="color: #a6a39b">type:</span> <span style="color: #86b5a0">bootstrap.prepare</span>
+  - <span style="color: #a6a39b">type:</span> <span style="color: #86b5a0">bootstrap.apply</span>
+  - <span style="color: #a6a39b">type:</span> <span style="color: #86b5a0">bootstrap.commit-push</span>
+  - <span style="color: #a6a39b">type:</span> <span style="color: #86b5a0">bootstrap.diff-cap</span>
+  - <span style="color: #a6a39b">type:</span> <span style="color: #86b5a0">bootstrap.open-pr</span></div>
+</div>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-top: 1px solid #2a2c30; background: #17181a">
+<span class="hint">Version 1 · <a href="#" style="color: #a6a39b; text-decoration: underline">History</a></span>
+<div style="flex-grow: 1"></div>
+<button class="btn btn-ghost" style="color: #d9776b">Remove</button>
+<button class="btn">Restore this workflow</button>
+<button class="btn btn-primary">Validate &amp; save</button>
+</div>
+</section>
+</div>
+</main>
+</div>
+</body>
+</html>

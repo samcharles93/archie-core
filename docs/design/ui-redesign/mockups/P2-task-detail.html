@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Task detail</title>
+<!-- Static snapshot of the design mockup (accent = sage #86b5a0). Generated from the matching file in source/. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121314}
+a{color:#e8e6e1;text-decoration:none}a:hover{color:#ffffff}
+.btn{height:36px;padding:0 14px;border-radius:6px;font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;border:1px solid #34373c;background:#1e2023;color:#e8e6e1;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn-sm{height:30px;padding:0 10px;font-size:12px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#101412}
+.btn-ghost{background:transparent;border-color:transparent;color:#a6a39b}
+.card{border:1px solid #2a2c30;border-radius:10px;background:#16171a;display:flex;flex-direction:column;min-width:0}
+.card-h{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid #232529}
+.card-t{font-size:14px;font-weight:500}
+.hint{font-size:12px;color:#8f8c85;line-height:1.5}
+.mono{font-family:'IBM Plex Mono',monospace}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #2e3034;color:#a6a39b;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.warn{color:#d9a45b;border-color:rgba(217,164,91,.3);background:rgba(217,164,91,.08)}
+.nav a{padding:8px 12px;color:#a6a39b;border-radius:6px}
+.nav a.on{color:#e8e6e1;background:#1e2023}
+.tab{height:44px;display:flex;align-items:center;font-size:13px;color:#8f8c85;border-bottom:2px solid transparent}
+.sel{height:32px;box-sizing:border-box;padding:0 10px;background:#121314;border:1px solid #2e3034;border-radius:6px;color:#e8e6e1;font:13px 'IBM Plex Sans',sans-serif}
+.kv{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;font-size:13px;padding:8px 0;border-bottom:1px solid #202225}
+.kv dt{color:#8f8c85}.kv dd{margin:0}
+.tag{font:11px 'IBM Plex Mono',monospace;color:#a6a39b;background:#1e2023;border-radius:4px;padding:1px 6px}
+</style>
+</head>
+<body>
+<div style="--accent: #86b5a0; width: 1440px; height: 1000px; box-sizing: border-box; display: flex; flex-direction: column; background: #121314; color: #e8e6e1; font-family: 'IBM Plex Sans', sans-serif; overflow: hidden">
+
+<header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #232529; background: #151618">
+<div style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86b5a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 12 4l8 16"></path><path d="M8 14h8"></path></svg>Archie</div>
+<nav class="nav" style="display: flex; gap: 2px; font-size: 13px"><a href="#">Dashboard</a><a href="#" class="on">Tasks</a><a href="#">Workflows</a><a href="#">Events</a><a href="#">Settings</a></nav>
+<div style="flex-grow: 1"></div>
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; width: 220px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2c30; border-radius: 6px; color: #8f8c85; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input aria-label="Jump to" placeholder="Jump to…" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: inherit; width: 100%"><span class="mono" style="font-size: 11px; padding: 1px 5px; border: 1px solid #2e3034; border-radius: 4px">⌘K</span></label>
+<button class="btn btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>New task</button>
+<span class="pill"><span class="dot" style="background: #86b5a0"></span>Connected</span>
+<span aria-label="Account" style="width: 28px; height: 28px; border-radius: 50%; background: #26282c; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a6a39b">A</span>
+</header>
+
+<main style="flex-grow: 1; padding: 24px 48px 32px; display: flex; flex-direction: column; gap: 20px; min-height: 0">
+<div>
+<div class="hint"><a href="#" style="color: #a6a39b">Tasks</a> / <span class="mono">#1</span></div>
+<div style="display: flex; align-items: flex-start; gap: 16px; margin-top: 8px">
+<div style="flex-grow: 1; min-width: 0">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">changes_captured key-set validation is top-level only</h1>
+<div style="display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 13px; color: #a6a39b">
+<span class="pill warn"><span class="dot" style="background: #d9a45b"></span>Parked</span>
+<span class="mono">tdd</span><span style="color: #4a4c50">·</span>
+<a href="#" class="mono" style="color: #a6a39b; text-decoration: underline">samcharles93/archie-core #868</a>
+</div>
+</div>
+<button class="btn btn-ghost">Archive</button>
+<button class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>Start a new run</button>
+</div>
+</div>
+
+<div role="alert" style="display: flex; gap: 12px; padding: 14px 16px; border-radius: 8px; background: rgba(217,164,91,0.08); border: 1px solid rgba(217,164,91,0.25)">
+<svg style="flex-shrink: 0; margin-top: 2px" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d9a45b" stroke-width="2"><path d="M12 3 2 20h20L12 3Z"></path><path d="M12 10v4M12 17h.01"></path></svg>
+<div style="min-width: 0; flex-grow: 1">
+<div style="font-size: 14px; font-weight: 500; color: #e3c08f">Parked: couldn’t prepare the worktree</div>
+<div class="mono" style="font-size: 12px; color: #a6a39b; margin-top: 4px; line-height: 1.6; word-break: break-all">fetch origin: http transport: Get "https://github.com/samcharles93/archie-core.git/info/refs?service=git-upload-pack": terminated signal received</div>
+</div>
+<button class="btn btn-sm" style="align-self: flex-start">Jump to log line</button>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; flex-grow: 1; min-height: 0">
+<section class="card" style="overflow: hidden">
+<nav style="display: flex; gap: 28px; padding: 0 20px; border-bottom: 1px solid #232529">
+<a class="tab" href="#" style="color: #e8e6e1; border-bottom-color: #86b5a0">Log</a>
+<a class="tab" href="#">Changed files <span class="hint" style="margin-left: 6px">0</span></a>
+<a class="tab" href="#">Configuration</a>
+<a class="tab" href="#">Debug</a>
+</nav>
+<div style="display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid #232529">
+<select aria-label="Level" class="sel"><option>All levels</option></select>
+<select aria-label="Stage" class="sel"><option>All stages</option></select>
+<label style="display: flex; align-items: center; gap: 8px; height: 32px; width: 260px; padding: 0 10px; box-sizing: border-box; border: 1px solid #2e3034; border-radius: 6px; color: #8f8c85"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input aria-label="Search log" placeholder="Search log" style="background: transparent; border: 0; outline: none; color: #e8e6e1; font: 13px 'IBM Plex Sans', sans-serif; width: 100%"></label>
+<div style="flex-grow: 1"></div>
+<button class="btn btn-sm btn-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>Download</button>
+</div>
+<div class="mono" style="font-size: 12px; line-height: 1.7; flex-grow: 1; background: #121314">
+<div style="display: grid; grid-template-columns: 72px 56px minmax(0, 1fr); gap: 12px; padding: 10px 20px; background: rgba(217,119,107,0.06); border-left: 2px solid #d9776b">
+<span style="color: #8f8c85">08:38:49</span>
+<span style="color: #e0a39a">ERROR</span>
+<div style="min-width: 0">
+<div style="word-break: break-all">task parked: worktree prepare failed: fetch origin: http transport: Get "https://github.com/samcharles93/archie-core.git/info/refs?service=git-upload-pack": terminated signal received</div>
+<div style="display: flex; gap: 6px; margin-top: 6px"><span class="tag">component=daemon</span><span class="tag">task=1</span></div>
+</div>
+</div>
+<div style="padding: 16px 20px; color: #8f8c85; font-family: 'IBM Plex Sans', sans-serif; font-size: 12px">End of attempt 1 · 1 line</div>
+</div>
+</section>
+
+<aside style="display: flex; flex-direction: column; gap: 20px">
+<section class="card">
+<div class="card-h"><span class="card-t">Attempts</span></div>
+<div style="padding: 8px 12px">
+<a href="#" style="display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-radius: 6px; background: #1e2023; box-shadow: inset 2px 0 0 #86b5a0">
+<span class="dot" style="background: #d9a45b"></span><span style="font-size: 13px; flex-grow: 1">Attempt 1</span><span class="hint">parked · 08:38</span></a>
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 8px; color: #8f8c85">
+<span class="dot" style="background: transparent; border: 1px dashed #4a4c50; box-sizing: border-box"></span><span style="font-size: 13px; flex-grow: 1">Attempt 2</span><span class="hint">not recorded</span></div>
+</div>
+</section>
+<section class="card">
+<div class="card-h"><span class="card-t">Details</span></div>
+<dl style="margin: 0; padding: 4px 20px 12px">
+<div class="kv"><dt>Status</dt><dd style="color: #d9a45b">Parked</dd></div>
+<div class="kv"><dt>Workflow</dt><dd><a href="#" class="mono" style="text-decoration: underline">tdd</a></dd></div>
+<div class="kv"><dt>Repository</dt><dd class="mono" style="font-size: 12px">samcharles93/archie-core</dd></div>
+<div class="kv"><dt>Issue</dt><dd><a href="#" style="text-decoration: underline">#868</a> ↗</dd></div>
+<div class="kv"><dt>Persona</dt><dd class="mono" style="font-size: 12px">[persona]</dd></div>
+<div class="kv"><dt>Tokens</dt><dd class="mono" style="font-size: 12px">[tokens]</dd></div>
+<div class="kv" style="border: 0"><dt>Started</dt><dd>[date · time]</dd></div>
+</dl>
+</section>
+</aside>
+</div>
+</main>
+</div>
+</body>
+</html>
