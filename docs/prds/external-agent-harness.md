@@ -73,62 +73,93 @@ retry without a `resume` verb.
 
 ## Selection
 
-Order of precedence, first match wins:
+A harness is an agent profile. `docs/prds/event-automation.md` defines a
+profile as the execution environment a workflow selects; a harness profile
+names a Kit composition (the workload Kit pinned by digest, and zero or more
+mixin Kits) in place of a container image. Everything else about profiles
+holds: a workflow names its profile, a stage may name a different one, and a
+profile holds no secrets.
 
-1. the stage's `runner` in the workflow definition;
-2. the agent profile's `runner`;
-3. `builtin`, the ai-sdk agent loop.
+`archie-agent` builds the stage's runner from the stage's profile: the
+ai-sdk agent loop for an image profile, the harness runner for a Kit
+profile. Image profiles, and every workflow already written against them,
+are unchanged. A Kit profile named by no workflow is a validation error.
 
-`runner` names a harness resource. `archie-agent` reads it when it builds the
-stage's runner; that is its only consumer. An unknown name, and a harness
-named by no stage and no profile, are validation errors.
+Profiles are org resources in the State Store, so a Kit profile belongs to
+one org, is granted to its workspaces like any profile, and applies without
+a restart.
 
-A harness resource holds the workload Kit reference pinned by digest, zero or
-more mixin Kit references, the credential bindings it uses, and
-`max_concurrent` (default 1). Harness resources and credential bindings are
-State Store resources managed from the dashboard, so they apply without a
-restart.
+## Organisations
+
+`docs/prds/orgs-and-access.md` is the boundary; a harness adds nothing that
+crosses it.
+
+- A Kit profile, its credential bindings and its OAuth tokens belong to one
+  org. No record is shared between orgs.
+- A harness run is a run like any other: it acts as the workflow's identity,
+  under the run credential issued at dispatch.
+- The egress proxy injects a credential only when the run credential carries
+  the secret the binding names. A Kit that declares a service the identity is
+  not granted gets no credential: a required one refuses the launch, an
+  optional one is skipped.
+- A Kit's network policy is what the Kit asks for; the identity's network
+  grants are what the org allows. The proxy enforces the intersection.
+- Concurrency slots are counted per binding within its org.
 
 ## Credentials
 
-A credential binding is keyed by the Kit's `credential@1` `service` name and
-holds one of:
+A credential binding maps a Kit's `credential@1` `service` name to an org
+secret, which the org grants to identities like any secret. The secret holds
+one of:
 
-- **API key:** a `{ engine, key }` secret reference resolved through
-  `internal/secret`.
+- **API key:** a value in the org's secret store.
 - **OAuth:** tokens captured by the setup terminal, stored in the State Store
   under the at-rest envelope of `binding-secret-encryption.md` with its own
   domain separator.
 
-The egress proxy resolves the binding for each request. The container gets
-the Kit's sentinel in the named variable or credential file. OAuth refresh
-happens at the proxy, which intercepts the Kit's `tokenEndpoint`, so a
-refreshed token is written to the State Store and never returned to the
-container.
+The egress proxy resolves the binding for each request against the run
+credential. The container gets the Kit's sentinel in the named variable or
+credential file. OAuth refresh happens at the proxy, which intercepts the
+Kit's `tokenEndpoint`, so a refreshed token is written to the State Store and
+never returned to the container.
 
 Runs sharing an OAuth binding share its subscription's rate limit.
-`max_concurrent` is enforced per binding, summed across harnesses that use
-it. A stage waiting for a slot is `pending`, not `running`.
+`max_concurrent` on the binding (default 1) caps its simultaneous runs. A
+stage waiting for a slot is `pending`, not `running`.
 
 ## Setup terminal
 
-The dashboard opens an operator-only terminal (xterm.js over a WebSocket to a
-PTY) into an ephemeral container built from the harness's Kits, on the same
-egress proxy. The operator runs the CLI's own login. The proxy captures the
-tokens at the token endpoint into the credential binding. The container is
-removed when the terminal closes. No worktree is mounted into it.
+The dashboard opens a terminal (xterm.js over a WebSocket to a PTY) into an
+ephemeral container built from a Kit profile, on the same egress path. The
+member runs the CLI's own login. The proxy captures the tokens at the token
+endpoint into the org secret the binding names. The container is removed when
+the terminal closes. No worktree is mounted into it.
 
-The terminal requires the administrative role. It is the only interactive
-path into a harness container.
+Opening the terminal is the `update` action on the secret, decided by the
+Authorizer like any other; the shipped roles give it to org owners and
+admins. It is the only interactive path into a harness container.
 
-## Egress proxy
+## Egress
 
-The egress proxy runs inside `archied`. Task and setup containers attach to
-an internal Docker network whose only reachable endpoint is the proxy, so
-egress outside the policy fails at the network, not by convention. The proxy
-terminates TLS with a per-daemon CA installed into the container at create,
-identifies the container by a per-container proxy token, and applies that
-container's resolved `network-policy@1` and `credential@1` inject rules.
+Only Kit profiles run on the egress path. An image profile keeps the network
+access its identity is granted, because workflows such as a network
+investigator need raw DNS, ICMP and arbitrary TCP that no HTTP proxy
+carries.
+
+- **Sandbox network.** Each Kit run gets its own internal Docker bridge on
+  which the host holds no address. Host services, including those listening
+  on every interface, are unreachable from it by any address.
+- **Relay.** One relay container, `archie-agent relay`, sits on the sandbox
+  networks under a fixed alias and on the host-reachable network. It
+  forwards every connection to the proxy and can reach nothing else. It
+  holds no secrets.
+- **Proxy.** The proxy runs inside `archied`, listening on the host gateway
+  of the host-reachable network. It terminates TLS with a per-daemon CA
+  installed into the container at create, identifies the container by a
+  per-run proxy token, and applies that run's network policy and credential
+  inject rules. Upstream dials refuse loopback, and refuse internal addresses
+  unless the policy names the exact IP, so an allowed name cannot resolve
+  back into the host.
 
 ## Container layout
 
@@ -201,9 +232,10 @@ of them.
    worktree checks for git, protected paths and read-only; budget and
    cancellation.
 5. Claude Code output adapter; `archie-agent mcp`; gate-and-resume loop.
-6. Harness resources, selection precedence and definition validation.
-7. OAuth bindings: token-endpoint interception, encrypted storage, per-binding
-   concurrency; dashboard setup terminal.
+6. Kit profiles, runner selection from the stage's profile, and definition
+   validation.
+7. OAuth bindings as org secrets: token-endpoint interception, encrypted
+   storage, per-binding concurrency; dashboard setup terminal.
 8. Output adapters for Codex, Pi, OMP and GitHub Copilot CLI.
 
 ## Verification
@@ -230,3 +262,10 @@ of them.
 - Two tasks sharing an OAuth binding with `max_concurrent = 1` run one at a
   time; the second waits as `pending`.
 - Stopping a run kills the harness process and removes the container.
+- A Kit profile in org A cannot be selected, and its binding cannot be
+  resolved, by a workflow in org B.
+- A harness run whose identity is not granted a Kit's required credential is
+  refused at launch; the proxy never injects a secret outside the run
+  credential.
+- The firewall investigation example runs unchanged on an image profile with
+  direct network access.

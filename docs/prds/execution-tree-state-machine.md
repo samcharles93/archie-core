@@ -45,8 +45,13 @@ WorkflowExecution (tasks row, id E)
 - A StepExecution belongs to exactly one WorkflowExecution and one attempt.
   `parent_id` is null for a stage and names the enclosing StepExecution
   otherwise. Depth is derived from the parent, never supplied by the caller.
-- `kind` is `stage` or `agent`. A new kind needs a named consumer before it is
-  added.
+- `kind` is `stage`, `agent` or `call`. A new kind needs a named consumer
+  before it is added.
+- A `workflow.call` step (`docs/prds/event-automation.md`) is a `call`
+  StepExecution in the caller's tree. The callee is its own
+  WorkflowExecution, with its own tree, acting as its own identity, and the
+  `call` step records the callee's execution ID. Trees never nest across
+  executions, so each run's tree stays inside that run's authority.
 - A retry starts a new attempt. Earlier attempts' StepExecutions are never
   rewritten.
 
@@ -106,6 +111,10 @@ whichever the operator action names. The daemon then cancels the in-memory
 context. A worker whose step write returns `ErrStaleTransition` because its
 step is already `cancelled` stops without writing further.
 
+Cancelling a caller cancels each callee it is waiting on (`wait: true`),
+through `CancelExecution` on the callee under the callee's own lifecycle. A
+callee started with `wait: false` runs on.
+
 The store is the record of cancellation. The context cancel is the delivery
 mechanism, so a lost cancel still leaves the store correct and the worker's
 next write fails.
@@ -126,16 +135,25 @@ facade:
 - `CancelExecution(execution, reason, to)`
 - `ListSteps(execution, attempt)`
 
-`TaskGrants.UnaryInterceptor` authorises a task-scoped token for `StartStep`
-and `FinishStep` on its own execution only. The container records its own
-agent calls. `CancelExecution` and `ListSteps` require the administrative
-token.
+The run credential of `docs/prds/orgs-and-access.md` authorises `StartStep`
+and `FinishStep` on its own execution only, and the container records its own
+agent calls with it. `CancelExecution` and `ListSteps` are dashboard, API and
+dispatch actions, decided by the Authorizer: `update` and `read` on the run.
+
+## Organisations
+
+`docs/prds/orgs-and-access.md` is the boundary. A StepExecution belongs to its
+WorkflowExecution's org and workspace and carries their `org_id` and
+`workspace_id`, like every owned record. The State Store stamps both from the
+credential on `StartStep` and ignores them in the request. `ListSteps` for an
+execution in another org returns the store's ordinary not-found error.
 
 ## Storage
 
-One new table, `step_executions`: `id`, `execution_id`, `attempt`,
-`parent_id`, `depth`, `kind`, `name`, `status`, `detail`, `tokens_used`,
-`started_at`, `finished_at`. Indexed on `(execution_id, attempt, id)`.
+One new table, `step_executions`: `id`, `org_id`, `workspace_id`,
+`execution_id`, `attempt`, `parent_id`, `depth`, `kind`, `name`,
+`called_execution_id`, `status`, `detail`, `tokens_used`, `started_at`,
+`finished_at`. Indexed on `(execution_id, attempt, id)`.
 Deleting an execution (archive, clearing terminal tasks) deletes its steps.
 Existing rows gain no backfilled steps. Their history stays in `transitions`
 and `events`.
@@ -174,6 +192,9 @@ it, then dropped once the dashboard reads `ListSteps`.
   `interrupted` and the execution `queued` with a new attempt.
 - Stopping a run during review leaves every review child `cancelled`, and a
   late `FinishStep` from the container returns `ErrStaleTransition`.
-- A task-scoped token cannot `StartStep` on another execution.
+- A run credential cannot `StartStep` on another execution, and a member of
+  org A listing steps of an org B execution gets not-found.
+- Cancelling a caller cancels its `wait: true` callee and leaves a
+  `wait: false` callee running.
 - For every step transition there is exactly one event row, written in the
   same transaction.

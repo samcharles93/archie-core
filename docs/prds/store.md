@@ -66,10 +66,31 @@ Install and update verify the catalogue signature and the package digest.
 Archie never installs a tag it has not resolved to a digest through a
 verified catalogue.
 
+## Organisations
+
+`docs/prds/orgs-and-access.md` is the boundary, and the store follows its
+split between the instance and each org.
+
+- **Instance.** Catalogues and their keys are instance configuration, set by
+  instance admins. Every org browses the same catalogues.
+- **Org.** Installing, updating, removing, accepting authority and setting the
+  update policy are org actions. An installed package, its pinned digest and
+  its accepted authority belong to one org. Two orgs can run different
+  versions of one package.
+- **Contributions** become org resources: workflows are org workflows,
+  profiles are org profiles, and credential bindings name org secrets. A
+  workspace uses them only once the org grants them to it.
+- **Authority is an upper bound, not a grant.** Accepting a package's
+  authority permits the package to ask; the workflow's identity must still
+  hold each grant. A package never creates, grants to or widens an identity.
+- Install and authority acceptance are the `create` and `approve` actions on
+  the package, decided by the Authorizer. Org approval policy decides who may
+  accept, and no member accepts authority they asked for.
+
 ## Install, update, remove
 
 - Installed packages, their pinned digests, accepted authority and update
-  policy are State Store resources. They apply without a restart.
+  policy are org resources in the State Store. They apply without a restart.
 - **Update policy** per package: `manual` (default) or `auto`. `auto` applies
   non-widening updates when the catalogue lists them; widening updates always
   wait.
@@ -130,3 +151,9 @@ cannot be removed.
 - A tampered package digest or an unsigned catalogue refuses to install.
 - A package containing executable host code is rejected at validation.
 - Rolling back restores the prior digest and its accepted authority.
+- A package installed in org A is invisible to org B, and org B's workflows
+  cannot select its profiles.
+- A package whose workflow needs a forge permission the running identity was
+  never granted fails that step, even though the org accepted the package's
+  authority.
+- A member cannot accept widened authority on an update they requested.

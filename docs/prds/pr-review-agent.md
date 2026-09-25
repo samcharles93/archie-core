@@ -141,6 +141,15 @@ fails.
   the task with the findings. A pipeline that fails parks the task. Advisory
   findings are posted after the PR opens.
 
+## Organisations
+
+The reviewer is a workflow, so `docs/prds/orgs-and-access.md` applies to it
+unchanged: it runs as the workflow's identity under the run credential, reads
+only repositories that identity may read, and posts through the forge RPC
+under that credential. A watched repository belongs to a workspace, and its
+PR events start reviews through that workspace's bindings. Findings,
+StepExecutions and the posted review carry the run's org and workspace.
+
 ## Models
 
 Each agent phase names a model role. Lens, reviewer, verification,
