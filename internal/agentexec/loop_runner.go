@@ -274,19 +274,12 @@ func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) 
 // capture-tool invocations.
 func makeCaptureHandler(spec CaptureTool, captures map[string][]json.RawMessage) func(context.Context, string) (string, error) {
 	return func(_ context.Context, input string) (string, error) {
-		if spec.MaxCalls > 0 && len(captures[spec.Name]) >= spec.MaxCalls {
-			return fmt.Sprintf("%s rejected: maximum call count is %d", spec.Name, spec.MaxCalls), nil
-		}
 		value := json.RawMessage(input)
-		if !json.Valid(value) {
-			return spec.Name + " rejected: arguments are not valid JSON", nil
+		reply, ok := acceptCapture(spec, len(captures[spec.Name]), value)
+		if ok {
+			captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
 		}
-		rejection, ok := validateCaptureArgs(spec, value)
-		if !ok {
-			return rejection, nil
-		}
-		captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
-		return spec.Name + " recorded", nil
+		return reply, nil
 	}
 }
 

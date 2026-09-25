@@ -73,3 +73,21 @@ func harnessCredential(name string) (*syscall.Credential, error) {
 	}
 	return &cred, nil
 }
+
+// ownForHarness gives paths to the harness user when the worker is root, so
+// the harness's MCP server can write its captures.
+func ownForHarness(name string, paths ...string) error {
+	if name == "" || os.Geteuid() != 0 {
+		return nil
+	}
+	cred, err := harnessCredential(name)
+	if err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if err := os.Chown(p, int(cred.Uid), int(cred.Gid)); err != nil {
+			return err
+		}
+	}
+	return nil
+}

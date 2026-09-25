@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,6 +54,9 @@ type HarnessOutput interface {
 // invocation, runs the gate itself, and owns the process's lifetime.
 type HarnessRunner struct {
 	newOutput func() HarnessOutput
+	// mcpCommand starts archie's MCP server; it defaults to this binary's
+	// own "mcp" subcommand.
+	mcpCommand []string
 }
 
 // NewHarnessRunner returns a runner using newOutput to read each
@@ -65,6 +69,23 @@ func (r *HarnessRunner) Run(ctx context.Context, workspace string, req Request, 
 	if err := validateHarness(req); err != nil {
 		return Result{}, err
 	}
+	mcpConfig, capturesPath, cleanup, err := r.prepareCaptures(req)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cleanup()
+	res, err := r.run(ctx, workspace, req, mcpConfig, report)
+	if capturesPath != "" {
+		captures, readErr := readCaptures(capturesPath, req.CaptureTools)
+		if readErr != nil {
+			return res, errors.Join(err, fmt.Errorf("read captures: %w", readErr))
+		}
+		res.Captures = captures
+	}
+	return res, err
+}
+
+func (r *HarnessRunner) run(ctx context.Context, workspace string, req Request, mcpConfig string, report ToolCallReporter) (Result, error) {
 	res := Result{Version: ProtocolVersion, TaskID: req.TaskID, Attempt: req.Attempt, Stage: req.Stage}
 	before, err := snapshotRepo(workspace)
 	if err != nil {
@@ -87,7 +108,7 @@ func (r *HarnessRunner) Run(ctx context.Context, workspace string, req Request, 
 	for {
 		res.Iterations++
 		out := r.output()
-		exitErr := invoke(runCtx, workspace, req.Harness, harnessArgv(req.Harness, verb, prompt, session), out, report)
+		exitErr := invoke(runCtx, workspace, req.Harness, harnessArgv(req.Harness, verb, prompt, session, mcpConfig), out, report)
 		if id := out.SessionID(); id != "" {
 			session = id
 		}
@@ -160,22 +181,29 @@ func validateHarness(req Request) error {
 	if len(h.Resume) > 0 && !slices.ContainsFunc(h.Resume, func(s string) bool { return strings.Contains(s, sessionPlaceholder) }) {
 		return fmt.Errorf("harness resume verb must carry %s", sessionPlaceholder)
 	}
+	if len(req.CaptureTools) > 0 && !slices.ContainsFunc(h.MCPConfig, func(s string) bool { return strings.Contains(s, mcpConfigPlaceholder) }) {
+		return errors.New("stage has capture tools but the harness registers no MCP server; its results would be lost")
+	}
 	return nil
 }
 
 // harnessArgv is the launch command, then the verb, then the prompt verb
 // when the verb is a resume or continue, with placeholders substituted as
 // raw values rather than shell text.
-func harnessArgv(h *HarnessSpec, verb []string, prompt, session string) []string {
+func harnessArgv(h *HarnessSpec, verb []string, prompt, session, mcpConfig string) []string {
 	argv := slices.Clone(h.Launch)
 	tails := [][]string{verb}
 	if !slices.Equal(verb, h.Prompt) {
 		tails = append(tails, h.Prompt)
 	}
+	if mcpConfig != "" {
+		tails = append([][]string{h.MCPConfig}, tails...)
+	}
 	for _, tail := range tails {
 		for _, arg := range tail {
 			arg = strings.ReplaceAll(arg, promptPlaceholder, prompt)
 			arg = strings.ReplaceAll(arg, sessionPlaceholder, session)
+			arg = strings.ReplaceAll(arg, mcpConfigPlaceholder, mcpConfig)
 			argv = append(argv, arg)
 		}
 	}
@@ -434,3 +462,53 @@ func (t *tailBuffer) Write(p []byte) (int, error) {
 }
 
 func (t *tailBuffer) String() string { return t.buf.String() }
+
+// prepareCaptures writes the capture tools' spec and an MCP config pointing
+// the CLI at archie's MCP server, and creates the captures file the server
+// appends to. The directory belongs to the harness user, whose MCP server
+// writes into it.
+func (r *HarnessRunner) prepareCaptures(req Request) (config, captures string, cleanup func(), err error) {
+	cleanup = func() {}
+	if len(req.CaptureTools) == 0 {
+		return "", "", cleanup, nil
+	}
+	dir, err := os.MkdirTemp("", "archie-captures-")
+	if err != nil {
+		return "", "", cleanup, err
+	}
+	cleanup = func() { _ = os.RemoveAll(dir) }
+	fail := func(err error) (string, string, func(), error) {
+		cleanup()
+		return "", "", func() {}, err
+	}
+	spec, err := json.Marshal(req.CaptureTools)
+	if err != nil {
+		return fail(err)
+	}
+	specPath, capturesPath, configPath := filepath.Join(dir, "tools.json"), filepath.Join(dir, "captures.jsonl"), filepath.Join(dir, "mcp.json")
+	command := r.mcpCommand
+	if len(command) == 0 {
+		self, err := os.Executable()
+		if err != nil {
+			return fail(err)
+		}
+		command = []string{self}
+	}
+	server := map[string]any{
+		"command": command[0],
+		"args":    slices.Concat(command[1:], []string{"mcp", "-spec", specPath, "-captures", capturesPath}),
+	}
+	cfg, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"archie": server}})
+	if err != nil {
+		return fail(err)
+	}
+	for path, content := range map[string][]byte{specPath: spec, configPath: cfg, capturesPath: nil} {
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			return fail(err)
+		}
+	}
+	if err := ownForHarness(req.Harness.User, dir, specPath, configPath, capturesPath); err != nil {
+		return fail(err)
+	}
+	return configPath, capturesPath, cleanup, nil
+}

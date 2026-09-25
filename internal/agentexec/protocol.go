@@ -109,6 +109,10 @@ type HarnessSpec struct {
 	Prompt   []string `json:"prompt"`
 	Resume   []string `json:"resume,omitempty"`
 	Continue []string `json:"continue,omitempty"`
+	// MCPConfig registers archie's MCP server with the CLI: an argv tail
+	// carrying {{.MCPConfig}}, the path of a standard mcpServers config.
+	// A stage with capture tools needs it.
+	MCPConfig []string `json:"mcp_config,omitempty"`
 }
 
 // PluginSpec is a bundled Yaegi plugin passed from daemon to agent.

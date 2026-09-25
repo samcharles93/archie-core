@@ -31,6 +31,9 @@ func runCommand(args []string, getenv func(string) string, stderr io.Writer, run
 	if len(args) > 0 && args[0] == "relay" {
 		return runRelay(args[1:], stderr, agentworker.RunRelay)
 	}
+	if len(args) > 0 && args[0] == "mcp" {
+		return runMCP(args[1:], stderr, agentworker.RunCaptureMCP)
+	}
 	flags := flag.NewFlagSet("archie-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	natsURLFlag := flags.String("nats-url", "", "NATS server URL (defaults to NATS_URL)")
@@ -127,6 +130,35 @@ func runRelay(args []string, stderr io.Writer, serve relayServer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := serve(ctx, forwards); err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	return 0
+}
+
+type mcpServer func(ctx context.Context, specPath, capturesPath string) error
+
+// runMCP serves a stage's capture tools to a harness over stdio. The
+// harness starts it, so it runs as the harness user and holds no secrets.
+func runMCP(args []string, stderr io.Writer, serve mcpServer) int {
+	flags := flag.NewFlagSet("archie-agent mcp", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	spec := flags.String("spec", "", "JSON file listing the stage's capture tools")
+	captures := flags.String("captures", "", "file accepted capture calls are appended to")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if *spec == "" || *captures == "" {
+		fmt.Fprintln(stderr, "error: -spec and -captures are required")
+		flags.Usage()
+		return 1
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serve(ctx, *spec, *captures); err != nil {
 		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}

@@ -19,3 +19,6 @@ func runAsHarnessUser(_ *exec.Cmd, name string) error {
 	}
 	return nil
 }
+
+// ownForHarness has nothing to do where the harness runs as the worker.
+func ownForHarness(string, ...string) error { return nil }

@@ -29,6 +29,12 @@ config) git config remote.origin.url https://attacker.invalid/repo.git ;;
 protected) echo broken >> widget_test.go ;;
 sleep) sleep 30 & echo $! > "$FAKE_LOG.child"; wait ;;
 env) env > "$FAKE_LOG.env" ;;
+capture)
+  cfg=""; prev=""
+  for a in "$@"; do [ "$prev" = "--mcp-config" ] && cfg="$a"; prev="$a"; done
+  out=$(sed -n 's/.*"-captures","\([^"]*\)".*/\1/p' "$cfg")
+  echo '{"tool":"record_finding","args":{"title":"found it"}}' >> "$out"
+  echo '{"tool":"record_finding","args":{"severity":"forged, no title"}}' >> "$out" ;;
 fix-on-resume) if [ -f .attempted ]; then echo ok > fixed.txt; else touch .attempted; fi ;;
 esac
 echo "session=S123"
