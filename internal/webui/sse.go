@@ -2,12 +2,14 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 // sseBacklogPageSize bounds one EventsSince fetch during catch-up.
@@ -30,61 +32,79 @@ func sseVisible(e events.Event) bool {
 	return !sseNoiseKinds[e.Kind]
 }
 
-// handleSSE streams events: catch-up from the store (?since=<event id>, or
-// the Last-Event-ID header on a reconnect), then live from the broadcast
-// hub.
+// handleSSE serves task history, latest resource snapshots, and optional
+// live logs over one connection. Append-only topics resume from independent
+// cursors; state topics replay their latest value on each connection.
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
-	stream, ok := newSSEStream(s.Store, s.Log, w, sseSince(r))
+	cursors := sseCursors(r)
+	stream, ok := newSSEStream(s.Store, s.Log, w, cursors.Tasks)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	stream.logsSince = cursors.Logs
 
 	// Register before reading the backlog. An event published between the
 	// backlog read and subscription would otherwise be lost permanently.
-	conn, unregister := s.registerSSEConn()
+	conn, snapshot, stale, unregister := s.registerSSEConn()
 	defer unregister()
+	var logs <-chan logging.Entry
+	if r.URL.Query().Get("topics") == "logs" && s.LogFeed != nil {
+		logs = s.LogFeed.Subscribe(r.Context())
+	}
+	// Headers make an idle stream live before any resource changes.
+	w.WriteHeader(http.StatusOK)
+	stream.fl.Flush()
 
 	if !stream.catchUp(r.Context(), "") {
 		return
 	}
-	stream.drain(r.Context(), conn)
+	for _, update := range snapshot {
+		if !stream.sendLive(update) {
+			return
+		}
+	}
+	if r.URL.Query().Get("topics") == "logs" && !stream.sendLogSnapshot(s.LogFeed) {
+		return
+	}
+	stream.drain(r.Context(), conn, stale, logs)
 }
 
-// sseSince resolves the cursor a client wants to resume after. A valid
-// Last-Event-ID header  --  how EventSource itself resumes a dropped
-// connection  --  takes precedence over the ?since= query parameter, which
-// only matters for a client's very first connection. An absent or unparseable
-// cursor degrades to "from the beginning": a browser holding a legacy integer
-// id (the pre-cursor id: field) or garbage must not break the feed, exactly
-// as a failed ParseInt yielded 0 before the cursor became a string.
-func sseSince(r *http.Request) string {
-	since := r.URL.Query().Get("since")
+// sseSince is the task-only cursor view retained for legacy clients/tests.
+// Native reconnects prefer Last-Event-ID; deliberate reconnects use ?since=.
+// An invalid or pre-cursor integer degrades to replay from the beginning.
+func sseSince(r *http.Request) string { return sseCursors(r).Tasks }
+
+type streamCursors struct {
+	Tasks string `json:"tasks"`
+	Logs  int64  `json:"logs"`
+}
+
+// EventSource only sends Last-Event-ID on reconnects it owns. A deliberate
+// reconnect (entering/leaving Logs) supplies the same token in ?since=.
+func sseCursors(r *http.Request) streamCursors {
+	value := r.URL.Query().Get("since")
 	if header := r.Header.Get("Last-Event-ID"); header != "" {
-		since = header
+		value = header
 	}
-	if _, _, ok := storecontract.ParseEventCursor(since); !ok {
-		return ""
+	var cursors streamCursors
+	if data, err := base64.RawURLEncoding.DecodeString(value); err == nil {
+		_ = json.Unmarshal(data, &cursors)
+	} else if _, _, ok := storecontract.ParseEventCursor(value); ok {
+		cursors.Tasks = value // legacy task cursor
 	}
-	return since
+	if _, _, ok := storecontract.ParseEventCursor(cursors.Tasks); !ok {
+		cursors.Tasks = ""
+	}
+	if cursors.Logs < 0 {
+		cursors.Logs = 0
+	}
+	return cursors
 }
 
-// registerSSEConn subscribes a channel to Broadcast and returns the
-// function that unsubscribes it.
-func (s *Server) registerSSEConn() (chan events.Event, func()) {
-	c := make(chan events.Event, 64)
-	s.mu.Lock()
-	if s.conns == nil {
-		s.conns = map[chan events.Event]struct{}{}
-	}
-	s.conns[c] = struct{}{}
-	s.mu.Unlock()
-
-	return c, func() {
-		s.mu.Lock()
-		delete(s.conns, c)
-		s.mu.Unlock()
-	}
+func (c streamCursors) id() string {
+	encoded, _ := json.Marshal(c)
+	return base64.RawURLEncoding.EncodeToString(encoded)
 }
 
 // sseStream renders one client's event-stream response: an SSE frame per
@@ -92,11 +112,12 @@ func (s *Server) registerSSEConn() (chan events.Event, func()) {
 // running "since" cursor that deduplicates the backlog against live
 // broadcasts covering the same event.
 type sseStream struct {
-	store storecontract.TaskStore
-	log   *slog.Logger
-	w     http.ResponseWriter
-	fl    http.Flusher
-	since string
+	store     storecontract.TaskStore
+	log       *slog.Logger
+	w         http.ResponseWriter
+	fl        http.Flusher
+	since     string
+	logsSince int64
 }
 
 // newSSEStream builds a stream over w, reporting false if w cannot be
@@ -114,12 +135,44 @@ func newSSEStream(st storecontract.TaskStore, log *slog.Logger, w http.ResponseW
 // send writes one event as an SSE frame. It reports false on a write
 // error, meaning the connection is gone and the caller must stop.
 func (s *sseStream) send(e events.Event) bool {
-	body, err := json.Marshal(e)
-	if err != nil {
-		s.log.Error("sse event marshal failed", "error", err, "event_id", e.ID)
+	return s.writeLive(liveUpdate{topic: "tasks", data: e}, streamCursors{Tasks: storecontract.EventCursor(e.At, e.ID), Logs: s.logsSince}.id())
+}
+
+func (s *sseStream) sendLogSnapshot(feed *logging.Feed) bool {
+	if feed == nil {
+		return s.sendLive(liveUpdate{topic: "logs-status", data: map[string]bool{"available": false}})
+	}
+	for _, entry := range feed.Snapshot() {
+		if !s.sendLog(entry) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *sseStream) sendLog(entry logging.Entry) bool {
+	if entry.ID <= s.logsSince {
+		return true
+	}
+	if !s.writeLive(liveUpdate{topic: "logs", data: entry}, streamCursors{Tasks: s.since, Logs: entry.ID}.id()) {
 		return false
 	}
-	if _, err := s.w.Write([]byte("id: " + storecontract.EventCursor(e.At, e.ID) + "\ndata: " + string(body) + "\n\n")); err != nil {
+	s.logsSince = entry.ID
+	return true
+}
+
+func (s *sseStream) sendLive(update liveUpdate) bool { return s.writeLive(update, "") }
+
+func (s *sseStream) writeLive(update liveUpdate, id string) bool {
+	body, err := marshalLiveFrame(update)
+	if err != nil {
+		return false
+	}
+	prefix := ""
+	if id != "" {
+		prefix = "id: " + id + "\n"
+	}
+	if _, err := s.w.Write([]byte(prefix + "data: " + string(body) + "\n\n")); err != nil {
 		return false
 	}
 	s.fl.Flush()
@@ -190,25 +243,47 @@ func (s *sseStream) sendPage(backlog []events.Event, target string) (reachedTarg
 // first fills any persisted gap ahead of it, then is delivered directly if
 // catch-up did not already cover it -- both paths go through the same
 // since-based deduplication.
-func (s *sseStream) drain(ctx context.Context, conn <-chan events.Event) {
+func (s *sseStream) drain(ctx context.Context, conn <-chan liveUpdate, stale <-chan struct{}, logs <-chan logging.Entry) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case e := <-conn:
-			cursor := storecontract.EventCursor(e.At, e.ID)
-			if cursor <= s.since {
+		case <-stale:
+			return
+		case entry, ok := <-logs:
+			if !ok {
+				logs = nil
 				continue
 			}
-			if !s.catchUp(ctx, cursor) {
+			if !s.sendLog(entry) {
 				return
 			}
-			if cursor > s.since {
-				if sseVisible(e) && !s.send(e) {
+		case update := <-conn:
+			if update.topic == "tasks" {
+				e, ok := update.data.(events.Event)
+				if ok && !s.relayTask(ctx, e) {
 					return
 				}
-				s.since = cursor
+			} else if !s.sendLive(update) {
+				return
 			}
 		}
 	}
+}
+
+func (s *sseStream) relayTask(ctx context.Context, e events.Event) bool {
+	cursor := storecontract.EventCursor(e.At, e.ID)
+	if cursor <= s.since {
+		return true
+	}
+	if !s.catchUp(ctx, cursor) {
+		return false
+	}
+	if cursor > s.since {
+		if sseVisible(e) && !s.send(e) {
+			return false
+		}
+		s.since = cursor
+	}
+	return true
 }

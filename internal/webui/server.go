@@ -195,8 +195,9 @@ type Server struct {
 	// When Cfg is present, Cfg.Get().Web.TrustForwardedHeaders is also checked.
 	TrustForwardedHeaders bool
 
-	mu    sync.Mutex
-	conns map[chan events.Event]struct{}
+	mu     sync.Mutex
+	conns  map[*liveSubscriber]struct{}
+	latest map[string]liveUpdate
 }
 
 func (s *Server) trustForwardedHeaders() bool {
@@ -223,17 +224,9 @@ type EventPublisher interface {
 	Publish(events.Event)
 }
 
-// Broadcast fans an (ID-stamped) event out to every connected SSE
-// client; stalled clients drop events rather than blocking the caller.
+// Broadcast delivers a persisted task event through the shared stream hub.
 func (s *Server) Broadcast(e events.Event) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for c := range s.conns {
-		select {
-		case c <- e:
-		default:
-		}
-	}
+	s.publish(liveUpdate{topic: "tasks", data: e}, "")
 }
 
 func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
@@ -292,15 +285,12 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}", s.handleControlPlaneQuery)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}/history", s.handleControlPlaneHistory)
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
-	mux.HandleFunc("GET /api/control-plane/watch/{kind}", s.handleControlPlaneWatch)
 	mux.HandleFunc("GET /api/control-plane/audit", s.handleAudit)
 	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
-	mux.HandleFunc("GET /api/identities/watch", s.handleIdentitiesWatch)
 	mux.HandleFunc("POST /api/identities", s.handleIdentityCreate)
 	mux.HandleFunc("POST /api/identities/{id}/{command}", s.handleIdentityCommand)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
-	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)
 }
 
 func (s *Server) registerChatRoutes(mux *http.ServeMux) {

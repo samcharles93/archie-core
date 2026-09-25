@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -38,15 +39,22 @@ type applyStatusView struct {
 // process is running. A process with no apply-status wiring renders an empty
 // page rather than failing: that is a deployment fact, not an error.
 func (s *Server) handleApplyStatus(w http.ResponseWriter, r *http.Request) {
-	view := applyStatusView{Records: []applyStatusRecord{}, Processes: applystatus.Processes()}
-	if s.ApplyStatus == nil {
-		writeJSON(w, view)
-		return
-	}
-	records, err := s.ApplyStatus.ListApplyStatus(r.Context())
+	view, err := s.readApplyStatus(r.Context())
 	if err != nil {
 		http.Error(w, "apply status unavailable", http.StatusServiceUnavailable)
 		return
+	}
+	writeJSON(w, view)
+}
+
+func (s *Server) readApplyStatus(ctx context.Context) (applyStatusView, error) {
+	view := applyStatusView{Records: []applyStatusRecord{}, Processes: applystatus.Processes()}
+	if s.ApplyStatus == nil {
+		return view, nil
+	}
+	records, err := s.ApplyStatus.ListApplyStatus(ctx)
+	if err != nil {
+		return view, err
 	}
 	now := s.clock()
 	for _, record := range records {
@@ -55,7 +63,7 @@ func (s *Server) handleApplyStatus(w http.ResponseWriter, r *http.Request) {
 			Error: record.Error, ReportedAt: record.ReportedAt, State: applyState(record, now),
 		})
 	}
-	writeJSON(w, view)
+	return view, nil
 }
 
 // applyState reads staleness before the error: a process that stopped

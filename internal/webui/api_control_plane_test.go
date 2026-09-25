@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,31 +60,18 @@ func (f *controlPlaneClientStub) Watch(context.Context, *controlpb.WatchRequest,
 	return f.watch, f.err
 }
 
-// idleWatch is a watch stream with nothing to deliver: Recv blocks until the
-// request ends, as a real stream does while the resource is unchanged.
-type idleWatch struct {
-	grpc.ClientStream
-	done <-chan struct{}
-}
-
-func (w idleWatch) Recv() (*controlpb.WatchResponse, error) {
-	<-w.done
-	return nil, context.Canceled
-}
-
-// TestControlPlaneWatchOpensBeforeTheFirstChange: a browser marks an event
-// stream live when its headers arrive. Holding them until the first change
-// leaves every settings card reading "Connecting" on an unchanged resource.
-func TestControlPlaneWatchOpensBeforeTheFirstChange(t *testing.T) {
-	server := httptest.NewServer((&Server{ControlPlane: &controlPlaneClientStub{watch: idleWatch{done: t.Context().Done()}}}).Handler())
+// The multiplexed stream answers before any topic changes. An unchanged
+// resource must not leave the connection pill at Connecting indefinitely.
+func TestLiveStreamOpensBeforeTheFirstChange(t *testing.T) {
+	server := httptest.NewServer((&Server{Store: &fakeEventStore{}, Log: slog.New(slog.DiscardHandler)}).Handler())
 	t.Cleanup(server.Close)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/control-plane/watch/workflow-execution-settings", nil)
+	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/stream", nil)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		t.Fatalf("watch did not answer before its first change: %v", err)
+		t.Fatalf("stream did not answer before its first change: %v", err)
 	}
 	defer response.Body.Close()
 	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {

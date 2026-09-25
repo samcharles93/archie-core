@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
-import { computed, reactive, ref } from "vue";
+import { computed, onScopeDispose, reactive, ref, watch } from "vue";
+import { useLiveUpdatesStore } from "./live-updates.ts";
 
 export interface ResourceDescriptor {
   kind: string;
@@ -229,7 +230,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
   const catalog = ref<ResourceDescriptor[]>([]);
   const catalogError = ref("");
   const states = reactive<Record<string, ResourceState>>({});
-  const streams = new Map<string, EventSource>();
+  const live = useLiveUpdatesStore();
   const applyStatus = ref<ApplyStatusResponse>({ records: [], processes: [] });
 
   const genericResources = computed(() =>
@@ -247,7 +248,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
         loading: false,
         saving: false,
         conflict: false,
-        stream: "connecting",
+        stream: live.streamState === "live" ? "live" : "connecting",
       };
     return states[kind];
   }
@@ -278,28 +279,22 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
-  function watchResource(kind: string): void {
-    if (streams.has(kind)) return;
-    const state = stateFor(kind);
-    const after = state.resource?.version ?? 0;
-    const stream = new EventSource(
-      `/api/control-plane/watch/${encodeURIComponent(kind)}?after=${after}`,
-    );
-    stream.onopen = () => {
-      state.stream = "live";
-    };
-    stream.onerror = () => {
-      state.stream = "reconnecting";
-    };
-    stream.onmessage = (event) => {
-      try {
-        apply((JSON.parse(event.data) as ResourceResponse).resource);
-      } catch {
-        state.error = "Invalid live update";
-      }
-    };
-    streams.set(kind, stream);
-  }
+  const stopResource = live.subscribe("control-plane", (data) => {
+    const resource = (data as ResourceResponse).resource;
+    if (resource?.kind) apply(resource);
+  });
+  const stopStatus = live.subscribe("apply-status", (data) => {
+    applyStatus.value = data as ApplyStatusResponse;
+  });
+  const stopConnection = watch(() => live.streamState, (state) => {
+    for (const resource of Object.values(states))
+      resource.stream = state === "live" ? "live" : "reconnecting";
+  });
+  onScopeDispose(() => {
+    stopResource();
+    stopStatus();
+    stopConnection();
+  });
 
   /** Re-read on every load and after each save, so the page reflects what the
    * processes did with the edit rather than what was stored. A failure leaves
@@ -333,12 +328,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
       catalog.value = response.resources ?? [];
       catalogError.value = "";
       await loadApplyStatus();
-      await Promise.all(
-        genericResources.value.map(async ({ kind }) => {
-          await loadResource(kind);
-          watchResource(kind);
-        }),
-      );
+      await Promise.all(genericResources.value.map(({ kind }) => loadResource(kind)));
     } catch (error) {
       catalogError.value = String((error as Error).message || error);
     }

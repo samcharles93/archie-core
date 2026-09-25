@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
@@ -32,48 +31,6 @@ func (s *Server) handleIdentitiesList(w http.ResponseWriter, r *http.Request) {
 		values = []identity.Identity{}
 	}
 	writeJSON(w, map[string]any{"identities": values})
-}
-
-func (s *Server) handleIdentitiesWatch(w http.ResponseWriter, r *http.Request) {
-	if s.Identities == nil {
-		http.Error(w, "identity store unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	var previous string
-	for {
-		values, err := s.Identities.List(r.Context())
-		if err != nil {
-			return
-		}
-		if values == nil {
-			values = []identity.Identity{}
-		}
-		payload, err := json.Marshal(map[string]any{"identities": values})
-		if err != nil {
-			return
-		}
-		if current := string(payload); current != previous {
-			if _, err = w.Write(append(append([]byte("data: "), payload...), '\n', '\n')); err != nil {
-				return
-			}
-			flusher.Flush()
-			previous = current
-		}
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-		}
-	}
 }
 
 func (s *Server) handleIdentityCreate(w http.ResponseWriter, r *http.Request) {

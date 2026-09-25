@@ -37,6 +37,7 @@ restating them.
   tree gets committed. `task check` also adds linter-tool lines to `go.sum`
   (bead 1e37); restore `go.sum` before committing unless you changed a
   dependency.
-- A change to `docs/prds/` or `docs/architecture/` carries the regenerated
-  `docs/data/generated/dev-docs.json`, and PRD edits follow
-  `docs/prds/RULES.md` and pass `task docs:prds`.
+- A change to `docs/prds/`, `docs/architecture/` **or `docs/development/`**
+  carries the regenerated `docs/data/generated/dev-docs.json`: run
+  `task docs:artifact` (not `task docs:check`, which checks contracts only).
+  PRD edits also follow `docs/prds/RULES.md` and pass `task docs:prds`.

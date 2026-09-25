@@ -1,6 +1,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
-import { api, subscribeLogs } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useLiveUpdatesStore } from "@/stores/live-updates";
 import type { LogEntry } from "@/lib/log";
 import type { StatusKind } from "@/lib/status";
 import type { StreamState } from "@/lib/stream-state";
@@ -138,6 +139,7 @@ let unsubscribe: (() => void) | undefined;
 /** Owns the initial read, the re-reads a filter change causes, and the live
  * stream, for the page's lifetime. */
 export function useLogs(): void {
+  const live = useLiveUpdatesStore();
   onMounted(() => {
     // A mount opens a new stream against a fresh read, so the tail starts
     // unpaused, connecting, and without the lines the previous visit's stream
@@ -149,11 +151,21 @@ export function useLogs(): void {
     liveTick.value += 1;
 
     void loadLogs();
-    unsubscribe = subscribeLogs(handleEntry, (state) => {
-      streamState.value = state;
-    });
+    unsubscribe = live.subscribe("logs", handleEntry);
+    streamState.value = live.streamState;
   });
-  onUnmounted(() => unsubscribe?.());
+  onUnmounted(() => {
+    unsubscribe?.();
+    unsubscribe = undefined;
+  });
+  watch(() => live.streamState, (state) => {
+    streamState.value = state;
+  });
+  // A process without a LogFeed cannot deliver live entries.
+  const stopStatus = live.subscribe("logs-status", (data) => {
+    if (!(data as { available: boolean }).available) streamState.value = "unavailable";
+  });
+  onUnmounted(stopStatus);
 
   // Every filter is a server-side one -- the request carries it -- so a change
   // to any of them is a new read, not a re-filter of what is already here.

@@ -48,10 +48,6 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 			want: http.StatusOK, emptyJSON: `"disabled":true`,
 		},
 		{
-			name: "daemon log stream", method: http.MethodGet, path: "/api/logs/stream",
-			want: http.StatusServiceUnavailable,
-		},
-		{
 			// Task logs are a State Store read contract now
 			// (archie-core-iaqx), so the route answers with real data
 			// rather than the degrade. The task exists and its attempt

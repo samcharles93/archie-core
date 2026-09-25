@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"encoding/json"
 	"net/http"
 	"slices"
 	"strconv"
@@ -75,37 +74,6 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"file":       result.File,
 		"components": components,
 	})
-}
-
-func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
-	if s.LogFeed == nil {
-		http.Error(w, "live daemon log feed unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	entries := s.LogFeed.Subscribe(r.Context())
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case entry, ok := <-entries:
-			if !ok {
-				return
-			}
-			data, err := json.Marshal(entry)
-			if err != nil {
-				continue
-			}
-			_, _ = w.Write([]byte("id: " + strconv.FormatInt(entry.ID, 10) + "\ndata: " + string(data) + "\n\n"))
-			flusher.Flush()
-		}
-	}
 }
 
 func mergeComponents(history []string, live []logging.Entry) []string {
