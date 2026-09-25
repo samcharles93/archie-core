@@ -178,12 +178,14 @@ The current `store.Task` lifecycle uses:
 
 ```text
 queued -> running
-running -> waiting_human | pr_open | merged | parked | closed_wont_do
+running -> queued (crash recovery) | waiting_human | pr_open | completed | parked | closed_wont_do
 waiting_human -> queued | closed_wont_do
 parked -> queued | dead
 pr_open -> merged | rejected
-running after crash -> queued
 ```
+
+`merged` is reached only from `pr_open`. `completed` is terminal: it means a
+workflow that opens no pull request finished its work.
 
 Workflows select and sequence deterministic and agent-run stages. Implement,
 TDD, feasibility, and bootstrap are current Workflow definitions.
