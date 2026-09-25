@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/agentworker"
@@ -85,29 +87,46 @@ func natsConnectionSettings(flagURL string, getenv func(string) string) (url, to
 	return url, getenv("NATS_TOKEN")
 }
 
-type relayServer func(ctx context.Context, listen, target string) error
+type relayServer func(ctx context.Context, forwards map[string]string) error
 
 // runRelay is the sandbox egress relay: the container on both a sandbox's
-// isolated network and the host-reachable one, forwarding to the proxy.
+// isolated network and the host-reachable one, forwarding a fixed set of
+// ports to the proxy, NATS and the State Store.
 func runRelay(args []string, stderr io.Writer, serve relayServer) int {
 	flags := flag.NewFlagSet("archie-agent relay", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	listen := flags.String("listen", ":3128", "address sandbox containers connect to")
-	target := flags.String("to", "", "the egress proxy address every connection is forwarded to")
+	forwards := map[string]string{}
+	flags.Func("forward", "listen=target: forward connections on listen to target (repeatable)", func(v string) error {
+		listen, target, ok := strings.Cut(v, "=")
+		if !ok || listen == "" || target == "" {
+			return fmt.Errorf("%q is not listen=target", v)
+		}
+		if _, _, err := net.SplitHostPort(listen); err != nil {
+			return fmt.Errorf("listen address %q: %w", listen, err)
+		}
+		if _, _, err := net.SplitHostPort(target); err != nil {
+			return fmt.Errorf("target %q: %w", target, err)
+		}
+		if _, dup := forwards[listen]; dup {
+			return fmt.Errorf("listen address %q is forwarded twice", listen)
+		}
+		forwards[listen] = target
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
 	}
-	if *target == "" {
-		fmt.Fprintln(stderr, "error: -to is required")
+	if len(forwards) == 0 {
+		fmt.Fprintln(stderr, "error: at least one -forward is required")
 		flags.Usage()
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, *listen, *target); err != nil {
+	if err := serve(ctx, forwards); err != nil {
 		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}

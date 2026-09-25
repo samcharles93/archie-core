@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -157,7 +156,7 @@ func TestSandboxNetworkReachesOnlyTheProxy(t *testing.T) {
 		Name:       name + "-relay",
 		Image:      probeImage,
 		Entrypoint: []string{"/bin/archie-agent"},
-		Cmd:        []string{"relay", "-listen", ":" + strconv.Itoa(RelayPort), "-to", proxyAddr},
+		Cmd:        RelayArgs(proxyAddr, "", ""),
 		Network:    "bridge",
 		Binds:      []string{filepath.Join(bin, "archie-agent") + ":/bin/archie-agent:ro,z"},
 	})

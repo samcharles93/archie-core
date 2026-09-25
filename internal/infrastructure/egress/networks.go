@@ -17,8 +17,12 @@ import (
 const (
 	// RelayAlias is the name a sandbox container reaches its relay by.
 	RelayAlias = "archie-egress"
-	// RelayPort is the port the relay listens on inside sandbox networks.
+	// RelayPort is the port the relay forwards to the egress proxy.
 	RelayPort = 3128
+	// RelayNATSPort and RelayStateStorePort are the ports the relay forwards
+	// to NATS and the State Store, for the worker in a sandbox container.
+	RelayNATSPort       = 4222
+	RelayStateStorePort = 50051
 
 	relayLabel   = "archie-egress-relay"
 	sandboxLabel = "archie-egress-sandbox"
@@ -159,4 +163,17 @@ func ProxyEnv(token, caPath string) []string {
 		env = append(env, name+"="+caPath)
 	}
 	return env
+}
+
+// RelayArgs is archie-agent relay's arguments forwarding the relay's fixed
+// ports to the proxy, NATS and the State Store at their host-reachable
+// addresses. An empty address is not forwarded.
+func RelayArgs(proxy, nats, stateStore string) []string {
+	args := []string{"relay"}
+	for port, target := range map[int]string{RelayPort: proxy, RelayNATSPort: nats, RelayStateStorePort: stateStore} {
+		if target != "" {
+			args = append(args, "-forward", ":"+strconv.Itoa(port)+"="+target)
+		}
+	}
+	return args
 }
