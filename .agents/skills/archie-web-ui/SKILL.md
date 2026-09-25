@@ -14,7 +14,16 @@ Not editorial, not marketing, not playful. Every rule below serves that.
 - Vue 3 SFCs + TypeScript, Vite, Pinia, vue-router.
 - Tailwind CSS v4 via `@tailwindcss/vite`; `@custom-variant dark` keyed on the
   `[data-theme]` attribute; shadcn-vue + reka-ui for primitives;
-  `@lucide/vue` for icons; `@fontsource-variable/geist` is the typeface.
+  `@lucide/vue` for icons; IBM Plex Sans for UI, IBM Plex Mono for every
+  machine value (Graphite theme, `docs/design/ui-redesign/`).
+- `ui/src/components/ui/` is CLI-installed only; never hand-edit it. Order of
+  preference for a missing component: stock shadcn-vue (`npx shadcn-vue add`;
+  reka-ui names differ, e.g. chip input is Tags input), another shadcn-vue
+  registry (e.g. inspira-ui), then a new item in the sibling
+  `archie-component-registry` repo, installed from its `public/r/<item>.json`.
+  The CLI prompts to overwrite stock primitives an item depends on: answer no.
+  If `npm install` fails with `EALLOWSCRIPTS`, run the CLI with
+  `NPM_CONFIG_USERCONFIG=/dev/null`.
 - Features live in `ui/src/<feature>/` with colocated `.js`/`.css`. Extract a
   helper to `ui/src/base/` only on the **second distinct consumer**.
 - `ui/dist/` is committed and generated — never hand-edit it, never ignore it
