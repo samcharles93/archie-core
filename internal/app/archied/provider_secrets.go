@@ -30,9 +30,6 @@ func configuredSecretRegistry(cfg *config.Config, log *slog.Logger) (*secret.Reg
 		}
 		log.Info("secret engines loaded", "count", loaded)
 	}
-	if err := resolveProviderSecrets(cfg, registry, log); err != nil {
-		return nil, fmt.Errorf("resolve provider secrets: %w", err)
-	}
 	return registry, nil
 }
 

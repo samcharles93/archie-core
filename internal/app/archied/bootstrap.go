@@ -361,6 +361,10 @@ func (b *boot) openStores(ctx context.Context) error {
 		return err
 	}
 	b.secrets = secrets
+	if err := resolveProviderSecrets(&b.cfg, secrets, log); err != nil {
+		log.Error("resolve provider secrets", "err", err)
+		return err
+	}
 	b.forgeClient, b.token = resolveForge(cfg.Forge, secrets, log)
 
 	// The daemon and gateway do not serve the State Store's tables: the
