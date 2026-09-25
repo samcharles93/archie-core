@@ -26,6 +26,10 @@
         "gate": {
           "$ref": "#/schemas/Gate"
         },
+        "harness": {
+          "$ref": "#/schemas/HarnessSpec",
+          "description": "Harness, when set, runs the stage on an external coding-agent CLI\ninstead of the built-in loop. The worker in a Kit container is the\ndaemon's own archie-agent build, so it always understands this field."
+        },
         "mission": {
           "type": "string"
         },
@@ -245,6 +249,41 @@
           "type": "integer"
         }
       },
+      "type": "object"
+    },
+    "HarnessSpec": {
+      "additionalProperties": false,
+      "description": "HarnessSpec is how to drive a Kit's agent headlessly: its launch argv (image entrypoint and cmd) and the agent-sessions@1 verb tails appended to it.",
+      "properties": {
+        "continue": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "launch": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompt": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resume": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "launch",
+        "prompt"
+      ],
       "type": "object"
     },
     "MediaAttachment": {
