@@ -8,6 +8,8 @@ import LogsPage from "@/logs/LogsPage.vue";
 import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
 import ToolsPage from "@/settings/ToolsPage.vue";
 import HistoryPage from "@/settings/HistoryPage.vue";
+import PersonasPage from "@/settings/PersonasPage.vue";
+import SchedulesPage from "@/settings/SchedulesPage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -195,6 +197,30 @@ const routes = [
     },
   },
   {
+    path: "/settings/personas",
+    name: "settings-personas",
+    component: PersonasPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Personas",
+      description: "The system prompts chat runs under, and the default.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/schedules",
+    name: "settings-schedules",
+    component: SchedulesPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Schedules",
+      description: "Work Archie starts on its own, on a timetable.",
+      section: "settings",
+    },
+  },
+  {
     path: "/settings/scheduling-policy",
     name: "settings-scheduling-policy",
     component: SchedulingPolicyPage,
@@ -245,7 +271,7 @@ const routes = [
   },
   {
     path: "/settings",
-    redirect: "/settings/models",
+    redirect: "/settings/personas",
     meta: {
       label: "Settings",
       description: "Everything you configure: agents, integrations, runtime.",

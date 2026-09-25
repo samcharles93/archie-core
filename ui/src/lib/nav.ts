@@ -28,9 +28,11 @@ const settings: NavSpec = {
     {
       label: "Agents",
       paths: [
+        "/settings/personas",
         "/settings/models",
         "/settings/skills",
         "/settings/curators",
+        "/settings/schedules",
         "/settings/scheduling-policy",
         "/settings/advanced",
       ],

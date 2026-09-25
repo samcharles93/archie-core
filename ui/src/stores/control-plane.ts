@@ -165,6 +165,8 @@ export type ControlPlanePage =
   | "channels"
   | "scheduling"
   | "tools"
+  | "personas"
+  | "schedules"
   | "advanced"
   | "workflows";
 
@@ -175,9 +177,9 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   channels: ["channel-settings"],
   scheduling: ["scheduling-policy"],
   tools: ["tool-settings"],
+  personas: ["personas"],
+  schedules: ["schedules"],
   advanced: [
-    "personas",
-    "schedules",
     "plugin-settings",
     "container-runtime-policies",
   ],

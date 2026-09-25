@@ -39,6 +39,8 @@ test("control-plane resources belong to one settings narrative", () => {
     "model-role-assignments",
     "repository-policies",
     "channel-settings",
+    "personas",
+    "schedules",
     "scheduling-policy",
     "tool-settings",
     "plugin-settings",
@@ -74,6 +76,14 @@ test("control-plane resources belong to one settings narrative", () => {
   assert.deepEqual(
     resourcesForPage(catalog, "tools").map(({ kind }) => kind),
     ["tool-settings"],
+  );
+  assert.deepEqual(
+    resourcesForPage(catalog, "personas").map(({ kind }) => kind),
+    ["personas"],
+  );
+  assert.deepEqual(
+    resourcesForPage(catalog, "schedules").map(({ kind }) => kind),
+    ["schedules"],
   );
   assert.deepEqual(
     resourcesForPage(catalog, "advanced").map(({ kind }) => kind),
