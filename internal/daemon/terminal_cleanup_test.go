@@ -100,12 +100,28 @@ func newLocalRemote(t *testing.T, owner, repo string) string {
 	return host
 }
 
+// newTestTrees returns a worktree manager whose clones come from the local
+// bare remote at host, so a fixture can prepare the clone the daemon would.
+func newTestTrees(t *testing.T, host string) *worktree.Manager {
+	t.Helper()
+	return &worktree.Manager{
+		WorkDir:  t.TempDir(),
+		Token:    "unused",
+		BotUser:  "archie-bot",
+		BotEmail: "archie-bot@example.com",
+		BaseURL:  "file://" + host,
+	}
+}
+
 func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
+	host := newLocalRemote(t, "acme", "widget")
+
 	tests := []struct {
 		name           string
 		taskIdentity   string
 		setupStatus    string
 		prNumber       int
+		uncommitted    bool
 		wantTreeExists bool
 	}{
 		{
@@ -137,6 +153,25 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 			wantTreeExists: false,
 		},
 		{
+			// agent.run ends a task completed with its deliverable still
+			// uncommitted in the clone. Deleting that worktree deletes the
+			// work: nothing else anywhere holds those edits.
+			name:           "completed task keeps a worktree that holds uncommitted work",
+			taskIdentity:   "",
+			setupStatus:    workflow.StatusCompleted,
+			prNumber:       0,
+			uncommitted:    true,
+			wantTreeExists: true,
+		},
+		{
+			name:           "merged task keeps a worktree that holds uncommitted work",
+			taskIdentity:   "",
+			setupStatus:    workflow.StatusMerged,
+			prNumber:       0,
+			uncommitted:    true,
+			wantTreeExists: true,
+		},
+		{
 			name:           "parked task preserves worktree for post-mortem",
 			taskIdentity:   "",
 			setupStatus:    workflow.StatusParked,
@@ -165,8 +200,8 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
-			rootTrees := &worktree.Manager{WorkDir: t.TempDir()}
-			winterTrees := &worktree.Manager{WorkDir: t.TempDir()}
+			rootTrees := newTestTrees(t, host)
+			winterTrees := newTestTrees(t, host)
 
 			log := slog.New(slog.DiscardHandler)
 			d := &Daemon{
@@ -210,8 +245,15 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 
 			targetTrees := d.treesFor(claimed)
 			workDir := targetTrees.Dir(claimed.Owner, claimed.Repo, claimed.IssueNumber)
-			if err := os.MkdirAll(workDir, 0o755); err != nil {
-				t.Fatalf("create workDir: %v", err)
+			// A prepared clone, the only shape the daemon ever cleans up.
+			if _, _, err := targetTrees.Prepare(ctx, claimed.Owner, claimed.Repo, "main",
+				claimed.IssueNumber, claimed.Title, claimed.Body, claimed.Labels); err != nil {
+				t.Fatalf("prepare worktree: %v", err)
+			}
+			if tt.uncommitted {
+				if err := os.WriteFile(filepath.Join(workDir, "deliverable.md"), []byte("uncommitted work\n"), 0o600); err != nil {
+					t.Fatalf("write uncommitted work: %v", err)
+				}
 			}
 
 			d.cleanupTerminalTaskWorktree(ctx, claimed, targetTrees)

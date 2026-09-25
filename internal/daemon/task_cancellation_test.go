@@ -197,6 +197,8 @@ func TestCancelledTaskTransitionsToParked(t *testing.T) {
 }
 
 func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
+	host := newLocalRemote(t, "acme", "widget")
+
 	tests := []struct {
 		name           string
 		taskStatus     string
@@ -243,7 +245,7 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
-			trees := &worktree.Manager{WorkDir: t.TempDir()}
+			trees := newTestTrees(t, host)
 			log := slog.New(slog.DiscardHandler)
 			d := &Daemon{
 				Store: st,
@@ -270,8 +272,11 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 			}
 
 			workDir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
-			if err := os.MkdirAll(workDir, 0o755); err != nil {
-				t.Fatalf("create workDir: %v", err)
+			// A prepared clone: the cancelled context is the thing under test,
+			// so the worktree itself is readied with a live one.
+			if _, _, err := trees.Prepare(context.Background(), task.Owner, task.Repo, "main",
+				task.IssueNumber, task.Title, task.Body, task.Labels); err != nil {
+				t.Fatalf("prepare worktree: %v", err)
 			}
 
 			d.cleanupTerminalTaskWorktree(ctx, task, trees)

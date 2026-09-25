@@ -1329,6 +1329,15 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 	return dir, true
 }
 
+// cleanupTerminalTaskWorktree removes a task's worktree once its forge side is
+// settled, unless the worktree still holds work no commit captured.
+//
+// The cleanliness guard is what keeps agent.run's deliverable: that step ends
+// the workflow StatusCompleted and works in a real clone whose edits it never
+// commits, so a status-only rule deletes the work. Nothing else holds it -- not
+// the branch, not the store. A worktree whose cleanliness cannot be read is
+// kept for the same reason: a wrong keep costs disk, a wrong delete costs the
+// work.
 func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow.Task, trees *worktree.Manager) {
 	if d.Store == nil || trees == nil || task == nil || !task.HasRepository() {
 		return
@@ -1348,15 +1357,41 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow
 	// later run needs: the PR merged, the PR was rejected, an operator refused
 	// the work, or the run finished without opening a PR at all (a no-change
 	// build, a triage that needed no code -- StatusCompleted). The PRNumber
-	// guard keeps the worktree when a PR exists for the reconciler.
+	// guard keeps the worktree when a PR exists for the reconciler; the
+	// cleanliness guard keeps it when it holds uncaptured work.
 	switch latest.Status {
 	case workflow.StatusMerged, workflow.StatusRejected, workflow.StatusClosedWontDo, workflow.StatusCompleted:
-		if latest.PRNumber == 0 {
-			if err := trees.Cleanup(task.Owner, task.Repo, task.IssueNumber); err != nil {
-				d.Log.Warn("terminal worktree cleanup failed", "task", task.ID, "err", err)
-			}
+		if latest.PRNumber != 0 {
+			return
+		}
+		if d.worktreeHoldsUncapturedWork(cleanupCtx, trees, task) {
+			return
+		}
+		if err := trees.Cleanup(task.Owner, task.Repo, task.IssueNumber); err != nil {
+			d.Log.Warn("terminal worktree cleanup failed", "task", task.ID, "err", err)
 		}
 	}
+}
+
+// worktreeHoldsUncapturedWork reports whether a terminal task's worktree has
+// to survive cleanup because it may hold work no commit captured. A worktree
+// that is not on disk at all has nothing to keep, so a task whose clone was
+// already removed still cleans up whatever leftovers share its path.
+func (d *Daemon) worktreeHoldsUncapturedWork(ctx context.Context, trees *worktree.Manager, task *workflow.Task) bool {
+	dir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+	if _, err := os.Stat(dir); err != nil {
+		return false
+	}
+	uncommitted, err := trees.HasUncommittedChanges(ctx, dir)
+	if err != nil {
+		d.Log.Warn("terminal worktree kept: uncommitted work could not be read", "task", task.ID, "dir", dir, "err", err)
+		return true
+	}
+	if uncommitted {
+		d.Log.Info("terminal worktree kept: it holds uncommitted work", "task", task.ID, "dir", dir)
+		return true
+	}
+	return false
 }
 
 // openTaskLog opens task's log sink for the lifetime of one process() call
