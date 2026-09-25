@@ -1,6 +1,6 @@
 # Store
 
-**Status:** Draft
+**Status:** Approved
 **Authority:** `docs/architecture/plugins-and-extensions.md`; supersedes
 `docs/prds/extensions-center.md`, whose installed-inventory states are
 adopted below.

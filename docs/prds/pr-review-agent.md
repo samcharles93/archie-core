@@ -1,6 +1,6 @@
 # PR review agent
 
-**Status:** Draft
+**Status:** Approved
 **Authority:** `docs/architecture/agent-system.md`; supersedes the reviewer
 executor and blocking rule in `docs/architecture/adversarial-review.md`, and
 the designs in `docs/prds/operator-pr-review.md` and
