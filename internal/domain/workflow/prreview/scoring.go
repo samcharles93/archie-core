@@ -77,11 +77,18 @@ const (
 // Finding is one review finding before scoring: what the reviewer observed,
 // where, and the two flags that only a verdict can set.
 type Finding struct {
-	Dimension  string
-	File       string
-	LineStart  int
-	LineEnd    int
-	Severity   Severity
+	Dimension string
+	File      string
+	LineStart int
+	LineEnd   int
+	Severity  Severity
+	// Category is what the finding is about, and the third of the three things
+	// two findings have to share to be one claim: the PRD merges exact
+	// duplicates on (file, overlapping lines, category). No producer sets it
+	// yet, so an empty category is a category -- two findings that both leave
+	// it empty are duplicates of each other when they also share a file and a
+	// line.
+	Category   string
 	Title      string
 	Body       string
 	Suggestion string
@@ -110,6 +117,7 @@ type ScoredFinding struct {
 	LineStart   int
 	LineEnd     int
 	Severity    Severity
+	Category    string
 	Title       string
 	Body        string
 	Suggestion  string
@@ -132,12 +140,12 @@ type ScoreInputs struct {
 
 // Score drops the findings under their severity's confidence floor, scores
 // what is left, merges the duplicates among the survivors and ranks the rest by
-// score. The same findings always produce the same scores and the same order.
+// score. The same findings always produce the same scores and the same order,
+// whatever order they were handed in.
 //
-// The floor comes before the merge and the merge keeps the higher-scoring
-// duplicate, so which findings were handed in decides the result and the order
-// they were handed in does not: a discarded finding must not be able to shadow
-// a kept one.
+// The floor comes before the merge, so a discarded finding cannot shadow a kept
+// one, and the merge is a clustering rather than a scan, so a chain of
+// overlapping findings collapses the same way however it was listed.
 func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 	scored := make([]ScoredFinding, 0, len(findings))
 	for _, finding := range findings {
@@ -146,12 +154,13 @@ func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 			continue
 		}
 		score, applied := scoreOf(finding, severity, inputs)
-		candidate := ScoredFinding{
+		scored = append(scored, ScoredFinding{
 			Dimension:   finding.Dimension,
 			File:        finding.File,
 			LineStart:   finding.LineStart,
 			LineEnd:     finding.LineEnd,
 			Severity:    severity,
+			Category:    finding.Category,
 			Title:       finding.Title,
 			Body:        finding.Body,
 			Suggestion:  finding.Suggestion,
@@ -161,40 +170,146 @@ func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 			Score:       score,
 			Multipliers: applied,
 			Blocking:    finding.Blocking,
+		})
+	}
+
+	ranked := mergeDuplicates(scored)
+	slices.SortFunc(ranked, compareScored)
+	return ranked
+}
+
+// mergeDuplicates collapses the findings that are one claim about one place.
+// Two findings are one claim when they name the same file and category and
+// their line ranges overlap -- the PRD's exact-duplicate rule, with the wording
+// and the severity left out of it. Overlap is transitive, so a chain 1-2, 2-3,
+// 3-4 is one claim and not two.
+func mergeDuplicates(findings []ScoredFinding) []ScoredFinding {
+	ordered := slices.Clone(findings)
+	slices.SortFunc(ordered, compareIdentity)
+
+	merged := make([]ScoredFinding, 0, len(ordered))
+	for start := 0; start < len(ordered); {
+		end := start + 1
+		for end < len(ordered) && sameKey(ordered[start], ordered[end]) {
+			end++
 		}
-		if duplicate := indexOfDuplicate(scored, candidate); duplicate >= 0 {
-			if candidate.Score > scored[duplicate].Score {
-				scored[duplicate] = candidate
-			}
+		merged = append(merged, mergeRun(ordered[start:end])...)
+		start = end
+	}
+	return merged
+}
+
+// sameKey reports whether two findings of a canonically ordered list are in the
+// same (file, category) group, which is how far the grouping reaches before the
+// line ranges decide.
+func sameKey(a, b ScoredFinding) bool {
+	return a.File == b.File && a.Category == b.Category
+}
+
+// mergeRun unions the overlapping ranges of one (file, category) group into
+// clusters. The group arrives ordered by line, so a cluster is a run of members
+// whose start is inside the range the run has already covered -- which is what
+// makes the overlap transitive: 1-2, 2-3 and 3-4 are one cluster even though
+// 1-2 and 3-4 do not touch. A run that begins where the previous one ended is
+// two clusters: line 13 and the range 10-12 are two places.
+//
+// The cluster contributes the highest-scoring member, because that is the one
+// that says the most, over the union of the cluster's lines, because the
+// cluster is the claim and it covers every line of it. It is blocking when any
+// member is: a merge may discard wording, never a verdict.
+func mergeRun(group []ScoredFinding) []ScoredFinding {
+	clusters := make([]findingCluster, 0, len(group))
+	for _, member := range group {
+		if len(clusters) > 0 && member.LineStart <= clusters[len(clusters)-1].last {
+			clusters[len(clusters)-1].add(member)
 			continue
 		}
-		scored = append(scored, candidate)
+		clusters = append(clusters, newFindingCluster(member))
 	}
 
-	slices.SortStableFunc(scored, func(a, b ScoredFinding) int { return cmp.Compare(b.Score, a.Score) })
-	return scored
-}
-
-// indexOfDuplicate returns the position of the scoring already kept that
-// candidate duplicates, or -1 when it is a finding of its own. Two findings are
-// one finding when they are the same claim about one place: the same severity,
-// in the same file, over lines that overlap. The wording is not part of it --
-// two reviewers describing one defect are one comment -- and a different
-// severity over the same lines is a different claim about them.
-func indexOfDuplicate(scored []ScoredFinding, candidate ScoredFinding) int {
-	for index, kept := range scored {
-		if kept.File == candidate.File && kept.Severity == candidate.Severity && linesOverlap(kept, candidate) {
-			return index
-		}
+	merged := make([]ScoredFinding, 0, len(clusters))
+	for _, cluster := range clusters {
+		merged = append(merged, cluster.finding())
 	}
-	return -1
+	return merged
 }
 
-// linesOverlap reports whether two findings' line ranges share a line. A range
-// that merely ends where the next begins does not overlap it: line 13 and the
-// range 10-12 are two places.
-func linesOverlap(a, b ScoredFinding) bool {
-	return a.LineStart <= b.LineEnd && b.LineStart <= a.LineEnd
+// findingCluster is the run of overlapping findings one output finding stands
+// for: the best member's wording and score, the union of the members' lines,
+// and the disjunction of their verdicts. The best member is kept whole, so
+// choosing between two members reads the fields they carry and never the
+// cluster's widened range.
+type findingCluster struct {
+	best     ScoredFinding
+	first    int
+	last     int
+	blocking bool
+}
+
+func newFindingCluster(member ScoredFinding) findingCluster {
+	return findingCluster{best: member, first: member.LineStart, last: member.LineEnd, blocking: member.Blocking}
+}
+
+// add folds a member whose range overlaps the cluster into it.
+func (c *findingCluster) add(member ScoredFinding) {
+	c.last = max(c.last, member.LineEnd)
+	c.blocking = c.blocking || member.Blocking
+	if compareScored(member, c.best) < 0 {
+		c.best = member
+	}
+}
+
+// finding is the one finding the cluster contributes.
+func (c *findingCluster) finding() ScoredFinding {
+	merged := c.best
+	merged.LineStart = c.first
+	merged.LineEnd = c.last
+	merged.Blocking = c.blocking
+	return merged
+}
+
+// compareScored is the order findings are ranked in: the highest score first,
+// ties broken by the finding itself. It is a total order over what a scored
+// finding carries, so it is also what picks a cluster's member and what makes
+// any permutation of the same findings produce the same list in the same order.
+func compareScored(a, b ScoredFinding) int {
+	if order := cmp.Compare(b.Score, a.Score); order != 0 {
+		return order
+	}
+	return compareIdentity(a, b)
+}
+
+// compareIdentity orders two findings by their own content: where they are,
+// then what they say. It carries no score, so it is the order the merge walks
+// rows in -- it has to be by line for the ranges to be unioned -- and it is the
+// tie-break that keeps tied findings out of the order they arrived in.
+func compareIdentity(a, b ScoredFinding) int {
+	if order := cmp.Or(
+		cmp.Compare(a.File, b.File),
+		cmp.Compare(a.Category, b.Category),
+		cmp.Compare(a.LineStart, b.LineStart),
+		cmp.Compare(a.LineEnd, b.LineEnd),
+		cmp.Compare(string(a.Severity), string(b.Severity)),
+		cmp.Compare(a.Dimension, b.Dimension),
+		cmp.Compare(a.Title, b.Title),
+		cmp.Compare(a.Body, b.Body),
+		cmp.Compare(a.Suggestion, b.Suggestion),
+		cmp.Compare(a.Evidence, b.Evidence),
+		cmp.Compare(a.Confidence, b.Confidence),
+		slices.Compare(a.Tags, b.Tags),
+		slices.Compare(a.Multipliers, b.Multipliers),
+	); order != 0 {
+		return order
+	}
+	// The gating finding comes first, so a pair that differs in nothing else
+	// still has one order.
+	if a.Blocking == b.Blocking {
+		return 0
+	}
+	if a.Blocking {
+		return -1
+	}
+	return 1
 }
 
 // scoreOf applies the rubric: the severity's weight times the reviewer's

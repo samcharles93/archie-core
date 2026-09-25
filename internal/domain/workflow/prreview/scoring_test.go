@@ -149,9 +149,13 @@ func TestScoreDropsFindingsUnderTheirConfidenceFloor(t *testing.T) {
 	}
 }
 
-func TestScoreMergesExactDuplicates(t *testing.T) {
+func TestScoreMergesFindingsThatShareAFileLinesAndCategory(t *testing.T) {
 	t.Parallel()
 
+	// Two findings are one claim when they name the same file, their line
+	// ranges overlap and they carry the same category. The wording and the
+	// severity are not part of that: two reviewers describing one defect at one
+	// place have made one finding, however differently they graded it.
 	first := scored(SeverityImportant, 0.8)
 	first.Title = "first"
 
@@ -166,19 +170,29 @@ func TestScoreMergesExactDuplicates(t *testing.T) {
 			want:   []string{"first"},
 		},
 		{
-			name:   "the same place with another severity is another finding",
+			name:   "the same place with another severity is still one finding",
 			second: func() Finding { f := first; f.Title = "second"; f.Severity = SeverityCritical; return f }(),
-			want:   []string{"first", "second"},
-		},
-		{
-			name:   "the same severity elsewhere is another finding",
-			second: func() Finding { f := first; f.Title = "second"; f.LineStart = 40; f.LineEnd = 42; return f }(),
-			want:   []string{"first", "second"},
+			want:   []string{"second"},
 		},
 		{
 			name:   "another spelling of the same severity is the same finding",
 			second: func() Finding { f := first; f.Title = "second"; f.Severity = Severity("major"); return f }(),
 			want:   []string{"first"},
+		},
+		{
+			name:   "the same lines under another category are another finding",
+			second: func() Finding { f := first; f.Title = "second"; f.Category = "security"; return f }(),
+			want:   []string{"first", "second"},
+		},
+		{
+			name:   "a finding elsewhere in the same file is another finding",
+			second: func() Finding { f := first; f.Title = "second"; f.LineStart = 40; f.LineEnd = 42; return f }(),
+			want:   []string{"first", "second"},
+		},
+		{
+			name:   "the same lines in another file are another finding",
+			second: func() Finding { f := first; f.Title = "second"; f.File = "pkg/b.go"; return f }(),
+			want:   []string{"first", "second"},
 		},
 	}
 
@@ -197,6 +211,153 @@ func TestScoreMergesExactDuplicates(t *testing.T) {
 			wantStrings(t, titles, test.want)
 		})
 	}
+}
+
+func TestScoreMergesTwoReviewersOfOneLine(t *testing.T) {
+	t.Parallel()
+
+	// The commonest duplicate there is: two reviewers both cite one line, and
+	// neither finding names a category, because nothing sets one yet. An empty
+	// category is a category.
+	confident := scored(SeverityImportant, 0.9)
+	confident.Title = "cited by the first reviewer"
+	confident.LineStart = 7
+	confident.LineEnd = 7
+	lessConfident := scored(SeverityImportant, 0.5)
+	lessConfident.Title = "cited by the second reviewer"
+	lessConfident.LineStart = 7
+	lessConfident.LineEnd = 7
+
+	orders := []struct {
+		name     string
+		findings []Finding
+	}{
+		{name: "the confident reviewer first", findings: []Finding{confident, lessConfident}},
+		{name: "the less confident reviewer first", findings: []Finding{lessConfident, confident}},
+	}
+
+	for _, order := range orders {
+		t.Run(order.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Score(order.findings, ScoreInputs{})
+			if len(got) != 1 {
+				t.Fatalf("Score() returned %d findings for one cited line, want 1", len(got))
+			}
+			if got[0].Title != confident.Title {
+				t.Errorf("Score() kept %q, want %q", got[0].Title, confident.Title)
+			}
+			if got[0].LineStart != 7 || got[0].LineEnd != 7 {
+				t.Errorf("Score() kept lines %d-%d, want 7-7", got[0].LineStart, got[0].LineEnd)
+			}
+		})
+	}
+}
+
+func TestScoreMergesOverlappingFindingsInAnyOrder(t *testing.T) {
+	t.Parallel()
+
+	// Three reviewers report one defect over a chain of ranges: 1-2, 2-3 and
+	// 3-4. Each range overlaps the next, so the three are one claim about one
+	// place even though the first and the last do not touch -- and the answer
+	// cannot depend on which reviewer was asked first. Every finding scores the
+	// same, so nothing but the clustering can decide it.
+	chain := []Finding{
+		chainFinding("reported 1-2", 1, 2),
+		chainFinding("reported 2-3", 2, 3),
+		chainFinding("reported 3-4", 3, 4),
+	}
+
+	for _, order := range permutations(len(chain)) {
+		findings := make([]Finding, 0, len(chain))
+		for _, index := range order {
+			findings = append(findings, chain[index])
+		}
+
+		got := Score(findings, ScoreInputs{})
+		if len(got) != 1 {
+			// Two overlapping findings that tie can only be told apart by the
+			// order they were handed in, which is the defect this pins.
+			t.Fatalf("Score() over order %v returned %d findings, want one cluster", order, len(got))
+		}
+		if got[0].Title != chain[0].Title {
+			t.Errorf("Score() over order %v kept %q, want %q", order, got[0].Title, chain[0].Title)
+		}
+		if got[0].LineStart != 1 || got[0].LineEnd != 4 {
+			t.Errorf("Score() over order %v kept lines %d-%d, want the cluster's 1-4", order, got[0].LineStart, got[0].LineEnd)
+		}
+	}
+}
+
+func TestScoreKeepsABlockingDuplicateSweptIntoAMerge(t *testing.T) {
+	t.Parallel()
+
+	// The merge gate ruled on both duplicates and only one of them is
+	// blocking. The merge keeps the higher-scoring wording, and the verdict has
+	// to survive it: an advisory duplicate must not be able to swallow a
+	// blocking one, whatever order they arrive in.
+	blocking := scored(SeverityCritical, 0.5)
+	blocking.Title = "blocking, reported with less confidence"
+	blocking.Blocking = true
+	advisory := scored(SeverityImportant, 0.9)
+	advisory.Title = "advisory, reported with more confidence"
+
+	orders := []struct {
+		name     string
+		findings []Finding
+	}{
+		{name: "the advisory duplicate first", findings: []Finding{advisory, blocking}},
+		{name: "the blocking duplicate first", findings: []Finding{blocking, advisory}},
+	}
+
+	for _, order := range orders {
+		t.Run(order.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Score(order.findings, ScoreInputs{})
+			if len(got) != 1 {
+				t.Fatalf("Score() returned %d findings for one place, want 1", len(got))
+			}
+			if got[0].Title != advisory.Title {
+				t.Errorf("Score() kept %q, want the higher-scoring %q", got[0].Title, advisory.Title)
+			}
+			if !got[0].Blocking {
+				t.Errorf("Score() kept the advisory wording and dropped the blocking verdict: %+v", got[0])
+			}
+			if event := ReviewEventFor(got); event != ReviewEventRequestChanges {
+				t.Errorf("ReviewEventFor() = %q, want %q", event, ReviewEventRequestChanges)
+			}
+		})
+	}
+}
+
+// chainFinding builds one finding of the overlapping chain the order test
+// scores: the same defect, in the same file and category, at its own range.
+func chainFinding(title string, lineStart, lineEnd int) Finding {
+	finding := scored(SeverityImportant, 0.8)
+	finding.Title = title
+	finding.LineStart = lineStart
+	finding.LineEnd = lineEnd
+	return finding
+}
+
+// permutations returns every ordering of the indexes 0..n-1, so a test can ask
+// the same question of every way the same findings could have been handed over.
+func permutations(n int) [][]int {
+	orders := [][]int{{}}
+	for len(orders[0]) < n {
+		next := make([][]int, 0, len(orders))
+		for _, order := range orders {
+			for candidate := range n {
+				if slices.Contains(order, candidate) {
+					continue
+				}
+				next = append(next, append(slices.Clone(order), candidate))
+			}
+		}
+		orders = next
+	}
+	return orders
 }
 
 func TestScoreAppliesTheConfidenceFloorBeforeDeduplication(t *testing.T) {
@@ -257,11 +418,12 @@ func TestScoreMergesFindingsWhoseLinesOverlap(t *testing.T) {
 	after.LineEnd = 13
 	after.Title = "after the gap"
 
-	// The same lines carrying another severity are another claim about them.
-	other := scored(SeverityCritical, 0.8)
+	// The same lines under another category are another claim about them.
+	other := scored(SeverityImportant, 0.8)
 	other.LineStart = 10
 	other.LineEnd = 13
-	other.Title = "another severity"
+	other.Title = "another category"
+	other.Category = "security"
 
 	tests := []struct {
 		name     string
@@ -284,9 +446,9 @@ func TestScoreMergesFindingsWhoseLinesOverlap(t *testing.T) {
 			want:     []string{"after the gap", "before the gap"},
 		},
 		{
-			name:     "an overlapping range of another severity is another finding",
+			name:     "an overlapping range of another category is another finding",
 			findings: []Finding{higher, other},
-			want:     []string{"another severity", "higher"},
+			want:     []string{"another category", "higher"},
 		},
 	}
 
@@ -307,11 +469,12 @@ func TestScoreMergesFindingsWhoseLinesOverlap(t *testing.T) {
 	}
 }
 
-func TestScoreRanksByScoreAndKeepsInputOrderOnTies(t *testing.T) {
+func TestScoreRanksByScoreThenByTheFindingItself(t *testing.T) {
 	t.Parallel()
 
 	// Every finding here covers a line of its own: the ties are two findings,
-	// not one reported twice.
+	// not one reported twice. A tie is broken by the finding's own content, so
+	// no permutation of the same findings can rank them differently.
 	low := scored(SeveritySuggestion, 0.5)
 	low.Title = "low"
 	low.LineStart = 1
@@ -338,9 +501,16 @@ func TestScoreRanksByScoreAndKeepsInputOrderOnTies(t *testing.T) {
 	}
 	wantStrings(t, titles, []string{"high", "tie-first", "tie-second", "low"})
 
-	// The same findings always produce the same scores and the same order.
-	if again := Score(findings, ScoreInputs{}); !reflect.DeepEqual(got, again) {
-		t.Errorf("a second scoring pass differs:\n%+v\n%+v", got, again)
+	// The same findings always produce the same scores and the same order,
+	// whatever order they were handed in.
+	for _, order := range permutations(len(findings)) {
+		permuted := make([]Finding, 0, len(findings))
+		for _, index := range order {
+			permuted = append(permuted, findings[index])
+		}
+		if again := Score(permuted, ScoreInputs{}); !reflect.DeepEqual(got, again) {
+			t.Errorf("scoring order %v differs:\n%+v\n%+v", order, got, again)
+		}
 	}
 }
 
@@ -348,10 +518,12 @@ func TestScoreCopiesTheFindingItScores(t *testing.T) {
 	t.Parallel()
 
 	finding := scored(SeverityImportant, 0.8)
+	finding.Category = "security"
 	got := scoreOne(t, finding, ScoreInputs{})
 
 	if got.File != finding.File || got.Dimension != finding.Dimension || got.Title != finding.Title ||
 		got.Body != finding.Body || got.Suggestion != finding.Suggestion || got.Evidence != finding.Evidence ||
+		got.Category != finding.Category ||
 		got.LineStart != finding.LineStart || got.LineEnd != finding.LineEnd || got.Confidence != finding.Confidence {
 		t.Errorf("ScoredFinding = %+v, want the finding it was scored from", got)
 	}

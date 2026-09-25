@@ -89,6 +89,56 @@ func TestParseDiffDescribesEachFile(t *testing.T) {
 			diff: "",
 			want: nil,
 		},
+		{
+			name: "a plain unified diff opens its files from the --- header",
+			diff: "--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,3 @@\n package a\n+var b = 1\n var c = 2\n--- a/b.go\n+++ b/b.go\n@@ -1,1 +1,2 @@\n package b\n+var x = 1\n",
+			want: []fileSummary{
+				{Path: "a.go", Status: "modified", Language: "go", Added: 1, Hunks: 1},
+				{Path: "b.go", Status: "modified", Language: "go", Added: 1, Hunks: 1},
+			},
+		},
+		{
+			name: "a plain unified diff's added file",
+			diff: "--- /dev/null\n+++ b/created.go\n@@ -0,0 +1,1 @@\n+package created\n",
+			want: []fileSummary{{Path: "created.go", Status: "added", Language: "go", Added: 1, Hunks: 1}},
+		},
+		{
+			name: "a plain unified diff's deleted file",
+			diff: "--- a/gone.go\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-package gone\n",
+			want: []fileSummary{{Path: "gone.go", Status: "deleted", Language: "go", Removed: 1, Hunks: 1}},
+		},
+		{
+			// A binary file's patch carries no hunks, so the ---/+++ headers
+			// are absent and the mode line is the only statement of what the
+			// change did. git's own output, byte for byte.
+			name: "an added binary file is an addition",
+			diff: "diff --git a/logo.png b/logo.png\nnew file mode 100644\nindex 0000000..8352675\nBinary files /dev/null and b/logo.png differ\n",
+			want: []fileSummary{{Path: "logo.png", Status: "added"}},
+		},
+		{
+			name: "a deleted binary file is a deletion",
+			diff: "diff --git a/logo.png b/logo.png\ndeleted file mode 100644\nindex 8352675..0000000\nBinary files a/logo.png and /dev/null differ\n",
+			want: []fileSummary{{Path: "logo.png", Status: "deleted"}},
+		},
+		{
+			name: "an added empty file is an addition",
+			diff: "diff --git a/empty.txt b/empty.txt\nnew file mode 100644\nindex 0000000..e69de29\n",
+			want: []fileSummary{{Path: "empty.txt", Status: "added"}},
+		},
+		{
+			name: "a deleted empty file is a deletion",
+			diff: "diff --git a/empty.txt b/empty.txt\ndeleted file mode 100644\nindex e69de29..0000000\n",
+			want: []fileSummary{{Path: "empty.txt", Status: "deleted"}},
+		},
+		{
+			// A permission change is a modification; a change of object type
+			// -- a symlink becoming a regular file, a submodule becoming a
+			// file -- is a typechange, the status the change capture persists
+			// as "typechange".
+			name: "a file-type change is a typechange",
+			diff: "diff --git a/link b/link\nold mode 120000\nnew mode 100644\nindex 4cbb553..7898192\n--- a/link\n+++ b/link\n@@ -1,1 +1,1 @@\n-target.txt\n+content\n",
+			want: []fileSummary{{Path: "link", Status: "typechange", Added: 1, Removed: 1, Hunks: 1}},
+		},
 	}
 
 	for _, test := range tests {
@@ -105,6 +155,109 @@ func TestParseDiffDescribesEachFile(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseDiffDecodesGitQuotedPaths(t *testing.T) {
+	t.Parallel()
+
+	// git C-quotes a path it cannot write plainly: every byte outside ASCII
+	// under the default core.quotePath, and a quote, a backslash or a tab
+	// anywhere. FileChange.Path is the path a reviewer hands back to the
+	// snapshot, so it has to be the path and not git's spelling of it.
+	tests := []struct {
+		name string
+		diff string
+		want []fileSummary
+	}{
+		{
+			name: "a non-ASCII path is escaped as the bytes of its UTF-8",
+			diff: "diff --git \"a/caf\\303\\251.txt\" \"b/caf\\303\\251.txt\"\n" +
+				"index 572eb43..1e76f07 100644\n" +
+				"--- \"a/caf\\303\\251.txt\"\n" +
+				"+++ \"b/caf\\303\\251.txt\"\n" +
+				"@@ -1,1 +1,2 @@\n" +
+				" old\n" +
+				"+b\n",
+			// 303 251 is C3 A9: "é" in UTF-8.
+			want: []fileSummary{{Path: "caf\u00e9.txt", Status: "modified", Added: 1, Hunks: 1}},
+		},
+		{
+			name: "a quote is escaped in the path and decoded out of it",
+			diff: "diff --git \"a/qu\\\"ote.txt\" \"b/qu\\\"ote.txt\"\n" +
+				"index 7898192..422c2b7 100644\n" +
+				"--- \"a/qu\\\"ote.txt\"\n" +
+				"+++ \"b/qu\\\"ote.txt\"\n" +
+				"@@ -1,1 +1,2 @@\n" +
+				" old\n" +
+				"+b\n",
+			want: []fileSummary{{Path: `qu"ote.txt`, Status: "modified", Added: 1, Hunks: 1}},
+		},
+		{
+			name: "a tab in a path is a tab once it is decoded",
+			diff: "diff --git \"a/tab\\tname.txt\" \"b/tab\\tname.txt\"\n" +
+				"--- \"a/tab\\tname.txt\"\n" +
+				"+++ \"b/tab\\tname.txt\"\n",
+			want: []fileSummary{{Path: "tab\tname.txt", Status: "modified"}},
+		},
+		{
+			name: "a backslash is escaped twice and decoded once",
+			diff: "diff --git \"a/back\\\\slash.txt\" \"b/back\\\\slash.txt\"\n" +
+				"--- \"a/back\\\\slash.txt\"\n" +
+				"+++ \"b/back\\\\slash.txt\"\n",
+			want: []fileSummary{{Path: `back\slash.txt`, Status: "modified"}},
+		},
+		{
+			name: "a quoted rename names both paths without their quoting",
+			diff: "diff --git \"a/back\\\\slash.txt\" \"b/renamed\\\\back.txt\"\n" +
+				"similarity index 100%\n" +
+				"rename from \"back\\\\slash.txt\"\n" +
+				"rename to \"renamed\\\\back.txt\"\n",
+			want: []fileSummary{{Path: `renamed\back.txt`, PreviousPath: `back\slash.txt`, Status: "renamed"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := summarize(ParseDiff(test.diff))
+			if len(got) != len(test.want) {
+				t.Fatalf("ParseDiff() described %+v, want %+v", got, test.want)
+			}
+			for i := range got {
+				if got[i] != test.want[i] {
+					t.Errorf("file %d = %+v, want %+v", i, got[i], test.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestFileStatusIsTheCapturedChangeVocabulary pins this package's status words
+// to internal/domain/workflow/task/changes.go, which persists a captured
+// change's status as these strings. prreview imports the standard library only,
+// so this test -- rather than a shared constant -- is what keeps the two
+// vocabularies one. A status read off a diff and a status read off a capture
+// have to be the same word, or a caller comparing them silently misses one.
+func TestFileStatusIsTheCapturedChangeVocabulary(t *testing.T) {
+	t.Parallel()
+
+	captured := []struct {
+		status FileStatus
+		want   string
+	}{
+		{FileAdded, "added"},
+		{FileModified, "modified"},
+		{FileRemoved, "deleted"},
+		{FileRenamed, "renamed"},
+		{FileTypeChanged, "typechange"},
+	}
+
+	for _, test := range captured {
+		if string(test.status) != test.want {
+			t.Errorf("FileStatus %q, want %q as the change capture persists it", test.status, test.want)
+		}
 	}
 }
 
@@ -140,6 +293,14 @@ func TestParseDiffHunkGeometry(t *testing.T) {
 			name: "a header that cannot be positioned starts no hunk",
 			diff: "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ not a hunk header @@\n+orphan\n",
 			want: nil,
+		},
+		{
+			// A removed line whose text begins "-- " and an added line
+			// whose text begins "++ ": the shape of a header pair, and body
+			// text of the hunk that is still waiting for lines.
+			name: "a header pair inside an unfinished hunk is body text",
+			diff: "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1,1 +1,2 @@\n--- old title\n+++ new title\n",
+			want: []Hunk{{OldStart: 1, OldCount: 1, NewStart: 1, NewCount: 2, Header: "@@ -1,1 +1,2 @@", Lines: []string{"--- old title", "+++ new title"}}},
 		},
 	}
 
@@ -206,6 +367,16 @@ func TestAddedLinesPositionsTheChange(t *testing.T) {
 			name: "an empty diff adds nothing",
 			diff: "",
 			want: nil,
+		},
+		{
+			name: "a plain unified diff numbers each file from its own hunks",
+			diff: "--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,3 @@\n package a\n+var b = 1\n var c = 2\n--- a/b.go\n+++ b/b.go\n@@ -1,1 +1,2 @@\n package b\n+var x = 1\n",
+			want: []AddedLine{{Path: "a.go", Line: 2, Text: "var b = 1"}, {Path: "b.go", Line: 2, Text: "var x = 1"}},
+		},
+		{
+			name: "a plain unified diff's added file numbers from line one",
+			diff: "--- /dev/null\n+++ b/created.go\n@@ -0,0 +1,2 @@\n+package created\n+var a = 1\n",
+			want: []AddedLine{{Path: "created.go", Line: 1, Text: "package created"}, {Path: "created.go", Line: 2, Text: "var a = 1"}},
 		},
 	}
 
@@ -296,6 +467,18 @@ func TestSummarizeFilesCountsTheChange(t *testing.T) {
 			name: "a change of tests alone does not divide by zero",
 			diff: "diff --git a/a_test.go b/a_test.go\n--- a/a_test.go\n+++ b/a_test.go\n@@ -1,1 +1,2 @@\n package a\n+var b = 1\n",
 			want: DiffStats{TotalFiles: 1, TotalAdditions: 1, FilesModified: 1, TestFilesChanged: 1, TestToCodeRatio: 1},
+		},
+		{
+			// The files a patch cannot show hunks for: binary, empty, and a
+			// pure mode change. They add no lines, and they are still an
+			// addition, a deletion and a typechange.
+			name: "files with no hunks are counted by what they did",
+			diff: "diff --git a/logo.png b/logo.png\nnew file mode 100644\nindex 0000000..8352675\nBinary files /dev/null and b/logo.png differ\n" +
+				"diff --git a/empty.txt b/empty.txt\nnew file mode 100644\nindex 0000000..e69de29\n" +
+				"diff --git a/gone.png b/gone.png\ndeleted file mode 100644\nindex 8352675..0000000\nBinary files a/gone.png and /dev/null differ\n" +
+				"diff --git a/gone.txt b/gone.txt\ndeleted file mode 100644\nindex e69de29..0000000\n" +
+				"diff --git a/link b/link\nold mode 120000\nnew mode 100644\n",
+			want: DiffStats{TotalFiles: 5, FilesAdded: 2, FilesRemoved: 2, FilesTypeChanged: 1},
 		},
 	}
 
