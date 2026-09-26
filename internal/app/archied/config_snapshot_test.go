@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -134,5 +136,32 @@ func TestPublishConfigSnapshotWithoutConfiguration(t *testing.T) {
 
 	if _, found, err := st.ConfigSnapshot(context.Background()); found || err != nil {
 		t.Fatalf("ConfigSnapshot = (found %v, %v), want nothing published", found, err)
+	}
+}
+
+// TestLiveSettingsApplyRepublishesTheConfigSnapshot: the dashboard renders the
+// published projection, not the daemon's Holder, so a live apply that changes
+// the running config must republish it or the page keeps showing the old
+// values until the next reload.
+func TestLiveSettingsApplyRepublishesTheConfigSnapshot(t *testing.T) {
+	st := pgstore.Open(t)
+	t.Cleanup(func() { _ = st.Close() })
+
+	b, _ := newLiveApplyBoot(t, fileConfig())
+	b.stateStore = st
+	if err := b.applyWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{MaxModelToolSteps: 25, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 4}, 2); err != nil {
+		t.Fatalf("live update: %v", err)
+	}
+
+	snapshot, found, err := st.ConfigSnapshot(context.Background())
+	if err != nil || !found {
+		t.Fatalf("ConfigSnapshot = (found %v, %v), want the live apply to publish one", found, err)
+	}
+	var view webui.ConfigView
+	if err := json.Unmarshal(snapshot.Document, &view); err != nil {
+		t.Fatalf("decode published document: %v", err)
+	}
+	if view.Budgets.MaxSteps != 25 || view.Budgets.GateMaxFailures != 4 {
+		t.Errorf("published budgets = %+v, want the live-applied limits", view.Budgets)
 	}
 }
