@@ -5,6 +5,56 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.42.0] - 2026-09-26
+
+### archied
+
+- **The dashboard is rebuilt on a new Graphite theme.** Settings moved to its
+  own sidebar with one save flow across every page (Channels, Tools & MCP,
+  Scheduling policy, Personas and Schedules, Identities, Plugins, Container
+  runtime, and a History of past changes). The top bar, Dashboard, Workflows,
+  task detail, the New task dialog and the Events page are all new: Dashboard
+  leads with what needs you, a run's stage rail and detail panels sit
+  side by side, Workflows shows per-workflow stats including completed runs,
+  and Events states capture status with a copyable capture endpoint. Live
+  updates share one stream and reopen after a drop instead of going quiet.
+- **Settings changes are audited.** A field-level audit table records who
+  changed what, with a view on each settings page.
+- **A task can carry a whole-run wall-clock limit**, separate from a stage's
+  own budget.
+- **A run that makes no changes now ends as completed and its worktree is
+  cleaned up**, rather than left in a state Workflows didn't count.
+- **Abandoning a task no longer closes its forge issue.** Only the workflow's
+  own terminal outcomes do that now.
+- **A task whose container exits before the worker replies is parked**
+  instead of left running with no way to finish.
+- **A worktree still holding uncommitted work is kept**, rather than reset,
+  when its task reaches a terminal state.
+- **A provider's stored settings no longer get corrupted with a process-local
+  placeholder in place of your configured secret reference**, and archied
+  rejects a stored value shaped like one on the way back in.
+- **Kit v3 harness profiles.** A `[containers.profiles.<name>]` entry can now
+  name a Kit v3 image (`kit = [...]`, pinned by digest) instead of a plain
+  container image, running the task's agent stages on an external CLI --
+  Claude Code, Codex, Pi, OMP or GitHub Copilot CLI -- inside an isolated
+  sandbox network. This release lands the daemon-side plumbing (egress
+  proxy, sandbox network, credential injection points); it does not yet ship
+  a way to grant a run's identity the credential a Kit needs, so a Kit
+  requiring one is refused at launch until a later release adds it.
+- `task dev` now starts the State Store and waits for it before the rest of
+  the stack.
+- Every service binary the installer builds is stamped with its version.
+
+### archie-agent
+
+- Carries the same task-lifecycle fixes as archied above (no-change runs,
+  parking on an early container exit, and the abandon/forge-issue fix), plus
+  the Kit v3 harness runner: a stage can now drive an external CLI
+  headlessly, read output from Claude Code, Codex, Pi, OMP or GitHub Copilot
+  CLI, and serve it capture tools over MCP.
+- Claude's cached tokens are counted as prompt tokens, matching the built-in
+  agent loop's accounting.
+
 ## [1.41.2] - 2026-09-25
 
 ### archied
