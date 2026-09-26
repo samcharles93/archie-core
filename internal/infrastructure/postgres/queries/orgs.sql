@@ -41,3 +41,12 @@ SELECT COALESCE(
 	 ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
 	'default'
 )::text AS org_id;
+-- name: EnsureAgentOrgMembership :exec
+-- Every agent identity serves its org with the shipped developer role: an
+-- agent is granted access the way a user is
+-- (docs/prds/orgs-and-access.md, "Identity"). Idempotent, so an operator's
+-- later role change survives a restart, and the shipped seed never
+-- overwrites it.
+INSERT INTO memberships (identity_id, org_id, role)
+SELECT a.identity_id, a.org_id, 'developer' FROM org_agents a
+ON CONFLICT (identity_id, org_id, COALESCE(workspace_id, '')) DO NOTHING;

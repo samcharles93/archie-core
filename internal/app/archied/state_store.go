@@ -21,11 +21,13 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -103,6 +105,46 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if upgrader, ok := b.st.(org.Upgrader); ok {
 		if err := upgrader.UpgradeDefaultOrg(ctx); err != nil {
 			return fmt.Errorf("upgrade default org: %w", err)
+		}
+	}
+	// The shipped role policies mean the org level always has policies
+	// (docs/prds/orgs-and-access.md, "Roles"): seed them for every org that
+	// lacks them, then re-validate every stored policy this process serves.
+	// An invalid org, workspace or object policy is logged here and named as
+	// a problem by the engines the consumers build; an invalid instance
+	// policy fails this boot -- the store stops serving until it is fixed.
+	if policies, ok := b.st.(access.PolicyStore); ok {
+		// An agent is granted access the way a user is: its assigned org,
+		// with the shipped developer role, so dispatch's principal evaluates.
+		if agents, ok := b.st.(interface {
+			EnsureAgentOrgMembership(context.Context) error
+		}); ok {
+			if err := agents.EnsureAgentOrgMembership(ctx); err != nil {
+				return fmt.Errorf("grant agent org membership: %w", err)
+			}
+		}
+		if orgs, ok := b.st.(org.Repository); ok {
+			list, err := orgs.ListOrgs(ctx)
+			if err != nil {
+				return fmt.Errorf("list orgs for policy seeding: %w", err)
+			}
+			for _, o := range list {
+				if err := policies.EnsureShippedOrgPolicies(ctx, o.ID); err != nil {
+					return fmt.Errorf("seed shipped org policies for %s: %w", o.ID, err)
+				}
+			}
+		}
+		stored, err := policies.ListPolicies(ctx)
+		if err != nil {
+			return fmt.Errorf("load stored policies: %w", err)
+		}
+		engine, err := infraaccess.New(stored)
+		if err != nil {
+			return fmt.Errorf("validate stored policies: %w", err)
+		}
+		for _, problem := range engine.Problems() {
+			b.log.Error("stored access policy is invalid and denies its level",
+				"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
 		}
 	}
 	resources, ok := b.st.(controlplane.ResourceStore)
@@ -286,6 +328,19 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	}
 	if wc, ok := b.st.(storecontract.WorkflowCaller); ok {
 		deps.WorkflowCalls = wc
+	}
+	// The policy chain and its denial records are served from the same store
+	// (docs/prds/orgs-and-access.md). A store without them -- one that owns
+	// no tenant boundary yet -- degrades the access RPCs rather than failing
+	// the boot, the same pattern the other optional surfaces use.
+	if ps, ok := b.st.(access.PrincipalSource); ok {
+		deps.Principals = ps
+	}
+	if ps, ok := b.st.(access.PolicyStore); ok {
+		deps.Policies = ps
+	}
+	if ds, ok := b.st.(access.DenialStore); ok {
+		deps.Denials = ds
 	}
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css

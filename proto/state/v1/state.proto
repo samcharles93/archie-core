@@ -165,6 +165,20 @@ service StateStoreService {
   // relation server-side, so the grant only names the caller.
   rpc EnqueueCallTask(EnqueueCallTaskRequest) returns (EnqueueCallTaskResponse);
   rpc WorkflowCallStatus(WorkflowCallStatusRequest) returns (WorkflowCallStatusResponse);
+
+  // Access: the stored policy chain and its denial records
+  // (docs/prds/orgs-and-access.md). ListPolicies is the engine's snapshot;
+  // the writes are administrative. RecordDenial is the dashboard's and
+  // dispatch's write path; ListDenials is the operator surface.
+  // The principal assembly the Authorizer evaluates: an identity, the org
+  // it serves, and its memberships (internal/domain/access).
+  rpc GetPrincipal(GetPrincipalRequest) returns (GetPrincipalResponse);
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc PutPolicy(PutPolicyRequest) returns (PutPolicyResponse);
+  rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse);
+  rpc EnsureShippedOrgPolicies(EnsureShippedOrgPoliciesRequest) returns (EnsureShippedOrgPoliciesResponse);
+  rpc RecordDenial(RecordDenialRequest) returns (RecordDenialResponse);
+  rpc ListDenials(ListDenialsRequest) returns (ListDenialsResponse);
 }
 
 message RegisterTaskGrantRequest {
@@ -923,3 +937,56 @@ message RemoveInstalledPackageRequest { string org_id = 1; string name = 2; }
 message RemoveInstalledPackageResponse {}
 
 // Task mirrors internal/domain/workflow.Task.
+
+message GetPrincipalRequest { string identity_id = 1; }
+// PrincipalMembership mirrors org.Membership: an identity's role in an org,
+// or in one workspace of it.
+message PrincipalMembership {
+  string org_id = 1;
+  string workspace_id = 2;
+  string role = 3;
+}
+message AccessPrincipal {
+  string identity_id = 1;
+  string org_id = 2;
+  repeated PrincipalMembership memberships = 3;
+}
+message GetPrincipalResponse { AccessPrincipal principal = 1; }
+
+// AccessPolicy mirrors internal/domain/access.Policy: one Cedar policy
+// document and the level-scope tuple that places it in the chain.
+message AccessPolicy {
+  string policy_id = 1;
+  string level = 2;
+  string org_id = 3;
+  string workspace_id = 4;
+  string object_kind = 5;
+  string object_id = 6;
+  string text = 7;
+}
+message ListPoliciesRequest {}
+message ListPoliciesResponse { repeated AccessPolicy policies = 1; }
+message PutPolicyRequest { AccessPolicy policy = 1; }
+message PutPolicyResponse { int64 version = 1; }
+message DeletePolicyRequest { AccessPolicy policy = 1; }
+message DeletePolicyResponse {}
+message EnsureShippedOrgPoliciesRequest { string org_id = 1; }
+message EnsureShippedOrgPoliciesResponse {}
+// AccessDenial mirrors internal/domain/access.Denial: one refusal with the
+// level that decided it and the deciding policies. The store coalesces
+// identical denials within a minute into one row with a count.
+message AccessDenial {
+  string org_id = 1;
+  string principal = 2;
+  string action = 3;
+  string resource_kind = 4;
+  string resource_id = 5;
+  string level = 6;
+  repeated string policies = 7;
+  int64 count = 8;
+  google.protobuf.Timestamp at = 9;
+}
+message RecordDenialRequest { AccessDenial denial = 1; }
+message RecordDenialResponse {}
+message ListDenialsRequest { string org_id = 1; int32 limit = 2; }
+message ListDenialsResponse { repeated AccessDenial denials = 1; }

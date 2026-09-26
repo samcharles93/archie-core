@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
@@ -148,6 +149,43 @@ func (s *Store) AssignAgent(ctx context.Context, value org.AgentAssignment) erro
 	return s.queries().UpsertAgentAssignment(ctx, postgresdb.UpsertAgentAssignmentParams{
 		IdentityID: string(value.IdentityID), OrgID: string(value.OrgID),
 	})
+}
+
+// EnsureAgentOrgMembership grants every agent identity the shipped developer
+// role in the org it serves. It runs at the State Store's boot, after the
+// default-org upgrade, so dispatch's chain has a principal to evaluate.
+// Idempotent: an existing membership (any role) is left alone.
+func (s *Store) EnsureAgentOrgMembership(ctx context.Context) error {
+	return s.queries().EnsureAgentOrgMembership(ctx)
+}
+
+// PrincipalFor assembles the access principal for one identity: the org it
+// serves and its memberships (internal/domain/access). An identity in no org
+// is the default org with no role, which the shipped role policies never
+// permit.
+func (s *Store) PrincipalFor(ctx context.Context, id identity.IdentityID) (access.Principal, error) {
+	resolved, err := s.OrgForIdentity(ctx, id)
+	if err != nil {
+		return access.Principal{}, err
+	}
+	rows, err := s.queries().ListMembershipsByIdentity(ctx, string(id))
+	if err != nil {
+		return access.Principal{}, err
+	}
+	memberships := make([]org.Membership, 0, len(rows))
+	for _, r := range rows {
+		var ws org.WorkspaceID
+		if r.WorkspaceID.Valid {
+			ws = org.WorkspaceID(r.WorkspaceID.String)
+		}
+		memberships = append(memberships, org.Membership{
+			IdentityID:  id,
+			OrgID:       org.OrgID(r.OrgID),
+			WorkspaceID: ws,
+			Role:        org.Role(r.Role),
+		})
+	}
+	return access.Principal{IdentityID: id, Org: resolved, Memberships: memberships}, nil
 }
 
 // OrgForIdentity returns the org an identity serves: the assigned org for an

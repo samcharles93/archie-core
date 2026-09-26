@@ -17,6 +17,7 @@ import (
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
@@ -99,6 +100,18 @@ type Deps struct {
 	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
 	PlaybookDispatcher storecontract.PlaybookDispatcher
+	// Principals assembles the access principal for one identity: the org it
+	// serves and its memberships. Optional: nil answers GetPrincipal with
+	// codes.Unavailable.
+	Principals access.PrincipalSource
+	// Policies is the stored policy chain (docs/prds/orgs-and-access.md).
+	// Optional: nil answers the access RPCs with codes.Unavailable. The reset
+	// surface is deliberately not an RPC: `archied access reset` runs on the
+	// State Store host, never over the network.
+	Policies access.PolicyStore
+	// Denials records and lists denial records. Optional: nil disables the
+	// pair with codes.Unavailable.
+	Denials access.DenialStore
 	// TaskLogs reads one task attempt's persisted log out of the state
 	// directory this process owns. Optional, and nil is the honest default for
 	// a store service that shares no state directory with the daemon:

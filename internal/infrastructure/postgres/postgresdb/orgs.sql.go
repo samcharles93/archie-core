@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ensureAgentOrgMembership = `-- name: EnsureAgentOrgMembership :exec
+INSERT INTO memberships (identity_id, org_id, role)
+SELECT a.identity_id, a.org_id, 'developer' FROM org_agents a
+ON CONFLICT (identity_id, org_id, COALESCE(workspace_id, '')) DO NOTHING
+`
+
+// Every agent identity serves its org with the shipped developer role: an
+// agent is granted access the way a user is
+// (docs/prds/orgs-and-access.md, "Identity"). Idempotent, so an operator's
+// later role change survives a restart, and the shipped seed never
+// overwrites it.
+func (q *Queries) EnsureAgentOrgMembership(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, ensureAgentOrgMembership)
+	return err
+}
+
 const ensureMembership = `-- name: EnsureMembership :exec
 INSERT INTO memberships (identity_id, org_id, workspace_id, role)
 VALUES ($1, $2, $3, $4)

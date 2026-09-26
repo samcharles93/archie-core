@@ -6,6 +6,7 @@
 package access
 
 import (
+	"context"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/identity"
@@ -127,6 +128,16 @@ func Allowed() Decision { return Decision{Allowed: true} }
 // DeniedAt records a denial decided at a level by the given policies.
 func DeniedAt(level Level, policies []string) Decision {
 	return Decision{Level: level, Policies: policies}
+}
+
+// PrincipalSource assembles the principal for one identity: the org it
+// serves and its memberships. The State Store implements it (the memberships
+// live in the State Store); the dashboard and dispatch call it over the wire.
+type PrincipalSource interface {
+	// PrincipalFor returns the assembled principal. An identity in no org
+	// resolves to the default org, a principal with no role, which no
+	// shipped policy permits.
+	PrincipalFor(ctx context.Context, id identity.IdentityID) (Principal, error)
 }
 
 // Denial is one recorded refusal: who was refused, doing what, to what, by
