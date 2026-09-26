@@ -486,6 +486,9 @@ func validateContainers(cfg *config.Config) error {
 	if err := cfg.Containers.ValidateProfiles(); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
+	if err := cfg.Containers.ValidateCredentialBindings(); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 	return nil
 }
 

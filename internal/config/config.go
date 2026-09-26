@@ -458,6 +458,20 @@ type Config struct {
 	// Label marks issues archie should pick up.
 	Label   string `toml:"label" yaml:"label"`
 	BotUser string `toml:"bot_user" yaml:"bot_user"`
+	// Org is this identity's org (docs/prds/orgs-and-access.md). Empty means
+	// "default": the org a single-operator install's one identity belongs to.
+	// A credential binding whose Org does not match a run's identity never
+	// resolves for it, regardless of what the identity is granted.
+	Org string `toml:"org" yaml:"org"`
+	// GrantedCredentials names the credential@1 services this identity may
+	// use, by CredentialBinding.Service (docs/prds/external-agent-harness.md,
+	// Organisations: "a harness run ... acts as the workflow's identity").
+	// Empty grants none -- a binding existing is not a grant, the same
+	// fail-closed default the proxy itself already applies to an unbound
+	// required credential. Declared (what a Kit's descriptor asks for) and
+	// granted (this list) are two separate facts; only their intersection
+	// resolves, and neither widens the other.
+	GrantedCredentials []string `toml:"granted_credentials" yaml:"granted_credentials"`
 	// BotEmail is the git author email; defaults to the GitHub noreply
 	// address for BotUser.
 	BotEmail string `toml:"bot_email" yaml:"bot_email"`
@@ -547,6 +561,13 @@ type IdentityConfig struct {
 	// BotEmail is the git author email. Falls back to a forge-appropriate
 	// default from BotUser when empty.
 	BotEmail string `toml:"bot_email" yaml:"bot_email"`
+	// Org overrides the shared Org for this identity. Empty inherits it.
+	Org string `toml:"org" yaml:"org"`
+	// GrantedCredentials overrides the shared GrantedCredentials for this
+	// identity. Nil (absent) inherits it; a present, empty list grants none
+	// -- the same explicit-empty-means-off shape DiffCapLines uses, needed
+	// because a plain nil already means "not set" here.
+	GrantedCredentials *[]string `toml:"granted_credentials" yaml:"granted_credentials"`
 	// DiffCapLines overrides the shared cap for this identity. Nil (absent)
 	// inherits it; an explicit 0 switches the cap off for this identity only.
 	DiffCapLines *int `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
@@ -851,6 +872,79 @@ type ContainerConfig struct {
 	// AgentProfileKind, seeded from this field but validated and stored
 	// (and reloaded live) separately -- see internal/app/controlplane.
 	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles" json:"-"`
+	// Credentials binds a Kit's credential@1 service names to org secrets
+	// (docs/prds/external-agent-harness.md, Credentials). A binding names
+	// where the value comes from; it is not itself a grant -- an identity
+	// resolves a bound service only when its own Org matches and the service
+	// is in its GrantedCredentials.
+	// Credentials is excluded from the control-plane JSON document
+	// (container-runtime-policies): it is its own resource, CredentialBindingsKind,
+	// seeded from this field but validated and stored (and reloaded live)
+	// separately -- see internal/app/controlplane.
+	Credentials []CredentialBinding `toml:"credentials" yaml:"credentials" json:"-"`
+}
+
+// CredentialBinding maps one Kit credential@1 service name to an org secret.
+// It carries no secret value itself, only where to resolve one from: the
+// existing secret registry (env/file), not yet the encrypted org-secret
+// store docs/prds/binding-secret-encryption.md describes -- that store is
+// separate, still-open work this does not attempt.
+type CredentialBinding struct {
+	// Service names the credential@1 service a Kit's descriptor declares
+	// (docker/sandbox-kit-spec spec.CredentialCapability.Service).
+	Service string `toml:"service" yaml:"service"`
+	// Org is the org this binding belongs to. Empty means the default org.
+	// A run whose identity's Org does not match never resolves this binding,
+	// however it is granted (docs/prds/orgs-and-access.md: "No record is
+	// shared between orgs").
+	Org string `toml:"org" yaml:"org"`
+	// Secret is where the real value is resolved from.
+	Secret SecretRef `toml:"secret" yaml:"secret"`
+}
+
+// BoundCredentials returns the credential bindings one run may actually use:
+// every declared service (what a Kit's descriptor asks for) that is also
+// granted (the run's identity's GrantedCredentials) and belongs to org (the
+// run's identity's Org). This is the whole enforcement of "authority is an
+// intersection": declared and granted are two independent facts, neither
+// widens the other, and only a service present in all three -- org, granted,
+// declared -- resolves. A service missing from any one is simply absent from
+// the result; the caller (the egress resolver) treats that as unbound.
+func (c ContainerConfig) BoundCredentials(org string, granted, declared []string) map[string]CredentialBinding {
+	grantedSet := make(map[string]bool, len(granted))
+	for _, g := range granted {
+		grantedSet[g] = true
+	}
+	declaredSet := make(map[string]bool, len(declared))
+	for _, d := range declared {
+		declaredSet[d] = true
+	}
+	out := make(map[string]CredentialBinding)
+	for _, b := range c.Credentials {
+		if b.Org != org || !grantedSet[b.Service] || !declaredSet[b.Service] {
+			continue
+		}
+		out[b.Service] = b
+	}
+	return out
+}
+
+// ValidateCredentialBindings rejects a binding with an empty service name or
+// duplicated (service, org) pair: two bindings resolving the same Kit
+// credential in the same org is ambiguous, not a fallback chain.
+func (c ContainerConfig) ValidateCredentialBindings() error {
+	seen := make(map[string]bool, len(c.Credentials))
+	for _, b := range c.Credentials {
+		if strings.TrimSpace(b.Service) == "" {
+			return fmt.Errorf("containers.credentials: a service name must not be empty")
+		}
+		key := b.Org + "\x00" + b.Service
+		if seen[key] {
+			return fmt.Errorf("containers.credentials: service %q is bound more than once for org %q", b.Service, b.Org)
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 // AgentProfile is a named execution environment for an agent. Secrets and

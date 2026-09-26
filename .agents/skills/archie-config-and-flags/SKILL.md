@@ -176,6 +176,8 @@ looking at before reporting one:
 | `pull_policy`     | Default `missing` when enabled. Pool code recognises `missing` and `always`; other strings silently skip pre-pull. |
 | `network`         | Empty uses best-effort self-network detection. Repository overlay pins `archie-core_default`.                      |
 | `profiles`        | Named agent execution environments (image or Kit); resolved per task dispatch (`ContainerConfig.Profile`). Own control-plane resource `agent-profiles` (`json:"-"` on the field so `container-runtime-policies` never carries it), `ApplyMode: live` -- a profile change applies without a restart, unlike the rest of `[containers]`. |
+| `credentials`     | Maps a Kit `credential@1` service to a secret (`config.CredentialBinding`). Own control-plane resource `credential-bindings`, `ApplyMode: live`, `json:"-"` on the field. `kitrun.Launcher` reads it fresh from the live `config.Holder` on every `Launch`, never a value captured at boot -- see `internal/infrastructure/kitrun/launcher.go`'s `resolveCredentials`. A binding alone grants nothing; see `org`/`granted_credentials` below. |
+| `org` / `granted_credentials` (root and per-identity) | An identity's org and the `credentials` service names it may resolve. `daemon.runKitTask` reads both fresh per dispatch (`d.configFor(task)`) and passes them to `kitrun.Request`; `config.ContainerConfig.BoundCredentials` computes the declared (Kit) ∩ granted (identity) ∩ org-matched intersection -- neither declared nor granted widens the other. |
 
 ### Channel settings
 

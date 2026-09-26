@@ -34,6 +34,8 @@ label = "archie"
 bot_user = "vectis-labs-archie"
 # 0 switches the cap off; omit the key to take the built-in default (400).
 diff_cap_lines = 400
+# org = "acme"                        # empty means the default org (a single-operator install's one identity)
+# granted_credentials = ["openai"]    # credential@1 services the root identity may resolve (see [containers.credentials])
 
 # how many operator-triggered retries a parked task gets
 # before it moves to dead (global default; set per-repo to
@@ -75,6 +77,8 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 # name = "personal"       # required; namespaces logs/events/NATS subjects
 # bot_user = "your-bot"   # required
 # forge = { type = "github", host = "https://github.com", token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN_PERSONAL" } }
+# org = "acme"                        # empty inherits the shared org (empty = default)
+# granted_credentials = ["openai"]    # credential@1 services this identity may resolve (see [containers.credentials])
 
 [dispatch]
 # Can be of "assignee", "label", or "either"
@@ -450,6 +454,16 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # [containers.profiles.claude]
 # kit = ["docker/claude-code-kit@sha256:<digest>"]
 # adapter = "claude-code"          # claude-code, codex, pi, omp or copilot; empty runs without capture tools or usage
+#
+# Credential bindings map a Kit's credential@1 service name to a secret. A
+# binding alone grants nothing -- an identity resolves it only when its own
+# org matches and the service is in its granted_credentials (see
+# [[identities]] above). Once the State Store holds it, edit bindings in the
+# dashboard (Settings, Advanced); a stored set replaces the file's.
+# [[containers.credentials]]
+# service = "openai"
+# org = "acme"                     # empty means the default org
+# secret = {engine = "env", key = "OPENAI_API_KEY"}
 
 # At least one [[repos]] entry is required before archied will poll
 # anything -- it is deliberately left commented rather than shipped active:

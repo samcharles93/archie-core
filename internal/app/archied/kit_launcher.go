@@ -59,9 +59,11 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 		log.Warn("kit harness runs disabled: egress relay", "err", err)
 		return
 	}
-	// No credential resolver yet (archie-core-egkf.11): a Kit's required
-	// credential is refused at the proxy until run credentials carry secrets.
-	proxy := egress.NewProxy(ca, egress.ProxyOptions{})
+	// grants is the production Resolver: Launch/Release Grant/RevokeGrant it
+	// per run with exactly the declared-and-granted intersection
+	// (docs/prds/external-agent-harness.md, Credentials; archie-core-egkf.11).
+	grants := egress.NewGrantResolver()
+	proxy := egress.NewProxy(ca, egress.ProxyOptions{Resolver: grants})
 	srv := &http.Server{Handler: proxy, ReadHeaderTimeout: 30 * time.Second}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -76,6 +78,7 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 	b.kitLauncher = &kitrun.Launcher{
 		Pool: pool, Fetch: fetcher, Proxy: proxy, Networks: networks,
 		AgentBinary: agentBinary, CAFile: egress.CACertPath(caDir),
+		Config: b.cfgHolder, Secrets: b.secrets, Grants: grants,
 	}
 	log.Info("kit harness runs enabled", "proxy", ln.Addr().String())
 }
