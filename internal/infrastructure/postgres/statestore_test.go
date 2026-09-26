@@ -267,6 +267,52 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	}
 }
 
+// A request ID is idempotent per kind: the store API, the resource_history
+// UNIQUE(kind, request_id) index and every production caller treat it as one,
+// so a caller that mints one request ID for two different kinds must get two
+// writes -- the second kind's own revision -- and not the first kind's history
+// row replayed under the second kind's name.
+func TestResourceRequestIDIsIdempotentPerKind(t *testing.T) {
+	resources := resourcesFor(t)
+	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	first, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+		Kind: "provider-settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "import",
+		RequestID: "shared", ExpectedVersion: 0, At: at,
+	})
+	if err != nil {
+		t.Fatalf("first PutResource: %v", err)
+	}
+	second, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+		Kind: "scheduling-policy", Value: []byte(`{"v":2}`), Actor: "operator", Source: "import",
+		RequestID: "shared", ExpectedVersion: 0, At: at,
+	})
+	if err != nil {
+		t.Fatalf("second PutResource with the same request ID: %v", err)
+	}
+	if second.Kind != "scheduling-policy" || string(second.Value) != `{"v":2}` || second.Version != 1 {
+		t.Fatalf("second write = %+v, want scheduling-policy's own revision, not a replay of %+v", second, first)
+	}
+
+	replay, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+		Kind: "scheduling-policy", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
+		RequestID: "shared", ExpectedVersion: 0, At: at.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("replay PutResource: %v", err)
+	}
+	if replay.Version != second.Version || string(replay.Value) != string(second.Value) || replay.Actor != second.Actor {
+		t.Fatalf("replay = %+v, want scheduling-policy's original %+v", replay, second)
+	}
+
+	live, err := resources.Resource(t.Context(), "scheduling-policy")
+	if err != nil {
+		t.Fatalf("Resource: %v", err)
+	}
+	if live.Version != second.Version || string(live.Value) != string(second.Value) {
+		t.Fatalf("live scheduling-policy = %+v, want second write %+v", live, second)
+	}
+}
+
 // PostgreSQL admits concurrent writers, unlike SQLite's single writer. The
 // resource lock keeps the expected-version comparison and audit append one
 // serialized operation.
