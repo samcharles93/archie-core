@@ -338,19 +338,7 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if wc, ok := b.st.(storecontract.WorkflowCaller); ok {
 		deps.WorkflowCalls = wc
 	}
-	// The policy chain and its denial records are served from the same store
-	// (docs/prds/orgs-and-access.md). A store without them -- one that owns
-	// no tenant boundary yet -- degrades the access RPCs rather than failing
-	// the boot, the same pattern the other optional surfaces use.
-	if ps, ok := b.st.(access.PrincipalSource); ok {
-		deps.Principals = ps
-	}
-	if ps, ok := b.st.(access.PolicyStore); ok {
-		deps.Policies = ps
-	}
-	if ds, ok := b.st.(access.DenialStore); ok {
-		deps.Denials = ds
-	}
+	b.accessDeps(&deps)
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css
 	}
@@ -361,6 +349,22 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.ChannelStatus = cs
 	}
 	return deps
+}
+
+// accessDeps wires the policy chain and its denial records from the same
+// store (docs/prds/orgs-and-access.md). A store without them -- one that owns
+// no tenant boundary yet -- degrades the access RPCs rather than failing the
+// boot, the same pattern the other optional surfaces use.
+func (b *boot) accessDeps(deps *staterpc.Deps) {
+	if ps, ok := b.st.(access.PrincipalSource); ok {
+		deps.Principals = ps
+	}
+	if ps, ok := b.st.(access.PolicyStore); ok {
+		deps.Policies = ps
+	}
+	if ds, ok := b.st.(access.DenialStore); ok {
+		deps.Denials = ds
+	}
 }
 
 // serveStateStore registers the StateStore gRPC service and serves it until
