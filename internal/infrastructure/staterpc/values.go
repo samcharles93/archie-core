@@ -329,6 +329,7 @@ func dayTokensValue(d *pb.DayTokens) storecontract.DayTokens {
 // matching (code, message), never by parsing free-form text.
 const (
 	msgStaleTransition   = "stale transition"
+	msgIllegalTransition = "illegal transition"
 	msgBindingNotFound   = "binding not found"
 	msgMappingNotFound   = "mapping not found"
 	msgEventTypeNotFound = "event type not found"
@@ -441,6 +442,7 @@ var wireErrors = []struct {
 	message  string
 }{
 	{storecontract.ErrStaleTransition, codes.FailedPrecondition, msgStaleTransition},
+	{storecontract.ErrIllegalTransition, codes.FailedPrecondition, msgIllegalTransition},
 	{storecontract.ErrBindingOverlap, codes.FailedPrecondition, msgBindingOverlap},
 	{storecontract.ErrBindingTransition, codes.FailedPrecondition, msgBindingTransition},
 	{storecontract.ErrSourceSigningStale, codes.FailedPrecondition, msgSourceSigning},

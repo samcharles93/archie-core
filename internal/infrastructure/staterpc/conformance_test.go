@@ -173,6 +173,16 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("Transition stale = %v, want ErrStaleTransition", err)
 			}
 
+			// Illegal transition: the from is truthful, but the pair the move
+			// would execute is outside the shared transition table
+			// (docs/prds/execution-tree-state-machine.md). The sentinel must
+			// survive the hop in both directions, which is what the gRPC mode
+			// of this battery exists to prove.
+			err = c.Transition(ctx, task.ID, "running", "merged", "")
+			if !errors.Is(err, storecontract.ErrIllegalTransition) {
+				t.Fatalf("Transition illegal = %v, want ErrIllegalTransition", err)
+			}
+
 			// Remediation starter: the guarded transition carries the review
 			// unit, and both guards are the wire contract (the sentinel must
 			// survive the hop for the reaction consumer's dedup to work).
@@ -184,6 +194,11 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 			if err := c.BeginRemediation(ctx, task.ID, `{"review_id":7}`); !errors.Is(err, storecontract.ErrStaleTransition) {
 				t.Fatalf("BeginRemediation stale = %v, want ErrStaleTransition", err)
+			}
+			// ParkTask refuses an illegal pair too: a queued task cannot be
+			// parked, however truthful the from is.
+			if err := c.ParkTask(ctx, task.ID, "queued", "why", "transient"); !errors.Is(err, storecontract.ErrIllegalTransition) {
+				t.Fatalf("ParkTask illegal = %v, want ErrIllegalTransition", err)
 			}
 			remediated, err := c.TaskByID(ctx, task.ID)
 			if err != nil || remediated == nil {
@@ -283,11 +298,21 @@ func TestStateStoreConformance(t *testing.T) {
 			if err != nil || claimed == nil {
 				t.Fatalf("ClaimNext: %+v %v", claimed, err)
 			}
+			// Requeue and RetryTask both land on queued through table-routed
+			// edges, and each guard is the wire contract. The battery used to
+			// walk queued -> queued through RetryTask, a self-write the shared
+			// transition table refuses, so the retry runs from running instead.
+			if err := c.RetryTask(ctx, claimed.ID, "running", ""); err != nil {
+				t.Fatalf("RetryTask: %v", err)
+			}
+			if err := c.RetryTask(ctx, claimed.ID, "queued", ""); !errors.Is(err, storecontract.ErrIllegalTransition) {
+				t.Fatalf("RetryTask queued->queued = %v, want ErrIllegalTransition", err)
+			}
+			if err := c.Transition(ctx, claimed.ID, "queued", "running", "re-claimed"); err != nil {
+				t.Fatalf("re-claim: %v", err)
+			}
 			if err := c.Requeue(ctx, claimed.ID, "running", ""); err != nil {
 				t.Fatalf("Requeue: %v", err)
-			}
-			if err := c.RetryTask(ctx, claimed.ID, "queued", ""); err != nil {
-				t.Fatalf("RetryTask: %v", err)
 			}
 			if _, err := c.RecoverStale(ctx); err != nil {
 				t.Fatalf("RecoverStale: %v", err)

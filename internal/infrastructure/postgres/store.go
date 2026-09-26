@@ -37,6 +37,33 @@ func (s *Store) queries() *postgresdb.Queries {
 	return postgresdb.New(s.pool)
 }
 
+// guardTransition locks the task's row and checks the status write the caller
+// is about to perform: a row whose status is not the expected from is stale
+// (ErrStaleTransition), a from->to pair outside the shared transition table is
+// refused with ErrIllegalTransition
+// (docs/prds/execution-tree-state-machine.md). Staleness is decided first, so
+// a caller that is wrong about the row's state gets the stale sentinel even
+// when its pair is also unroutable. The row stays locked for the caller's
+// transaction, so the checks cannot race the guarded write that follows.
+// A missing row is stale, matching what the guarded update alone used to
+// return.
+func guardTransition(ctx context.Context, q *postgresdb.Queries, taskID int64, from, to string) error {
+	status, err := q.LockTaskStatus(ctx, taskID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return storecontract.ErrStaleTransition
+	}
+	if err != nil {
+		return err
+	}
+	if status != from {
+		return storecontract.ErrStaleTransition
+	}
+	if !taskstate.CanTransition(from, to) {
+		return storecontract.ErrIllegalTransition
+	}
+	return nil
+}
+
 // Close is a no-op: this store owns no file handle
 // or connection -- the pool belongs to the composition that opened it.
 func (s *Store) Close() error { return nil }
@@ -180,8 +207,9 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 
 // Transition moves a task to a new status and records the audit detail. The
 // from status guards the update; a mismatch returns ErrStaleTransition without
-// writing an audit row. Transitioning to parked also stores detail as
-// ParkReason in the same transaction.
+// writing an audit row, and a from->to pair outside the shared transition
+// table returns ErrIllegalTransition. Transitioning to parked also stores
+// detail as ParkReason in the same transaction.
 func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -190,6 +218,9 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := postgresdb.New(tx)
 
+	if err := guardTransition(ctx, q, taskID, from, to); err != nil {
+		return err
+	}
 	n, err := q.TransitionTask(ctx, postgresdb.TransitionTaskParams{
 		ID: taskID, Status: to, ParkReason: clip(detail, 4000),
 		ParkClass: taskstate.ParkNeedsHuman, Status_2: from,
@@ -210,6 +241,8 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 
 // ParkTask is the classified park write: the same guarded running->parked
 // transition Transition performs, carrying the park class the site chose.
+// The park is only legal from running (the transition table), so a stale or
+// off-table from is refused before anything is written.
 func (s *Store) ParkTask(ctx context.Context, taskID int64, from, detail, class string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -218,6 +251,9 @@ func (s *Store) ParkTask(ctx context.Context, taskID int64, from, detail, class 
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := postgresdb.New(tx)
 
+	if err := guardTransition(ctx, q, taskID, from, workflow.StatusParked); err != nil {
+		return err
+	}
 	n, err := q.ParkTask(ctx, postgresdb.ParkTaskParams{
 		ID: taskID, ParkReason: clip(detail, 4000),
 		ParkClass: taskstate.NormalizeParkClass(class), Status: from,
@@ -269,6 +305,9 @@ func (s *Store) BeginRemediation(ctx context.Context, taskID int64, payload stri
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := postgresdb.New(tx)
 
+	if err := guardTransition(ctx, q, taskID, workflow.StatusPROpen, workflow.StatusQueued); err != nil {
+		return err
+	}
 	n, err := q.BeginRemediationTask(ctx, postgresdb.BeginRemediationTaskParams{
 		ID: taskID, ReviewPayload: clip(payload, 4000),
 	})
@@ -317,35 +356,31 @@ func (s *Store) SetReviewCursors(ctx context.Context, taskID, reviewCursor, comm
 }
 
 // Requeue puts a task back on the queue; an empty workflow keeps the task's
-// current workflow.
+// current workflow. The from->queued pair must be routed by the transition
+// table: requeueing out of a terminal status is refused, not rewritten.
 func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, wf string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	q := postgresdb.New(tx)
-
-	n, err := q.RequeueTask(ctx, postgresdb.RequeueTaskParams{
-		ID: taskID, Workflow: wf, FromStatus: fromStatus,
+	return s.requeue(ctx, taskID, fromStatus, wf, "requeued "+wf, func(q *postgresdb.Queries) (int64, error) {
+		return q.RequeueTask(ctx, postgresdb.RequeueTaskParams{
+			ID: taskID, Workflow: wf, FromStatus: fromStatus,
+		})
 	})
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return storecontract.ErrStaleTransition
-	}
-	if err := q.InsertTransition(ctx, postgresdb.InsertTransitionParams{
-		TaskID: taskID, FromStatus: fromStatus, ToStatus: workflow.StatusQueued, Detail: "requeued " + wf,
-	}); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
 }
 
 // RetryTask requeues a task and increments retry_count in the same guarded
-// transaction.
+// transaction, under the same table check Requeue applies.
 func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf string) error {
+	return s.requeue(ctx, taskID, fromStatus, wf, "retried "+wf, func(q *postgresdb.Queries) (int64, error) {
+		return q.RetryTask(ctx, postgresdb.RetryTaskParams{
+			ID: taskID, Workflow: wf, FromStatus: fromStatus,
+		})
+	})
+}
+
+// requeue carries the guarded requeue write Requeue and RetryTask share: the
+// transition-table check, the update guarded on the from status, and one audit
+// row. update is the query that differs between the two callers; detail is the
+// audit line it records.
+func (s *Store) requeue(ctx context.Context, taskID int64, fromStatus, wf, detail string, update func(*postgresdb.Queries) (int64, error)) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -353,9 +388,10 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf stri
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := postgresdb.New(tx)
 
-	n, err := q.RetryTask(ctx, postgresdb.RetryTaskParams{
-		ID: taskID, Workflow: wf, FromStatus: fromStatus,
-	})
+	if err := guardTransition(ctx, q, taskID, fromStatus, workflow.StatusQueued); err != nil {
+		return err
+	}
+	n, err := update(q)
 	if err != nil {
 		return err
 	}
@@ -363,7 +399,7 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf stri
 		return storecontract.ErrStaleTransition
 	}
 	if err := q.InsertTransition(ctx, postgresdb.InsertTransitionParams{
-		TaskID: taskID, FromStatus: fromStatus, ToStatus: workflow.StatusQueued, Detail: "retried " + wf,
+		TaskID: taskID, FromStatus: fromStatus, ToStatus: workflow.StatusQueued, Detail: detail,
 	}); err != nil {
 		return err
 	}
@@ -399,7 +435,9 @@ func (s *Store) ArchiveTask(ctx context.Context, taskID int64, fromStatus string
 	return eventID, nil
 }
 
-// RecoverStale re-queues tasks left running by a crashed daemon.
+// RecoverStale re-queues tasks left running by a crashed daemon. The write is
+// the table's crash-recovery edge (running->queued), pinned in SQL and pinned
+// to the table by TestSQLPinnedTransitionsAreTableLegal.
 func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 	return s.queries().RecoverStaleTasks(ctx)
 }

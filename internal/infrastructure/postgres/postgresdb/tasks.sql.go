@@ -484,6 +484,20 @@ func (q *Queries) ListTaskSummaries(ctx context.Context, limit int32) ([]ListTas
 	return items, nil
 }
 
+const lockTaskStatus = `-- name: LockTaskStatus :one
+SELECT status FROM tasks WHERE id = $1 FOR UPDATE
+`
+
+// Locks the task's row and returns its current status, so the staleness and
+// transition-table checks that decide a guarded write hold against a
+// concurrent claim or transition until the update in the same transaction.
+func (q *Queries) LockTaskStatus(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, lockTaskStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const parkTask = `-- name: ParkTask :execrows
 UPDATE tasks
 SET status = 'parked', park_reason = $2, park_class = $3, updated_at = now()

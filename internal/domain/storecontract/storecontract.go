@@ -399,6 +399,13 @@ var (
 	// ErrStaleTransition is returned when a task transition's expected
 	// from status does not match the task's current status.
 	ErrStaleTransition = errors.New("store: stale transition: task status does not match expected from status")
+	// ErrIllegalTransition is returned when a task's current status and the
+	// requested status form a pair the shared taskstate transition table
+	// does not route (docs/prds/execution-tree-state-machine.md): the move
+	// would have executed against a truthful from, but the table forbids
+	// it. Distinct from ErrStaleTransition, which covers a from that does
+	// not match the row's actual status.
+	ErrIllegalTransition = errors.New("store: illegal transition: status pair is not in the transition table")
 	// ErrBindingNotFound is returned when a binding ID does not exist.
 	ErrBindingNotFound = errors.New("store: binding not found")
 	// ErrBindingOverlap is returned when a binding's matcher overlaps an
