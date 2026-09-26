@@ -34,9 +34,8 @@ func TestApplyContainerDefaultsMakesManagedWorkersReadyByDefault(t *testing.T) {
 	cfg := &config.Config{}
 	applyContainerDefaults(cfg)
 
-	const wantImage = "ghcr.io/samcharles93/archie-agent:latest"
-	if cfg.Containers.Image != wantImage {
-		t.Errorf("Containers.Image = %q, want %q", cfg.Containers.Image, wantImage)
+	if cfg.Containers.Image != defaultContainerImage {
+		t.Errorf("Containers.Image = %q, want %q", cfg.Containers.Image, defaultContainerImage)
 	}
 	if cfg.Containers.MaxUptime.Std() != defaultContainerUptime {
 		t.Errorf("Containers.MaxUptime = %s, want %s", cfg.Containers.MaxUptime.Std(), defaultContainerUptime)

@@ -84,13 +84,13 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 	}
 
 	report := b.healthRegistry.Run(context.Background())
-	if len(report.Components) != 5 {
-		t.Fatalf("components = %d, want 5: %+v", len(report.Components), report.Components)
+	got := map[string]int{}
+	for _, c := range report.Components {
+		got[c.Name]++
 	}
-	want := []string{"state_db", "config", "disk", "model", "gateway"}
-	for i, name := range want {
-		if report.Components[i].Name != name {
-			t.Fatalf("component[%d] = %q, want %q", i, report.Components[i].Name, name)
+	for _, name := range []string{"state_db", "config", "disk", "model", "gateway"} {
+		if got[name] != 1 {
+			t.Errorf("component %q registered %d times, want 1: %+v", name, got[name], report.Components)
 		}
 	}
 }

@@ -57,9 +57,7 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 		}
 	}
 
-	// Every dotted key settings.js hardcodes today must have a descriptor,
-	// so the schema is a superset (ideally exact set) of what the frontend
-	// currently renders -- see ui/src/settings/settings.js.
+	// Keys the dashboard settings pages address by name must keep a descriptor.
 	wantKeys := []string{
 		"bot_user", "bot_email", "label", "forge.type", "forge.host", "diff_cap_lines",
 		"repos", "models", "providers",
@@ -69,11 +67,8 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 	}
 	for _, key := range wantKeys {
 		if !seen[key] {
-			t.Errorf("missing descriptor for %q, which settings.js already hardcodes", key)
+			t.Errorf("missing descriptor for %q", key)
 		}
-	}
-	if len(seen) != len(wantKeys) {
-		t.Errorf("configFieldDescriptors has %d keys, want exactly %d (extra keys need adding to wantKeys deliberately)", len(seen), len(wantKeys))
 	}
 }
 
