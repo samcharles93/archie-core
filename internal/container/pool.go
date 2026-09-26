@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -195,16 +196,12 @@ func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount
 	if image == "" {
 		image = p.cfg.Image
 	}
-	if err := p.ensureImage(ctx, image); err != nil {
+	if err := p.EnsureImage(ctx, image); err != nil {
 		return nil, err
 	}
-	p.mu.Lock()
-	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
-		p.mu.Unlock()
-		return nil, fmt.Errorf("max concurrency %d reached", p.cfg.MaxConcurrency)
+	if err := p.reserve(); err != nil {
+		return nil, err
 	}
-	p.active++
-	p.mu.Unlock()
 
 	name := fmt.Sprintf("archie-agent-%d", time.Now().UnixNano())
 
@@ -232,9 +229,7 @@ func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		p.mu.Lock()
-		p.active--
-		p.mu.Unlock()
+		p.unreserve()
 		return nil, fmt.Errorf("container create: %w", err)
 	}
 
@@ -243,19 +238,61 @@ func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount
 		if _, rmErr := p.cli.ContainerRemove(context.WithoutCancel(ctx), resp.ID, client.ContainerRemoveOptions{Force: true}); rmErr != nil {
 			p.log.Warn("container remove after start failure", "id", resp.ID[:12], "err", rmErr)
 		}
-		p.mu.Lock()
-		p.active--
-		p.mu.Unlock()
+		p.unreserve()
 		return nil, fmt.Errorf("container start: %w", err)
 	}
-
-	if p.cfg.MaxUptime > 0 {
-		p.armMaxUptime(ctx, resp.ID)
-	}
-
-	p.log.Info("container started", "id", resp.ID[:12], "name", name)
-	return &Container{ID: resp.ID, exited: p.watchExit(ctx, resp.ID)}, nil
+	return p.started(ctx, resp.ID, name), nil
 }
+
+// AcquireKit starts a Kit task container under the same concurrency cap,
+// lifetime cap and exit watch as Acquire. Release tears it down.
+func (p *Pool) AcquireKit(ctx context.Context, s KitSpec) (*Container, error) {
+	if err := p.EnsureImage(ctx, s.Image); err != nil {
+		return nil, err
+	}
+	if err := p.reserve(); err != nil {
+		return nil, err
+	}
+	s.Labels = maps.Clone(s.Labels)
+	if s.Labels == nil {
+		s.Labels = map[string]string{}
+	}
+	s.Labels["archie-daemon"] = "true"
+	id, err := StartKit(ctx, p.cli, s)
+	if err != nil {
+		p.unreserve()
+		return nil, err
+	}
+	return p.started(ctx, id, s.Name), nil
+}
+
+func (p *Pool) reserve() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
+		return fmt.Errorf("max concurrency %d reached", p.cfg.MaxConcurrency)
+	}
+	p.active++
+	return nil
+}
+
+func (p *Pool) unreserve() {
+	p.mu.Lock()
+	p.active--
+	p.mu.Unlock()
+}
+
+func (p *Pool) started(ctx context.Context, id, name string) *Container {
+	if p.cfg.MaxUptime > 0 {
+		p.armMaxUptime(ctx, id)
+	}
+	p.log.Info("container started", "id", id[:12], "name", name)
+	return &Container{ID: id, exited: p.watchExit(ctx, id)}
+}
+
+// Client is the pool's Docker client, for callers that provision what a
+// container needs around it.
+func (p *Pool) Client() *client.Client { return p.cli }
 
 // watchExit returns a channel closed once Docker reports the container is no
 // longer running. A failed wait says nothing about the container, so it never
@@ -499,10 +536,10 @@ func (p *Pool) Close() error {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-// ensureImage pulls an image other than the configured one the first time a
+// EnsureImage pulls an image other than the configured one the first time a
 // task asks for it, under the configured pull policy. The configured image
 // was already pulled by NewPool.
-func (p *Pool) ensureImage(ctx context.Context, ref string) error {
+func (p *Pool) EnsureImage(ctx context.Context, ref string) error {
 	if ref == p.cfg.Image || (p.cfg.PullPolicy != "always" && p.cfg.PullPolicy != "missing") {
 		return nil
 	}

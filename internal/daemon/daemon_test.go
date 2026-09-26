@@ -19,6 +19,7 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -27,6 +28,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/kit"
+	"github.com/samcharles93/archie-core/internal/infrastructure/kitrun"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -2330,7 +2333,7 @@ func TestRunViaAgentCarriesTheWorkflowProfile(t *testing.T) {
 	if !ok || profile.Image != "agent-net:1" {
 		t.Fatalf("pinTaskProfile() = %+v, %v; want the net profile", profile, ok)
 	}
-	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, profile)
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, profile, nil)
 	select {
 	case req := <-received:
 		if len(req.Tools) != 1 || req.Tools[0] != "whois" {
@@ -2378,7 +2381,7 @@ func TestRunViaAgentParksWhenTheContainerExits(t *testing.T) {
 	defer stop()
 	done := make(chan struct{})
 	go func() {
-		d.runViaAgent(runCtx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, config.AgentProfile{})
+		d.runViaAgent(runCtx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, config.AgentProfile{}, nil)
 		close(done)
 	}()
 
@@ -2422,7 +2425,7 @@ func TestRunViaAgentParksWhenTheTaskTimeLimitPasses(t *testing.T) {
 	defer stop()
 	done := make(chan struct{})
 	go func() {
-		d.runViaAgent(runCtx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, config.AgentProfile{})
+		d.runViaAgent(runCtx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, config.AgentProfile{}, nil)
 		close(done)
 	}()
 	select {
@@ -2434,5 +2437,87 @@ func TestRunViaAgentParksWhenTheTaskTimeLimitPasses(t *testing.T) {
 	got, err := s.TaskByID(ctx, task.ID)
 	if err != nil || got.Status != workflow.StatusParked || !strings.Contains(got.ParkReason, "task exceeded its time limit (100ms)") {
 		t.Fatalf("task = %+v, %v; want parked naming the time limit", got, err)
+	}
+}
+
+type fakeKitLauncher struct {
+	got      kitrun.Request
+	released bool
+	removed  []kit.Volume
+}
+
+func (f *fakeKitLauncher) Launch(_ context.Context, req kitrun.Request) (*kitrun.Run, error) {
+	f.got = req
+	return &kitrun.Run{
+		Container: &container.Container{},
+		Harness:   agentexec.HarnessSpec{Adapter: agentexec.AdapterClaudeCode, Launch: []string{"claude"}},
+		Volumes:   []kit.Volume{{Name: "v", Path: "/home/agent/.claude"}},
+	}, nil
+}
+
+func (f *fakeKitLauncher) Release(context.Context, *kitrun.Run) error {
+	f.released = true
+	return nil
+}
+
+func (f *fakeKitLauncher) RemoveVolumes(_ context.Context, v []kit.Volume) error {
+	f.removed = append(f.removed, v...)
+	return nil
+}
+
+// A Kit profile starts the task through the Kit launcher, hands the worker
+// the Kit's harness, keeps model provider keys out of the container, and
+// removes the execution's volumes once the task is no longer retryable.
+func TestKitProfileRunsTheTaskOnItsHarness(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	launcher := &fakeKitLauncher{}
+	d.KitLauncher = launcher
+	d.ConnectedNATS.URL = "nats://172.17.0.1:4222"
+	t.Setenv("KIT_TEST_PROVIDER_KEY", "sk-real")
+	cfg := d.Cfg.Get()
+	cfg.Providers = map[string]config.Provider{"p": {APIKeyEnv: "KIT_TEST_PROVIDER_KEY"}}
+	d.Cfg.Set(cfg)
+	ctx := context.Background()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 31, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+	received := make(chan taskrun.Request, 1)
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		var req taskrun.Request
+		_ = json.Unmarshal(msg.Data, &req)
+		received <- req
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	profile := config.AgentProfile{Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode}
+	d.runKitTask(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, t.TempDir(), profile)
+
+	select {
+	case req := <-received:
+		if req.Harness == nil || req.Harness.Adapter != agentexec.AdapterClaudeCode {
+			t.Fatalf("request harness = %+v, want the Kit's", req.Harness)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("archied did not publish a taskrun request")
+	}
+	if !slices.Equal(launcher.got.Kit, profile.Kit) || launcher.got.Adapter != profile.Adapter {
+		t.Fatalf("launch request %+v, want the profile's kits and adapter", launcher.got)
+	}
+	for _, e := range launcher.got.WorkerEnv {
+		if strings.Contains(e, "sk-real") {
+			t.Fatalf("worker env carries a model provider key: %q", e)
+		}
+	}
+	if !launcher.released || len(launcher.removed) != 1 {
+		t.Fatalf("released %v, removed %v; want the run released and its volumes removed", launcher.released, launcher.removed)
 	}
 }

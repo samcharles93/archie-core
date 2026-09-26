@@ -69,6 +69,9 @@ func (r *HarnessRunner) Run(ctx context.Context, workspace string, req Request, 
 	if err := validateHarness(req); err != nil {
 		return Result{}, err
 	}
+	if err := ownTreeForHarness(req.Harness.User, workspace); err != nil {
+		return Result{}, fmt.Errorf("give the worktree to the harness user: %w", err)
+	}
 	mcpConfig, capturesPath, cleanup, err := r.prepareCaptures(req)
 	if err != nil {
 		return Result{}, err

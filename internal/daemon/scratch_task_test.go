@@ -42,5 +42,5 @@ func runPinnedViaAgent(ctx context.Context, d *Daemon, task *workflow.Task, repo
 	if !ok {
 		return
 	}
-	d.runViaAgent(ctx, task, repo, profile)
+	d.runViaAgent(ctx, task, repo, profile, nil)
 }

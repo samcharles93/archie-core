@@ -208,7 +208,10 @@ type boot struct {
 	natsToken string
 
 	containerPool *container.Pool
-	storeBackend  storage.Backend
+	// kitLauncher starts Kit profile tasks; nil when the egress path cannot
+	// be built on this host.
+	kitLauncher  daemon.KitLauncher
+	storeBackend storage.Backend
 
 	llm *runtime.Runtime
 
@@ -1332,6 +1335,7 @@ func (b *boot) buildDaemon() {
 		WorktreeGrants:      b.worktreeGrants,
 		StateStoreGrants:    b.stateStoreGrants,
 		ContainerPool:       b.containerPool,
+		KitLauncher:         b.kitLauncher,
 		Guardrails:          b.guardrails,
 		ToolRegistry:        b.toolReg,
 		Identities:          b.identityRunners,
@@ -1609,6 +1613,9 @@ func (b *boot) startServices(ctx context.Context) error {
 func (b *boot) setupBackends(ctx context.Context) error {
 	closeContainers := b.setupContainers(ctx)
 	err := b.connectNATS(ctx)
+	if err == nil {
+		b.setupKitLauncher(ctx)
+	}
 	// Container discovery must precede embedded NATS so it can bind the
 	// worker bridge gateway, but cleanup registration comes afterwards.
 	// cleanups run LIFO: workers stop first, then the daemon client closes,

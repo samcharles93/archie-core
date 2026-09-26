@@ -129,10 +129,19 @@ func Admit(d *spec.Descriptor) (*Plan, error) {
 // admits the result. archie drives a harness headlessly, so the composition
 // must carry an agent-sessions prompt verb.
 func Compose(contributions []spec.Contribution) (*Plan, error) {
-	merged, err := spec.Merge(contributions, spec.MergeOptions{ContextPath: contextPath})
+	merged, err := spec.Merge(contributions, MergeOptions)
 	if err != nil {
 		return nil, err
 	}
+	return FromMerge(merged)
+}
+
+// MergeOptions are the options every composition archie runs is merged with.
+var MergeOptions = spec.MergeOptions{ContextPath: contextPath}
+
+// FromMerge admits an already-merged composition, such as one the Kit spec's
+// fetch package assembled from a registry.
+func FromMerge(merged *spec.MergeResult) (*Plan, error) {
 	if merged.Descriptor.Kind != spec.KindWorkload {
 		return nil, errors.New("kit composition has no workload: a harness needs exactly one base kit")
 	}

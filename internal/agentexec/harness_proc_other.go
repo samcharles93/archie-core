@@ -22,3 +22,6 @@ func runAsHarnessUser(_ *exec.Cmd, name string) error {
 
 // ownForHarness has nothing to do where the harness runs as the worker.
 func ownForHarness(string, ...string) error { return nil }
+
+// ownTreeForHarness has nothing to do where the harness runs as the worker.
+func ownTreeForHarness(string, string) error { return nil }

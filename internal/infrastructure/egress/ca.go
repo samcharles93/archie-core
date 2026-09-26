@@ -40,6 +40,10 @@ type CA struct {
 	leaves map[string]*tls.Certificate
 }
 
+// CACertPath is where LoadOrCreateCA keeps the CA certificate in dir, the
+// file a sandbox container mounts to trust the proxy.
+func CACertPath(dir string) string { return filepath.Join(dir, caCertFile) }
+
 // LoadOrCreateCA loads the CA from dir, creating it on first use. A CA that
 // exists but will not load is an error: minting a replacement silently
 // would break trust in every running container.

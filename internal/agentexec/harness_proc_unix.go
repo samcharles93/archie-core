@@ -5,9 +5,11 @@ package agentexec
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -90,4 +92,26 @@ func ownForHarness(name string, paths ...string) error {
 		}
 	}
 	return nil
+}
+
+// ownTreeForHarness gives the worktree to the harness user when the worker
+// is root, except .git: the harness edits files and never writes the
+// repository, so its refs and config stay the worker's.
+func ownTreeForHarness(name, root string) error {
+	if name == "" || os.Geteuid() != 0 {
+		return nil
+	}
+	cred, err := harnessCredential(name)
+	if err != nil {
+		return err
+	}
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == ".git" && path != root {
+			return filepath.SkipDir
+		}
+		return os.Lchown(path, int(cred.Uid), int(cred.Gid))
+	})
 }

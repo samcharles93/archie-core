@@ -90,6 +90,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/sqlite v1.59.0 // indirect
+	oras.land/oras-go/v2 v2.6.2 // indirect
 )
 
 require (

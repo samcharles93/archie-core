@@ -158,6 +158,8 @@ type Daemon struct {
 	// set -- acquireTaskContainer parks the task rather than fall back to
 	// forwarding the daemon's own administrative token.
 	StateStoreGrants StateStoreGrantIssuer
+	// KitLauncher starts tasks whose agent profile is a Kit. Nil parks them.
+	KitLauncher KitLauncher
 	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
 	// taskrun request that fails with nats.ErrNoResponders, giving a
 	// freshly spawned archie-agent container time to connect to NATS, set
@@ -1261,6 +1263,12 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	if !ok {
 		return
 	}
+	if profile.IsKit() {
+		d.runKitTask(ctx, task, repo, workDir, profile)
+		d.teardownStorage(ctx, task, repo, workDir)
+		d.cleanupTerminalTaskWorktree(ctx, task, trees)
+		return
+	}
 	ctr, revokeStateStoreGrant, ok := d.acquireTaskContainer(ctx, task, repo, workDir, profile.Image)
 	if !ok {
 		return
@@ -1278,12 +1286,17 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	// task is always served by its own forge client and worktree manager.
 	limitCtx, stopLimit := withTaskTimeLimit(ctx, d.configFor(task).Budgets.TaskWallClock.Std())
 	runCtx, stopWatch := withContainerExit(limitCtx, ctr.Exited())
-	d.runViaAgent(runCtx, task, repo, profile)
+	d.runViaAgent(runCtx, task, repo, profile, nil)
 	stopWatch()
 	stopLimit()
 
-	// Teardown storage after workflow completes. The Docker backend is a
-	// no-op; future backends (temp volumes, NFS leases) use this hook.
+	d.teardownStorage(ctx, task, repo, workDir)
+	d.cleanupTerminalTaskWorktree(ctx, task, trees)
+}
+
+// teardownStorage runs after the workflow completes. The Docker backend is
+// a no-op; future backends (temp volumes, NFS leases) use this hook.
+func (d *Daemon) teardownStorage(ctx context.Context, task *workflow.Task, repo config.Repo, workDir string) {
 	if d.Storage != nil {
 		_ = d.Storage.Teardown(ctx, storage.TaskRef{
 			WorktreeDir:       workDir,
@@ -1293,8 +1306,6 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 			Repo:              task.Repo,
 		})
 	}
-
-	d.cleanupTerminalTaskWorktree(ctx, task, trees)
 }
 
 // prepareWorkspace makes the directory the container binds as its
@@ -1427,14 +1438,7 @@ func (d *Daemon) acquireTaskContainer(
 		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error(), taskstate.ParkTransient)
 	}
 
-	// Write task.json  --  the container's boot-time brief.
-	if err := container.WriteTaskJSON(workDir, container.TaskPayload{
-		ID: task.ID, Owner: task.Owner, Repo: task.Repo,
-		Number: task.IssueNumber, Title: task.Title, Body: task.Body,
-		Labels:   strings.Split(task.Labels, ","),
-		Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
-		Inputs: task.Inputs,
-	}); err != nil {
+	if err := writeTaskBrief(workDir, task); err != nil {
 		park("task.json write failed", err)
 		return nil, nil, false
 	}
@@ -1494,6 +1498,17 @@ func (d *Daemon) acquireTaskContainer(
 		return nil, nil, false
 	}
 	return ctr, revokeStateStoreGrant, true
+}
+
+// writeTaskBrief writes task.json, the container's boot-time brief.
+func writeTaskBrief(workDir string, task *workflow.Task) error {
+	return container.WriteTaskJSON(workDir, container.TaskPayload{
+		ID: task.ID, Owner: task.Owner, Repo: task.Repo,
+		Number: task.IssueNumber, Title: task.Title, Body: task.Body,
+		Labels:   strings.Split(task.Labels, ","),
+		Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
+		Inputs: task.Inputs,
+	})
 }
 
 // parkCapabilityUnavailable parks a task whose daemon-side capability is
@@ -1588,7 +1603,7 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 // itself when nothing else could have: the request never reached (or was
 // never answered by) an archie-agent, or archie-agent failed before its
 // own workflow.Run got a chance to record an outcome.
-func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile) {
+func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentexec.HarnessSpec) {
 	grant, revoke, ok := d.publicationGrant(ctx, task)
 	if !ok {
 		return
@@ -1608,6 +1623,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		LabelWorkflows:     d.LabelWorkflows,
 		WorkflowDefinition: task.WorkflowDefinitionYAML,
 		Tools:              profile.Tools,
+		Harness:            harness,
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
