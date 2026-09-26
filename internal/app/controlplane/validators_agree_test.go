@@ -107,14 +107,14 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 		{
 			name:    "valid container runtime policies",
 			kind:    ContainerRuntimePoliciesKind,
-			value:   config.ContainerConfig{Image: "archie-agent:test", PullPolicy: "missing"},
+			value:   containerRuntimePolicies{Image: "archie-agent:test", PullPolicy: "missing"},
 			mutate:  func(cfg *config.Config) {},
 			wantErr: false,
 		},
 		{
 			name: "container profile with an empty tool name",
 			kind: ContainerRuntimePoliciesKind,
-			value: config.ContainerConfig{Image: "archie-agent:test", Profiles: map[string]config.AgentProfile{
+			value: containerRuntimePolicies{Image: "archie-agent:test", Profiles: map[string]agentProfile{
 				"net": {Tools: []string{""}},
 			}},
 			mutate: func(cfg *config.Config) {
@@ -125,14 +125,14 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 		{
 			name:    "container runtime policies without an image",
 			kind:    ContainerRuntimePoliciesKind,
-			value:   config.ContainerConfig{PullPolicy: "missing"},
+			value:   containerRuntimePolicies{PullPolicy: "missing"},
 			mutate:  func(cfg *config.Config) { cfg.Containers.Image = "" },
 			wantErr: true,
 		},
 		{
 			name:    "negative container volume ttl",
 			kind:    ContainerRuntimePoliciesKind,
-			value:   config.ContainerConfig{Image: "archie-agent:test", VolumeTTL: config.Duration(-time.Minute)},
+			value:   containerRuntimePolicies{Image: "archie-agent:test", VolumeTTL: config.Duration(-time.Minute)},
 			mutate:  func(cfg *config.Config) { cfg.Containers.VolumeTTL = config.Duration(-time.Minute) },
 			wantErr: true,
 		},

@@ -25,16 +25,27 @@ that reads it and the path the value takes to get there.
 
 ## Adding a database-owned field
 
-1. Add it to the struct the resource's `Document` names in
-   `internal/app/controlplane/operational_settings.go`. The resource's JSON
-   schema and the dashboard's Advanced settings editor are generated from that
-   type, so no UI work is needed for the editor itself.
-2. Stored documents use Go field names as keys (`Image`, `MaxConcurrency`).
-   Give the field no `json` tag unless its neighbours have one.
-3. A map or a nested struct needs its layering checked. `json.Unmarshal`
-   merges into an existing map, so a stored map would add to the file's rather
-   than replace it. A field the stored document omits keeps the file's value
-   (a document stored before the field existed). Add a case to
+1. Add it to the wire-shape type the resource's `Document` names — a dedicated
+   struct in `internal/app/controlplane/` with explicit snake_case json tags
+   (`channel_settings.go`, `tool_settings.go`, `container_settings.go` are the
+   precedents), never the internal config struct itself. A struct fed straight
+   into the document falls back to Go field names (`Window`, `MaxRequests`),
+   and a bare `time.Duration` marshals as nanoseconds — both render unusable
+   in the Web UI. The resource's JSON schema and the dashboard's Advanced
+   settings editor are generated from that type, so no UI work is needed for
+   the editor itself.
+2. Map to and from the internal config type at the resource boundary (`Seed`,
+   the layering in `runtime_config.go`, and the validator all use the same
+   mapping). Durations in the document are a string-marshalling type
+   (`config.Duration` or a document-local one), never a bare `time.Duration`.
+3. A document stored before the shape existed carries Go-cased keys. Read them
+   with `controlplanerpc.DecodeRenamingLegacyKeys` (an `UnmarshalJSON` on the
+   wire type) while keeping `DisallowUnknownFields` — dropping unknown keys
+   would decode a misspelling as "unset" — and register a `Normalize` on the
+   `Definition` that re-encodes the document, so a legacy document converges
+   the next time it is written. A map or a nested struct needs its layering
+   checked: a stored map replaces the file's, not merges into it, and a field
+   the stored document omits keeps the file's value. Add a case to
    `internal/app/controlplane/runtime_config_test.go` for both.
 4. Validate it in one function both sides call, and add a case to
    `TestResourceValidatorsRejectWhatEffectiveValidationRejects` in

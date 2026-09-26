@@ -204,18 +204,30 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		return config.Config{}, nil, err
 	}
 	if err := layerResource(ctx, reader, versions, ContainerRuntimePoliciesKind, func(value []byte) error {
-		// A document that omits Profiles (one stored before they existed)
+		// A document that omits profiles (one stored before they existed)
 		// inherits the file's. One that carries them replaces the file's:
-		// json.Unmarshal merges into an existing map, so without clearing it a
-		// profile deleted from the store would come back from the file.
+		// the mapping below would otherwise merge into the file's map, so a
+		// profile deleted from the store would come back from the file. Both
+		// spellings are checked, because documents written before the document
+		// had its own shape carry the Go-cased key.
 		var keys map[string]json.RawMessage
 		if err := json.Unmarshal(value, &keys); err != nil {
 			return err
 		}
-		if _, stored := keys["Profiles"]; stored {
-			out.Containers.Profiles = nil
+		_, carriesProfiles := keys["profiles"]
+		if !carriesProfiles {
+			_, carriesProfiles = keys["Profiles"]
 		}
-		return json.Unmarshal(value, &out.Containers)
+		var policies containerRuntimePolicies
+		if err := json.Unmarshal(value, &policies); err != nil {
+			return err
+		}
+		inherited := out.Containers.Profiles
+		out.Containers = policies.settings()
+		if !carriesProfiles {
+			out.Containers.Profiles = inherited
+		}
+		return nil
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
