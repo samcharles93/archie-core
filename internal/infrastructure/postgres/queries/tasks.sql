@@ -73,6 +73,12 @@ UPDATE tasks SET workflow = $2, stage = $3, branch = $4, plan = $5, notes = $6,
     updated_at = now()
 WHERE id = $1;
 
+-- name: LockTaskStatus :one
+-- Locks the task's row and returns its current status, so the staleness and
+-- transition-table checks that decide a guarded write hold against a
+-- concurrent claim or transition until the update in the same transaction.
+SELECT status FROM tasks WHERE id = $1 FOR UPDATE;
+
 -- name: TransitionTask :execrows
 -- Arriving at 'parked' also records why. The class is normalized by the
 -- caller, so an unknown value persists as needs_human rather than as itself.
