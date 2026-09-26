@@ -194,7 +194,12 @@ func (s *Store) ResetInstancePolicies(ctx context.Context) error {
 	return s.queries().ResetInstancePolicies(ctx)
 }
 
-// RecordDenial records one refusal. The store coalesces identical denials
+// RecordResetAudit records the one audit row a reset is written as.
+func (s *Store) RecordResetAudit(ctx context.Context, key string) error {
+	return s.queries().InsertAccessResetAudit(ctx, key)
+}
+
+// RecordDenial records one refusal The store coalesces identical denials
 // within a minute into one row with a count, so a retry storm does not
 // flood the surface.
 func (s *Store) RecordDenial(ctx context.Context, d access.Denial) error {

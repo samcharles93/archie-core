@@ -69,3 +69,9 @@ DO UPDATE SET count = access_denials.count + 1, updated_at = now();
 -- name: ListDenials :many
 SELECT id, org_id, principal, action, resource_kind, resource_id, level, policies, minute_at, count, created_at, updated_at
 FROM access_denials WHERE org_id = $1 ORDER BY id DESC LIMIT $2;
+-- name: InsertAccessResetAudit :exec
+-- The one audit row a reset is recorded as; the reset's policy changes
+-- carry their own rows (docs/prds/orgs-and-access.md, "Recovering from a
+-- locked-out org").
+INSERT INTO sys_audit (at, table_name, record_key, field, record_version, actor, source, request_id)
+VALUES (now(), 'access_policies', $1, 'reset', 1, 'archied access reset', 'archied', '');

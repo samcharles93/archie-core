@@ -154,6 +154,19 @@ func (q *Queries) InsertAccessPolicyAudit(ctx context.Context, arg InsertAccessP
 	return err
 }
 
+const insertAccessResetAudit = `-- name: InsertAccessResetAudit :exec
+INSERT INTO sys_audit (at, table_name, record_key, field, record_version, actor, source, request_id)
+VALUES (now(), 'access_policies', $1, 'reset', 1, 'archied access reset', 'archied', '')
+`
+
+// The one audit row a reset is recorded as; the reset's policy changes
+// carry their own rows (docs/prds/orgs-and-access.md, "Recovering from a
+// locked-out org").
+func (q *Queries) InsertAccessResetAudit(ctx context.Context, recordKey string) error {
+	_, err := q.db.Exec(ctx, insertAccessResetAudit, recordKey)
+	return err
+}
+
 const listAccessPolicies = `-- name: ListAccessPolicies :many
 
 SELECT level, org_id, workspace_id, object_kind, object_id, policy_id, text, updated_at
