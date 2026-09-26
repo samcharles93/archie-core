@@ -26,8 +26,8 @@ type providerDocument struct {
 
 func modelDefinitions() []Definition {
 	return []Definition{
-		{Kind: ProviderSettingsKind, Title: "Providers", ApplyMode: "restart-required", Document: map[string]providerDocument{}, Seed: seedProviders, Validate: validateProviders},
-		{Kind: ModelRoleAssignmentsKind, Title: "Model role assignments", ApplyMode: "restart-required", Document: map[string]string{}, Seed: func(cfg config.Config) any { return cfg.Models }, Validate: validateModelRoles},
+		{Kind: ProviderSettingsKind, Title: "Providers", ApplyMode: "live", Document: map[string]providerDocument{}, Seed: seedProviders, Validate: validateProviders},
+		{Kind: ModelRoleAssignmentsKind, Title: "Model role assignments", ApplyMode: "live", Document: map[string]string{}, Seed: func(cfg config.Config) any { return cfg.Models }, Validate: validateModelRoles},
 	}
 }
 

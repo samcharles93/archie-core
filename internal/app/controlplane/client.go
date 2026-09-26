@@ -134,6 +134,33 @@ func (c *Client) WatchWorkflowExecutionSettings(ctx context.Context, afterVersio
 		func(err error) AppliedSettings { return AppliedSettings{Err: err} }), nil
 }
 
+// AppliedResource carries a watched resource's version only, without its
+// document. The kinds applied with it are applied by re-running the whole
+// layering, which reads every kind back from the store, so the document the
+// stream carries would be decoded and then thrown away; a stored value this
+// build cannot read is reported by the layering that refuses it (with
+// last-known-good kept), not by the watch.
+type AppliedResource struct {
+	Version int64
+	Err     error
+}
+
+// WatchResource streams version updates for any resource kind without
+// decoding the document. It is the shape the runtime-resource watches read
+// (archie-core-zfb0.1): keepWatch reconnects on it exactly as it does on a
+// typed stream, and the resume point still moves past a document the client
+// refused to decode -- the store answered with that version, and resuming
+// before it would re-offer it on every reconnect.
+func (c *Client) WatchResource(ctx context.Context, kind string, afterVersion int64) (<-chan AppliedResource, error) {
+	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: kind, AfterVersion: afterVersion})
+	if err != nil {
+		return nil, controlplanerpc.ClientError(err)
+	}
+	return watchUpdates(ctx, stream,
+		func(resource *pb.Resource) AppliedResource { return AppliedResource{Version: resource.Version} },
+		func(err error) AppliedResource { return AppliedResource{Err: err} }), nil
+}
+
 type AppliedSettings struct {
 	Settings workflow.ExecutionSettings
 	Version  int64

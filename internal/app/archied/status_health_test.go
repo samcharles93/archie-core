@@ -16,6 +16,7 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
+	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/container"
@@ -441,7 +442,7 @@ func TestCuratorRunnerRecordsItsOutcome(t *testing.T) {
 	if rt == nil {
 		t.Fatal("NewRuntime returned nil for a configured provider")
 	}
-	runner := curatorLLMRunner{rt: rt, outcomes: recorder}
+	runner := curatorLLMRunner{llm: func() *runtime.Runtime { return rt }, outcomes: recorder}
 
 	_, err := runner.Chat(context.Background(), curator.ChatRequest{Model: "openai/gpt-4o"})
 	if err == nil {
@@ -470,7 +471,7 @@ func TestTitleGenerationDoesNotRecordChatModelHealth(t *testing.T) {
 	if rt == nil {
 		t.Fatal("NewRuntime returned nil for a configured provider")
 	}
-	gen := &chatTitleGenerator{llm: rt, chatModels: newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil, nil)}
+	gen := &chatTitleGenerator{llm: func() *runtime.Runtime { return rt }, chatModels: newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil, nil)}
 
 	if _, err := gen.GenerateTitle(context.Background(), "s1", "hello"); err == nil {
 		t.Fatal("GenerateTitle against a closed port returned no error")

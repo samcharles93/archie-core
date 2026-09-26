@@ -379,8 +379,8 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		b.log.Error("runtime settings unavailable", "err", err)
 		return 1
 	}
-	if err := b.startWorkflowExecutionSettings(ctx); err != nil {
-		b.log.Error("workflow execution settings unavailable", "err", err)
+	if err := b.startLiveSettings(ctx); err != nil {
+		b.log.Error("live settings unavailable", "err", err)
 		return 1
 	}
 	go b.applyStatus.Run(ctx)
@@ -494,7 +494,11 @@ func (s curatorEventSink) Emit(kind, detail string, data map[string]any) {
 // declared set is converted to a runnable core.ToolSet rather than a
 // parallel catalogue.
 type curatorLLMRunner struct {
-	rt *runtime.Runtime
+	// llm resolves the runtime at each call, so a live model-settings update
+	// that swaps it wholesale is the one the next curator run reads; a
+	// snapshot taken at construction would keep curators on the providers
+	// boot started with.
+	llm func() *runtime.Runtime
 	// outcomes records this call for /status alongside sendChatTurn's. A
 	// curator call is a model call this process made, and it does not pass
 	// through sendChatTurn, so without this a daemon whose only recent model
@@ -509,7 +513,11 @@ func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (cu
 	// nil *runtime.Runtime panics on the first method call. A curator asking
 	// for a completion on a daemon with no providers is a misconfiguration,
 	// not a reason to take the process down.
-	if r.rt == nil {
+	if r.llm == nil {
+		return curator.ChatResult{}, fmt.Errorf("curator chat: no model runtime is configured")
+	}
+	llm := r.llm()
+	if llm == nil {
 		return curator.ChatResult{}, fmt.Errorf("curator chat: no model runtime is configured")
 	}
 	msgs := make([]chat.Message, 0, len(req.Messages))
@@ -521,7 +529,7 @@ func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (cu
 		r.outcomes.record(req.Model, err)
 		return curator.ChatResult{}, err
 	}
-	res, err := r.rt.Chat(ctx, req.Model, core.GenerateOptions{
+	res, err := llm.Chat(ctx, req.Model, core.GenerateOptions{
 		Messages: msgs,
 		Tools:    toolSet,
 		MaxSteps: max(req.MaxSteps, 1),

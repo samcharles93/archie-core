@@ -28,8 +28,12 @@ type chatSetup struct {
 	// Cfg is read once per setup function via Get(); the process is not
 	// running yet at this point, so the reload-safe Holder is mostly a
 	// formality, but matching the daemon's API keeps callers honest.
-	Cfg                 *config.Holder
-	LLM                 *runtime.Runtime
+	Cfg *config.Holder
+	// LLM resolves the provider runtime at each use: a live provider-settings
+	// or model-role-assignments update swaps the runtime wholesale (ai-sdk's
+	// Runtime caches the provider instances it built), so the pointer cannot
+	// be captured at construction. nil means no model runtime is configured.
+	LLM                 func() *runtime.Runtime
 	ChatModels          gateway.ModelManager
 	ToolReg             *tools.Registry
 	Personas            *gateway.PersonaRegistry
@@ -152,7 +156,7 @@ func makeChatLLMResponder(
 	sessionStore gateway.SessionStore,
 	router *gateway.Router,
 ) (gateway.LLMResponder, gateway.LLMStreamResponder) {
-	if s.LLM == nil {
+	if s.LLM == nil || s.LLM() == nil {
 		return nil, nil
 	}
 	runner := newChatTurnRunner(ctx, channel, s, sessionStore, router)
@@ -365,7 +369,7 @@ func multimodalMediaRefs(output string) []tools.MediaRef {
 // untitled and are logged here.
 type chatTitleGenerator struct {
 	log        *slog.Logger
-	llm        *runtime.Runtime
+	llm        func() *runtime.Runtime
 	chatModels gateway.ModelManager
 }
 
@@ -395,7 +399,11 @@ func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, first
 	// broken provider on the strength of a call no user was waiting for.
 	// No tool set and no stream, so no tool call can be reported: this turn
 	// needs no icons.
-	text, err := sendChatTurn(ctx, g.llm, g.chatModels.ActiveModel(),
+	llm := g.llm()
+	if llm == nil {
+		return "", fmt.Errorf("no model runtime is configured")
+	}
+	text, err := sendChatTurn(ctx, llm, g.chatModels.ActiveModel(),
 		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, nil, nil)
 	if err != nil {
 		if g.log != nil {

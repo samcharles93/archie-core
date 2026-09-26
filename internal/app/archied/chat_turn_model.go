@@ -3,6 +3,7 @@ package archied
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
@@ -17,7 +18,9 @@ import (
 // provider-neutral TurnModel seam. Tool construction remains here because it
 // depends on runtime registries and configured execution limits.
 type chatTurnModel struct {
-	llm      *runtime.Runtime
+	// llm resolves the provider runtime at each turn, so a runtime swapped by
+	// a live model-settings update is the one the turn after it runs on.
+	llm      func() *runtime.Runtime
 	registry *tools.Registry
 	maxSteps int
 	limits   agentexec.ToolLimits
@@ -26,7 +29,7 @@ type chatTurnModel struct {
 }
 
 func newChatTurnModel(
-	llm *runtime.Runtime,
+	llm func() *runtime.Runtime,
 	registry *tools.Registry,
 	maxSteps int,
 	limits agentexec.ToolLimits,
@@ -54,7 +57,7 @@ func (m *chatTurnModel) Prepare(
 		return nil, err
 	}
 	return &preparedChatTurnModel{
-		llm:        m.llm,
+		llm:        m.llm(),
 		model:      req.Model,
 		options:    options,
 		toolInfo:   toolSummaries(options.Tools),
@@ -121,5 +124,10 @@ func (m *preparedChatTurnModel) Generate(
 	// This is one provider response's output allowance, not a turn-
 	// continuation budget. Tool loops remain free to continue.
 	options.MaxTokens = request.MaxOutputTokens
+	// A runtime swapped to nil -- a live update that left no usable provider
+	// configured -- is a refused turn, not a panic.
+	if m.llm == nil {
+		return "", fmt.Errorf("llm chat: no model runtime is configured")
+	}
 	return sendChatTurn(ctx, m.llm, m.model, options, stream, m.outcomes, m.icons)
 }

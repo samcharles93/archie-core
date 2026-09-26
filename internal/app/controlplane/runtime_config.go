@@ -113,7 +113,20 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := layerResourceJSON(ctx, reader, versions, ModelRoleAssignmentsKind, &out.Models); err != nil {
+	// The stored role assignments own cfg.Models once the store carries a
+	// value, the way the provider layer above owns cfg.Providers: a role
+	// removed from the store is gone from the layered document too. The
+	// runtime-resource watches re-layer over an already-layered base
+	// (archie-core-zfb0.1), so json.Unmarshal's map merge here would
+	// resurrect a role the store deleted every time any watched kind changed.
+	if err := layerResource(ctx, reader, versions, ModelRoleAssignmentsKind, func(value []byte) error {
+		var roles map[string]string
+		if err := json.Unmarshal(value, &roles); err != nil {
+			return err
+		}
+		out.Models = roles
+		return nil
+	}); err != nil {
 		return config.Config{}, nil, err
 	}
 	if err := layerResourceJSON(ctx, reader, versions, RepositoryPoliciesKind, &out.Repos); err != nil {

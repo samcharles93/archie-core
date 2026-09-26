@@ -15,14 +15,29 @@ import (
 // The configured role-to-model map supplies the available catalog; switching
 // chat models does not rewrite daemon configuration or affect workflow roles.
 type chatModelManager struct {
-	mu            sync.RWMutex
-	models        []string
-	active        string
+	mu     sync.RWMutex
+	models []string
+	active string
+	// catalogs are the non-role sources the model set is derived from, kept
+	// so SetConfigured can rebuild it after a live settings update without a
+	// caller re-passing them.
+	catalogs      [][]string
 	details       map[string]gateway.ModelDetails
 	providerNames map[string]string
 }
 
-func newChatModelManager(configured map[string]string, catalogs ...[]string) *chatModelManager {
+// pickChatDefault is the model the manager starts on: the chat role's
+// assignment, falling back to the builder role's.
+func pickChatDefault(configured map[string]string) string {
+	if active := strings.TrimSpace(configured["chat"]); active != "" {
+		return active
+	}
+	return strings.TrimSpace(configured["builder"])
+}
+
+// mergeModelRefs is the model set the manager offers: the configured role
+// assignments plus every catalog, unique and sorted.
+func mergeModelRefs(configured map[string]string, catalogs ...[]string) []string {
 	unique := make(map[string]struct{}, len(configured))
 	for _, ref := range configured {
 		ref = strings.TrimSpace(ref)
@@ -44,16 +59,33 @@ func newChatModelManager(configured map[string]string, catalogs ...[]string) *ch
 		models = append(models, ref)
 	}
 	slices.Sort(models)
+	return models
+}
 
-	active := strings.TrimSpace(configured["chat"])
-	if active == "" {
-		active = strings.TrimSpace(configured["builder"])
-	}
+func newChatModelManager(configured map[string]string, catalogs ...[]string) *chatModelManager {
 	return &chatModelManager{
-		models: models, active: active,
+		models:        mergeModelRefs(configured, catalogs...),
+		active:        pickChatDefault(configured),
+		catalogs:      append([][]string(nil), catalogs...),
 		details:       make(map[string]gateway.ModelDetails),
 		providerNames: make(map[string]string),
 	}
+}
+
+// SetConfigured re-derives the model set the manager offers after a live
+// change to model-role-assignments or provider-settings: the list is built
+// from the configured roles at construction, so a stored change would leave
+// the chat surfaces offering refs the runtime can no longer resolve. The
+// operator's active selection survives when the new roles still carry it; a
+// removed one falls back the way construction does.
+func (m *chatModelManager) SetConfigured(configured map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	models := mergeModelRefs(configured, m.catalogs...)
+	if !slices.Contains(models, m.active) {
+		m.active = pickChatDefault(configured)
+	}
+	m.models = models
 }
 
 func (m *chatModelManager) ApplyModelCatalog(snapshot modelcatalog.Snapshot) {

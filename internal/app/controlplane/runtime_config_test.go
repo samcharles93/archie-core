@@ -86,6 +86,28 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 	}
 }
 
+// TestRuntimeConfigReplacesStoredModelRolesEntirely: the stored role
+// assignments own cfg.Models once the store carries a value, the way the
+// provider settings own cfg.Providers, so a role removed from the store is
+// gone from the layered document too. The runtime-resource watches re-layer
+// over an already-layered base (archie-core-zfb0.1), so a merge here would
+// resurrect a role the store deleted every time any watched kind changed.
+func TestRuntimeConfigReplacesStoredModelRolesEntirely(t *testing.T) {
+	base := config.Config{Models: map[string]string{"builder": "old/model", "stale": "old/stale"}}
+	client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
+		ModelRoleAssignmentsKind: map[string]string{"builder": "main/model"},
+		SchedulingPolicyKind:     map[string]any{"poll_interval": "2m", "max_retries": 7, "dispatch": map[string]any{"trigger": "assignee"}},
+	}})
+
+	got, _, err := client.RuntimeConfig(t.Context(), base)
+	if err != nil {
+		t.Fatalf("RuntimeConfig: %v", err)
+	}
+	if !reflect.DeepEqual(got.Models, map[string]string{"builder": "main/model"}) {
+		t.Fatalf("layered roles = %v, want the stored document alone", got.Models)
+	}
+}
+
 func TestRuntimeConfigRejectsStoredBootDerivedProviderName(t *testing.T) {
 	stored := []byte(`{"openai":{"class":"openai","api_key_env":"ARCHIE_PROVIDER_6986D5A05E1DF674_API_KEY"}}`)
 	if err := validateProviders(stored); err == nil {
@@ -339,6 +361,35 @@ func populateEveryField(t *testing.T, value reflect.Value, label string) {
 // TestSchedulingPolicySeedCarriesTheLabel: the seed a fresh store writes must
 // carry the file document's label, so the pairing a stored trigger requires
 // is judgeable at write time from the moment the resource exists.
+// TestRuntimeResourceKindsApplyLive pins the four kinds the daemon re-layers
+// live (archie-core-zfb0.1) and the ones a startup-built consumer still
+// freezes, so a flip in either direction is a deliberate edit to the
+// definition, not a default that drifts.
+func TestRuntimeResourceKindsApplyLive(t *testing.T) {
+	t.Parallel()
+
+	registry, err := stepRegistry(testSteps(t))
+	if err != nil {
+		t.Fatalf("build step registry: %v", err)
+	}
+	modes := make(map[string]string)
+	for _, definition := range builtinDefinitions(registry) {
+		modes[definition.Kind] = definition.ApplyMode
+	}
+	for _, kind := range []string{
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind,
+	} {
+		if modes[kind] != "live" {
+			t.Errorf("%s applies %q, want live: the daemon re-layers this kind on a watch", kind, modes[kind])
+		}
+	}
+	for _, kind := range []string{ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind, ChannelSettingsKind} {
+		if modes[kind] != "restart-required" {
+			t.Errorf("%s applies %q, want restart-required: a startup-built component still holds it", kind, modes[kind])
+		}
+	}
+}
+
 func TestSchedulingPolicySeedCarriesTheLabel(t *testing.T) {
 	server := testServer(t, nil)
 	seed, err := server.definitions[SchedulingPolicyKind].seededValue(config.Config{

@@ -213,7 +213,16 @@ type boot struct {
 	kitLauncher  daemon.KitLauncher
 	storeBackend storage.Backend
 
-	llm *runtime.Runtime
+	// llm is the chat runtime's provider runtime, held in a pointer the chat
+	// surfaces read through chatLLM at each use. A live provider-settings or
+	// model-role-assignments update swaps it wholesale: ai-sdk's Runtime
+	// caches the provider instances it built, so a changed provider set needs
+	// a new Runtime rather than a mutated one.
+	llm atomic.Pointer[runtime.Runtime]
+	// runtimeVersions records the version of every control-plane kind boot's
+	// layering applied. Set once at boot before the runtime-resource watches
+	// start, which read it as their resume points.
+	runtimeVersions map[string]int64
 
 	// embeddings is nil unless models["embedding"] and a working provider
 	// credential are both configured -- see setupLLMAndChat's "Embeddings
@@ -223,7 +232,7 @@ type boot struct {
 	embeddings domainembedding.Client
 
 	toolReg        *tools.Registry
-	chatModels     gateway.ModelManager
+	chatModels     *chatModelManager
 	personas       *gateway.PersonaRegistry
 	chatTasks      gateway.TaskCreator
 	chatController *gateway.StoreTaskController
@@ -278,6 +287,16 @@ type boot struct {
 func newBootstrap() *boot {
 	return &boot{log: slog.New(slog.NewJSONHandler(os.Stderr, nil)), agentStatus: &daemon.AgentStatus{}}
 }
+
+// chatLLM is the provider runtime the chat surfaces read at each use: a turn
+// resolves it when it starts, so a runtime swapped by a live model-settings
+// update is the one the turn after it runs on.
+func (b *boot) chatLLM() *runtime.Runtime { return b.llm.Load() }
+
+// setLLM replaces the chat runtime. A nil runtime is a legal state: a
+// deployment whose every provider credential was disabled by a live update
+// leaves chat turns refused until another update restores one.
+func (b *boot) setLLM(rt *runtime.Runtime) { b.llm.Store(rt) }
 
 func (b *boot) addCleanup(fn func()) {
 	b.cleanups = append(b.cleanups, fn)
@@ -1087,7 +1106,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		// (TurnRunnerConfig.BotUser), so a fact written here is a fact a later
 		// turn reaches.
 		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
-		LLM:           curatorLLMRunner{rt: b.llm, outcomes: b.providerOutcomes},
+		LLM:           curatorLLMRunner{llm: b.chatLLM, outcomes: b.providerOutcomes},
 		// b.chatModels.ActiveModel() is the same source sendChatTurn uses
 		// for a real chat turn (telegram_setup.go) -- not
 		// b.defaultChatIdentity, which names a task-routing identity, not

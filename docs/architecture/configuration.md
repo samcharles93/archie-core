@@ -334,6 +334,18 @@ Two properties matter to anyone changing this area:
   ones. Workflow execution budgets arrive on a watch rather than in a resource
   query, so boot records the last published settings and the reload re-applies
   them from there.
+- **Live kinds arrive on a watch.** Provider settings, model role assignments,
+  repository policies and scheduling policy are `ApplyMode: live`
+  (archie-core-zfb0.1): the daemon keeps a watch per kind and, on a new
+  version, re-runs `boot.runtimeConfig` over the published snapshot and
+  republishes through `config.Holder`. A candidate the layered document cannot
+  run is refused before it is published — last-known-good keeps running and
+  the refusal is reported through apply status. The kinds stay
+  restart-required while a startup-built component still holds their value
+  (tool, plugin, container and channel settings today); a kind joins the live
+  list only with a consumer that re-reads it, and the model/provider half of
+  it also rebuilds the gateway chat runtime's provider set and the chat model
+  list the chat surfaces offer.
 
 ## Completion criteria
 

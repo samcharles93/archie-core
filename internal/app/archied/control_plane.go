@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -16,10 +17,10 @@ import (
 // reload re-resolves the file document alone, so republishing that document
 // as it stands reverts each of these layers to its file value until the
 // process restarts (archie-core-ju85).
-func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Config, error) {
+func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
 	cfg, versions, err := b.controlPlane.RuntimeConfig(ctx, base)
 	if err != nil {
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
 	if settings := b.executionSettings.Load(); settings != nil {
 		applyExecutionBudgets(&cfg, *settings)
@@ -27,17 +28,17 @@ func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Co
 	if err := configuration.Validate(&cfg); err != nil {
 		wrapped := fmt.Errorf("validate database settings: %w", err)
 		b.reportApplied(ctx, versions, wrapped)
-		return config.Config{}, wrapped
+		return config.Config{}, nil, wrapped
 	}
 	// The State Store persists source references, while openStores resolved
 	// only the file snapshot. Layering provider-settings restores the source
 	// references, so resolve the effective map before any runtime consumes it.
 	if err := resolveProviderSecrets(&cfg, b.secrets, b.log); err != nil {
 		b.reportApplied(ctx, versions, err)
-		return config.Config{}, err
+		return config.Config{}, nil, err
 	}
 	b.reportApplied(ctx, versions, nil)
-	return cfg, nil
+	return cfg, versions, nil
 }
 
 // reportApplied publishes the version of each kind this process just layered
@@ -50,12 +51,17 @@ func (b *boot) reportApplied(ctx context.Context, versions map[string]int64, app
 }
 
 func (b *boot) loadRuntimeConfig(ctx context.Context) error {
-	cfg, err := b.runtimeConfig(ctx, b.cfg)
+	cfg, versions, err := b.runtimeConfig(ctx, b.cfg)
 	if err != nil {
 		return err
 	}
 	b.cfg = cfg
 	b.cfgHolder.Set(cfg)
+	// The versions boot layered in are the resume points the runtime-resource
+	// watches start from: a watch re-established after a version it already
+	// applied neither replays a document this process handled nor skips one
+	// it has not.
+	b.runtimeVersions = versions
 	return nil
 }
 
@@ -75,7 +81,7 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	// surface as a failed reload rather than a SIGHUP that never returns.
 	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cfg, err := b.runtimeConfig(queryCtx, doc.Config)
+	cfg, _, err := b.runtimeConfig(queryCtx, doc.Config)
 	if err != nil {
 		return fmt.Errorf("runtime settings unavailable: %w", err)
 	}
@@ -223,4 +229,123 @@ func applyExecutionBudgets(cfg *config.Config, settings workflow.ExecutionSettin
 	for i := range cfg.Identities {
 		cfg.Identities[i].Budgets = cfg.Budgets
 	}
+}
+
+// startLiveSettings starts everything a live control-plane update needs
+// established before Run continues: the workflow-execution-settings watch,
+// whose limits the layering applies, and one watch per runtime-resource kind
+// (control_plane.go, runtimeResourceKinds). Both first reads are synchronous,
+// so a control plane that cannot be watched at all fails the boot that asked
+// for it rather than leaving the process running settings it can no longer
+// update.
+func (b *boot) startLiveSettings(ctx context.Context) error {
+	if err := b.startWorkflowExecutionSettings(ctx); err != nil {
+		return fmt.Errorf("workflow execution settings: %w", err)
+	}
+	if err := b.startRuntimeResourceWatches(ctx, b.runtimeVersions); err != nil {
+		return fmt.Errorf("runtime resource watches: %w", err)
+	}
+	return nil
+}
+
+// runtimeResourceKinds are the control-plane kinds this process re-layers
+// live: on a new stored version the watch re-runs the layering a reload runs
+// (b.runtimeConfig, which applies the execution budgets the settings watch
+// published) and republishes through config.Holder, so the change takes
+// effect without a restart. Kinds stay out of this list while a
+// startup-built component still holds their value -- tool, plugin, container
+// and channel settings are frozen in components built at boot and remain
+// restart-required -- and a kind joins it only with a consumer that re-reads
+// it. Each kind is watched in its own goroutine, exactly the shape the
+// workflow-execution-settings watch established.
+var runtimeResourceKinds = []string{
+	controlplane.ProviderSettingsKind,
+	controlplane.ModelRoleAssignmentsKind,
+	controlplane.RepositoryPoliciesKind,
+	controlplane.SchedulingPolicyKind,
+}
+
+// startRuntimeResourceWatches keeps a watch per live kind established for the
+// life of the process. versions carries the resume point each kind starts
+// from, the versions boot's layering recorded. The first stream per kind is
+// opened synchronously, so a control plane that cannot be watched at all
+// fails the boot that asked for it; after that the watch does not return, it
+// reconnects (see keepWatch, whose backoff rules these watches ride).
+func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[string]int64) error {
+	for _, kind := range runtimeResourceKinds {
+		updates, err := b.controlPlane.WatchResource(ctx, kind, versions[kind])
+		if err != nil {
+			return fmt.Errorf("watch %s: %w", kind, err)
+		}
+		go keepWatch(ctx, b.log, kind, versions[kind], updates,
+			func(ctx context.Context, afterVersion int64) (<-chan controlplane.AppliedResource, error) {
+				return b.controlPlane.WatchResource(ctx, kind, afterVersion)
+			},
+			waitFor,
+			func(update controlplane.AppliedResource) int64 { return update.Version },
+			func(update controlplane.AppliedResource) { b.applyRuntimeResourceUpdate(ctx, kind, update) })
+	}
+	return nil
+}
+
+// applyRuntimeResourceUpdate re-runs the layering a reload runs and
+// republishes the result through config.Holder. The base is the published
+// snapshot rather than the boot struct: reloadConfig publishes through the
+// same holder and does not update the boot config, so the holder is the one
+// view that is current in every path. The layering reads every kind from the
+// store over it, so a scheduling-policy document written during this
+// process's life and every other kind's last stored value land together, and
+// the merge is idempotent (every kind it reads replaces its fields).
+//
+// The published snapshot is replaced only after the same check the reload
+// and the boot layering pass: on a validation failure nothing is published,
+// the previous settings keep running (last-known-good), and the failure is
+// reported through apply status, which keeps the version still live on the
+// record. A refused update therefore reaches the settings page the way a
+// refused workflow-execution-settings update does
+// (docs/prds/control-plane-apply-status.md).
+func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, update controlplane.AppliedResource) {
+	if update.Err != nil {
+		// A stream failure carries no version at all (versions start at 1,
+		// store.PutResource), and a process must never report an unreachable
+		// store as its own refusal; the reconnect is keepWatch's business.
+		if update.Version > 0 {
+			b.applyStatus.Report(ctx, kind, update.Version, update.Err)
+		}
+		b.log.Error("runtime settings watch failed", "kind", kind, "err", update.Err)
+		return
+	}
+	base := b.cfgHolder.Get()
+	// Boot publishes before the model catalog is merged in, so the snapshot
+	// this read returns can lack the catalog's model limits and discovered
+	// providers. The merge is idempotent, and reloadConfig re-applies it
+	// before layering for the same reason.
+	applyModelCatalog(&base, b.catalog)
+	cfg, _, err := b.runtimeConfig(ctx, base)
+	if err != nil {
+		// runtimeConfig reported the refusal through apply status for every
+		// kind it layers, keeping the version each of them last applied.
+		b.log.Error("runtime settings update rejected; the running settings stay", "kind", kind, "version", update.Version, "err", err)
+		return
+	}
+	b.publishConfig(ctx, cfg)
+	b.log.Info("runtime settings applied", "kind", kind, "version", update.Version)
+	switch kind {
+	case controlplane.ProviderSettingsKind, controlplane.ModelRoleAssignmentsKind:
+		b.rebuildChatModelRuntime(cfg)
+	}
+}
+
+// rebuildChatModelRuntime re-derives the gateway chat runtime's provider set
+// after a live change to provider-settings or model-role-assignments. The
+// turn runner reads the runtime through boot.chatLLM, so the swap reaches its
+// next turn without rebuilding the runner, and the model manager re-derives
+// the references it offers from the new role assignments.
+func (b *boot) rebuildChatModelRuntime(cfg config.Config) {
+	if b.chatModels == nil {
+		return // this process serves no chat turns
+	}
+	b.setLLM(agentexec.NewRuntime(executionProviders(cfg)))
+	b.chatModels.SetConfigured(cfg.Models)
+	b.log.Info("chat model runtime rebuilt", "providers", len(cfg.Providers), "models", len(cfg.Models))
 }

@@ -151,6 +151,9 @@ type watchStreamStub struct {
 	grpc.ClientStream
 	responses []*pb.WatchResponse
 	next      int
+	// onDeliver, when set, runs as the stream delivers each response, so a
+	// stub standing in for the store can store what it just delivered.
+	onDeliver func()
 }
 
 func (s *watchStreamStub) Recv() (*pb.WatchResponse, error) {
@@ -159,6 +162,9 @@ func (s *watchStreamStub) Recv() (*pb.WatchResponse, error) {
 	}
 	response := s.responses[s.next]
 	s.next++
+	if s.onDeliver != nil {
+		s.onDeliver()
+	}
 	return response, nil
 }
 

@@ -21,7 +21,7 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	// Created before the router so the LLMResponder can be wired in for
 	// non-command message processing.
 	providers := executionProviders(cfg)
-	b.llm = agentexec.NewRuntime(providers)
+	b.setLLM(agentexec.NewRuntime(providers))
 	b.toolReg = tools.NewRegistry()
 	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, b.catalogModels)
 	chatModels.ApplyModelCatalog(b.catalog)
@@ -119,7 +119,7 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	router.Health = b.statusHealth
 	setup := chatSetup{
-		Cfg: config.NewHolder(cfg), LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
+		Cfg: config.NewHolder(cfg), LLM: b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks,
 		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
 		ChatTaskLogs:   chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
