@@ -7,7 +7,6 @@ package workflow
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -20,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -304,6 +304,20 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	for _, stage := range wf.Stages {
 		t.Stage = stage.Name
 		_ = tc.Store.Update(ctx, t)
+		// Every stage is a StepExecution (docs/prds/execution-tree-state-machine.md):
+		// the store records pending -> running and writes the stage_start event
+		// in the same transaction, and refuses a start the state machine
+		// forbids. A failed recording write parks the execution -- the step
+		// does not run unrecorded, because a stage whose record never landed
+		// would park on a reason no dashboard can trace to a step row.
+		stepID, startEvent, err := tc.Store.StartStep(ctx, StepStart{
+			ExecutionID: t.ID, Attempt: t.Attempt, Kind: task.StepKindStage, Name: stage.Name,
+		})
+		if err != nil {
+			park(ctx, tc, fmt.Sprintf("stage %s could not be recorded: %v", stage.Name, err))
+			return
+		}
+		publishEvent(tc, startEvent)
 		// The stage is bound onto the task logger for exactly the stage's own
 		// execution and removed afterwards, so every line a stage's code writes
 		// is selectable by stage (internal/logging.Query.Stage). It is restored
@@ -315,28 +329,52 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		stageLog := previousLog.With("stage", stage.Name)
 		tc.Log = stageLog
 		stageLog.Info("stage starting")
-		tc.Emit(events.KindStageStart, stage.Name, "", nil)
-		started := time.Now()
 
-		err := stage.Run(ctx, tc)
-		data := map[string]any{"duration_ms": time.Since(started).Milliseconds()}
-		if err != nil {
-			data["error"] = err.Error()
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				data["interrupted"] = true
-			}
-		}
-		tc.Emit(events.KindStageFinish, stage.Name, "", data)
+		err = stage.Run(ctx, tc)
 		tc.Log = previousLog
 
-		if err != nil {
-			// Daemon shutdown is not a workflow failure. Leave the task running
-			// so Startup's existing crash recovery requeues it; parking here
-			// would publish a false failure and require manual intervention.
-			if ctx.Err() != nil {
-				stageLog.Info("stage interrupted", "err", err)
-				return
+		// Daemon shutdown is not a workflow failure. The step records the
+		// table's interrupted outcome -- the process knows the step it is
+		// giving up -- and returns without parking: Startup's existing crash
+		// recovery requeues the execution, and the next attempt starts fresh
+		// steps. A recording failure on this path is logged and left to the
+		// same recovery: the process is on its way out either way.
+		if ctx.Err() != nil && err != nil {
+			if finishEvent, recordErr := tc.Store.FinishStep(ctx, StepFinish{
+				StepID: stepID, ExecutionID: t.ID,
+				From: taskstate.StepRunning, To: taskstate.StepInterrupted, Detail: err.Error(),
+			}); recordErr != nil {
+				stageLog.Warn("interrupted step finish could not be recorded", "stage", stage.Name, "err", recordErr)
+			} else {
+				publishEvent(tc, finishEvent)
 			}
+			stageLog.Info("stage interrupted", "err", err)
+			return
+		}
+
+		finishTo := taskstate.StepSucceeded
+		finishDetail := ""
+		if err != nil {
+			finishTo = taskstate.StepFailed
+			finishDetail = err.Error()
+		}
+		// The outcome event is the store's own stage_finish row, written in the
+		// FinishStep transaction -- not a second copy emitted beside it. A
+		// failed recording write parks the execution, like a failed start.
+		finishEvent, recordErr := tc.Store.FinishStep(ctx, StepFinish{
+			StepID: stepID, ExecutionID: t.ID,
+			From: taskstate.StepRunning, To: finishTo, Detail: finishDetail,
+		})
+		if recordErr != nil {
+			stageLog.Error("stage finish could not be recorded", "stage", stage.Name, "err", recordErr)
+			park(ctx, tc, fmt.Sprintf("stage %s could not be recorded: %v", stage.Name, recordErr))
+			return
+		}
+		publishEvent(tc, finishEvent)
+
+		if err != nil {
+			// Parking here publishes the failure; the store has already
+			// recorded the step that produced it.
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
 			park(ctx, tc, t.ParkReason)
 			return
@@ -349,6 +387,16 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	// A workflow must end with an explicit outcome; not doing so is a
 	// definition bug, which still must not vanish silently.
 	park(ctx, tc, "workflow ended without an outcome (definition bug)")
+}
+
+// publishEvent puts an already-persisted event on the run's bus after its
+// write committed: the assigned ID is what the daemon's event sink reads to
+// skip the second insert, the same convention EmitDurable established.
+func publishEvent(tc *TaskContext, e events.Event) {
+	if tc.Bus == nil || e.ID == 0 {
+		return
+	}
+	tc.Bus.Publish(e)
 }
 
 func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {

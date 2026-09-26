@@ -221,6 +221,18 @@ func (d deadlineStore) InsertEvent(ctx context.Context, e events.Event) (int64, 
 	return d.Store.InsertEvent(ctx, e)
 }
 
+func (d deadlineStore) StartStep(ctx context.Context, s task.StepStart) (int64, events.Event, error) {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Store.StartStep(ctx, s)
+}
+
+func (d deadlineStore) FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error) {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Store.FinishStep(ctx, s)
+}
+
 // Trees constructs the identity-scoped worktree RPC client.
 func (t *Transport) Trees(identity, grant string, timeout time.Duration) RemoteTrees {
 	return &worktreerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity, Grant: grant}

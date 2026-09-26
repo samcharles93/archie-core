@@ -40,6 +40,10 @@ service StateStoreService {
   rpc ClaimByIssue(ClaimByIssueRequest) returns (ClaimByIssueResponse);
   rpc Transition(TransitionRequest) returns (TransitionResponse);
   rpc Update(UpdateRequest) returns (UpdateResponse);
+  // Step executions (docs/prds/execution-tree-state-machine.md). The run
+  // credential authorises both on its own execution only.
+  rpc StartStep(StartStepRequest) returns (StartStepResponse);
+  rpc FinishStep(FinishStepRequest) returns (FinishStepResponse);
   rpc Requeue(RequeueRequest) returns (RequeueResponse);
   rpc ParkTask(ParkTaskRequest) returns (ParkTaskResponse);
   rpc RecoverStale(RecoverStaleRequest) returns (RecoverStaleResponse);
@@ -517,6 +521,42 @@ message TransitionRequest {
   string detail = 4;
 }
 message TransitionResponse {}
+
+message StartStepRequest {
+  // execution_id is the WorkflowExecution (the tasks row) the step belongs
+  // to, and the task ID the run credential is scoped to.
+  int64 execution_id = 1;
+  int64 attempt = 2;
+  // parent_id is 0 when the step is a stage; otherwise it names the enclosing
+  // StepExecution, from which the store derives depth.
+  int64 parent_id = 3;
+  // kind is stage, agent or call.
+  string kind = 4;
+  string name = 5;
+}
+message StartStepResponse {
+  int64 step_id = 1;
+  // event is the transition's stage_start row, already persisted; the caller
+  // publishes it to its bus after the write commits (the daemon's event sink
+  // skips already-persisted rows by their assigned ID).
+  Event event = 2;
+}
+
+message FinishStepRequest {
+  // execution_id names the run the step belongs to. The grant check verifies
+  // it against the credential, and the store verifies the step really is that
+  // execution's, so a caller cannot move another run's step by naming it.
+  int64 execution_id = 1;
+  int64 step_id = 2;
+  string from = 3;
+  string to = 4;
+  string detail = 5;
+  int64 tokens_used = 6;
+}
+message FinishStepResponse {
+  // event is the transition's stage_finish row, already persisted.
+  Event event = 1;
+}
 
 message UpdateRequest { Task task = 1; }
 message UpdateResponse {}

@@ -107,6 +107,41 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 	return unmapError(err)
 }
 
+// StartStep and FinishStep record the run's step executions
+// (docs/prds/execution-tree-state-machine.md) under the run credential, which
+// the State Store's grant interceptor scopes to the execution the requests
+// name. Each returns the transition's persisted event for the caller's
+// post-commit publish.
+func (c *Client) StartStep(ctx context.Context, s task.StepStart) (int64, events.Event, error) {
+	r, err := c.client.StartStep(ctx, &pb.StartStepRequest{
+		ExecutionId: s.ExecutionID, Attempt: int64(s.Attempt),
+		ParentId: s.ParentID, Kind: s.Kind, Name: s.Name,
+	})
+	if err != nil {
+		return 0, events.Event{}, unmapError(err)
+	}
+	event := events.Event{}
+	if r.Event != nil {
+		event = eventValue(r.Event)
+	}
+	return r.StepId, event, nil
+}
+
+func (c *Client) FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error) {
+	r, err := c.client.FinishStep(ctx, &pb.FinishStepRequest{
+		ExecutionId: s.ExecutionID, StepId: s.StepID,
+		From: string(s.From), To: string(s.To), Detail: s.Detail, TokensUsed: s.TokensUsed,
+	})
+	if err != nil {
+		return events.Event{}, unmapError(err)
+	}
+	event := events.Event{}
+	if r.Event != nil {
+		event = eventValue(r.Event)
+	}
+	return event, nil
+}
+
 func (c *Client) Update(ctx context.Context, t *task.Task) error {
 	_, err := c.client.Update(ctx, &pb.UpdateRequest{Task: taskProto(t)})
 	return unmapError(err)

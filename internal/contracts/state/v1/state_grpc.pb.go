@@ -40,6 +40,8 @@ const (
 	StateStoreService_ClaimByIssue_FullMethodName               = "/state.v1.StateStoreService/ClaimByIssue"
 	StateStoreService_Transition_FullMethodName                 = "/state.v1.StateStoreService/Transition"
 	StateStoreService_Update_FullMethodName                     = "/state.v1.StateStoreService/Update"
+	StateStoreService_StartStep_FullMethodName                  = "/state.v1.StateStoreService/StartStep"
+	StateStoreService_FinishStep_FullMethodName                 = "/state.v1.StateStoreService/FinishStep"
 	StateStoreService_Requeue_FullMethodName                    = "/state.v1.StateStoreService/Requeue"
 	StateStoreService_ParkTask_FullMethodName                   = "/state.v1.StateStoreService/ParkTask"
 	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
@@ -149,6 +151,10 @@ type StateStoreServiceClient interface {
 	ClaimByIssue(ctx context.Context, in *ClaimByIssueRequest, opts ...grpc.CallOption) (*ClaimByIssueResponse, error)
 	Transition(ctx context.Context, in *TransitionRequest, opts ...grpc.CallOption) (*TransitionResponse, error)
 	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
+	// Step executions (docs/prds/execution-tree-state-machine.md). The run
+	// credential authorises both on its own execution only.
+	StartStep(ctx context.Context, in *StartStepRequest, opts ...grpc.CallOption) (*StartStepResponse, error)
+	FinishStep(ctx context.Context, in *FinishStepRequest, opts ...grpc.CallOption) (*FinishStepResponse, error)
 	Requeue(ctx context.Context, in *RequeueRequest, opts ...grpc.CallOption) (*RequeueResponse, error)
 	ParkTask(ctx context.Context, in *ParkTaskRequest, opts ...grpc.CallOption) (*ParkTaskResponse, error)
 	RecoverStale(ctx context.Context, in *RecoverStaleRequest, opts ...grpc.CallOption) (*RecoverStaleResponse, error)
@@ -486,6 +492,26 @@ func (c *stateStoreServiceClient) Update(ctx context.Context, in *UpdateRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_Update_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) StartStep(ctx context.Context, in *StartStepRequest, opts ...grpc.CallOption) (*StartStepResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartStepResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_StartStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) FinishStep(ctx context.Context, in *FinishStepRequest, opts ...grpc.CallOption) (*FinishStepResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FinishStepResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_FinishStep_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1229,6 +1255,10 @@ type StateStoreServiceServer interface {
 	ClaimByIssue(context.Context, *ClaimByIssueRequest) (*ClaimByIssueResponse, error)
 	Transition(context.Context, *TransitionRequest) (*TransitionResponse, error)
 	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
+	// Step executions (docs/prds/execution-tree-state-machine.md). The run
+	// credential authorises both on its own execution only.
+	StartStep(context.Context, *StartStepRequest) (*StartStepResponse, error)
+	FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error)
 	Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error)
 	ParkTask(context.Context, *ParkTaskRequest) (*ParkTaskResponse, error)
 	RecoverStale(context.Context, *RecoverStaleRequest) (*RecoverStaleResponse, error)
@@ -1424,6 +1454,12 @@ func (UnimplementedStateStoreServiceServer) Transition(context.Context, *Transit
 }
 func (UnimplementedStateStoreServiceServer) Update(context.Context, *UpdateRequest) (*UpdateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedStateStoreServiceServer) StartStep(context.Context, *StartStepRequest) (*StartStepResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartStep not implemented")
+}
+func (UnimplementedStateStoreServiceServer) FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FinishStep not implemented")
 }
 func (UnimplementedStateStoreServiceServer) Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Requeue not implemented")
@@ -2021,6 +2057,42 @@ func _StateStoreService_Update_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).Update(ctx, req.(*UpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_StartStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).StartStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_StartStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).StartStep(ctx, req.(*StartStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_FinishStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FinishStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).FinishStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_FinishStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).FinishStep(ctx, req.(*FinishStepRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3300,6 +3372,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Update",
 			Handler:    _StateStoreService_Update_Handler,
+		},
+		{
+			MethodName: "StartStep",
+			Handler:    _StateStoreService_StartStep_Handler,
+		},
+		{
+			MethodName: "FinishStep",
+			Handler:    _StateStoreService_FinishStep_Handler,
 		},
 		{
 			MethodName: "Requeue",

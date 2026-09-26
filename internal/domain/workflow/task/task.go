@@ -160,6 +160,17 @@ type Store interface {
 	Update(ctx context.Context, t *Task) error
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
 	InsertEvent(ctx context.Context, e events.Event) (int64, error)
+	// StartStep records a StepExecution entering running
+	// (docs/prds/execution-tree-state-machine.md): the store creates the row,
+	// enforces the step transition table and the execution's own status, and
+	// writes the transition's stage_start event in the same transaction. It
+	// returns the step's id and the persisted event, which the caller publishes
+	// to its bus after the write commits.
+	StartStep(ctx context.Context, s StepStart) (int64, events.Event, error)
+	// FinishStep moves one step to its outcome under the same table, writing
+	// the stage_finish event in the same transaction, and returns that event
+	// for the caller's post-commit publish.
+	FinishStep(ctx context.Context, s StepFinish) (events.Event, error)
 }
 
 // Definition is the operator-safe snapshot of an executable workflow. It
