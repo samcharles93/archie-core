@@ -48,12 +48,13 @@ A single-definition parse cannot see callees, so it validates shape only.
   `repository: none` workflow: the callee inherits the caller's task record
   (owner/repo/identity/org), and the callee's own `repository` mode decides
   whether its run clones.
-- **Org enablement** (bead `archie-core-t2db.42`): today's single
-  instance-wide collection is what "enabled for the caller's org" resolves
-  against — an undefined callee parks. The callee's org is derived from the
-  caller's row, so a callee is never visible outside its caller's org. The
-  per-org enable/disable catalogue lands with `archie-core-t2db.42` and
-  becomes the one source of this predicate.
+- **Org enablement** (bead `archie-core-t2db.42`): the single
+  instance-wide collection the current model serves is what "enabled for
+  the caller's org" resolves against — an undefined callee parks. The
+  callee's org is derived from the caller's row, so a callee is never
+  visible outside its caller's org. The per-org enable/disable catalogue
+  lands with `archie-core-t2db.42` and becomes the one source of this
+  predicate.
 
 ## Runtime
 
