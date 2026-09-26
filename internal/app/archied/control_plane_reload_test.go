@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,22 +114,27 @@ func newReloadBoot(t *testing.T, stub *controlPlaneStub) *boot {
 	return b
 }
 
-func TestRuntimeConfigResolvesStoredProviderReference(t *testing.T) {
-	t.Setenv("ARCHIE_TEST_STORED_PROVIDER", "provider-secret")
-	resources := databaseOwnedResources()
-	resources[controlplane.ProviderSettingsKind] = map[string]any{"main": map[string]any{
-		"class": "openai", "api_key_ref": map[string]any{"engine": "env", "key": "ARCHIE_TEST_STORED_PROVIDER"},
-	}}
-	b := newReloadBoot(t, &controlPlaneStub{values: resources})
-	b.secrets = secret.NewRegistry()
-	if err := b.loadRuntimeConfig(t.Context()); err != nil {
-		t.Fatal(err)
+func TestRuntimeConfigResolvesStoredProviderReferences(t *testing.T) {
+	for _, providerID := range []string{"main", "secondary"} {
+		t.Run(providerID, func(t *testing.T) {
+			refKey := "ARCHIE_TEST_STORED_PROVIDER_" + strings.ToUpper(providerID)
+			t.Setenv(refKey, "provider-secret")
+			resources := databaseOwnedResources()
+			resources[controlplane.ProviderSettingsKind] = map[string]any{providerID: map[string]any{
+				"class": "openai", "api_key_ref": map[string]any{"engine": "env", "key": refKey},
+			}}
+			b := newReloadBoot(t, &controlPlaneStub{values: resources})
+			b.secrets = secret.NewRegistry()
+			if err := b.loadRuntimeConfig(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			got := b.cfgHolder.Get().Providers[providerID]
+			if got.APIKey != (secret.SecretRef{}) || got.APIKeyEnv != providerSecretEnvName("root", providerID) {
+				t.Fatalf("effective provider credential = %+v, want a resolved process-local env name", got)
+			}
+			t.Cleanup(func() { _ = os.Unsetenv(got.APIKeyEnv) })
+		})
 	}
-	got := b.cfgHolder.Get().Providers["main"]
-	if got.APIKey != (secret.SecretRef{}) || got.APIKeyEnv != providerSecretEnvName("root", "main") {
-		t.Fatalf("effective provider credential = %+v, want a resolved process-local env name", got)
-	}
-	t.Cleanup(func() { _ = os.Unsetenv(got.APIKeyEnv) })
 }
 
 // TestReloadConfigKeepsDatabaseOwnedSettings is archie-core-ju85. The SIGHUP

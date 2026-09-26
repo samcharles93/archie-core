@@ -132,7 +132,8 @@ func (*settingsWatchStub) Command(context.Context, *pb.CommandRequest, ...grpc.C
 	panic("unexpected Command")
 }
 
-func (s *settingsWatchStub) Watch(context.Context, *pb.WatchRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[pb.WatchResponse], error) {
+func (s *settingsWatchStub) Watch(ctx context.Context, request *pb.WatchRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[pb.WatchResponse], error) {
+	_ = request
 	responses := make([]*pb.WatchResponse, 0, len(s.documents))
 	for i, document := range s.documents {
 		responses = append(responses, &pb.WatchResponse{Resource: &pb.Resource{
@@ -141,7 +142,7 @@ func (s *settingsWatchStub) Watch(context.Context, *pb.WatchRequest, ...grpc.Cal
 			ValueJson: []byte(document),
 		}})
 	}
-	return &watchStreamStub{responses: responses}, nil
+	return &watchStreamStub{responses: responses, done: ctx.Done()}, nil
 }
 
 // watchStreamStub is the client end of a Watch stream. Recv is the only method
@@ -150,6 +151,7 @@ func (s *settingsWatchStub) Watch(context.Context, *pb.WatchRequest, ...grpc.Cal
 type watchStreamStub struct {
 	grpc.ClientStream
 	responses []*pb.WatchResponse
+	done      <-chan struct{}
 	next      int
 	// onDeliver, when set, runs as the stream delivers each response, so a
 	// stub standing in for the store can store what it just delivered.
@@ -158,7 +160,11 @@ type watchStreamStub struct {
 
 func (s *watchStreamStub) Recv() (*pb.WatchResponse, error) {
 	if s.next >= len(s.responses) {
-		return nil, io.EOF
+		if s.done == nil {
+			return nil, io.EOF
+		}
+		<-s.done
+		return nil, context.Canceled
 	}
 	response := s.responses[s.next]
 	s.next++

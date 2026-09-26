@@ -58,10 +58,12 @@ indistinguishable from a process that never reported.
 ## What can be reported, and what cannot
 
 A process reaches its apply point only after the State Store has answered it.
-When the State Store is unreachable, the process exits or refuses to start and
-writes no record. An unreachable store is never reported as a failure by the
-process it affected. A record carries the other failure: the store answered,
-and the value would not validate.
+At startup, when the State Store is unreachable, the process exits or refuses
+to start and writes no record. A live watcher that loses its established
+control-plane stream reports the connection failure against its last applied
+version while it retries. Re-establishing the stream clears that outage record
+without clearing a versioned document rejection. A transport failure is not a
+document rejection; it reports that live delivery is unavailable.
 
 Absence has two meanings and the UI never collapses them: no process applies
 this kind, or a process that applies other kinds has not reported this one.
@@ -101,6 +103,9 @@ restart but not a death, and accepting the limitation with the page saying so.
 - A process that applies a resource writes a record carrying that version.
 - A process whose apply fails validation writes a record carrying the error and
   no new version.
+- A live watch outage is reported against the last applied version until the
+  stream is re-established; re-establishment preserves any outstanding
+  versioned rejection.
 - A reload that fails leaves the previously applied version recorded.
 - A record written under a process name outside the shared constant fails the
   test binding writer to reader.
