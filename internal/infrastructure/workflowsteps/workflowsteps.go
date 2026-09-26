@@ -64,7 +64,7 @@ type eventSteps struct{}
 func (eventSteps) Name() string { return "event" }
 
 func (eventSteps) StepTypes() []workflow.StepType {
-	return []workflow.StepType{workflow.AgentRunStepType()}
+	return []workflow.StepType{workflow.AgentRunStepType(), workflow.WorkflowCallStepType()}
 }
 
 // Providers returns the provider set the roots that resolve a workflow step

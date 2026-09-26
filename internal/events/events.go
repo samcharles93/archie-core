@@ -119,6 +119,16 @@ const (
 	// the sender. data: source, capture_id, binding_id.
 	KindUnsignedEvent = "unsigned_event"
 
+	// KindWorkflowCallStarted marks the moment a workflow.call step
+	// started its callee run (docs/prds/workflow-calls.md). data:
+	// callee_task_id, workflow, wait.
+	KindWorkflowCallStarted = "workflow_call_started"
+	// KindWorkflowCallFinished carries the terminal state of a waited-on
+	// callee back onto the caller's timeline. data: callee_task_id,
+	// workflow, status, detail. Only a call the caller waited on records
+	// one; a wait:false callee reports on its own run.
+	KindWorkflowCallFinished = "workflow_call_finished"
+
 	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
 	// update -- whether the restarted daemon came back up healthy and on
 	// the version it claimed, relayed once on the boot that finds the

@@ -122,6 +122,14 @@ type Task struct {
 	// budget: one shared counter made N operator retries eat the
 	// review-remediation budget and vice versa.
 	RemediationRounds int `json:"remediation_rounds"`
+	// CallParentTaskID is the task whose workflow.call step started this
+	// one; 0 on a root run. A caller reads only the tasks it started,
+	// through WorkflowCallStatus.
+	CallParentTaskID int64 `json:"call_parent_task_id,omitempty"`
+	// CallDepth counts workflow.call hops from the root run. The engine
+	// refuses a call past workflow.MaxCallDepth, and the store re-checks on
+	// insert, so no enqueue path can pass the limit.
+	CallDepth int `json:"call_depth,omitempty"`
 	// CreatedAt and UpdatedAt are the SQLite row timestamps, exposed so
 	// callers can show a task's age and last activity. They are written by
 	// column defaults and the UPDATE statements, never by the caller.
