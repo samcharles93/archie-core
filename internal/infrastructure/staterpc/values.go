@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -448,6 +449,9 @@ var wireErrors = []struct {
 	{storecontract.ErrSourceNotFound, codes.NotFound, msgSourceNotFound},
 	{storecontract.ErrAlreadyDispatched, codes.AlreadyExists, msgAlreadyDispatched},
 	{storecontract.ErrSourcePathTaken, codes.AlreadyExists, msgSourcePathTaken},
+	{storepkg.ErrNotFound, codes.NotFound, storepkg.ErrNotFound.Error()},
+	{storepkg.ErrInstalled, codes.AlreadyExists, storepkg.ErrInstalled.Error()},
+	{storepkg.ErrRequired, codes.FailedPrecondition, storepkg.ErrRequired.Error()},
 	{logging.ErrTaskLogsUnavailable, codes.Unavailable, msgTaskLogsUnavailable},
 }
 

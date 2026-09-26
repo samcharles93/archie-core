@@ -24,8 +24,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	registry "github.com/samcharles93/archie-core/internal/infrastructure/storepkg"
 )
 
 func configuredIdentityNames(cfg config.Config) []string {
@@ -214,6 +217,12 @@ func (b *boot) openStateStore(ctx context.Context) error {
 // degrades that group rather than aborting boot.
 func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
+	if b.pg != nil {
+		deps.Packages = storepkg.Service{
+			Registry: registry.LocalRegistry{},
+			Store:    postgres.NewInstalledPackages(b.pg),
+		}
+	}
 	if identities, ok := b.st.(identity.Repository); ok {
 		deps.Identities = identities
 	}

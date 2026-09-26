@@ -12,6 +12,11 @@ import "google/protobuf/timestamp.proto";
 // service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 service StateStoreService {
+  // Installed Archie packages. Administrative until org-scoped principals land.
+  rpc InstallPackage(InstallPackageRequest) returns (InstallPackageResponse);
+  rpc GetInstalledPackage(GetInstalledPackageRequest) returns (GetInstalledPackageResponse);
+  rpc ListInstalledPackages(ListInstalledPackagesRequest) returns (ListInstalledPackagesResponse);
+  rpc RemoveInstalledPackage(RemoveInstalledPackageRequest) returns (RemoveInstalledPackageResponse);
   // Administrative task credential lifecycle. Worker credentials cannot call these.
   rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
   rpc RevokeTaskGrant(RevokeTaskGrantRequest) returns (RevokeTaskGrantResponse);
@@ -154,7 +159,6 @@ service StateStoreService {
   rpc EnqueueBindingTask(EnqueueBindingTaskRequest) returns (EnqueueBindingTaskResponse);
 }
 
-// Task mirrors internal/domain/workflow.Task.
 message RegisterTaskGrantRequest {
   int64 task_id = 1;
   string token = 2;
@@ -853,3 +857,28 @@ message EnqueueBindingTaskRequest {
   string inputs_json = 9;
 }
 message EnqueueBindingTaskResponse { Task task = 1; }
+
+message InstalledPackage {
+  string org_id = 1;
+  string name = 2;
+  string reference = 3;
+  string digest = 4;
+  bytes descriptor_json = 5;
+  bytes layer = 6;
+  string update_policy = 7;
+}
+message InstallPackageRequest {
+  string org_id = 1;
+  string name = 2;
+  string reference = 3;
+  string digest = 4;
+}
+message InstallPackageResponse { InstalledPackage package = 1; }
+message GetInstalledPackageRequest { string org_id = 1; string name = 2; }
+message GetInstalledPackageResponse { InstalledPackage package = 1; }
+message ListInstalledPackagesRequest { string org_id = 1; }
+message ListInstalledPackagesResponse { repeated InstalledPackage packages = 1; }
+message RemoveInstalledPackageRequest { string org_id = 1; string name = 2; }
+message RemoveInstalledPackageResponse {}
+
+// Task mirrors internal/domain/workflow.Task.

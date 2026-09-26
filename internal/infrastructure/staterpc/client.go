@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -57,6 +58,7 @@ var (
 	_ storecontract.ChannelStatusStore   = (*Client)(nil)
 	_ storecontract.ApplyStatusStore     = (*Client)(nil)
 	_ identity.Repository                = (*Client)(nil)
+	_ storepkg.Manager                   = (*Client)(nil)
 )
 
 // Lifecycle

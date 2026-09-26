@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/logging"
 )
@@ -70,6 +71,7 @@ type Deps struct {
 	// verified subject, and the RPCs answer Unavailable rather than pretending.
 	SubjectBindings identity.SubjectBinding
 	Grants          *TaskGrants
+	Packages        storepkg.Manager
 	Tasks           storecontract.TaskStore
 	Captures        storecontract.CaptureStore
 	ConfigSnapshots storecontract.ConfigSnapshotStore

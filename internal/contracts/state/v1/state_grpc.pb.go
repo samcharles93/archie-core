@@ -19,6 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	StateStoreService_InstallPackage_FullMethodName             = "/state.v1.StateStoreService/InstallPackage"
+	StateStoreService_GetInstalledPackage_FullMethodName        = "/state.v1.StateStoreService/GetInstalledPackage"
+	StateStoreService_ListInstalledPackages_FullMethodName      = "/state.v1.StateStoreService/ListInstalledPackages"
+	StateStoreService_RemoveInstalledPackage_FullMethodName     = "/state.v1.StateStoreService/RemoveInstalledPackage"
 	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
 	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
 	StateStoreService_ListIdentities_FullMethodName             = "/state.v1.StateStoreService/ListIdentities"
@@ -108,6 +112,11 @@ const (
 // service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceClient interface {
+	// Installed Archie packages. Administrative until org-scoped principals land.
+	InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageResponse, error)
+	GetInstalledPackage(ctx context.Context, in *GetInstalledPackageRequest, opts ...grpc.CallOption) (*GetInstalledPackageResponse, error)
+	ListInstalledPackages(ctx context.Context, in *ListInstalledPackagesRequest, opts ...grpc.CallOption) (*ListInstalledPackagesResponse, error)
+	RemoveInstalledPackage(ctx context.Context, in *RemoveInstalledPackageRequest, opts ...grpc.CallOption) (*RemoveInstalledPackageResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error)
@@ -242,6 +251,46 @@ type stateStoreServiceClient struct {
 
 func NewStateStoreServiceClient(cc grpc.ClientConnInterface) StateStoreServiceClient {
 	return &stateStoreServiceClient{cc}
+}
+
+func (c *stateStoreServiceClient) InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallPackageResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_InstallPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetInstalledPackage(ctx context.Context, in *GetInstalledPackageRequest, opts ...grpc.CallOption) (*GetInstalledPackageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInstalledPackageResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetInstalledPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListInstalledPackages(ctx context.Context, in *ListInstalledPackagesRequest, opts ...grpc.CallOption) (*ListInstalledPackagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInstalledPackagesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListInstalledPackages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RemoveInstalledPackage(ctx context.Context, in *RemoveInstalledPackageRequest, opts ...grpc.CallOption) (*RemoveInstalledPackageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveInstalledPackageResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RemoveInstalledPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *stateStoreServiceClient) RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error) {
@@ -1033,6 +1082,11 @@ func (c *stateStoreServiceClient) EnqueueBindingTask(ctx context.Context, in *En
 // service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceServer interface {
+	// Installed Archie packages. Administrative until org-scoped principals land.
+	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error)
+	GetInstalledPackage(context.Context, *GetInstalledPackageRequest) (*GetInstalledPackageResponse, error)
+	ListInstalledPackages(context.Context, *ListInstalledPackagesRequest) (*ListInstalledPackagesResponse, error)
+	RemoveInstalledPackage(context.Context, *RemoveInstalledPackageRequest) (*RemoveInstalledPackageResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error)
@@ -1169,6 +1223,18 @@ type StateStoreServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedStateStoreServiceServer struct{}
 
+func (UnimplementedStateStoreServiceServer) InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallPackage not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetInstalledPackage(context.Context, *GetInstalledPackageRequest) (*GetInstalledPackageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInstalledPackage not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListInstalledPackages(context.Context, *ListInstalledPackagesRequest) (*ListInstalledPackagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListInstalledPackages not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RemoveInstalledPackage(context.Context, *RemoveInstalledPackageRequest) (*RemoveInstalledPackageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveInstalledPackage not implemented")
+}
 func (UnimplementedStateStoreServiceServer) RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterTaskGrant not implemented")
 }
@@ -1413,6 +1479,78 @@ func RegisterStateStoreServiceServer(s grpc.ServiceRegistrar, srv StateStoreServ
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&StateStoreService_ServiceDesc, srv)
+}
+
+func _StateStoreService_InstallPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallPackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).InstallPackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_InstallPackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).InstallPackage(ctx, req.(*InstallPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetInstalledPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInstalledPackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetInstalledPackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetInstalledPackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetInstalledPackage(ctx, req.(*GetInstalledPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListInstalledPackages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInstalledPackagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListInstalledPackages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListInstalledPackages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListInstalledPackages(ctx, req.(*ListInstalledPackagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RemoveInstalledPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveInstalledPackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RemoveInstalledPackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RemoveInstalledPackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RemoveInstalledPackage(ctx, req.(*RemoveInstalledPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _StateStoreService_RegisterTaskGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2751,6 +2889,22 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "state.v1.StateStoreService",
 	HandlerType: (*StateStoreServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "InstallPackage",
+			Handler:    _StateStoreService_InstallPackage_Handler,
+		},
+		{
+			MethodName: "GetInstalledPackage",
+			Handler:    _StateStoreService_GetInstalledPackage_Handler,
+		},
+		{
+			MethodName: "ListInstalledPackages",
+			Handler:    _StateStoreService_ListInstalledPackages_Handler,
+		},
+		{
+			MethodName: "RemoveInstalledPackage",
+			Handler:    _StateStoreService_RemoveInstalledPackage_Handler,
+		},
 		{
 			MethodName: "RegisterTaskGrant",
 			Handler:    _StateStoreService_RegisterTaskGrant_Handler,

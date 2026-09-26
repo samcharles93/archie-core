@@ -134,6 +134,24 @@ type IdentitySubject struct {
 	BoundAt    time.Time
 }
 
+type InstalledPackage struct {
+	OrgID        string
+	Name         string
+	Reference    string
+	Digest       string
+	Descriptor   []byte
+	Layer        []byte
+	UpdatePolicy string
+	InstalledAt  time.Time
+}
+
+type InstalledPackageRequirement struct {
+	OrgID          string
+	PackageName    string
+	RequiredName   string
+	RequiredDigest string
+}
+
 type Mapping struct {
 	ID         string
 	Name       string
