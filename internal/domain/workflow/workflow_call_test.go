@@ -172,9 +172,9 @@ func collectionOf(yamls ...string) WorkflowDefinitionCollection {
 }
 
 func yamlID(y string) string {
-	for _, line := range strings.Split(y, "\n") {
-		if strings.HasPrefix(line, "id: ") {
-			return strings.TrimPrefix(line, "id: ")
+	for line := range strings.SplitSeq(y, "\n") {
+		if after, ok := strings.CutPrefix(line, "id: "); ok {
+			return after
 		}
 	}
 	return ""
