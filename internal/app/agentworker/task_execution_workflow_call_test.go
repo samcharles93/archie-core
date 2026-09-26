@@ -75,7 +75,11 @@ func TestExecuteTaskRequestStartsWorkflowCallCallee(t *testing.T) {
 		t.Fatalf("seed caller task: %v", err)
 	}
 
-	transport, err := agentnats.Connect(ctx, agentnats.Config{StateStoreURL: startStateStoreGRPC(t, st)}, slog.New(slog.DiscardHandler))
+	natsSrv := startEmbeddedTaskRPCServer(t)
+	transport, err := agentnats.Connect(ctx, agentnats.Config{
+		URL:           natsSrv.ClientURL(),
+		StateStoreURL: startStateStoreGRPC(t, st),
+	}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
