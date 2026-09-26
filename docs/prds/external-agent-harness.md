@@ -85,6 +85,19 @@ ai-sdk agent loop for an image profile, the harness runner for a Kit
 profile. Image profiles, and every workflow already written against them,
 are unchanged. A Kit profile named by no workflow is a validation error.
 
+A stage naming a different profile than its workflow's is a separate run,
+not a mid-container runner switch: a Kit task runs in one container
+provisioned for one profile (Container layout), so a stage that needs a
+different one is its own callee, started the way `workflow.call` already
+starts one (`docs/prds/event-automation.md` "Workflows call workflows"),
+with its own agent profile resolved off its own task row. This needs no
+mechanism beyond `workflow.call` plus per-task profile resolution
+(`daemon.pinTaskProfile`), both of which already treat every task's
+profile independently of any caller's -- see
+`TestWorkflowCallerConformance` (staterpc) for the callee's independent
+`Workflow` field and `TestWorkflowCallGivesACalleeItsOwnProfile` (daemon)
+for the Kit-vs-image runner selection that independence produces.
+
 Profiles are org resources in the State Store, so a Kit profile belongs to
 one org, is granted to its workspaces like any profile, and applies without
 a restart.
