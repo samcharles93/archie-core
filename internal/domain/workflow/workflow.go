@@ -114,6 +114,11 @@ type TaskContext struct {
 	// tasks.stage in favour of the durable StepExecution record StartStep
 	// writes) purely so park/finish can tag the event they emit with it.
 	Stage string
+	// StepID is the StepExecution the engine recorded for the stage whose
+	// body is running: every agent call the stage makes records itself as
+	// this step's child. Zero outside a stage body, which is how the stage
+	// unit tests run their bodies.
+	StepID int64
 	// BuildSummary is the builder agent's finish summary  --  the PR body.
 	BuildSummary string
 	// BuildNoChanges is set when the builder returned StatusPassed but
@@ -323,6 +328,11 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 			return
 		}
 		publishEvent(tc, startEvent)
+		// The stage's own step is the parent of every agent or call step the
+		// stage body records; zero it when the body returns, so a caller that
+		// outlives the stage cannot parent to a step that has finished.
+		tc.StepID = stepID
+		defer func() { tc.StepID = 0 }()
 		// The stage is bound onto the task logger for exactly the stage's own
 		// execution and removed afterwards, so every line a stage's code writes
 		// is selectable by stage (internal/logging.Query.Stage). It is restored
@@ -510,3 +520,63 @@ func extractFailingGateOutput(s string) string {
 // goTestOKLine matches a `go test` passing-package summary line, e.g.
 // "ok  \tgithub.com/example/pkg\t0.004s".
 var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)
+
+// RunAgentChild records one agent call as a child StepExecution of the stage
+// this run is executing (docs/prds/execution-tree-state-machine.md, "Model"):
+// kind agent, parented to the stage's own step, which the store derives depth
+// from, and finished with the call's own outcome and the tokens it
+// accounted. A child's recording write failure is the same park a stage's
+// is: an agent call that ran unrecorded is the invisibility the step table
+// exists to end. A stage invoked outside the engine's recorded run -- which
+// is how the stage unit tests run -- records no child and runs its work
+// unchanged.
+func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func() (agentexec.Result, error)) (agentexec.Result, error) {
+	stepID, _, err := tc.startChildStep(ctx, task.StepKindAgent, name)
+	if err != nil {
+		return agentexec.Result{}, err
+	}
+	res, runErr := run()
+	to, detail := taskstate.StepSucceeded, res.Summary
+	if runErr != nil {
+		to, detail = taskstate.StepFailed, runErr.Error()
+	}
+	if ferr := tc.finishChildStep(ctx, stepID, to, detail, int64(res.TokensUsed)); ferr != nil {
+		return res, ferr
+	}
+	return res, runErr
+}
+
+// startChildStep records one agent or call step under the stage step this
+// run is executing. A run with no recorded stage step records nothing and
+// reports step id 0 without an error, which is how the stage unit tests keep
+// running their bodies exactly as they did before the record existed.
+func (tc *TaskContext) startChildStep(ctx context.Context, kind, name string) (int64, events.Event, error) {
+	if tc.Store == nil || tc.StepID == 0 {
+		return 0, events.Event{}, nil
+	}
+	stepID, event, err := tc.Store.StartStep(ctx, task.StepStart{
+		ExecutionID: tc.Task.ID, Attempt: tc.Task.Attempt, ParentID: tc.StepID, Kind: kind, Name: name,
+	})
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	publishEvent(tc, event)
+	return stepID, event, nil
+}
+
+// finishChildStep closes a child step and publishes the transition's
+// persisted event, the same post-commit convention the stage steps use.
+func (tc *TaskContext) finishChildStep(ctx context.Context, stepID int64, to taskstate.StepStatus, detail string, tokensUsed int64) error {
+	if stepID == 0 {
+		return nil
+	}
+	event, err := tc.Store.FinishStep(ctx, task.StepFinish{
+		StepID: stepID, ExecutionID: tc.Task.ID,
+		From: taskstate.StepRunning, To: to, Detail: detail, TokensUsed: tokensUsed,
+	})
+	if err != nil {
+		return err
+	}
+	publishEvent(tc, event)
+	return nil
+}

@@ -16,6 +16,14 @@ INSERT INTO step_executions (org_id, workspace_id, execution_id, attempt, parent
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
 RETURNING id;
 
+-- name: StepCalleeParent :one
+-- The caller linkage a call step's callee must carry: the callee's
+-- call_parent_task_id names the execution whose tree records the call. A
+-- call step naming a task that is not this execution's callee is refused,
+-- because a cancel of that execution would otherwise cancel work the
+-- caller never started.
+SELECT call_parent_task_id FROM tasks WHERE id = $1;
+
 -- name: StartStepExecution :execrows
 -- The pending -> running half of StartStep, guarded by the row's own status:
 -- the step transition table routes the pair, so a row that is not pending is
@@ -70,3 +78,12 @@ SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, 
 FROM step_executions
 WHERE execution_id = @execution_id::bigint AND (@attempt::bigint = 0 OR attempt = @attempt::bigint)
 ORDER BY attempt, id;
+-- name: WaitingCallSteps :many
+-- The call steps of the execution's current attempt that are still open and
+-- name a callee: a call step closes when the callee ends, so an open one is
+-- a callee the caller waits on (wait:true). The callee sweep of CancelExecution
+-- walks these, because a callee whose call step already closed -- wait:false,
+-- or one that ended before the cancel arrived -- runs on.
+SELECT id, called_execution_id FROM step_executions
+WHERE execution_id = $1 AND attempt = $2
+  AND kind = 'call' AND status IN ('pending', 'running') AND called_execution_id <> 0;

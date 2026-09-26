@@ -27,6 +27,7 @@ type recordingStore struct {
 	finishes     []StepFinish
 	insertEr     error
 	stepEr       error
+	finishEr     error
 	stepNames    map[int64]string
 	stepAttempts map[int64]int
 }
@@ -67,8 +68,8 @@ func (s *recordingStore) StartStep(_ context.Context, start StepStart) (int64, e
 }
 
 func (s *recordingStore) FinishStep(_ context.Context, finish StepFinish) (events.Event, error) {
-	if s.stepEr != nil {
-		return events.Event{}, s.stepEr
+	if s.finishEr != nil || s.stepEr != nil {
+		return events.Event{}, s.finishEr
 	}
 	s.finishes = append(s.finishes, finish)
 	id := int64(len(s.finishes))

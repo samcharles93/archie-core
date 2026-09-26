@@ -544,6 +544,9 @@ message StartStepRequest {
   // kind is stage, agent or call.
   string kind = 4;
   string name = 5;
+  // called_execution_id names the WorkflowExecution a `call` step started;
+  // the store verifies it is this execution's own callee.
+  int64 called_execution_id = 6;
 }
 message StartStepResponse {
   int64 step_id = 1;

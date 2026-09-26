@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // Reviewer runs an adversarial review of a code snapshot in its own
@@ -102,7 +105,25 @@ func runReview(ctx context.Context, tc *TaskContext) (ReviewReport, error) {
 		IssueText:   taskPromptBlock(tc.Task),
 		MaxSteps:    tc.Cfg.Budgets.MaxSteps,
 	}
-	return tc.Reviewer.Review(ctx, req), nil
+	// The reviewer is an agent call like any other: it records itself as a
+	// child of the review stage's step, so an intervention during review can
+	// say what the reviewer did. The reviewer runs on a report contract, not
+	// the agent runner's result, so the recording maps the report's own
+	// verdict: a review that ran is succeeded, one that never ran is failed,
+	// and the tokens it accounted are not carried by the contract.
+	stepID, _, err := tc.startChildStep(ctx, task.StepKindAgent, "review")
+	if err != nil {
+		return ReviewReport{}, err
+	}
+	report := tc.Reviewer.Review(ctx, req)
+	to, detail := taskstate.StepSucceeded, report.Summary
+	if report.Status == ReviewStatusNotRun {
+		to, detail = taskstate.StepFailed, report.SkipReason
+	}
+	if ferr := tc.finishChildStep(ctx, stepID, to, detail, 0); ferr != nil {
+		return ReviewReport{}, ferr
+	}
+	return report, nil
 }
 
 // StagePostReviewComments posts the review's line-anchored findings as inline

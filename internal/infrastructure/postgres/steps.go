@@ -56,6 +56,9 @@ func (s *Store) StartStep(ctx context.Context, start task.StepStart) (int64, eve
 		// execution no longer runs is describing a run that is over.
 		return 0, events.Event{}, storecontract.ErrStaleTransition
 	}
+	if err := s.verifyCallStep(ctx, q, start); err != nil {
+		return 0, events.Event{}, err
+	}
 
 	depth, err := s.startParent(ctx, q, start)
 	if err != nil {
@@ -72,7 +75,7 @@ func (s *Store) StartStep(ctx context.Context, start task.StepStart) (int64, eve
 		OrgID: execution.OrgID, WorkspaceID: execution.WorkspaceID,
 		ExecutionID: execution.ID, Attempt: execution.Attempt,
 		ParentID: stepParentID(start.ParentID), Depth: int32(depth.depth),
-		Kind: start.Kind, Name: start.Name, CalledExecutionID: 0,
+		Kind: start.Kind, Name: start.Name, CalledExecutionID: start.CalledExecutionID,
 	})
 	if err != nil {
 		return 0, events.Event{}, err
@@ -97,6 +100,28 @@ func (s *Store) StartStep(ctx context.Context, start task.StepStart) (int64, eve
 		return 0, events.Event{}, err
 	}
 	return stepID, event, nil
+}
+
+// verifyCallStep refuses a call step whose callee is not this run's own:
+// the callee's call_parent_task_id must name the recording execution, or the
+// call step cannot record (a missing callee is the caller's stale view).
+// Without this check a cancel of the recording run would sweep work it never
+// started.
+func (s *Store) verifyCallStep(ctx context.Context, q *postgresdb.Queries, start task.StepStart) error {
+	if start.CalledExecutionID == 0 {
+		return nil
+	}
+	calleeParent, err := q.StepCalleeParent(ctx, start.CalledExecutionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return storecontract.ErrStaleTransition
+	}
+	if err != nil {
+		return err
+	}
+	if calleeParent != start.ExecutionID {
+		return storecontract.ErrStaleTransition
+	}
+	return nil
 }
 
 // stepParent resolves the enclosing StepExecution a child step names: its
@@ -293,6 +318,15 @@ func (s *Store) CancelExecution(ctx context.Context, taskID int64, reason, to st
 		return nil, fmt.Errorf("%w: %s -> %s is not a transition",
 			storecontract.ErrIllegalTransition, execution.Status, to)
 	}
+	// Read the wait:true callees before the sweep below closes them: an open
+	// call step is a callee the caller waits on, and one whose call step
+	// already closed -- wait:false, or one that ended first -- runs on.
+	waiting, err := q.WaitingCallSteps(ctx, postgresdb.WaitingCallStepsParams{
+		ExecutionID: taskID, Attempt: execution.Attempt,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	steps, err := q.CancelAttemptSteps(ctx, postgresdb.CancelAttemptStepsParams{
 		ExecutionID: taskID, Attempt: execution.Attempt,
@@ -330,5 +364,25 @@ func (s *Store) CancelExecution(ctx context.Context, taskID int64, reason, to st
 	for _, step := range steps {
 		ids = append(ids, step.ID)
 	}
+
+	if err := s.cancelWaitedCallees(ctx, waiting, reason, to); err != nil {
+		return ids, err
+	}
 	return ids, nil
+}
+
+// cancelWaitedCallees cancels each callee the caller was still waiting on
+// through its own CancelExecution, under its own lifecycle, in the caller's
+// write's aftermath -- the callee's own steps and its own move to the same
+// destination. A chain of calls is bounded by the call depth the enqueue
+// enforces, so the recursion is finite; a callee that cannot be cancelled is
+// reported, and the caller's own record stands either way.
+func (s *Store) cancelWaitedCallees(ctx context.Context, waiting []postgresdb.WaitingCallStepsRow, reason, to string) error {
+	var failures []error
+	for _, call := range waiting {
+		if _, err := s.CancelExecution(ctx, call.CalledExecutionID, reason, to); err != nil {
+			failures = append(failures, fmt.Errorf("cancel callee %d: %w", call.CalledExecutionID, err))
+		}
+	}
+	return errors.Join(failures...)
 }

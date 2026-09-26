@@ -35,87 +35,94 @@ const (
 // fix them via TDD before proceeding. Only parks if the builder cannot fix
 // the failures.
 func StageBaselineGate() Stage {
-	return Stage{Name: "baseline", Run: func(ctx context.Context, tc *TaskContext) error {
-		for _, argv := range tc.Repo.Gate {
-			if len(argv) == 0 {
-				continue
-			}
-			cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-			cmd.Dir = tc.Dir
-			out, err := cmd.CombinedOutput()
-			if err == nil {
-				continue
-			}
-			tc.Log.Warn("baseline red  --  auto-fixing pre-existing gate failure",
-				"cmd", strings.Join(argv, " "),
-				"err", clipTail(string(out), baselineWarnLogBytes))
+	return Stage{Name: "baseline", Run: stageBaselineGateRun}
+}
 
-			// Run builder to fix the failure via TDD.
-			mission := fmt.Sprintf(
-				"The baseline gate check `%s` failed on the repository %s at the base commit "+
-					"(before any feature work). This is a pre-existing issue  --  not caused by your work. "+
-					"Fix it using TDD:\n\n"+
-					"1. Write a test that proves the failure exists\n"+
-					"2. Run the test  --  it should FAIL (confirming the bug)\n"+
-					"3. Fix the root cause\n"+
-					"4. Run the test  --  it should PASS\n"+
-					"5. Repeat until the gate `%s` passes for all packages\n\n"+
-					"Gate output:\n%s\n\n"+
-					"When the gate passes, call finish with status \"passed\".",
-				strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "),
-				clip(extractFailingGateOutput(string(out)), baselineMissionBytes),
-			)
-
-			modelRef := tc.Cfg.Models["builder"]
-			req := agentexec.Request{
-				Version:       agentexec.ProtocolVersion,
-				TaskID:        tc.Task.ID,
-				Attempt:       tc.Task.Attempt,
-				Stage:         "baseline-fix",
-				Workflow:      tc.Task.Workflow,
-				Model:         modelRef,
-				ContextWindow: modelContextBudget(tc.Cfg, modelRef),
-				Mission:       mission,
-				Budget: agentexec.Budget{
-					MaxSteps:  tc.Cfg.Budgets.MaxSteps,
-					WallClock: tc.Cfg.Budgets.WallClock.Std(),
-				},
-				Gate:       GateFromRepo(tc.Repo, tc.Cfg.Budgets),
-				Protection: agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
-			}
-
-			res, agentErr := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter("baseline-fix"))
-			if agentErr != nil && res.Version == 0 {
-				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
-			}
-			tc.Task.TokensUsed += res.TokensUsed
-			tc.Task.Iterations += res.Iterations
-			accumulateUsage(&tc.RunUsage, res.Usage)
-			if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, "baseline-fix", res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
-				return fmt.Errorf("persist baseline-fix agent finish: %w", emitErr)
-			}
-			if agentErr != nil {
-				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
-			}
-			if res.Status != agentexec.StatusPassed {
-				return fmt.Errorf("baseline red  --  %s fails and builder could not auto-fix (status: %s)\n\ngate output:\n%s",
-					strings.Join(argv, " "), res.Status, clipTail(string(out), baselineParkOutputBytes))
-			}
-
-			// Commit the baseline fix.
-			changed, commitErr := tc.Trees.CommitAll(ctx, tc.Dir,
-				fmt.Sprintf("fix: baseline gate repair (%s)", strings.Join(argv, " ")))
-			if commitErr != nil {
-				tc.Log.Warn("baseline fix commit failed", "err", commitErr)
-			}
-			if changed {
-				tc.BuildSummary = res.Summary
-				tc.BaselineFixed = true
-				tc.captureChanges(ctx, capturedAfterBaselineFix)
-			}
+// stageBaselineGateRun is StageBaselineGate's body, extracted to keep the
+// composition's own length off the gate; the auto-fix agent it may dispatch
+// records itself under the stage's step.
+func stageBaselineGateRun(ctx context.Context, tc *TaskContext) error {
+	for _, argv := range tc.Repo.Gate {
+		if len(argv) == 0 {
+			continue
 		}
-		return nil
-	}}
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Dir = tc.Dir
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			continue
+		}
+		tc.Log.Warn("baseline red  --  auto-fixing pre-existing gate failure",
+			"cmd", strings.Join(argv, " "),
+			"err", clipTail(string(out), baselineWarnLogBytes))
+
+		// Run builder to fix the failure via TDD.
+		mission := fmt.Sprintf(
+			"The baseline gate check `%s` failed on the repository %s at the base commit "+
+				"(before any feature work). This is a pre-existing issue  --  not caused by your work. "+
+				"Fix it using TDD:\n\n"+
+				"1. Write a test that proves the failure exists\n"+
+				"2. Run the test  --  it should FAIL (confirming the bug)\n"+
+				"3. Fix the root cause\n"+
+				"4. Run the test  --  it should PASS\n"+
+				"5. Repeat until the gate `%s` passes for all packages\n\n"+
+				"Gate output:\n%s\n\n"+
+				"When the gate passes, call finish with status \"passed\".",
+			strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "),
+			clip(extractFailingGateOutput(string(out)), baselineMissionBytes),
+		)
+
+		modelRef := tc.Cfg.Models["builder"]
+		req := agentexec.Request{
+			Version:       agentexec.ProtocolVersion,
+			TaskID:        tc.Task.ID,
+			Attempt:       tc.Task.Attempt,
+			Stage:         "baseline-fix",
+			Workflow:      tc.Task.Workflow,
+			Model:         modelRef,
+			ContextWindow: modelContextBudget(tc.Cfg, modelRef),
+			Mission:       mission,
+			Budget: agentexec.Budget{
+				MaxSteps:  tc.Cfg.Budgets.MaxSteps,
+				WallClock: tc.Cfg.Budgets.WallClock.Std(),
+			},
+			Gate:       GateFromRepo(tc.Repo, tc.Cfg.Budgets),
+			Protection: agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
+		}
+
+		res, agentErr := tc.RunAgentChild(ctx, "baseline-fix", func() (agentexec.Result, error) {
+			return tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter("baseline-fix"))
+		})
+		if agentErr != nil && res.Version == 0 {
+			return fmt.Errorf("baseline-fix agent run: %w", agentErr)
+		}
+		tc.Task.TokensUsed += res.TokensUsed
+		tc.Task.Iterations += res.Iterations
+		accumulateUsage(&tc.RunUsage, res.Usage)
+		if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, "baseline-fix", res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
+			return fmt.Errorf("persist baseline-fix agent finish: %w", emitErr)
+		}
+		if agentErr != nil {
+			return fmt.Errorf("baseline-fix agent run: %w", agentErr)
+		}
+		if res.Status != agentexec.StatusPassed {
+			return fmt.Errorf("baseline red  --  %s fails and builder could not auto-fix (status: %s)\n\ngate output:\n%s",
+				strings.Join(argv, " "), res.Status, clipTail(string(out), baselineParkOutputBytes))
+		}
+
+		// Commit the baseline fix.
+		changed, commitErr := tc.Trees.CommitAll(ctx, tc.Dir,
+			fmt.Sprintf("fix: baseline gate repair (%s)", strings.Join(argv, " ")))
+		if commitErr != nil {
+			tc.Log.Warn("baseline fix commit failed", "err", commitErr)
+		}
+		if changed {
+			tc.BuildSummary = res.Summary
+			tc.BaselineFixed = true
+			tc.captureChanges(ctx, capturedAfterBaselineFix)
+		}
+	}
+	return nil
 }
 
 // Implement is the default workflow: plan read-only, post the plan to

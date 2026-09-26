@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	task "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -114,3 +115,80 @@ func TestRunParksWhenAStepWriteFails(t *testing.T) {
 }
 
 var errStepWrite = errors.New("recording write failed")
+
+// The agent-call children (docs/prds/execution-tree-state-machine.md, "Model"):
+// every agent call a stage makes is its own StepExecution of kind agent,
+// parented to the stage's recorded step, with the call's own outcome and the
+// tokens it accounted. Stage "implement" carries agent "implement" one level
+// down, the way the model draws it.
+func TestRunRecordsAgentChildrenUnderTheStageStep(t *testing.T) {
+	store := &recordingStore{}
+	wf := Workflow{Name: "recording", Stages: []Stage{{
+		Name: "implement",
+		Run: func(ctx context.Context, tc *TaskContext) error {
+			_, err := tc.RunAgentChild(ctx, "implement", func() (agentexec.Result, error) {
+				return agentexec.Result{TokensUsed: 120, Summary: "built"}, nil
+			})
+			return err
+		},
+	}}}
+	tc := &TaskContext{
+		Task:  &Task{ID: 41, Attempt: 3, Owner: "acme", Repo: "widgets", Status: StatusRunning},
+		Store: store, Log: slog.New(slog.DiscardHandler),
+	}
+
+	Run(context.Background(), wf, tc)
+
+	if len(store.steps) != 2 {
+		t.Fatalf("steps = %+v, want the stage and its agent child", store.steps)
+	}
+	stageStep, child := store.steps[0], store.steps[1]
+	if stageStep.Kind != StepKindStage || stageStep.Name != "implement" {
+		t.Errorf("stage step = %+v, want the recorded stage", stageStep)
+	}
+	if child.Kind != StepKindAgent || child.Name != "implement" {
+		t.Errorf("child step = %+v, want the agent call", child)
+	}
+	// The parent is the stage's own step: the store derives depth from it.
+	if child.ParentID == 0 || child.ParentID == stageStep.ExecutionID {
+		t.Errorf("child parent = %d, want the stage step's id, not the execution's", child.ParentID)
+	}
+	if len(store.finishes) != 2 {
+		t.Fatalf("finishes = %+v, want the stage's and the child's", store.finishes)
+	}
+	var childFinish StepFinish
+	for _, f := range store.finishes {
+		if f.StepID == child.ParentID+1 {
+			childFinish = f
+		}
+	}
+	if childFinish.To != "succeeded" || childFinish.TokensUsed != 120 {
+		t.Errorf("child finish = %+v, want succeeded with the call's own usage", childFinish)
+	}
+}
+
+// TestRunParksWhenAChildStepWriteFails: a child's recording write parks the
+// execution the same way a stage's does -- an agent call that ran unrecorded
+// is exactly the invisibility the step table exists to end.
+func TestRunParksWhenAChildStepWriteFails(t *testing.T) {
+	store := &recordingStore{finishEr: errStepWrite}
+	wf := Workflow{Name: "recording", Stages: []Stage{{
+		Name: "implement",
+		Run: func(ctx context.Context, tc *TaskContext) error {
+			_, err := tc.RunAgentChild(ctx, "implement", func() (agentexec.Result, error) {
+				return agentexec.Result{}, nil
+			})
+			return err
+		},
+	}}}
+	tc := &TaskContext{
+		Task:  &Task{ID: 9, Attempt: 1, Owner: "acme", Repo: "widgets", Status: StatusRunning},
+		Store: store, Log: slog.New(slog.DiscardHandler),
+	}
+
+	Run(context.Background(), wf, tc)
+
+	if len(store.transitions) == 0 || store.transitions[0].to != StatusParked {
+		t.Fatalf("transitions = %+v, want the execution parked after the child's recording failed", store.transitions)
+	}
+}
