@@ -343,6 +343,24 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if btc, ok := b.st.(storecontract.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
 	}
+	b.executionDeps(&deps)
+	b.accessDeps(&deps)
+	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
+		deps.ConfigSnapshots = css
+	}
+	if as, ok := b.st.(storecontract.ApplyStatusStore); ok {
+		deps.ApplyStatus = as
+	}
+	if cs, ok := b.st.(storecontract.ChannelStatusStore); ok {
+		deps.ChannelStatus = cs
+	}
+	return deps
+}
+
+// executionDeps wires the execution-tree surfaces (workflow calls, step
+// recording/reading, cancellation) from the same store, degrading each one
+// independently the store lacks it rather than failing the boot.
+func (b *boot) executionDeps(deps *staterpc.Deps) {
 	if wc, ok := b.st.(storecontract.WorkflowCaller); ok {
 		deps.WorkflowCalls = wc
 	}
@@ -355,17 +373,6 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if sr, ok := b.st.(storecontract.StepReader); ok {
 		deps.StepReader = sr
 	}
-	b.accessDeps(&deps)
-	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
-		deps.ConfigSnapshots = css
-	}
-	if as, ok := b.st.(storecontract.ApplyStatusStore); ok {
-		deps.ApplyStatus = as
-	}
-	if cs, ok := b.st.(storecontract.ChannelStatusStore); ok {
-		deps.ChannelStatus = cs
-	}
-	return deps
 }
 
 // accessDeps wires the policy chain and its denial records from the same

@@ -24,7 +24,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ done: [taskId: Task["id"]] }>();
 
-const columns = computed(() => (props.showRepo ? 8 : 7));
+const columns = computed(() => (props.showRepo ? 7 : 6));
 </script>
 
 <template>
@@ -38,7 +38,6 @@ const columns = computed(() => (props.showRepo ? 8 : 7));
         <TableHead class="w-full">Title</TableHead>
         <TableHead>Status</TableHead>
         <TableHead>Workflow</TableHead>
-        <TableHead>Stage</TableHead>
         <TableHead>Last activity</TableHead>
         <TableHead>Action</TableHead>
       </TableRow>
