@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"01a0db18-e119-7872-bf13-3644369044fb"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll run the two requested shell commands in order, exactly as written."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/usr/bin/bash -lc 'echo hello'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/usr/bin/bash -lc 'echo hello'","aggregated_output":"hello\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"/usr/bin/bash -lc 'cat /nonexistent-file'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"/usr/bin/bash -lc 'cat /nonexistent-file'","aggregated_output":"cat: /nonexistent-file: No such file or directory\n","exit_code":1,"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":72082,"cached_input_tokens":57600,"cache_write_input_tokens":0,"output_tokens":118,"reasoning_output_tokens":0}}

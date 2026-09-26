@@ -449,7 +449,7 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # image: the workload Kit, then mixins, each pinned by digest.
 # [containers.profiles.claude]
 # kit = ["docker/claude-code-kit@sha256:<digest>"]
-# adapter = "claude-code"          # output adapter; empty runs without capture tools or usage
+# adapter = "claude-code"          # claude-code, codex, pi, omp or copilot; empty runs without capture tools or usage
 
 # At least one [[repos]] entry is required before archied will poll
 # anything -- it is deliberately left commented rather than shipped active:
