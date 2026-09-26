@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
@@ -46,6 +47,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
@@ -124,6 +126,13 @@ type boot struct {
 	// set. The b.st field remains solely for the standalone archie-state-store
 	// binary, which serves the task store from Postgres.
 	stateStore storecontract.TaskStore
+	// accessChain is the daemon's policy engine, built once from the stored
+	// policies (openAccessChain); accessProblems is what the readiness
+	// surface reports. Both are nil when no policy store is wired.
+	accessChain      access.Authorizer
+	accessPrincipals access.PrincipalSource
+	accessDenials    access.DenialStore
+	accessProblems   []infraaccess.Problem
 	// stateStoreGrants issues per-task, scoped State Store credentials for
 	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
 	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
@@ -432,6 +441,33 @@ func (b *boot) openStateStoreAdapter() error {
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)
+	return nil
+}
+
+// openAccessChain builds the policy chain the daemon dispatches through
+// (docs/prds/orgs-and-access.md, "Where it lives"): the stored policies over
+// the wire, compiled once at boot. An invalid instance policy fails the boot;
+// an invalid org, workspace or object policy is retained as a health problem
+// and its level denies everything.
+func (b *boot) openAccessChain(ctx context.Context) error {
+	source, ok := b.stateStore.(access.PolicySource)
+	if !ok {
+		return nil // no policy store wired: the chain is not built
+	}
+	stored, err := source.Policies(ctx)
+	if err != nil {
+		return fmt.Errorf("load stored policies: %w", err)
+	}
+	engine, err := infraaccess.New(stored)
+	if err != nil {
+		return fmt.Errorf("validate stored policies: %w", err)
+	}
+	b.accessChain = engine
+	b.accessProblems = engine.Problems()
+	for _, problem := range b.accessProblems {
+		b.log.Error("stored access policy is invalid and denies its level",
+			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
+	}
 	return nil
 }
 
@@ -1386,6 +1422,18 @@ func (b *boot) buildDaemon() {
 	}
 	if btc, ok := b.stateStore.(storecontract.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
+	}
+	// Dispatch is the second Authorizer call site: the chain built by
+	// openAccessChain, the principal assembly over the wire, and the denial
+	// record -- wired together or not at all (docs/prds/orgs-and-access.md).
+	b.d.Access = b.accessChain
+	if b.accessChain != nil {
+		if principals, ok := b.stateStore.(access.PrincipalSource); ok {
+			b.d.Principals = principals
+		}
+		if denials, ok := b.stateStore.(access.DenialStore); ok {
+			b.d.Denials = denials
+		}
 	}
 	b.d.PlaybookLedger = playbookLedger(b.stateStore, b.playbooks, b.log)
 	b.setupForgeWebhook()

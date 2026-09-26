@@ -193,7 +193,7 @@ func composeUIProcessWithLog(t *testing.T) (*webui.Server, int64, int) {
 		Options: options,
 		Log:     slog.New(slog.DiscardHandler),
 		Store:   client,
-		Health:  newReadinessRegistry(options, client, nil),
+		Health:  newReadinessRegistry(options, client, nil, nil),
 	})
 	return srv, task.ID, task.Attempt
 }

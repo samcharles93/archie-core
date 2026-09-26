@@ -181,6 +181,6 @@ func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 		Options: options,
 		Log:     slog.New(slog.DiscardHandler),
 		Store:   client,
-		Health:  newReadinessRegistry(options, client, nil),
+		Health:  newReadinessRegistry(options, client, nil, nil),
 	}), task.ID
 }

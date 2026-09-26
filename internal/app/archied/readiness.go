@@ -44,6 +44,9 @@ func (b *boot) setupReadinessProbes() {
 			return pingChat(ctx, b.chat)
 		}),
 	}
+	if b.accessProblems != nil {
+		probes = append(probes, readiness.NewProblemProbe("access_policies", b.accessProblems))
+	}
 	b.healthRegistry = health.NewRegistry(probes...)
 }
 

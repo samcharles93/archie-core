@@ -19,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
@@ -129,10 +130,21 @@ type Daemon struct {
 	// dispatch loop does not acquire the full task-creation contract.
 	// Optional: nil disables the dispatch loop.
 	BindingTaskCreator storecontract.BindingTaskCreator
-	Forge              forge.Forge
-	Trees              *worktree.Manager
-	Bus                *events.Bus
-	Log                *slog.Logger
+	// Access evaluates the policy chain at dispatch, the second of the two
+	// Authorizer call sites (docs/prds/orgs-and-access.md, "Where it
+	// lives"): the workflow's identity may `run` the workflow in its
+	// workspace. Optional: nil dispatches without the chain, which is the
+	// behaviour of an install that has not built it.
+	Access access.Authorizer
+	// Principals assembles the dispatch principal for the workflow's
+	// identity. Wired with Access or not at all.
+	Principals access.PrincipalSource
+	// Denials records dispatch refusals. Optional: nil skips the record.
+	Denials access.DenialStore
+	Forge   forge.Forge
+	Trees   *worktree.Manager
+	Bus     *events.Bus
+	Log     *slog.Logger
 	// Tasks is the NATS task distribution bus: the poller publishes
 	// discovered work over it and runViaAgent requests execution through it.
 	// NATS startup is mandatory (there is no broker-off execution mode), so
@@ -728,6 +740,14 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	if !ok {
 		return
 	}
+	// The chain decides dispatch: the workflow's identity may `run` this
+	// workflow in its workspace, and the event's signature result and
+	// address travel with the request (docs/prds/orgs-and-access.md,
+	// "Access decisions"). A denial is recorded and the dispatch is not
+	// claimed: the capture stays listed for the next cycle.
+	if !d.authorizeDispatch(ctx, b, c, target) {
+		return
+	}
 	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0); err != nil {
 		if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 			d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
@@ -747,6 +767,58 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	if c.Unsigned {
 		d.markUnsignedStart(ctx, task.ID, b, c)
 	}
+}
+
+// authorizeDispatch evaluates the policy chain for the workflow's identity
+// before the dispatch is claimed: the identity may `run` the workflow in its
+// workspace, with the event's signature result and source address as context.
+// A denial is recorded with the level that decided it and the deciding
+// policies, and reported as a binding_dispatch_failure.
+func (d *Daemon) authorizeDispatch(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, target bindingTarget) bool {
+	if d.Access == nil || d.Principals == nil {
+		return true
+	}
+	principal, err := d.Principals.PrincipalFor(ctx, d.RootIdentityID)
+	if err != nil {
+		d.Log.Warn("binding dispatch: principal unavailable; dispatch parked for the next cycle",
+			"binding", b.ID, "capture", c.ID, "error", err)
+		return false
+	}
+	resource := access.Resource{
+		Kind: access.KindWorkflow, ID: b.Workflow, Org: principal.Org,
+	}
+	contextValue := access.Context{Signature: signatureOf(c), Addr: c.RemoteAddr}
+	decision := d.Access.Authorize(principal, access.ActionRun, resource, contextValue)
+	if decision.Allowed {
+		return true
+	}
+	if d.Denials != nil {
+		denial := access.Denial{
+			Principal: principal.IdentityID, Org: principal.Org, Action: access.ActionRun,
+			Kind: resource.Kind, ResourceID: resource.ID, Level: decision.Level,
+			Policies: decision.Policies,
+		}
+		if err := d.Denials.RecordDenial(ctx, denial); err != nil {
+			d.Log.Warn("binding dispatch: record denial", "binding", b.ID, "error", err)
+		}
+	}
+	d.recordDispatchFailure(ctx, b, c, "access denied", map[string]any{
+		"level": string(decision.Level), "policies": decision.Policies,
+	})
+	return false
+}
+
+// signatureOf names the event's signature result as the dispatch context
+// carries it: a signed event and an approved unsigned event are the two
+// dispatchable shapes (storecontract.CapturedEvent.Dispatchable).
+func signatureOf(c storecontract.CapturedEvent) string {
+	switch {
+	case c.Authenticated:
+		return "valid"
+	case c.Unsigned:
+		return "unsigned"
+	}
+	return "unverified"
 }
 
 // markUnsignedStart records on a task's timeline that an unsigned event

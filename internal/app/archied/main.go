@@ -375,6 +375,12 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.openDaemonStateSurfaces(); err != nil {
 		return 1
 	}
+	// The policy chain the dispatch loop evaluates, built once from the
+	// stored policies (docs/prds/orgs-and-access.md). It runs after the
+	// state surfaces exist and before the daemon is built.
+	if err := b.openAccessChain(ctx); err != nil {
+		return 1
+	}
 	if err := b.loadRuntimeConfig(ctx); err != nil {
 		b.log.Error("runtime settings unavailable", "err", err)
 		return 1

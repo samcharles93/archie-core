@@ -178,7 +178,7 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		Log:     slog.New(slog.DiscardHandler),
 		Store:   stateClient,
 		Chat:    chatClient,
-		Health:  newReadinessRegistry(options, stateClient, chatClient),
+		Health:  newReadinessRegistry(options, stateClient, chatClient, nil),
 	})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
