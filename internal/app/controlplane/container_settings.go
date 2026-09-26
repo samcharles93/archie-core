@@ -17,14 +17,18 @@ import (
 // "MaxConcurrency", "LegacyEnabled" -- the only Go-cased resource left in the
 // registry (archie-core-1171). The two durations are config.Duration, which
 // already writes the string the file accepts; the leak was the keys only.
+//
+// Profiles is deliberately not a field here: config.ContainerConfig.Profiles
+// is json:"-" (its own resource, AgentProfileKind, applies live where the
+// rest of this one is restart-required -- docs/prds/external-agent-harness.md
+// "Selection"), so this document never carries it either.
 type containerRuntimePolicies struct {
-	Image          string                  `json:"image"`
-	MaxConcurrency int                     `json:"max_concurrency"`
-	MaxUptime      config.Duration         `json:"max_uptime"`
-	VolumeTTL      config.Duration         `json:"volume_ttl"`
-	PullPolicy     string                  `json:"pull_policy"`
-	Network        string                  `json:"network"`
-	Profiles       map[string]agentProfile `json:"profiles,omitempty"`
+	Image          string          `json:"image"`
+	MaxConcurrency int             `json:"max_concurrency"`
+	MaxUptime      config.Duration `json:"max_uptime"`
+	VolumeTTL      config.Duration `json:"volume_ttl"`
+	PullPolicy     string          `json:"pull_policy"`
+	Network        string          `json:"network"`
 }
 
 // agentProfile is one named execution environment as the document writes it.
@@ -43,7 +47,6 @@ type agentProfile struct {
 var legacyContainerKeys = map[string]string{
 	"Image": "image", "MaxConcurrency": "max_concurrency", "MaxUptime": "max_uptime",
 	"VolumeTTL": "volume_ttl", "PullPolicy": "pull_policy", "Network": "network",
-	"Profiles": "profiles",
 }
 
 // legacyProfileKeys are the same fallback at the profile nesting level.
@@ -74,6 +77,11 @@ func (p *containerRuntimePolicies) UnmarshalJSON(data []byte) error {
 	// consumer -- so it is dropped rather than renamed: the strict decode would
 	// otherwise refuse a document every deployment of that window stores.
 	delete(raw, "LegacyEnabled")
+	// "profiles"/"Profiles" carried config.ContainerConfig.Profiles before it
+	// moved to its own resource, AgentProfileKind; a document stored under
+	// either name before that still decodes, with the key simply dropped.
+	delete(raw, "profiles")
+	delete(raw, "Profiles")
 	encoded, err := json.Marshal(raw)
 	if err != nil {
 		return err
@@ -87,33 +95,22 @@ func (p *containerRuntimePolicies) UnmarshalJSON(data []byte) error {
 }
 
 // settings maps the document onto the internal config struct the daemon runs.
+// Profiles is never set here: config.ContainerConfig.Profiles is json:"-",
+// and AgentProfileKind's own layering step in runtime_config.go is what sets
+// it, after this one runs.
 func (p containerRuntimePolicies) settings() config.ContainerConfig {
-	out := config.ContainerConfig{
+	return config.ContainerConfig{
 		Image: p.Image, MaxConcurrency: p.MaxConcurrency, MaxUptime: p.MaxUptime,
 		VolumeTTL: p.VolumeTTL, PullPolicy: p.PullPolicy, Network: p.Network,
 	}
-	if p.Profiles != nil {
-		out.Profiles = make(map[string]config.AgentProfile, len(p.Profiles))
-		for name, profile := range p.Profiles {
-			out.Profiles[name] = config.AgentProfile{Image: profile.Image, Kit: profile.Kit, Adapter: profile.Adapter, Tools: profile.Tools}
-		}
-	}
-	return out
 }
 
 func seedContainerPolicies(cfg config.Config) any {
 	containers := cfg.Containers
-	policies := containerRuntimePolicies{
+	return containerRuntimePolicies{
 		Image: containers.Image, MaxConcurrency: containers.MaxConcurrency, MaxUptime: containers.MaxUptime,
 		VolumeTTL: containers.VolumeTTL, PullPolicy: containers.PullPolicy, Network: containers.Network,
 	}
-	if containers.Profiles != nil {
-		policies.Profiles = make(map[string]agentProfile, len(containers.Profiles))
-		for name, profile := range containers.Profiles {
-			policies.Profiles[name] = agentProfile{Image: profile.Image, Kit: profile.Kit, Adapter: profile.Adapter, Tools: profile.Tools}
-		}
-	}
-	return policies
 }
 
 func validateContainers(input []byte) error {
@@ -130,7 +127,9 @@ func validateContainers(input []byte) error {
 		if strings.TrimSpace(settings.Image) == "" {
 			return fmt.Errorf("container image is required for autonomous workflow workers")
 		}
-		return settings.ValidateProfiles()
+		// Profiles is json:"-" on config.ContainerConfig: it is
+		// AgentProfileKind's document now, validated there.
+		return nil
 	})
 }
 

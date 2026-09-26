@@ -24,6 +24,12 @@ type ChatSnapshot struct {
 type ChatReply struct {
 	Text      string
 	SessionID string
+	// RateLimited reports whether Text is the inbound rate-limit reply rather
+	// than a real dispatch outcome. A human-facing channel can ignore it and
+	// send Text as usual; a channel with no human reading replies (a webhook)
+	// must not treat it as a normal reply or a delivered event -- see
+	// archie-core-1173.
+	RateLimited bool
 }
 
 // ChatCancellation is what Cancel returns.

@@ -269,10 +269,22 @@ func inboundBudgetKey(in Inbound) string {
 // Route dispatches msg and returns the reply. Gateway-local commands
 // are handled directly; everything else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
+	reply, _, err := r.RouteResult(ctx, in)
+	return reply, err
+}
+
+// RouteResult is Route, plus whether the sender was blocked by its inbound
+// rate limit. A caller with a human reading the reply (chat channels) can
+// ignore the flag and treat the reply text as usual; a caller with no human
+// there (a webhook) needs it to answer with a proper rejection instead of
+// echoing the rate-limit prose as a successful delivery, or accepting an
+// event that was actually dropped (archie-core-1173).
+func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rateLimited bool, err error) {
 	if r.checkRateLimit(in) {
-		return rateLimitReply, nil
+		return rateLimitReply, true, nil
 	}
-	return r.route(ctx, in)
+	reply, err = r.route(ctx, in)
+	return reply, false, err
 }
 
 // route is Route's continuation once the caller has already cleared the

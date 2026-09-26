@@ -216,7 +216,7 @@ func (b *boot) applyWorkflowExecutionSettings(ctx context.Context, settings work
 		return err
 	}
 	b.executionSettings.Store(&candidate.settings)
-	b.cfgHolder.Set(candidate.cfg)
+	b.publishConfig(ctx, candidate.cfg)
 	b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, version, nil)
 	b.log.Info("workflow execution settings applied", "version", version)
 	if limit, uptime := settings.MaxTaskRuntime, candidate.cfg.Containers.MaxUptime.Std(); uptime > 0 && (limit <= 0 || limit > uptime) {

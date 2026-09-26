@@ -89,12 +89,12 @@ func (a *LocalChatAdapter) RecentTurns(ctx context.Context, id string, n int) ([
 }
 
 func (a *LocalChatAdapter) Route(ctx context.Context, in Inbound) (ChatReply, error) {
-	reply, err := a.Router.Route(ctx, in)
+	reply, rateLimited, err := a.Router.RouteResult(ctx, in)
 	if err != nil {
 		return ChatReply{}, err
 	}
 	id, err := a.Router.ResolveSessionKey(ctx, in)
-	return ChatReply{Text: reply, SessionID: id}, err
+	return ChatReply{Text: reply, SessionID: id, RateLimited: rateLimited}, err
 }
 
 func (a *LocalChatAdapter) Cancel(ctx context.Context, id string) (ChatCancellation, error) {

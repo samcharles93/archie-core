@@ -112,11 +112,11 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "container profile with an empty tool name",
-			kind: ContainerRuntimePoliciesKind,
-			value: containerRuntimePolicies{Image: "archie-agent:test", Profiles: map[string]agentProfile{
+			name: "agent profile with an empty tool name",
+			kind: AgentProfileKind,
+			value: map[string]agentProfile{
 				"net": {Tools: []string{""}},
-			}},
+			},
 			mutate: func(cfg *config.Config) {
 				cfg.Containers.Profiles = map[string]config.AgentProfile{"net": {Tools: []string{""}}}
 			},

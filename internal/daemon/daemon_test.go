@@ -2353,6 +2353,115 @@ func TestRunViaAgentCarriesTheWorkflowProfile(t *testing.T) {
 	}
 }
 
+// TestPinTaskProfileRefusesCapturesTheHarnessCannotServe is the harness PRD's
+// (Contract) "workflow definition validation rejects... a stage whose needs
+// the selected harness cannot meet: capture tools without an adapter". A Kit
+// profile's own adapter -- not the workflow -- decides whether captures are
+// servable, so a workflow that needs them but names a profile whose CLI
+// serves no capture tools (empty MCPConfig, e.g. Codex/Pi/OMP) must be
+// refused rather than silently running with no way to return its result.
+func TestPinTaskProfileRefusesCapturesTheHarnessCannotServe(t *testing.T) {
+	d, s, _ := daemonWithNATS(t)
+	cfg := d.Cfg.Get()
+	cfg.Containers.Profiles = map[string]config.AgentProfile{
+		"serves-captures": {Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode},
+		"no-captures":     {Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterCodex},
+		"no-adapter":      {Kit: []string{"kit@sha256:ab"}},
+	}
+	d.Cfg.Set(cfg)
+	d.WorkflowDefinitions = &workflowDefinitionsStub{collection: workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{
+		{ID: "needs-captures-served", YAML: "id: needs-captures-served\nrepository: none\nprofile: serves-captures\nneeds: {captures: true}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
+		{ID: "needs-captures-codex", YAML: "id: needs-captures-codex\nrepository: none\nprofile: no-captures\nneeds: {captures: true}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
+		{ID: "needs-captures-bare", YAML: "id: needs-captures-bare\nrepository: none\nprofile: no-adapter\nneeds: {captures: true}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
+	}}, version: 1}
+	ctx := context.Background()
+
+	claim := func(number int, wf string) *workflow.Task {
+		t.Helper()
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", number, "t", "b", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		task, err := s.ClaimNext(ctx)
+		if err != nil || task == nil {
+			t.Fatalf("claim: (%v, %v)", task, err)
+		}
+		task.Workflow = wf
+		return task
+	}
+
+	served := claim(51, "needs-captures-served")
+	if _, ok := d.pinTaskProfile(ctx, served); !ok {
+		t.Fatal("a Kit profile whose adapter serves captures was refused")
+	}
+
+	for _, tt := range []struct {
+		number   int
+		workflow string
+	}{
+		{52, "needs-captures-codex"},
+		{53, "needs-captures-bare"},
+	} {
+		task := claim(tt.number, tt.workflow)
+		if _, ok := d.pinTaskProfile(ctx, task); ok {
+			t.Fatalf("%s: a workflow needing captures was not refused by a profile that cannot serve them", tt.workflow)
+		}
+		got, err := s.TaskByID(ctx, task.ID)
+		if err != nil || got.Status != workflow.StatusParked || !strings.Contains(got.ParkReason, "captures") {
+			t.Fatalf("%s: task = %+v, %v; want parked naming the unmet captures need", tt.workflow, got, err)
+		}
+	}
+}
+
+// TestWorkflowCallGivesACalleeItsOwnProfile is the harness PRD's "a stage may
+// name a different profile" (docs/prds/external-agent-harness.md, Selection):
+// there is no mid-container runner switch, and none is built here. A stage
+// wanting a different profile -- a Kit harness where the rest of the workflow
+// runs on the built-in loop -- is its own callee workflow, started the way
+// workflow.call already starts one (StartCall), with its own agent profile
+// resolved independently by pinTaskProfile off the callee's own task row.
+// TestWorkflowCallerConformance (staterpc) already proves the callee's
+// Workflow field is independent of the caller's; this proves that
+// independence is what makes Kit-vs-image runner selection independent too.
+func TestWorkflowCallGivesACalleeItsOwnProfile(t *testing.T) {
+	d, s, _ := daemonWithNATS(t)
+	cfg := d.Cfg.Get()
+	cfg.Containers.Profiles = map[string]config.AgentProfile{
+		"net":     {Image: "agent-net:1"},
+		"contain": {Kit: []string{"contain-kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode},
+	}
+	d.Cfg.Set(cfg)
+	d.WorkflowDefinitions = &workflowDefinitionsStub{collection: workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{
+		{ID: "investigate", YAML: "id: investigate\nprofile: net\nsteps:\n  - type: implement.prepare\n"},
+		{ID: "contain", YAML: "id: contain\nrepository: none\nprofile: contain\nsteps:\n  - type: agent.run\n    settings: {mission: contain it}\n"},
+	}}, version: 1}
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 41, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	caller, err := s.ClaimNext(ctx)
+	if err != nil || caller == nil {
+		t.Fatalf("claim caller: (%v, %v)", caller, err)
+	}
+	caller.Workflow = "investigate"
+
+	// Exactly the call a workflow.call step makes (workflow_call.go's
+	// runWorkflowCall -> tc.Calls.StartCall), not a hand-rolled shortcut.
+	callee, err := s.StartCall(ctx, caller.ID, "contain", nil)
+	if err != nil || callee == nil {
+		t.Fatalf("StartCall: (%+v, %v)", callee, err)
+	}
+
+	callerProfile, ok := d.pinTaskProfile(ctx, caller)
+	if !ok || callerProfile.IsKit() {
+		t.Fatalf("caller profile = %+v, %v; want a non-Kit profile", callerProfile, ok)
+	}
+	calleeProfile, ok := d.pinTaskProfile(ctx, callee)
+	if !ok || !calleeProfile.IsKit() || calleeProfile.Adapter != agentexec.AdapterClaudeCode {
+		t.Fatalf("callee profile = %+v, %v; want the Kit profile its own workflow names", calleeProfile, ok)
+	}
+}
+
 // A container that dies mid-run (max-uptime reaper, OOM, crash) never answers
 // the taskrun request. The run must end with the task parked, not left
 // running with the worker blocked on a reply that cannot come.
@@ -2519,5 +2628,47 @@ func TestKitProfileRunsTheTaskOnItsHarness(t *testing.T) {
 	}
 	if !launcher.released || len(launcher.removed) != 1 {
 		t.Fatalf("released %v, removed %v; want the run released and its volumes removed", launcher.released, launcher.removed)
+	}
+}
+
+// TestRunKitTaskThreadsGateRetriesToTheLauncher: KitLauncher.Launch is where
+// the Kit's actual agent-sessions capability is known (it composes the Kit),
+// so that is where docs/prds/external-agent-harness.md's "a gate retry
+// without a resume verb" refusal has to run (kit.ValidateNeeds, wired in
+// kitrun.Launcher.Launch). This proves runKitTask carries the workflow's
+// declared retry budget there rather than dropping it.
+func TestRunKitTaskThreadsGateRetriesToTheLauncher(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	launcher := &fakeKitLauncher{}
+	d.KitLauncher = launcher
+	d.ConnectedNATS.URL = "nats://172.17.0.1:4222"
+	ctx := context.Background()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 32, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+	task.WorkflowDefinitionYAML = "id: contain\nrepository: none\nneeds: {gate_retries: 4}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"
+	// runKitTask calls through to runViaAgent after Launch, which blocks on a
+	// NATS reply bounded by the task wall-clock budget (zero here, i.e. no
+	// bound at all) -- a handler that never responds hangs the daemon
+	// goroutine forever rather than timing out, so this must answer even
+	// though the assertion below only cares about what Launch already saw.
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runKitTask(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, t.TempDir(),
+		config.AgentProfile{Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode})
+
+	if launcher.got.GateRetries != 4 {
+		t.Fatalf("launch request GateRetries = %d, want the workflow's declared 4", launcher.got.GateRetries)
 	}
 }

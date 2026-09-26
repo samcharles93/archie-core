@@ -42,6 +42,25 @@ type WorkflowInterface struct {
 	// Profile names a [containers.profiles] entry. It is resolved when a task
 	// is dispatched, not when the workflow is saved.
 	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
+	// Needs declares what this workflow's agent stages require of the
+	// profile they run under -- checked against the profile's actual
+	// capabilities before dispatch (docs/prds/external-agent-harness.md,
+	// "Contract"): a stage that returns structured output needs a harness
+	// with a capture-tools-capable output adapter, and a gated stage that
+	// may retry needs the Kit's agent-sessions resume verb. Only a Kit
+	// profile is checked against it -- an image profile's built-in agent
+	// loop always supports both.
+	Needs WorkflowNeeds `yaml:"needs" json:"needs"`
+}
+
+// WorkflowNeeds is WorkflowInterface's declared harness requirements.
+type WorkflowNeeds struct {
+	// Captures declares that a stage returns structured output through
+	// capture tools.
+	Captures bool `yaml:"captures,omitempty" json:"captures,omitempty"`
+	// GateRetries is the largest gate-retry budget any stage declares. Zero
+	// means no stage gates its result, so no resume capability is needed.
+	GateRetries int `yaml:"gate_retries,omitempty" json:"gate_retries,omitempty"`
 }
 
 var (
@@ -74,6 +93,9 @@ func (w WorkflowInterface) Validate() error {
 		if !slices.Contains(inputTypes, spec.Type) {
 			return fmt.Errorf("workflow input %q type %q must be one of %s", name, spec.Type, strings.Join(inputTypes, ", "))
 		}
+	}
+	if w.Needs.GateRetries < 0 {
+		return fmt.Errorf("workflow needs.gate_retries must not be negative")
 	}
 	return nil
 }

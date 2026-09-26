@@ -1757,12 +1757,32 @@ func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (confi
 	if err == nil {
 		var profile config.AgentProfile
 		if profile, err = d.configFor(task).Containers.Profile(iface.Profile); err == nil {
-			return profile, true
+			if err = validateProfileMeetsNeeds(profile, iface.Needs); err == nil {
+				return profile, true
+			}
 		}
 	}
 	d.Log.Error("agent profile unavailable", "task", task.ID, "err", err)
 	d.parkRunningTask(ctx, task.ID, "workflow "+task.Workflow+": "+err.Error(), taskstate.ParkNeedsHuman)
 	return config.AgentProfile{}, false
+}
+
+// validateProfileMeetsNeeds rejects a Kit profile whose harness cannot meet
+// what the workflow declares it needs (docs/prds/external-agent-harness.md,
+// "Contract"): a workflow needing captures but naming a profile whose Kit CLI
+// serves none (no adapter, or one with no MCP config to register archie-agent
+// mcp against -- e.g. Codex, Pi, OMP per agentexec.harnessAdapters). An image
+// profile is never checked: the built-in agent loop always supports both
+// captures and gate retries, so Needs constrains only the harness path.
+func validateProfileMeetsNeeds(profile config.AgentProfile, needs workflowtask.WorkflowNeeds) error {
+	if !profile.IsKit() || !needs.Captures {
+		return nil
+	}
+	adapter, ok := agentexec.LookupHarnessAdapter(profile.Adapter)
+	if !ok || len(adapter.MCPConfig) == 0 {
+		return fmt.Errorf("needs.captures is set, but profile adapter %q serves no capture tools", profile.Adapter)
+	}
+	return nil
 }
 
 // publicationGrant issues the capability to publish the task's branch. A task

@@ -18,6 +18,7 @@ func TestParseWorkflowInterface(t *testing.T) {
 		{name: "unknown mode", src: "id: a\nrepository: sometimes\n", wantErr: "must be none, optional or required"},
 		{name: "unknown input type", src: "id: a\ninputs:\n  ip: {type: ipv4}\n", wantErr: `type "ipv4"`},
 		{name: "malformed input name", src: "id: a\ninputs:\n  src-ip: {type: string}\n", wantErr: `input "src-ip"`},
+		{name: "negative gate_retries", src: "id: a\nneeds: {gate_retries: -1}\n", wantErr: "gate_retries must not be negative"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -35,6 +36,19 @@ func TestParseWorkflowInterface(t *testing.T) {
 				t.Errorf("RepositoryMode() = %q, want %q", got, tt.wantMode)
 			}
 		})
+	}
+}
+
+// TestParseWorkflowInterfaceNeeds pins the declared-needs vocabulary
+// (docs/prds/external-agent-harness.md, "Contract"): a stage's requirements
+// of its harness are static, readable metadata, not derived at run time.
+func TestParseWorkflowInterfaceNeeds(t *testing.T) {
+	w, err := ParseWorkflowInterface("id: a\nprofile: contain\nneeds: {captures: true, gate_retries: 3}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.Needs.Captures || w.Needs.GateRetries != 3 {
+		t.Fatalf("Needs = %+v, want {Captures:true GateRetries:3}", w.Needs)
 	}
 }
 

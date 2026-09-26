@@ -120,6 +120,35 @@ func TestWebhookHandlerRoute(t *testing.T) {
 	}
 }
 
+// TestWebhookHandlerRateLimitedDeliveryIsRejected pins archie-core-1173: a
+// rate-limited webhook delivery must be surfaced to the origin as an
+// observable rejection (429), never as chat prose echoed back with a 200, and
+// never as a 202 that claims a dropped event was accepted (the origin would
+// then never retry it).
+func TestWebhookHandlerRateLimitedDeliveryIsRejected(t *testing.T) {
+	for _, deliverTo := range []string{"origin", ""} {
+		t.Run("DeliverTo="+deliverTo, func(t *testing.T) {
+			log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			g := New("", 0, []RouteConfig{{Path: "/hook", DeliverTo: deliverTo}}, log)
+			g.client = &fakeChatContract{
+				routeFunc: func(context.Context, messaging.Inbound) (messaging.ChatReply, error) {
+					return messaging.ChatReply{Text: "You're sending messages too quickly. Please wait a moment and try again.", RateLimited: true}, nil
+				},
+			}
+
+			handler := g.WebhookHandler()
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", strings.NewReader(`{"text":"hello"}`)))
+			if rec.Code != http.StatusTooManyRequests {
+				t.Errorf("status = %d, want 429 so the origin can back off and retry", rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), "too quickly") {
+				t.Errorf("body = %q, want no chat prose echoed to a webhook origin", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestWebhookHandlerInvalidSignature(t *testing.T) {
 	g := New("", 0, []RouteConfig{{Path: "/hook", Secret: "secret"}}, slog.Default())
 	g.client = &fakeChatContract{}
