@@ -13,6 +13,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // WorkflowCallStepName is the step type that starts another workflow as its
@@ -101,10 +102,60 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 		fmt.Sprintf("started %q as task %d", s.Workflow, callee.ID), started); err != nil {
 		tc.Log.Warn("workflow call start not persisted", "err", err)
 	}
+	// The call is a call StepExecution in the caller's tree, recording the
+	// callee's execution ID -- the store verifies the callee is this run's
+	// own callee, which is what makes "cancel the callees the caller waits
+	// on" decidable: an open call step is a waited-on callee, a closed one
+	// is a wait:false callee that runs on.
+	callStep, _, err := tc.startCallStep(ctx, callee.ID)
+	if err != nil {
+		return fmt.Errorf("%s: could not be recorded: %w", WorkflowCallStepName, err)
+	}
 	if !s.Wait {
+		// The call step closes at once: the callee runs on, and nothing the
+		// caller waits on remains open.
+		if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded,
+			fmt.Sprintf("started %q (task %d); no wait", s.Workflow, callee.ID), 0); err != nil {
+			return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, err)
+		}
 		return nil
 	}
-	return awaitCallee(ctx, s, tc, callee.ID)
+	// The wait ends when the callee ends, however it ended: a successful
+	// callee closes the call step as succeeded; a callee that ended otherwise
+	// closes it as failed with the callee's detail. The one open case is the
+	// caller itself being cancelled -- its CancelExecution already swept this
+	// step with the other non-terminal ones, so a late write here must not
+	// pretend the wait is still the caller's business.
+	waitErr := awaitCallee(ctx, s, tc, callee.ID)
+	if waitErr != nil {
+		if ctx.Err() == nil {
+			if ferr := tc.finishChildStep(ctx, callStep, taskstate.StepFailed, waitErr.Error(), 0); ferr != nil {
+				return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, ferr)
+			}
+		}
+		return waitErr
+	}
+	if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded,
+		fmt.Sprintf("%q (task %d) finished", s.Workflow, callee.ID), 0); err != nil {
+		return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, err)
+	}
+	return nil
+}
+
+// startCallStep records the call step for a callee this run just started.
+func (tc *TaskContext) startCallStep(ctx context.Context, calleeTaskID int64) (int64, events.Event, error) {
+	if tc.Store == nil {
+		return 0, events.Event{}, nil
+	}
+	stepID, event, err := tc.Store.StartStep(ctx, task.StepStart{
+		ExecutionID: tc.Task.ID, Attempt: tc.Task.Attempt, ParentID: tc.StepID,
+		Kind: task.StepKindCall, Name: WorkflowCallStepName, CalledExecutionID: calleeTaskID,
+	})
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	publishEvent(tc, event)
+	return stepID, event, nil
 }
 
 // resolveCallInputs turns the call's saved values into the callee's inputs: a

@@ -3391,10 +3391,13 @@ type StartStepRequest struct {
 	// StepExecution, from which the store derives depth.
 	ParentId int64 `protobuf:"varint,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	// kind is stage, agent or call.
-	Kind          string `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
-	Name          string `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Kind string `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	Name string `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
+	// called_execution_id names the WorkflowExecution a `call` step started;
+	// the store verifies it is this execution's own callee.
+	CalledExecutionId int64 `protobuf:"varint,6,opt,name=called_execution_id,json=calledExecutionId,proto3" json:"called_execution_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *StartStepRequest) Reset() {
@@ -3460,6 +3463,13 @@ func (x *StartStepRequest) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *StartStepRequest) GetCalledExecutionId() int64 {
+	if x != nil {
+		return x.CalledExecutionId
+	}
+	return 0
 }
 
 type StartStepResponse struct {
@@ -11407,13 +11417,14 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x03 \x01(\tR\x02to\x12\x16\n" +
 	"\x06detail\x18\x04 \x01(\tR\x06detail\"\x14\n" +
-	"\x12TransitionResponse\"\x94\x01\n" +
+	"\x12TransitionResponse\"\xc4\x01\n" +
 	"\x10StartStepRequest\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\x03R\vexecutionId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x1b\n" +
 	"\tparent_id\x18\x03 \x01(\x03R\bparentId\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04name\x18\x05 \x01(\tR\x04name\"S\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\x12.\n" +
+	"\x13called_execution_id\x18\x06 \x01(\x03R\x11calledExecutionId\"S\n" +
 	"\x11StartStepResponse\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\x03R\x06stepId\x12%\n" +
 	"\x05event\x18\x02 \x01(\v2\x0f.state.v1.EventR\x05event\"\xac\x01\n" +

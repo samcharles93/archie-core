@@ -211,6 +211,7 @@ func (s *server) StartStep(ctx context.Context, r *pb.StartStepRequest) (*pb.Sta
 	stepID, event, err := s.deps.Steps.StartStep(ctx, task.StepStart{
 		ExecutionID: r.ExecutionId, Attempt: int(r.Attempt),
 		ParentID: r.ParentId, Kind: r.Kind, Name: r.Name,
+		CalledExecutionID: r.CalledExecutionId,
 	})
 	if err != nil {
 		return nil, s.logErr("StartStep", err)

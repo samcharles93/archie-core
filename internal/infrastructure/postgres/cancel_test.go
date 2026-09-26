@@ -272,3 +272,95 @@ func TestRecoverStaleInterruptsRunningSteps(t *testing.T) {
 		t.Errorf("interrupted event = %+v, want a stage_finish row attributed to the interrupted attempt", interrupted[0])
 	}
 }
+
+// A wait:true call step is how the store knows the caller is still waiting on
+// its callee: it closes only when the callee ends, so a non-terminal call
+// step is a callee the caller waits on. Cancelling the caller sweeps each
+// such callee through its own CancelExecution -- the callee's own lifecycle
+// -- while a finished call step's callee (wait:false, or already ended) runs
+// on. Trees never cross runs: a call step naming a task that is not the
+// caller's callee cannot even be recorded (StartStep verifies the callee's
+// call_parent_task_id).
+func TestCancelExecutionCancelsTheCalleesTheCallerWaitsOn(t *testing.T) {
+	s := storeFor(t)
+	caller := runningExecution(t, s)
+
+	// The callee: started through the call linkage the way a wait:true step
+	// does (the store derives the callee from the caller's own row), running
+	// under its own lifecycle, with a running step of its own.
+	callee, err := s.StartCall(t.Context(), caller.ID, "implement", nil)
+	if err != nil {
+		t.Fatalf("EnqueueCallTask: %v", err)
+	}
+	if _, err := s.ClaimNext(t.Context()); err != nil {
+		t.Fatalf("ClaimNext callee: %v", err)
+	}
+	// The claim increments the attempt; read the row back the way the
+	// container's own request carries it.
+	callee, err = s.TaskByID(t.Context(), callee.ID)
+	if err != nil || callee == nil {
+		t.Fatalf("TaskByID(callee): %+v %v", callee, err)
+	}
+	if _, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: callee.ID, Attempt: callee.Attempt, Kind: task.StepKindStage, Name: "implement",
+	}); err != nil {
+		t.Fatalf("callee StartStep: %v", err)
+	}
+
+	// The caller's wait:true call step names the callee and is still running.
+	if _, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: caller.ID, Attempt: caller.Attempt, Kind: task.StepKindCall,
+		Name: "workflow.call", CalledExecutionID: callee.ID,
+	}); err != nil {
+		t.Fatalf("call step: %v", err)
+	}
+
+	// A wait:false call step's callee runs on: its call step already ended.
+	unwaited, err := s.StartCall(t.Context(), caller.ID, "implement", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimNext(t.Context()); err != nil {
+		t.Fatalf("ClaimNext no-wait callee: %v", err)
+	}
+	noWaitStep, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: caller.ID, Attempt: caller.Attempt, Kind: task.StepKindCall,
+		Name: "workflow.call", CalledExecutionID: unwaited.ID,
+	})
+	if err != nil {
+		t.Fatalf("no-wait call step: %v", err)
+	}
+	if _, err := s.FinishStep(t.Context(), task.StepFinish{
+		StepID: noWaitStep, ExecutionID: caller.ID,
+		From: taskstate.StepRunning, To: taskstate.StepSucceeded, Detail: "started; no wait",
+	}); err != nil {
+		t.Fatalf("close the no-wait call step: %v", err)
+	}
+
+	if _, err := s.CancelExecution(t.Context(), caller.ID, "stopped by operator", taskstate.Parked); err != nil {
+		t.Fatalf("CancelExecution: %v", err)
+	}
+
+	waited, err := s.TaskByID(t.Context(), callee.ID)
+	if err != nil || waited == nil {
+		t.Fatalf("TaskByID(callee): %+v %v", waited, err)
+	}
+	if waited.Status != taskstate.Parked {
+		t.Fatalf("the waited-on callee = %q, want parked under its own lifecycle", waited.Status)
+	}
+	waitedSteps, err := s.TaskEvents(t.Context(), callee.ID)
+	if err != nil {
+		t.Fatalf("callee TaskEvents: %v", err)
+	}
+	if len(waitedSteps) == 0 {
+		t.Error("the callee's steps were not cancelled with their events")
+	}
+
+	unwaitedAfter, err := s.TaskByID(t.Context(), unwaited.ID)
+	if err != nil || unwaitedAfter == nil {
+		t.Fatalf("TaskByID no-wait callee: %+v %v", unwaitedAfter, err)
+	}
+	if unwaitedAfter.Status != taskstate.Running {
+		t.Errorf("the wait:false callee = %q, want it running on", unwaitedAfter.Status)
+	}
+}

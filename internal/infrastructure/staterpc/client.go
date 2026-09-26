@@ -117,6 +117,7 @@ func (c *Client) StartStep(ctx context.Context, s task.StepStart) (int64, events
 	r, err := c.client.StartStep(ctx, &pb.StartStepRequest{
 		ExecutionId: s.ExecutionID, Attempt: int64(s.Attempt),
 		ParentId: s.ParentID, Kind: s.Kind, Name: s.Name,
+		CalledExecutionId: s.CalledExecutionID,
 	})
 	if err != nil {
 		return 0, events.Event{}, unmapError(err)

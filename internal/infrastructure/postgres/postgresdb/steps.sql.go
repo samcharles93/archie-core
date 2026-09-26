@@ -294,3 +294,60 @@ func (q *Queries) StartStepExecution(ctx context.Context, id int64) (int64, erro
 	}
 	return result.RowsAffected(), nil
 }
+
+const stepCalleeParent = `-- name: StepCalleeParent :one
+SELECT call_parent_task_id FROM tasks WHERE id = $1
+`
+
+// The caller linkage a call step's callee must carry: the callee's
+// call_parent_task_id names the execution whose tree records the call. A
+// call step naming a task that is not this execution's callee is refused,
+// because a cancel of that execution would otherwise cancel work the
+// caller never started.
+func (q *Queries) StepCalleeParent(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, stepCalleeParent, id)
+	var call_parent_task_id int64
+	err := row.Scan(&call_parent_task_id)
+	return call_parent_task_id, err
+}
+
+const waitingCallSteps = `-- name: WaitingCallSteps :many
+SELECT id, called_execution_id FROM step_executions
+WHERE execution_id = $1 AND attempt = $2
+  AND kind = 'call' AND status IN ('pending', 'running') AND called_execution_id <> 0
+`
+
+type WaitingCallStepsParams struct {
+	ExecutionID int64
+	Attempt     int64
+}
+
+type WaitingCallStepsRow struct {
+	ID                int64
+	CalledExecutionID int64
+}
+
+// The call steps of the execution's current attempt that are still open and
+// name a callee: a call step closes when the callee ends, so an open one is
+// a callee the caller waits on (wait:true). The callee sweep of CancelExecution
+// walks these, because a callee whose call step already closed -- wait:false,
+// or one that ended before the cancel arrived -- runs on.
+func (q *Queries) WaitingCallSteps(ctx context.Context, arg WaitingCallStepsParams) ([]WaitingCallStepsRow, error) {
+	rows, err := q.db.Query(ctx, waitingCallSteps, arg.ExecutionID, arg.Attempt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WaitingCallStepsRow
+	for rows.Next() {
+		var i WaitingCallStepsRow
+		if err := rows.Scan(&i.ID, &i.CalledExecutionID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
