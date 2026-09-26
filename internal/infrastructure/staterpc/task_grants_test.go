@@ -44,7 +44,8 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		Captures: eda, Mappings: eda, Bindings: eda,
 		BindingDispatcher: eda, PlaybookDispatcher: eda, EventTypes: eda,
 		BindingTaskCreator: local, WorkflowCalls: local, Steps: local,
-		Grants: grants,
+		Canceller: local,
+		Grants:    grants,
 	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
@@ -455,5 +456,31 @@ func TestRunCredentialRecordsItsOwnSteps(t *testing.T) {
 		From: taskstate.StepRunning, To: taskstate.StepSucceeded,
 	}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("FinishStep naming another execution = %v, want PermissionDenied from the grant check", err)
+	}
+}
+
+// A task-scoped grant never reaches CancelExecution: a cancel is a dashboard,
+// API and dispatch action decided by the Authorizer
+// (docs/prds/execution-tree-state-machine.md), and the deny-by-default rule
+// covers it without a widening.
+func TestTaskGrantCannotCancelAnExecution(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	grants, dial := grantsServer(t, adminToken)
+	_ = grants
+	admin := dial(t, adminToken)
+	ctx := t.Context()
+
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerToken, err := admin.RegisterTaskGrant(ctx, task.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("RegisterTaskGrant: %v", err)
+	}
+	worker := dial(t, workerToken)
+
+	if _, err := worker.CancelExecution(ctx, task.ID, "why", "parked"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("CancelExecution with a task grant = %v, want PermissionDenied", err)
 	}
 }

@@ -134,16 +134,13 @@ type TaskController interface {
 	// error (surfaced to the user, not the LLM) if the task doesn't
 	// exist, isn't owned by identity, or isn't in waiting_human.
 	Approve(ctx context.Context, taskID int64, identity string) error
-	// Cancel moves an active task to a rejected/cancelled terminal
-	// state, interrupting it first if it is running. Returns an error if
-	// the task doesn't exist, isn't owned by identity, or is already
-	// terminal.
+	// Cancel moves an active task to a terminal state through the one
+	// cancel path (docs/prds/execution-tree-state-machine.md): the store
+	// records the cancellation first, and the runtime delivers it by
+	// cancelling the run's in-memory context where this process owns one.
+	// Returns an error if the task doesn't exist, isn't owned by identity,
+	// or is already terminal.
 	Cancel(ctx context.Context, taskID int64, identity string) error
-	// StopRunning interrupts every task currently executing for
-	// identity and returns the IDs it stopped. It is the agent half of
-	// /stop, so it must not require knowing a task ID: someone reaching
-	// for the brake is not in a position to look one up.
-	StopRunning(ctx context.Context, identity string) ([]int64, error)
 }
 
 // Router dispatches inbound messages. Gateway-local commands (like

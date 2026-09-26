@@ -230,3 +230,70 @@ func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map
 func stepParentID(parentID int64) pgtype.Int8 {
 	return pgtype.Int8{Int64: parentID, Valid: parentID != 0}
 }
+
+// CancelExecution is the one cancel path (docs/prds/execution-tree-state-machine.md,
+// "Cancellation"): one transaction moves every non-terminal StepExecution of
+// the execution's current attempt to cancelled -- one event row each -- and
+// the execution itself to the status the operator action names, under the
+// shared execution transition table. Staleness is decided before legality, as
+// guardTransition decides it, and the audit row lands in the same write. The
+// caller cancels the in-memory context after this commits; the worker's next
+// step write then fails ErrStaleTransition and stops.
+func (s *Store) CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+
+	execution, err := q.LockExecutionForStep(ctx, taskID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, storecontract.ErrStaleTransition
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !taskstate.CanTransition(execution.Status, to) {
+		return nil, fmt.Errorf("%w: %s -> %s is not a transition",
+			storecontract.ErrIllegalTransition, execution.Status, to)
+	}
+
+	steps, err := q.CancelAttemptSteps(ctx, postgresdb.CancelAttemptStepsParams{
+		ExecutionID: taskID, Attempt: execution.Attempt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, step := range steps {
+		if _, err := insertEventQ(ctx, q, stepEvent(events.KindStageFinish, execution.ID,
+			execution.Owner, execution.Repo, execution.IssueNumber, execution.Workflow,
+			int(execution.Attempt), step.Name, map[string]any{"cancelled": true})); err != nil {
+			return nil, err
+		}
+	}
+
+	n, err := q.TransitionTask(ctx, postgresdb.TransitionTaskParams{
+		ID: taskID, Status: to, ParkReason: clip(reason, 4000),
+		ParkClass: taskstate.ParkNeedsHuman, Status_2: execution.Status,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, storecontract.ErrStaleTransition
+	}
+	if err := q.InsertTransition(ctx, postgresdb.InsertTransitionParams{
+		TaskID: taskID, FromStatus: execution.Status, ToStatus: to, Detail: clip(reason, 4000),
+	}); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(steps))
+	for _, step := range steps {
+		ids = append(ids, step.ID)
+	}
+	return ids, nil
+}

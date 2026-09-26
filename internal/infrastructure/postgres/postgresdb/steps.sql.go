@@ -11,6 +11,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelAttemptSteps = `-- name: CancelAttemptSteps :many
+UPDATE step_executions
+SET status = 'cancelled', finished_at = now()
+WHERE execution_id = $1 AND attempt = $2 AND status IN ('pending', 'running')
+RETURNING id, name
+`
+
+type CancelAttemptStepsParams struct {
+	ExecutionID int64
+	Attempt     int64
+}
+
+type CancelAttemptStepsRow struct {
+	ID   int64
+	Name string
+}
+
+// The half of CancelExecution that cancels the current attempt's
+// non-terminal steps, returning them so the store writes one event row per
+// transition in the same transaction. Earlier attempts' rows never match:
+// history is never rewritten.
+func (q *Queries) CancelAttemptSteps(ctx context.Context, arg CancelAttemptStepsParams) ([]CancelAttemptStepsRow, error) {
+	rows, err := q.db.Query(ctx, cancelAttemptSteps, arg.ExecutionID, arg.Attempt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CancelAttemptStepsRow
+	for rows.Next() {
+		var i CancelAttemptStepsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const finishStepExecution = `-- name: FinishStepExecution :execrows
 UPDATE step_executions
 SET status = $1, detail = $2, tokens_used = $3, finished_at = now()

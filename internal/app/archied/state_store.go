@@ -349,6 +349,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if sr, ok := b.st.(storecontract.StepRecorder); ok {
 		deps.Steps = sr
 	}
+	if ec, ok := b.st.(storecontract.ExecutionCanceller); ok {
+		deps.Canceller = ec
+	}
 	b.accessDeps(&deps)
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css

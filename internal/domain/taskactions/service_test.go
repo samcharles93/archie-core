@@ -19,6 +19,10 @@ func (f *fakeStore) Transition(context.Context, int64, string, string, string) e
 	return nil
 }
 
+func (f *fakeStore) CancelExecution(context.Context, int64, string, string) ([]int64, error) {
+	return nil, nil
+}
+
 func (f *fakeStore) Requeue(context.Context, int64, string, string) error { return nil }
 func (f *fakeStore) RetryTask(context.Context, int64, string, string) error {
 	return nil

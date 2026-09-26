@@ -125,6 +125,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 var (
 	_ storecontract.TaskStore           = (*Store)(nil)
 	_ storecontract.StepRecorder        = (*Store)(nil)
+	_ storecontract.ExecutionCanceller  = (*Store)(nil)
 	_ storecontract.BindingTaskCreator  = (*Store)(nil)
 	_ storecontract.ConfigSnapshotStore = (*Store)(nil)
 	_ storecontract.ChannelStatusStore  = (*Store)(nil)

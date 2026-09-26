@@ -146,14 +146,12 @@ type chatTaskController interface {
 
 // TaskRuntime reaches tasks that are currently executing. The daemon
 // implements it; the store cannot, because a row records what a task is
-// meant to be doing, not the goroutine doing it.
+// meant to be doing, not the goroutine doing it. It is only the delivery
+// mechanism: the store's CancelExecution record precedes it.
 type TaskRuntime interface {
 	// CancelTask interrupts one running task, reporting whether it was
 	// running.
 	CancelTask(taskID int64) bool
-	// CancelRunningTasks interrupts every task running for identity, or
-	// all of them when identity is empty, returning the IDs stopped.
-	CancelRunningTasks(identity string) []int64
 }
 
 // StoreTaskController implements TaskController backed by a store
@@ -197,38 +195,20 @@ func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity
 	if err := taskstate.CheckDecline(st.Status); err != nil {
 		return err
 	}
-	switch st.Status {
-	case taskstate.Running:
-		// Cancelling a running task used to be refused outright, which
-		// left the only case worth interrupting as the one case that
-		// could not be. Interrupt the work first, then record it: the
-		// order matters, because writing the terminal state while the
-		// task is still executing invites it to write its own state
-		// afterwards and win.
-		if c.runtime == nil {
-			return fmt.Errorf("task is running and no runtime control is configured")
-		}
-		if !c.runtime.CancelTask(taskID) {
-			// The store says running but nothing is executing -- a
-			// crashed or migrated daemon. Recording the terminal state
-			// is still right, and is what unsticks the task.
-			break
-		}
+	// The store records the cancellation first -- the one cancel path -- and
+	// the context cancel delivers it. The order is the PRD's: a worker that
+	// keeps writing after the record fails ErrStaleTransition on its next
+	// step write, so it cannot win the race the old interrupt-first ordering
+	// guarded against. A task the store says is running but nothing is
+	// executing for (a crashed or migrated daemon) is unstuck by the record
+	// alone, which is why the delivery is reported, not required.
+	if err := c.store.CancelChatTask(ctx, taskID, "declined by "+identity); err != nil {
+		return err
 	}
-	return c.store.CancelChatTask(ctx, taskID, "declined by "+identity)
-}
-
-// StopRunning interrupts every task executing for identity.
-//
-// It deliberately does not write terminal states. A stopped task unwinds
-// through its own error paths and lands wherever that leaves it, usually
-// parked, which is recoverable. Forcing every one to rejected would
-// discard work the operator may well want to resume.
-func (c *StoreTaskController) StopRunning(_ context.Context, identity string) ([]int64, error) {
-	if c.runtime == nil {
-		return nil, fmt.Errorf("no runtime control is configured")
+	if st.Status == taskstate.Running && c.runtime != nil {
+		c.runtime.CancelTask(taskID)
 	}
-	return c.runtime.CancelRunningTasks(identity), nil
+	return nil
 }
 
 func (c *StoreTaskController) authorize(ctx context.Context, taskID int64, identity string) (ChatTaskStatus, error) {

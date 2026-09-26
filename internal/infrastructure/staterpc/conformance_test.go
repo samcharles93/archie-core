@@ -28,6 +28,7 @@ import (
 type contract interface {
 	storecontract.TaskStore
 	storecontract.StepRecorder
+	storecontract.ExecutionCanceller
 	storecontract.BindingTaskCreator
 	storecontract.ConfigSnapshotStore
 	storecontract.ApplyStatusStore
@@ -84,6 +85,7 @@ func remoteTaskStore(t *testing.T, local *pgstore.TaskDB, logs storecontract.Tas
 	server := grpc.NewServer()
 	deps := Deps{
 		Tasks: local, BindingTaskCreator: local, WorkflowCalls: local, Steps: local,
+		Canceller:       local,
 		ConfigSnapshots: local, ApplyStatus: local,
 		TaskLogs: logs,
 	}
@@ -400,12 +402,25 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("ClaimByIssue missing: %+v %v", byClaim, err)
 			}
 
+			// The one cancel path, at the battery's end where the task's
+			// status is whatever the lifecycle section left: both adapters
+			// cancel the attempt's non-terminal steps and move the execution
+			// in one write, and the archive below then reads the parked row.
+			cancelled, err := c.CancelExecution(ctx, task.ID, "declined by operator", "closed_wont_do")
+			if err != nil {
+				t.Fatalf("CancelExecution: %v", err)
+			}
+			_ = cancelled
+
 			// Archive. RecoverStale above may have requeued task if it was
 			// still running, so re-fetch its current status rather than
 			// trusting the in-memory snapshot.
 			current, err = c.TaskByID(ctx, task.ID)
 			if err != nil || current == nil {
 				t.Fatalf("TaskByID before archive: %+v %v", current, err)
+			}
+			if current.Status != "closed_wont_do" {
+				t.Fatalf("execution after cancel = %q, want closed_wont_do", current.Status)
 			}
 			if _, err := c.ArchiveTask(ctx, task.ID, current.Status, events.Event{Kind: "archived"}); err != nil {
 				t.Fatalf("ArchiveTask: %v", err)

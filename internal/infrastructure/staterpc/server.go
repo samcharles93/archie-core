@@ -102,6 +102,10 @@ type Deps struct {
 	// workflow engine's run credential calls. Optional: nil answers both RPCs
 	// with codes.Unavailable.
 	Steps storecontract.StepRecorder
+	// Canceller is the one cancel path (docs/prds/execution-tree-state-machine.md):
+	// an operator action's guarded write over the execution and its steps.
+	// Optional: nil answers the RPC with codes.Unavailable.
+	Canceller storecontract.ExecutionCanceller
 	// PlaybookDispatcher is the side-effecting-action idempotency ledger
 	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
@@ -212,6 +216,20 @@ func (s *server) StartStep(ctx context.Context, r *pb.StartStepRequest) (*pb.Sta
 		return nil, s.logErr("StartStep", err)
 	}
 	return &pb.StartStepResponse{StepId: stepID, Event: eventProto(event)}, nil
+}
+
+// CancelExecution is the one cancel path (docs/prds/execution-tree-state-machine.md):
+// the store records the cancellation and returns the steps it cancelled; the
+// caller delivers it by cancelling the run's in-memory context afterwards.
+func (s *server) CancelExecution(ctx context.Context, r *pb.CancelExecutionRequest) (*pb.CancelExecutionResponse, error) {
+	if s.deps.Canceller == nil {
+		return nil, status.Error(codes.Unavailable, "execution canceller unavailable")
+	}
+	ids, err := s.deps.Canceller.CancelExecution(ctx, r.TaskId, r.Reason, r.To)
+	if err != nil {
+		return nil, s.logErr("CancelExecution", err)
+	}
+	return &pb.CancelExecutionResponse{CancelledStepIds: ids}, nil
 }
 
 func (s *server) FinishStep(ctx context.Context, r *pb.FinishStepRequest) (*pb.FinishStepResponse, error) {

@@ -76,10 +76,14 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 // controller path and fails the test on error.
 func runChatAction(t *testing.T, ctx context.Context, st storecontract.TaskStore, action string, taskID int64) {
 	t.Helper()
+	canceller, ok := st.(storecontract.ExecutionCanceller)
+	if !ok {
+		t.Fatal("the task store cannot cancel executions")
+	}
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:   st.TaskByID,
-		requeue:    st.Requeue,
-		transition: st.Transition,
+		taskByID:        st.TaskByID,
+		requeue:         st.Requeue,
+		cancelExecution: canceller.CancelExecution,
 	})
 	var err error
 	if action == "approve" {
