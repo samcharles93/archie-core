@@ -59,6 +59,7 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 		ToolSettingsKind:             map[string]any{"mcp_servers": []map[string]any{{"name": "docs", "transport": "http", "url": "https://mcp.example.com", "headers_configured": true}}, "policy": map[string]any{}, "web_fetch": map[string]any{}, "minimax": map[string]any{"enabled": false, "credential_configured": false}},
 		PluginSettingsKind:           map[string]any{"plugin_dir": "/plugins", "module_dir": "/modules", "secret_engine_dir": "/secrets", "skills_dir": "/skills"},
 		ContainerRuntimePoliciesKind: map[string]any{"image": "archie:next", "pull_policy": "missing"},
+		AgentProfileKind:             map[string]any{"net": map[string]any{"tools": []string{"whois"}}},
 	}})
 
 	got, versions, err := client.RuntimeConfig(t.Context(), base)
@@ -69,7 +70,7 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 	// publishes is the one it actually layered in (archie-core-pskb).
 	for _, kind := range []string{
 		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, ChannelSettingsKind,
-		SchedulingPolicyKind, ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind,
+		SchedulingPolicyKind, ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind, AgentProfileKind,
 	} {
 		if versions[kind] != 2 {
 			t.Errorf("versions[%s] = %d, want the 2 the store answered with", kind, versions[kind])
@@ -551,7 +552,7 @@ func TestRuntimeResourceKindsApplyLive(t *testing.T) {
 		modes[definition.Kind] = definition.ApplyMode
 	}
 	for _, kind := range []string{
-		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind,
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind,
 	} {
 		if modes[kind] != "live" {
 			t.Errorf("%s applies %q, want live: the daemon re-layers this kind on a watch", kind, modes[kind])
@@ -583,31 +584,47 @@ func TestSchedulingPolicySeedCarriesTheLabel(t *testing.T) {
 	}
 }
 
-// Stored container policies that carry profiles replace the file's outright;
-// ones stored before profiles existed inherit the file's.
+// absentReader answers every kind as not-found, so a test can exercise
+// runtimeConfigFrom's leave-the-file-value-in-effect path (real ImportConfig
+// never leaves a kind unseeded, but a store the migration has not reached yet
+// -- or a resource kind added after this document was last stored -- does).
+type absentReader struct{}
+
+func (absentReader) Query(context.Context, string, func([]byte) error) (int64, bool, error) {
+	return 0, false, nil
+}
+
+// A stored AgentProfileKind value replaces the file's profiles outright; no
+// stored value at all leaves the file's in effect (agent-profiles is its own
+// resource, seeded from but independent of container-runtime-policies, so a
+// Kit profile applies without a restart -- docs/prds/external-agent-harness.md
+// "Selection").
 func TestRuntimeConfigLayersStoredProfiles(t *testing.T) {
 	base := config.Config{Containers: config.ContainerConfig{Image: "agent:1", Profiles: map[string]config.AgentProfile{
 		"file-only": {Image: "file:1"},
 	}}}
+
 	for _, tt := range []struct {
 		name   string
 		stored map[string]any
 		want   []string
 	}{
-		{name: "stored profiles replace the file's", stored: map[string]any{"image": "agent:2", "profiles": map[string]any{"net": map[string]any{"tools": []string{"whois"}}}}, want: []string{"net"}},
+		{name: "a stored value replaces the file's", stored: map[string]any{"net": map[string]any{"tools": []string{"whois"}}}, want: []string{"net"}},
 		{
-			// The Go-cased spelling documents written before the document had its
-			// own shape carry: the profile it names must still replace the file's.
-			name:   "legacy Go-cased profiles replace the file's",
-			stored: map[string]any{"Image": "agent:2", "Profiles": map[string]any{"net": map[string]any{"Tools": []string{"whois"}}}},
+			// The Go-cased spelling documents written before agent-profiles had
+			// its own document shape carry, at the profile-nesting level
+			// (agentProfile.UnmarshalJSON): the profile it names must still
+			// replace the file's.
+			name:   "a legacy Go-cased stored value replaces the file's",
+			stored: map[string]any{"net": map[string]any{"Tools": []string{"whois"}}},
 			want:   []string{"net"},
 		},
-		{name: "a document without profiles inherits the file's", stored: map[string]any{"image": "agent:2"}, want: []string{"file-only"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
 				SchedulingPolicyKind:         map[string]any{"poll_interval": "2m", "dispatch": map[string]any{"trigger": "assignee"}},
-				ContainerRuntimePoliciesKind: tt.stored,
+				ContainerRuntimePoliciesKind: map[string]any{"image": "agent:2"},
+				AgentProfileKind:             tt.stored,
 			}})
 			got, _, err := client.RuntimeConfig(t.Context(), base)
 			if err != nil {
@@ -622,6 +639,21 @@ func TestRuntimeConfigLayersStoredProfiles(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("no stored value inherits the file's", func(t *testing.T) {
+		got, _, err := runtimeConfigFrom(t.Context(), absentReader{}, base)
+		if err != nil {
+			t.Fatalf("runtimeConfigFrom: %v", err)
+		}
+		var names []string
+		for name := range got.Containers.Profiles {
+			names = append(names, name)
+		}
+		if want := []string{"file-only"}; !reflect.DeepEqual(names, want) {
+			t.Fatalf("profiles = %v, want %v", names, want)
+		}
+	})
+
 	if got := base.Containers.Profiles; len(got) != 1 {
 		t.Fatalf("layering mutated the file document's profiles: %v", got)
 	}

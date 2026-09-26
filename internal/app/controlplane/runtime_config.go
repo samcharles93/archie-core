@@ -204,29 +204,33 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		return config.Config{}, nil, err
 	}
 	if err := layerResource(ctx, reader, versions, ContainerRuntimePoliciesKind, func(value []byte) error {
-		// A document that omits profiles (one stored before they existed)
-		// inherits the file's. One that carries them replaces the file's:
-		// the mapping below would otherwise merge into the file's map, so a
-		// profile deleted from the store would come back from the file. Both
-		// spellings are checked, because documents written before the document
-		// had its own shape carry the Go-cased key.
-		var keys map[string]json.RawMessage
-		if err := json.Unmarshal(value, &keys); err != nil {
-			return err
-		}
-		_, carriesProfiles := keys["profiles"]
-		if !carriesProfiles {
-			_, carriesProfiles = keys["Profiles"]
-		}
 		var policies containerRuntimePolicies
 		if err := json.Unmarshal(value, &policies); err != nil {
 			return err
 		}
-		inherited := out.Containers.Profiles
+		// Profiles survives this assignment untouched: containerRuntimePolicies
+		// carries no Profiles field at all (it is AgentProfileKind's document
+		// now), and settings() never sets it, so whatever the AgentProfileKind
+		// layering step below assigns is what's left standing regardless of
+		// which of the two runs first.
+		profiles := out.Containers.Profiles
 		out.Containers = policies.settings()
-		if !carriesProfiles {
-			out.Containers.Profiles = inherited
+		out.Containers.Profiles = profiles
+		return nil
+	}); err != nil {
+		return config.Config{}, nil, err
+	}
+	// AgentProfileKind is a separate resource from ContainerRuntimePoliciesKind
+	// (config.ContainerConfig.Profiles is json:"-") so a Kit profile applies
+	// without a restart: a stored value replaces the file's outright rather
+	// than merging into it, the same reason ModelRoleAssignmentsKind above
+	// reassigns out.Models wholesale instead of decoding into the existing map.
+	if err := layerResource(ctx, reader, versions, AgentProfileKind, func(value []byte) error {
+		var profiles map[string]agentProfile
+		if err := json.Unmarshal(value, &profiles); err != nil {
+			return err
 		}
+		out.Containers.Profiles = agentProfilesSettings(profiles)
 		return nil
 	}); err != nil {
 		return config.Config{}, nil, err

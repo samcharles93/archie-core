@@ -846,7 +846,11 @@ type ContainerConfig struct {
 	// Profiles are the named agent profiles a workflow selects with
 	// `profile:`. A workflow that names none runs under the default profile:
 	// Image and every tool.
-	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles"`
+	// Profiles is excluded from the control-plane JSON document
+	// (container-runtime-policies): profiles are their own resource,
+	// AgentProfileKind, seeded from this field but validated and stored
+	// (and reloaded live) separately -- see internal/app/controlplane.
+	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles" json:"-"`
 }
 
 // AgentProfile is a named execution environment for an agent. Secrets and
@@ -893,7 +897,16 @@ func (p AgentProfile) IsKit() bool { return len(p.Kit) > 0 }
 // ValidateProfiles rejects a profile with an empty name, an empty tool
 // name, or a Kit that is not pinned by digest or also names an image.
 func (c ContainerConfig) ValidateProfiles() error {
-	for name, p := range c.Profiles {
+	return ValidateAgentProfiles(c.Profiles)
+}
+
+// ValidateAgentProfiles is ValidateProfiles's rule set, standalone so the
+// control-plane AgentProfileKind resource (internal/app/controlplane) can
+// apply the same rules to a stored value: the file document and the
+// resource that replaces it must not be able to disagree about which
+// profiles are valid.
+func ValidateAgentProfiles(profiles map[string]AgentProfile) error {
+	for name, p := range profiles {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("containers.profiles: a profile name must not be empty")
 		}

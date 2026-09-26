@@ -148,16 +148,20 @@ var reloadableFields = map[string]bool{
 
 // reloadableSubFields are sub-fields of structs that are otherwise
 // startup-built. VolumeTTL is re-read per cycle in cleanupExpiredStorage;
-// everything else in Containers (Image, MaxConcurrency,
-// MaxUptime, PullPolicy, Network) is frozen in the startup-built
-// container pool -- the dispatchers re-read MaxConcurrency but the pool
-// captures it at construction (container/pool.go:94,163), so a change
-// only partially applies and must warn requires-restart. Forge.Host is
-// carried into TaskContext by ForTask (display/link building only); the
-// forge client itself is startup-built, so Type/Token/TokenEnv stay
-// requires-restart.
+// Profiles is resolved fresh per dispatch (daemon.configFor ->
+// Containers.Profile, called from pinTaskProfile) and is also its own
+// live-applying control-plane resource (AgentProfileKind), never captured at
+// container-pool construction -- docs/prds/external-agent-harness.md
+// "Selection": a Kit profile applies without a restart. Everything else in
+// Containers (Image, MaxConcurrency, MaxUptime, PullPolicy, Network) is
+// frozen in the startup-built container pool -- the dispatchers re-read
+// MaxConcurrency but the pool captures it at construction
+// (container/pool.go:94,163), so a change only partially applies and must
+// warn requires-restart. Forge.Host is carried into TaskContext by ForTask
+// (display/link building only); the forge client itself is startup-built, so
+// Type/Token/TokenEnv stay requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
-	"Containers": {"VolumeTTL": true},
+	"Containers": {"VolumeTTL": true, "Profiles": true},
 	"Forge":      {"Host": true},
 	// Policy is carried into TaskConfig by ForTask (config.go); MCPServers,
 	// WebFetch and Minimax are not and stay requires-restart.

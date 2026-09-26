@@ -175,6 +175,7 @@ looking at before reporting one:
 | `volume_ttl`      | Default `72h` only when enabled; negative rejected.                                                                |
 | `pull_policy`     | Default `missing` when enabled. Pool code recognises `missing` and `always`; other strings silently skip pre-pull. |
 | `network`         | Empty uses best-effort self-network detection. Repository overlay pins `archie-core_default`.                      |
+| `profiles`        | Named agent execution environments (image or Kit); resolved per task dispatch (`ContainerConfig.Profile`). Own control-plane resource `agent-profiles` (`json:"-"` on the field so `container-runtime-policies` never carries it), `ApplyMode: live` -- a profile change applies without a restart, unlike the rest of `[containers]`. |
 
 ### Channel settings
 
