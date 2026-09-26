@@ -63,8 +63,11 @@ func TestWorkflowCallerConformance(t *testing.T) {
 			if err != nil || status != workflow.StatusQueued || detail != "" {
 				t.Fatalf("CallStatus queued = (%q, %q, %v), want (queued, \"\", nil)", status, detail, err)
 			}
-			if err := local.Transition(ctx, callee.ID, callee.Status, workflow.StatusCompleted, "contained 10.0.0.9"); err != nil {
-				t.Fatalf("Transition callee: %v", err)
+			if err := local.Transition(ctx, callee.ID, callee.Status, workflow.StatusRunning, "started"); err != nil {
+				t.Fatalf("Transition callee to running: %v", err)
+			}
+			if err := local.Transition(ctx, callee.ID, workflow.StatusRunning, workflow.StatusCompleted, "contained 10.0.0.9"); err != nil {
+				t.Fatalf("Transition callee to completed: %v", err)
 			}
 			status, detail, err = c.CallStatus(ctx, caller.ID, callee.ID)
 			if err != nil || status != workflow.StatusCompleted || detail != "contained 10.0.0.9" {
