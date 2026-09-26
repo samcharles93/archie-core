@@ -288,6 +288,29 @@ StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
    Verify the failure originates from test assertions, not compilation errors.
    Do not write tests that restate an assignment or a constant: a test that
    cannot fail for an interesting reason is noise in the gate.
+   - **A test is a maintenance liability, not free insurance.** Every test
+     added is code the project now carries forever: it must compile, it must
+     keep passing as the code around it changes, and someone reads it during
+     every future change to that area. Write one because a real regression
+     would slip through without it, not because the function was touched.
+   - **Never pin a literal end-user config value, database row, or settings
+     document as the thing under test.** Test the validation rule, the
+     migration's shape, or the round-trip contract -- not one operator's
+     specific `config.toml` value, a hand-picked DB fixture that mirrors real
+     data, or a setting's current default. Those change for reasons that have
+     nothing to do with a regression, and a test pinned to one breaks on
+     every such change, which is cost with no signal.
+   - **Test-only helpers, fakes and fixtures live in `_test.go` files (or a
+     package no production `.go` file imports), never in a file the binary
+     ships.** `go build` does not compile `_test.go` files into the binary,
+     but an exported "test helper" living in a regular source file compiles
+     into every binary that imports the package, whether or not a test ever
+     runs. If a helper must be shared across packages, put it behind a
+     build-tagged or `_test.go`-suffixed file in an `xtest`-style package,
+     not behind a normal export.
+   - **Coverage is not the goal.** A codebase that grows mostly because tests
+     multiplied faster than the feature they cover is a symptom, not
+     progress -- prefer fewer, sharper tests over one per line changed.
 2. **Green (Implementation):** Implement minimal code to satisfy the failing
    tests.
 3. **Quality Gate:** Run `task check`.
