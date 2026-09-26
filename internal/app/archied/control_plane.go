@@ -115,41 +115,45 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var lastApplyErr, streamErr error
+	open := func(ctx context.Context, after int64) (<-chan controlplane.AppliedSettings, error) {
+		updates, err := b.controlPlane.WatchWorkflowExecutionSettings(ctx, after)
+		if err == nil {
+			b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, after, lastApplyErr)
+		}
+		return updates, err
+	}
 	go keepWatch(ctx, b.log, controlplane.WorkflowExecutionSettingsKind, version, updates,
-		b.controlPlane.WatchWorkflowExecutionSettings,
+		open,
 		waitFor,
 		func(update controlplane.AppliedSettings) int64 { return update.Version },
 		func(update controlplane.AppliedSettings) {
 			if update.Err != nil {
-				// A refused update arrives here, not through
-				// applyWorkflowExecutionSettings: controlplane.Client decodes every
-				// document it is handed, so a stored value this process cannot run
-				// never reaches the apply call. Report it against the version it
-				// came from -- the reporter keeps the version it last applied --
-				// so the settings page shows the refusal instead of a version this
-				// process never ran (docs/prds/control-plane-apply-status.md).
-				//
-				// A stream failure arrives the same way and must not be reported:
-				// it carries no version at all, because a Recv error is the store
-				// not answering rather than a document, and versions start at 1
-				// (store.PutResource). The rule is
-				// docs/prds/control-plane-apply-status.md, "What can be reported,
-				// and what cannot": a process reaches its apply point only after
-				// the State Store has answered it, and an unreachable store is
-				// never reported as a failure by the process it affected. The
-				// record would not stick of itself -- Report overwrites it on the
-				// next applied version -- but a store that never changes again
-				// leaves the one stamp standing, and the process must not write it
-				// at all. Reporting it would also overwrite the text of a standing
-				// refusal, which is the one message that says what to fix. The
-				// reconnect is the loop's business, not the record's.
+				// A refused document carries its version, while a stream failure
+				// does not. Keep a refusal visible across a transport outage; when
+				// there is no outstanding refusal, the end callback records the
+				// outage until a watch is re-established.
 				if update.Version > 0 {
+					lastApplyErr = update.Err
 					b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, update.Version, update.Err)
+				} else {
+					streamErr = update.Err
 				}
 				b.log.Error("workflow execution settings watch failed", "err", update.Err)
 				return
 			}
-			_ = b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
+			lastApplyErr = b.applyWorkflowExecutionSettings(ctx, update.Settings, update.Version)
+		},
+		func() {
+			if lastApplyErr != nil {
+				return
+			}
+			if streamErr == nil {
+				streamErr = fmt.Errorf("control-plane watch stream ended")
+			}
+			b.applyStatus.Report(ctx, controlplane.WorkflowExecutionSettingsKind, 0,
+				fmt.Errorf("workflow execution settings watch unavailable: %w", streamErr))
+			streamErr = nil
 		})
 	return nil
 }

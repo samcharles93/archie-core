@@ -219,22 +219,22 @@ func TestWorkflowExecutionSettingsWatchIsReEstablishedAfterTheStreamEnds(t *test
 				t.Errorf("watch resumed after %v, want the boot version then the last version handled", got)
 			}
 
-			// Boot's own apply, then the update the re-established stream
-			// delivered. Neither way the stream ends writes a record of its own:
-			// a stream the server closed emits no update at all (controlplane
-			// .Client sends one only for a Recv error), and a Recv failure
-			// carries no version, which is the unreachable store the process must
-			// never report as a failure of its own
-			// (docs/prds/control-plane-apply-status.md, "What can be reported, and
-			// what cannot").
-			records := status.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 2)
-			if len(records) != 2 {
-				t.Fatalf("apply status = %+v, want the boot apply and the recovered one alone", records)
+			// Boot applies version 1, the ended stream reports the outage, the
+			// reopened watch clears it, and the delivered version 2 is applied.
+			records := status.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 4)
+			if len(records) != 4 {
+				t.Fatalf("apply status = %+v, want boot, outage, reconnect, and update reports", records)
 			}
 			if records[0].AppliedVersion != 1 || records[0].Error != "" {
 				t.Errorf("boot report = %+v, want a clean apply of version 1", records[0])
 			}
-			last := records[len(records)-1]
+			if records[1].AppliedVersion != 1 || !strings.Contains(records[1].Error, "watch unavailable") {
+				t.Errorf("outage report = %+v, want version 1 with a watch outage", records[1])
+			}
+			if records[2].AppliedVersion != 1 || records[2].Error != "" {
+				t.Errorf("reconnect report = %+v, want the outage cleared at version 1", records[2])
+			}
+			last := records[3]
 			if last.AppliedVersion != 2 || last.Error != "" {
 				t.Errorf("last apply status = %+v, want the recovered apply of version 2 with the failure cleared", last)
 			}
@@ -256,7 +256,7 @@ func TestWorkflowExecutionSettingsWatchIsReEstablishedAfterTheStreamEnds(t *test
 // point), applystatus.Reporter keeps a standing error and re-stamps it forever,
 // and the dashboard renders any non-empty error as failed. The process reads as
 // failed for the rest of its life, after one blip.
-func TestWatchTransportFailureIsNotReportedAsAFailedApply(t *testing.T) {
+func TestWatchTransportFailureIsReportedUntilTheWatchRecovers(t *testing.T) {
 	t.Parallel()
 	b, recorder := newLiveApplyBoot(t, fileConfig())
 	stub := &watchStub{
@@ -285,23 +285,25 @@ func TestWatchTransportFailureIsNotReportedAsAFailedApply(t *testing.T) {
 	// the loop delivers what ended the stream, then reopens.
 	stub.awaitWatchCalls(t, controlplane.WorkflowExecutionSettingsKind, 2)
 
-	records := recorder.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 1)
-	if len(records) != 1 {
-		t.Fatalf("apply status = %+v, want the boot apply alone: an unreachable store writes no record", records)
+	records := recorder.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 3)
+	if len(records) != 3 {
+		t.Fatalf("apply status = %+v, want boot, outage, and recovery reports", records)
 	}
-	if last := records[0]; last.AppliedVersion != 1 || last.Error != "" {
-		t.Errorf("apply status = %+v, want the clean apply of version 1 still standing", last)
+	if records[0].AppliedVersion != 1 || records[0].Error != "" {
+		t.Errorf("boot apply status = %+v, want the clean apply of version 1", records[0])
+	}
+	if records[1].AppliedVersion != 1 || !strings.Contains(records[1].Error, "watch unavailable") {
+		t.Errorf("outage apply status = %+v, want version 1 with a watch outage", records[1])
+	}
+	if records[2].AppliedVersion != 1 || records[2].Error != "" {
+		t.Errorf("recovered apply status = %+v, want version 1 with the outage cleared", records[2])
 	}
 }
 
-// TestWatchTransportFailureDoesNotOverwriteARefusal is the other half of the
-// same rule, and the reason the branch is on the version rather than on the
-// error: a refused document arrives carrying the version it came from, so it is
-// the store answering and must be reported; a transport failure carries no
-// version and must not. Reporting the transport failure against the version
-// still live overwrites the refusal's text, so a validation error against
-// version 2 reads "control-plane unavailable: ..." after any blip, and the
-// operator loses the one message that says what to fix.
+// TestWatchTransportFailureDoesNotOverwriteARefusal keeps the more useful
+// versioned rejection visible when a stream drops afterward. Reconnection
+// restores that rejection instead of clearing it as though a valid update had
+// arrived.
 func TestWatchTransportFailureDoesNotOverwriteARefusal(t *testing.T) {
 	t.Parallel()
 	b, recorder := newLiveApplyBoot(t, fileConfig())
@@ -332,18 +334,18 @@ func TestWatchTransportFailureDoesNotOverwriteARefusal(t *testing.T) {
 
 	stub.awaitWatchCalls(t, controlplane.WorkflowExecutionSettingsKind, 2)
 
-	records := recorder.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 2)
-	if len(records) != 2 {
-		t.Fatalf("apply status = %+v, want the boot apply and the refusal alone", records)
+	records := recorder.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 3)
+	if len(records) != 3 {
+		t.Fatalf("apply status = %+v, want boot, refusal, and the preserved refusal after reconnect", records)
 	}
-	last := records[len(records)-1]
+	last := records[2]
 	if last.AppliedVersion != 1 {
 		t.Errorf("refusal reported against version %d, want the version still live (1)", last.AppliedVersion)
 	}
 	if !strings.Contains(last.Error, "max model/tool steps must not be negative") {
 		t.Errorf("apply status error = %q, want the refusal's own text", last.Error)
 	}
-	if strings.Contains(last.Error, "control-plane unavailable") {
+	if strings.Contains(last.Error, "watch unavailable") {
 		t.Errorf("apply status error = %q, want the transport blip not to have overwritten the refusal", last.Error)
 	}
 	// The refused version is unusable to this build, so the resume point moves
@@ -394,13 +396,16 @@ func TestWatchReconnectDoesNotReplayWhatItAlreadyApplied(t *testing.T) {
 		t.Errorf("watch resumed after %v, want the boot version then the last version handled", got)
 	}
 
-	// One report for the boot apply and one for the update: a third would be
-	// the re-served version 1 applied over itself.
-	records := recorder.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 2)
-	if len(records) != 2 {
-		t.Fatalf("apply status = %+v, want the boot apply and the update alone", records)
+	// The outage and reconnection records sit between boot and version 2; the
+	// re-served version 1 is still filtered out.
+	records := recorder.awaitCount(t, controlplane.WorkflowExecutionSettingsKind, 4)
+	if len(records) != 4 {
+		t.Fatalf("apply status = %+v, want boot, outage, reconnect, and version 2", records)
 	}
-	last := records[len(records)-1]
+	if records[1].AppliedVersion != 1 || !strings.Contains(records[1].Error, "watch unavailable") {
+		t.Errorf("outage report = %+v, want an outage against version 1", records[1])
+	}
+	last := records[3]
 	if last.AppliedVersion != 2 || last.Error != "" {
 		t.Errorf("last apply status = %+v, want the recovered apply of version 2", last)
 	}

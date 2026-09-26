@@ -52,12 +52,10 @@ const controlPlaneWatchHealthyMultiple = 2
 // re-establishes it in this same goroutine until ctx ends.
 //
 // A control-plane watch stream is not permanent. The State Store restarts, the
-// connection drops, the server closes the stream -- and nothing on the client
-// side reopens it. A watch that ends on its first end stops applying that kind
-// for the rest of the process's life: every later stored change is silently
-// never applied while the last apply-status record keeps re-stamping, so the
-// settings page reads the process as current, and the process recovers only by
-// restarting (archie-core-yrmr).
+// connection drops, or the server closes the stream. keepWatch reopens it in
+// place; workflow-execution-settings also reports the gap so apply status does
+// not keep re-stamping the previous successful version as current while no
+// live updates can arrive (archie-core-1050).
 //
 // One goroutine per kind, reconnecting in place: a long outage does not stack
 // watchers. Reopening resumes after the last version an update carried, so a
@@ -129,6 +127,7 @@ func keepWatch[T any](
 	wait func(ctx context.Context, d time.Duration) bool,
 	versionOf func(update T) int64,
 	deliver func(update T),
+	onEnded ...func(),
 ) {
 	stream, backoff := first, controlPlaneWatchRetryMin
 	for {
@@ -145,6 +144,9 @@ func keepWatch[T any](
 		}
 		if ctx.Err() != nil {
 			return
+		}
+		if len(onEnded) > 0 {
+			onEnded[0]()
 		}
 		backoff = retryDelay(backoff, attemptHealthy(progressed, time.Since(started), backoff))
 		log.Warn("control plane watch stream ended; reconnecting",
