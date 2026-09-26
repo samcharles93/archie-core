@@ -194,74 +194,248 @@ func TestRuntimeConfigCarriesParallelToolCallsThroughTheProjection(t *testing.T)
 	}
 }
 
-// TestToolSettingsProjectionCarriesEveryMCPServerField is the guard the field
-// itself cannot be. mcpServerSettings mirrors config.MCPServer field by field,
-// so the next field added to MCPServer -- internal/config's Sandboxed, when
-// mcp-tool-completion's #178 lands -- silently falls out of the control-plane
-// path unless something fails when it does. This test is that something: it
-// populates every MCPServer field by reflection, so a field added later is
-// populated without editing any fixture here, then requires the seed to name
-// the field and the layering to hand it back.
-//
-// mcpServerFieldsLeftToTheFile is the only way past the check, and every entry
-// in it has to say what the projection carries in place of the field.
-func TestToolSettingsProjectionCarriesEveryMCPServerField(t *testing.T) {
-	var server config.MCPServer
-	populateEveryField(t, reflect.ValueOf(&server).Elem(), "config.MCPServer")
-	// The resource validator knows a fixed transport vocabulary, so the round
-	// trip needs one of them. It is the only value here the fixture takes from
-	// the validator rather than from the field's type; stdio requires a command,
-	// which the fixture has already set.
-	server.Transport = "stdio"
-	base := config.Config{Tools: config.ToolsConfig{MCPServers: []config.MCPServer{server}}}
+// settingsProjectionSpec describes a source config struct and the explicit
+// control-plane document struct that projects it. Overrides cover renamed or
+// transformed keys; the two allowlists require a reason for one-way fields.
+type settingsProjectionSpec struct {
+	name           string
+	source         any
+	projection     any
+	keyOverrides   map[string]string
+	fileSurrogates map[string]string
+	leftToFile     map[string]string
+	projectionOnly map[string]string
+}
 
-	seed := seedToolSettings(t, base)
-	seeded := seededServer(t, seed)
-	got := layerToolSettings(t, seed, base).Tools.MCPServers[0]
+// settingsProjectionSpecs includes the custom config mirrors in this package:
+// provider and tool resources, plus the channel document types aliased from
+// controlplanerpc. Repo and container resources carry config types directly.
+var settingsProjectionSpecs = []settingsProjectionSpec{
+	{
+		name: "tools", source: config.ToolsConfig{}, projection: toolSettings{},
+		keyOverrides: map[string]string{"Policy": "policy"},
+	},
+	{
+		name: "MCP server", source: config.MCPServer{}, projection: mcpServerSettings{},
+		fileSurrogates: map[string]string{"Headers": "headers_configured"},
+		leftToFile:     map[string]string{"Headers": "HTTP credentials remain file-owned"},
+	},
+	{
+		name: "MiniMax", source: config.MinimaxConfig{}, projection: minimaxSettings{},
+		keyOverrides:   map[string]string{"APIKey": "api_key_ref"},
+		projectionOnly: map[string]string{"CredentialConfigured": "derived from APIKey"},
+	},
+	{
+		name: "provider", source: config.Provider{}, projection: providerDocument{},
+		keyOverrides:   map[string]string{"APIKey": "api_key_ref"},
+		projectionOnly: map[string]string{"HasCredential": "derived from APIKey and APIKeyEnv"},
+	},
+	{name: "chat", source: config.ChatConfig{}, projection: channelSettings{}},
+	{
+		name: "Telegram", source: config.TelegramConfig{}, projection: telegramSettings{},
+		keyOverrides: map[string]string{"Token": "token_ref"},
+		leftToFile: map[string]string{
+			"UpdateCheckCommand":   "update commands stay file-owned",
+			"UpdateInstallCommand": "update commands stay file-owned",
+		},
+		projectionOnly: map[string]string{"CredentialConfigured": "derived from Token"},
+	},
+	{
+		name: "webhook route", source: config.WebhookRoute{}, projection: webhookChannelSettings{},
+		keyOverrides:   map[string]string{"Secret": "secret_ref"},
+		projectionOnly: map[string]string{"CredentialConfigured": "derived from Secret"},
+	},
+	{name: "email", source: config.EmailConfig{}, projection: emailSettings{}},
+	{name: "rate limit", source: config.RateLimitConfig{}, projection: rateLimitSettings{}},
+}
 
-	typ := reflect.TypeOf(server)
-	for i := range typ.NumField() {
-		field := typ.Field(i)
-		name := jsonFieldName(field)
-		surrogate, leftToTheFile := mcpServerFieldsLeftToTheFile[field.Name]
-		if leftToTheFile {
-			// Deliberately not carried: the stored value must not hold the
-			// field's own value, and whatever the projection carries instead
-			// must be there.
-			if _, carried := seeded[name]; carried {
-				t.Errorf("the %s seed carries MCPServer.%s (%q), which mcpServerFieldsLeftToTheFile leaves to the file document", ToolSettingsKind, field.Name, name)
+func TestSettingsProjectionTypesStayInParity(t *testing.T) {
+	for _, spec := range settingsProjectionSpecs {
+		t.Run(spec.name, func(t *testing.T) {
+			sourceType, projectionType := reflect.TypeOf(spec.source), reflect.TypeOf(spec.projection)
+			projectionKeys := make(map[string]string, projectionType.NumField())
+			for field := range projectionType.Fields() {
+				projectionKeys[jsonFieldName(field)] = field.Name
 			}
-			if _, ok := seeded[surrogate]; !ok {
-				t.Errorf("the %s seed carries neither MCPServer.%s nor the %q the projection carries in its place", ToolSettingsKind, field.Name, surrogate)
+
+			mappedKeys := map[string]string{}
+			for field := range sourceType.Fields() {
+				key := spec.keyOverrides[field.Name]
+				if key == "" {
+					key = configFieldName(field)
+				}
+				if reason, allowed := spec.leftToFile[field.Name]; allowed {
+					if reason == "" {
+						t.Errorf("%s.%s has an empty left-to-file reason", spec.name, field.Name)
+					}
+					if surrogate := spec.fileSurrogates[field.Name]; surrogate != "" {
+						if _, exists := projectionKeys[surrogate]; !exists {
+							t.Errorf("%s.%s is left to the file but projection has no surrogate key %q", spec.name, field.Name, surrogate)
+						}
+						mappedKeys[surrogate] = field.Name
+					}
+					continue
+				}
+				if key == "" {
+					t.Errorf("%s.%s has no config or projection key; add an explicit key override or left-to-file reason", spec.name, field.Name)
+					continue
+				}
+				if _, exists := projectionKeys[key]; !exists {
+					t.Errorf("%s.%s maps to %q, which %s does not project", spec.name, field.Name, key, projectionType)
+				}
+				mappedKeys[key] = field.Name
 			}
-			continue
-		}
-		if _, carried := seeded[name]; !carried {
-			t.Errorf("the %s seed has no %q key, so seedTools never projects MCPServer.%s and the layering can only restore its zero value", ToolSettingsKind, name, field.Name)
-			continue
-		}
-		wantField := reflect.ValueOf(server).Field(i).Interface()
-		if gotField := reflect.ValueOf(got).Field(i).Interface(); !reflect.DeepEqual(gotField, wantField) {
-			t.Errorf("MCPServer.%s = %#v after the control-plane round trip, want %#v: carry it through mcpServerSettings, seedTools, and runtimeToolConfigFrom, or add it to mcpServerFieldsLeftToTheFile with what the projection carries in its place", field.Name, gotField, wantField)
-		}
-	}
-	// An allowlist entry for a field MCPServer no longer has is a dead pass.
-	for name := range mcpServerFieldsLeftToTheFile {
-		if _, ok := typ.FieldByName(name); !ok {
-			t.Errorf("mcpServerFieldsLeftToTheFile names MCPServer.%s, which the struct no longer has", name)
-		}
+
+			for name, reason := range spec.leftToFile {
+				if _, exists := sourceType.FieldByName(name); !exists {
+					t.Errorf("%s left-to-file allowlist names missing source field %s", spec.name, name)
+				}
+				if reason == "" {
+					t.Errorf("%s left-to-file allowlist for %s has no reason", spec.name, name)
+				}
+			}
+			for key, fieldName := range spec.keyOverrides {
+				if _, exists := sourceType.FieldByName(key); !exists {
+					t.Errorf("%s key override names missing source field %s", spec.name, key)
+				}
+				if _, exists := projectionKeys[fieldName]; !exists {
+					t.Errorf("%s key override names missing projection key %q", spec.name, fieldName)
+				}
+			}
+			for fieldName, key := range spec.fileSurrogates {
+				if _, exists := sourceType.FieldByName(fieldName); !exists {
+					t.Errorf("%s file-surrogate mapping names missing source field %s", spec.name, fieldName)
+				}
+				if _, exists := projectionKeys[key]; !exists {
+					t.Errorf("%s file-surrogate mapping names missing projection key %q", spec.name, key)
+				}
+				if _, allowed := spec.leftToFile[fieldName]; !allowed {
+					t.Errorf("%s.%s has file surrogate %q but is not allowed to remain file-owned", spec.name, fieldName, key)
+				}
+			}
+			for field := range projectionType.Fields() {
+				key := jsonFieldName(field)
+				if _, exists := mappedKeys[key]; exists {
+					continue
+				}
+				if reason, allowed := spec.projectionOnly[field.Name]; !allowed || reason == "" {
+					t.Errorf("%s.%s projects JSON key %q with no source field or derived-field reason", spec.name, field.Name, key)
+				}
+			}
+			for name := range spec.projectionOnly {
+				if _, exists := projectionType.FieldByName(name); !exists {
+					t.Errorf("%s projection-only allowlist names missing projection field %s", spec.name, name)
+				}
+			}
+		})
 	}
 }
 
-// mcpServerFieldsLeftToTheFile names the MCPServer fields the control plane's
-// projection deliberately does not carry, with the projection key that stands
-// in for each. It is deliberately short: a field belongs here only when the
-// file document has to stay its owner. Headers hold credentials, so the stored
-// resource records only that some are configured and the layering restores the
-// real map from the base config by server name (runtime_config.go), which
-// TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets pins.
-var mcpServerFieldsLeftToTheFile = map[string]string{
-	"Headers": "headers_configured",
+func configFieldName(field reflect.StructField) string {
+	for _, tag := range []string{"toml", "json"} {
+		name, _, _ := strings.Cut(field.Tag.Get(tag), ",")
+		if name == "-" {
+			return ""
+		}
+		if name != "" {
+			return name
+		}
+	}
+	return field.Name
+}
+
+func TestToolSettingsProjectionCarriesEveryMirroredField(t *testing.T) {
+	tests := []struct {
+		name          string
+		source        any
+		configure     func(*config.Config, reflect.Value)
+		projectedItem func(*testing.T, []byte) map[string]any
+		result        func(config.Config) reflect.Value
+	}{
+		{
+			name:   "MCP server",
+			source: config.MCPServer{},
+			configure: func(cfg *config.Config, value reflect.Value) {
+				server, ok := value.Interface().(config.MCPServer)
+				if !ok {
+					t.Fatalf("source type = %T, want config.MCPServer", value.Interface())
+				}
+				cfg.Tools.MCPServers = []config.MCPServer{server}
+			},
+			projectedItem: seededServer,
+			result:        func(cfg config.Config) reflect.Value { return reflect.ValueOf(cfg.Tools.MCPServers[0]) },
+		},
+		{
+			name:   "MiniMax",
+			source: config.MinimaxConfig{},
+			configure: func(cfg *config.Config, value reflect.Value) {
+				minimax, ok := value.Interface().(config.MinimaxConfig)
+				if !ok {
+					t.Fatalf("source type = %T, want config.MinimaxConfig", value.Interface())
+				}
+				cfg.Tools.Minimax = minimax
+			},
+			projectedItem: func(t *testing.T, seed []byte) map[string]any {
+				t.Helper()
+				var document struct {
+					Minimax map[string]any `json:"minimax"`
+				}
+				if err := json.Unmarshal(seed, &document); err != nil {
+					t.Fatalf("decode %s seed: %v", ToolSettingsKind, err)
+				}
+				return document.Minimax
+			},
+			result: func(cfg config.Config) reflect.Value { return reflect.ValueOf(cfg.Tools.Minimax) },
+		},
+	}
+
+	specs := make(map[string]settingsProjectionSpec, len(settingsProjectionSpecs))
+	for _, spec := range settingsProjectionSpecs {
+		specs[spec.name] = spec
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := reflect.New(reflect.TypeOf(tt.source)).Elem()
+			populateEveryField(t, source, "config."+source.Type().Name())
+			if tt.name == "MCP server" {
+				source.FieldByName("Transport").SetString("stdio") // the validator's supported value
+			}
+			base := config.Config{}
+			tt.configure(&base, source)
+			seed := seedToolSettings(t, base)
+			seeded := tt.projectedItem(t, seed)
+			got := tt.result(layerToolSettings(t, seed, base))
+			spec := specs[tt.name]
+			for i := range source.NumField() {
+				field := source.Type().Field(i)
+				key := spec.keyOverrides[field.Name]
+				if key == "" {
+					key = configFieldName(field)
+				}
+				surrogate := spec.fileSurrogates[field.Name]
+				_, leftToFile := spec.leftToFile[field.Name]
+				switch {
+				case surrogate != "":
+					if _, ok := seeded[surrogate]; !ok {
+						t.Errorf("%s seed has no %q surrogate for file-owned %s.%s", ToolSettingsKind, surrogate, source.Type(), field.Name)
+					}
+				case leftToFile:
+					if key != "" {
+						if _, ok := seeded[key]; ok {
+							t.Errorf("%s seed unexpectedly carries file-owned %s.%s as %q", ToolSettingsKind, source.Type(), field.Name, key)
+						}
+					}
+				default:
+					if _, ok := seeded[key]; !ok {
+						t.Errorf("%s seed has no %q key for %s.%s", ToolSettingsKind, key, source.Type(), field.Name)
+					}
+				}
+				if gotField, wantField := got.Field(i).Interface(), source.Field(i).Interface(); !reflect.DeepEqual(gotField, wantField) {
+					t.Errorf("%s.%s after round trip = %#v, want %#v", source.Type(), field.Name, gotField, wantField)
+				}
+			}
+		})
+	}
 }
 
 // seedToolSettings is the value a State Store writes for the tool settings when
