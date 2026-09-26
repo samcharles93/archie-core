@@ -183,6 +183,7 @@ func worktreeOwnerID(env string) int {
 type taskDependencies struct {
 	forge  workflow.Forger
 	store  workflow.Store
+	calls  task.Caller
 	trees  remoteTrees
 	events agentexec.EventPublisher
 	// steps is the workflow step vocabulary pinned definitions are compiled
@@ -314,6 +315,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Cfg:      req.Cfg.ToConfig(),
 		Forge:    dependencies.forge,
 		Store:    dependencies.store,
+		Calls:    dependencies.calls,
 		Trees:    trees,
 		Agent:    agent,
 		Reviewer: reviewer,

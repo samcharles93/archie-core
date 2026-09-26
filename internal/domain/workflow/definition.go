@@ -25,8 +25,9 @@ type YAMLDefinition struct {
 
 // repoFreeStepTypes are the step types that run without a repository. A
 // workflow whose repository is not required may use only these, since it may
-// run with no worktree at all.
-var repoFreeStepTypes = map[string]bool{AgentRunStepName: true}
+// run with no worktree at all. workflow.call needs none of the caller's own:
+// the callee's own repository mode decides whether its run clones.
+var repoFreeStepTypes = map[string]bool{AgentRunStepName: true, WorkflowCallStepName: true}
 
 // StepRecord selects one registered step type and supplies its typed settings.
 type StepRecord struct {
@@ -112,9 +113,13 @@ type (
 	WorkflowDefinitionCollection = task.WorkflowDefinitionCollection
 )
 
-// ValidateDefinitionCollection rejects malformed, duplicate, or mismatched definitions.
+// ValidateDefinitionCollection rejects malformed, duplicate, or mismatched
+// definitions, and every workflow.call step a definition carries: the callee
+// must exist, its inputs must be satisfiable, and the call graph must be
+// acyclic (docs/prds/workflow-calls.md).
 func ValidateDefinitionCollection(collection WorkflowDefinitionCollection, registry StepRegistry) error {
 	seen := make(map[string]struct{}, len(collection.Definitions))
+	parsed := make(map[string]YAMLDefinition, len(collection.Definitions))
 	for _, entry := range collection.Definitions {
 		if _, ok := seen[entry.ID]; ok {
 			return fmt.Errorf("duplicate workflow id %q", entry.ID)
@@ -127,8 +132,9 @@ func ValidateDefinitionCollection(collection WorkflowDefinitionCollection, regis
 		if definition.ID != entry.ID {
 			return fmt.Errorf("workflow entry id %q does not match YAML id %q", entry.ID, definition.ID)
 		}
+		parsed[entry.ID] = definition
 	}
-	return nil
+	return validateWorkflowCalls(parsed)
 }
 
 // DecodeDefinitionCollection strictly decodes the control-plane projection.

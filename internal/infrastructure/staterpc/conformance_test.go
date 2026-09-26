@@ -81,7 +81,7 @@ func remoteTaskStore(t *testing.T, local *pgstore.TaskDB, logs storecontract.Tas
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	deps := Deps{
-		Tasks: local, BindingTaskCreator: local,
+		Tasks: local, BindingTaskCreator: local, WorkflowCalls: local,
 		ConfigSnapshots: local, ApplyStatus: local,
 		TaskLogs: logs,
 	}

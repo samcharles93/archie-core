@@ -382,7 +382,7 @@ func startStateStoreGRPC(t *testing.T, local *pgstore.TaskDB) string {
 	eda := pgstore.EDA(t, nil)
 	staterpc.RegisterServer(server, staterpc.Deps{
 		Tasks: local, Captures: eda, Mappings: eda, Bindings: eda,
-		BindingDispatcher: eda, BindingTaskCreator: local,
+		BindingDispatcher: eda, BindingTaskCreator: local, WorkflowCalls: local,
 	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })

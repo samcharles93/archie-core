@@ -254,6 +254,15 @@ type BindingTaskCreator interface {
 	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*task.Task, error)
 }
 
+// WorkflowCaller is the consumer surface a workflow.call step crosses to
+// start its callee and read it back while waiting (docs/prds/workflow-calls.md).
+// It is the workflow engine's own task.Caller contract, satisfied by the
+// PostgreSQL store and *staterpc.Client alike -- the same shape as
+// workflow.Store. The caller task ID is explicit so both the wire grant and
+// the store's own row check answer the same question: is this call this
+// task's call?
+type WorkflowCaller = task.Caller
+
 // PlaybookDispatcher is the idempotency-ledger surface for side-effecting
 // playbook actions (docs/prds/eda-playbook-engine.md gap 2).
 // RecordPlaybookDispatch writes the (playbook, version, event, action) row
@@ -421,6 +430,18 @@ var (
 	// the sentinel is shared so a caller treats "already recorded" the same
 	// way across the two surfaces.
 	ErrAlreadyDispatched = errors.New("store: binding already dispatched for capture")
+	// ErrCallNotYours is returned when a workflow.call status read names a
+	// task that is not a callee of the calling task, or the caller itself
+	// does not exist: a caller reads only the tasks it started
+	// (docs/prds/workflow-calls.md).
+	ErrCallNotYours = errors.New("store: task is not a callee of the calling task")
+	// ErrCallCallerNotRunning is returned when a workflow.call enqueue names
+	// a caller that is not running: a stale retry, or a bug in the caller.
+	ErrCallCallerNotRunning = errors.New("store: workflow.call caller is not running")
+	// ErrCallDepthExceeded is returned when a workflow.call enqueue would
+	// pass workflow.MaxCallDepth. The engine refuses the same call first;
+	// the store re-checks because it owns the table.
+	ErrCallDepthExceeded = errors.New("store: workflow.call would pass the depth limit")
 	// ErrMappingNotFound is returned when a mapping ID does not exist.
 	ErrMappingNotFound = errors.New("store: mapping not found")
 	// ErrEventTypeNotFound is returned when an event type ID does not exist.

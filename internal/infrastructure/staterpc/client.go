@@ -44,6 +44,7 @@ func (c *Client) Close() error { return nil }
 
 var (
 	_ task.Store                         = (*Client)(nil)
+	_ task.Caller                        = (*Client)(nil)
 	_ storecontract.TaskStore            = (*Client)(nil)
 	_ storecontract.TaskLogStore         = (*Client)(nil)
 	_ storecontract.CaptureStore         = (*Client)(nil)
@@ -564,6 +565,32 @@ func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, bod
 		return nil, unmapError(err)
 	}
 	return taskValue(r.Task), nil
+}
+
+// WorkflowCaller: the workflow.call step's two RPCs (docs/prds/
+// workflow-calls.md). StartCall encodes the call's inputs in the same form
+// every other wire crossing uses; CallStatus rehydrates the sentinels the
+// server maps, so a caller's errors.Is(err, storecontract.ErrCallNotYours)
+// works across the wire.
+
+func (c *Client) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*task.Task, error) {
+	encoded, err := task.EncodeInputs(inputs)
+	if err != nil {
+		return nil, err
+	}
+	r, err := c.client.EnqueueCallTask(ctx, &pb.EnqueueCallTaskRequest{CallerTaskId: callerTaskID, Workflow: wf, InputsJson: encoded})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	return taskValue(r.Task), nil
+}
+
+func (c *Client) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, error) {
+	r, err := c.client.WorkflowCallStatus(ctx, &pb.WorkflowCallStatusRequest{CallerTaskId: callerTaskID, CallTaskId: callTaskID})
+	if err != nil {
+		return "", "", unmapError(err)
+	}
+	return r.Status, r.Detail, nil
 }
 
 // Task log

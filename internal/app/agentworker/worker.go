@@ -8,6 +8,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentboot"
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentgit"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
@@ -50,6 +51,7 @@ type workerTransport interface {
 	SubscribeTasks(context.Context, int64, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) workflow.Store
+	Calls(time.Duration) task.Caller
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
 }
 
@@ -152,6 +154,7 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 type taskServiceTransport interface {
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) workflow.Store
+	Calls(time.Duration) task.Caller
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
 	EventPublisher() agentexec.EventPublisher
 }
@@ -161,6 +164,7 @@ func executeTaskRequest(ctx context.Context, request taskrun.Request, transport 
 	dependencies := taskDependencies{
 		forge:  transport.Forger(request.Task.Identity, rpcTimeout),
 		store:  transport.Store(rpcTimeout),
+		calls:  transport.Calls(rpcTimeout),
 		trees:  transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
 		events: transport.EventPublisher(),
 		steps:  steps,

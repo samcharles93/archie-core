@@ -17,6 +17,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/tools"
@@ -82,6 +83,11 @@ type TaskContext struct {
 	Store Store
 	Trees Trees
 	Agent agentexec.Runner
+	// Calls starts workflow.call callees and reads them back while a
+	// wait:true caller waits. Nil is only safe for a workflow with no
+	// workflow.call step: such a step in a runner with no capability
+	// fails the run with a named error (docs/prds/workflow-calls.md).
+	Calls task.Caller
 	// Reviewer runs the adversarial self-review stage (StageReview). Nil
 	// is only safe when Repo.ReviewEnabled is false; StageReview parks
 	// rather than silently skipping if it is enabled with no Reviewer

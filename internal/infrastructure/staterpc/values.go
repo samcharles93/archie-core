@@ -80,6 +80,8 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,
 		Org:                       string(t.Org),
+		CallParentTaskId:          t.CallParentTaskID,
+		CallDepth:                 int32(t.CallDepth),
 	}
 }
 
@@ -105,6 +107,8 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYAML:    t.WorkflowDefinitionYaml,
 		Org:                       org.OrgID(t.Org),
+		CallParentTaskID:          t.CallParentTaskId,
+		CallDepth:                 int(t.CallDepth),
 	}
 }
 
@@ -453,6 +457,9 @@ var wireErrors = []struct {
 	{storecontract.ErrEventTypeNotFound, codes.NotFound, msgEventTypeNotFound},
 	{storecontract.ErrSourceNotFound, codes.NotFound, msgSourceNotFound},
 	{storecontract.ErrAlreadyDispatched, codes.AlreadyExists, msgAlreadyDispatched},
+	{storecontract.ErrCallNotYours, codes.PermissionDenied, storecontract.ErrCallNotYours.Error()},
+	{storecontract.ErrCallCallerNotRunning, codes.FailedPrecondition, storecontract.ErrCallCallerNotRunning.Error()},
+	{storecontract.ErrCallDepthExceeded, codes.FailedPrecondition, storecontract.ErrCallDepthExceeded.Error()},
 	{storecontract.ErrSourcePathTaken, codes.AlreadyExists, msgSourcePathTaken},
 	{storepkg.ErrNotFound, codes.NotFound, storepkg.ErrNotFound.Error()},
 	{storepkg.ErrInstalled, codes.AlreadyExists, storepkg.ErrInstalled.Error()},

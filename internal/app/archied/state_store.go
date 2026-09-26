@@ -284,6 +284,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if btc, ok := b.st.(storecontract.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
 	}
+	if wc, ok := b.st.(storecontract.WorkflowCaller); ok {
+		deps.WorkflowCalls = wc
+	}
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css
 	}

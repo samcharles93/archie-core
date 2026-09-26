@@ -157,6 +157,14 @@ service StateStoreService {
 
   // BindingTaskCreator
   rpc EnqueueBindingTask(EnqueueBindingTaskRequest) returns (EnqueueBindingTaskResponse);
+
+  // WorkflowCaller: a workflow.call step starts its callee and, with
+  // wait:true, reads it back while waiting. Both are the one sanctioned
+  // widening of a task-scoped grant -- the callee is the caller's child
+  // (docs/prds/workflow-calls.md). CallStatus re-checks the parent-child
+  // relation server-side, so the grant only names the caller.
+  rpc EnqueueCallTask(EnqueueCallTaskRequest) returns (EnqueueCallTaskResponse);
+  rpc WorkflowCallStatus(WorkflowCallStatusRequest) returns (WorkflowCallStatusResponse);
 }
 
 message RegisterTaskGrantRequest {
@@ -282,6 +290,12 @@ message Task {
   // identity when the row is written; a task of a single-operator install
   // belongs to the default org (docs/prds/orgs-and-access.md).
   string org = 35;
+  // The workflow.call linkage (docs/prds/workflow-calls.md): the task whose
+  // workflow.call step started this one (0 on a root run) and how many
+  // call hops this row is from that root. Columns default, so an older
+  // writer reads as a depth-0 root run.
+  int64 call_parent_task_id = 36;
+  int32 call_depth = 37;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -861,6 +875,29 @@ message EnqueueBindingTaskRequest {
   string inputs_json = 9;
 }
 message EnqueueBindingTaskResponse { Task task = 1; }
+
+// workflow.call: the caller's grant names the caller; the store derives the
+// rest from the caller's row (docs/prds/workflow-calls.md).
+message EnqueueCallTaskRequest {
+  int64 caller_task_id = 1;
+  string workflow = 2;
+  string inputs_json = 3;
+}
+message EnqueueCallTaskResponse {
+  Task task = 1;
+  bool accepted = 2;
+}
+
+message WorkflowCallStatusRequest {
+  int64 caller_task_id = 1;
+  int64 call_task_id = 2;
+}
+message WorkflowCallStatusResponse {
+  // status is the callee's task status and detail its latest transition
+  // detail (empty before the callee first moves).
+  string status = 1;
+  string detail = 2;
+}
 
 message InstalledPackage {
   string org_id = 1;

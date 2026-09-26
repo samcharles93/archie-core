@@ -41,6 +41,7 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		Tasks: local, ConfigSnapshots: local, ApplyStatus: local,
 		Captures: eda, Mappings: eda, Bindings: eda,
 		BindingDispatcher: eda, PlaybookDispatcher: eda, EventTypes: eda,
+		BindingTaskCreator: local, WorkflowCalls: local,
 		Grants: grants,
 	})
 	go func() { _ = server.Serve(listener) }()
@@ -163,7 +164,7 @@ func TestUpdateRejectsNilTask(t *testing.T) {
 // Transition/InsertEvent on its own task ID, never the admin-only surface
 // (StatusCounts here stands in for any of the other ~37 RPCs) and never
 // another task's ID.
-func TestTaskGrantScopesWorkerToItsOwnThreeRPCs(t *testing.T) {
+func TestTaskGrantScopesWorkerToItsOwnRPCs(t *testing.T) {
 	const adminToken = "daemon-admin-token"
 	grants, dial := grantsServer(t, adminToken)
 	admin := dial(t, adminToken)
