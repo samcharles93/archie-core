@@ -67,7 +67,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64
 }
 
 const listEventsAfter = `-- name: ListEventsAfter :many
-SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data
+SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
 WHERE at > $1 OR (at = $1 AND id > $2)
 ORDER BY at, id
@@ -104,6 +104,8 @@ func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams
 			&i.PrincipalID,
 			&i.Detail,
 			&i.Data,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -116,7 +118,7 @@ func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams
 }
 
 const listEventsFromBeginning = `-- name: ListEventsFromBeginning :many
-SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data
+SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
 ORDER BY at, id
 LIMIT $1
@@ -146,6 +148,8 @@ func (q *Queries) ListEventsFromBeginning(ctx context.Context, limit int32) ([]E
 			&i.PrincipalID,
 			&i.Detail,
 			&i.Data,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -203,7 +207,7 @@ func (q *Queries) StageStats(ctx context.Context) ([]StageStatsRow, error) {
 }
 
 const taskEventsByID = `-- name: TaskEventsByID :many
-SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data
+SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
 WHERE task_id = $1
 ORDER BY id
@@ -233,6 +237,8 @@ func (q *Queries) TaskEventsByID(ctx context.Context, taskID int64) ([]Event, er
 			&i.PrincipalID,
 			&i.Detail,
 			&i.Data,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}

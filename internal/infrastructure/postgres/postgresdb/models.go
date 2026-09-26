@@ -6,6 +6,8 @@ package postgresdb
 
 import (
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type ApplyStatus struct {
@@ -17,21 +19,23 @@ type ApplyStatus struct {
 }
 
 type Binding struct {
-	ID        string
-	Name      string
-	Source    string
-	Mapping   string
-	Workflow  string
-	Owner     string
-	Repo      string
-	Version   int64
-	Status    string
-	Secret    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Filter    string
-	Inputs    string
-	RepoParam string
+	ID          string
+	Name        string
+	Source      string
+	Mapping     string
+	Workflow    string
+	Owner       string
+	Repo        string
+	Version     int64
+	Status      string
+	Secret      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Filter      string
+	Inputs      string
+	RepoParam   string
+	OrgID       string
+	WorkspaceID string
 }
 
 type BindingDispatch struct {
@@ -53,6 +57,8 @@ type Capture struct {
 	ReceivedAt    time.Time
 	Unsigned      bool
 	EventType     string
+	OrgID         string
+	WorkspaceID   string
 }
 
 type ChannelStatus struct {
@@ -87,16 +93,20 @@ type Event struct {
 	PrincipalID string
 	Detail      string
 	Data        string
+	OrgID       string
+	WorkspaceID string
 }
 
 type EventType struct {
-	ID        string
-	Source    string
-	Name      string
-	Rule      string
-	Schema    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          string
+	Source      string
+	Name        string
+	Rule        string
+	Schema      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	OrgID       string
+	WorkspaceID string
 }
 
 type Identity struct {
@@ -153,19 +163,29 @@ type InstalledPackageRequirement struct {
 }
 
 type Mapping struct {
-	ID         string
-	Name       string
-	SourceHint string
-	Fields     string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	EventType  string
+	ID          string
+	Name        string
+	SourceHint  string
+	Fields      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	EventType   string
+	OrgID       string
+	WorkspaceID string
 }
 
 type MappingMatch struct {
 	Mapping   string
 	Capture   string
 	MatchedAt time.Time
+}
+
+type Membership struct {
+	IdentityID  string
+	OrgID       string
+	WorkspaceID pgtype.Text
+	Role        string
+	CreatedAt   time.Time
 }
 
 type Message struct {
@@ -181,6 +201,24 @@ type Message struct {
 	Search    interface{}
 }
 
+type Org struct {
+	ID        string
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type OrgAgent struct {
+	IdentityID string
+	OrgID      string
+	CreatedAt  time.Time
+}
+
+type OrgUpgrade struct {
+	Phase       string
+	CompletedAt time.Time
+}
+
 type PlaybookDispatch struct {
 	PlaybookID      string
 	PlaybookVersion string
@@ -194,6 +232,7 @@ type Resource struct {
 	Value     []byte
 	Version   int64
 	UpdatedAt time.Time
+	OrgID     string
 }
 
 type ResourceHistory struct {
@@ -207,6 +246,7 @@ type ResourceHistory struct {
 	ExpectedVersion int64
 	CurrentVersion  int64
 	At              time.Time
+	OrgID           string
 }
 
 type Session struct {
@@ -223,11 +263,13 @@ type Session struct {
 }
 
 type Source struct {
-	Path      string
-	Signing   string
-	Secret    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Path        string
+	Signing     string
+	Secret      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	OrgID       string
+	WorkspaceID string
 }
 
 type SysAudit struct {
@@ -279,27 +321,33 @@ type Task struct {
 	UpdatedAt                 time.Time
 	ReviewCursor              int64
 	Inputs                    string
+	OrgID                     string
+	WorkspaceID               string
 }
 
 type ToolCall struct {
-	ID         string
-	TaskID     int64
-	Attempt    int64
-	Tool       string
-	Args       string
-	Result     string
-	Error      string
-	DurationMs int64
-	CalledAt   time.Time
+	ID          string
+	TaskID      int64
+	Attempt     int64
+	Tool        string
+	Args        string
+	Result      string
+	Error       string
+	DurationMs  int64
+	CalledAt    time.Time
+	OrgID       string
+	WorkspaceID string
 }
 
 type Transition struct {
-	ID         int64
-	TaskID     int64
-	At         time.Time
-	FromStatus string
-	ToStatus   string
-	Detail     string
+	ID          int64
+	TaskID      int64
+	At          time.Time
+	FromStatus  string
+	ToStatus    string
+	Detail      string
+	OrgID       string
+	WorkspaceID string
 }
 
 type Turn struct {
@@ -317,4 +365,13 @@ type Turn struct {
 	Error              string
 	CreatedAt          int64
 	UpdatedAt          int64
+}
+
+type Workspace struct {
+	ID          string
+	OrgID       string
+	Name        string
+	Environment string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }

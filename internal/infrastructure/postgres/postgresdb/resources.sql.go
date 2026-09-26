@@ -13,7 +13,7 @@ import (
 const insertResource = `-- name: InsertResource :one
 INSERT INTO resources (kind, value, version, updated_at)
 VALUES ($1, $2, 1, $3)
-RETURNING kind, value, version, updated_at
+RETURNING kind, value, version, updated_at, org_id
 `
 
 type InsertResourceParams struct {
@@ -30,6 +30,7 @@ func (q *Queries) InsertResource(ctx context.Context, arg InsertResourceParams) 
 		&i.Value,
 		&i.Version,
 		&i.UpdatedAt,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -108,7 +109,7 @@ func (q *Queries) LockResourceWrite(ctx context.Context, hashtextextended string
 }
 
 const resourceByKind = `-- name: ResourceByKind :one
-SELECT kind, value, version, updated_at FROM resources WHERE kind = $1
+SELECT kind, value, version, updated_at, org_id FROM resources WHERE kind = $1
 `
 
 func (q *Queries) ResourceByKind(ctx context.Context, kind string) (Resource, error) {
@@ -119,6 +120,7 @@ func (q *Queries) ResourceByKind(ctx context.Context, kind string) (Resource, er
 		&i.Value,
 		&i.Version,
 		&i.UpdatedAt,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -235,7 +237,7 @@ const updateResource = `-- name: UpdateResource :one
 UPDATE resources
 SET value = $2, version = version + 1, updated_at = $3
 WHERE kind = $1 AND version = $4
-RETURNING kind, value, version, updated_at
+RETURNING kind, value, version, updated_at, org_id
 `
 
 type UpdateResourceParams struct {
@@ -258,6 +260,7 @@ func (q *Queries) UpdateResource(ctx context.Context, arg UpdateResourceParams) 
 		&i.Value,
 		&i.Version,
 		&i.UpdatedAt,
+		&i.OrgID,
 	)
 	return i, err
 }

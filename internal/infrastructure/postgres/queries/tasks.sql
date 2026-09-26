@@ -94,9 +94,22 @@ WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed');
 UPDATE tasks SET status = 'queued', updated_at = now() WHERE status = 'running';
 
 -- name: EnqueueIssue :execrows
-INSERT INTO tasks (owner, repo, issue_number, title, body, labels, identity)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (owner, repo, issue_number) DO NOTHING;
+-- The org is derived from the identity at the one place a task row is
+-- written (an agent's assignment, else a membership, else the default org);
+-- uniqueness follows the record's identity: two orgs may work the same
+-- issue under their own identities, one may not work it twice.
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, identity, org_id, workspace_id)
+VALUES (
+	$1, $2, $3, $4, $5, $6, $7,
+	COALESCE(
+		(SELECT a.org_id FROM org_agents a WHERE a.identity_id = $7),
+		(SELECT m.org_id FROM memberships m WHERE m.identity_id = $7
+		 ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
+		'default'
+	),
+	'default'
+)
+ON CONFLICT (org_id, identity, owner, repo, issue_number) DO NOTHING;
 
 -- name: ClaimByIssue :one
 UPDATE tasks SET status = 'running', attempt = attempt + 1, updated_at = now()

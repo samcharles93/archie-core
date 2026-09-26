@@ -31,6 +31,8 @@ var (
 	ErrInvalidWorkspace  = errors.New("org: invalid workspace")
 	ErrInvalidAssignment = errors.New("org: invalid agent assignment")
 	ErrOrgNotFound       = errors.New("org: org not found")
+	ErrOrgExists         = errors.New("org: org already exists")
+	ErrWorkspaceExists   = errors.New("org: workspace already exists")
 	ErrMembershipExists  = errors.New("org: membership already exists")
 	// ErrUpgradeIncomplete reports that the resumable default org/workspace
 	// upgrade has not finished (docs/prds/orgs-and-access.md, "Upgrading

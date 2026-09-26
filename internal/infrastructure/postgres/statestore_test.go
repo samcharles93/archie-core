@@ -99,17 +99,30 @@ func TestChatIssueNumberAllocatorIsPerRepo(t *testing.T) {
 	}
 }
 
-// The issue-number uniqueness the SQLite schema carried as a table constraint
-// survives the move.
+// Task uniqueness follows the record's identity: the same owner/repo/issue
+// under the same org and identity is refused, and the constraint that carries
+// that rule survives the move.
 func TestTaskIssueNumberIsUnique(t *testing.T) {
 	pool, q := migrated(t)
 	task := insertChatTask(t, q)
 
 	_, err := pool.Exec(t.Context(), `
-		INSERT INTO tasks (owner, repo, issue_number) VALUES ($1, $2, $3)`,
-		task.Owner, task.Repo, task.IssueNumber)
+		INSERT INTO tasks (owner, repo, issue_number, identity, org_id)
+		VALUES ($1, $2, $3, $4, 'default')`,
+		task.Owner, task.Repo, task.IssueNumber, task.Identity)
 	if err == nil {
-		t.Fatal("a second task for the same owner/repo/issue was accepted, want the unique constraint refused it")
+		t.Fatal("a second task for the same org/identity/owner/repo/issue was accepted, want the unique constraint refused it")
+	}
+
+	// A different identity may work the same issue: that is its own record.
+	if task.Identity != "other" {
+		_, err = pool.Exec(t.Context(), `
+			INSERT INTO tasks (owner, repo, issue_number, identity, org_id)
+			VALUES ($1, $2, $3, 'other', 'default')`,
+			task.Owner, task.Repo, task.IssueNumber)
+		if err != nil {
+			t.Fatalf("a second task under another identity was refused: %v", err)
+		}
 	}
 }
 

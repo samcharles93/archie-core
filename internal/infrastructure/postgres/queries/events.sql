@@ -17,20 +17,20 @@ FROM append_lock
 RETURNING id;
 
 -- name: ListEventsFromBeginning :many
-SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data
+SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
 ORDER BY at, id
 LIMIT $1;
 
 -- name: ListEventsAfter :many
-SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data
+SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
 WHERE at > $1 OR (at = $1 AND id > $2)
 ORDER BY at, id
 LIMIT $3;
 
 -- name: TaskEventsByID :many
-SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data
+SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
 WHERE task_id = $1
 ORDER BY id;

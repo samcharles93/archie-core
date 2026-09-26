@@ -142,7 +142,7 @@ func (q *Queries) DeriveSources(ctx context.Context) error {
 }
 
 const eventTypesForSource = `-- name: EventTypesForSource :many
-SELECT id, source, name, rule, schema, created_at, updated_at
+SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
 FROM event_types WHERE source = $1 ORDER BY name
 `
 
@@ -163,6 +163,8 @@ func (q *Queries) EventTypesForSource(ctx context.Context, source string) ([]Eve
 			&i.Schema,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -223,9 +225,19 @@ SELECT id, source, name, rule, schema, created_at, updated_at
 FROM event_types WHERE id = $1
 `
 
-func (q *Queries) GetEventType(ctx context.Context, id string) (EventType, error) {
+type GetEventTypeRow struct {
+	ID        string
+	Source    string
+	Name      string
+	Rule      string
+	Schema    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) GetEventType(ctx context.Context, id string) (GetEventTypeRow, error) {
 	row := q.db.QueryRow(ctx, getEventType, id)
-	var i EventType
+	var i GetEventTypeRow
 	err := row.Scan(
 		&i.ID,
 		&i.Source,
@@ -239,7 +251,7 @@ func (q *Queries) GetEventType(ctx context.Context, id string) (EventType, error
 }
 
 const getMapping = `-- name: GetMapping :one
-SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type,
+SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type, mappings.org_id, mappings.workspace_id,
 	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
 	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
 FROM mappings WHERE id = $1
@@ -262,6 +274,8 @@ func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, err
 		&i.Mapping.CreatedAt,
 		&i.Mapping.UpdatedAt,
 		&i.Mapping.EventType,
+		&i.Mapping.OrgID,
+		&i.Mapping.WorkspaceID,
 		&i.MatchCount,
 		&i.LastMatchedAt,
 	)
@@ -269,7 +283,7 @@ func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, err
 }
 
 const getSource = `-- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at FROM sources WHERE path = $1
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources WHERE path = $1
 `
 
 func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
@@ -281,6 +295,8 @@ func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
 		&i.Secret,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OrgID,
+		&i.WorkspaceID,
 	)
 	return i, err
 }
@@ -565,7 +581,7 @@ func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1
@@ -591,6 +607,8 @@ func (q *Queries) ListCaptures(ctx context.Context, limit int32) ([]Capture, err
 			&i.ReceivedAt,
 			&i.Unsigned,
 			&i.EventType,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -603,7 +621,7 @@ func (q *Queries) ListCaptures(ctx context.Context, limit int32) ([]Capture, err
 }
 
 const listEventTypes = `-- name: ListEventTypes :many
-SELECT id, source, name, rule, schema, created_at, updated_at
+SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
 FROM event_types ORDER BY source, name
 `
 
@@ -624,6 +642,8 @@ func (q *Queries) ListEventTypes(ctx context.Context) ([]EventType, error) {
 			&i.Schema,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -636,7 +656,7 @@ func (q *Queries) ListEventTypes(ctx context.Context) ([]EventType, error) {
 }
 
 const listMappings = `-- name: ListMappings :many
-SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type,
+SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type, mappings.org_id, mappings.workspace_id,
 	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
 	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
 FROM mappings ORDER BY created_at DESC
@@ -665,6 +685,8 @@ func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
 			&i.Mapping.CreatedAt,
 			&i.Mapping.UpdatedAt,
 			&i.Mapping.EventType,
+			&i.Mapping.OrgID,
+			&i.Mapping.WorkspaceID,
 			&i.MatchCount,
 			&i.LastMatchedAt,
 		); err != nil {
@@ -679,7 +701,7 @@ func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
 }
 
 const listSources = `-- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at FROM sources ORDER BY created_at DESC, path
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources ORDER BY created_at DESC, path
 `
 
 func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
@@ -697,6 +719,8 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 			&i.Secret,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -709,7 +733,7 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 }
 
 const listUndispatchedCaptures = `-- name: ListUndispatchedCaptures :many
-SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type
+SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id
 FROM captures c
 WHERE c.source = ANY($1::text[])
   AND c.event_type <> ''
@@ -750,6 +774,8 @@ func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispat
 			&i.ReceivedAt,
 			&i.Unsigned,
 			&i.EventType,
+			&i.OrgID,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}

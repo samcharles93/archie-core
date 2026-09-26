@@ -5,7 +5,7 @@ INSERT INTO captures (id, source, remote_addr, content_type, headers, body, auth
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1;
@@ -14,7 +14,7 @@ LIMIT $1;
 -- A capture is undispatched while some armed binding on its source, whose
 -- mapping belongs to the capture's event type, has not dispatched it. An
 -- unidentified capture has no event type, so it is never listed.
-SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type
+SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id
 FROM captures c
 WHERE c.source = ANY(@sources::text[])
   AND c.event_type <> ''
@@ -118,11 +118,11 @@ SELECT id, source, name, rule, schema, created_at, updated_at
 FROM event_types WHERE id = $1;
 
 -- name: ListEventTypes :many
-SELECT id, source, name, rule, schema, created_at, updated_at
+SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
 FROM event_types ORDER BY source, name;
 
 -- name: EventTypesForSource :many
-SELECT id, source, name, rule, schema, created_at, updated_at
+SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
 FROM event_types WHERE source = $1 ORDER BY name;
 
 -- name: UpdateEventType :execrows
@@ -139,10 +139,10 @@ SELECT pg_advisory_xact_lock(hashtext('event_types:' || sqlc.arg(source)::text))
 INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3);
 
 -- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at FROM sources WHERE path = $1;
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources WHERE path = $1;
 
 -- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at FROM sources ORDER BY created_at DESC, path;
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources ORDER BY created_at DESC, path;
 
 -- name: SetSourceSigning :execrows
 UPDATE sources SET signing = sqlc.arg(to_signing), updated_at = now()
