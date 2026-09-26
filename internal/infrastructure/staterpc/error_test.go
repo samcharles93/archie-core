@@ -77,6 +77,7 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 	}{
 		{name: "stale transition", store: storecontract.ErrStaleTransition, rehyd: storecontract.ErrStaleTransition},
 		{name: "illegal transition", store: storecontract.ErrIllegalTransition, rehyd: storecontract.ErrIllegalTransition},
+		{name: "invalid step", store: storecontract.ErrInvalidStep, rehyd: storecontract.ErrInvalidStep},
 		{name: "binding not found", store: storecontract.ErrBindingNotFound, rehyd: storecontract.ErrBindingNotFound},
 		{name: "mapping not found", store: storecontract.ErrMappingNotFound, rehyd: storecontract.ErrMappingNotFound},
 		{name: "binding overlap", store: storecontract.ErrBindingOverlap, rehyd: storecontract.ErrBindingOverlap},

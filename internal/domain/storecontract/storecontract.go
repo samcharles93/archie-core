@@ -65,6 +65,16 @@ type TaskParker interface {
 	ParkTask(ctx context.Context, taskID int64, from, detail, class string) error
 }
 
+// StepRecorder records the StepExecutions of one running WorkflowExecution
+// (docs/prds/execution-tree-state-machine.md). It is deliberately separate
+// from TaskLifecycle, which is exactly at the interfacebloat cap: the same
+// two methods also sit on the workflow engine's mid-run facade (task.Store),
+// which is what a container's run credential calls.
+type StepRecorder interface {
+	StartStep(ctx context.Context, s task.StepStart) (int64, events.Event, error)
+	FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error)
+}
+
 // TaskArchiver removes one terminal task's local record with an optimistic
 // status guard. It is separate from the already broad lifecycle contract so
 // consumers that only run tasks do not acquire an operator-only capability.
@@ -415,6 +425,12 @@ var (
 	// it. Distinct from ErrStaleTransition, which covers a from that does
 	// not match the row's actual status.
 	ErrIllegalTransition = errors.New("store: illegal transition: status pair is not in the transition table")
+	// ErrInvalidStep is returned when a step-execution request names a kind
+	// the store does not record (docs/prds/execution-tree-state-machine.md:
+	// stage, agent or call; a new kind needs a named consumer before it is
+	// added) or a step whose identifying fields do not resolve. Distinct from
+	// the transition sentinels, which cover a row's state.
+	ErrInvalidStep = errors.New("store: invalid step execution request")
 	// ErrBindingNotFound is returned when a binding ID does not exist.
 	ErrBindingNotFound = errors.New("store: binding not found")
 	// ErrBindingOverlap is returned when a binding's matcher overlaps an

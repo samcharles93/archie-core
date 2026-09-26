@@ -266,13 +266,14 @@ _view_, not new RPCs — `Update`/`Transition`/`InsertEvent` are shared with
 | Dispatch           | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures`                                                     |
 | Playbook           | `RecordPlaybookDispatch`, `DeletePlaybookDispatches`                                                                       |
 | WorkflowCaller     | `EnqueueCallTask`, `WorkflowCallStatus`                                                                                    |
+| Step executions    | `StartStep`, `FinishStep`                                                                                                  |
 | BindingTaskCreator | `EnqueueBindingTask`                                                                                                       |
 | Config snapshot    | `PutConfigSnapshot`, `GetConfigSnapshot`                                                                                   |
 | Apply status       | `PutApplyStatus`, `ListApplyStatus`                                                                                        |
 | Channel status     | `PutChannelStatus`, `ListChannelStatus`                                                                                    |
 | Task log           | `ReadTaskLog`, `StreamTaskLogContent`                                                                                      |
 
-That is **53 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **55 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The channel-status pair follows the config snapshot's split for the same reason: the writer is the process that HOSTS the channels -- the Messaging Service, which alone observes whether a channel is starting, running or failed -- and the reader is the UI process. Both RPCs are administrative, so a task-scoped grant reaches neither. A channel's state is runtime state rather than a settings document, which is why it is not a `ControlPlaneService` resource kind: a failed channel is not a document anybody edits. Asking for a reload travels on its own surface rather than through this one; see `docs/architecture/migration-decisions.md`, "Channel state to the dashboard".
@@ -307,12 +308,18 @@ condition, and the panel that collapsed them told operators task logging was swi
 it was not. The Go facade is `storecontract.TaskLogStore` (2 methods), carried by
 `*staterpc.Client` alongside the rest.
 
-The workflow-caller pair was added by `archie-core-t2db.41` (see
-`docs/prds/workflow-calls.md`). It is the one surface a task-scoped grant
-reaches beyond the three task.Store RPCs: a `workflow.call` step must start
-its callee and, with `wait: true`, read it back, and the callee is the
-caller's child. Both requests carry the caller's task ID, which the grant
-check verifies; `EnqueueCallTask` derives everything else from the caller's
+The step-execution pair was added by the execution tree's plan item 3 (see
+`docs/prds/execution-tree-state-machine.md`), the surface a task-scoped grant reaches for
+its own execution beyond the three `task.Store` RPCs and the workflow-caller pair: the
+container records its stages and its own agent calls with the run credential. Both requests
+carry the caller's execution ID, which the grant check verifies; `FinishStep` additionally
+verifies, handler-side, that the step really is that execution's. The store writes each
+transition's `stage_start`/`stage_finish` event row in the same transaction and returns it
+for the caller's post-commit bus publish. `called_execution_id` is stored for the `call`
+kind but not yet carried on the wire: the named consumer is the workflow-call recording
+that will set it.
+
+The workflow-caller pair was added by `archie-core-t2db.41` (see everything else from the caller's
 row and refuses a caller that is not running or a call past the depth limit
 (`ErrCallCallerNotRunning` / `ErrCallDepthExceeded`), and `WorkflowCallStatus`
 re-checks the parent-child relation against the row before answering

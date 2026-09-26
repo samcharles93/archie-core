@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
@@ -26,6 +27,7 @@ import (
 // docs/prds/state-store-contract.md §11's conformance requirement.
 type contract interface {
 	storecontract.TaskStore
+	storecontract.StepRecorder
 	storecontract.BindingTaskCreator
 	storecontract.ConfigSnapshotStore
 	storecontract.ApplyStatusStore
@@ -81,7 +83,7 @@ func remoteTaskStore(t *testing.T, local *pgstore.TaskDB, logs storecontract.Tas
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	deps := Deps{
-		Tasks: local, BindingTaskCreator: local, WorkflowCalls: local,
+		Tasks: local, BindingTaskCreator: local, WorkflowCalls: local, Steps: local,
 		ConfigSnapshots: local, ApplyStatus: local,
 		TaskLogs: logs,
 	}
@@ -132,6 +134,37 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 			if err := c.Transition(ctx, task.ID, task.Status, "running", "started"); err != nil {
 				t.Fatalf("Transition: %v", err)
+			}
+			current, err := c.TaskByID(ctx, task.ID)
+			if err != nil || current == nil {
+				t.Fatalf("TaskByID: %+v %v", current, err)
+			}
+			// The step-execution writes (docs/prds/execution-tree-state-machine.md):
+			// both adapters record the same guarded pair, and each response
+			// carries the transition's own persisted event.
+			stepID, startEvent, err := c.StartStep(ctx, workflow.StepStart{
+				ExecutionID: task.ID, Attempt: current.Attempt, Kind: workflow.StepKindStage, Name: "implement",
+			})
+			if err != nil || stepID == 0 {
+				t.Fatalf("StartStep: %d %v", stepID, err)
+			}
+			if startEvent.Kind != "stage_start" || startEvent.TaskID != task.ID || startEvent.ID == 0 {
+				t.Fatalf("StartStep event = %+v, want the persisted stage_start row", startEvent)
+			}
+			finishEvent, err := c.FinishStep(ctx, workflow.StepFinish{
+				StepID: stepID, ExecutionID: task.ID,
+				From: "running", To: "succeeded", Detail: "done", TokensUsed: 12,
+			})
+			if err != nil {
+				t.Fatalf("FinishStep: %v", err)
+			}
+			if finishEvent.Kind != "stage_finish" || finishEvent.ID == 0 || finishEvent.Data["duration_ms"] == nil {
+				t.Fatalf("FinishStep event = %+v, want the persisted stage_finish row with a duration", finishEvent)
+			}
+			if _, err := c.FinishStep(ctx, workflow.StepFinish{
+				StepID: stepID, ExecutionID: task.ID, From: "running", To: "succeeded",
+			}); !errors.Is(err, storecontract.ErrStaleTransition) {
+				t.Fatalf("replayed FinishStep = %v, want ErrStaleTransition over both adapters", err)
 			}
 			task.Plan = "the plan"
 			task.Status = "running"
@@ -256,24 +289,29 @@ func TestStateStoreConformance(t *testing.T) {
 				t.Fatalf("OpenPRs: %v", err)
 			}
 
-			// TaskEvents / EventsSince / stats.
+			// TaskEvents / EventsSince / stats. The two step events the
+			// battery's step half wrote come first (their transitions ran
+			// first), then the two the battery inserted directly.
 			evs, err := c.TaskEvents(ctx, task.ID)
-			if err != nil || len(evs) != 2 || evs[0].Data["duration_ms"] != 12.0 {
+			if err != nil || len(evs) != 4 {
 				t.Fatalf("TaskEvents: %+v %v", evs, err)
 			}
-			if evs[0].Attempt != 2 {
-				t.Errorf("TaskEvents attempt = %d, want 2 (provenance must survive the wire)", evs[0].Attempt)
+			if evs[2].Data["duration_ms"] != 12.0 {
+				t.Fatalf("TaskEvents stage_finish = %+v, want the battery's own duration_ms", evs[2])
 			}
-			if evs[1].Kind != events.KindConfigCaptured || evs[1].Attempt != 2 || evs[1].Data["schema"] != events.ConfigCapturedSchema {
-				t.Errorf("config_captured event = %+v, want its kind, attempt and schema preserved", evs[1])
+			if evs[2].Attempt != 2 {
+				t.Errorf("TaskEvents attempt = %d, want 2 (provenance must survive the wire)", evs[2].Attempt)
 			}
-			if _, renamed := evs[1].Data["config"]; renamed {
+			if evs[3].Kind != events.KindConfigCaptured || evs[3].Attempt != 2 || evs[3].Data["schema"] != events.ConfigCapturedSchema {
+				t.Errorf("config_captured event = %+v, want its kind, attempt and schema preserved", evs[3])
+			}
+			if _, renamed := evs[3].Data["config"]; renamed {
 				t.Error(`the document crossed under "config"; the producer writes it under "document"`)
 			}
-			if len(evs[1].Data) != 2 {
+			if len(evs[3].Data) != 2 {
 				t.Errorf("config_captured data keys = %v, want exactly schema and document", evs[1].Data)
 			}
-			doc, ok := evs[1].Data["document"].(map[string]any)
+			doc, ok := evs[3].Data["document"].(map[string]any)
 			if !ok || doc["bot_user"] != "archie" {
 				t.Errorf("config_captured payload = %#v, want the decoded document under its own key", evs[1].Data)
 			}
@@ -365,7 +403,7 @@ func TestStateStoreConformance(t *testing.T) {
 			// Archive. RecoverStale above may have requeued task if it was
 			// still running, so re-fetch its current status rather than
 			// trusting the in-memory snapshot.
-			current, err := c.TaskByID(ctx, task.ID)
+			current, err = c.TaskByID(ctx, task.ID)
 			if err != nil || current == nil {
 				t.Fatalf("TaskByID before archive: %+v %v", current, err)
 			}

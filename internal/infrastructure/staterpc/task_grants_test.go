@@ -17,8 +17,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	task "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // grantsServer wires TaskGrants' Unary/Stream interceptors -- the same
@@ -41,7 +43,7 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		Tasks: local, ConfigSnapshots: local, ApplyStatus: local,
 		Captures: eda, Mappings: eda, Bindings: eda,
 		BindingDispatcher: eda, PlaybookDispatcher: eda, EventTypes: eda,
-		BindingTaskCreator: local, WorkflowCalls: local,
+		BindingTaskCreator: local, WorkflowCalls: local, Steps: local,
 		Grants: grants,
 	})
 	go func() { _ = server.Serve(listener) }()
@@ -383,5 +385,75 @@ func TestOnlyAdminCanRegisterOrRevokeTaskGrants(t *testing.T) {
 	}
 	if err := worker.RevokeTaskGrant(ctx, workerToken); err == nil {
 		t.Fatal("a task-scoped grant must not be able to revoke grants")
+	}
+}
+
+// TestRunCredentialRecordsItsOwnSteps: the run credential of
+// docs/prds/execution-tree-state-machine.md authorises StartStep and
+// FinishStep on its own execution only -- the container records its stages
+// and its own agent calls with it -- and never another execution's.
+func TestRunCredentialRecordsItsOwnSteps(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	grants, dial := grantsServer(t, adminToken)
+	_ = grants
+	admin := dial(t, adminToken)
+	ctx := t.Context()
+
+	own, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.ClaimNext(ctx); err != nil {
+		t.Fatalf("ClaimNext: %v", err)
+	}
+	// The claim increments the attempt, so the run the grant names is read
+	// back after it, the way the container's own request does.
+	own, err = admin.TaskByID(ctx, own.ID)
+	if err != nil || own == nil {
+		t.Fatalf("TaskByID: %+v %v", own, err)
+	}
+	other, err := admin.EnqueueChatTask(ctx, "acme", "widget", "b", "body", "implement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workerToken, err := admin.RegisterTaskGrant(ctx, own.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("RegisterTaskGrant: %v", err)
+	}
+	worker := dial(t, workerToken)
+
+	stepID, startEvent, err := worker.StartStep(ctx, task.StepStart{
+		ExecutionID: own.ID, Attempt: own.Attempt, Kind: task.StepKindStage, Name: "implement",
+	})
+	if err != nil {
+		t.Fatalf("task grant should authorize StartStep on its own execution: %v", err)
+	}
+	if startEvent.Kind != events.KindStageStart || startEvent.TaskID != own.ID {
+		t.Fatalf("start event = %+v, want the transition's stage_start row", startEvent)
+	}
+	finishEvent, err := worker.FinishStep(ctx, task.StepFinish{
+		StepID: stepID, ExecutionID: own.ID,
+		From: taskstate.StepRunning, To: taskstate.StepSucceeded,
+	})
+	if err != nil {
+		t.Fatalf("task grant should authorize FinishStep on its own execution: %v", err)
+	}
+	if finishEvent.Kind != events.KindStageFinish {
+		t.Fatalf("finish event = %+v, want the transition's stage_finish row", finishEvent)
+	}
+
+	// The refusal is the interceptor's, not the store's: the codes tell the
+	// difference, so a store-level refusal could not mask a missing grant rule.
+	if _, _, err := worker.StartStep(ctx, task.StepStart{
+		ExecutionID: other.ID, Attempt: other.Attempt, Kind: task.StepKindStage, Name: "plan",
+	}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("StartStep on another execution = %v, want PermissionDenied from the grant check", err)
+	}
+	if _, err := worker.FinishStep(ctx, task.StepFinish{
+		StepID: stepID, ExecutionID: other.ID,
+		From: taskstate.StepRunning, To: taskstate.StepSucceeded,
+	}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("FinishStep naming another execution = %v, want PermissionDenied from the grant check", err)
 	}
 }

@@ -306,6 +306,24 @@ type Source struct {
 	WorkspaceID string
 }
 
+type StepExecution struct {
+	ID                int64
+	OrgID             string
+	WorkspaceID       string
+	ExecutionID       int64
+	Attempt           int64
+	ParentID          pgtype.Int8
+	Depth             int32
+	Kind              string
+	Name              string
+	CalledExecutionID int64
+	Status            string
+	Detail            string
+	TokensUsed        int64
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+}
+
 type SysAudit struct {
 	ID            int64
 	At            time.Time

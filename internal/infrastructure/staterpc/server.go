@@ -26,6 +26,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/logging"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // Unavailable-capability errors, mirroring gatewayrpc's missing-session-store
@@ -96,6 +97,11 @@ type Deps struct {
 	// answers both RPCs with codes.Unavailable, which is the honest answer
 	// for a store that owns no task table.
 	WorkflowCalls storecontract.WorkflowCaller
+	// Steps is the step-execution write surface
+	// (docs/prds/execution-tree-state-machine.md): the guarded row writes the
+	// workflow engine's run credential calls. Optional: nil answers both RPCs
+	// with codes.Unavailable.
+	Steps storecontract.StepRecorder
 	// PlaybookDispatcher is the side-effecting-action idempotency ledger
 	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
@@ -187,6 +193,40 @@ func (s *server) Transition(ctx context.Context, r *pb.TransitionRequest) (*pb.T
 		return nil, s.logErr("Transition", err)
 	}
 	return &pb.TransitionResponse{}, nil
+}
+
+// StartStep and FinishStep are the step-execution writes
+// (docs/prds/execution-tree-state-machine.md). Each is the store's own
+// transaction -- guarded row write plus the event row -- and the store's
+// response carries the persisted event back for the caller's post-commit
+// publish.
+func (s *server) StartStep(ctx context.Context, r *pb.StartStepRequest) (*pb.StartStepResponse, error) {
+	if s.deps.Steps == nil {
+		return nil, status.Error(codes.Unavailable, "step recorder unavailable")
+	}
+	stepID, event, err := s.deps.Steps.StartStep(ctx, task.StepStart{
+		ExecutionID: r.ExecutionId, Attempt: int(r.Attempt),
+		ParentID: r.ParentId, Kind: r.Kind, Name: r.Name,
+	})
+	if err != nil {
+		return nil, s.logErr("StartStep", err)
+	}
+	return &pb.StartStepResponse{StepId: stepID, Event: eventProto(event)}, nil
+}
+
+func (s *server) FinishStep(ctx context.Context, r *pb.FinishStepRequest) (*pb.FinishStepResponse, error) {
+	if s.deps.Steps == nil {
+		return nil, status.Error(codes.Unavailable, "step recorder unavailable")
+	}
+	event, err := s.deps.Steps.FinishStep(ctx, task.StepFinish{
+		StepID: r.StepId, ExecutionID: r.ExecutionId,
+		From: taskstate.StepStatus(r.From), To: taskstate.StepStatus(r.To),
+		Detail: r.Detail, TokensUsed: r.TokensUsed,
+	})
+	if err != nil {
+		return nil, s.logErr("FinishStep", err)
+	}
+	return &pb.FinishStepResponse{Event: eventProto(event)}, nil
 }
 
 func (s *server) Update(ctx context.Context, r *pb.UpdateRequest) (*pb.UpdateResponse, error) {

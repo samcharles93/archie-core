@@ -1,0 +1,232 @@
+package postgres
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	task "github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
+	"github.com/samcharles93/archie-core/internal/taskstate"
+)
+
+// The step-execution writes of docs/prds/execution-tree-state-machine.md.
+// Each is one transaction: the guarded row write, and the domain event row
+// the step transition produces, so the events table records exactly the
+// transitions the step row does. The events land in the table; the caller
+// publishes the returned event to its bus after the write commits, and the
+// daemon's event sink skips already-persisted rows by their assigned ID --
+// the EmitDurable convention.
+
+// StartStep records a StepExecution entering running: the row is created
+// pending, guarded into running under the shared step transition table, and
+// the stage_start event is appended in the same transaction. The execution's
+// row is locked for the whole write, so its status check cannot race the
+// guarded updates, and org and workspace are stamped from it -- the request's
+// ownership fields are ignored, like every owned record.
+func (s *Store) StartStep(ctx context.Context, start task.StepStart) (int64, events.Event, error) {
+	if !task.ValidStepKind(start.Kind) {
+		return 0, events.Event{}, fmt.Errorf("%w: unknown step kind %q", storecontract.ErrInvalidStep, start.Kind)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+
+	execution, err := q.LockExecutionForStep(ctx, start.ExecutionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The execution the caller names does not exist: its view of the run
+		// is stale, matching what guardTransition returns for a missing row.
+		return 0, events.Event{}, storecontract.ErrStaleTransition
+	}
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	if execution.Attempt != int64(start.Attempt) {
+		// A step belongs to exactly one attempt; a caller naming one the
+		// execution no longer runs is describing a run that is over.
+		return 0, events.Event{}, storecontract.ErrStaleTransition
+	}
+
+	depth, err := s.startParent(ctx, q, start)
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	// A step cannot reach running while its execution is not running, and
+	// never under a terminal parent. Both are the state machine's rules, so
+	// they refuse as illegal transitions.
+	if err := taskstate.CheckStepStart(execution.Status, depth.underTerminal); err != nil {
+		return 0, events.Event{}, fmt.Errorf("%w: %w", storecontract.ErrIllegalTransition, err)
+	}
+
+	stepID, err := q.InsertStepExecution(ctx, postgresdb.InsertStepExecutionParams{
+		OrgID: execution.OrgID, WorkspaceID: execution.WorkspaceID,
+		ExecutionID: execution.ID, Attempt: execution.Attempt,
+		ParentID: stepParentID(start.ParentID), Depth: int32(depth.depth),
+		Kind: start.Kind, Name: start.Name, CalledExecutionID: 0,
+	})
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	n, err := q.StartStepExecution(ctx, stepID)
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	if n == 0 {
+		return 0, events.Event{}, storecontract.ErrStaleTransition
+	}
+
+	event := stepEvent(events.KindStageStart, execution.ID,
+		execution.Owner, execution.Repo, execution.IssueNumber, execution.Workflow,
+		int(execution.Attempt), start.Name, nil)
+	eventID, err := insertEventQ(ctx, q, event)
+	if err != nil {
+		return 0, events.Event{}, err
+	}
+	event.ID = eventID
+	if err := tx.Commit(ctx); err != nil {
+		return 0, events.Event{}, err
+	}
+	return stepID, event, nil
+}
+
+// stepParent resolves the enclosing StepExecution a child step names: its
+// row is locked in the same transaction, the tree must stay inside one
+// execution and one attempt, and depth is derived from the parent, never
+// supplied by the caller.
+func (s *Store) startParent(ctx context.Context, q *postgresdb.Queries, start task.StepStart) (stepParentState, error) {
+	if start.ParentID == 0 {
+		return stepParentState{}, nil
+	}
+	parent, err := q.LockStepExecution(ctx, start.ParentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return stepParentState{}, storecontract.ErrStaleTransition
+	}
+	if err != nil {
+		return stepParentState{}, err
+	}
+	if parent.ExecutionID != start.ExecutionID || parent.Attempt != int64(start.Attempt) {
+		// Trees never nest across executions, and a parent from another
+		// attempt is a tree the caller is not running.
+		return stepParentState{}, storecontract.ErrStaleTransition
+	}
+	return stepParentState{
+		depth:         int(parent.Depth) + 1,
+		underTerminal: taskstate.StepTerminal(taskstate.StepStatus(parent.Status)),
+	}, nil
+}
+
+type stepParentState struct {
+	depth         int
+	underTerminal bool
+}
+
+// FinishStep moves one step to its outcome under the shared step transition
+// table, writing the stage_finish event in the same transaction and returning
+// it for the caller's post-commit publish. A step that is missing, that is
+// not the named execution's, or whose status does not match from is stale; an
+// off-table from->to pair is refused as an illegal transition.
+func (s *Store) FinishStep(ctx context.Context, finish task.StepFinish) (events.Event, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return events.Event{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+
+	step, err := q.LockStepExecution(ctx, finish.StepID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return events.Event{}, storecontract.ErrStaleTransition
+	}
+	if err != nil {
+		return events.Event{}, err
+	}
+	// The step belongs to another run, or the caller believes a state the row
+	// does not hold. Either way its view is stale, and writing would move
+	// another execution's record.
+	if step.ExecutionID != finish.ExecutionID || taskstate.StepStatus(step.Status) != finish.From {
+		return events.Event{}, storecontract.ErrStaleTransition
+	}
+	// Staleness is decided first, the way guardTransition decides it: a caller
+	// that is wrong about the row's state gets the stale sentinel even when
+	// its pair is also unroutable.
+	if !taskstate.CanStepTransition(finish.From, finish.To) {
+		return events.Event{}, fmt.Errorf("%w: %s -> %s is not a step transition",
+			storecontract.ErrIllegalTransition, finish.From, finish.To)
+	}
+	execution, err := q.TaskByID(ctx, step.ExecutionID)
+	if err != nil {
+		return events.Event{}, err
+	}
+
+	durationMS := int64(0)
+	if step.StartedAt.Valid {
+		durationMS = time.Since(step.StartedAt.Time).Milliseconds()
+	}
+	n, err := q.FinishStepExecution(ctx, postgresdb.FinishStepExecutionParams{
+		Status: string(finish.To), Detail: clip(finish.Detail, 4000), TokensUsed: finish.TokensUsed,
+		ID: finish.StepID, Status_2: string(finish.From),
+	})
+	if err != nil {
+		return events.Event{}, err
+	}
+	if n == 0 {
+		return events.Event{}, storecontract.ErrStaleTransition
+	}
+
+	event := stepEvent(events.KindStageFinish, execution.ID,
+		execution.Owner, execution.Repo, execution.IssueNumber, execution.Workflow,
+		int(step.Attempt), step.Name,
+		stepEventData(finish.To, durationMS, finish.Detail))
+	eventID, err := insertEventQ(ctx, q, event)
+	if err != nil {
+		return events.Event{}, err
+	}
+	event.ID = eventID
+	if err := tx.Commit(ctx); err != nil {
+		return events.Event{}, err
+	}
+	return event, nil
+}
+
+// stepEvent builds the event row one step transition writes, stamped with the
+// execution's identity the way TaskContext.Emit stamped it -- the same fields
+// the timeline and the stage statistics read back.
+func stepEvent(kind string, executionID int64, owner, repo string, issue int64, wf string, attempt int, stage string, data map[string]any) events.Event {
+	return events.Event{
+		Kind: kind, TaskID: executionID,
+		Repo: owner + "/" + repo, Issue: int(issue), Workflow: wf,
+		Attempt: attempt, Stage: stage, Data: data,
+	}
+}
+
+// stepEventData reads a stage_finish event's data the way the dashboard
+// (stageOutcome) and the stage statistics (StageStats) do: duration always,
+// the error text only when the step reported failure, and the interruption
+// marker only for an interrupted step.
+func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map[string]any {
+	data := map[string]any{"duration_ms": durationMS}
+	switch to {
+	case taskstate.StepFailed:
+		data["error"] = detail
+	case taskstate.StepInterrupted:
+		data["interrupted"] = true
+	}
+	return data
+}
+
+// stepParentID encodes the nullable parent id an insert takes: 0 means "no
+// parent" -- a stage at the tree's root -- which the column stores as NULL
+// rather than as a reference to a row that does not exist.
+func stepParentID(parentID int64) pgtype.Int8 {
+	return pgtype.Int8{Int64: parentID, Valid: parentID != 0}
+}

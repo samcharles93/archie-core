@@ -124,6 +124,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 // Compile-time checks: *Store satisfies every surface the SQLite store did.
 var (
 	_ storecontract.TaskStore           = (*Store)(nil)
+	_ storecontract.StepRecorder        = (*Store)(nil)
 	_ storecontract.BindingTaskCreator  = (*Store)(nil)
 	_ storecontract.ConfigSnapshotStore = (*Store)(nil)
 	_ storecontract.ChannelStatusStore  = (*Store)(nil)

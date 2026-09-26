@@ -95,32 +95,74 @@ func (g *TaskGrants) taskFor(token string) int64 {
 // (including RegisterTaskGrant/RevokeTaskGrant themselves) falls through to
 // false: a task grant can only ever narrow, never expand.
 //
-// The two workflow.call RPCs are the one sanctioned widening
-// (docs/prds/workflow-calls.md): a workflow.call step must start its callee
-// and read it back, and the callee is the caller's child. Both requests
-// carry the caller's own task ID, which the grant check verifies; the
-// parent-child relation is a handler-side row check, so this interceptor
-// never reads the database.
+// The two workflow.call RPCs and the two step-execution writes are the
+// sanctioned widenings: a workflow.call step must start its callee and read it
+// back, the callee being the caller's child (docs/prds/workflow-calls.md), and
+// the container records its stages and its own agent calls under the run
+// credential of docs/prds/execution-tree-state-machine.md. The step requests
+// carry the caller's own task ID, which the grant check verifies; the step's
+// membership in that execution is a handler-side row check, so this
+// interceptor never reads the database.
 func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
-	switch fullMethod {
-	case pb.StateStoreService_Update_FullMethodName:
+	target := taskScopedTargets[fullMethod]
+	return target != nil && target(req) == taskID
+}
+
+// taskScopedTargets maps each RPC a task grant may ever authorize to the
+// function naming the task ID its request targets (0 for a request it cannot
+// read). Held as data so the sanctioned widenings stop growing a switch: a
+// new authorized RPC registers one row here, and the deny-by-default rule
+// above covers everything else.
+var taskScopedTargets = map[string]func(any) int64{
+	pb.StateStoreService_Update_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.UpdateRequest)
-		return ok && r.Task != nil && r.Task.Id == taskID
-	case pb.StateStoreService_Transition_FullMethodName:
+		if !ok || r.Task == nil {
+			return 0
+		}
+		return r.Task.Id
+	},
+	pb.StateStoreService_Transition_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.TransitionRequest)
-		return ok && r.TaskId == taskID
-	case pb.StateStoreService_InsertEvent_FullMethodName:
+		if !ok {
+			return 0
+		}
+		return r.TaskId
+	},
+	pb.StateStoreService_InsertEvent_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.InsertEventRequest)
-		return ok && r.Event != nil && r.Event.TaskId == taskID
-	case pb.StateStoreService_EnqueueCallTask_FullMethodName:
+		if !ok || r.Event == nil {
+			return 0
+		}
+		return r.Event.TaskId
+	},
+	pb.StateStoreService_StartStep_FullMethodName: func(req any) int64 {
+		r, ok := req.(*pb.StartStepRequest)
+		if !ok {
+			return 0
+		}
+		return r.ExecutionId
+	},
+	pb.StateStoreService_FinishStep_FullMethodName: func(req any) int64 {
+		r, ok := req.(*pb.FinishStepRequest)
+		if !ok {
+			return 0
+		}
+		return r.ExecutionId
+	},
+	pb.StateStoreService_EnqueueCallTask_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.EnqueueCallTaskRequest)
-		return ok && r.CallerTaskId == taskID
-	case pb.StateStoreService_WorkflowCallStatus_FullMethodName:
+		if !ok {
+			return 0
+		}
+		return r.CallerTaskId
+	},
+	pb.StateStoreService_WorkflowCallStatus_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.WorkflowCallStatusRequest)
-		return ok && r.CallerTaskId == taskID
-	default:
-		return false
-	}
+		if !ok {
+			return 0
+		}
+		return r.CallerTaskId
+	},
 }
 
 // UnaryInterceptor separates administrator access from task-scoped worker

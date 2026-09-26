@@ -21,9 +21,14 @@ import (
 // events it was asked to persist. A capture is durable provenance, so the
 // assertions below read this and not the lossy bus.
 type recordingStore struct {
-	events      []events.Event
-	transitions []transition
-	insertEr    error
+	events       []events.Event
+	transitions  []transition
+	steps        []StepStart
+	finishes     []StepFinish
+	insertEr     error
+	stepEr       error
+	stepNames    map[int64]string
+	stepAttempts map[int64]int
 }
 
 // transition is one status change the engine asked the store for. Parking is
@@ -44,6 +49,33 @@ func (s *recordingStore) InsertEvent(_ context.Context, e events.Event) (int64, 
 	}
 	s.events = append(s.events, e)
 	return int64(len(s.events)), nil
+}
+
+func (s *recordingStore) StartStep(_ context.Context, start StepStart) (int64, events.Event, error) {
+	if s.stepEr != nil {
+		return 0, events.Event{}, s.stepEr
+	}
+	s.steps = append(s.steps, start)
+	id := int64(len(s.steps))
+	if s.stepNames == nil {
+		s.stepNames = map[int64]string{}
+		s.stepAttempts = map[int64]int{}
+	}
+	s.stepNames[id] = start.Name
+	s.stepAttempts[id] = start.Attempt
+	return id, events.Event{ID: id, Kind: events.KindStageStart, Stage: start.Name, Attempt: start.Attempt}, nil
+}
+
+func (s *recordingStore) FinishStep(_ context.Context, finish StepFinish) (events.Event, error) {
+	if s.stepEr != nil {
+		return events.Event{}, s.stepEr
+	}
+	s.finishes = append(s.finishes, finish)
+	id := int64(len(s.finishes))
+	return events.Event{
+		ID: id, Kind: events.KindStageFinish,
+		Stage: s.stepNames[finish.StepID], Attempt: s.stepAttempts[finish.StepID],
+	}, nil
 }
 
 func (s *recordingStore) ofKind(kind string) []events.Event {
