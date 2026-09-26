@@ -12,7 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	task "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -79,7 +79,7 @@ const syntheticIssueNumberBase = 1_000_000_000_000_000
 func taskFromRow(t postgresdb.Task) *workflow.Task {
 	// The inputs column is only ever written by EncodeInputs, so a decode
 	// failure cannot arise from stored data this package produced.
-	inputs, _ := workflowtask.DecodeInputs(t.Inputs)
+	inputs, _ := task.DecodeInputs(t.Inputs)
 	return &workflow.Task{
 		ID:                        t.ID,
 		Owner:                     t.Owner,
@@ -114,6 +114,8 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		ReviewPayload:             t.ReviewPayload,
 		ParkClass:                 t.ParkClass,
 		RemediationRounds:         int(t.RemediationRounds),
+		CallParentTaskID:          t.CallParentTaskID,
+		CallDepth:                 int(t.CallDepth),
 		CreatedAt:                 t.CreatedAt,
 		UpdatedAt:                 t.UpdatedAt,
 	}
@@ -126,6 +128,7 @@ var (
 	_ storecontract.ConfigSnapshotStore = (*Store)(nil)
 	_ storecontract.ChannelStatusStore  = (*Store)(nil)
 	_ storecontract.ApplyStatusStore    = (*Store)(nil)
+	_ task.Caller                       = (*Store)(nil)
 	_ workflow.Store                    = (*Store)(nil)
 )
 
@@ -159,7 +162,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 // EnqueueBindingTask enqueues a binding-triggered task and stamps its binding
 // provenance in a second statement (best-effort, as in the SQLite store).
 func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*workflow.Task, error) {
-	encoded, err := workflowtask.EncodeInputs(inputs)
+	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -538,4 +541,81 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 		return nil, err
 	}
 	return taskFromRow(t), nil
+}
+
+// StartCall enqueues the callee of callerTaskID's workflow.call step
+// (docs/prds/workflow-calls.md). The store owns the table, so it re-checks
+// both runtime invariants the engine checks: the caller must be running and
+// the call must not pass workflow.MaxCallDepth. The callee inherits the
+// caller's org, workspace, identity, owner and repo, and takes a fresh
+// synthetic issue number, the same allocator chat tasks use.
+func (s *Store) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*workflow.Task, error) {
+	encoded, err := task.EncodeInputs(inputs)
+	if err != nil {
+		return nil, err
+	}
+	callee, err := s.queries().EnqueueCallTask(ctx, postgresdb.EnqueueCallTaskParams{
+		ID:                  callerTaskID,
+		FallbackIssueNumber: syntheticIssueNumberBase - 1,
+		Title:               fmt.Sprintf("workflow.call %s from task %d", wf, callerTaskID),
+		Body:                fmt.Sprintf("Started by a workflow.call step from task %d (workflow %q); the call's inputs travel with the task.", callerTaskID, wf),
+		Workflow:            wf,
+		Inputs:              encoded,
+		MaxDepth:            int32(workflow.MaxCallDepth),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The WITH reads the caller FOR UPDATE before inserting, so "no
+		// rows" means the caller is missing, not running, or past the depth
+		// limit. Name which, off a plain read.
+		return nil, s.callRefusal(ctx, callerTaskID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return taskFromRow(callee), nil
+}
+
+// callRefusal names why EnqueueCallTask inserted nothing. The three refusals
+// are distinct failures an operator reads differently: a missing caller is a
+// problem, a caller that is not running is a stale retry, and a depth
+// refusal is the limit doing its job. The two behavioural ones carry the
+// caller's detail in the log and the sentinel across the wire.
+func (s *Store) callRefusal(ctx context.Context, callerTaskID int64) error {
+	caller, err := s.queries().TaskByID(ctx, callerTaskID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("store: workflow.call caller task %d does not exist: %w", callerTaskID, storecontract.ErrCallNotYours)
+	}
+	if err != nil {
+		return err
+	}
+	if caller.Status != "running" {
+		return fmt.Errorf("store: workflow.call caller task %d is %s: %w", callerTaskID, caller.Status, storecontract.ErrCallCallerNotRunning)
+	}
+	return fmt.Errorf("store: workflow.call from task %d at depth %d: %w", callerTaskID, caller.CallDepth, storecontract.ErrCallDepthExceeded)
+}
+
+// CallStatus reads one call's callee for a waiting caller: its status and
+// latest transition detail. The parent check is the row check the wire grant
+// cannot do: a caller reads only the tasks it started.
+func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, error) {
+	callee, err := s.queries().TaskByID(ctx, callTaskID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", storecontract.ErrCallNotYours
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if callee.CallParentTaskID != callerTaskID {
+		return "", "", storecontract.ErrCallNotYours
+	}
+	// A callee that has not moved yet has no transition row; its queue
+	// status is the whole answer, and the empty detail says so.
+	detail, err := s.queries().CallStatusDetail(ctx, callTaskID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return callee.Status, "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return callee.Status, detail, nil
 }

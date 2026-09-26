@@ -42,6 +42,7 @@ var (
 	errBindingDispatchUnavailable    = status.Error(codes.Unavailable, "binding dispatcher unavailable")
 	errBindingTaskCreatorUnavailable = status.Error(codes.Unavailable, "binding task creator unavailable")
 	errPlaybookDispatcherUnavailable = status.Error(codes.Unavailable, "playbook dispatcher unavailable")
+	errWorkflowCallerUnavailable     = status.Error(codes.Unavailable, "workflow caller unavailable")
 	// errTaskLogsUnavailable is the "this process cannot read task logs at
 	// all" answer, and it is deliberately distinct from a found=false read
 	// result: only the first is a deployment matter. A dashboard that receives
@@ -89,6 +90,11 @@ type Deps struct {
 	Sources            storecontract.SourceStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator
+	// WorkflowCalls is the workflow.call surface (docs/prds/workflow-calls.md):
+	// the workflow engine's task.Caller over this contract. Optional: nil
+	// answers both RPCs with codes.Unavailable, which is the honest answer
+	// for a store that owns no task table.
+	WorkflowCalls storecontract.WorkflowCaller
 	// PlaybookDispatcher is the side-effecting-action idempotency ledger
 	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
@@ -799,6 +805,40 @@ func (s *server) EnqueueBindingTask(ctx context.Context, r *pb.EnqueueBindingTas
 		return nil, s.logErr("EnqueueBindingTask", err)
 	}
 	return &pb.EnqueueBindingTaskResponse{Task: taskProto(t)}, nil
+}
+
+// WorkflowCaller: a workflow.call step starts its callee and reads it back
+// while waiting (docs/prds/workflow-calls.md). The grant already named the
+// caller; the store's own row checks are what make both calls answer only
+// for this caller's own callees.
+
+func (s *server) EnqueueCallTask(ctx context.Context, r *pb.EnqueueCallTaskRequest) (*pb.EnqueueCallTaskResponse, error) {
+	if s.deps.WorkflowCalls == nil {
+		return nil, errWorkflowCallerUnavailable
+	}
+	if r.CallerTaskId <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "caller task id is required")
+	}
+	inputs, err := task.DecodeInputs(r.InputsJson)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	t, err := s.deps.WorkflowCalls.StartCall(ctx, r.CallerTaskId, r.Workflow, inputs)
+	if err != nil {
+		return nil, s.logErr("EnqueueCallTask", err)
+	}
+	return &pb.EnqueueCallTaskResponse{Task: taskProto(t), Accepted: true}, nil
+}
+
+func (s *server) WorkflowCallStatus(ctx context.Context, r *pb.WorkflowCallStatusRequest) (*pb.WorkflowCallStatusResponse, error) {
+	if s.deps.WorkflowCalls == nil {
+		return nil, errWorkflowCallerUnavailable
+	}
+	status, detail, err := s.deps.WorkflowCalls.CallStatus(ctx, r.CallerTaskId, r.CallTaskId)
+	if err != nil {
+		return nil, s.logErr("WorkflowCallStatus", err)
+	}
+	return &pb.WorkflowCallStatusResponse{Status: status, Detail: detail}, nil
 }
 
 // Task log

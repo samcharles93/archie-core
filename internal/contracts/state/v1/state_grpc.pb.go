@@ -98,6 +98,8 @@ const (
 	StateStoreService_DeletePlaybookDispatches_FullMethodName   = "/state.v1.StateStoreService/DeletePlaybookDispatches"
 	StateStoreService_StreamUndispatchedCaptures_FullMethodName = "/state.v1.StateStoreService/StreamUndispatchedCaptures"
 	StateStoreService_EnqueueBindingTask_FullMethodName         = "/state.v1.StateStoreService/EnqueueBindingTask"
+	StateStoreService_EnqueueCallTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueCallTask"
+	StateStoreService_WorkflowCallStatus_FullMethodName         = "/state.v1.StateStoreService/WorkflowCallStatus"
 )
 
 // StateStoreServiceClient is the client API for StateStoreService service.
@@ -243,6 +245,13 @@ type StateStoreServiceClient interface {
 	StreamUndispatchedCaptures(ctx context.Context, in *StreamUndispatchedCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse], error)
 	// BindingTaskCreator
 	EnqueueBindingTask(ctx context.Context, in *EnqueueBindingTaskRequest, opts ...grpc.CallOption) (*EnqueueBindingTaskResponse, error)
+	// WorkflowCaller: a workflow.call step starts its callee and, with
+	// wait:true, reads it back while waiting. Both are the one sanctioned
+	// widening of a task-scoped grant -- the callee is the caller's child
+	// (docs/prds/workflow-calls.md). CallStatus re-checks the parent-child
+	// relation server-side, so the grant only names the caller.
+	EnqueueCallTask(ctx context.Context, in *EnqueueCallTaskRequest, opts ...grpc.CallOption) (*EnqueueCallTaskResponse, error)
+	WorkflowCallStatus(ctx context.Context, in *WorkflowCallStatusRequest, opts ...grpc.CallOption) (*WorkflowCallStatusResponse, error)
 }
 
 type stateStoreServiceClient struct {
@@ -1070,6 +1079,26 @@ func (c *stateStoreServiceClient) EnqueueBindingTask(ctx context.Context, in *En
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) EnqueueCallTask(ctx context.Context, in *EnqueueCallTaskRequest, opts ...grpc.CallOption) (*EnqueueCallTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EnqueueCallTaskResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_EnqueueCallTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) WorkflowCallStatus(ctx context.Context, in *WorkflowCallStatusRequest, opts ...grpc.CallOption) (*WorkflowCallStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkflowCallStatusResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_WorkflowCallStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StateStoreServiceServer is the server API for StateStoreService service.
 // All implementations must embed UnimplementedStateStoreServiceServer
 // for forward compatibility.
@@ -1213,6 +1242,13 @@ type StateStoreServiceServer interface {
 	StreamUndispatchedCaptures(*StreamUndispatchedCapturesRequest, grpc.ServerStreamingServer[StreamUndispatchedCapturesResponse]) error
 	// BindingTaskCreator
 	EnqueueBindingTask(context.Context, *EnqueueBindingTaskRequest) (*EnqueueBindingTaskResponse, error)
+	// WorkflowCaller: a workflow.call step starts its callee and, with
+	// wait:true, reads it back while waiting. Both are the one sanctioned
+	// widening of a task-scoped grant -- the callee is the caller's child
+	// (docs/prds/workflow-calls.md). CallStatus re-checks the parent-child
+	// relation server-side, so the grant only names the caller.
+	EnqueueCallTask(context.Context, *EnqueueCallTaskRequest) (*EnqueueCallTaskResponse, error)
+	WorkflowCallStatus(context.Context, *WorkflowCallStatusRequest) (*WorkflowCallStatusResponse, error)
 	mustEmbedUnimplementedStateStoreServiceServer()
 }
 
@@ -1459,6 +1495,12 @@ func (UnimplementedStateStoreServiceServer) StreamUndispatchedCaptures(*StreamUn
 }
 func (UnimplementedStateStoreServiceServer) EnqueueBindingTask(context.Context, *EnqueueBindingTaskRequest) (*EnqueueBindingTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueBindingTask not implemented")
+}
+func (UnimplementedStateStoreServiceServer) EnqueueCallTask(context.Context, *EnqueueCallTaskRequest) (*EnqueueCallTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EnqueueCallTask not implemented")
+}
+func (UnimplementedStateStoreServiceServer) WorkflowCallStatus(context.Context, *WorkflowCallStatusRequest) (*WorkflowCallStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WorkflowCallStatus not implemented")
 }
 func (UnimplementedStateStoreServiceServer) mustEmbedUnimplementedStateStoreServiceServer() {}
 func (UnimplementedStateStoreServiceServer) testEmbeddedByValue()                           {}
@@ -2882,6 +2924,42 @@ func _StateStoreService_EnqueueBindingTask_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_EnqueueCallTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnqueueCallTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).EnqueueCallTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_EnqueueCallTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).EnqueueCallTask(ctx, req.(*EnqueueCallTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_WorkflowCallStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WorkflowCallStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).WorkflowCallStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_WorkflowCallStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).WorkflowCallStatus(ctx, req.(*WorkflowCallStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StateStoreService_ServiceDesc is the grpc.ServiceDesc for StateStoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3192,6 +3270,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EnqueueBindingTask",
 			Handler:    _StateStoreService_EnqueueBindingTask_Handler,
+		},
+		{
+			MethodName: "EnqueueCallTask",
+			Handler:    _StateStoreService_EnqueueCallTask_Handler,
+		},
+		{
+			MethodName: "WorkflowCallStatus",
+			Handler:    _StateStoreService_WorkflowCallStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

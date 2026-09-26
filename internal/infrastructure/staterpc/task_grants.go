@@ -90,10 +90,17 @@ func (g *TaskGrants) taskFor(token string) int64 {
 	return 0
 }
 
-// authorizesTaskScopedCall reports whether req -- a call to one of the three
-// task.Store RPCs a task grant may ever authorize -- targets taskID.
-// Every other RPC (including RegisterTaskGrant/RevokeTaskGrant themselves)
-// falls through to false: a task grant can only ever narrow, never expand.
+// authorizesTaskScopedCall reports whether req -- a call to one of the RPCs
+// a task grant may ever authorize -- targets taskID. Every other RPC
+// (including RegisterTaskGrant/RevokeTaskGrant themselves) falls through to
+// false: a task grant can only ever narrow, never expand.
+//
+// The two workflow.call RPCs are the one sanctioned widening
+// (docs/prds/workflow-calls.md): a workflow.call step must start its callee
+// and read it back, and the callee is the caller's child. Both requests
+// carry the caller's own task ID, which the grant check verifies; the
+// parent-child relation is a handler-side row check, so this interceptor
+// never reads the database.
 func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
 	switch fullMethod {
 	case pb.StateStoreService_Update_FullMethodName:
@@ -105,6 +112,12 @@ func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
 	case pb.StateStoreService_InsertEvent_FullMethodName:
 		r, ok := req.(*pb.InsertEventRequest)
 		return ok && r.Event != nil && r.Event.TaskId == taskID
+	case pb.StateStoreService_EnqueueCallTask_FullMethodName:
+		r, ok := req.(*pb.EnqueueCallTaskRequest)
+		return ok && r.CallerTaskId == taskID
+	case pb.StateStoreService_WorkflowCallStatus_FullMethodName:
+		r, ok := req.(*pb.WorkflowCallStatusRequest)
+		return ok && r.CallerTaskId == taskID
 	default:
 		return false
 	}

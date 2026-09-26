@@ -323,6 +323,8 @@ type Task struct {
 	Inputs                    string
 	OrgID                     string
 	WorkspaceID               string
+	CallParentTaskID          int64
+	CallDepth                 int32
 }
 
 type ToolCall struct {

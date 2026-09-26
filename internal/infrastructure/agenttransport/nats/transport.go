@@ -15,6 +15,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -152,6 +153,39 @@ func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forg
 // one.
 func (t *Transport) Store(timeout time.Duration) workflow.Store {
 	return deadlineStore{Store: t.state, timeout: timeout}
+}
+
+// Calls constructs the workflow.call RPC client over the same long-lived
+// State Store client (docs/prds/workflow-calls.md), bounded by timeout the
+// same way Store() is.
+func (t *Transport) Calls(timeout time.Duration) task.Caller {
+	return deadlineCaller{Caller: t.state, timeout: timeout}
+}
+
+// deadlineCaller applies a default per-call timeout to task.Caller calls
+// whose context carries no deadline of its own, matching deadlineStore.
+type deadlineCaller struct {
+	task.Caller
+	timeout time.Duration
+}
+
+func (d deadlineCaller) withDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok || d.timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d.timeout)
+}
+
+func (d deadlineCaller) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*task.Task, error) {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Caller.StartCall(ctx, callerTaskID, wf, inputs)
+}
+
+func (d deadlineCaller) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, error) {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Caller.CallStatus(ctx, callerTaskID, callTaskID)
 }
 
 // deadlineStore applies a default per-call timeout to workflow.Store calls

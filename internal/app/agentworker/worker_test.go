@@ -11,6 +11,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 )
 
@@ -74,6 +75,8 @@ func (t *workerTransportStub) SubscribeTasks(_ context.Context, taskID int64, _ 
 func (*workerTransportStub) Forger(string, time.Duration) workflow.Forger { return nil }
 
 func (*workerTransportStub) Store(time.Duration) workflow.Store { return nil }
+
+func (*workerTransportStub) Calls(time.Duration) task.Caller { return nil }
 
 func (*workerTransportStub) Trees(string, string, time.Duration) agentnats.RemoteTrees { return nil }
 
