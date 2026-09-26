@@ -27,3 +27,20 @@ passes the same gate.
    rule; do not loosen the rule to the test.
 3. Run the full suite without `-short`, then `task check`, then commit. Check
    `git status` for files a test wrote into the tree before staging.
+4. **A merge can surface a bug neither lane's own tests exposed alone.** Two
+   real cases from 2026-09-26: a test that dialled no NATS URL passed on a
+   machine with an ambient dev server running and failed the moment it landed
+   on a clean CI runner (start an ephemeral server per test, never rely on a
+   default port resolving to something); and a cycle-detector that walked a
+   Go map in range order reported the same cycle two different ways from run
+   to run, invisible until enough fresh (uncached) runs hit the unlucky
+   ordering. Both looked like "the merge broke a passing test" but were
+   latent defects the merge only had the opportunity to expose. Fix the
+   defect the failure is pointing at, not the assertion that caught it — see
+   CLAUDE.md's test-quality bar before writing the replacement.
+5. `go test`'s cache reuses a package's last result when nothing in its
+   dependency graph changed. A merge that touches one package can leave a
+   sibling's flaky test silently cached "pass" locally while CI runs it
+   fresh. `task check` passing on your machine is not proof a merge is
+   clean — rerun anything nondeterminism-prone with `-count=1` before
+   trusting it, and let CI's from-scratch run be the tiebreaker it is.
