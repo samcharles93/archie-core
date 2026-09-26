@@ -123,6 +123,17 @@ func TestResourceValidatorsRejectWhatEffectiveValidationRejects(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "credential binding with an empty service name",
+			kind: CredentialBindingsKind,
+			value: []credentialBinding{
+				{Service: "", Org: "acme"},
+			},
+			mutate: func(cfg *config.Config) {
+				cfg.Containers.Credentials = []config.CredentialBinding{{Service: "", Org: "acme"}}
+			},
+			wantErr: true,
+		},
+		{
 			name:    "container runtime policies without an image",
 			kind:    ContainerRuntimePoliciesKind,
 			value:   containerRuntimePolicies{PullPolicy: "missing"},

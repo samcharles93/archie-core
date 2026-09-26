@@ -60,6 +60,7 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 		PluginSettingsKind:           map[string]any{"plugin_dir": "/plugins", "module_dir": "/modules", "secret_engine_dir": "/secrets", "skills_dir": "/skills"},
 		ContainerRuntimePoliciesKind: map[string]any{"image": "archie:next", "pull_policy": "missing"},
 		AgentProfileKind:             map[string]any{"net": map[string]any{"tools": []string{"whois"}}},
+		CredentialBindingsKind:       []map[string]any{{"service": "openai", "org": "acme", "secret": map[string]any{"engine": "env", "key": "OPENAI_KEY"}}},
 	}})
 
 	got, versions, err := client.RuntimeConfig(t.Context(), base)
@@ -70,7 +71,7 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 	// publishes is the one it actually layered in (archie-core-pskb).
 	for _, kind := range []string{
 		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, ChannelSettingsKind,
-		SchedulingPolicyKind, ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind, AgentProfileKind,
+		SchedulingPolicyKind, ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind, AgentProfileKind, CredentialBindingsKind,
 	} {
 		if versions[kind] != 2 {
 			t.Errorf("versions[%s] = %d, want the 2 the store answered with", kind, versions[kind])
@@ -552,7 +553,7 @@ func TestRuntimeResourceKindsApplyLive(t *testing.T) {
 		modes[definition.Kind] = definition.ApplyMode
 	}
 	for _, kind := range []string{
-		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind,
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind,
 	} {
 		if modes[kind] != "live" {
 			t.Errorf("%s applies %q, want live: the daemon re-layers this kind on a watch", kind, modes[kind])
@@ -656,5 +657,44 @@ func TestRuntimeConfigLayersStoredProfiles(t *testing.T) {
 
 	if got := base.Containers.Profiles; len(got) != 1 {
 		t.Fatalf("layering mutated the file document's profiles: %v", got)
+	}
+}
+
+// A stored CredentialBindingsKind value replaces the file's bindings
+// outright; no stored value at all leaves the file's in effect (the same
+// shape TestRuntimeConfigLayersStoredProfiles pins for AgentProfileKind, for
+// the same reason: a binding applies without a restart).
+func TestRuntimeConfigLayersStoredCredentialBindings(t *testing.T) {
+	base := config.Config{Containers: config.ContainerConfig{Image: "agent:1", Credentials: []config.CredentialBinding{
+		{Service: "file-only", Org: "acme"},
+	}}}
+
+	t.Run("a stored value replaces the file's", func(t *testing.T) {
+		client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
+			SchedulingPolicyKind:         map[string]any{"poll_interval": "2m", "dispatch": map[string]any{"trigger": "assignee"}},
+			ContainerRuntimePoliciesKind: map[string]any{"image": "agent:2"},
+			CredentialBindingsKind:       []map[string]any{{"service": "openai", "org": "acme", "secret": map[string]any{"engine": "env", "key": "OPENAI_KEY"}}},
+		}})
+		got, _, err := client.RuntimeConfig(t.Context(), base)
+		if err != nil {
+			t.Fatalf("RuntimeConfig: %v", err)
+		}
+		if len(got.Containers.Credentials) != 1 || got.Containers.Credentials[0].Service != "openai" || got.Containers.Credentials[0].Secret.Key != "OPENAI_KEY" {
+			t.Fatalf("credentials = %+v, want the stored binding", got.Containers.Credentials)
+		}
+	})
+
+	t.Run("no stored value inherits the file's", func(t *testing.T) {
+		got, _, err := runtimeConfigFrom(t.Context(), absentReader{}, base)
+		if err != nil {
+			t.Fatalf("runtimeConfigFrom: %v", err)
+		}
+		if len(got.Containers.Credentials) != 1 || got.Containers.Credentials[0].Service != "file-only" {
+			t.Fatalf("credentials = %+v, want the file's binding", got.Containers.Credentials)
+		}
+	})
+
+	if got := base.Containers.Credentials; len(got) != 1 {
+		t.Fatalf("layering mutated the file document's credentials: %v", got)
 	}
 }

@@ -61,13 +61,20 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 		park("kit workflow interface", err)
 		return
 	}
+	// Org and GrantedServices are the dispatching identity's own facts, read
+	// fresh here rather than cached anywhere: the same per-task
+	// config.Config d.configFor already resolves for every other identity
+	// override (Forge, Budgets, ...).
+	taskCfg := d.configFor(task)
 	run, err := d.KitLauncher.Launch(ctx, kitrun.Request{
-		Execution:   fmt.Sprintf("task-%d", task.ID),
-		Kit:         profile.Kit,
-		Adapter:     profile.Adapter,
-		WorkDir:     workDir,
-		WorkerEnv:   env,
-		GateRetries: iface.Needs.GateRetries,
+		Execution:       fmt.Sprintf("task-%d", task.ID),
+		Kit:             profile.Kit,
+		Adapter:         profile.Adapter,
+		WorkDir:         workDir,
+		WorkerEnv:       env,
+		GateRetries:     iface.Needs.GateRetries,
+		Org:             taskCfg.Org,
+		GrantedServices: taskCfg.GrantedCredentials,
 	})
 	if err != nil {
 		park("kit launch failed", err)

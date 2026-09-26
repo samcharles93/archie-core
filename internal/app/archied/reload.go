@@ -152,7 +152,10 @@ var reloadableFields = map[string]bool{
 // Containers.Profile, called from pinTaskProfile) and is also its own
 // live-applying control-plane resource (AgentProfileKind), never captured at
 // container-pool construction -- docs/prds/external-agent-harness.md
-// "Selection": a Kit profile applies without a restart. Everything else in
+// "Selection": a Kit profile applies without a restart. Credentials is the
+// same shape one layer down: kitrun.Launcher reads Config.Get().Containers.
+// Credentials fresh on every Launch (CredentialBindingsKind), never a slice
+// captured once when the launcher was built. Everything else in
 // Containers (Image, MaxConcurrency, MaxUptime, PullPolicy, Network) is
 // frozen in the startup-built container pool -- the dispatchers re-read
 // MaxConcurrency but the pool captures it at construction
@@ -161,7 +164,7 @@ var reloadableFields = map[string]bool{
 // (display/link building only); the forge client itself is startup-built, so
 // Type/Token/TokenEnv stay requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
-	"Containers": {"VolumeTTL": true, "Profiles": true},
+	"Containers": {"VolumeTTL": true, "Profiles": true, "Credentials": true},
 	"Forge":      {"Host": true},
 	// Policy is carried into TaskConfig by ForTask (config.go); MCPServers,
 	// WebFetch and Minimax are not and stay requires-restart.
