@@ -31,31 +31,35 @@ const (
 
 // orgReadPolicy is every role's floor: read everything in the org, and its
 // logs, but not a secret's value.
-const orgReadPolicy = `permit(principal, action, resource) when
+const orgReadPolicy = `permit(principal, action, resource) when {
     resource.org == principal.org &&
-    principal.role in ["` + roleViewer + `", "` + roleDeveloper + `", "` + roleAdmin + `", "` + roleOwner + `"] &&
-    action in [Archie::Action::"read", Archie::Action::"read_logs"];`
+    ["` + roleViewer + `", "` + roleDeveloper + `", "` + roleAdmin + `", "` + roleOwner + `"].contains(principal.role) &&
+    action in [Archie::Action::"read", Archie::Action::"read_logs"]
+};`
 
 // orgEditPolicy is a developer's grant: create and edit workspace resources
 // and org workflows, and run them.
-const orgEditPolicy = `permit(principal, action, resource) when
+const orgEditPolicy = `permit(principal, action, resource) when {
     resource.org == principal.org &&
-    principal.role in ["` + roleDeveloper + `", "` + roleAdmin + `", "` + roleOwner + `"] &&
-    action in [Archie::Action::"create", Archie::Action::"update", Archie::Action::"run"];`
+    ["` + roleDeveloper + `", "` + roleAdmin + `", "` + roleOwner + `"].contains(principal.role) &&
+    action in [Archie::Action::"create", Archie::Action::"update", Archie::Action::"run"]
+};`
 
 // orgAdminPolicy is an admin's grant: approve, secret values, member and
 // identity management, policy management, and deletion of every record that
 // is not the org itself.
-const orgAdminPolicy = `permit(principal, action, resource) when
+const orgAdminPolicy = `permit(principal, action, resource) when {
     resource.org == principal.org &&
-    principal.role in ["` + roleAdmin + `", "` + roleOwner + `"] &&
-    (action != Archie::Action::"delete" || resource.kind != "org");`
+    ["` + roleAdmin + `", "` + roleOwner + `"].contains(principal.role) &&
+    (action != Archie::Action::"delete" || resource.kind != "org")
+};`
 
 // orgOwnerPolicy is the owner's grant: everything in the org, including
 // deleting it.
-const orgOwnerPolicy = `permit(principal, action, resource) when
+const orgOwnerPolicy = `permit(principal, action, resource) when {
     resource.org == principal.org &&
-    principal.role == "` + roleOwner + `";`
+    principal.role == "` + roleOwner + `"
+};`
 
 // ShippedOrgPolicies returns the four shipped role policies for one org, as
 // the store seeds them and `archied access reset --org` restores them.
@@ -77,5 +81,6 @@ const CrossOrgForbidID = PolicyCrossOrgID
 // and the reset command's audit trail. The engine enforces it structurally
 // (a principal never reaches a resource outside its org) before any Cedar
 // runs, which is what makes it non-removable.
-const CrossOrgForbidText = `forbid(principal, action, resource)
-when resource.org != principal.org;`
+const CrossOrgForbidText = `forbid(principal, action, resource) when {
+    resource.org != principal.org;
+};`
