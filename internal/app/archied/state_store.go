@@ -146,6 +146,14 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nol
 	if err := b.startOptionalSurfaces(ctx, options); err != nil {
 		return err
 	}
+	// Boot is over and every listener this process serves is bound: the gRPC
+	// contract below and, when -ready-addr asked for one, the readiness HTTP
+	// surface. systemd's READY=1 asserts the same fact, so the announcement
+	// goes out here rather than from a second notion of "started"
+	// (archie-core-1174). Not earlier: a readiness surface that fails to bind
+	// fails the boot, and READY must not precede it. Not later: Serve begins
+	// accepting the moment it is called.
+	b.announceReady()
 
 	deps := b.stateStoreDeps(grants)
 	deps.ControlPlane = control

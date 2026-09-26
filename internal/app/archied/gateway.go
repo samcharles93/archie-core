@@ -119,8 +119,21 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	if err != nil {
 		return fmt.Errorf("listen for gateway: %w", err)
 	}
+	return b.serveGatewayListener(ctx, listener, loopback, contract, opts)
+}
+
+// serveGatewayListener is the serving tail of RunGateway: the listener is
+// bound, the process declares itself serving, and the chat contract answers
+// until ctx ends.
+func (b *boot) serveGatewayListener(ctx context.Context, listener net.Listener, loopback bool, contract gateway.ChatContract, opts []grpc.ServerOption) error {
 	defer listener.Close()
 	b.log.Info("archie-gateway running", "addr", listener.Addr().String(), "token_required", !loopback)
+	// Boot is over and this listener is about to accept: the same fact
+	// systemd's READY=1 asserts, so the announcement goes out here rather than
+	// from a second notion of "started" (archie-core-1174). Not later: Serve
+	// begins accepting the moment it is called, and a unit whose
+	// TimeoutStartSec expires first would restart a healthy process.
+	b.announceReady()
 	return serveGateway(ctx, listener, contract, b.chatSessionStore, opts)
 }
 

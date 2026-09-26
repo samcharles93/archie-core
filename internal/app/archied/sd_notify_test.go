@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
 
 // notifyRecorder captures every record at every level. The other recording
@@ -117,6 +118,28 @@ func countState(states []string, want string) int {
 		}
 	}
 	return n
+}
+
+// waitForState reads datagrams until one carries want or the window closes.
+// The states drain above collects a window's worth; a boot-path test waiting
+// for one state returns as soon as it arrives.
+func (l *notifyListener) waitForState(t *testing.T, window time.Duration, want string) bool {
+	t.Helper()
+	deadline := time.Now().Add(window)
+	buf := make([]byte, 1024)
+	for time.Now().Before(deadline) {
+		if err := l.conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+			t.Fatalf("set notify read deadline: %v", err)
+		}
+		n, _, err := l.conn.ReadFromUnix(buf)
+		if err != nil {
+			continue
+		}
+		if string(buf[:n]) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // newNotifyTestBoot builds the composition the notify path reads: a boot whose
@@ -361,5 +384,38 @@ func TestNotifySocketFailureIsNotFatal(t *testing.T) {
 	}
 	if errs := rec.at(slog.LevelError); len(errs) != 0 {
 		t.Errorf("an unusable notify socket logged %d errors, want none: %v", len(errs), errs)
+	}
+}
+
+// TestStateStoreBootAnnouncesReady: archie-state-store run as a Type=notify
+// unit must send READY=1 once its boot is over and it is serving the contract,
+// or systemd kills a healthy process once TimeoutStartSec expires
+// (archie-core-1174). The real RunStateStore composition drives it, over a
+// real State Store database, the way the provider-seeding boot test does.
+func TestStateStoreBootAnnouncesReady(t *testing.T) {
+	listener := newNotifyListener(t)
+	url := pgtest.URL(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := fmt.Sprintf("bot_user = 'archie'\ndatabase_url = %q\n", url)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- RunStateStore(ctx, StateStoreOptions{Config: path, Listen: "127.0.0.1:0"}) }()
+
+	if !listener.waitForState(t, 15*time.Second, readyState) {
+		select {
+		case bootErr := <-errCh:
+			t.Fatalf("RunStateStore exited before announcing ready: %v", bootErr)
+		default:
+			t.Fatal("no READY=1 datagram within 15s of boot")
+		}
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunStateStore shutdown: %v", err)
 	}
 }
