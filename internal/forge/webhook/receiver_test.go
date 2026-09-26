@@ -244,8 +244,8 @@ func TestPublishedEnvelopeCarriesIssueIdentityAndKind(t *testing.T) {
 	if !slices.Contains(task.Labels, testLabel) || !slices.Contains(task.Labels, "bug") {
 		t.Errorf("envelope labels = %v, want to contain %q and %q", task.Labels, testLabel, "bug")
 	}
-	if task.IdempotencyKey() != "archie:owner/repo/42" {
-		t.Errorf("idempotency key = %q, want archie:owner/repo/42", task.IdempotencyKey())
+	if task.IdempotencyKey() != "archie:default//owner/repo/42" {
+		t.Errorf("idempotency key = %q, want archie:default//owner/repo/42", task.IdempotencyKey())
 	}
 }
 

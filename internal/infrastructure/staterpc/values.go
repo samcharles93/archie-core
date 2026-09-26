@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
@@ -78,6 +79,7 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,
+		Org:                       string(t.Org),
 	}
 }
 
@@ -102,6 +104,7 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYAML:    t.WorkflowDefinitionYaml,
+		Org:                       org.OrgID(t.Org),
 	}
 }
 

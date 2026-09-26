@@ -278,6 +278,10 @@ message Task {
   // inputs_json is the JSON object of workflow inputs a binding dispatch
   // resolved (task.EncodeInputs); empty for a task no binding started.
   string inputs_json = 34;
+  // org is the org the task belongs to, derived store-side from the task's
+  // identity when the row is written; a task of a single-operator install
+  // belongs to the default org (docs/prds/orgs-and-access.md).
+  string org = 35;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object

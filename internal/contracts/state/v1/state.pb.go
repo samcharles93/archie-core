@@ -1319,7 +1319,11 @@ type Task struct {
 	RemediationRounds int32 `protobuf:"varint,33,opt,name=remediation_rounds,json=remediationRounds,proto3" json:"remediation_rounds,omitempty"`
 	// inputs_json is the JSON object of workflow inputs a binding dispatch
 	// resolved (task.EncodeInputs); empty for a task no binding started.
-	InputsJson    string `protobuf:"bytes,34,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	InputsJson string `protobuf:"bytes,34,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	// org is the org the task belongs to, derived store-side from the task's
+	// identity when the row is written; a task of a single-operator install
+	// belongs to the default org (docs/prds/orgs-and-access.md).
+	Org           string `protobuf:"bytes,35,opt,name=org,proto3" json:"org,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1588,6 +1592,13 @@ func (x *Task) GetRemediationRounds() int32 {
 func (x *Task) GetInputsJson() string {
 	if x != nil {
 		return x.InputsJson
+	}
+	return ""
+}
+
+func (x *Task) GetOrg() string {
+	if x != nil {
+		return x.Org
 	}
 	return ""
 }
@@ -9651,7 +9662,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12-\n" +
 	"\x05audit\x18\x04 \x01(\v2\x17.state.v1.IdentityAuditR\x05audit\"M\n" +
 	"\x1bBindIdentitySubjectResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xfa\b\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\x8c\t\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -9697,7 +9708,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"park_class\x18  \x01(\tR\tparkClass\x12-\n" +
 	"\x12remediation_rounds\x18! \x01(\x05R\x11remediationRounds\x12\x1f\n" +
 	"\vinputs_json\x18\" \x01(\tR\n" +
-	"inputsJson\"\xf8\x02\n" +
+	"inputsJson\x12\x10\n" +
+	"\x03org\x18# \x01(\tR\x03org\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
