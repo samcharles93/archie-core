@@ -208,6 +208,51 @@ func TestCompose(t *testing.T) {
 	}
 }
 
+// TestValidateNeeds pins the harness PRD's "a gate retry without a resume
+// verb" refusal (Contract): archie resumes the harness's own session with the
+// gate's output rather than starting a fresh one, so a gated stage's retry
+// budget is unmeetable by a Kit whose agent-sessions capability names no
+// resume verb.
+func TestValidateNeeds(t *testing.T) {
+	promptOnly := descriptor(t, spec.KindWorkload, `
+  - type: com.docker.sandbox/agent-sessions@1
+    config:
+      prompt: [-p, "{{.Prompt}}"]`)
+	withResume := descriptor(t, spec.KindWorkload, sessions)
+
+	tests := []struct {
+		name        string
+		descriptor  *spec.Descriptor
+		gateRetries int
+		wantErr     bool
+	}{
+		{"no gated stage, no resume verb", promptOnly, 0, false},
+		{"gated stage, no resume verb", promptOnly, 2, true},
+		{"gated stage, a resume verb", withResume, 2, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := Admit(tt.descriptor)
+			if err != nil {
+				t.Fatalf("Admit: %v", err)
+			}
+			sessions, err := spec.AgentSessionsOf(plan.Capabilities)
+			if err != nil {
+				t.Fatalf("AgentSessionsOf: %v", err)
+			}
+			plan.Sessions = sessions
+
+			err = ValidateNeeds(plan, tt.gateRetries)
+			if tt.wantErr && err == nil {
+				t.Fatal("ValidateNeeds accepted a gate retry budget the kit cannot resume")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ValidateNeeds: %v", err)
+			}
+		})
+	}
+}
+
 func TestDecodePublished(t *testing.T) {
 	published := "schemaVersion: \"3\"\nkind: workload\ncapabilities:" + sessions + "\n"
 	tests := []struct {

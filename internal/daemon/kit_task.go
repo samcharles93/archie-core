@@ -8,6 +8,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kit"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kitrun"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -51,12 +52,22 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 		park("kit worker environment", err)
 		return
 	}
+	// The interface is reparsed rather than threaded through pinTaskProfile's
+	// return: task.WorkflowDefinitionYAML is already pinned by the time this
+	// runs, parsing it is pure and cheap, and pinTaskProfile's signature stays
+	// unchanged for its other callers.
+	iface, err := workflowtask.ParseWorkflowInterface(task.WorkflowDefinitionYAML)
+	if err != nil {
+		park("kit workflow interface", err)
+		return
+	}
 	run, err := d.KitLauncher.Launch(ctx, kitrun.Request{
-		Execution: fmt.Sprintf("task-%d", task.ID),
-		Kit:       profile.Kit,
-		Adapter:   profile.Adapter,
-		WorkDir:   workDir,
-		WorkerEnv: env,
+		Execution:   fmt.Sprintf("task-%d", task.ID),
+		Kit:         profile.Kit,
+		Adapter:     profile.Adapter,
+		WorkDir:     workDir,
+		WorkerEnv:   env,
+		GateRetries: iface.Needs.GateRetries,
 	})
 	if err != nil {
 		park("kit launch failed", err)

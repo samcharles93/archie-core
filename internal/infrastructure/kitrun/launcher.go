@@ -49,6 +49,12 @@ type Request struct {
 	Adapter   string
 	WorkDir   string
 	WorkerEnv []string
+	// GateRetries is the workflow's declared gate-retry budget
+	// (task.WorkflowNeeds.GateRetries); zero means no stage gates its
+	// result. A composition with no agent-sessions resume verb cannot meet
+	// a positive one, and Launch refuses it rather than starting a
+	// container no gate failure could ever resume.
+	GateRetries int
 }
 
 // Run is a started Kit task.
@@ -76,6 +82,9 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	}
 	plan, img, err := l.compose(ctx, req.Kit)
 	if err != nil {
+		return nil, err
+	}
+	if err := kit.ValidateNeeds(plan, req.GateRetries); err != nil {
 		return nil, err
 	}
 	network, err := spec.NetworkPolicyOf(plan.Capabilities)
