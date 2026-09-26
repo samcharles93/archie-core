@@ -265,13 +265,14 @@ _view_, not new RPCs — `Update`/`Transition`/`InsertEvent` are shared with
 | Binding            | `InsertBinding`, `GetBinding`, `ListBindings`, `UpdateBinding`, `DeleteBinding`, `ApproveBinding`                          |
 | Dispatch           | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures`                                                     |
 | Playbook           | `RecordPlaybookDispatch`, `DeletePlaybookDispatches`                                                                       |
+| WorkflowCaller     | `EnqueueCallTask`, `WorkflowCallStatus`                                                                                    |
 | BindingTaskCreator | `EnqueueBindingTask`                                                                                                       |
 | Config snapshot    | `PutConfigSnapshot`, `GetConfigSnapshot`                                                                                   |
 | Apply status       | `PutApplyStatus`, `ListApplyStatus`                                                                                        |
 | Channel status     | `PutChannelStatus`, `ListChannelStatus`                                                                                    |
 | Task log           | `ReadTaskLog`, `StreamTaskLogContent`                                                                                      |
 
-That is **51 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **53 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The channel-status pair follows the config snapshot's split for the same reason: the writer is the process that HOSTS the channels -- the Messaging Service, which alone observes whether a channel is starting, running or failed -- and the reader is the UI process. Both RPCs are administrative, so a task-scoped grant reaches neither. A channel's state is runtime state rather than a settings document, which is why it is not a `ControlPlaneService` resource kind: a failed channel is not a document anybody edits. Asking for a reload travels on its own surface rather than through this one; see `docs/architecture/migration-decisions.md`, "Channel state to the dashboard".
@@ -305,6 +306,19 @@ and the two answers are load-bearing for the dashboard: only the second is a dep
 condition, and the panel that collapsed them told operators task logging was switched off when
 it was not. The Go facade is `storecontract.TaskLogStore` (2 methods), carried by
 `*staterpc.Client` alongside the rest.
+
+The workflow-caller pair was added by `archie-core-t2db.41` (see
+`docs/prds/workflow-calls.md`). It is the one surface a task-scoped grant
+reaches beyond the three task.Store RPCs: a `workflow.call` step must start
+its callee and, with `wait: true`, read it back, and the callee is the
+caller's child. Both requests carry the caller's task ID, which the grant
+check verifies; `EnqueueCallTask` derives everything else from the caller's
+row and refuses a caller that is not running or a call past the depth limit
+(`ErrCallCallerNotRunning` / `ErrCallDepthExceeded`), and `WorkflowCallStatus`
+re-checks the parent-child relation against the row before answering
+(`ErrCallNotYours`), so the interceptor itself never reads the database. The
+facade is `workflow/task.Caller` (2 methods), carried by `*staterpc.Client`
+and the PostgreSQL store alike.
 
 The playbook pair was added by `archie-core-t2db.17`'s implementation (see
 `docs/prds/eda-playbook-engine.md`, execution-time gap 2). It is administrative
@@ -551,9 +565,12 @@ stated explicitly rather than left implicit.
   cannot leave a grant valid indefinitely.
 - **Validation and scope (`.4.7`):** a gRPC interceptor (`staterpc.TaskGrants.UnaryInterceptor`)
   validates the token against the State Store's own issued-grant set; missing/unknown/expired →
-  `codes.Unauthenticated`. Unlike the daemon's own administrative token (full access to all ~40
-  RPCs), a task-scoped grant additionally authorises only `Update`/`Transition`/`InsertEvent` on
-  its own task ID — every other RPC, including the streaming capture surface and
+  `codes.Unauthenticated`. Unlike the daemon's own administrative token (full access to all RPCs),
+  a task-scoped grant additionally authorises only `Update`/`Transition`/`InsertEvent` on
+  its own task ID, plus the two workflow-caller RPCs naming that same task ID
+  (`EnqueueCallTask`/`WorkflowCallStatus`, `docs/prds/workflow-calls.md` — the one
+  sanctioned widening: the callee is the caller's child). Every other RPC, including the
+  streaming capture surface and
   `RegisterTaskGrant`/`RevokeTaskGrant` themselves, is `codes.PermissionDenied` for a task-scoped
   caller. The token is carried in gRPC metadata, never in a URL.
 
