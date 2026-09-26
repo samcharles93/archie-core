@@ -10,6 +10,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccessDenial struct {
+	ID           int64
+	OrgID        string
+	Principal    string
+	Action       string
+	ResourceKind string
+	ResourceID   string
+	Level        string
+	Policies     []string
+	MinuteAt     time.Time
+	Count        int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type AccessPolicy struct {
+	Level       string
+	OrgID       string
+	WorkspaceID string
+	ObjectKind  string
+	ObjectID    string
+	PolicyID    string
+	Text        string
+	UpdatedAt   time.Time
+}
+
+type AccessPolicyVersion struct {
+	Level       string
+	OrgID       string
+	WorkspaceID string
+	Version     int64
+	UpdatedAt   time.Time
+}
+
 type ApplyStatus struct {
 	Process        string
 	Kind           string

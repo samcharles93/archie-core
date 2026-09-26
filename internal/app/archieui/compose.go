@@ -6,6 +6,7 @@ import (
 	"time"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
@@ -33,6 +34,12 @@ type deps struct {
 	// Login drives the browser sign-in flow, or nil when no provider is
 	// configured for it.
 	Login identity.LoginFlow
+	// Access evaluates the policy chain; Principals assembles the request
+	// principal; Denials records refusals
+	// (docs/prds/orgs-and-access.md). Wired together or not at all.
+	Access     access.Authorizer
+	Principals access.PrincipalSource
+	Denials    access.DenialStore
 }
 
 // compose builds the dashboard server for the UI process. It sets exactly the
@@ -114,6 +121,11 @@ func compose(d deps) *webui.Server {
 	// rather than opening a path (docs/prds/ui-service-boundary.md). Withholding
 	// it would degrade a page that has an owner, and would leave the dashboard
 	// claiming task logging was not enabled -- see wireTaskLogs.
+	// The policy chain: wired together or not at all
+	// (docs/prds/orgs-and-access.md, "Where it lives").
+	srv.Access = d.Access
+	srv.Principals = d.Principals
+	srv.Denials = d.Denials
 	wireTaskLogs(d, srv)
 	wireCaptureSurfaces(d, srv)
 	return srv

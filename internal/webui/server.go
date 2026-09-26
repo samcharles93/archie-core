@@ -11,6 +11,7 @@ import (
 	"time"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
@@ -107,6 +108,16 @@ type Server struct {
 	// Authenticate because a caller may present a token without ever signing in
 	// through a browser -- an agent does exactly that.
 	Login identity.LoginFlow
+
+	// Access evaluates the policy chain for each request
+	// (docs/prds/orgs-and-access.md). Optional: nil keeps the credential
+	// check as the whole gate -- the documented behaviour of an install that
+	// has not built the chain. Principals assembles the request principal
+	// from the acting identity; Denials records refusals. All three are
+	// wired together at composition or not at all.
+	Access     access.Authorizer
+	Principals access.PrincipalSource
+	Denials    access.DenialStore
 
 	// Events publishes operator actions so they reach the task timeline and
 	// the live activity stream. Optional: nil means the action is recorded
@@ -329,7 +340,10 @@ func (s *Server) Handler() http.Handler {
 	if s.CaptureIntake != nil {
 		top.Handle(captureIntakeRoute, s.CaptureIntake)
 	}
-	top.Handle("/", s.requireToken(mux))
+	// The chain runs after the credential check and before any handler: the
+	// principal exists only once the credential resolved
+	// (docs/prds/orgs-and-access.md, "Where it lives").
+	top.Handle("/", s.requireToken(s.authorize(mux)))
 	return top
 }
 

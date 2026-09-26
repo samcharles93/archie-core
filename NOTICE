@@ -11,3 +11,9 @@ deduplication, line mapping and review-event selection.
 PR-AF declares the Apache License, Version 2.0 in its pyproject.toml and
 ships no license file. A copy of the License is available at
 https://www.apache.org/licenses/LICENSE-2.0
+
+This product includes software from the Cedar project
+(https://github.com/cedar-policy/cedar), Copyright Amazon.com, Inc. or its
+affiliates, licensed under the Apache License, Version 2.0, as implemented by
+github.com/cedar-policy/cedar-go, which declares the same license in its
+repository. This repository links the library; it derives no source from it.

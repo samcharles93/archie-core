@@ -21,11 +21,13 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -70,7 +72,7 @@ type StateStoreOptions struct {
 // The conversation store belongs to the separate archie-gateway process. The
 // store service owns its own DB lifecycle, so
 // b.cleanup() is the sole owner closing b.st here (in-process owner).
-func RunStateStore(ctx context.Context, options StateStoreOptions) error {
+func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nolint:cyclop // the composition root's setup sequence is deliberately flat and sequential
 	b := newBootstrap()
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
@@ -105,12 +107,15 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 			return fmt.Errorf("upgrade default org: %w", err)
 		}
 	}
+	if err := b.seedAndValidatePolicies(ctx); err != nil {
+		return err
+	}
+	// The validating side's control plane, built here at the composition root
+	// before the first definition is read or replaced.
 	resources, ok := b.st.(controlplane.ResourceStore)
 	if !ok {
 		return fmt.Errorf("state store does not support control-plane resources")
 	}
-	// The validating side's control plane, built here at the composition root
-	// before the first definition is read or replaced.
 	control, err := openStateStoreControlPlane(resources)
 	if err != nil {
 		return err
@@ -145,6 +150,52 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	deps := b.stateStoreDeps(grants)
 	deps.ControlPlane = control
 	return serveStateStore(ctx, listener, deps, opts)
+}
+
+// seedAndValidatePolicies seeds the shipped role policies for every org
+// that lacks them, grants the agent identities their org's shipped developer
+// role, and re-validates every stored policy this process serves
+// (docs/prds/orgs-and-access.md, "Storing and changing policies" and
+// "Roles"). An invalid org, workspace or object policy is logged here and
+// named as a problem by the engines the consumers build; an invalid instance
+// policy fails this boot -- the store stops serving until it is fixed. A
+// store without the access surfaces degrades: there is no chain to seed.
+func (b *boot) seedAndValidatePolicies(ctx context.Context) error {
+	policies, ok := b.st.(access.PolicyStore)
+	if !ok {
+		return nil
+	}
+	if agents, ok := b.st.(interface {
+		EnsureAgentOrgMembership(context.Context) error
+	}); ok {
+		if err := agents.EnsureAgentOrgMembership(ctx); err != nil {
+			return fmt.Errorf("grant agent org membership: %w", err)
+		}
+	}
+	if orgs, ok := b.st.(org.Repository); ok {
+		list, err := orgs.ListOrgs(ctx)
+		if err != nil {
+			return fmt.Errorf("list orgs for policy seeding: %w", err)
+		}
+		for _, o := range list {
+			if err := policies.EnsureShippedOrgPolicies(ctx, o.ID); err != nil {
+				return fmt.Errorf("seed shipped org policies for %s: %w", o.ID, err)
+			}
+		}
+	}
+	stored, err := policies.ListPolicies(ctx)
+	if err != nil {
+		return fmt.Errorf("load stored policies: %w", err)
+	}
+	engine, err := infraaccess.New(stored)
+	if err != nil {
+		return fmt.Errorf("validate stored policies: %w", err)
+	}
+	for _, problem := range engine.Problems() {
+		b.log.Error("stored access policy is invalid and denies its level",
+			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
+	}
+	return nil
 }
 
 // reportUnseededResources logs every kind ImportConfig could not seed.
@@ -286,6 +337,19 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	}
 	if wc, ok := b.st.(storecontract.WorkflowCaller); ok {
 		deps.WorkflowCalls = wc
+	}
+	// The policy chain and its denial records are served from the same store
+	// (docs/prds/orgs-and-access.md). A store without them -- one that owns
+	// no tenant boundary yet -- degrades the access RPCs rather than failing
+	// the boot, the same pattern the other optional surfaces use.
+	if ps, ok := b.st.(access.PrincipalSource); ok {
+		deps.Principals = ps
+	}
+	if ps, ok := b.st.(access.PolicyStore); ok {
+		deps.Policies = ps
+	}
+	if ds, ok := b.st.(access.DenialStore); ok {
+		deps.Denials = ds
 	}
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css

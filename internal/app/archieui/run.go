@@ -10,10 +10,42 @@ import (
 	"os"
 	"slices"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/samcharles93/archie-core/internal/domain/access"
+	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
+
+// buildAccessChain loads the stored policies over the wire and builds the
+// engine. The wire client satisfies the two access contracts the dashboard
+// needs alongside the engine.
+// buildAccessChain loads the stored policies over the wire and builds the
+// engine. A State Store serving no policies has no chain to evaluate: the
+// dashboard degrades to the credential check rather than refusing to serve,
+// so an unavailable policy store is a warning, not a boot failure.
+func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (access.Authorizer, []infraaccess.Problem, error) {
+	stored, err := store.ListPolicies(ctx)
+	if err != nil {
+		if status.Code(err) == codes.Unavailable {
+			log.Warn("access chain unavailable; the credential check is the gate", "err", err)
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	engine, err := infraaccess.New(stored)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, problem := range engine.Problems() {
+		log.Error("stored access policy is invalid and denies its level",
+			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
+	}
+	return engine, engine.Problems(), nil
+}
 
 // Run serves the dashboard until ctx is cancelled. It resolves its own
 // options, dials the Gateway and State Store contracts itself, composes the
@@ -44,6 +76,15 @@ func Run(ctx context.Context, options Options) error {
 	}
 	cleanups = append(cleanups, closeGateway)
 
+	chain, problems, err := buildAccessChain(ctx, tasks, log)
+	if err != nil {
+		return err
+	}
+	for _, problem := range problems {
+		log.Error("stored access policy is invalid and denies its level",
+			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
+	}
+
 	authenticate, err := dashboardAuthenticator(ctx, opts, tasks, log)
 	if err != nil {
 		return err
@@ -58,11 +99,14 @@ func Run(ctx context.Context, options Options) error {
 		Log:          log,
 		Store:        tasks,
 		Chat:         chat,
-		Health:       newReadinessRegistry(opts, tasks, chat),
+		Health:       newReadinessRegistry(opts, tasks, chat, problems),
 		ControlPlane: tasks.ControlPlane(),
 		Identities:   tasks,
 		Authenticate: authenticate,
 		Login:        login,
+		Access:       chain,
+		Principals:   tasks,
+		Denials:      tasks,
 	})
 
 	// Live activity has no in-process bus in this process: the pump reads

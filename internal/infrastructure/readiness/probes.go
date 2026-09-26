@@ -21,6 +21,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/infrastructure/access"
 )
 
 // --- state_db ---
@@ -91,6 +92,51 @@ func (p *ContractProbe) Check(ctx context.Context) health.Result {
 		return health.Result{Status: health.StatusDegraded, Detail: "unreachable: " + err.Error()}
 	}
 	return health.Result{Status: health.StatusOK}
+}
+
+// --- access policies ---
+
+// PolicyProblems reports the stored access policies this process's engine
+// could not validate. The policy chain is the source; a policy that failed
+// startup re-validation denies its level and must be named here with its
+// error (docs/prds/orgs-and-access.md, "Storing and changing policies").
+type PolicyProblems interface {
+	Problems() []access.Problem
+}
+
+// ProblemProbe reports the stored policies the engine could not validate.
+// It is a static probe: the engine is immutable for the life of the process,
+// so the problems it names do not change under it.
+type ProblemProbe struct {
+	ProbeName string
+	Source    PolicyProblems
+}
+
+// NewProblemProbe returns an access_policies probe over a problem source.
+// A nil source degrades the probe rather than lying about the chain.
+func NewProblemProbe(name string, problems []access.Problem) *ProblemProbe {
+	return &ProblemProbe{ProbeName: name, Source: staticProblemSource(problems)}
+}
+
+type staticProblemSource []access.Problem
+
+func (s staticProblemSource) Problems() []access.Problem { return s }
+
+func (p *ProblemProbe) Name() string { return p.ProbeName }
+
+func (p *ProblemProbe) Check(ctx context.Context) health.Result {
+	if p.Source == nil {
+		return health.Result{Status: health.StatusDegraded, Detail: "access engine not wired"}
+	}
+	problems := p.Source.Problems()
+	if len(problems) == 0 {
+		return health.Result{Status: health.StatusOK}
+	}
+	details := make([]string, 0, len(problems))
+	for _, problem := range problems {
+		details = append(details, problem.Policy.ID+": "+problem.Err.Error())
+	}
+	return health.Result{Status: health.StatusDegraded, Detail: strings.Join(details, "; ")}
 }
 
 // --- config ---

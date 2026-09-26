@@ -100,6 +100,13 @@ const (
 	StateStoreService_EnqueueBindingTask_FullMethodName         = "/state.v1.StateStoreService/EnqueueBindingTask"
 	StateStoreService_EnqueueCallTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueCallTask"
 	StateStoreService_WorkflowCallStatus_FullMethodName         = "/state.v1.StateStoreService/WorkflowCallStatus"
+	StateStoreService_GetPrincipal_FullMethodName               = "/state.v1.StateStoreService/GetPrincipal"
+	StateStoreService_ListPolicies_FullMethodName               = "/state.v1.StateStoreService/ListPolicies"
+	StateStoreService_PutPolicy_FullMethodName                  = "/state.v1.StateStoreService/PutPolicy"
+	StateStoreService_DeletePolicy_FullMethodName               = "/state.v1.StateStoreService/DeletePolicy"
+	StateStoreService_EnsureShippedOrgPolicies_FullMethodName   = "/state.v1.StateStoreService/EnsureShippedOrgPolicies"
+	StateStoreService_RecordDenial_FullMethodName               = "/state.v1.StateStoreService/RecordDenial"
+	StateStoreService_ListDenials_FullMethodName                = "/state.v1.StateStoreService/ListDenials"
 )
 
 // StateStoreServiceClient is the client API for StateStoreService service.
@@ -252,6 +259,19 @@ type StateStoreServiceClient interface {
 	// relation server-side, so the grant only names the caller.
 	EnqueueCallTask(ctx context.Context, in *EnqueueCallTaskRequest, opts ...grpc.CallOption) (*EnqueueCallTaskResponse, error)
 	WorkflowCallStatus(ctx context.Context, in *WorkflowCallStatusRequest, opts ...grpc.CallOption) (*WorkflowCallStatusResponse, error)
+	// Access: the stored policy chain and its denial records
+	// (docs/prds/orgs-and-access.md). ListPolicies is the engine's snapshot;
+	// the writes are administrative. RecordDenial is the dashboard's and
+	// dispatch's write path; ListDenials is the operator surface.
+	// The principal assembly the Authorizer evaluates: an identity, the org
+	// it serves, and its memberships (internal/domain/access).
+	GetPrincipal(ctx context.Context, in *GetPrincipalRequest, opts ...grpc.CallOption) (*GetPrincipalResponse, error)
+	ListPolicies(ctx context.Context, in *ListPoliciesRequest, opts ...grpc.CallOption) (*ListPoliciesResponse, error)
+	PutPolicy(ctx context.Context, in *PutPolicyRequest, opts ...grpc.CallOption) (*PutPolicyResponse, error)
+	DeletePolicy(ctx context.Context, in *DeletePolicyRequest, opts ...grpc.CallOption) (*DeletePolicyResponse, error)
+	EnsureShippedOrgPolicies(ctx context.Context, in *EnsureShippedOrgPoliciesRequest, opts ...grpc.CallOption) (*EnsureShippedOrgPoliciesResponse, error)
+	RecordDenial(ctx context.Context, in *RecordDenialRequest, opts ...grpc.CallOption) (*RecordDenialResponse, error)
+	ListDenials(ctx context.Context, in *ListDenialsRequest, opts ...grpc.CallOption) (*ListDenialsResponse, error)
 }
 
 type stateStoreServiceClient struct {
@@ -1099,6 +1119,76 @@ func (c *stateStoreServiceClient) WorkflowCallStatus(ctx context.Context, in *Wo
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) GetPrincipal(ctx context.Context, in *GetPrincipalRequest, opts ...grpc.CallOption) (*GetPrincipalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPrincipalResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetPrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListPolicies(ctx context.Context, in *ListPoliciesRequest, opts ...grpc.CallOption) (*ListPoliciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPoliciesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListPolicies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) PutPolicy(ctx context.Context, in *PutPolicyRequest, opts ...grpc.CallOption) (*PutPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutPolicyResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PutPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) DeletePolicy(ctx context.Context, in *DeletePolicyRequest, opts ...grpc.CallOption) (*DeletePolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletePolicyResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_DeletePolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) EnsureShippedOrgPolicies(ctx context.Context, in *EnsureShippedOrgPoliciesRequest, opts ...grpc.CallOption) (*EnsureShippedOrgPoliciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EnsureShippedOrgPoliciesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_EnsureShippedOrgPolicies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RecordDenial(ctx context.Context, in *RecordDenialRequest, opts ...grpc.CallOption) (*RecordDenialResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordDenialResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecordDenial_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListDenials(ctx context.Context, in *ListDenialsRequest, opts ...grpc.CallOption) (*ListDenialsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDenialsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListDenials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StateStoreServiceServer is the server API for StateStoreService service.
 // All implementations must embed UnimplementedStateStoreServiceServer
 // for forward compatibility.
@@ -1249,6 +1339,19 @@ type StateStoreServiceServer interface {
 	// relation server-side, so the grant only names the caller.
 	EnqueueCallTask(context.Context, *EnqueueCallTaskRequest) (*EnqueueCallTaskResponse, error)
 	WorkflowCallStatus(context.Context, *WorkflowCallStatusRequest) (*WorkflowCallStatusResponse, error)
+	// Access: the stored policy chain and its denial records
+	// (docs/prds/orgs-and-access.md). ListPolicies is the engine's snapshot;
+	// the writes are administrative. RecordDenial is the dashboard's and
+	// dispatch's write path; ListDenials is the operator surface.
+	// The principal assembly the Authorizer evaluates: an identity, the org
+	// it serves, and its memberships (internal/domain/access).
+	GetPrincipal(context.Context, *GetPrincipalRequest) (*GetPrincipalResponse, error)
+	ListPolicies(context.Context, *ListPoliciesRequest) (*ListPoliciesResponse, error)
+	PutPolicy(context.Context, *PutPolicyRequest) (*PutPolicyResponse, error)
+	DeletePolicy(context.Context, *DeletePolicyRequest) (*DeletePolicyResponse, error)
+	EnsureShippedOrgPolicies(context.Context, *EnsureShippedOrgPoliciesRequest) (*EnsureShippedOrgPoliciesResponse, error)
+	RecordDenial(context.Context, *RecordDenialRequest) (*RecordDenialResponse, error)
+	ListDenials(context.Context, *ListDenialsRequest) (*ListDenialsResponse, error)
 	mustEmbedUnimplementedStateStoreServiceServer()
 }
 
@@ -1501,6 +1604,27 @@ func (UnimplementedStateStoreServiceServer) EnqueueCallTask(context.Context, *En
 }
 func (UnimplementedStateStoreServiceServer) WorkflowCallStatus(context.Context, *WorkflowCallStatusRequest) (*WorkflowCallStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WorkflowCallStatus not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetPrincipal(context.Context, *GetPrincipalRequest) (*GetPrincipalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPrincipal not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListPolicies(context.Context, *ListPoliciesRequest) (*ListPoliciesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPolicies not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PutPolicy(context.Context, *PutPolicyRequest) (*PutPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutPolicy not implemented")
+}
+func (UnimplementedStateStoreServiceServer) DeletePolicy(context.Context, *DeletePolicyRequest) (*DeletePolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeletePolicy not implemented")
+}
+func (UnimplementedStateStoreServiceServer) EnsureShippedOrgPolicies(context.Context, *EnsureShippedOrgPoliciesRequest) (*EnsureShippedOrgPoliciesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EnsureShippedOrgPolicies not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RecordDenial(context.Context, *RecordDenialRequest) (*RecordDenialResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordDenial not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListDenials(context.Context, *ListDenialsRequest) (*ListDenialsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDenials not implemented")
 }
 func (UnimplementedStateStoreServiceServer) mustEmbedUnimplementedStateStoreServiceServer() {}
 func (UnimplementedStateStoreServiceServer) testEmbeddedByValue()                           {}
@@ -2960,6 +3084,132 @@ func _StateStoreService_WorkflowCallStatus_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_GetPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetPrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetPrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetPrincipal(ctx, req.(*GetPrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListPolicies(ctx, req.(*ListPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_PutPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PutPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PutPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PutPolicy(ctx, req.(*PutPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_DeletePolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).DeletePolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_DeletePolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).DeletePolicy(ctx, req.(*DeletePolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_EnsureShippedOrgPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnsureShippedOrgPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).EnsureShippedOrgPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_EnsureShippedOrgPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).EnsureShippedOrgPolicies(ctx, req.(*EnsureShippedOrgPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RecordDenial_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordDenialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecordDenial(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecordDenial_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecordDenial(ctx, req.(*RecordDenialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListDenials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDenialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListDenials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListDenials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListDenials(ctx, req.(*ListDenialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StateStoreService_ServiceDesc is the grpc.ServiceDesc for StateStoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3278,6 +3528,34 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WorkflowCallStatus",
 			Handler:    _StateStoreService_WorkflowCallStatus_Handler,
+		},
+		{
+			MethodName: "GetPrincipal",
+			Handler:    _StateStoreService_GetPrincipal_Handler,
+		},
+		{
+			MethodName: "ListPolicies",
+			Handler:    _StateStoreService_ListPolicies_Handler,
+		},
+		{
+			MethodName: "PutPolicy",
+			Handler:    _StateStoreService_PutPolicy_Handler,
+		},
+		{
+			MethodName: "DeletePolicy",
+			Handler:    _StateStoreService_DeletePolicy_Handler,
+		},
+		{
+			MethodName: "EnsureShippedOrgPolicies",
+			Handler:    _StateStoreService_EnsureShippedOrgPolicies_Handler,
+		},
+		{
+			MethodName: "RecordDenial",
+			Handler:    _StateStoreService_RecordDenial_Handler,
+		},
+		{
+			MethodName: "ListDenials",
+			Handler:    _StateStoreService_ListDenials_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

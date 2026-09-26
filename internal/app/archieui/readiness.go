@@ -6,6 +6,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 )
 
@@ -17,8 +18,9 @@ import (
 //
 // The component names match the daemon dashboard's, so the readiness view
 // reads the same whichever process serves it.
-func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messaging.ChatContract) *health.Registry {
+func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messaging.ChatContract, problems []infraaccess.Problem) *health.Registry {
 	return health.NewRegistry(
+		readiness.NewProblemProbe("access_policies", problems),
 		readiness.NewContractProbe("state_db", o.DependencyTimeout, func(ctx context.Context) error {
 			_, err := tasks.StatusCounts(ctx)
 			return err
