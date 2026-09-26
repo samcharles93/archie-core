@@ -124,6 +124,13 @@ type Store interface {
 	RetryTask(context.Context, int64, string, string) error
 	ArchiveTask(context.Context, int64, string, events.Event) (int64, error)
 	InsertEvent(context.Context, events.Event) (int64, error)
+	// CancelExecution is the one cancel path
+	// (docs/prds/execution-tree-state-machine.md, "Cancellation"): the store
+	// records the cancellation -- every non-terminal step of the current
+	// attempt plus the execution's own move to `to` -- in one transaction.
+	// The service then cancels the in-memory context that was delivering the
+	// run; a worker's next step write fails ErrStaleTransition and stops.
+	CancelExecution(context.Context, int64, string, string) ([]int64, error)
 }
 
 // Service runs in the daemon, which owns execution cancellation and events.
@@ -189,17 +196,31 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 	case taskstate.ActionStop:
 		return s.applyStop(ctx, task, actor, o)
 	case taskstate.ActionReject:
-		o.event.Kind, o.event.Detail, o.verb = rejectedKind(actor), actor.describe("rejected"), "rejected"
-		if task.Status == "running" && s.CancelTask != nil {
-			s.CancelTask(task.ID)
+		// A rejection ends the run's work wherever it sits, so it rides the
+		// one cancel path like every other operator stop.
+		o.event.Kind, o.event.Detail, o.verb = rejectedKind(actor), actor.describe("rejected"), "declined"
+		if _, err := s.Store.CancelExecution(ctx, task.ID, actor.describe("rejected"), "closed_wont_do"); err != nil {
+			return o, err
 		}
-		return o, s.Store.Transition(ctx, task.ID, task.Status, "closed_wont_do", actor.describe("declined"))
+		s.deliver(task.ID)
+		return o, nil
 	case taskstate.ActionCancel, taskstate.ActionAbandon:
 		return s.applyCancelOrAbandon(ctx, task, action, actor, o)
 	case taskstate.ActionArchive:
 		return s.applyArchive(ctx, task, actor, o)
 	default:
 		return o, fmt.Errorf("unsupported task action %q", action)
+	}
+}
+
+// deliver cancels the in-memory context of a run the store has already
+// recorded as cancelled. It is the delivery mechanism, never a second store
+// write, and it follows the record -- the PRD's order, which the step rows
+// make safe: a worker that keeps writing after the record fails
+// ErrStaleTransition on its next step write.
+func (s Service) deliver(taskID int64) {
+	if s.CancelTask != nil {
+		s.CancelTask(taskID)
 	}
 }
 
@@ -244,10 +265,17 @@ func (s Service) applyStop(ctx context.Context, task *Task, actor Actor, o outco
 		return o, ErrUnavailable
 	}
 	o.event.Kind, o.event.Detail = events.KindTaskStopped, actor.describe("stopped")+"; recoverable work remains parked"
+	// The store records the stop first, then the context delivers it. A
+	// context cancel that found nothing executing says so; the parked
+	// execution is recorded either way, and the task's own unwind cannot win
+	// the race any more -- its next step write is already stale.
+	if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, "parked"); err != nil {
+		return o, err
+	}
 	if !s.CancelTask(task.ID) {
 		o.event.Detail = "no active execution was found; recoverable work was parked, " + actor.describe("stopped")
 	}
-	return o, s.Store.Transition(ctx, task.ID, "running", "parked", o.event.Detail)
+	return o, nil
 }
 
 func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action taskstate.Action, actor Actor, o outcome) (outcome, error) {
@@ -255,10 +283,17 @@ func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action ta
 		// Abandoning ends archie's run, not the issue: no verb, so the issue
 		// stays open for a human.
 		o.event.Kind, o.event.Detail = events.KindTaskAbandoned, actor.describe("abandoned")
-		return o, s.Store.Transition(ctx, task.ID, "parked", "closed_wont_do", o.event.Detail)
+		if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, "closed_wont_do"); err != nil {
+			return o, err
+		}
+		return o, nil
 	}
 	o.event.Kind, o.event.Detail, o.verb = events.KindTaskCancelled, actor.describe("cancelled"), "cancelled"
-	return o, s.Store.Transition(ctx, task.ID, "queued", "closed_wont_do", o.event.Detail)
+	if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, "closed_wont_do"); err != nil {
+		return o, err
+	}
+	s.deliver(task.ID)
+	return o, nil
 }
 
 func (s Service) applyArchive(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {

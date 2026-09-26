@@ -558,9 +558,9 @@ func (a chatTaskWriterAdapter) EnqueueChatTask(
 }
 
 type chatTaskControllerAdapter struct {
-	taskByID   func(context.Context, int64) (*workflow.Task, error)
-	requeue    func(context.Context, int64, string, string) error
-	transition func(context.Context, int64, string, string, string) error
+	taskByID        func(context.Context, int64) (*workflow.Task, error)
+	requeue         func(context.Context, int64, string, string) error
+	cancelExecution func(context.Context, int64, string, string) ([]int64, error)
 }
 
 func (a chatTaskControllerAdapter) ChatTaskStatus(ctx context.Context, taskID int64) (gateway.ChatTaskStatus, bool, error) {
@@ -593,12 +593,19 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 		return fmt.Errorf("task %d is not chat-originated", taskID)
 	}
 	// An operator declining work lands in the same state whichever surface
-	// they used. This used to record StatusRejected while the dashboard
-	// recorded StatusClosedWontDo, so the same decision showed up as two
-	// different states -- and StatusRejected, which the PR reconciler uses
-	// for "the pull request was closed without merging", stopped meaning one
-	// thing.
-	return a.transition(ctx, taskID, task.Status, workflow.StatusClosedWontDo, reason)
+	// they used, through the one cancel path: the store records the
+	// cancellation -- every non-terminal step of the current attempt plus the
+	// execution's own move (docs/prds/execution-tree-state-machine.md) -- and
+	// this write is what a late worker's next step write fails against. This
+	// used to record StatusRejected while the dashboard recorded
+	// StatusClosedWontDo, so the same decision showed up as two different
+	// states -- and StatusRejected, which the PR reconciler uses for "the
+	// pull request was closed without merging", stopped meaning one thing.
+	if a.cancelExecution == nil {
+		return fmt.Errorf("execution cancellation is unavailable")
+	}
+	_, err = a.cancelExecution(ctx, taskID, reason, workflow.StatusClosedWontDo)
+	return err
 }
 
 // chatTaskLogReaderAdapter gives the gateway a read view of a task's

@@ -669,16 +669,16 @@ func TestChatTaskControllerAdapterRejectsForgeTask(t *testing.T) {
 
 func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	task := &workflow.Task{ID: 42, Source: workflow.SourceChat, Status: workflow.StatusWaitingHuman}
-	var requeueFrom, requeueWorkflow, transitionFrom, transitionTo, transitionDetail string
+	var requeueFrom, requeueWorkflow, cancelReason, cancelTo string
 	adapter := chatTaskControllerAdapter{
 		taskByID: func(context.Context, int64) (*workflow.Task, error) { return task, nil },
 		requeue: func(_ context.Context, _ int64, from, workflow string) error {
 			requeueFrom, requeueWorkflow = from, workflow
 			return nil
 		},
-		transition: func(_ context.Context, _ int64, from, to, detail string) error {
-			transitionFrom, transitionTo, transitionDetail = from, to, detail
-			return nil
+		cancelExecution: func(_ context.Context, _ int64, reason, to string) ([]int64, error) {
+			cancelReason, cancelTo = reason, to
+			return nil, nil
 		},
 	}
 
@@ -692,12 +692,12 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 		t.Fatalf("CancelChatTask(): %v", err)
 	}
 	// Declining from chat lands in the same state as declining from the
-	// dashboard. It used to record StatusRejected, which the PR reconciler
-	// also uses for "the pull request was closed without merging", so the
-	// state could not tell an operator's decision from a forge outcome.
-	if transitionFrom != workflow.StatusWaitingHuman || transitionTo != workflow.StatusClosedWontDo ||
-		transitionDetail != "cancelled by test" {
-		t.Errorf("transition = %q/%q/%q", transitionFrom, transitionTo, transitionDetail)
+	// dashboard, through the one cancel path. It used to record
+	// StatusRejected, which the PR reconciler also uses for "the pull
+	// request was closed without merging", so the state could not tell an
+	// operator's decision from a forge outcome.
+	if cancelReason != "cancelled by test" || cancelTo != workflow.StatusClosedWontDo {
+		t.Errorf("cancel = %q/%q", cancelReason, cancelTo)
 	}
 }
 
@@ -834,9 +834,9 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		profiles,
 	)
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:   st.TaskByID,
-		requeue:    st.Requeue,
-		transition: st.Transition,
+		taskByID:        st.TaskByID,
+		requeue:         st.Requeue,
+		cancelExecution: st.CancelExecution,
 	})
 	router := gateway.NewRouter(st, nil, "test")
 	configureTaskCommands(router, creator, controller, chatTaskListerAdapter{tasks: st.Tasks}, defaultIdentity)

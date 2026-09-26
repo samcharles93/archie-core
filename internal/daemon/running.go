@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"slices"
 	"sort"
 	"sync"
 )
@@ -63,32 +62,6 @@ func (r *runningTasks) stop(id int64) bool {
 	return true
 }
 
-// stopAll cancels every running task belonging to identity, or all of them
-// when identity is empty. It returns the IDs it cancelled, in order.
-func (r *runningTasks) stopAll(identity string) []int64 {
-	r.mu.Lock()
-	var (
-		ids     []int64
-		cancels []context.CancelFunc
-	)
-	for id, entry := range r.entries {
-		if identity != "" && entry.identity != identity {
-			continue
-		}
-		ids = append(ids, id)
-		cancels = append(cancels, entry.cancel)
-	}
-	r.mu.Unlock()
-
-	// Cancel outside the lock: a cancel can synchronously unwind a task
-	// whose cleanup calls back in here to retire itself.
-	for _, cancel := range cancels {
-		cancel()
-	}
-	slices.Sort(ids)
-	return ids
-}
-
 // list returns the tasks currently running, for reporting.
 func (r *runningTasks) list() []RunningTask {
 	r.mu.Lock()
@@ -107,12 +80,6 @@ func (r *runningTasks) list() []RunningTask {
 // caller decides what a miss means.
 func (d *Daemon) CancelTask(id int64) bool {
 	return d.running.stop(id)
-}
-
-// CancelRunningTasks stops every task running for identity, or all of them
-// when identity is empty, and returns the IDs it stopped.
-func (d *Daemon) CancelRunningTasks(identity string) []int64 {
-	return d.running.stopAll(identity)
 }
 
 // RunningTasks lists the tasks currently executing.

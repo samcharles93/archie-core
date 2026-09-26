@@ -42,8 +42,11 @@ type stubStore struct {
 func (s stubStore) TaskByID(context.Context, int64) (*domain.Task, error) { return s.task, nil }
 
 func (s stubStore) Transition(context.Context, int64, string, string, string) error { return s.err }
-func (s stubStore) Requeue(context.Context, int64, string, string) error            { return s.err }
-func (s stubStore) RetryTask(context.Context, int64, string, string) error          { return s.err }
+func (s stubStore) CancelExecution(context.Context, int64, string, string) ([]int64, error) {
+	return nil, s.err
+}
+func (s stubStore) Requeue(context.Context, int64, string, string) error   { return s.err }
+func (s stubStore) RetryTask(context.Context, int64, string, string) error { return s.err }
 
 func (s stubStore) ArchiveTask(context.Context, int64, string, events.Event) (int64, error) {
 	return 0, s.err

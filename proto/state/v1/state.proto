@@ -44,6 +44,10 @@ service StateStoreService {
   // credential authorises both on its own execution only.
   rpc StartStep(StartStepRequest) returns (StartStepResponse);
   rpc FinishStep(FinishStepRequest) returns (FinishStepResponse);
+  // Cancellation. Deliberately administrative (deny-by-default for a
+  // task-scoped grant): a cancel is a dashboard, API and dispatch action
+  // decided by the Authorizer, not a worker call.
+  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
   rpc Requeue(RequeueRequest) returns (RequeueResponse);
   rpc ParkTask(ParkTaskRequest) returns (ParkTaskResponse);
   rpc RecoverStale(RecoverStaleRequest) returns (RecoverStaleResponse);
@@ -556,6 +560,20 @@ message FinishStepRequest {
 message FinishStepResponse {
   // event is the transition's stage_finish row, already persisted.
   Event event = 1;
+}
+
+message CancelExecutionRequest {
+  int64 task_id = 1;
+  // reason records why the run was stopped, in the execution's park reason
+  // when the cancel lands there, and on every step event it writes.
+  string reason = 2;
+  // to is the execution's destination: the transition table routes it, and
+  // the operator actions name parked or closed_wont_do.
+  string to = 3;
+}
+message CancelExecutionResponse {
+  // cancelled_step_ids are the StepExecutions the transaction cancelled.
+  repeated int64 cancelled_step_ids = 1;
 }
 
 message UpdateRequest { Task task = 1; }

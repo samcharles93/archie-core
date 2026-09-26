@@ -8,6 +8,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -57,10 +58,14 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	}
 	b.chatTasks = chatTasks
 	b.defaultChatIdentity = defaultChatIdentity
+	var canceller storecontract.ExecutionCanceller
+	if ec, ok := b.stateStore.(storecontract.ExecutionCanceller); ok {
+		canceller = ec
+	}
 	b.chatController = gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:   b.stateStore.TaskByID,
-		requeue:    b.stateStore.Requeue,
-		transition: b.stateStore.Transition,
+		taskByID:        b.stateStore.TaskByID,
+		requeue:         b.stateStore.Requeue,
+		cancelExecution: canceller.CancelExecution,
 	})
 	b.updateService = makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
 	return nil

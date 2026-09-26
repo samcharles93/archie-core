@@ -34,3 +34,12 @@ FROM step_executions WHERE id = $1 FOR UPDATE;
 UPDATE step_executions
 SET status = $1, detail = $2, tokens_used = $3, finished_at = now()
 WHERE id = $4 AND status = $5;
+-- name: CancelAttemptSteps :many
+-- The half of CancelExecution that cancels the current attempt's
+-- non-terminal steps, returning them so the store writes one event row per
+-- transition in the same transaction. Earlier attempts' rows never match:
+-- history is never rewritten.
+UPDATE step_executions
+SET status = 'cancelled', finished_at = now()
+WHERE execution_id = $1 AND attempt = $2 AND status IN ('pending', 'running')
+RETURNING id, name;

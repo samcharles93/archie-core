@@ -75,6 +75,21 @@ type StepRecorder interface {
 	FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error)
 }
 
+// ExecutionCanceller is the one cancel path
+// (docs/prds/execution-tree-state-machine.md, "Cancellation"): one
+// transaction moves every non-terminal StepExecution of the execution's
+// current attempt to cancelled and the execution itself to the status the
+// operator action names (parked or closed_wont_do, as the transition table
+// routes). The daemon then cancels the in-memory context that was delivering
+// the run: the store is the record of cancellation, the context cancel is
+// only the delivery mechanism, so a lost cancel still leaves the store
+// correct and the worker's next step write fails ErrStaleTransition. It is a
+// dashboard, API and dispatch action, so a task-scoped grant never reaches
+// it; the Authorizer decides.
+type ExecutionCanceller interface {
+	CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error)
+}
+
 // TaskArchiver removes one terminal task's local record with an optimistic
 // status guard. It is separate from the already broad lifecycle contract so
 // consumers that only run tasks do not acquire an operator-only capability.

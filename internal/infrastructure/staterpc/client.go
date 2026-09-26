@@ -58,6 +58,7 @@ var (
 	_ storecontract.ConfigSnapshotStore  = (*Client)(nil)
 	_ storecontract.ChannelStatusStore   = (*Client)(nil)
 	_ storecontract.ApplyStatusStore     = (*Client)(nil)
+	_ storecontract.ExecutionCanceller   = (*Client)(nil)
 	_ identity.Repository                = (*Client)(nil)
 	_ storepkg.Manager                   = (*Client)(nil)
 )
@@ -125,6 +126,18 @@ func (c *Client) StartStep(ctx context.Context, s task.StepStart) (int64, events
 		event = eventValue(r.Event)
 	}
 	return r.StepId, event, nil
+}
+
+// CancelExecution is the one cancel path (docs/prds/execution-tree-state-machine.md):
+// the State Store records the cancellation -- every non-terminal step of the
+// current attempt plus the execution's own move -- and returns the steps it
+// cancelled; the caller cancels the run's in-memory context afterwards.
+func (c *Client) CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error) {
+	r, err := c.client.CancelExecution(ctx, &pb.CancelExecutionRequest{TaskId: taskID, Reason: reason, To: to})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	return r.CancelledStepIds, nil
 }
 
 func (c *Client) FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error) {

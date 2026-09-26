@@ -3,6 +3,7 @@ package taskactions
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -17,6 +18,19 @@ func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error
 		return nil, err
 	}
 	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, Stage: t.Stage, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, ForgeBacked: t.IsForgeBacked()}, nil
+}
+
+// CancelExecution delegates to the store's one cancel path
+// (docs/prds/execution-tree-state-machine.md). Both adapters -- the
+// PostgreSQL store and the remote gRPC client -- implement it; the type
+// assertion failing would be a composition bug, so it is named rather than
+// panicked over.
+func (s Store) CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error) {
+	canceller, ok := s.TaskStore.(storecontract.ExecutionCanceller)
+	if !ok {
+		return nil, fmt.Errorf("task store cannot cancel executions")
+	}
+	return canceller.CancelExecution(ctx, taskID, reason, to)
 }
 
 func MaxRetries(cfg *config.Holder) func(*taskactions.Task) int {
