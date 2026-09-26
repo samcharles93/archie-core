@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/ui"
 )
@@ -338,7 +339,10 @@ func (s *Server) Handler() http.Handler {
 		top.HandleFunc(loginCallbackRoute, s.handleCallback)
 	}
 	if s.CaptureIntake != nil {
-		top.Handle(captureIntakeRoute, s.CaptureIntake)
+		// captureintake.Path is the single spelling of this route: the receiver
+		// owns the route's semantics, so mounting re-spells nothing and a rename
+		// there cannot silently unmount here.
+		top.Handle(captureintake.Path, s.CaptureIntake)
 	}
 	// The chain runs after the credential check and before any handler: the
 	// principal exists only once the credential resolved
@@ -346,12 +350,6 @@ func (s *Server) Handler() http.Handler {
 	top.Handle("/", s.requireToken(s.authorize(mux)))
 	return top
 }
-
-// captureIntakeRoute is the bypass-mux route the host process's capture
-// receiver mounts on. captureintake.Path is the authority for the route's
-// semantics; this literal exists so webui can mount an http.Handler without
-// depending on the receiver's concrete package.
-const captureIntakeRoute = "POST /webhooks/capture/{source}"
 
 // handleHealthz is a liveness probe for local, unauthenticated callers --
 // most notably the update watchdog script, which polls it after restarting
