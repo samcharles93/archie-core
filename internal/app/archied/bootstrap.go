@@ -129,10 +129,8 @@ type boot struct {
 	// accessChain is the daemon's policy engine, built once from the stored
 	// policies (openAccessChain); accessProblems is what the readiness
 	// surface reports. Both are nil when no policy store is wired.
-	accessChain      access.Authorizer
-	accessPrincipals access.PrincipalSource
-	accessDenials    access.DenialStore
-	accessProblems   []infraaccess.Problem
+	accessChain    access.Authorizer
+	accessProblems []infraaccess.Problem
 	// stateStoreGrants issues per-task, scoped State Store credentials for
 	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
 	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
@@ -442,6 +440,20 @@ func (b *boot) openStateStoreAdapter() error {
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)
 	return nil
+}
+
+// openStateStage opens the state-store adapter and its daemon-side surfaces
+// plus the policy chain, in one step of the composition sequence: the three
+// are ordered but not interleaved, and any failure fails the boot
+// (openStateStoreAdapter, openDaemonStateSurfaces, openAccessChain).
+func (b *boot) openStateStage(ctx context.Context) error {
+	if err := b.openStores(ctx); err != nil {
+		return err
+	}
+	if err := b.openDaemonStateSurfaces(); err != nil {
+		return err
+	}
+	return b.openAccessChain(ctx)
 }
 
 // openAccessChain builds the policy chain the daemon dispatches through

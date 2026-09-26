@@ -72,7 +72,7 @@ type StateStoreOptions struct {
 // The conversation store belongs to the separate archie-gateway process. The
 // store service owns its own DB lifecycle, so
 // b.cleanup() is the sole owner closing b.st here (in-process owner).
-func RunStateStore(ctx context.Context, options StateStoreOptions) error {
+func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nolint:cyclop // the composition root's setup sequence is deliberately flat and sequential
 	b := newBootstrap()
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
@@ -107,52 +107,15 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 			return fmt.Errorf("upgrade default org: %w", err)
 		}
 	}
-	// The shipped role policies mean the org level always has policies
-	// (docs/prds/orgs-and-access.md, "Roles"): seed them for every org that
-	// lacks them, then re-validate every stored policy this process serves.
-	// An invalid org, workspace or object policy is logged here and named as
-	// a problem by the engines the consumers build; an invalid instance
-	// policy fails this boot -- the store stops serving until it is fixed.
-	if policies, ok := b.st.(access.PolicyStore); ok {
-		// An agent is granted access the way a user is: its assigned org,
-		// with the shipped developer role, so dispatch's principal evaluates.
-		if agents, ok := b.st.(interface {
-			EnsureAgentOrgMembership(context.Context) error
-		}); ok {
-			if err := agents.EnsureAgentOrgMembership(ctx); err != nil {
-				return fmt.Errorf("grant agent org membership: %w", err)
-			}
-		}
-		if orgs, ok := b.st.(org.Repository); ok {
-			list, err := orgs.ListOrgs(ctx)
-			if err != nil {
-				return fmt.Errorf("list orgs for policy seeding: %w", err)
-			}
-			for _, o := range list {
-				if err := policies.EnsureShippedOrgPolicies(ctx, o.ID); err != nil {
-					return fmt.Errorf("seed shipped org policies for %s: %w", o.ID, err)
-				}
-			}
-		}
-		stored, err := policies.ListPolicies(ctx)
-		if err != nil {
-			return fmt.Errorf("load stored policies: %w", err)
-		}
-		engine, err := infraaccess.New(stored)
-		if err != nil {
-			return fmt.Errorf("validate stored policies: %w", err)
-		}
-		for _, problem := range engine.Problems() {
-			b.log.Error("stored access policy is invalid and denies its level",
-				"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
-		}
+	if err := b.seedAndValidatePolicies(ctx); err != nil {
+		return err
 	}
+	// The validating side's control plane, built here at the composition root
+	// before the first definition is read or replaced.
 	resources, ok := b.st.(controlplane.ResourceStore)
 	if !ok {
 		return fmt.Errorf("state store does not support control-plane resources")
 	}
-	// The validating side's control plane, built here at the composition root
-	// before the first definition is read or replaced.
 	control, err := openStateStoreControlPlane(resources)
 	if err != nil {
 		return err
@@ -187,6 +150,52 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	deps := b.stateStoreDeps(grants)
 	deps.ControlPlane = control
 	return serveStateStore(ctx, listener, deps, opts)
+}
+
+// seedAndValidatePolicies seeds the shipped role policies for every org
+// that lacks them, grants the agent identities their org's shipped developer
+// role, and re-validates every stored policy this process serves
+// (docs/prds/orgs-and-access.md, "Storing and changing policies" and
+// "Roles"). An invalid org, workspace or object policy is logged here and
+// named as a problem by the engines the consumers build; an invalid instance
+// policy fails this boot -- the store stops serving until it is fixed. A
+// store without the access surfaces degrades: there is no chain to seed.
+func (b *boot) seedAndValidatePolicies(ctx context.Context) error {
+	policies, ok := b.st.(access.PolicyStore)
+	if !ok {
+		return nil
+	}
+	if agents, ok := b.st.(interface {
+		EnsureAgentOrgMembership(context.Context) error
+	}); ok {
+		if err := agents.EnsureAgentOrgMembership(ctx); err != nil {
+			return fmt.Errorf("grant agent org membership: %w", err)
+		}
+	}
+	if orgs, ok := b.st.(org.Repository); ok {
+		list, err := orgs.ListOrgs(ctx)
+		if err != nil {
+			return fmt.Errorf("list orgs for policy seeding: %w", err)
+		}
+		for _, o := range list {
+			if err := policies.EnsureShippedOrgPolicies(ctx, o.ID); err != nil {
+				return fmt.Errorf("seed shipped org policies for %s: %w", o.ID, err)
+			}
+		}
+	}
+	stored, err := policies.ListPolicies(ctx)
+	if err != nil {
+		return fmt.Errorf("load stored policies: %w", err)
+	}
+	engine, err := infraaccess.New(stored)
+	if err != nil {
+		return fmt.Errorf("validate stored policies: %w", err)
+	}
+	for _, problem := range engine.Problems() {
+		b.log.Error("stored access policy is invalid and denies its level",
+			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
+	}
+	return nil
 }
 
 // reportUnseededResources logs every kind ImportConfig could not seed.

@@ -748,6 +748,13 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	if !d.authorizeDispatch(ctx, b, c, target) {
 		return
 	}
+	d.claimAndEnqueue(ctx, b, c, target, values)
+}
+
+// claimAndEnqueue claims the dispatch in the at-most-once ledger and enqueues
+// the task. A failed enqueue after the claim loses that dispatch, which is
+// the at-most-once side of the trade (docs/prds/playbook-binding.md).
+func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, target bindingTarget, values map[string]any) {
 	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0); err != nil {
 		if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 			d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)

@@ -138,25 +138,27 @@ func TestOnlyTheDaemonRootRegistersAStepVocabulary(t *testing.T) {
 		t.Error("the gateway root file mentions stepVocabulary; the gateway resolves no workflow step type")
 	}
 
-	// The daemon root opens both halves -- the shared adapter and the
-	// daemon-only definitions client -- through one call, so the sequence costs
-	// Run a single branch. The guarantee is the one this pin always held,
-	// relocated to where the sequence now lives: adapter first, then the client
-	// built on its transport, both before buildDaemon captures the client.
+	// The daemon root opens the state stage -- the shared adapter, the
+	// daemon-only definitions client and the access chain -- through one
+	// call, so the sequence costs Run a single branch. The guarantee is the
+	// one this pin always held, relocated to where the sequence now lives:
+	// adapter first, then the client built on its transport, both before
+	// buildDaemon captures the client.
 	run := parsedBody(t, "main.go", "Run")
-	surfaces := methodCallPosition(run, "openDaemonStateSurfaces")
+	stage := methodCallPosition(run, "openStateStage")
 	build := methodCallPosition(run, "buildDaemon")
-	if surfaces == token.NoPos {
-		t.Fatal("Run never opens the daemon's State Store surfaces; every task pin would fall back to the shipped definitions")
+	if stage == token.NoPos {
+		t.Fatal("Run never opens the daemon's state stage; every task pin would fall back to the shipped definitions")
 	}
-	if build == token.NoPos || surfaces > build {
-		t.Errorf("Run opens the daemon's State Store surfaces at %v, after buildDaemon at %v: the daemon would capture no definitions surface", surfaces, build)
+	if build == token.NoPos || stage > build {
+		t.Errorf("Run opens the state stage at %v, after buildDaemon at %v: the daemon would capture no definitions surface", stage, build)
 	}
-	// Neither half may also be opened from Run directly: a second call site
-	// would be a copy of the sequence outside the order asserted below.
-	for _, direct := range []string{"openStateStoreAdapter", "openDaemonWorkflowDefinitions"} {
+	// No half of the stage may also be opened from Run directly: a second
+	// call site would be a copy of the sequence outside the order asserted
+	// below.
+	for _, direct := range []string{"openStateStoreAdapter", "openDaemonWorkflowDefinitions", "openDaemonStateSurfaces", "openAccessChain"} {
 		if pos := methodCallPosition(run, direct); pos != token.NoPos {
-			t.Errorf("Run calls %s directly at %v; the daemon's State Store surfaces open through openDaemonStateSurfaces alone", direct, pos)
+			t.Errorf("Run calls %s directly at %v; the state stage opens through openStateStage alone", direct, pos)
 		}
 	}
 

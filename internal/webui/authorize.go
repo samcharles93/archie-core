@@ -128,55 +128,72 @@ func (*notWiredError) Error() string { return "webui: principal assembly not wir
 // request from its method and path. Unmapped routes read the dashboard
 // itself, so a new route is never wider than read until it is mapped.
 func accessRequest(r *http.Request) (access.Action, access.ResourceKind, string) {
-	action := access.ActionRead
-	switch r.Method {
-	case http.MethodPost:
-		action = access.ActionCreate
-	case http.MethodPut, http.MethodPatch:
-		action = access.ActionUpdate
-	case http.MethodDelete:
-		action = access.ActionDelete
-	}
+	action := actionOf(r.Method)
 	path := r.URL.Path
+	if a, kind, id, ok := routeOverride(action, path); ok {
+		return a, kind, id
+	}
+	return action, kindOf(path), segmentValue(path, 2)
+}
 
-	// Route-specific action and kind refinements.
+// actionOf maps the HTTP method onto the action vocabulary. POST is create:
+// the route refinements lift the routes whose write is something else.
+func actionOf(method string) access.Action {
+	switch method {
+	case http.MethodPost:
+		return access.ActionCreate
+	case http.MethodPut, http.MethodPatch:
+		return access.ActionUpdate
+	case http.MethodDelete:
+		return access.ActionDelete
+	}
+	return access.ActionRead
+}
+
+// routeOverride returns the action, kind and record key a specific route
+// shape carries, or ok=false when the method-and-kind fallback applies.
+func routeOverride(action access.Action, path string) (access.Action, access.ResourceKind, string, bool) {
 	switch {
 	case action == access.ActionCreate && matchSegment(path, "/api/bindings/", "/approve"):
-		return access.ActionApprove, access.KindBinding, segmentValue(path, 2)
+		return access.ActionApprove, access.KindBinding, segmentValue(path, 2), true
 	case matchSegment(path, "/api/tasks/", "/logs"):
-		return access.ActionReadLogs, access.KindTask, segmentValue(path, 2)
+		return access.ActionReadLogs, access.KindTask, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/identities"):
-		return actionManage(action), access.KindIdentity, segmentValue(path, 2)
+		return actionManage(action), access.KindIdentity, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/control-plane/resources"):
-		return actionManage(action), access.KindPolicy, segmentValue(path, 3)
+		return actionManage(action), access.KindPolicy, segmentValue(path, 3), true
 	case matchPrefix(path, "/api/chat"):
 		if action == access.ActionCreate {
-			return access.ActionRun, access.KindWorkflow, ""
+			return access.ActionRun, access.KindWorkflow, "", true
 		}
-		return access.ActionRead, access.KindDashboard, ""
+		return access.ActionRead, access.KindDashboard, "", true
 	case matchSegment(path, "/api/sources/", "/secret"):
-		return access.ActionUpdate, access.KindSecret, segmentValue(path, 2)
+		return access.ActionUpdate, access.KindSecret, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/channels/"):
-		return actionManage(action), access.KindDashboard, segmentValue(path, 2)
+		return actionManage(action), access.KindDashboard, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/config"), matchPrefix(path, "/api/logs"):
-		return access.ActionRead, access.KindDashboard, ""
+		return access.ActionRead, access.KindDashboard, "", true
 	}
+	return action, "", "", false
+}
 
+// kindOf maps a collection route onto the resource kind it addresses.
+func kindOf(path string) access.ResourceKind {
 	switch {
 	case matchPrefix(path, "/api/tasks"):
-		return action, access.KindTask, segmentValue(path, 2)
+		return access.KindTask
 	case matchPrefix(path, "/api/event-types"):
-		return action, access.KindEventType, segmentValue(path, 2)
+		return access.KindEventType
 	case matchPrefix(path, "/api/mappings"):
-		return action, access.KindMapping, segmentValue(path, 2)
+		return access.KindMapping
 	case matchPrefix(path, "/api/bindings"):
-		return action, access.KindBinding, segmentValue(path, 2)
+		return access.KindBinding
 	case matchPrefix(path, "/api/sources"):
-		return action, access.KindSource, segmentValue(path, 2)
+		return access.KindSource
 	case matchPrefix(path, "/api/work-requests"):
-		return action, access.KindTask, ""
+		return access.KindTask
 	}
-	return action, access.KindDashboard, ""
+	return access.KindDashboard
 }
 
 // actionManage lifts a create or update on a managed surface to the manage

@@ -53,7 +53,7 @@ func TestAuthorizeNilEngineServesEverything(t *testing.T) {
 	s := &Server{}
 	h := s.authorize(http.HandlerFunc(handlerEcho))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tasks", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/tasks", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("nil chain served %d, want 200: the credential check stays the gate", rec.Code)
 	}
@@ -64,7 +64,7 @@ func TestAuthorizeTokenOwnerAllowed(t *testing.T) {
 	s := newAccessServer(t, engine, nil)
 	h := s.authorize(http.HandlerFunc(handlerEcho))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/bindings", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/bindings", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("allowed request served %d, want 200", rec.Code)
 	}
@@ -84,7 +84,7 @@ func TestAuthorizeDenialIsForbiddenWithoutReason(t *testing.T) {
 	s := newAccessServer(t, engine, denials)
 	h := s.authorize(http.HandlerFunc(handlerEcho))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/bindings/b1", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/bindings/b1", nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("denied request served %d, want 403", rec.Code)
 	}
@@ -108,7 +108,7 @@ func TestAuthorizeApproveRoute(t *testing.T) {
 	engine := &fakeAuthorizer{decision: access.Allowed()}
 	s := newAccessServer(t, engine, nil)
 	h := s.authorize(http.HandlerFunc(handlerEcho))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/bindings/b1/approve", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/bindings/b1/approve", nil))
 	if engine.lastAct != access.ActionApprove {
 		t.Fatalf("approve route derived action %q, want approve", engine.lastAct)
 	}
@@ -118,7 +118,7 @@ func TestAuthorizeTaskLogRouteReadsLogs(t *testing.T) {
 	engine := &fakeAuthorizer{decision: access.Allowed()}
 	s := newAccessServer(t, engine, nil)
 	h := s.authorize(http.HandlerFunc(handlerEcho))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/tasks/7/logs", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/tasks/7/logs", nil))
 	if engine.lastAct != access.ActionReadLogs || engine.last.Kind != access.KindTask || engine.last.ID != "7" {
 		t.Fatalf("log route derived %+v %q, want read_logs on task 7", engine.lastAct, engine.last.Kind)
 	}

@@ -20,24 +20,29 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// errAccessStoreUnavailable reports that no policy store is wired. The
-// dashboard degrades to the credential check rather than refusing to serve.
-var errAccessStoreUnavailable = errors.New("access policy store unavailable")
-
 // buildAccessChain loads the stored policies over the wire and builds the
 // engine. The wire client satisfies the two access contracts the dashboard
 // needs alongside the engine.
-func buildAccessChain(ctx context.Context, store *staterpc.Client) (access.Authorizer, []infraaccess.Problem, error) {
+// buildAccessChain loads the stored policies over the wire and builds the
+// engine. A State Store serving no policies has no chain to evaluate: the
+// dashboard degrades to the credential check rather than refusing to serve,
+// so an unavailable policy store is a warning, not a boot failure.
+func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (access.Authorizer, []infraaccess.Problem, error) {
 	stored, err := store.ListPolicies(ctx)
 	if err != nil {
 		if status.Code(err) == codes.Unavailable {
-			return nil, nil, errAccessStoreUnavailable
+			log.Warn("access chain unavailable; the credential check is the gate", "err", err)
+			return nil, nil, nil
 		}
 		return nil, nil, err
 	}
 	engine, err := infraaccess.New(stored)
 	if err != nil {
 		return nil, nil, err
+	}
+	for _, problem := range engine.Problems() {
+		log.Error("stored access policy is invalid and denies its level",
+			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
 	}
 	return engine, engine.Problems(), nil
 }
@@ -71,21 +76,9 @@ func Run(ctx context.Context, options Options) error {
 	}
 	cleanups = append(cleanups, closeGateway)
 
-	// The access chain is built here, from the stored policies over the
-	// wire: an invalid instance policy stops this process serving until it
-	// is fixed; an invalid org, workspace or object policy is reported as a
-	// health issue naming the policy and the error, and its level denies
-	// everything (docs/prds/orgs-and-access.md, "Storing and changing
-	// policies").
-	chain, problems, err := buildAccessChain(ctx, tasks)
+	chain, problems, err := buildAccessChain(ctx, tasks, log)
 	if err != nil {
-		if errors.Is(err, errAccessStoreUnavailable) {
-			// A State Store serving no policies has no chain to evaluate:
-			// the dashboard keeps the credential check as the whole gate.
-			log.Warn("access chain unavailable; the credential check is the gate", "err", err)
-		} else {
-			return err
-		}
+		return err
 	}
 	for _, problem := range problems {
 		log.Error("stored access policy is invalid and denies its level",
