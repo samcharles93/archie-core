@@ -23,6 +23,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
@@ -92,6 +93,17 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	legacyNames := configuredIdentityNames(b.cfg)
 	if err := identityStore.BootstrapIdentities(ctx, legacyNames); err != nil {
 		return fmt.Errorf("bootstrap identities: %w", err)
+	}
+	// The resumable default org/workspace upgrade runs before this process
+	// serves anything: the State Store refuses scoped calls until its upgrade
+	// has finished, rather than serving records with no org
+	// (docs/prds/orgs-and-access.md, "Upgrading existing installs"). A store
+	// without the upgrader is one that owns no tenant boundary yet, so the
+	// absence degrades to "no upgrade" rather than aborting boot.
+	if upgrader, ok := b.st.(org.Upgrader); ok {
+		if err := upgrader.UpgradeDefaultOrg(ctx); err != nil {
+			return fmt.Errorf("upgrade default org: %w", err)
+		}
 	}
 	resources, ok := b.st.(controlplane.ResourceStore)
 	if !ok {
