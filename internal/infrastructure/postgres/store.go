@@ -93,7 +93,6 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYAML:    t.WorkflowDefinitionYaml,
-		Stage:                     t.Stage,
 		Branch:                    t.Branch,
 		Plan:                      t.Plan,
 		Notes:                     t.Notes,
@@ -282,7 +281,6 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 	return s.queries().UpdateTask(ctx, postgresdb.UpdateTaskParams{
 		ID:                        t.ID,
 		Workflow:                  t.Workflow,
-		Stage:                     t.Stage,
 		Branch:                    t.Branch,
 		Plan:                      t.Plan,
 		Notes:                     t.Notes,
@@ -527,7 +525,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 	for _, r := range rows {
 		tasks = append(tasks, workflow.Task{
 			ID: r.ID, Owner: r.Owner, Repo: r.Repo, IssueNumber: int(r.IssueNumber),
-			Title: r.Title, Status: r.Status, Workflow: r.Workflow, Stage: r.Stage,
+			Title: r.Title, Status: r.Status, Workflow: r.Workflow,
 			PRNumber: int(r.PrNumber), TokensUsed: int(r.TokensUsed), Iterations: int(r.Iterations),
 			Attempt: int(r.Attempt), ParkReason: r.ParkReason, RetryCount: int(r.RetryCount),
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, Plan: r.Plan, Source: r.Source,

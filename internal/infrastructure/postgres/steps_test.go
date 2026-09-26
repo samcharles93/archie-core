@@ -237,6 +237,71 @@ func TestFinishStepRefusesStaleAndForeign(t *testing.T) {
 	}
 }
 
+// TestListStepsOrdersByAttemptThenID is the dashboard run detail's
+// authoritative read (docs/prds/execution-tree-state-machine.md): every
+// attempt in one call when attempt is 0, one attempt's steps when it names
+// one, both ordered oldest first.
+func TestListStepsOrdersByAttemptThenID(t *testing.T) {
+	s := storeFor(t)
+	execution := runningExecution(t, s)
+
+	firstStepID, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: execution.ID, Attempt: execution.Attempt, Kind: task.StepKindStage, Name: "plan",
+	})
+	if err != nil {
+		t.Fatalf("StartStep: %v", err)
+	}
+	if _, err := s.FinishStep(t.Context(), task.StepFinish{
+		StepID: firstStepID, ExecutionID: execution.ID,
+		From: taskstate.StepRunning, To: taskstate.StepSucceeded, Detail: "planned", TokensUsed: 42,
+	}); err != nil {
+		t.Fatalf("FinishStep: %v", err)
+	}
+	secondStepID, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: execution.ID, Attempt: execution.Attempt, Kind: task.StepKindStage, Name: "implement",
+	})
+	if err != nil {
+		t.Fatalf("StartStep: %v", err)
+	}
+
+	steps, err := s.ListSteps(t.Context(), execution.ID, execution.Attempt)
+	if err != nil {
+		t.Fatalf("ListSteps: %v", err)
+	}
+	if len(steps) != 2 {
+		t.Fatalf("ListSteps len = %d, want 2", len(steps))
+	}
+	if steps[0].ID != firstStepID || steps[0].Name != "plan" || steps[0].Status != taskstate.StepSucceeded ||
+		steps[0].Detail != "planned" || steps[0].TokensUsed != 42 || steps[0].StartedAt.IsZero() || steps[0].FinishedAt.IsZero() {
+		t.Fatalf("steps[0] = %+v, want the finished plan step", steps[0])
+	}
+	if steps[1].ID != secondStepID || steps[1].Name != "implement" || steps[1].Status != taskstate.StepRunning ||
+		steps[1].StartedAt.IsZero() || !steps[1].FinishedAt.IsZero() {
+		t.Fatalf("steps[1] = %+v, want the still-running implement step", steps[1])
+	}
+
+	// attempt 0 lists every attempt; there is only one here, so the result is
+	// the same, proving the "list everything" branch is reachable and correct
+	// rather than coincidentally equal to a hardcoded attempt.
+	all, err := s.ListSteps(t.Context(), execution.ID, 0)
+	if err != nil {
+		t.Fatalf("ListSteps(attempt=0): %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("ListSteps(attempt=0) len = %d, want 2", len(all))
+	}
+
+	// A different execution's steps never appear, however queried.
+	other := runningExecution(t, s)
+	otherSteps, err := s.ListSteps(t.Context(), other.ID, 0)
+	if err != nil {
+		t.Fatalf("ListSteps other execution: %v", err)
+	}
+	if len(otherSteps) != 0 {
+		t.Fatalf("ListSteps other execution = %+v, want none", otherSteps)
+	}
+}
+
 // A late FinishStep for a step another path already finished is stale, the
 // PRD's named wire behaviour: errors.Is matches on the client too.
 func TestFinishStepOffTablePairIsIllegalOverTheTable(t *testing.T) {

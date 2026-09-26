@@ -224,6 +224,41 @@ func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map
 	return data
 }
 
+// ListSteps reads one execution's recorded steps, every attempt oldest first
+// when attempt is 0, or just the one it names. It is the dashboard run
+// detail's authoritative source (docs/prds/execution-tree-state-machine.md),
+// replacing the fold over stage_start/stage_finish events tasks.stage used to
+// back -- unlike StartStep/FinishStep, this is a plain read with no
+// transition to guard, so it takes no transaction.
+func (s *Store) ListSteps(ctx context.Context, executionID int64, attempt int) ([]task.StepExecution, error) {
+	rows, err := s.queries().ListStepExecutions(ctx, postgresdb.ListStepExecutionsParams{
+		ExecutionID: executionID, Attempt: int64(attempt),
+	})
+	if err != nil {
+		return nil, err
+	}
+	steps := make([]task.StepExecution, len(rows))
+	for i, r := range rows {
+		steps[i] = task.StepExecution{
+			ID: r.ID, ExecutionID: r.ExecutionID, Attempt: int(r.Attempt),
+			ParentID: nullableInt64(r.ParentID), Depth: int(r.Depth),
+			Kind: r.Kind, Name: r.Name, Status: taskstate.StepStatus(r.Status),
+			Detail: r.Detail, TokensUsed: r.TokensUsed,
+			StartedAt: r.StartedAt.Time, FinishedAt: r.FinishedAt.Time,
+		}
+	}
+	return steps, nil
+}
+
+// nullableInt64 reads a pgtype.Int8 the way stepParentID wrote it: absent
+// means 0, a stage at the tree's root.
+func nullableInt64(v pgtype.Int8) int64 {
+	if !v.Valid {
+		return 0
+	}
+	return v.Int64
+}
+
 // stepParentID encodes the nullable parent id an insert takes: 0 means "no
 // parent" -- a stage at the tree's root -- which the column stores as NULL
 // rather than as a reference to a row that does not exist.

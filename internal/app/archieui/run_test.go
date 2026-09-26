@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -102,9 +103,14 @@ func serveGRPC(t *testing.T, register func(grpc.ServiceRegistrar)) (target strin
 func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	st := pgstore.Open(t)
 	defer st.Close()
-	seeded, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", "")
-	if err != nil {
+	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", ""); err != nil {
 		t.Fatalf("seed task: %v", err)
+	}
+	// Claimed (not just enqueued): StartStep guards on the execution's own
+	// current attempt, which a merely-queued task does not have yet.
+	seeded, err := st.ClaimNext(t.Context())
+	if err != nil || seeded == nil {
+		t.Fatalf("claim seeded task: %+v %v", seeded, err)
 	}
 	// The daemon publishes the configuration page's projection; this process
 	// only renders it (archie-core-ymut). The forge host is published too: it
@@ -129,9 +135,23 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	// worker's change capture -- attributed to one attempt, so the assertions
 	// further down read them back through the real client rather than a fake.
 	seedAt := time.Now().UTC()
+	prepareStepID, _, err := st.StartStep(t.Context(), task.StepStart{ExecutionID: seeded.ID, Attempt: 1, Kind: task.StepKindStage, Name: "prepare"})
+	if err != nil {
+		t.Fatalf("seed prepare step: %v", err)
+	}
+	if _, err := st.FinishStep(t.Context(), task.StepFinish{
+		StepID: prepareStepID, ExecutionID: seeded.ID, From: taskstate.StepRunning, To: taskstate.StepSucceeded,
+	}); err != nil {
+		t.Fatalf("finish prepare step: %v", err)
+	}
+	// Terminal, not left running: the attempt rail reads the task's own
+	// record for "is this still happening" (inFlight), and a run still
+	// marked running would report the attempt "running" regardless of its
+	// finished step, rather than the "ok" a completed run's own stages earn.
+	if err := st.Transition(t.Context(), seeded.ID, taskstate.Running, taskstate.Completed, "done"); err != nil {
+		t.Fatalf("complete seeded task: %v", err)
+	}
 	for _, e := range []events.Event{
-		{Kind: events.KindStageStart, TaskID: seeded.ID, Attempt: 1, Stage: "prepare", At: seedAt},
-		{Kind: events.KindStageFinish, TaskID: seeded.ID, Attempt: 1, Stage: "prepare", At: seedAt.Add(time.Second), Data: map[string]any{"duration_ms": 1000}},
 		{Kind: events.KindConfigCaptured, TaskID: seeded.ID, Attempt: 1, At: seedAt, Data: map[string]any{
 			"schema": events.ConfigCapturedSchema, "document": map[string]any{"bot_user": "archie"},
 		}},
@@ -150,7 +170,7 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
 		eda := pgstore.EDA(t, nil)
-		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
+		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: eda, BindingDispatcher: eda, ConfigSnapshots: st, StepReader: st, Log: slog.New(slog.DiscardHandler)})
 	})
 	defer stopState()
 	chat := &fakeChat{sessions: []gateway.SessionContext{

@@ -43,6 +43,7 @@ const (
 	StateStoreService_StartStep_FullMethodName                  = "/state.v1.StateStoreService/StartStep"
 	StateStoreService_FinishStep_FullMethodName                 = "/state.v1.StateStoreService/FinishStep"
 	StateStoreService_CancelExecution_FullMethodName            = "/state.v1.StateStoreService/CancelExecution"
+	StateStoreService_ListSteps_FullMethodName                  = "/state.v1.StateStoreService/ListSteps"
 	StateStoreService_Requeue_FullMethodName                    = "/state.v1.StateStoreService/Requeue"
 	StateStoreService_ParkTask_FullMethodName                   = "/state.v1.StateStoreService/ParkTask"
 	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
@@ -160,6 +161,9 @@ type StateStoreServiceClient interface {
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
 	// decided by the Authorizer, not a worker call.
 	CancelExecution(ctx context.Context, in *CancelExecutionRequest, opts ...grpc.CallOption) (*CancelExecutionResponse, error)
+	// ListSteps is a dashboard/API/dispatch action (Authorizer: read on the
+	// run), not task-scoped-grant callable like StartStep/FinishStep.
+	ListSteps(ctx context.Context, in *ListStepsRequest, opts ...grpc.CallOption) (*ListStepsResponse, error)
 	Requeue(ctx context.Context, in *RequeueRequest, opts ...grpc.CallOption) (*RequeueResponse, error)
 	ParkTask(ctx context.Context, in *ParkTaskRequest, opts ...grpc.CallOption) (*ParkTaskResponse, error)
 	RecoverStale(ctx context.Context, in *RecoverStaleRequest, opts ...grpc.CallOption) (*RecoverStaleResponse, error)
@@ -527,6 +531,16 @@ func (c *stateStoreServiceClient) CancelExecution(ctx context.Context, in *Cance
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CancelExecutionResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_CancelExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListSteps(ctx context.Context, in *ListStepsRequest, opts ...grpc.CallOption) (*ListStepsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListStepsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListSteps_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,6 +1292,9 @@ type StateStoreServiceServer interface {
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
 	// decided by the Authorizer, not a worker call.
 	CancelExecution(context.Context, *CancelExecutionRequest) (*CancelExecutionResponse, error)
+	// ListSteps is a dashboard/API/dispatch action (Authorizer: read on the
+	// run), not task-scoped-grant callable like StartStep/FinishStep.
+	ListSteps(context.Context, *ListStepsRequest) (*ListStepsResponse, error)
 	Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error)
 	ParkTask(context.Context, *ParkTaskRequest) (*ParkTaskResponse, error)
 	RecoverStale(context.Context, *RecoverStaleRequest) (*RecoverStaleResponse, error)
@@ -1482,6 +1499,9 @@ func (UnimplementedStateStoreServiceServer) FinishStep(context.Context, *FinishS
 }
 func (UnimplementedStateStoreServiceServer) CancelExecution(context.Context, *CancelExecutionRequest) (*CancelExecutionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelExecution not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListSteps(context.Context, *ListStepsRequest) (*ListStepsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSteps not implemented")
 }
 func (UnimplementedStateStoreServiceServer) Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Requeue not implemented")
@@ -2133,6 +2153,24 @@ func _StateStoreService_CancelExecution_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).CancelExecution(ctx, req.(*CancelExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListSteps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStepsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListSteps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListSteps_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListSteps(ctx, req.(*ListStepsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3424,6 +3462,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelExecution",
 			Handler:    _StateStoreService_CancelExecution_Handler,
+		},
+		{
+			MethodName: "ListSteps",
+			Handler:    _StateStoreService_ListSteps_Handler,
 		},
 		{
 			MethodName: "Requeue",

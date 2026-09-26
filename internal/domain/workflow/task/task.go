@@ -53,7 +53,6 @@ type Task struct {
 	WorkflowDefinitionVersion int64  `json:"workflow_definition_version"`
 	WorkflowDefinitionDigest  string `json:"workflow_definition_digest"`
 	WorkflowDefinitionYAML    string `json:"workflow_definition_yaml"`
-	Stage                     string `json:"stage"`
 	Branch                    string `json:"branch"`
 	Plan                      string `json:"plan"`
 	Notes                     string `json:"notes"`

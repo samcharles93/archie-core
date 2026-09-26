@@ -166,7 +166,6 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 			Title:      task.Title,
 			Status:     task.Status,
 			Workflow:   task.Workflow,
-			Stage:      task.Stage,
 			PRNumber:   task.PRNumber,
 			Attempt:    task.Attempt,
 			ParkReason: task.ParkReason,

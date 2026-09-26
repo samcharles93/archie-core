@@ -48,6 +48,9 @@ service StateStoreService {
   // task-scoped grant): a cancel is a dashboard, API and dispatch action
   // decided by the Authorizer, not a worker call.
   rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+  // ListSteps is a dashboard/API/dispatch action (Authorizer: read on the
+  // run), not task-scoped-grant callable like StartStep/FinishStep.
+  rpc ListSteps(ListStepsRequest) returns (ListStepsResponse);
   rpc Requeue(RequeueRequest) returns (RequeueResponse);
   rpc ParkTask(ParkTaskRequest) returns (ParkTaskResponse);
   rpc RecoverStale(RecoverStaleRequest) returns (RecoverStaleResponse);
@@ -262,7 +265,11 @@ message Task {
   string labels = 7;
   string status = 8;
   string workflow = 9;
-  string stage = 10;
+  // Retired: the per-task "current stage" column was overwritten as
+  // workflow.Run advanced and carried no history. step_executions is the
+  // durable per-step record now (docs/prds/execution-tree-state-machine.md);
+  // ListSteps is its read.
+  string stage = 10 [deprecated = true];
   string branch = 11;
   string plan = 12;
   string notes = 13;
@@ -575,6 +582,32 @@ message CancelExecutionResponse {
   // cancelled_step_ids are the StepExecutions the transaction cancelled.
   repeated int64 cancelled_step_ids = 1;
 }
+
+// StepExecution mirrors internal/domain/workflow/task.StepExecution.
+message StepExecution {
+  int64 id = 1;
+  int64 execution_id = 2;
+  int64 attempt = 3;
+  // parent_id is 0 for a stage at the tree's root.
+  int64 parent_id = 4;
+  int32 depth = 5;
+  string kind = 6;
+  string name = 7;
+  string status = 8;
+  string detail = 9;
+  int64 tokens_used = 10;
+  google.protobuf.Timestamp started_at = 11;
+  google.protobuf.Timestamp finished_at = 12;
+}
+
+message ListStepsRequest {
+  int64 execution_id = 1;
+  // attempt selects one attempt's steps; 0 lists every attempt of the
+  // execution, oldest first -- the dashboard's run-detail rail renders every
+  // attempt from a single call rather than one per attempt.
+  int64 attempt = 2;
+}
+message ListStepsResponse { repeated StepExecution steps = 1; }
 
 message UpdateRequest { Task task = 1; }
 message UpdateResponse {}

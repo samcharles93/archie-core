@@ -35,7 +35,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	s := pgstore.Open(t)
 	t.Cleanup(func() { _ = s.Close() })
-	srv := &Server{Store: s, Log: slog.New(slog.DiscardHandler)}
+	srv := &Server{Store: s, Steps: s, Log: slog.New(slog.DiscardHandler)}
 	// Composition always gives the dashboard a Gateway contract; task
 	// actions travel through it now, so a test server without one could
 	// only ever answer 503.

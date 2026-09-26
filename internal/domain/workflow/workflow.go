@@ -109,6 +109,11 @@ type TaskContext struct {
 	// Dir/Branch are set by the prepare step.
 	Dir    string
 	Branch string
+	// Stage is the name of the stage currently running, kept here (not
+	// persisted on Task -- docs/prds/execution-tree-state-machine.md drops
+	// tasks.stage in favour of the durable StepExecution record StartStep
+	// writes) purely so park/finish can tag the event they emit with it.
+	Stage string
 	// BuildSummary is the builder agent's finish summary  --  the PR body.
 	BuildSummary string
 	// BuildNoChanges is set when the builder returned StatusPassed but
@@ -302,7 +307,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	log := tc.Log.With("workflow", wf.Name, "repo", tc.Repo.FullName(), "issue", t.IssueNumber)
 
 	for _, stage := range wf.Stages {
-		t.Stage = stage.Name
+		tc.Stage = stage.Name
 		_ = tc.Store.Update(ctx, t)
 		// Every stage is a StepExecution (docs/prds/execution-tree-state-machine.md):
 		// the store records pending -> running and writes the stage_start event
@@ -407,7 +412,7 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	}
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
-	tc.Emit(events.KindOutcome, t.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
+	tc.Emit(events.KindOutcome, tc.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
 	log.Info("workflow finished", "status", tc.Outcome.Status)
 }
 
@@ -416,12 +421,12 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	t.ParkReason = reason
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, StatusParked, reason)
-	tc.Emit(events.KindParked, t.Stage, reason, nil)
+	tc.Emit(events.KindParked, tc.Stage, reason, nil)
 	// The run's own log is the surface an operator downloads to answer "why did
 	// this park?", and the event above lands on the timeline, which the log
 	// never carries. This is the one place a park's reason is final, so it is
 	// the one place that records it -- the stage names itself in the reason.
-	tc.Log.Error("task parked", "stage", t.Stage, "reason", reason)
+	tc.Log.Error("task parked", "stage", tc.Stage, "reason", reason)
 }
 
 func clip(s string, n int) string {

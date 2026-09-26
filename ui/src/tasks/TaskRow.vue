@@ -19,7 +19,6 @@ export interface Task {
   park_reason?: string;
   tokens_used?: number;
   workflow?: string;
-  stage?: string;
   attempt?: number;
   created_at?: string;
   updated_at?: string;
@@ -173,7 +172,6 @@ function open() {
     <TableCell class="text-fg-muted">{{
       props.task.workflow || "—"
     }}</TableCell>
-    <TableCell class="text-fg-muted">{{ props.task.stage || "—" }}</TableCell>
     <TableCell
       class="text-fg-muted"
       :title="

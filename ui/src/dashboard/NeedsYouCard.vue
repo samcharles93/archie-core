@@ -18,7 +18,7 @@ const waiting = computed(() => {
 
 function meta(task: AttentionTask): string {
   const where = task.owner && task.repo ? `${task.owner}/${task.repo}${task.issue_number ? ` #${task.issue_number}` : ""}` : "";
-  return [where, task.workflow, task.park_reason || task.stage].filter(Boolean).join(" · ");
+  return [where, task.workflow, task.park_reason].filter(Boolean).join(" · ");
 }
 </script>
 

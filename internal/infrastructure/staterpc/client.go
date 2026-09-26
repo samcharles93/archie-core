@@ -155,6 +155,18 @@ func (c *Client) FinishStep(ctx context.Context, s task.StepFinish) (events.Even
 	return event, nil
 }
 
+func (c *Client) ListSteps(ctx context.Context, executionID int64, attempt int) ([]task.StepExecution, error) {
+	r, err := c.client.ListSteps(ctx, &pb.ListStepsRequest{ExecutionId: executionID, Attempt: int64(attempt)})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	steps := make([]task.StepExecution, len(r.Steps))
+	for i, s := range r.Steps {
+		steps[i] = stepExecutionValue(s)
+	}
+	return steps, nil
+}
+
 func (c *Client) Update(ctx context.Context, t *task.Task) error {
 	_, err := c.client.Update(ctx, &pb.UpdateRequest{Task: taskProto(t)})
 	return unmapError(err)

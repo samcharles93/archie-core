@@ -20,10 +20,10 @@ var (
 
 // Task is the state needed to authorize and apply an operator action.
 type Task struct {
-	ID                                               int64
-	Owner, Repo, Identity, Status, Stage, ParkReason string
-	IssueNumber, RetryCount                          int
-	ForgeBacked                                      bool
+	ID                                        int64
+	Owner, Repo, Identity, Status, ParkReason string
+	IssueNumber, RetryCount                   int
+	ForgeBacked                               bool
 	// Attempt is the run the operator acted on. It is stamped onto the event
 	// this action records so an intervention is attributable to the run it
 	// changed course -- without it a retry or a stop is indistinguishable
@@ -256,7 +256,7 @@ func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outc
 	}
 	err := s.Store.RetryTask(ctx, task.ID, "parked", "")
 	o.event.Kind, o.event.Detail = events.KindTaskRetried, actor.describe("retried")
-	o.event.Data = map[string]any{"retry_count": task.RetryCount + 1, "previous_stage": task.Stage, "previous_reason": task.ParkReason}
+	o.event.Data = map[string]any{"retry_count": task.RetryCount + 1, "previous_reason": task.ParkReason}
 	return o, err
 }
 
