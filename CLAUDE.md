@@ -35,7 +35,18 @@ plugin engine, satisfy
 
 Before changing an area (frontend UI, agent, workflows, daemon, State Store,
 control plane), read its page in `docs/development/`: it names every layer the
-change must reach.
+change must reach. This is not optional colour reading -- archie-core is built
+as an extensible, customisable surface, not a fixed product, so a change that
+looks complete inside one package routinely is not: a new setting that never
+reaches the control-plane schema descriptor and dashboard parses but never
+renders, is never editable, and never live-applies, exactly like a config
+field with no consumer. The dev-docs page for the area is where that
+cross-layer reach is written down; read it before starting, not after
+something downstream turns out silently unwired. This applies whether the
+work is yours directly or handed to a subagent or crew worker -- carry the
+relevant docs/development page into their prompt, the same way a bead ID is
+carried; "figure out what else needs updating" left implicit is exactly the
+gap this note exists to close.
 
 ## Scope Discipline
 
