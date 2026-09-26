@@ -348,7 +348,6 @@ type Task struct {
 	Labels                    string
 	Status                    string
 	Workflow                  string
-	Stage                     string
 	Branch                    string
 	Plan                      string
 	Notes                     string

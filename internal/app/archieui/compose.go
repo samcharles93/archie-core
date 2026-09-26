@@ -90,6 +90,9 @@ func compose(d deps) *webui.Server {
 	if snapshots, ok := d.Store.(storecontract.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)
 	}
+	if steps, ok := d.Store.(storecontract.StepReader); ok {
+		srv.Steps = steps
+	}
 	// Channel lifecycle follows the same split as the config view: the process
 	// hosting the channels publishes, this one reads. Withholding it left
 	// /api/channels answering with nothing while channels were running

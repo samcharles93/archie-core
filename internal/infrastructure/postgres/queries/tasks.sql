@@ -29,7 +29,7 @@ SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status
 -- The dashboard's list. This projection is deliberately narrow: Plan gates
 -- the "Decision required" panel and Source labels the row, and widening it
 -- back would send rows without them.
-SELECT id, owner, repo, issue_number, title, status, workflow, stage,
+SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
        created_at, updated_at, plan, source, identity, binding_id, binding_version
 FROM tasks ORDER BY updated_at DESC LIMIT $1;
@@ -65,11 +65,11 @@ RETURNING *;
 UPDATE tasks SET binding_id = $2, binding_version = $3, inputs = $4 WHERE id = $1;
 
 -- name: UpdateTask :exec
-UPDATE tasks SET workflow = $2, stage = $3, branch = $4, plan = $5, notes = $6,
-    pr_number = $7, tokens_used = $8, iterations = $9, park_reason = $10,
-    watch_comment_id = $11, retry_count = $12, remediation_rounds = $13,
-    review_payload = $14, workflow_definition_version = $15,
-    workflow_definition_digest = $16, workflow_definition_yaml = $17,
+UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
+    pr_number = $6, tokens_used = $7, iterations = $8, park_reason = $9,
+    watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
+    review_payload = $13, workflow_definition_version = $14,
+    workflow_definition_digest = $15, workflow_definition_yaml = $16,
     updated_at = now()
 WHERE id = $1;
 
@@ -129,7 +129,7 @@ WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
 RETURNING *;
 
 -- name: BeginRemediationTask :execrows
-UPDATE tasks SET status = 'queued', workflow = 'remediate', stage = '', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
+UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
 WHERE id = $1 AND status = 'pr_open';
 
 -- name: UpdateReviewPayloadTask :execrows
@@ -143,13 +143,13 @@ WHERE id = $1 AND status = 'pr_open';
 -- name: RequeueTask :execrows
 UPDATE tasks SET status = 'queued',
     workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
-    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+    park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = @id AND status = @from_status;
 
 -- name: RetryTask :execrows
 UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
     workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
-    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+    park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = @id AND status = @from_status;
 
 -- name: ArchiveTaskDelete :execrows

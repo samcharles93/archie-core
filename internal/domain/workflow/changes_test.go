@@ -161,8 +161,9 @@ func captureTaskContext(t *testing.T, trees Trees, store Store) *TaskContext {
 	return &TaskContext{
 		Task: &Task{
 			ID: 11, Attempt: 2, Owner: "acme", Repo: "widget", IssueNumber: 7,
-			Stage: "commit-push", Branch: "feat/7-widget",
+			Branch: "feat/7-widget",
 		},
+		Stage:  "commit-push",
 		Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Trees:  trees,
 		Store:  store,
@@ -278,7 +279,7 @@ func TestStageCommitCapturesTheChangedFiles(t *testing.T) {
 	trees := &capturingTrees{commitAllChanged: true, stats: sampleStats()}
 	store := &recordingStore{}
 	tc := captureTaskContext(t, trees, store)
-	tc.Task.Stage = "commit-repro"
+	tc.Stage = "commit-repro"
 
 	if err := StageCommit("commit-repro", func(*TaskContext) string { return "msg" }).Run(context.Background(), tc); err != nil {
 		t.Fatalf("StageCommit.Run() = %v, want nil", err)
@@ -430,7 +431,7 @@ func TestOpenPRCapturesThePullRequestNumber(t *testing.T) {
 	forgeClient := &fakeForge{}
 	tc := captureTaskContext(t, trees, store)
 	tc.Forge = forgeClient
-	tc.Task.Stage = "open-pr"
+	tc.Stage = "open-pr"
 	tc.Task.Title = "widget fails"
 
 	if err := OpenPR(context.Background(), tc, "body"); err != nil {

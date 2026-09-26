@@ -26,6 +26,14 @@ type Server struct {
 	Store storecontract.TaskStore
 	Log   *slog.Logger
 
+	// Steps lists one execution's recorded StepExecutions
+	// (docs/prds/execution-tree-state-machine.md): the run detail's
+	// authoritative source, GET /api/tasks/{id}/attempts. Nil degrades the
+	// route to reporting no steps rather than folding stage_start/
+	// stage_finish events, which tasks.stage used to back and no longer
+	// exists to fall back to.
+	Steps storecontract.StepReader
+
 	// ConfigSource supplies the configuration projection GET /api/config
 	// renders. Composition sets it to RemoteConfigView in a process that
 	// only displays configuration; unset means this process builds the view

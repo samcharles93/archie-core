@@ -106,6 +106,11 @@ type Deps struct {
 	// an operator action's guarded write over the execution and its steps.
 	// Optional: nil answers the RPC with codes.Unavailable.
 	Canceller storecontract.ExecutionCanceller
+	// StepReader lists an execution's recorded steps for the dashboard/API
+	// (docs/prds/execution-tree-state-machine.md): a plain read, never
+	// task-scoped-grant callable. Optional: nil answers ListSteps with
+	// codes.Unavailable.
+	StepReader storecontract.StepReader
 	// PlaybookDispatcher is the side-effecting-action idempotency ledger
 	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
@@ -245,6 +250,17 @@ func (s *server) FinishStep(ctx context.Context, r *pb.FinishStepRequest) (*pb.F
 		return nil, s.logErr("FinishStep", err)
 	}
 	return &pb.FinishStepResponse{Event: eventProto(event)}, nil
+}
+
+func (s *server) ListSteps(ctx context.Context, r *pb.ListStepsRequest) (*pb.ListStepsResponse, error) {
+	if s.deps.StepReader == nil {
+		return nil, status.Error(codes.Unavailable, "step reader unavailable")
+	}
+	steps, err := s.deps.StepReader.ListSteps(ctx, r.ExecutionId, int(r.Attempt))
+	if err != nil {
+		return nil, s.logErr("ListSteps", err)
+	}
+	return &pb.ListStepsResponse{Steps: mapValues(steps, stepExecutionProto)}, nil
 }
 
 func (s *server) Update(ctx context.Context, r *pb.UpdateRequest) (*pb.UpdateResponse, error) {

@@ -712,8 +712,8 @@ func formatTasks(tasks []ChatTaskSummary, now time.Time) string {
 		}
 		fmt.Fprintf(&b, "%s #%d %s%s", icon, t.ID, t.Title, reportLineBreak)
 		fmt.Fprintf(&b, "  %s", label)
-		if stage := workflowStage(t.Workflow, t.Stage); stage != "" {
-			fmt.Fprintf(&b, " · %s", stage)
+		if t.Workflow != "" {
+			fmt.Fprintf(&b, " · %s", t.Workflow)
 		}
 		if t.Attempt > 1 {
 			fmt.Fprintf(&b, " · attempt %d", t.Attempt)
@@ -727,22 +727,6 @@ func formatTasks(tasks []ChatTaskSummary, now time.Time) string {
 		b.WriteString("\n\n")
 	}
 	return strings.TrimSpace(b.String())
-}
-
-// workflowStage joins a task's workflow and stage for display, degrading
-// gracefully when either is unknown (e.g. a task that hasn't started its
-// first stage yet).
-func workflowStage(workflow, stage string) string {
-	switch {
-	case workflow == "" && stage == "":
-		return ""
-	case stage == "":
-		return workflow
-	case workflow == "":
-		return stage
-	default:
-		return workflow + "/" + stage
-	}
 }
 
 type taskStateDisplay struct {

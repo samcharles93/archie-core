@@ -35,7 +35,6 @@ type ChatTaskSummary struct {
 	Title    string `json:"title"`
 	Status   string `json:"status"`
 	Workflow string `json:"workflow,omitempty"`
-	Stage    string `json:"stage,omitempty"`
 	PRNumber int    `json:"pr_number,omitempty"`
 	// Attempt is the task's current retry attempt. 0 or 1 means it has never
 	// been retried; the /tasks command only surfaces this once it is

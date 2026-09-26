@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 func timestamp(t time.Time) *timestamppb.Timestamp {
@@ -65,7 +66,7 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 	return &pb.Task{
 		Id: t.ID, Owner: t.Owner, Repo: t.Repo, IssueNumber: int64(t.IssueNumber),
 		Title: t.Title, Body: t.Body, Labels: t.Labels, Status: t.Status,
-		Workflow: t.Workflow, Stage: t.Stage, Branch: t.Branch, Plan: t.Plan, Notes: t.Notes,
+		Workflow: t.Workflow, Branch: t.Branch, Plan: t.Plan, Notes: t.Notes,
 		PrNumber: int64(t.PRNumber), TokensUsed: int64(t.TokensUsed), Iterations: int64(t.Iterations),
 		Attempt: int64(t.Attempt), ParkReason: t.ParkReason, RetryCount: int64(t.RetryCount),
 		WatchCommentId: t.WatchCommentID, Source: t.Source, Identity: t.Identity,
@@ -92,7 +93,7 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 	return &task.Task{
 		ID: t.Id, Owner: t.Owner, Repo: t.Repo, IssueNumber: int(t.IssueNumber),
 		Title: t.Title, Body: t.Body, Labels: t.Labels, Status: t.Status,
-		Workflow: t.Workflow, Stage: t.Stage, Branch: t.Branch, Plan: t.Plan, Notes: t.Notes,
+		Workflow: t.Workflow, Branch: t.Branch, Plan: t.Plan, Notes: t.Notes,
 		PRNumber: int(t.PrNumber), TokensUsed: int(t.TokensUsed), Iterations: int(t.Iterations),
 		Attempt: int(t.Attempt), ParkReason: t.ParkReason, RetryCount: int(t.RetryCount),
 		WatchCommentID: t.WatchCommentId, Source: t.Source, Identity: t.Identity,
@@ -303,6 +304,27 @@ func workflowStatValue(w *pb.WorkflowStat) storecontract.WorkflowStat {
 		Workflow: w.Workflow, Runs: int(w.Runs), Merged: int(w.Merged),
 		Completed: int(w.Completed), PROpen: int(w.PrOpen), Parked: int(w.Parked),
 		AvgTokens: int(w.AvgTokens), AvgSteps: w.AvgSteps, TotalToken: int(w.TotalTokens),
+	}
+}
+
+func stepExecutionProto(s task.StepExecution) *pb.StepExecution {
+	return &pb.StepExecution{
+		Id: s.ID, ExecutionId: s.ExecutionID, Attempt: int64(s.Attempt),
+		ParentId: s.ParentID, Depth: int32(s.Depth), Kind: s.Kind, Name: s.Name,
+		Status: string(s.Status), Detail: s.Detail, TokensUsed: s.TokensUsed,
+		StartedAt: timestamp(s.StartedAt), FinishedAt: timestamp(s.FinishedAt),
+	}
+}
+
+func stepExecutionValue(s *pb.StepExecution) task.StepExecution {
+	if s == nil {
+		return task.StepExecution{}
+	}
+	return task.StepExecution{
+		ID: s.Id, ExecutionID: s.ExecutionId, Attempt: int(s.Attempt),
+		ParentID: s.ParentId, Depth: int(s.Depth), Kind: s.Kind, Name: s.Name,
+		Status: taskstate.StepStatus(s.Status), Detail: s.Detail, TokensUsed: s.TokensUsed,
+		StartedAt: timeValue(s.StartedAt), FinishedAt: timeValue(s.FinishedAt),
 	}
 }
 

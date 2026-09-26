@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,25 +12,45 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
+
+// stepWriter is StepRecorder, asserted against srv.Store here rather than
+// widened onto storecontract.TaskStore: the dashboard never writes a step
+// itself, only reads them (Server.Steps, storecontract.StepReader), and this
+// test needs real rows to exercise the read against.
+type stepWriter interface {
+	StartStep(ctx context.Context, s task.StepStart) (int64, events.Event, error)
+	FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error)
+}
 
 // railBase is the fixed clock the rail fixtures hang off, so every timestamp
 // and duration asserted below is a literal rather than a tolerance.
 var railBase = time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
 
-func stageStartEvent(taskID int64, attempt int, stage string, at time.Time) events.Event {
-	return events.Event{Kind: events.KindStageStart, TaskID: taskID, Attempt: attempt, Stage: stage, At: at}
-}
-
-func stageFinishEvent(taskID int64, attempt int, stage string, at time.Time, data map[string]any) events.Event {
-	return events.Event{Kind: events.KindStageFinish, TaskID: taskID, Attempt: attempt, Stage: stage, At: at, Data: data}
+// attemptEvent stands in for the events that still drive attempt bounds and
+// counts (attemptsFromEvents), independent of the stage rail those events
+// used to also back.
+func attemptEvent(taskID int64, attempt int, at time.Time) events.Event {
+	return events.Event{Kind: events.KindAgentFinish, TaskID: taskID, Attempt: attempt, At: at}
 }
 
 func insertTaskEvent(t *testing.T, srv *Server, ev events.Event) {
 	t.Helper()
 	if _, err := srv.Store.InsertEvent(t.Context(), ev); err != nil {
 		t.Fatalf("insert %s event: %v", ev.Kind, err)
+	}
+}
+
+// stageStep is a fixture StepExecution the pure-function test builds by
+// hand -- no store round trip, since stageViewsFromSteps operates on
+// task.StepExecution values directly.
+func stageStep(name string, attempt int, status taskstate.StepStatus, startedAt, finishedAt time.Time, detail string) task.StepExecution {
+	return task.StepExecution{
+		Attempt: attempt, Kind: task.StepKindStage, Name: name, Status: status,
+		StartedAt: startedAt, FinishedAt: finishedAt, Detail: detail,
 	}
 }
 
@@ -91,26 +112,6 @@ func twoAttemptTask(t *testing.T, srv *Server) *workflow.Task {
 // summarizeAttemptRail renders a folded rail as one line per attempt so a table
 // case states the derivation it expects without a struct literal per stage:
 // "attempt:status[name:status:duration[#error][@nostart],...] duration".
-func summarizeAttemptRail(attempts []taskAttemptView) string {
-	lines := make([]string, 0, len(attempts))
-	for _, a := range attempts {
-		stages := make([]string, 0, len(a.Stages))
-		for _, s := range a.Stages {
-			stage := s.Name + ":" + s.Status + ":" + durationToken(s.DurationMS)
-			if s.StartedAt == nil {
-				stage += "@nostart"
-			}
-			if s.Error != "" {
-				stage += "#" + s.Error
-			}
-			stages = append(stages, stage)
-		}
-		line := strconv.Itoa(a.Attempt) + ":" + a.Status + "[" + strings.Join(stages, ",") + "] " + durationToken(a.DurationMS)
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, " | ")
-}
-
 func durationToken(ms *int64) string {
 	if ms == nil {
 		return "?"
@@ -118,161 +119,158 @@ func durationToken(ms *int64) string {
 	return strconv.FormatInt(*ms, 10)
 }
 
-// TestAttemptsFromEventsDerivesEveryRailRule is the table behind R1: every
-// status rule the attempt rail depends on, one case each, plus the cases that
-// would otherwise be answered by inventing data (a finish with no start, an
-// event set with no stage information, events carrying no attempt at all).
-func TestAttemptsFromEventsDerivesEveryRailRule(t *testing.T) {
+// summarizeStages renders a stage list the same way summarizeAttemptRail's
+// inner loop does, for a test that exercises stageViewsFromSteps alone.
+func summarizeStages(stages []taskStageView) string {
+	tokens := make([]string, 0, len(stages))
+	for _, s := range stages {
+		token := s.Name + ":" + s.Status + ":" + durationToken(s.DurationMS)
+		if s.StartedAt == nil {
+			token += "@nostart"
+		}
+		if s.Error != "" {
+			token += "#" + s.Error
+		}
+		tokens = append(tokens, token)
+	}
+	return strings.Join(tokens, ",")
+}
+
+// TestStageViewsFromStepsDerivesEveryRailRule is the table behind R1: every
+// status rule the rail depends on, sourced from StepExecutions -- the
+// authoritative record (docs/prds/execution-tree-state-machine.md) -- rather
+// than a fold over stage_start/stage_finish events.
+func TestStageViewsFromStepsDerivesEveryRailRule(t *testing.T) {
 	at := railBase.Add
-	duration := func(ms int64) map[string]any { return map[string]any{"duration_ms": ms} }
+
+	tests := []struct {
+		name     string
+		steps    []task.StepExecution
+		inFlight bool
+		want     string
+	}{
+		{
+			name:  "a succeeded step is ok and reports its measured span",
+			steps: []task.StepExecution{stageStep("prepare", 1, taskstate.StepSucceeded, at(0), at(time.Second), "")},
+			want:  "prepare:ok:1000",
+		},
+		{
+			name:  "a failed step fails and carries its detail as the error",
+			steps: []task.StepExecution{stageStep("implement", 1, taskstate.StepFailed, at(0), at(2*time.Second), "builder exited 1")},
+			want:  "implement:failed:2000#builder exited 1",
+		},
+		{
+			name:  "a cancelled step reads interrupted",
+			steps: []task.StepExecution{stageStep("implement", 1, taskstate.StepCancelled, at(0), at(time.Second), "stopped by operator")},
+			want:  "implement:interrupted:1000",
+		},
+		{
+			name:  "an interrupted step reads interrupted",
+			steps: []task.StepExecution{stageStep("implement", 1, taskstate.StepInterrupted, at(0), at(time.Second), "")},
+			want:  "implement:interrupted:1000",
+		},
+		{
+			name:     "a running step on the task's current in-flight attempt is running",
+			steps:    []task.StepExecution{stageStep("implement", 2, taskstate.StepRunning, at(0), time.Time{}, "")},
+			inFlight: true,
+			want:     "implement:running:?",
+		},
+		{
+			name:     "a running step past the task's live attempt is stale, read as interrupted",
+			steps:    []task.StepExecution{stageStep("implement", 1, taskstate.StepRunning, at(0), time.Time{}, "")},
+			inFlight: false,
+			want:     "implement:interrupted:?",
+		},
+		{
+			name:  "a pending step (never observed in practice) reads unknown rather than a false verdict",
+			steps: []task.StepExecution{stageStep("implement", 1, taskstate.StepPending, time.Time{}, time.Time{}, "")},
+			want:  "implement:unknown:?@nostart",
+		},
+		{
+			name: "a repeated stage name yields one rail entry per occurrence",
+			steps: []task.StepExecution{
+				stageStep("implement", 1, taskstate.StepSucceeded, at(0), at(time.Second), ""),
+				{Attempt: 1, Kind: task.StepKindStage, Name: "implement", Status: taskstate.StepRunning, StartedAt: at(2 * time.Second)},
+			},
+			inFlight: true,
+			want:     "implement:ok:1000,implement:running:?",
+		},
+		{
+			name: "an agent or call step is not part of the stage rail",
+			steps: []task.StepExecution{
+				stageStep("implement", 1, taskstate.StepSucceeded, at(0), at(time.Second), ""),
+				{Attempt: 1, Kind: task.StepKindAgent, Name: "implement", Status: taskstate.StepSucceeded, StartedAt: at(0), FinishedAt: at(time.Second)},
+				{Attempt: 1, Kind: task.StepKindCall, Name: "callee", Status: taskstate.StepSucceeded, StartedAt: at(0), FinishedAt: at(time.Second)},
+			},
+			want: "implement:ok:1000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := summarizeStages(stageViewsFromSteps(tt.steps, tt.inFlight)); got != tt.want {
+				t.Errorf("stages = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAttemptsFromEventsIndexesAttemptsFromEventsAndUnattributedCount pins
+// what attemptsFromEvents still owns now that stage derivation moved to
+// steps: which attempt numbers exist, and the unattributed-event count --
+// both read from the task's events, since an attempt can carry events (agent
+// calls, say) with no recorded step at all.
+func TestAttemptsFromEventsIndexesAttemptsFromEventsAndUnattributedCount(t *testing.T) {
+	at := railBase.Add
 
 	tests := []struct {
 		name             string
 		taskStatus       string
 		currentAttempt   int
 		evs              []events.Event
-		want             string
+		steps            []task.StepExecution
+		wantAttempts     []int
 		wantUnattributed int
 	}{
 		{
-			name:       "a finished stage is ok and the attempt reports its measured span",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "prepare", at(0)),
-				stageFinishEvent(1, 1, "prepare", at(time.Second), duration(1000)),
-			},
-			want: "1:ok[prepare:ok:1000] 1000",
-		},
-		{
-			name:       "a failed stage fails the attempt and carries the error text",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "implement", at(0)),
-				stageFinishEvent(1, 1, "implement", at(2*time.Second), map[string]any{
-					"duration_ms": int64(2000),
-					"error":       "stage implement: builder exited 1",
-				}),
-			},
-			want: "1:failed[implement:failed:2000#stage implement: builder exited 1] 2000",
-		},
-		{
-			name:       "an interrupted stage reads interrupted even though the error text is recorded",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "implement", at(0)),
-				stageFinishEvent(1, 1, "implement", at(time.Second), map[string]any{
-					"duration_ms": int64(1000),
-					"error":       "context canceled",
-					"interrupted": true,
-				}),
-			},
-			want: "1:interrupted[implement:interrupted:1000#context canceled] 1000",
-		},
-		{
-			name:       "a failed stage outranks an interrupted one",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "a", at(0)),
-				stageFinishEvent(1, 1, "a", at(time.Second), map[string]any{"duration_ms": int64(1000), "error": "boom"}),
-				stageStartEvent(1, 1, "b", at(2*time.Second)),
-				stageFinishEvent(1, 1, "b", at(3*time.Second), map[string]any{
-					"duration_ms": int64(1000), "error": "canceled", "interrupted": true,
-				}),
-			},
-			want: "1:failed[a:failed:1000#boom,b:interrupted:1000#canceled] 3000",
-		},
-		{
-			name:       "an unpaired start on the task's current in-flight attempt is running",
+			name:       "a later attempt does not absorb the earlier attempt's steps",
 			taskStatus: workflow.StatusRunning, currentAttempt: 2,
-			evs:  []events.Event{stageStartEvent(1, 2, "implement", at(0))},
-			want: "2:running[implement:running:?] ?",
-		},
-		{
-			name:       "an unpaired start on a superseded attempt is interrupted",
-			taskStatus: workflow.StatusRunning, currentAttempt: 2,
-			evs:  []events.Event{stageStartEvent(1, 1, "implement", at(0))},
-			want: "1:interrupted[implement:interrupted:?] 0",
-		},
-		{
-			name:       "an unpaired start on a parked task's own attempt is interrupted",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs:  []events.Event{stageStartEvent(1, 1, "implement", at(0))},
-			want: "1:interrupted[implement:interrupted:?] 0",
-		},
-		{
-			name:       "a finish with no start yields the stage without an invented start time",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				stageFinishEvent(1, 1, "commit", at(0), duration(4000)),
-			},
-			want: "1:ok[commit:ok:4000@nostart] 0",
-		},
-		{
-			name:       "a finish without a recorded duration derives it from its own start",
-			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "prepare", at(0)),
-				stageFinishEvent(1, 1, "prepare", at(10*time.Second), nil),
-			},
-			want: "1:ok[prepare:ok:10000] 10000",
-		},
-		{
-			name:       "a repeated stage name yields one rail entry per occurrence",
-			taskStatus: workflow.StatusRunning, currentAttempt: 1,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "implement", at(0)),
-				stageFinishEvent(1, 1, "implement", at(time.Second), duration(1000)),
-				stageStartEvent(1, 1, "implement", at(2*time.Second)),
-			},
-			want: "1:running[implement:ok:1000,implement:running:?] ?",
-		},
-		{
-			name:       "a later attempt does not absorb the earlier attempt's stages",
-			taskStatus: workflow.StatusRunning, currentAttempt: 2,
-			evs: []events.Event{
-				stageStartEvent(1, 1, "prepare", at(0)),
-				stageFinishEvent(1, 1, "prepare", at(time.Second), duration(1000)),
-				stageStartEvent(1, 2, "implement", at(2*time.Second)),
-			},
-			want: "1:ok[prepare:ok:1000] 1000 | 2:running[implement:running:?] ?",
+			evs:          []events.Event{attemptEvent(1, 1, at(0)), attemptEvent(1, 2, at(time.Second))},
+			steps:        []task.StepExecution{stageStep("prepare", 1, taskstate.StepSucceeded, at(0), at(time.Second), "")},
+			wantAttempts: []int{1, 2},
 		},
 		{
 			name:       "events carrying no attempt are counted, never grouped",
 			taskStatus: workflow.StatusQueued, currentAttempt: 0,
-			evs: []events.Event{
-				{Kind: events.KindStageStart, TaskID: 1, Stage: "prepare", At: at(0)},
-				{Kind: events.KindStageFinish, TaskID: 1, Stage: "prepare", At: at(time.Second), Data: duration(1000)},
-			},
+			evs:              []events.Event{{Kind: events.KindAgentFinish, TaskID: 1, At: at(0)}, {Kind: events.KindAgentFinish, TaskID: 1, At: at(time.Second)}},
 			wantUnattributed: 2,
 		},
 		{
 			name:       "a task with no events has no attempts and nothing unattributed",
 			taskStatus: workflow.StatusQueued, currentAttempt: 0,
-			want: "",
 		},
 		{
-			name:       "an attempt whose events carry no stage information is unknown",
+			name:       "an attempt with events but no recorded step still appears, with no stages",
 			taskStatus: workflow.StatusParked, currentAttempt: 1,
-			evs: []events.Event{
-				{Kind: events.KindAgentFinish, TaskID: 1, Attempt: 1, At: at(0), Data: map[string]any{"status": "ok"}},
-			},
-			want: "1:unknown[] ?",
-		},
-		{
-			name:       "the task's own record keeps the current attempt running with no stage events",
-			taskStatus: workflow.StatusRunning, currentAttempt: 1,
-			evs: []events.Event{
-				{Kind: events.KindAgentFinish, TaskID: 1, Attempt: 1, At: at(0), Data: map[string]any{"status": "ok"}},
-			},
-			want: "1:running[] ?",
+			evs:          []events.Event{attemptEvent(1, 1, at(0))},
+			wantAttempts: []int{1},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attempts, unattributed := attemptsFromEvents(tt.evs, tt.taskStatus, tt.currentAttempt)
-			if got := summarizeAttemptRail(attempts); got != tt.want {
-				t.Errorf("rail = %q, want %q", got, tt.want)
+			attempts, unattributed := attemptsFromEvents(tt.evs, tt.steps, tt.taskStatus, tt.currentAttempt)
+			var got []int
+			for _, a := range attempts {
+				got = append(got, a.Attempt)
+			}
+			if len(got) != len(tt.wantAttempts) {
+				t.Fatalf("attempts = %v, want %v", got, tt.wantAttempts)
+			}
+			for i, want := range tt.wantAttempts {
+				if got[i] != want {
+					t.Errorf("attempts = %v, want %v", got, tt.wantAttempts)
+				}
 			}
 			if unattributed != tt.wantUnattributed {
 				t.Errorf("unattributed = %d, want %d", unattributed, tt.wantUnattributed)
@@ -287,17 +285,67 @@ func TestAttemptsFromEventsDerivesEveryRailRule(t *testing.T) {
 // attempt 2's stages.
 func TestHandleTaskAttemptsRendersBothAttemptsOfARetry(t *testing.T) {
 	srv := newTestServer(t)
-	current := twoAttemptTask(t, srv)
-	at := railBase.Add
+	ctx := t.Context()
+	steps, ok := srv.Store.(stepWriter)
+	if !ok {
+		t.Fatal("test store does not implement stepWriter")
+	}
 
-	insertTaskEvent(t, srv, stageStartEvent(current.ID, 1, "prepare", at(0)))
-	insertTaskEvent(t, srv, stageFinishEvent(current.ID, 1, "prepare", at(1200*time.Millisecond),
-		map[string]any{"duration_ms": int64(1200)}))
-	insertTaskEvent(t, srv, stageStartEvent(current.ID, 1, "implement", at(1323*time.Millisecond)))
-	insertTaskEvent(t, srv, stageFinishEvent(current.ID, 1, "implement", at(231323*time.Millisecond),
-		map[string]any{"duration_ms": int64(230000), "error": "stage implement: builder exited 1"}))
-	insertTaskEvent(t, srv, stageStartEvent(current.ID, 2, "implement", at(time.Hour)))
+	// Not twoAttemptTask: StartStep guards on the execution's own current
+	// attempt (a step named for a superseded attempt is a stale transition
+	// by design -- steps.go, "a caller naming one the execution no longer
+	// runs is describing a run that is over"), so attempt 1's steps have to
+	// be recorded while the task is actually on attempt 1, before the retry
+	// that moves it to attempt 2.
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	claimed1, err := srv.Store.ClaimNext(ctx)
+	if err != nil || claimed1 == nil || claimed1.Attempt != 1 {
+		t.Fatalf("ClaimNext = (%+v, %v), want attempt 1", claimed1, err)
+	}
 
+	prepareID, _, err := steps.StartStep(ctx, task.StepStart{ExecutionID: claimed1.ID, Attempt: 1, Kind: task.StepKindStage, Name: "prepare"})
+	if err != nil {
+		t.Fatalf("StartStep prepare: %v", err)
+	}
+	if _, err := steps.FinishStep(ctx, task.StepFinish{
+		StepID: prepareID, ExecutionID: claimed1.ID, From: taskstate.StepRunning, To: taskstate.StepSucceeded,
+	}); err != nil {
+		t.Fatalf("FinishStep prepare: %v", err)
+	}
+	implementID, _, err := steps.StartStep(ctx, task.StepStart{ExecutionID: claimed1.ID, Attempt: 1, Kind: task.StepKindStage, Name: "implement"})
+	if err != nil {
+		t.Fatalf("StartStep implement: %v", err)
+	}
+	if _, err := steps.FinishStep(ctx, task.StepFinish{
+		StepID: implementID, ExecutionID: claimed1.ID, From: taskstate.StepRunning, To: taskstate.StepFailed,
+		Detail: "stage implement: builder exited 1",
+	}); err != nil {
+		t.Fatalf("FinishStep implement: %v", err)
+	}
+
+	if err := srv.Store.Transition(ctx, claimed1.ID, workflow.StatusRunning, workflow.StatusParked, "stage implement: builder exited 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.RetryTask(ctx, claimed1.ID, workflow.StatusParked, ""); err != nil {
+		t.Fatal(err)
+	}
+	current, err := srv.Store.ClaimNext(ctx)
+	if err != nil || current == nil || current.Attempt != 2 {
+		t.Fatalf("second ClaimNext = (%+v, %v), want attempt 2", current, err)
+	}
+	if _, _, err := steps.StartStep(ctx, task.StepStart{ExecutionID: current.ID, Attempt: 2, Kind: task.StepKindStage, Name: "implement"}); err != nil {
+		t.Fatalf("StartStep attempt 2 implement: %v", err)
+	}
+
+	// No hand-inserted events: StartStep/FinishStep already write
+	// stage_start/stage_finish events in the same transaction as the step
+	// row (steps.go), which is what attemptBounds and event_count read --
+	// attempt 1 gets exactly the 4 those two StartStep+FinishStep pairs
+	// produce, attempt 2 the 1 its lone StartStep produces. Their
+	// timestamps are the store's own clock, so bounds are checked for
+	// presence and order below rather than against a literal railBase time.
 	w := getTaskAPI(t, srv, taskRoute(current.ID, "/attempts"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
@@ -345,14 +393,13 @@ func TestHandleTaskAttemptsRendersBothAttemptsOfARetry(t *testing.T) {
 	if first.EventCount != 4 {
 		t.Errorf("attempt 1 event_count = %d, want 4", first.EventCount)
 	}
-	if first.StartedAt == nil || !first.StartedAt.Equal(at(0)) {
-		t.Errorf("attempt 1 started_at = %v, want %v", first.StartedAt, at(0))
+	// StartStep/FinishStep stamp their events with the store's own clock, so
+	// only presence, order and non-negativity are checked here.
+	if first.StartedAt == nil || first.FinishedAt == nil || first.FinishedAt.Before(*first.StartedAt) {
+		t.Errorf("attempt 1 bounds = started %v finished %v, want finished not before started", first.StartedAt, first.FinishedAt)
 	}
-	if first.FinishedAt == nil || !first.FinishedAt.Equal(at(231323*time.Millisecond)) {
-		t.Errorf("attempt 1 finished_at = %v, want %v", first.FinishedAt, at(231323*time.Millisecond))
-	}
-	if first.DurationMS == nil || *first.DurationMS != 231323 {
-		t.Errorf("attempt 1 duration_ms = %v, want 231323", first.DurationMS)
+	if first.DurationMS == nil || *first.DurationMS < 0 {
+		t.Errorf("attempt 1 duration_ms = %v, want a non-negative measured span", first.DurationMS)
 	}
 	if len(first.Stages) != 2 {
 		t.Fatalf("attempt 1 stages = %d, want 2 (%s)", len(first.Stages), w.Body)
@@ -361,11 +408,12 @@ func TestHandleTaskAttemptsRendersBothAttemptsOfARetry(t *testing.T) {
 	if prepare.Name != "prepare" || prepare.Seq != 0 || prepare.Status != "ok" || prepare.Error != "" {
 		t.Errorf("stage 0 = %+v, want prepare/0/ok with no error", prepare)
 	}
-	if prepare.DurationMS == nil || *prepare.DurationMS != 1200 {
-		t.Errorf("stage 0 duration_ms = %v, want 1200", prepare.DurationMS)
-	}
-	if prepare.StartedAt == nil || !prepare.StartedAt.Equal(at(0)) {
-		t.Errorf("stage 0 started_at = %v, want %v", prepare.StartedAt, at(0))
+	// StartStep/FinishStep stamp started_at/finished_at with the store's own
+	// clock (now()), not a caller-supplied time, so only their presence and
+	// non-negativity are checked here -- railBase no longer applies to a step
+	// row the way it did to a hand-inserted event.
+	if prepare.StartedAt == nil || prepare.DurationMS == nil || *prepare.DurationMS < 0 {
+		t.Errorf("stage 0 = %+v, want a recorded start and a non-negative duration", prepare)
 	}
 	implement := first.Stages[1]
 	if implement.Name != "implement" || implement.Seq != 1 || implement.Status != "failed" {
@@ -374,8 +422,8 @@ func TestHandleTaskAttemptsRendersBothAttemptsOfARetry(t *testing.T) {
 	if implement.Error != "stage implement: builder exited 1" {
 		t.Errorf("stage 1 error = %q, want the recorded error text", implement.Error)
 	}
-	if implement.DurationMS == nil || *implement.DurationMS != 230000 {
-		t.Errorf("stage 1 duration_ms = %v, want 230000", implement.DurationMS)
+	if implement.DurationMS == nil || *implement.DurationMS < 0 {
+		t.Errorf("stage 1 duration_ms = %v, want a non-negative measured duration", implement.DurationMS)
 	}
 
 	second := body.Attempts[1]
@@ -431,9 +479,8 @@ func TestHandleTaskAttemptsSeparatesUnattributedEventsFromAFirstRun(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		insertTaskEvent(t, srv, stageStartEvent(task.ID, 0, "prepare", railBase))
-		insertTaskEvent(t, srv, stageFinishEvent(task.ID, 0, "prepare", railBase.Add(time.Second),
-			map[string]any{"duration_ms": int64(1000)}))
+		insertTaskEvent(t, srv, attemptEvent(task.ID, 0, railBase))
+		insertTaskEvent(t, srv, attemptEvent(task.ID, 0, railBase.Add(time.Second)))
 
 		w := getTaskAPI(t, srv, taskRoute(task.ID, "/attempts"))
 		if w.Code != http.StatusOK {

@@ -28,7 +28,7 @@ func (q *Queries) ArchiveTaskDelete(ctx context.Context, arg ArchiveTaskDeletePa
 }
 
 const beginRemediationTask = `-- name: BeginRemediationTask :execrows
-UPDATE tasks SET status = 'queued', workflow = 'remediate', stage = '', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
+UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
 WHERE id = $1 AND status = 'pr_open'
 `
 
@@ -48,7 +48,7 @@ func (q *Queries) BeginRemediationTask(ctx context.Context, arg BeginRemediation
 const claimByIssue = `-- name: ClaimByIssue :one
 UPDATE tasks SET status = 'running', attempt = attempt + 1, updated_at = now()
 WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
 `
 
 type ClaimByIssueParams struct {
@@ -70,7 +70,6 @@ func (q *Queries) ClaimByIssue(ctx context.Context, arg ClaimByIssueParams) (Tas
 		&i.Labels,
 		&i.Status,
 		&i.Workflow,
-		&i.Stage,
 		&i.Branch,
 		&i.Plan,
 		&i.Notes,
@@ -113,7 +112,7 @@ WHERE id = (
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
 `
 
 // FOR UPDATE SKIP LOCKED replaces the SQLite single-writer assumption: two
@@ -132,7 +131,6 @@ func (q *Queries) ClaimNextTask(ctx context.Context) (Task, error) {
 		&i.Labels,
 		&i.Status,
 		&i.Workflow,
-		&i.Stage,
 		&i.Branch,
 		&i.Plan,
 		&i.Notes,
@@ -270,7 +268,7 @@ VALUES (
         'default'
     )
 )
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
 `
 
 type InsertChatTaskParams struct {
@@ -308,7 +306,6 @@ func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) 
 		&i.Labels,
 		&i.Status,
 		&i.Workflow,
-		&i.Stage,
 		&i.Branch,
 		&i.Plan,
 		&i.Notes,
@@ -415,7 +412,7 @@ func (q *Queries) ListOpenPRs(ctx context.Context) ([]ListOpenPRsRow, error) {
 }
 
 const listTaskSummaries = `-- name: ListTaskSummaries :many
-SELECT id, owner, repo, issue_number, title, status, workflow, stage,
+SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
        created_at, updated_at, plan, source, identity, binding_id, binding_version
 FROM tasks ORDER BY updated_at DESC LIMIT $1
@@ -429,7 +426,6 @@ type ListTaskSummariesRow struct {
 	Title          string
 	Status         string
 	Workflow       string
-	Stage          string
 	PrNumber       int64
 	TokensUsed     int64
 	Iterations     int64
@@ -465,7 +461,6 @@ func (q *Queries) ListTaskSummaries(ctx context.Context, limit int32) ([]ListTas
 			&i.Title,
 			&i.Status,
 			&i.Workflow,
-			&i.Stage,
 			&i.PrNumber,
 			&i.TokensUsed,
 			&i.Iterations,
@@ -545,7 +540,7 @@ func (q *Queries) RecoverStaleTasks(ctx context.Context) (int64, error) {
 const requeueTask = `-- name: RequeueTask :execrows
 UPDATE tasks SET status = 'queued',
     workflow = CASE WHEN $1::text = '' THEN workflow ELSE $1::text END,
-    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+    park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = $2 AND status = $3
 `
 
@@ -566,7 +561,7 @@ func (q *Queries) RequeueTask(ctx context.Context, arg RequeueTaskParams) (int64
 const retryTask = `-- name: RetryTask :execrows
 UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
     workflow = CASE WHEN $1::text = '' THEN workflow ELSE $1::text END,
-    stage = '', park_reason = '', park_class = 'needs_human', updated_at = now()
+    park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = $2 AND status = $3
 `
 
@@ -625,7 +620,7 @@ func (q *Queries) StampTaskBinding(ctx context.Context, arg StampTaskBindingPara
 }
 
 const taskByID = `-- name: TaskByID :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth FROM tasks WHERE id = $1
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth FROM tasks WHERE id = $1
 `
 
 func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
@@ -641,7 +636,6 @@ func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
 		&i.Labels,
 		&i.Status,
 		&i.Workflow,
-		&i.Stage,
 		&i.Branch,
 		&i.Plan,
 		&i.Notes,
@@ -675,7 +669,7 @@ func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
 }
 
 const taskByIssue = `-- name: TaskByIssue :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
 `
 
 type TaskByIssueParams struct {
@@ -697,7 +691,6 @@ func (q *Queries) TaskByIssue(ctx context.Context, arg TaskByIssueParams) (Task,
 		&i.Labels,
 		&i.Status,
 		&i.Workflow,
-		&i.Stage,
 		&i.Branch,
 		&i.Plan,
 		&i.Notes,
@@ -731,7 +724,7 @@ func (q *Queries) TaskByIssue(ctx context.Context, arg TaskByIssueParams) (Task,
 }
 
 const taskByPR = `-- name: TaskByPR :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4
 `
 
 type TaskByPRParams struct {
@@ -762,7 +755,6 @@ func (q *Queries) TaskByPR(ctx context.Context, arg TaskByPRParams) (Task, error
 		&i.Labels,
 		&i.Status,
 		&i.Workflow,
-		&i.Stage,
 		&i.Branch,
 		&i.Plan,
 		&i.Notes,
@@ -847,11 +839,11 @@ func (q *Queries) UpdateReviewPayloadTask(ctx context.Context, arg UpdateReviewP
 }
 
 const updateTask = `-- name: UpdateTask :exec
-UPDATE tasks SET workflow = $2, stage = $3, branch = $4, plan = $5, notes = $6,
-    pr_number = $7, tokens_used = $8, iterations = $9, park_reason = $10,
-    watch_comment_id = $11, retry_count = $12, remediation_rounds = $13,
-    review_payload = $14, workflow_definition_version = $15,
-    workflow_definition_digest = $16, workflow_definition_yaml = $17,
+UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
+    pr_number = $6, tokens_used = $7, iterations = $8, park_reason = $9,
+    watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
+    review_payload = $13, workflow_definition_version = $14,
+    workflow_definition_digest = $15, workflow_definition_yaml = $16,
     updated_at = now()
 WHERE id = $1
 `
@@ -859,7 +851,6 @@ WHERE id = $1
 type UpdateTaskParams struct {
 	ID                        int64
 	Workflow                  string
-	Stage                     string
 	Branch                    string
 	Plan                      string
 	Notes                     string
@@ -880,7 +871,6 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) error {
 	_, err := q.db.Exec(ctx, updateTask,
 		arg.ID,
 		arg.Workflow,
-		arg.Stage,
 		arg.Branch,
 		arg.Plan,
 		arg.Notes,

@@ -1,6 +1,10 @@
 package task
 
-import "github.com/samcharles93/archie-core/internal/taskstate"
+import (
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
+)
 
 // The step-execution vocabulary of docs/prds/execution-tree-state-machine.md:
 // one stage run, or one agent or workflow.call step an execution's tree
@@ -56,4 +60,23 @@ type StepFinish struct {
 	// TokensUsed is the usage the step itself accounted. Stages record none;
 	// the agent runtime records its own calls' usage.
 	TokensUsed int64
+}
+
+// StepExecution is one recorded step: ListSteps' read, the dashboard run
+// detail's authoritative source (docs/prds/execution-tree-state-machine.md;
+// replaces folding stage_start/stage_finish events, which tasks.stage used to
+// back). ParentID is 0 for a stage at the tree's root.
+type StepExecution struct {
+	ID          int64
+	ExecutionID int64
+	Attempt     int
+	ParentID    int64
+	Depth       int
+	Kind        string
+	Name        string
+	Status      taskstate.StepStatus
+	Detail      string
+	TokensUsed  int64
+	StartedAt   time.Time
+	FinishedAt  time.Time
 }

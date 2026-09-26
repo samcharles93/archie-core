@@ -9,6 +9,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // Stage/attempt statuses the attempt rail reports. They are one vocabulary
@@ -66,7 +67,12 @@ type taskStageView struct {
 }
 
 // handleTaskAttempts serves the stage rail: one task's attempts, each with the
-// stages it recorded.
+// stages it recorded. Attempt bounds, event counts and which attempt numbers
+// exist still come from the task's events (an attempt can carry events with
+// no step, e.g. agent calls, so events remain the complete attempt index);
+// the stages themselves are step_executions, the authoritative record
+// (docs/prds/execution-tree-state-machine.md), not a fold over
+// stage_start/stage_finish events.
 func (s *Server) handleTaskAttempts(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.taskByPathID(w, r)
 	if !ok {
@@ -77,7 +83,15 @@ func (s *Server) handleTaskAttempts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	attempts, unattributed := attemptsFromEvents(evs, t.Status, t.Attempt)
+	var steps []task.StepExecution
+	if s.Steps != nil {
+		steps, err = s.Steps.ListSteps(r.Context(), t.ID, 0)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	attempts, unattributed := attemptsFromEvents(evs, steps, t.Status, t.Attempt)
 	writeJSON(w, taskAttemptsView{
 		TaskID:             t.ID,
 		CurrentAttempt:     t.Attempt,
@@ -143,7 +157,7 @@ func (s *Server) taskAttemptTarget(w http.ResponseWriter, r *http.Request) (*tas
 // unattributed -- every row written before the column existed and every
 // deliberately task-agnostic producer carries it -- so grouping them would
 // present unrelated activity as attempt zero's rail.
-func attemptsFromEvents(evs []events.Event, taskStatus string, currentAttempt int) ([]taskAttemptView, int) {
+func attemptsFromEvents(evs []events.Event, steps []task.StepExecution, taskStatus string, currentAttempt int) ([]taskAttemptView, int) {
 	grouped := make(map[int][]events.Event)
 	numbers := make([]int, 0, 4)
 	unattributed := 0
@@ -161,21 +175,34 @@ func attemptsFromEvents(evs []events.Event, taskStatus string, currentAttempt in
 
 	attempts := make([]taskAttemptView, 0, len(numbers))
 	for _, number := range numbers {
-		attempts = append(attempts, attemptRail(number, grouped[number], taskStatus, currentAttempt))
+		attempts = append(attempts, attemptRail(number, grouped[number], stepsForAttempt(steps, number), taskStatus, currentAttempt))
 	}
 	return attempts, unattributed
 }
 
-// attemptRail derives one attempt's status, bounds and stages from its events.
-func attemptRail(number int, evs []events.Event, taskStatus string, currentAttempt int) taskAttemptView {
+// stepsForAttempt filters ListSteps' full-execution result to one attempt's
+// steps, in the order the query already returns them (attempt, id).
+func stepsForAttempt(steps []task.StepExecution, attempt int) []task.StepExecution {
+	var out []task.StepExecution
+	for _, s := range steps {
+		if s.Attempt == attempt {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// attemptRail derives one attempt's status and bounds from its events, and
+// its stages from its recorded StepExecutions.
+func attemptRail(number int, evs []events.Event, steps []task.StepExecution, taskStatus string, currentAttempt int) taskAttemptView {
 	// The task's own record is the only honest source for "is this still
-	// happening": an unpaired start on any other attempt ended without
+	// happening": a step still running on any other attempt ended without
 	// finishing -- parked, retried, crashed or restarted -- so it is reported
 	// as interrupted rather than left looking permanently in flight.
 	inFlight := number == currentAttempt && taskStatus == task.StatusRunning
 
 	first, last := attemptBounds(evs)
-	stages := foldStages(evs, inFlight)
+	stages := stageViewsFromSteps(steps, inFlight)
 	attempt := taskAttemptView{
 		Attempt:    number,
 		Status:     attemptStatus(stages, inFlight),
@@ -215,32 +242,55 @@ func attemptBounds(evs []events.Event) (first, last time.Time) {
 	return first, last
 }
 
-// foldStages builds an attempt's ordered stage occurrences. A stage start is
-// folded as an OPEN stage (status empty) until a matching finish closes it;
-// resolving what is left needs the task's own record, so an open stage is
-// running only while the daemon is executing this attempt and interrupted
-// otherwise.
-func foldStages(evs []events.Event, inFlight bool) []taskStageView {
+// stageViewsFromSteps builds an attempt's ordered stage occurrences directly
+// from its recorded StepExecutions -- the authoritative record
+// (docs/prds/execution-tree-state-machine.md), not a fold over
+// stage_start/stage_finish events. Only kind "stage" steps are shown: agent
+// and call steps are the tree's own detail, not this rail's.
+func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageView {
 	stages := []taskStageView{}
-	for _, e := range evs {
-		switch e.Kind {
-		case events.KindStageStart:
-			started := e.At
-			stages = append(stages, taskStageView{Name: e.Stage, Seq: len(stages), StartedAt: &started})
-		case events.KindStageFinish:
-			stages = finishStage(stages, e)
-		}
-	}
-	for i := range stages {
-		if stages[i].Status != "" {
+	for _, s := range steps {
+		if s.Kind != task.StepKindStage {
 			continue
 		}
-		stages[i].Status = attemptStatusInterrupted
-		if inFlight {
-			stages[i].Status = attemptStatusRunning
+		view := taskStageView{Name: s.Name, Seq: len(stages), Status: mapStepStatus(s.Status, inFlight)}
+		if s.Status == taskstate.StepFailed {
+			view.Error = s.Detail
 		}
+		if !s.StartedAt.IsZero() {
+			started := s.StartedAt
+			view.StartedAt = &started
+		}
+		if !s.FinishedAt.IsZero() {
+			duration := s.FinishedAt.Sub(s.StartedAt).Milliseconds()
+			view.DurationMS = &duration
+		}
+		stages = append(stages, view)
 	}
 	return stages
+}
+
+// mapStepStatus reads the rail's status vocabulary off a step's own recorded
+// status. A step still recorded running past this attempt -- the daemon
+// crashed or restarted without marking it -- reads interrupted rather than
+// running: RecoverStale is what corrects the row itself, and until it runs
+// this is the honest read of a stale one.
+func mapStepStatus(status taskstate.StepStatus, inFlight bool) string {
+	switch status {
+	case taskstate.StepSucceeded:
+		return attemptStatusOK
+	case taskstate.StepFailed:
+		return attemptStatusFailed
+	case taskstate.StepCancelled, taskstate.StepInterrupted:
+		return attemptStatusInterrupted
+	case taskstate.StepRunning:
+		if inFlight {
+			return attemptStatusRunning
+		}
+		return attemptStatusInterrupted
+	default:
+		return attemptStatusUnknown
+	}
 }
 
 // attemptStatus reads one status off an attempt's stages. The task's own record
@@ -264,72 +314,6 @@ func attemptStatus(stages []taskStageView, inFlight bool) string {
 		return attemptStatusUnknown
 	default:
 		return attemptStatusOK
-	}
-}
-
-// finishStage applies one stage_finish event, closing the earliest still-open
-// stage of the same name. A finish with no matching start still yields the
-// stage -- with no start time rather than an invented one -- because the stage
-// demonstrably ran and dropping it would hide a failure.
-func finishStage(stages []taskStageView, e events.Event) []taskStageView {
-	status, errText := stageOutcome(e.Data)
-	recorded, hasRecorded := durationMillis(e.Data["duration_ms"])
-
-	idx := -1
-	for i := range stages {
-		if stages[i].Name == e.Stage && stages[i].Status == "" {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		stages = append(stages, taskStageView{Name: e.Stage, Seq: len(stages)})
-		idx = len(stages) - 1
-	}
-	stages[idx].Status = status
-	stages[idx].Error = errText
-	switch {
-	case hasRecorded:
-		// The producer's own measurement of the stage body, preferred over the
-		// gap between two event timestamps.
-		stages[idx].DurationMS = &recorded
-	case stages[idx].StartedAt != nil && !e.At.IsZero():
-		span := e.At.Sub(*stages[idx].StartedAt).Milliseconds()
-		stages[idx].DurationMS = &span
-	}
-	return stages
-}
-
-// stageOutcome reads a stage_finish event's own verdict. An interrupted finish
-// is interrupted even though it also carries the cancellation error text; a
-// non-empty error is a failure; anything else is ok. There is no exit code
-// anywhere in this system, so no stage is ever badged as passing -- the status
-// reports how the stage ended, not how well it went.
-func stageOutcome(data map[string]any) (status, errText string) {
-	errText, _ = data["error"].(string)
-	if interrupted, _ := data["interrupted"].(bool); interrupted {
-		return attemptStatusInterrupted, errText
-	}
-	if errText != "" {
-		return attemptStatusFailed, errText
-	}
-	return attemptStatusOK, ""
-}
-
-// durationMillis reads a millisecond duration a producer recorded in an event's
-// data. A value that crossed JSON is float64 and one built in this process is
-// an integer, so both spellings are accepted; anything else is reported as "not
-// recorded" rather than as zero.
-func durationMillis(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
 	}
 }
 

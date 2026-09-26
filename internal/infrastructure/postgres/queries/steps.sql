@@ -61,3 +61,12 @@ UPDATE step_executions
 SET status = 'interrupted', finished_at = now()
 WHERE execution_id = $1 AND attempt = $2 AND status = 'running'
 RETURNING id, name;
+
+-- name: ListStepExecutions :many
+-- attempt = 0 lists every attempt of the execution, oldest first; the index
+-- (execution_id, attempt, id) makes both this and the single-attempt form a
+-- straight index scan.
+SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, tokens_used, started_at, finished_at
+FROM step_executions
+WHERE execution_id = @execution_id::bigint AND (@attempt::bigint = 0 OR attempt = @attempt::bigint)
+ORDER BY attempt, id;

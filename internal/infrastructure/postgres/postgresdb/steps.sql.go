@@ -157,6 +157,69 @@ func (q *Queries) InterruptAttemptSteps(ctx context.Context, arg InterruptAttemp
 	return items, nil
 }
 
+const listStepExecutions = `-- name: ListStepExecutions :many
+SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, tokens_used, started_at, finished_at
+FROM step_executions
+WHERE execution_id = $1::bigint AND ($2::bigint = 0 OR attempt = $2::bigint)
+ORDER BY attempt, id
+`
+
+type ListStepExecutionsParams struct {
+	ExecutionID int64
+	Attempt     int64
+}
+
+type ListStepExecutionsRow struct {
+	ID          int64
+	ExecutionID int64
+	Attempt     int64
+	ParentID    pgtype.Int8
+	Depth       int32
+	Kind        string
+	Name        string
+	Status      string
+	Detail      string
+	TokensUsed  int64
+	StartedAt   pgtype.Timestamptz
+	FinishedAt  pgtype.Timestamptz
+}
+
+// attempt = 0 lists every attempt of the execution, oldest first; the index
+// (execution_id, attempt, id) makes both this and the single-attempt form a
+// straight index scan.
+func (q *Queries) ListStepExecutions(ctx context.Context, arg ListStepExecutionsParams) ([]ListStepExecutionsRow, error) {
+	rows, err := q.db.Query(ctx, listStepExecutions, arg.ExecutionID, arg.Attempt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStepExecutionsRow
+	for rows.Next() {
+		var i ListStepExecutionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExecutionID,
+			&i.Attempt,
+			&i.ParentID,
+			&i.Depth,
+			&i.Kind,
+			&i.Name,
+			&i.Status,
+			&i.Detail,
+			&i.TokensUsed,
+			&i.StartedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockExecutionForStep = `-- name: LockExecutionForStep :one
 
 SELECT id, status, org_id, workspace_id, owner, repo, issue_number, workflow, attempt

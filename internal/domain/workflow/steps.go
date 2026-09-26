@@ -71,7 +71,7 @@ func (tc *TaskContext) captureChanges(ctx context.Context, after string) task.Ch
 	// Durable, never bus-only: the worktree this was measured from is gone by
 	// the time anyone reads it, so a capture that only reached the live feed
 	// would be lost with the process.
-	if err := tc.EmitDurable(ctx, events.KindChangesCaptured, tc.Task.Stage, "", changeCaptureData(tc, after, stats)); err != nil {
+	if err := tc.EmitDurable(ctx, events.KindChangesCaptured, tc.Stage, "", changeCaptureData(tc, after, stats)); err != nil {
 		tc.Log.Warn("change capture not persisted", "captured_after", after, "err", err)
 	}
 	return stats

@@ -90,6 +90,15 @@ type ExecutionCanceller interface {
 	CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error)
 }
 
+// StepReader lists one execution's recorded steps -- the dashboard run
+// detail's read (docs/prds/execution-tree-state-machine.md). Separate from
+// StepRecorder: this is a dashboard/API/dispatch action (Authorizer: read on
+// the run), never task-scoped-grant callable the way StartStep/FinishStep
+// are.
+type StepReader interface {
+	ListSteps(ctx context.Context, executionID int64, attempt int) ([]task.StepExecution, error)
+}
+
 // TaskArchiver removes one terminal task's local record with an optimistic
 // status guard. It is separate from the already broad lifecycle contract so
 // consumers that only run tasks do not acquire an operator-only capability.

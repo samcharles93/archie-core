@@ -250,11 +250,11 @@ func TestFormatTasks(t *testing.T) {
 		want  string
 	}{
 		{
-			name: "running task shows workflow/stage and age",
+			name: "running task shows workflow and age",
 			tasks: []ChatTaskSummary{
-				{ID: 42, Title: "Fix login bug", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-3 * time.Minute)},
+				{ID: 42, Title: "Fix login bug", Status: taskstate.Running, Workflow: "tdd", UpdatedAt: now.Add(-3 * time.Minute)},
 			},
-			want: "🗂 Archie tasks\n\n▶ #42 Fix login bug  \n  Running · tdd/implement · updated 3m ago",
+			want: "🗂 Archie tasks\n\n▶ #42 Fix login bug  \n  Running · tdd · updated 3m ago",
 		},
 		{
 			// The criterion this command was built for: a bare "Running: 1"
@@ -262,10 +262,10 @@ func TestFormatTasks(t *testing.T) {
 			// failure loop, and each task's own age is what tells them apart.
 			name: "a stuck running task does not read like one making progress",
 			tasks: []ChatTaskSummary{
-				{ID: 5, Title: "Wedged", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-47 * time.Minute)},
-				{ID: 6, Title: "Working", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-20 * time.Second)},
+				{ID: 5, Title: "Wedged", Status: taskstate.Running, Workflow: "tdd", UpdatedAt: now.Add(-47 * time.Minute)},
+				{ID: 6, Title: "Working", Status: taskstate.Running, Workflow: "tdd", UpdatedAt: now.Add(-20 * time.Second)},
 			},
-			want: "🗂 Archie tasks\n\n▶ #5 Wedged  \n  Running · tdd/implement · updated 47m ago\n\n▶ #6 Working  \n  Running · tdd/implement · updated just now",
+			want: "🗂 Archie tasks\n\n▶ #5 Wedged  \n  Running · tdd · updated 47m ago\n\n▶ #6 Working  \n  Running · tdd · updated just now",
 		},
 		{
 			name: "parked task shows its reason",
