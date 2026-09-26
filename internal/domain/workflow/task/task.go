@@ -11,6 +11,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -86,6 +87,11 @@ type Task struct {
 	// deployments). Used to scope /approve and /cancel authorization so
 	// one identity cannot control another's chat-spawned tasks.
 	Identity string `json:"identity"`
+	// Org is the org the task belongs to. The State Store derives it from
+	// the task's identity when the row is written
+	// (docs/prds/orgs-and-access.md, "Events and task identity"); a task
+	// of a single-operator install belongs to the default org.
+	Org org.OrgID `json:"org,omitempty"`
 	// BindingID and BindingVersion are stamped when a task was created
 	// from a playbook binding dispatch (t2db.4 Phase B). They record
 	// provenance: which binding fired this task and at what version, so

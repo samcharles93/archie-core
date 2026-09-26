@@ -123,9 +123,20 @@ func TestTaskEnvelopeRef(t *testing.T) {
 }
 
 func TestTaskEnvelopeIdempotencyKey(t *testing.T) {
+	// An envelope with no org and no identity is the single-operator shape:
+	// both segments resolve to their default rather than disappearing, and
+	// the key is org/identity/owner/repo/number
+	// (docs/prds/orgs-and-access.md, "Events and task identity").
 	e := TaskEnvelope{Owner: "samcharles93", Repo: "archie-core", Number: 42}
-	if got, want := e.IdempotencyKey(), "archie:samcharles93/archie-core/42"; got != want {
+	if got, want := e.IdempotencyKey(), "archie:default//samcharles93/archie-core/42"; got != want {
 		t.Fatalf("IdempotencyKey() = %q, want %q", got, want)
+	}
+	// A resolved org and identity are carried verbatim; the same issue
+	// delivered by poll and by webhook with the same resolved identity
+	// still produces one key.
+	e.Org, e.Identity = "soc", "i-1"
+	if got, want := e.IdempotencyKey(), "archie:soc/i-1/samcharles93/archie-core/42"; got != want {
+		t.Fatalf("IdempotencyKey() with org = %q, want %q", got, want)
 	}
 }
 

@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // dedupKeyPrefix namespaces idempotency keys so they cannot collide with
@@ -46,6 +48,11 @@ type TaskEnvelope struct {
 	// empty for single-identity deployments. Carried so the consuming daemon
 	// enqueues the task under the right owner.
 	Identity string `json:"identity,omitempty"`
+
+	// Org is the org the identity serves, resolved by the producer before
+	// publishing (docs/prds/orgs-and-access.md, "Events and task identity").
+	// Empty means the default org of a single-operator install.
+	Org org.OrgID `json:"org,omitempty"`
 
 	// Kind is the routing category, chosen by the publisher. Empty means
 	// KindDefault, which is also what messages queued before this field
@@ -101,9 +108,24 @@ func (t TaskEnvelope) Ref() string {
 }
 
 // IdempotencyKey identifies this issue for delivery deduplication, so
-// rediscovering it on a later poll does not enqueue the same work twice.
+// rediscovering it on a later poll does not enqueue the same work twice. The
+// key is org/identity/owner/repo/number (docs/prds/orgs-and-access.md,
+// "Events and task identity"): the poller and the webhook receiver resolve
+// the org and identity before publishing, so the same issue delivered both
+// ways still gives one key, and the State Store's task uniqueness uses the
+// same fields. This method is the one place that shape is produced.
 func (t TaskEnvelope) IdempotencyKey() string {
-	return dedupKeyPrefix + t.Owner + "/" + t.Repo + "/" + strconv.Itoa(t.Number)
+	return dedupKeyPrefix + string(t.org()) + "/" + t.Identity + "/" +
+		t.Owner + "/" + t.Repo + "/" + strconv.Itoa(t.Number)
+}
+
+// org resolves the envelope's org, defaulting to the default org a record of
+// a single-operator install belongs to.
+func (t TaskEnvelope) org() org.OrgID {
+	if t.Org == "" {
+		return org.DefaultOrgID
+	}
+	return t.Org
 }
 
 // Subject returns the address this envelope routes to.

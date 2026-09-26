@@ -42,7 +42,7 @@ SELECT status, count(*)::int AS count FROM tasks GROUP BY status;
 -- issue numbers; this allocator is the single source of truth for it.
 -- fallback_issue_number is only the seed for a repo's first chat task -- the
 -- passed value is not the issue number that lands.
-INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity)
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id)
 VALUES (
     sqlc.arg(owner), sqlc.arg(repo),
     COALESCE((
@@ -51,7 +51,13 @@ VALUES (
           AND existing.repo = sqlc.arg(repo)
           AND existing.source = 'chat'
     ), sqlc.arg(fallback_issue_number)) + 1,
-    sqlc.arg(title), sqlc.arg(body), 'chat', sqlc.arg(workflow), 'chat', sqlc.arg(identity)
+    sqlc.arg(title), sqlc.arg(body), 'chat', sqlc.arg(workflow), 'chat', sqlc.arg(identity),
+    COALESCE(
+        (SELECT a.org_id FROM org_agents a WHERE a.identity_id = sqlc.arg(identity)),
+        (SELECT m.org_id FROM memberships m WHERE m.identity_id = sqlc.arg(identity)
+         ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
+        'default'
+    )
 )
 RETURNING *;
 

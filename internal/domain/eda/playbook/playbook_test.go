@@ -367,7 +367,9 @@ actions:
 // TestDispatchInputCarriesTaskIdentity: the originating task's identity is
 // carried on the dispatch input end to end, so a caller can derive the
 // event_id half of the playbook_dispatches ledger key. The chosen identity is
-// the TaskEnvelope.IdempotencyKey() string ("archie:owner/repo/number") --
+// the TaskEnvelope.IdempotencyKey() string
+// ("archie:org/identity/owner/repo/number", empty org and identity resolving
+// to the default org) --
 // the value available at the discovery/dispatch point (pollNATS + webhook
 // receiver both compute kind/labels from a TaskEnvelope before any
 // workflow.Task row exists), NOT a workflow.Task.ID int64.

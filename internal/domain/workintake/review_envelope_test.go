@@ -41,11 +41,16 @@ func TestReviewCommentEnvelopeKindSeparatesIdempotencyKeys(t *testing.T) {
 	if review.IdempotencyKey() == comment.IdempotencyKey() {
 		t.Fatalf("review and comment idempotency keys both %q; independent ID sequences collided", review.IdempotencyKey())
 	}
-	if got, want := review.IdempotencyKey(), "archie:review/acme/widgets/42/review/17"; got != want {
+	if got, want := review.IdempotencyKey(), "archie:review/default/acme/widgets/42/review/17"; got != want {
 		t.Errorf("review key = %q, want %q", got, want)
 	}
-	if got, want := comment.IdempotencyKey(), "archie:review/acme/widgets/42/comment/17"; got != want {
+	if got, want := comment.IdempotencyKey(), "archie:review/default/acme/widgets/42/comment/17"; got != want {
 		t.Errorf("comment key = %q, want %q", got, want)
+	}
+	// A resolved org is carried into the key.
+	review.Org = "soc"
+	if got, want := review.IdempotencyKey(), "archie:review/soc/acme/widgets/42/review/17"; got != want {
+		t.Errorf("org-scoped review key = %q, want %q", got, want)
 	}
 }
 

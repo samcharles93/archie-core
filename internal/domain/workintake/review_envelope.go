@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+
+	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // ErrInvalidReviewReaction reports a review reaction that cannot be routed.
@@ -35,6 +37,11 @@ type ReviewCommentEnvelope struct {
 	Body      string             `json:"body,omitempty"`
 	Path      string             `json:"path,omitempty"`
 	Line      int                `json:"line,omitempty"`
+
+	// Org is the org the reaction's repo belongs to, resolved by the producer
+	// before publishing; empty means the default org of a single-operator
+	// install (docs/prds/orgs-and-access.md, "Events and task identity").
+	Org org.OrgID `json:"org,omitempty"`
 }
 
 // Validate reports whether the envelope has the coordinates and external ID
@@ -88,13 +95,18 @@ func (e ReviewCommentEnvelope) Ref() string {
 }
 
 // IdempotencyKey identifies one forge review record independently of delivery
-// source.
+// source. The key follows the task key's org/identity rule
+// (docs/prds/orgs-and-access.md, "Events and task identity"), scoped to one
+// review record.
 func (e ReviewCommentEnvelope) IdempotencyKey() string {
 	id := e.ReviewID
 	if e.Kind == ReviewReactionComment {
 		id = e.CommentID
 	}
-	return dedupKeyPrefix + "review/" + e.Owner + "/" + e.Repo + "/" + strconv.Itoa(e.PRNumber) + "/" + string(e.Kind) + "/" + strconv.FormatInt(id, 10)
+	if e.Org == "" {
+		e.Org = org.DefaultOrgID
+	}
+	return dedupKeyPrefix + "review/" + string(e.Org) + "/" + e.Owner + "/" + e.Repo + "/" + strconv.Itoa(e.PRNumber) + "/" + string(e.Kind) + "/" + strconv.FormatInt(id, 10)
 }
 
 // Subject returns the reaction address for this envelope.

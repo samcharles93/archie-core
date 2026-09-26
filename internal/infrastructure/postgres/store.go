@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -79,6 +80,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		ReviewCursor:              t.ReviewCursor,
 		Source:                    t.Source,
 		Identity:                  t.Identity,
+		Org:                       org.OrgID(t.OrgID),
 		BindingID:                 t.BindingID,
 		BindingVersion:            int(t.BindingVersion),
 		Inputs:                    inputs,

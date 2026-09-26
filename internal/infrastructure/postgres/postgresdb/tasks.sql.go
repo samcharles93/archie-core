@@ -249,7 +249,7 @@ func (q *Queries) EnqueueIssue(ctx context.Context, arg EnqueueIssueParams) (int
 }
 
 const insertChatTask = `-- name: InsertChatTask :one
-INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity)
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id)
 VALUES (
     $1, $2,
     COALESCE((
@@ -258,7 +258,13 @@ VALUES (
           AND existing.repo = $2
           AND existing.source = 'chat'
     ), $3) + 1,
-    $4, $5, 'chat', $6, 'chat', $7
+    $4, $5, 'chat', $6, 'chat', $7,
+    COALESCE(
+        (SELECT a.org_id FROM org_agents a WHERE a.identity_id = $7),
+        (SELECT m.org_id FROM memberships m WHERE m.identity_id = $7
+         ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
+        'default'
+    )
 )
 RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, stage, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id
 `

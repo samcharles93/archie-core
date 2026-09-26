@@ -1777,7 +1777,7 @@ func playbookInput(task *workflow.Task) playbook.DispatchInput {
 	return playbook.DispatchInput{
 		Labels: labels,
 		Kind:   kind,
-		TaskID: workintake.TaskEnvelope{Owner: task.Owner, Repo: task.Repo, Number: task.IssueNumber}.IdempotencyKey(),
+		TaskID: workintake.TaskEnvelope{Org: task.Org, Identity: task.Identity, Owner: task.Owner, Repo: task.Repo, Number: task.IssueNumber}.IdempotencyKey(),
 		Event: map[string]any{
 			"kind":   kind,
 			"labels": labels,
