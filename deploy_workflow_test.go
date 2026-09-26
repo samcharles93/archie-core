@@ -125,7 +125,8 @@ func TestPullRequestsRunTheDefinitiveGateWithoutPublishAccess(t *testing.T) {
 // Naming each one with its reason keeps an omission a decision rather than an
 // oversight -- which is exactly how archied's channels were lost.
 var unpackagedCommands = map[string]string{
-	"archie-agent": "runs only inside the Docker image build-and-push publishes, never as a host binary",
+	"archie-agent":   "runs only inside the Docker image build-and-push publishes, never as a host binary",
+	"archie-prbench": "a developer benchmark run from the repository with task bench:prreview",
 }
 
 // cliOnlyCommands ship in the zip but must never be restarted by the updater:

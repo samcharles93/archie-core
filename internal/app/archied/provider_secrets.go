@@ -109,3 +109,13 @@ func providerSecretEnvName(scope, providerID string) string {
 	sum := sha256.Sum256([]byte(scope + "\x00" + providerID))
 	return fmt.Sprintf("ARCHIE_PROVIDER_%X_API_KEY", sum[:8])
 }
+
+// ResolveProviders resolves cfg's provider credentials the way the daemon does
+// at boot, for a tool that calls models outside the daemon.
+func ResolveProviders(cfg *config.Config, log *slog.Logger) error {
+	secrets, err := configuredSecretRegistry(cfg, log)
+	if err != nil {
+		return err
+	}
+	return resolveProviderSecrets(cfg, secrets, log)
+}
