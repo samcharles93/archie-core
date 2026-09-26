@@ -3,7 +3,9 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -297,7 +299,11 @@ func refuseCallCycles(calls map[string][]string) error {
 		}
 		return nil
 	}
-	for id := range calls {
+	// Sorted, not range-order: a map iteration order picks a different DFS
+	// root on every run, so an operator reading "calls itself through b ->
+	// a -> b" one time and "a -> b -> a" the next would see the same cycle
+	// reported two different ways with nothing having changed.
+	for _, id := range slices.Sorted(maps.Keys(calls)) {
 		if state[id] == unseen {
 			if err := walk(id); err != nil {
 				return err
