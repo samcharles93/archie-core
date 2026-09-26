@@ -43,3 +43,21 @@ UPDATE step_executions
 SET status = 'cancelled', finished_at = now()
 WHERE execution_id = $1 AND attempt = $2 AND status IN ('pending', 'running')
 RETURNING id, name;
+
+-- name: LockRunningExecutions :many
+-- The executions a crashed or replaced daemon left running, locked for the
+-- recovery transaction so the step sweep and the requeue cannot race a
+-- concurrent write. The row carries the identity the steps' events need.
+SELECT id, org_id, workspace_id, owner, repo, issue_number, workflow, attempt
+FROM tasks WHERE status = 'running' FOR UPDATE;
+
+-- name: InterruptAttemptSteps :many
+-- The crash-recovery step edge (docs/prds/execution-tree-state-machine.md):
+-- the steps an interrupted execution left running move to the table's
+-- interrupted outcome, guarded by the row's own status so only the pair the
+-- step transition table routes is written. Returning them lets the store
+-- write one event row per transition in the same transaction.
+UPDATE step_executions
+SET status = 'interrupted', finished_at = now()
+WHERE execution_id = $1 AND attempt = $2 AND status = 'running'
+RETURNING id, name;

@@ -440,11 +440,56 @@ func (s *Store) ArchiveTask(ctx context.Context, taskID int64, fromStatus string
 	return eventID, nil
 }
 
-// RecoverStale re-queues tasks left running by a crashed daemon. The write is
-// the table's crash-recovery edge (running->queued), pinned in SQL and pinned
-// to the table by TestSQLPinnedTransitionsAreTableLegal.
+// RecoverStale re-queues tasks left running by a crashed or replaced daemon
+// and, in the same transaction, moves the steps those executions left running
+// to the step transition table's interrupted outcome
+// (docs/prds/execution-tree-state-machine.md, "Crash recovery"): one event row
+// per step transition and the execution's audit row land in the same write.
+// Both edges are pinned in SQL (the execution's running->queued, the step's
+// running->interrupted) and pinned to the tables by
+// TestSQLPinnedTransitionsAreTableLegal. The next attempt starts with fresh
+// steps; earlier attempts are never rewritten.
 func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
-	return s.queries().RecoverStaleTasks(ctx)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+
+	executions, err := q.LockRunningExecutions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, execution := range executions {
+		steps, err := q.InterruptAttemptSteps(ctx, postgresdb.InterruptAttemptStepsParams{
+			ExecutionID: execution.ID, Attempt: execution.Attempt,
+		})
+		if err != nil {
+			return 0, err
+		}
+		for _, step := range steps {
+			if _, err := insertEventQ(ctx, q, stepEvent(events.KindStageFinish, execution.ID,
+				execution.Owner, execution.Repo, execution.IssueNumber, execution.Workflow,
+				int(execution.Attempt), step.Name, map[string]any{"interrupted": true})); err != nil {
+				return 0, err
+			}
+		}
+		if err := q.InsertTransition(ctx, postgresdb.InsertTransitionParams{
+			TaskID: execution.ID, FromStatus: workflow.StatusRunning, ToStatus: workflow.StatusQueued,
+			Detail: "re-queued after a crashed or replaced daemon",
+		}); err != nil {
+			return 0, err
+		}
+	}
+	n, err := q.RecoverStaleTasks(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // OpenPRs returns tasks whose PR state should be reconciled with the forge,

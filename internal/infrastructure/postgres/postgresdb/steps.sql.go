@@ -115,6 +115,48 @@ func (q *Queries) InsertStepExecution(ctx context.Context, arg InsertStepExecuti
 	return id, err
 }
 
+const interruptAttemptSteps = `-- name: InterruptAttemptSteps :many
+UPDATE step_executions
+SET status = 'interrupted', finished_at = now()
+WHERE execution_id = $1 AND attempt = $2 AND status = 'running'
+RETURNING id, name
+`
+
+type InterruptAttemptStepsParams struct {
+	ExecutionID int64
+	Attempt     int64
+}
+
+type InterruptAttemptStepsRow struct {
+	ID   int64
+	Name string
+}
+
+// The crash-recovery step edge (docs/prds/execution-tree-state-machine.md):
+// the steps an interrupted execution left running move to the table's
+// interrupted outcome, guarded by the row's own status so only the pair the
+// step transition table routes is written. Returning them lets the store
+// write one event row per transition in the same transaction.
+func (q *Queries) InterruptAttemptSteps(ctx context.Context, arg InterruptAttemptStepsParams) ([]InterruptAttemptStepsRow, error) {
+	rows, err := q.db.Query(ctx, interruptAttemptSteps, arg.ExecutionID, arg.Attempt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InterruptAttemptStepsRow
+	for rows.Next() {
+		var i InterruptAttemptStepsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockExecutionForStep = `-- name: LockExecutionForStep :one
 
 SELECT id, status, org_id, workspace_id, owner, repo, issue_number, workflow, attempt
@@ -156,6 +198,54 @@ func (q *Queries) LockExecutionForStep(ctx context.Context, id int64) (LockExecu
 		&i.Attempt,
 	)
 	return i, err
+}
+
+const lockRunningExecutions = `-- name: LockRunningExecutions :many
+SELECT id, org_id, workspace_id, owner, repo, issue_number, workflow, attempt
+FROM tasks WHERE status = 'running' FOR UPDATE
+`
+
+type LockRunningExecutionsRow struct {
+	ID          int64
+	OrgID       string
+	WorkspaceID string
+	Owner       string
+	Repo        string
+	IssueNumber int64
+	Workflow    string
+	Attempt     int64
+}
+
+// The executions a crashed or replaced daemon left running, locked for the
+// recovery transaction so the step sweep and the requeue cannot race a
+// concurrent write. The row carries the identity the steps' events need.
+func (q *Queries) LockRunningExecutions(ctx context.Context) ([]LockRunningExecutionsRow, error) {
+	rows, err := q.db.Query(ctx, lockRunningExecutions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockRunningExecutionsRow
+	for rows.Next() {
+		var i LockRunningExecutionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.WorkspaceID,
+			&i.Owner,
+			&i.Repo,
+			&i.IssueNumber,
+			&i.Workflow,
+			&i.Attempt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockStepExecution = `-- name: LockStepExecution :one
