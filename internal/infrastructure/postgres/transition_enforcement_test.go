@@ -131,6 +131,22 @@ func TestLegalTransitionStillWrites(t *testing.T) {
 // supplied by a caller (claim, BeginRemediation, RecoverStale) can only write
 // the pairs asserted here. Pinning them to the shared table keeps a query
 // edit from moving a write off the table without this file failing.
+// The step edge RecoverStale writes is table-routed too: the sweep's WHERE
+// clause pins status = 'running' and writes 'interrupted', so the pair must
+// stay legal on the STEP table for a query edit to stay on it. The step table
+// is a different table from the execution's, so it is pinned beside it rather
+// than mixed into the execution pairs above.
+func TestSQLPinnedStepTransitionsAreTableLegal(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		from, to taskstate.StepStatus
+	}{{name: "crash recovery pins step running->interrupted", from: taskstate.StepRunning, to: taskstate.StepInterrupted}} {
+		if !taskstate.CanStepTransition(tc.from, tc.to) {
+			t.Errorf("%s: %s -> %s is not in the shared step transition table", tc.name, tc.from, tc.to)
+		}
+	}
+}
+
 func TestSQLPinnedTransitionsAreTableLegal(t *testing.T) {
 	tests := []struct {
 		name     string

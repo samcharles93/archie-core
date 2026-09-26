@@ -192,3 +192,83 @@ func TestCancelExecutionOnAMissingExecutionIsStale(t *testing.T) {
 		t.Fatalf("CancelExecution on a missing execution = %v, want ErrStaleTransition", err)
 	}
 }
+
+// RecoverStale is the crash-recovery half of
+// docs/prds/execution-tree-state-machine.md: requeueing a running execution
+// moves the steps its interrupted attempt left running to the table's
+// interrupted outcome, through the step transition table (the pair pinned in
+// SQL, like the execution's own edge), with one event row per step transition
+// and the execution's audit row in the same transaction. Killing the daemon
+// mid-stage and restarting leaves that stage interrupted and the execution
+// queued with a fresh attempt for the next run.
+func TestRecoverStaleInterruptsRunningSteps(t *testing.T) {
+	s := storeFor(t)
+	execution := runningExecution(t, s)
+
+	stageID, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: execution.ID, Attempt: execution.Attempt, Kind: task.StepKindStage, Name: "implement",
+	})
+	if err != nil {
+		t.Fatalf("StartStep stage: %v", err)
+	}
+	childID, _, err := s.StartStep(t.Context(), task.StepStart{
+		ExecutionID: execution.ID, Attempt: execution.Attempt,
+		ParentID: stageID, Kind: task.StepKindAgent, Name: "implement",
+	})
+	if err != nil {
+		t.Fatalf("StartStep child: %v", err)
+	}
+	if _, err := s.FinishStep(t.Context(), task.StepFinish{
+		StepID: stageID, ExecutionID: execution.ID,
+		From: taskstate.StepRunning, To: taskstate.StepSucceeded, Detail: "done",
+	}); err != nil {
+		t.Fatalf("FinishStep: %v", err)
+	}
+
+	requeued, err := s.RecoverStale(t.Context())
+	if err != nil {
+		t.Fatalf("RecoverStale: %v", err)
+	}
+	if requeued != 1 {
+		t.Fatalf("RecoverStale requeued %d, want the one running execution", requeued)
+	}
+
+	got, err := s.TaskByID(t.Context(), execution.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID: %+v %v", got, err)
+	}
+	if got.Status != taskstate.Queued {
+		t.Fatalf("execution after recovery = %q, want queued for the next attempt", got.Status)
+	}
+
+	var statuses map[int64]string
+	if err := s.pool.QueryRow(t.Context(),
+		`SELECT jsonb_object_agg(id, status) FROM step_executions WHERE execution_id = $1`,
+		execution.ID).Scan(&statuses); err != nil {
+		t.Fatalf("read steps: %v", err)
+	}
+	if statuses[stageID] != string(taskstate.StepSucceeded) {
+		t.Errorf("the finished step was rewritten to %q; recovery only interrupts", statuses[stageID])
+	}
+	if statuses[childID] != string(taskstate.StepInterrupted) {
+		t.Errorf("the step the crash left running = %q, want interrupted", statuses[childID])
+	}
+
+	evs, err := s.TaskEvents(t.Context(), execution.ID)
+	if err != nil {
+		t.Fatalf("TaskEvents: %v", err)
+	}
+	var interrupted []events.Event
+	for _, e := range evs {
+		if e.Data["interrupted"] == true {
+			interrupted = append(interrupted, e)
+		}
+	}
+	if len(interrupted) != 1 {
+		t.Fatalf("interrupted step events = %d, want exactly one for the step transition", len(interrupted))
+	}
+	if interrupted[0].Kind != events.KindStageFinish || interrupted[0].Stage != "implement" ||
+		interrupted[0].Attempt != got.Attempt {
+		t.Errorf("interrupted event = %+v, want a stage_finish row attributed to the interrupted attempt", interrupted[0])
+	}
+}
