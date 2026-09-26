@@ -1,7 +1,9 @@
 package scheduling
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -14,6 +16,43 @@ var testZone = time.FixedZone("TEST", 2*60*60)
 // zoned builds a wall-clock time in the fixed test zone.
 func zoned(year int, month time.Month, day, hour, minute, sec int) time.Time {
 	return time.Date(year, month, day, hour, minute, sec, 0, testZone)
+}
+
+// TestScheduleIntervalJSON pins the wire contract the schedules document and
+// the jobs table both depend on: the interval writes the human string
+// time.ParseDuration reads -- never the nanosecond count that once asked an
+// operator to type 1800000000000 for one hour -- and reads both forms, because
+// every schedule stored before this shape existed carries a count.
+func TestScheduleIntervalJSON(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		encoded    string
+		want       Duration
+		wantString string
+	}{
+		{name: "the string the document writes", encoded: `"30m"`, want: Duration(30 * time.Minute), wantString: "30m0s"},
+		{name: "the nanosecond count a legacy document carries", encoded: `1800000000000`, want: Duration(30 * time.Minute), wantString: "30m0s"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got Duration
+			if err := json.Unmarshal([]byte(tc.encoded), &got); err != nil {
+				t.Fatalf("Unmarshal(%s): %v", tc.encoded, err)
+			}
+			if got != tc.want {
+				t.Errorf("Unmarshal(%s) = %v, want %v", tc.encoded, got, tc.want)
+			}
+			encoded, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if string(encoded) != fmt.Sprintf("%q", tc.wantString) {
+				t.Errorf("Marshal(%v) = %s, want %q: the document writes the string, never a count", got, encoded, tc.wantString)
+			}
+		})
+	}
+	if err := json.Unmarshal([]byte(`"banana"`), new(Duration)); !errors.Is(err, ErrInvalidSpec) {
+		t.Errorf("Unmarshal(banana) = %v, want ErrInvalidSpec", err)
+	}
 }
 
 func TestScheduleCronNextRun(t *testing.T) {

@@ -58,7 +58,7 @@ func TestRuntimeConfigUsesDatabaseResourcesAndPreservesBootstrapOnlySecrets(t *t
 		SchedulingPolicyKind:         map[string]any{"poll_interval": "2m", "max_retries": 7, "dispatch": map[string]any{"trigger": "assignee"}},
 		ToolSettingsKind:             map[string]any{"mcp_servers": []map[string]any{{"name": "docs", "transport": "http", "url": "https://mcp.example.com", "headers_configured": true}}, "policy": map[string]any{}, "web_fetch": map[string]any{}, "minimax": map[string]any{"enabled": false, "credential_configured": false}},
 		PluginSettingsKind:           map[string]any{"plugin_dir": "/plugins", "module_dir": "/modules", "secret_engine_dir": "/secrets", "skills_dir": "/skills"},
-		ContainerRuntimePoliciesKind: config.ContainerConfig{Image: "archie:next", PullPolicy: "missing"},
+		ContainerRuntimePoliciesKind: map[string]any{"image": "archie:next", "pull_policy": "missing"},
 	}})
 
 	got, versions, err := client.RuntimeConfig(t.Context(), base)
@@ -594,8 +594,15 @@ func TestRuntimeConfigLayersStoredProfiles(t *testing.T) {
 		stored map[string]any
 		want   []string
 	}{
-		{name: "stored profiles replace the file's", stored: map[string]any{"Image": "agent:2", "Profiles": map[string]any{"net": map[string]any{"Tools": []string{"whois"}}}}, want: []string{"net"}},
-		{name: "a document without profiles inherits the file's", stored: map[string]any{"Image": "agent:2"}, want: []string{"file-only"}},
+		{name: "stored profiles replace the file's", stored: map[string]any{"image": "agent:2", "profiles": map[string]any{"net": map[string]any{"tools": []string{"whois"}}}}, want: []string{"net"}},
+		{
+			// The Go-cased spelling documents written before the document had its
+			// own shape carry: the profile it names must still replace the file's.
+			name:   "legacy Go-cased profiles replace the file's",
+			stored: map[string]any{"Image": "agent:2", "Profiles": map[string]any{"net": map[string]any{"Tools": []string{"whois"}}}},
+			want:   []string{"net"},
+		},
+		{name: "a document without profiles inherits the file's", stored: map[string]any{"image": "agent:2"}, want: []string{"file-only"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := NewRPCClient(&runtimeConfigClient{values: map[string]any{

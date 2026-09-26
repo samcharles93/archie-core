@@ -95,11 +95,20 @@ func sendNotify(addr, state string) error {
 }
 
 // announceReady tells systemd the daemon has finished starting. It is called at
-// the moment the process declares itself serving (runLoop, next to
-// healthSurface.markServing), which is the same fact READY=1 asserts: boot is
-// over and the run loop is about to take over.
+// the moment a process declares itself serving: the daemon's run loop (next to
+// healthSurface.markServing), and the serve steps of archie-gateway and
+// archie-state-store (archie-core-1174), which have health surfaces of their
+// own and would otherwise hang a Type=notify unit until TimeoutStartSec while
+// perfectly healthy.
 func (b *boot) announceReady() {
-	newNotifier(os.Getenv, b.log).send(readyState)
+	notifyReady(b.log)
+}
+
+// notifyReady is announceReady without the boot: the Gateway's serving tail
+// runs on a boot it owns, but a free helper keeps the announcement one call
+// rather than a second notion of "started" on each surface.
+func notifyReady(log *slog.Logger) {
+	newNotifier(os.Getenv, log).send(readyState)
 }
 
 // startWatchdog arms the heartbeat sampler for the daemon's run loop. It does

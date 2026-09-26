@@ -2,7 +2,6 @@ package controlplane
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -50,7 +49,7 @@ func operationalDefinitions() []Definition {
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
-		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Document: config.ContainerConfig{}, Seed: func(cfg config.Config) any { return cfg.Containers }, Validate: validateContainers},
+		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
 }
 
@@ -101,22 +100,5 @@ func validateScheduling(input []byte) error {
 			return fmt.Errorf("label is required when dispatch.trigger is %q (an empty label matches every open issue)", policy.Dispatch.Trigger)
 		}
 		return nil
-	})
-}
-
-func validateContainers(input []byte) error {
-	return validateAs(input, func(settings config.ContainerConfig) error {
-		if settings.MaxConcurrency < 0 || time.Duration(settings.MaxUptime) < 0 || time.Duration(settings.VolumeTTL) < 0 {
-			return fmt.Errorf("container limits must not be negative")
-		}
-		if settings.PullPolicy != "" && settings.PullPolicy != "missing" && settings.PullPolicy != "always" {
-			return fmt.Errorf("pull_policy must be missing or always")
-		}
-		// The image is required for autonomous workflow workers; the same rule
-		// holds for the stored policies that replace the file's [containers].
-		if strings.TrimSpace(settings.Image) == "" {
-			return fmt.Errorf("container image is required for autonomous workflow workers")
-		}
-		return settings.ValidateProfiles()
 	})
 }
