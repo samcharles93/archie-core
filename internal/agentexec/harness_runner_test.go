@@ -388,6 +388,8 @@ func TestHarnessUser(t *testing.T) {
 		{"0", 0, 0, true},
 		{"root", 0, 0, true},
 		{"not-a-user-anywhere", 0, 0, true},
+		{"2147483648", 0, 0, true},
+		{"1000:2147483648", 0, 0, true},
 	}
 	for _, tt := range tests {
 		cred, err := harnessCredential(tt.user)

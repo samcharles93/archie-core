@@ -41,10 +41,11 @@ func runAsHarnessUser(cmd *exec.Cmd, name string) error {
 }
 
 // harnessCredential resolves a user name or "uid[:gid]" to a credential.
-// Root is refused whichever way it is named.
+// Root is refused whichever way it is named. IDs are bounded to 31 bits so
+// they convert to int for os.Chown on every platform.
 func harnessCredential(name string) (*syscall.Credential, error) {
 	uidText, gidText, hasGid := strings.Cut(name, ":")
-	uid, uidErr := strconv.ParseUint(uidText, 10, 32)
+	uid, uidErr := strconv.ParseUint(uidText, 10, 31)
 	var cred syscall.Credential
 	if uidErr == nil {
 		cred.Uid, cred.Gid = uint32(uid), uint32(uid)
@@ -53,18 +54,18 @@ func harnessCredential(name string) (*syscall.Credential, error) {
 		if err != nil {
 			return nil, fmt.Errorf("harness user %q: %w", uidText, err)
 		}
-		id, err := strconv.ParseUint(u.Uid, 10, 32)
+		id, err := strconv.ParseUint(u.Uid, 10, 31)
 		if err != nil {
 			return nil, fmt.Errorf("harness user %q has non-numeric uid %q", uidText, u.Uid)
 		}
-		group, err := strconv.ParseUint(u.Gid, 10, 32)
+		group, err := strconv.ParseUint(u.Gid, 10, 31)
 		if err != nil {
 			return nil, fmt.Errorf("harness user %q has non-numeric gid %q", uidText, u.Gid)
 		}
 		cred.Uid, cred.Gid = uint32(id), uint32(group)
 	}
 	if hasGid {
-		gid, err := strconv.ParseUint(gidText, 10, 32)
+		gid, err := strconv.ParseUint(gidText, 10, 31)
 		if err != nil {
 			return nil, fmt.Errorf("harness group %q is not numeric", gidText)
 		}

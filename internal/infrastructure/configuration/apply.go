@@ -185,7 +185,7 @@ func asMapping(value reflect.Value) (map[string]any, error) {
 // else replaces, matching how the decode treats a struct field versus a scalar.
 // It allocates rather than mutating either argument.
 func mergeMapping(base, override map[string]any) map[string]any {
-	out := make(map[string]any, len(base)+len(override))
+	out := make(map[string]any, len(base))
 	maps.Copy(out, base)
 	for key, value := range override {
 		if over, ok := value.(map[string]any); ok {
