@@ -32,11 +32,13 @@ type harness struct {
 	secrets    map[string]string
 	resolved   []string
 	resolveErr error
+	oauth      *fakeOAuthStore
+	token      *tokenEndpoint
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	h := &harness{secrets: map[string]string{}}
+	h := &harness{secrets: map[string]string{}, oauth: newFakeOAuthStore()}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.hits.Add(1)
 		h.lastAuth.Store(r.Header.Get("Authorization"))
@@ -54,15 +56,19 @@ func newHarness(t *testing.T) *harness {
 	}
 	upstreamRoots := x509.NewCertPool()
 	upstreamRoots.AddCert(h.upstream.Certificate())
+	token, tokenSrv := newTokenEndpoint(t)
+	h.token = token
 	routes := map[string]string{
 		"api.example.com:443":     h.upstream.Listener.Addr().String(),
 		"install.example.com:443": h.upstream.Listener.Addr().String(),
 		"denied.example.com:443":  h.upstream.Listener.Addr().String(),
 		"plain.example.com:80":    h.plain.Listener.Addr().String(),
+		"oauth.example.com:443":   tokenSrv.Listener.Addr().String(),
 	}
 	h.proxy = NewProxy(ca, ProxyOptions{
 		UpstreamRoots: upstreamRoots,
 		Resolver:      ResolverFunc(h.resolve),
+		OAuthStore:    h.oauth,
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			target, ok := routes[addr]
 			if !ok {

@@ -898,7 +898,9 @@ type CredentialBinding struct {
 	// however it is granted (docs/prds/orgs-and-access.md: "No record is
 	// shared between orgs").
 	Org string `toml:"org" yaml:"org"`
-	// Secret is where the real value is resolved from.
+	// Secret is where an API key's real value is resolved from. A service
+	// the Kit declares OAuth-managed leaves it empty: its tokens are the
+	// org's captured harness secret in the State Store.
 	Secret SecretRef `toml:"secret" yaml:"secret"`
 }
 

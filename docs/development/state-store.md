@@ -59,4 +59,7 @@ changing it breaks `errors.Is` on the client silently.
 admin-only State Store RPCs. The EDA store seals them with the binding cipher's
 keyring and a separate `HarnessSecretDomain`. OAuth writes require a configured
 binding encryption key; the legacy binding plaintext fallback does not apply.
-The proxy interception and setup terminal are separate harness slices.
+The daemon's egress proxy (`internal/infrastructure/egress/oauth.go`) is the
+only daemon consumer: for a run granted the service it swaps sentinels for the
+stored tokens and writes every refresh back. The setup terminal is a separate
+harness slice.
