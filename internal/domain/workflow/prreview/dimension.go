@@ -1,0 +1,69 @@
+package prreview
+
+import (
+	"cmp"
+	"slices"
+)
+
+// Dimension is one review dimension a lens proposed: a name, a reviewer
+// prompt written for this PR, the files the reviewer must read, and a
+// priority phase 3 ranks dimensions by when the depth's cap forces a cut.
+type Dimension struct {
+	Name         string
+	Prompt       string
+	TargetFiles  []string
+	ContextFiles []string
+	Priority     float64
+}
+
+// MergeDimensions drops duplicate dimension names across the lenses' outputs
+// (keeping the higher-priority copy), sorts by priority, and cuts the tail at
+// cap. Order is stable for equal priority: the input order of the first lens
+// that produced the name wins, so re-running the same lenses in the same
+// order always keeps the same dimensions.
+func MergeDimensions(lensOutputs [][]Dimension, limit int) []Dimension {
+	byName := make(map[string]Dimension)
+	order := make([]string, 0)
+	for _, lens := range lensOutputs {
+		for _, d := range lens {
+			existing, ok := byName[d.Name]
+			if !ok {
+				order = append(order, d.Name)
+				byName[d.Name] = d
+				continue
+			}
+			if d.Priority > existing.Priority {
+				byName[d.Name] = d
+			}
+		}
+	}
+	merged := make([]Dimension, 0, len(order))
+	for _, name := range order {
+		merged = append(merged, byName[name])
+	}
+	slices.SortStableFunc(merged, func(a, b Dimension) int {
+		return cmp.Compare(b.Priority, a.Priority)
+	})
+	if len(merged) > limit {
+		merged = merged[:limit]
+	}
+	return merged
+}
+
+// HallucinationDimension is the extra review dimension phase 3 adds for a PR
+// intake scores as likely machine-written: claims, citations and behaviour
+// the diff does not actually implement. Returns nil at or below
+// AIGeneratedThreshold -- a coin-flip is not evidence, so it is not added.
+func HallucinationDimension(aiGenerated float64) *Dimension {
+	if aiGenerated <= AIGeneratedThreshold {
+		return nil
+	}
+	return &Dimension{
+		Name: "hallucination-check",
+		Prompt: "This PR's description or commit messages read as likely machine-written. " +
+			"Check every claim the PR makes -- what it says it does, any cited behaviour, API, or test result -- " +
+			"against what the diff actually implements. Report a finding for any claim, citation, or described " +
+			"behaviour that the diff does not actually carry out.",
+		Priority: 1,
+	}
+}
