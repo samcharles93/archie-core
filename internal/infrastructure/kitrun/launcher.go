@@ -19,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kit"
+	"github.com/samcharles93/archie-core/internal/skill"
 )
 
 // SecretResolver resolves a credential binding's secret value. *secret.Registry
@@ -119,26 +120,15 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	if err := l.startEgress(ctx); err != nil {
 		return nil, err
 	}
-	plan, img, err := l.compose(ctx, req.Kit)
+	k, err := l.read(ctx, req.Kit, req.GateRetries)
 	if err != nil {
 		return nil, err
 	}
-	if err := kit.ValidateNeeds(plan, req.GateRetries); err != nil {
-		return nil, err
-	}
-	network, err := spec.NetworkPolicyOf(plan.Capabilities)
-	if err != nil {
-		return nil, err
-	}
-	creds, err := spec.CredentialsOf(plan.Capabilities)
-	if err != nil {
-		return nil, err
-	}
-	granted, bound := l.resolveCredentials(req, creds)
+	granted, bound := l.resolveCredentials(req, k.creds)
 	if l.Grants != nil {
 		l.Grants.Grant(req.Execution, granted)
 	}
-	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Org: req.Org, Network: network, Credentials: creds})
+	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Org: req.Org, Network: k.network, Credentials: k.creds})
 	if err != nil {
 		if l.Grants != nil {
 			l.Grants.RevokeGrant(req.Execution)
@@ -146,7 +136,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		return nil, err
 	}
 	run := &Run{network: "archie-kit-" + req.Execution, token: session.Token(), execution: req.Execution}
-	launch, err := kit.Assemble(plan, img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound})
+	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound})
 	if err != nil {
 		l.release(run)
 		return nil, err
@@ -163,11 +153,11 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		Network:   run.network,
 		Worker:    []string{agentPath},
 		WorkerEnv: req.WorkerEnv,
-		Binds: []string{
+		Binds: append([]string{
 			l.AgentBinary + ":" + agentPath + ":ro",
 			l.CAFile + ":" + caPath + ":ro",
 			req.WorkDir + ":" + kit.WorkspaceDir,
-		},
+		}, skillsBinds(k.skills, l.skillsDir())...),
 		Launch:      launch,
 		InstallDone: session.EnterRuntime,
 	})
@@ -235,25 +225,54 @@ func (l *Launcher) release(run *Run) {
 	l.Proxy.Revoke(run.token)
 }
 
-// compose reads the profile's Kit and the config of the image it runs.
-func (l *Launcher) compose(ctx context.Context, ref string) (*kit.Plan, kit.ImageConfig, error) {
-	reqs := []fetch.Request{{Reference: ref}}
-	merged, err := l.Fetch.Assemble(ctx, reqs, kit.MergeOptions)
+// kitNeeds is what a profile's Kit asks of its run, read from its admitted
+// plan.
+type kitNeeds struct {
+	plan    *kit.Plan
+	img     kit.ImageConfig
+	network *spec.PhasedNetwork
+	creds   []spec.CredentialCapability
+	skills  []spec.AgentSkillsCapability
+}
+
+// read fetches and admits the profile's Kit, checks it can meet the
+// workflow's gate retries, and decodes what it asks of the run.
+func (l *Launcher) read(ctx context.Context, ref string, gateRetries int) (kitNeeds, error) {
+	merged, err := l.Fetch.Assemble(ctx, []fetch.Request{{Reference: ref}}, kit.MergeOptions)
 	if err != nil {
-		return nil, kit.ImageConfig{}, fmt.Errorf("read kit: %w", err)
+		return kitNeeds{}, fmt.Errorf("read kit: %w", err)
 	}
-	plan, err := kit.FromMerge(merged.MergeResult)
-	if err != nil {
-		return nil, kit.ImageConfig{}, err
+	k := kitNeeds{}
+	if k.plan, err = kit.FromMerge(merged.MergeResult); err != nil {
+		return kitNeeds{}, err
 	}
-	img, err := l.imageConfig(ctx, ref)
-	if err != nil {
-		return nil, kit.ImageConfig{}, err
+	if err := kit.ValidateNeeds(k.plan, gateRetries); err != nil {
+		return kitNeeds{}, err
+	}
+	if k.img, err = l.imageConfig(ctx, ref); err != nil {
+		return kitNeeds{}, err
 	}
 	for _, name := range slices.Sorted(maps.Keys(merged.Env)) {
-		img.Env = append(img.Env, name+"="+merged.Env[name])
+		k.img.Env = append(k.img.Env, name+"="+merged.Env[name])
 	}
-	return plan, img, nil
+	if k.network, err = spec.NetworkPolicyOf(k.plan.Capabilities); err != nil {
+		return kitNeeds{}, err
+	}
+	if k.creds, err = spec.CredentialsOf(k.plan.Capabilities); err != nil {
+		return kitNeeds{}, err
+	}
+	if k.skills, err = spec.AgentSkillsOf(k.plan.Capabilities); err != nil {
+		return kitNeeds{}, err
+	}
+	return k, nil
+}
+
+// skillsDir is the operator's live skills_dir, or "" with no config.
+func (l *Launcher) skillsDir() string {
+	if l.Config == nil {
+		return ""
+	}
+	return l.Config.Get().SkillsDir
 }
 
 // Release stops the run's container, then removes its network, revokes its
@@ -300,4 +319,20 @@ func (l *Launcher) imageConfig(ctx context.Context, ref string) (kit.ImageConfig
 		Entrypoint: slices.Clone(cfg.Entrypoint), Cmd: slices.Clone(cfg.Cmd),
 		Env: slices.Clone(cfg.Env), User: cfg.User,
 	}, nil
+}
+
+// skillsBinds mounts the operator's shared skills store read-only at each
+// path the Kit asks for it, whatever mode the Kit asks for. With no
+// skills_dir configured the host withholds the mount.
+func skillsBinds(asks []spec.AgentSkillsCapability, sharedDir string) []string {
+	if sharedDir == "" {
+		return nil
+	}
+	var binds []string
+	for _, a := range asks {
+		if a.Path != "" {
+			binds = append(binds, skill.StoreDir(sharedDir)+":"+a.Path+":ro")
+		}
+	}
+	return binds
 }

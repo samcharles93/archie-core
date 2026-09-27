@@ -388,7 +388,8 @@ type Config struct {
 	// containing .agents/skills/*/SKILL.md files. When set, the
 	// daemon builds its workflow registry from the skill catalog
 	// (plugin-defined workflows override built-ins). When empty,
-	// only built-in workflows are available.
+	// only built-in workflows are available. Its skills are also the
+	// store a Kit's agent-skills@1 mounts, read-only, into the harness.
 	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
 	// WorkflowRoutingFile is an optional path to a YAML file rebinding
 	// which registered workflow an intake Kind (bug/feature/bootstrap)

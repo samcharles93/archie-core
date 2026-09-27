@@ -162,6 +162,10 @@ func SkillForWorkflow(catalog []CatalogEntry, workflow string) *CatalogEntry {
 
 const skillsDir = ".agents/skills"
 
+// StoreDir is where root keeps its skills: the directory a skills store
+// mounted into a harness exposes.
+func StoreDir(root string) string { return filepath.Join(root, skillsDir) }
+
 // Parse extracts YAML frontmatter and body from SKILL.md content.
 // The frontmatter is delimited by "---" lines. If no frontmatter is found,
 // the entire content is returned as the body with a zero Frontmatter.

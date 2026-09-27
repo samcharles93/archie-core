@@ -135,3 +135,18 @@ func TestResolveCredentialsIsAnIntersection(t *testing.T) {
 		})
 	}
 }
+
+// The skills store is mounted read-only whatever mode a Kit asks for, and
+// not at all when the operator configured none.
+func TestSkillsBinds(t *testing.T) {
+	asks := []spec.AgentSkillsCapability{
+		{Path: "/home/agent/.claude/skills", Mode: "readwrite"},
+	}
+	got := skillsBinds(asks, "/srv/shared")
+	if len(got) != 1 || got[0] != "/srv/shared/.agents/skills:/home/agent/.claude/skills:ro" {
+		t.Fatalf("skillsBinds = %v, want the store mounted read-only at the Kit's path", got)
+	}
+	if got := skillsBinds(asks, ""); len(got) != 0 {
+		t.Fatalf("skillsBinds with no skills_dir = %v, want none", got)
+	}
+}

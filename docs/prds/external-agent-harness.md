@@ -42,8 +42,8 @@ Archie is a partial Kit runtime. It implements these capability types:
 | `volume@1`          | A Docker volume keyed by WorkflowExecution, deleted with it.                              |
 | `lifecycle@1`       | Install and startup hooks run on container create.                                        |
 | `agent-sessions@1`  | The headless `prompt` and `resume` invocations for the stage.                             |
-| `agent-skills@1`    | The operator's skills store, mounted read-only whatever the Kit asks.                     |
-| `agent-context@1`   | Archie's stage instructions, delivered where the Kit declares.                            |
+| `agent-skills@1`    | The operator's skills store (`skills_dir`), mounted read-only whatever the Kit asks.      |
+| `agent-context@1`   | The workload's profile file beside the workspace, indexing each Kit's guidance.           |
 | `resources@1`       | Container CPU and memory limits.                                                          |
 
 Every other type fails closed: a required entry refuses the launch, an
