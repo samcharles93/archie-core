@@ -93,6 +93,17 @@ type TaskContext struct {
 	// rather than silently skipping if it is enabled with no Reviewer
 	// wired.
 	Reviewer Reviewer
+	// PRSource fetches a pull request under review and its head snapshot for
+	// the pr-review workflow (see prreview_stages.go). Nil is only safe for a
+	// workflow that never runs pr-review's stages: they fail the run with a
+	// named error rather than silently skipping, the same rule Reviewer and
+	// Calls follow.
+	PRSource PRSource
+	// prReview is the pr-review workflow's cross-stage scratch state (see
+	// prreview_stages.go). It is unexported, following the pattern set by
+	// the feasibility workflow's decision field: pipeline-private state has
+	// no business being read or set outside its own stages.
+	prReview *prReviewState
 	Bus      *events.Bus // nil-safe via Emit
 	Log      *slog.Logger
 	// CustomStages is retained for source compatibility only. Repository Go

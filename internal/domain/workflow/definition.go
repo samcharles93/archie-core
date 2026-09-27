@@ -202,5 +202,6 @@ func legacyBuiltinWorkflows() Registry {
 	return Registry{
 		"bootstrap": Bootstrap(), "implement": Implement(), "tdd": TDD(),
 		"feasibility": Feasibility(), "triage": Triage(), "remediate": Remediate(),
+		"pr-review": PRReview(),
 	}
 }

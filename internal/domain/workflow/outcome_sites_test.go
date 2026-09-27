@@ -41,6 +41,7 @@ var outcomeSites = []outcomeSite{
 	{"diff_rules.go", "StatusParked", "the diff breaks one of the repo's blocking rules"},
 	{"feasibility.go", "StatusClosedWontDo", "feasibility decided this work should not be done"},
 	{"feasibility.go", "StatusWaitingHuman", "the PRD is delivered and the run waits for a go/no-go"},
+	{"prreview_stages.go", "StatusCompleted", "the pr-review pipeline posted its findings (or found none to post)"},
 	{"remediate.go", "StatusParked", "the remediation round cap is spent"},
 	{"remediate.go", "StatusPROpen", "a remediation round pushed the task back to its open PR"},
 	{"review.go", "StatusParked", "review is enabled but no reviewer is wired"},
