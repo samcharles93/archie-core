@@ -1474,16 +1474,16 @@ func (d *Daemon) worktreeHoldsUncapturedWork(ctx context.Context, trees *worktre
 		if errors.Is(err, fs.ErrNotExist) {
 			return false
 		}
-		d.Log.Warn("terminal worktree kept: it could not be read", "task", task.ID, "dir", dir, "err", err)
+		d.Log.Warn("terminal worktree kept: it could not be read; archive the task to remove it", "task", task.ID, "dir", dir, "err", err)
 		return true
 	}
 	uncommitted, err := trees.HasUncommittedChanges(ctx, dir)
 	if err != nil {
-		d.Log.Warn("terminal worktree kept: uncommitted work could not be read", "task", task.ID, "dir", dir, "err", err)
+		d.Log.Warn("terminal worktree kept: uncommitted work could not be read; archive the task to remove it", "task", task.ID, "dir", dir, "err", err)
 		return true
 	}
 	if uncommitted {
-		d.Log.Info("terminal worktree kept: it holds uncommitted work", "task", task.ID, "dir", dir)
+		d.Log.Info("terminal worktree kept: it holds uncommitted work; archive the task to remove it", "task", task.ID, "dir", dir)
 		return true
 	}
 	return false
@@ -2279,4 +2279,15 @@ func withTaskTimeLimit(ctx context.Context, limit time.Duration) (context.Contex
 		return ctx, func() {}
 	}
 	return context.WithTimeoutCause(ctx, limit, fmt.Errorf("%w (%s)", errTaskTimeLimit, limit))
+}
+
+// RemoveWorktree deletes a task's clone from the trees of the identity that
+// owns it. Archiving calls it: terminal cleanup keeps a worktree that may hold
+// uncaptured work, and the operator's archive is the decision to discard it.
+func (d *Daemon) RemoveWorktree(owner, repo, identity string, issue int) error {
+	trees := d.treesFor(&workflow.Task{Owner: owner, Repo: repo, Identity: identity})
+	if trees == nil {
+		return nil
+	}
+	return trees.Cleanup(owner, repo, issue)
 }

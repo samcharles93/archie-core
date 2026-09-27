@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -274,14 +276,14 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 		wantTreeExists bool
 	}{
 		{
-			name:           "process removes worktree when worker reports merged without PR",
-			workerStatus:   workflow.StatusMerged,
+			name:           "process removes worktree when worker completes without a PR",
+			workerStatus:   workflow.StatusCompleted,
 			taskIdentity:   "",
 			wantTreeExists: false,
 		},
 		{
-			name:           "process removes identity worktree when worker reports merged without PR",
-			workerStatus:   workflow.StatusMerged,
+			name:           "process removes identity worktree when worker completes without a PR",
+			workerStatus:   workflow.StatusCompleted,
 			taskIdentity:   "winter",
 			wantTreeExists: false,
 		},
@@ -373,21 +375,9 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 			targetTrees := d.treesFor(task)
 			workDir := targetTrees.Dir(task.Owner, task.Repo, task.IssueNumber)
 
-			// The route the worker's completion report takes to its status,
-			// computed here because t.Fatalf is not callable from the
-			// subscription goroutine below.
-			route, err := taskstatetest.Path(workflow.StatusRunning, tt.workerStatus)
-			if err != nil {
-				t.Fatalf("no legal route to %s: %v", tt.workerStatus, err)
-			}
-
 			sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 				// Transition task in store as archie-agent would do over the gRPC State Store
-				at := workflow.StatusRunning
-				for _, to := range route {
-					_ = s.Transition(ctx, task.ID, at, to, "worker completion")
-					at = to
-				}
+				_ = s.Transition(ctx, task.ID, workflow.StatusRunning, tt.workerStatus, "worker completion")
 				resp, _ := json.Marshal(taskrun.Response{
 					Status: tt.workerStatus,
 				})
@@ -406,5 +396,29 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 				t.Errorf("worktree exists = %v, want %v (path: %s)", treeExists, tt.wantTreeExists, workDir)
 			}
 		})
+	}
+}
+
+// TestRemoveWorktreeReapsTheOwningIdentitysClone is the operator's reap path
+// for a worktree terminal cleanup kept: archiving removes the clone under the
+// trees of the identity that owns the task, and only that clone.
+func TestRemoveWorktreeReapsTheOwningIdentitysClone(t *testing.T) {
+	root := &worktree.Manager{WorkDir: t.TempDir()}
+	winter := &worktree.Manager{WorkDir: t.TempDir()}
+	d := &Daemon{Trees: root, Identities: []*IdentityRunner{{Name: "winter", Trees: winter}}}
+	for _, m := range []*worktree.Manager{root, winter} {
+		if err := os.MkdirAll(m.Dir("acme", "widget", 7), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := d.RemoveWorktree("acme", "widget", "winter", 7); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	if _, err := os.Stat(winter.Dir("acme", "widget", 7)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("identity worktree still on disk: %v", err)
+	}
+	if _, err := os.Stat(root.Dir("acme", "widget", 7)); err != nil {
+		t.Errorf("root worktree removed: %v", err)
 	}
 }

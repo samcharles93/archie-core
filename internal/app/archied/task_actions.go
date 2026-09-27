@@ -20,6 +20,7 @@ func (b *boot) taskActions() taskactions.Service {
 		b.cancelTask,
 		b.closeIssue,
 		b.removeTaskLogs,
+		b.removeTaskWorktree,
 		b.publishEvent,
 		b.log.Warn,
 	)
@@ -44,6 +45,13 @@ func (b *boot) removeTaskLogs(id int64) error {
 		return nil
 	}
 	return b.taskLogs.Remove(id)
+}
+
+func (b *boot) removeTaskWorktree(task *taskactions.Task) error {
+	if b.d == nil {
+		return nil
+	}
+	return b.d.RemoveWorktree(task.Owner, task.Repo, task.Identity, task.IssueNumber)
 }
 
 func (b *boot) publishEvent(e events.Event) {

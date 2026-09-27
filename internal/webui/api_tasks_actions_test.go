@@ -80,6 +80,7 @@ func (d *daemonActions) ApplyChatTaskAction(
 		d.cancelTask(),
 		d.closeIssue(),
 		d.removeLogs(),
+		nil,
 		d.publish(),
 		d.srv.logf,
 	)

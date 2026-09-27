@@ -140,8 +140,11 @@ type Service struct {
 	CancelTask func(int64) bool
 	CloseIssue func(context.Context, string, string, int, string) error
 	RemoveLogs func(int64) error
-	Publish    func(events.Event)
-	Warn       func(string, ...any)
+	// RemoveWorktree discards the task's clone on archive, the reap path for a
+	// worktree terminal cleanup kept because it may hold uncaptured work.
+	RemoveWorktree func(*Task) error
+	Publish        func(events.Event)
+	Warn           func(string, ...any)
 }
 
 // Apply scopes chat requests to an identity. A nil scope denotes a caller
@@ -313,6 +316,11 @@ func (s Service) applyArchive(ctx context.Context, task *Task, actor Actor, o ou
 	if s.RemoveLogs != nil {
 		if cleanupErr := s.RemoveLogs(task.ID); cleanupErr != nil {
 			s.warn("task log cleanup failed", "task", task.ID, "err", cleanupErr)
+		}
+	}
+	if s.RemoveWorktree != nil {
+		if cleanupErr := s.RemoveWorktree(task); cleanupErr != nil {
+			s.warn("task worktree cleanup failed", "task", task.ID, "err", cleanupErr)
 		}
 	}
 	return o, nil

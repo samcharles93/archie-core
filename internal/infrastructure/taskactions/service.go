@@ -17,16 +17,18 @@ func NewService(
 	cancel func(int64) bool,
 	closeIssue func(context.Context, string, string, int, string) error,
 	removeLogs func(int64) error,
+	removeWorktree func(*taskactions.Task) error,
 	publish func(events.Event),
 	warn func(string, ...any),
 ) taskactions.Service {
 	return taskactions.Service{
-		Store:      store,
-		MaxRetries: maxRetries,
-		CancelTask: cancel,
-		CloseIssue: closeIssue,
-		RemoveLogs: removeLogs,
-		Publish:    publish,
-		Warn:       warn,
+		Store:          store,
+		MaxRetries:     maxRetries,
+		CancelTask:     cancel,
+		CloseIssue:     closeIssue,
+		RemoveLogs:     removeLogs,
+		RemoveWorktree: removeWorktree,
+		Publish:        publish,
+		Warn:           warn,
 	}
 }
