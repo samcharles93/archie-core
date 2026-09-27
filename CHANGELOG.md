@@ -5,6 +5,48 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.43.0] - 2026-09-28
+
+### archied
+
+- **Organisations.** Tasks, identities and settings now belong to an org. An
+  existing install is upgraded into a default org when the State Store first
+  starts; the upgrade resumes if interrupted. Task de-duplication is scoped
+  per org and identity.
+- **Access policies are enforced** at the dashboard, the API and task
+  dispatch, with shipped roles and a rule that nothing crosses between orgs.
+  Denials are recorded and reported on the health page. If a policy locks
+  you out, `archied access reset --org <org>` (or `--instance`) on the State
+  Store host restores the shipped defaults.
+- **Workflows can call workflows** with a `workflow.call` step. Inputs and
+  call cycles are checked when the workflow is saved, and the caller waits
+  on the callee's result.
+- **Runs record each step.** A run's stages and agent calls are stored as
+  steps, the task detail page reads them, and stopping a task or archiving
+  it goes through one cancel path. After a crash, steps left running are
+  marked interrupted. Archiving a task removes its worktree.
+- **Model roles, repositories, scheduling policy, providers and agent
+  profiles apply without a restart.**
+- **Kit harness profiles:**
+  - `kit` is now one digest-pinned reference, a workload Kit or a published
+    Kit set, not a list. **Rewrite `kit = [...]` in `config.toml` or the
+    agent-profiles settings as the single reference**; a list no longer
+    loads. Compose mixins by publishing a Kit set.
+  - OAuth logins are handled on the host: the egress proxy refreshes tokens,
+    stores them encrypted, and gives the container only placeholders.
+  - A Kit's skills request mounts `skills_dir` read-only, and its
+    instructions file (such as `CLAUDE.md`) is written beside the workspace,
+    which is now `/archie/workspace`.
+  - A run still cannot be granted the credential a Kit needs, so a Kit that
+    requires one is refused at launch.
+- Rate-limited webhook deliveries get `429`.
+- `archie-gateway` and `archie-state-store` report ready to systemd.
+
+### archie-agent
+
+- Runs workflow calls, records its steps and agent calls, and runs Kit
+  harness stages under the profile's Kit.
+
 ## [1.42.0] - 2026-09-26
 
 ### archied
