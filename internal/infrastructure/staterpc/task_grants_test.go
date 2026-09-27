@@ -14,6 +14,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
+	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -245,6 +246,13 @@ func TestTaskGrantScopesWorkerToItsOwnRPCs(t *testing.T) {
 	}
 	if _, err := workerA.ListCaptures(ctx, 10); err == nil {
 		t.Fatal("task grant must not authorize the streaming capture surface")
+	}
+
+	if _, err := workerA.GetHarnessSecret(ctx, "org-a", "service"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("task grant secret read = %v, want PermissionDenied", err)
+	}
+	if err := workerA.PutHarnessSecret(ctx, harnesssecret.Secret{Org: "org-a", Service: "service", AccessToken: "token"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("task grant secret write = %v, want PermissionDenied", err)
 	}
 
 	if err := admin.RevokeTaskGrant(ctx, workerToken); err != nil {

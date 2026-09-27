@@ -51,6 +51,12 @@ service StateStoreService {
   // ListSteps is a dashboard/API/dispatch action (Authorizer: read on the
   // run), not task-scoped-grant callable like StartStep/FinishStep.
   rpc ListSteps(ListStepsRequest) returns (ListStepsResponse);
+  // Harness OAuth secrets (docs/prds/external-agent-harness.md,
+  // Credentials). Administrative: the setup terminal (an `update` action on
+  // the secret, Authorizer-gated) and the egress proxy's token-endpoint
+  // interception (acting as the daemon, not a worker) are the only callers.
+  rpc GetHarnessSecret(GetHarnessSecretRequest) returns (GetHarnessSecretResponse);
+  rpc PutHarnessSecret(PutHarnessSecretRequest) returns (PutHarnessSecretResponse);
   rpc Requeue(RequeueRequest) returns (RequeueResponse);
   rpc ParkTask(ParkTaskRequest) returns (ParkTaskResponse);
   rpc RecoverStale(RecoverStaleRequest) returns (RecoverStaleResponse);
@@ -611,6 +617,28 @@ message ListStepsRequest {
   int64 attempt = 2;
 }
 message ListStepsResponse { repeated StepExecution steps = 1; }
+
+// HarnessSecret mirrors internal/domain/harnesssecret.Secret -- one org's
+// captured OAuth token set for a credential binding's service
+// (docs/prds/external-agent-harness.md, Credentials).
+message HarnessSecret {
+  string org = 1;
+  string service = 2;
+  string access_token = 3;
+  string refresh_token = 4;
+  string token_type = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message GetHarnessSecretRequest {
+  string org = 1;
+  string service = 2;
+}
+message GetHarnessSecretResponse { HarnessSecret secret = 1; }
+
+message PutHarnessSecretRequest { HarnessSecret secret = 1; }
+message PutHarnessSecretResponse {}
 
 message UpdateRequest { Task task = 1; }
 message UpdateResponse {}

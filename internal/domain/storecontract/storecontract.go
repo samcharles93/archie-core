@@ -21,6 +21,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
+	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -97,6 +98,19 @@ type ExecutionCanceller interface {
 // are.
 type StepReader interface {
 	ListSteps(ctx context.Context, executionID int64, attempt int) ([]task.StepExecution, error)
+}
+
+// HarnessSecretStore persists one org's OAuth token set per credential
+// binding service (docs/prds/external-agent-harness.md, Credentials). The
+// setup terminal writes the first capture (an `update` action on the
+// secret, Authorizer-gated); the egress proxy's token-endpoint interception
+// overwrites it on every refresh with no Authorizer check of its own -- it
+// acts as the run, not as an operator. Encrypted at rest under its own
+// domain separator (docs/prds/binding-secret-encryption.md,
+// bindingcipher.HarnessSecretDomain).
+type HarnessSecretStore interface {
+	GetHarnessSecret(ctx context.Context, org, service string) (harnesssecret.Secret, error)
+	PutHarnessSecret(ctx context.Context, s harnesssecret.Secret) error
 }
 
 // TaskArchiver removes one terminal task's local record with an optimistic
@@ -493,6 +507,10 @@ var (
 	// ErrSourceSigningStale is returned when a signing write's expected
 	// from state does not match the stored one.
 	ErrSourceSigningStale = errors.New("store: source signing does not match expected state")
+	// ErrHarnessSecretNotFound is returned when no OAuth token set is
+	// stored for an org/service pair -- the setup terminal has not
+	// captured one yet.
+	ErrHarnessSecretNotFound = errors.New("store: harness secret not found")
 
 	// ErrResourceNotFound is returned when a control-plane resource kind has
 	// no stored document. It is in-process only (not on the gRPC wire): the

@@ -120,6 +120,31 @@ func TestBindingCipherDerivesDistinctKeys(t *testing.T) {
 	}
 }
 
+func TestDomainSeparationRejectsRelocation(t *testing.T) {
+	c, _ := NewBindingCipher(testBindingKey, nil)
+	plain := "refresh-token-0123456789abcdef"
+	env, err := c.EncryptDomain(HarnessSecretDomain, plain)
+	if err != nil {
+		t.Fatalf("EncryptDomain: %v", err)
+	}
+	if !strings.HasPrefix(env, "arcie-harness:v1:") {
+		t.Fatalf("envelope prefix = %q, want arcie-harness:v1:", env)
+	}
+	// The envelope sealed for HarnessSecretDomain must not authenticate
+	// under BindingDomain's AAD, even with the same keyring: a row moved
+	// from oauth_secrets into a bindings-secret column must not decrypt.
+	if _, err := c.Decrypt(env); err == nil {
+		t.Fatal("Decrypt (BindingDomain) of a HarnessSecretDomain envelope succeeded, want error")
+	}
+	got, err := c.DecryptDomain(HarnessSecretDomain, env)
+	if err != nil {
+		t.Fatalf("DecryptDomain: %v", err)
+	}
+	if got != plain {
+		t.Fatalf("round-trip = %q, want %q", got, plain)
+	}
+}
+
 // tamperEnvelope flips one byte inside the ciphertext region so Decrypt must
 // fail authentication rather than return altered plaintext.
 func tamperEnvelope(t *testing.T, envelope string) string {

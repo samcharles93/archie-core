@@ -143,6 +143,13 @@ type EventType struct {
 	WorkspaceID string
 }
 
+type HarnessSecret struct {
+	Org       string
+	Service   string
+	SecretEnc string
+	UpdatedAt time.Time
+}
+
 type Identity struct {
 	ID          string
 	Kind        string

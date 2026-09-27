@@ -111,6 +111,10 @@ type Deps struct {
 	// task-scoped-grant callable. Optional: nil answers ListSteps with
 	// codes.Unavailable.
 	StepReader storecontract.StepReader
+	// HarnessSecrets persists harness OAuth token sets
+	// (docs/prds/external-agent-harness.md, Credentials). Optional: nil
+	// answers both RPCs with codes.Unavailable.
+	HarnessSecrets storecontract.HarnessSecretStore
 	// PlaybookDispatcher is the side-effecting-action idempotency ledger
 	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
@@ -262,6 +266,27 @@ func (s *server) ListSteps(ctx context.Context, r *pb.ListStepsRequest) (*pb.Lis
 		return nil, s.logErr("ListSteps", err)
 	}
 	return &pb.ListStepsResponse{Steps: mapValues(steps, stepExecutionProto)}, nil
+}
+
+func (s *server) GetHarnessSecret(ctx context.Context, r *pb.GetHarnessSecretRequest) (*pb.GetHarnessSecretResponse, error) {
+	if s.deps.HarnessSecrets == nil {
+		return nil, status.Error(codes.Unavailable, "harness secret store unavailable")
+	}
+	secret, err := s.deps.HarnessSecrets.GetHarnessSecret(ctx, r.Org, r.Service)
+	if err != nil {
+		return nil, s.logErr("GetHarnessSecret", err)
+	}
+	return &pb.GetHarnessSecretResponse{Secret: harnessSecretProto(secret)}, nil
+}
+
+func (s *server) PutHarnessSecret(ctx context.Context, r *pb.PutHarnessSecretRequest) (*pb.PutHarnessSecretResponse, error) {
+	if s.deps.HarnessSecrets == nil {
+		return nil, status.Error(codes.Unavailable, "harness secret store unavailable")
+	}
+	if err := s.deps.HarnessSecrets.PutHarnessSecret(ctx, harnessSecretValue(r.Secret)); err != nil {
+		return nil, s.logErr("PutHarnessSecret", err)
+	}
+	return &pb.PutHarnessSecretResponse{}, nil
 }
 
 func (s *server) Update(ctx context.Context, r *pb.UpdateRequest) (*pb.UpdateResponse, error) {

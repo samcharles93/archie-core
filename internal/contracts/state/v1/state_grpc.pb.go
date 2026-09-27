@@ -44,6 +44,8 @@ const (
 	StateStoreService_FinishStep_FullMethodName                 = "/state.v1.StateStoreService/FinishStep"
 	StateStoreService_CancelExecution_FullMethodName            = "/state.v1.StateStoreService/CancelExecution"
 	StateStoreService_ListSteps_FullMethodName                  = "/state.v1.StateStoreService/ListSteps"
+	StateStoreService_GetHarnessSecret_FullMethodName           = "/state.v1.StateStoreService/GetHarnessSecret"
+	StateStoreService_PutHarnessSecret_FullMethodName           = "/state.v1.StateStoreService/PutHarnessSecret"
 	StateStoreService_Requeue_FullMethodName                    = "/state.v1.StateStoreService/Requeue"
 	StateStoreService_ParkTask_FullMethodName                   = "/state.v1.StateStoreService/ParkTask"
 	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
@@ -164,6 +166,12 @@ type StateStoreServiceClient interface {
 	// ListSteps is a dashboard/API/dispatch action (Authorizer: read on the
 	// run), not task-scoped-grant callable like StartStep/FinishStep.
 	ListSteps(ctx context.Context, in *ListStepsRequest, opts ...grpc.CallOption) (*ListStepsResponse, error)
+	// Harness OAuth secrets (docs/prds/external-agent-harness.md,
+	// Credentials). Administrative: the setup terminal (an `update` action on
+	// the secret, Authorizer-gated) and the egress proxy's token-endpoint
+	// interception (acting as the daemon, not a worker) are the only callers.
+	GetHarnessSecret(ctx context.Context, in *GetHarnessSecretRequest, opts ...grpc.CallOption) (*GetHarnessSecretResponse, error)
+	PutHarnessSecret(ctx context.Context, in *PutHarnessSecretRequest, opts ...grpc.CallOption) (*PutHarnessSecretResponse, error)
 	Requeue(ctx context.Context, in *RequeueRequest, opts ...grpc.CallOption) (*RequeueResponse, error)
 	ParkTask(ctx context.Context, in *ParkTaskRequest, opts ...grpc.CallOption) (*ParkTaskResponse, error)
 	RecoverStale(ctx context.Context, in *RecoverStaleRequest, opts ...grpc.CallOption) (*RecoverStaleResponse, error)
@@ -541,6 +549,26 @@ func (c *stateStoreServiceClient) ListSteps(ctx context.Context, in *ListStepsRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListStepsResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_ListSteps_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetHarnessSecret(ctx context.Context, in *GetHarnessSecretRequest, opts ...grpc.CallOption) (*GetHarnessSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetHarnessSecretResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetHarnessSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) PutHarnessSecret(ctx context.Context, in *PutHarnessSecretRequest, opts ...grpc.CallOption) (*PutHarnessSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutHarnessSecretResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PutHarnessSecret_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1295,6 +1323,12 @@ type StateStoreServiceServer interface {
 	// ListSteps is a dashboard/API/dispatch action (Authorizer: read on the
 	// run), not task-scoped-grant callable like StartStep/FinishStep.
 	ListSteps(context.Context, *ListStepsRequest) (*ListStepsResponse, error)
+	// Harness OAuth secrets (docs/prds/external-agent-harness.md,
+	// Credentials). Administrative: the setup terminal (an `update` action on
+	// the secret, Authorizer-gated) and the egress proxy's token-endpoint
+	// interception (acting as the daemon, not a worker) are the only callers.
+	GetHarnessSecret(context.Context, *GetHarnessSecretRequest) (*GetHarnessSecretResponse, error)
+	PutHarnessSecret(context.Context, *PutHarnessSecretRequest) (*PutHarnessSecretResponse, error)
 	Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error)
 	ParkTask(context.Context, *ParkTaskRequest) (*ParkTaskResponse, error)
 	RecoverStale(context.Context, *RecoverStaleRequest) (*RecoverStaleResponse, error)
@@ -1502,6 +1536,12 @@ func (UnimplementedStateStoreServiceServer) CancelExecution(context.Context, *Ca
 }
 func (UnimplementedStateStoreServiceServer) ListSteps(context.Context, *ListStepsRequest) (*ListStepsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSteps not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetHarnessSecret(context.Context, *GetHarnessSecretRequest) (*GetHarnessSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetHarnessSecret not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PutHarnessSecret(context.Context, *PutHarnessSecretRequest) (*PutHarnessSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutHarnessSecret not implemented")
 }
 func (UnimplementedStateStoreServiceServer) Requeue(context.Context, *RequeueRequest) (*RequeueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Requeue not implemented")
@@ -2171,6 +2211,42 @@ func _StateStoreService_ListSteps_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).ListSteps(ctx, req.(*ListStepsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetHarnessSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetHarnessSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetHarnessSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetHarnessSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetHarnessSecret(ctx, req.(*GetHarnessSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_PutHarnessSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutHarnessSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PutHarnessSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PutHarnessSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PutHarnessSecret(ctx, req.(*PutHarnessSecretRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3466,6 +3542,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSteps",
 			Handler:    _StateStoreService_ListSteps_Handler,
+		},
+		{
+			MethodName: "GetHarnessSecret",
+			Handler:    _StateStoreService_GetHarnessSecret_Handler,
+		},
+		{
+			MethodName: "PutHarnessSecret",
+			Handler:    _StateStoreService_PutHarnessSecret_Handler,
 		},
 		{
 			MethodName: "Requeue",

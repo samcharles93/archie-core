@@ -313,7 +313,10 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 
 	for _, stage := range wf.Stages {
 		tc.Stage = stage.Name
-		_ = tc.Store.Update(ctx, t)
+		if err := tc.Store.Update(ctx, t); err != nil {
+			park(ctx, tc, fmt.Sprintf("persist task before stage %s: %v", stage.Name, err))
+			return
+		}
 		// Every stage is a StepExecution (docs/prds/execution-tree-state-machine.md):
 		// the store records pending -> running and writes the stage_start event
 		// in the same transaction, and refuses a start the state machine
@@ -355,10 +358,13 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		// steps. A recording failure on this path is logged and left to the
 		// same recovery: the process is on its way out either way.
 		if ctx.Err() != nil && err != nil {
-			if finishEvent, recordErr := tc.Store.FinishStep(ctx, StepFinish{
+			finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			finishEvent, recordErr := tc.Store.FinishStep(finishCtx, StepFinish{
 				StepID: stepID, ExecutionID: t.ID,
 				From: taskstate.StepRunning, To: taskstate.StepInterrupted, Detail: err.Error(),
-			}); recordErr != nil {
+			})
+			cancel()
+			if recordErr != nil {
 				stageLog.Warn("interrupted step finish could not be recorded", "stage", stage.Name, "err", recordErr)
 			} else {
 				publishEvent(tc, finishEvent)
@@ -420,8 +426,14 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 		park(ctx, tc, tc.Outcome.Detail)
 		return
 	}
-	_ = tc.Store.Update(ctx, t)
-	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
+	if err := tc.Store.Update(ctx, t); err != nil {
+		park(ctx, tc, fmt.Sprintf("persist workflow outcome: %v", err))
+		return
+	}
+	if err := tc.Store.Transition(ctx, t.ID, StatusRunning, tc.Outcome.Status, tc.Outcome.Detail); err != nil {
+		log.Error("workflow outcome transition failed", "err", err)
+		return
+	}
 	tc.Emit(events.KindOutcome, tc.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
 	log.Info("workflow finished", "status", tc.Outcome.Status)
 }
@@ -429,8 +441,13 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 func park(ctx context.Context, tc *TaskContext, reason string) {
 	t := tc.Task
 	t.ParkReason = reason
-	_ = tc.Store.Update(ctx, t)
-	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, StatusParked, reason)
+	if err := tc.Store.Update(ctx, t); err != nil {
+		tc.Log.Error("task fields could not be persisted while parking", "err", err)
+	}
+	if err := tc.Store.Transition(ctx, t.ID, StatusRunning, StatusParked, reason); err != nil {
+		tc.Log.Error("task park transition failed", "err", err)
+		return
+	}
 	tc.Emit(events.KindParked, tc.Stage, reason, nil)
 	// The run's own log is the surface an operator downloads to answer "why did
 	// this park?", and the event above lands on the timeline, which the log

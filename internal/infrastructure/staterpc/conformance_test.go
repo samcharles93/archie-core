@@ -12,10 +12,12 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 )
@@ -95,6 +97,7 @@ func remoteTaskStore(t *testing.T, local *pgstore.TaskDB, logs storecontract.Tas
 		deps.Bindings = eda
 		deps.BindingDispatcher = eda
 		deps.PlaybookDispatcher = eda
+		deps.HarnessSecrets = eda
 	}
 	RegisterServer(server, deps)
 	go func() { _ = server.Serve(listener) }()
@@ -606,6 +609,43 @@ func TestConfigSnapshotContract(t *testing.T) {
 			}
 			if !got.PublishedAt.Equal(published.PublishedAt) {
 				t.Errorf("published at = %v, want %v", got.PublishedAt, published.PublishedAt)
+			}
+		})
+	}
+}
+
+func TestHarnessSecretConformance(t *testing.T) {
+	for _, mode := range []string{"local", "grpc"} {
+		t.Run(mode, func(t *testing.T) {
+			cipher, err := bindingcipher.NewBindingCipher("conformance-encryption-material", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			eda := pgstore.EDA(t, cipher)
+			var store storecontract.HarnessSecretStore = eda
+			if mode == "grpc" {
+				store = remoteEDA(t, pgstore.Open(t), eda)
+			}
+			secret := harnesssecret.Secret{Org: "org-a", Service: "service", AccessToken: "access", RefreshToken: "refresh", TokenType: "Bearer", ExpiresAt: time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour)}
+			for _, token := range []string{"access", "refreshed-access"} {
+				secret.AccessToken = token
+				if err := store.PutHarnessSecret(t.Context(), secret); err != nil {
+					t.Fatal(err)
+				}
+				got, err := store.GetHarnessSecret(t.Context(), secret.Org, secret.Service)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.UpdatedAt.IsZero() {
+					t.Fatal("missing store timestamp")
+				}
+				got.UpdatedAt = time.Time{}
+				if got != secret {
+					t.Fatalf("round trip mismatch: got %+v, want %+v", got, secret)
+				}
+			}
+			if _, err := store.GetHarnessSecret(t.Context(), "org-b", secret.Service); !errors.Is(err, storecontract.ErrHarnessSecretNotFound) {
+				t.Fatalf("other org read = %v, want not found", err)
 			}
 		})
 	}

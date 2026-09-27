@@ -75,6 +75,7 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 		store error
 		rehyd error
 	}{
+		{name: "harness secret not found", store: storecontract.ErrHarnessSecretNotFound, rehyd: storecontract.ErrHarnessSecretNotFound},
 		{name: "stale transition", store: storecontract.ErrStaleTransition, rehyd: storecontract.ErrStaleTransition},
 		{name: "illegal transition", store: storecontract.ErrIllegalTransition, rehyd: storecontract.ErrIllegalTransition},
 		{name: "invalid step", store: storecontract.ErrInvalidStep, rehyd: storecontract.ErrInvalidStep},

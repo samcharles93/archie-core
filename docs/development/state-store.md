@@ -52,3 +52,11 @@ process; nothing else opens the database.
 Add the sentinel to `storecontract`, a row to `wireErrors` in `values.go`, and
 a case to `error_test.go`. The canonical message is part of the wire contract:
 changing it breaks `errors.Is` on the client silently.
+
+## Harness OAuth secrets
+
+`HarnessSecretStore` stores token sets by org and credential service through
+admin-only State Store RPCs. The EDA store seals them with the binding cipher's
+keyring and a separate `HarnessSecretDomain`. OAuth writes require a configured
+binding encryption key; the legacy binding plaintext fallback does not apply.
+The proxy interception and setup terminal are separate harness slices.

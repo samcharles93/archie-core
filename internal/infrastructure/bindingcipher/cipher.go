@@ -14,22 +14,36 @@ import (
 	"strings"
 )
 
-// bindingSecretAAD is the additional-authenticated-data domain separator. It
-// binds a ciphertext to the binding-secret payload context so it cannot be
-// relocated to a different field/column and still authenticate. It is
-// deliberately NOT row-bound: binding secrets are random HMAC keys and are
-// never used as lookup keys, so cross-row relocation is not a meaningful
-// attack here (see docs/prds/binding-secret-encryption.md).
-var bindingSecretAAD = []byte("arcie-binding-secret")
+// bindingEnvelopeVersion identifies the format version. A future cipher or
+// KDF change bumps it so old rows stay readable while new writes use the new
+// format. The version is shared by every domain; only the marker and AAD
+// differ between them.
+const bindingEnvelopeVersion = "v1"
 
-// bindingEnvelopeMarker and bindingEnvelopeVersion identify a sealed binding
-// secret and the format version. A future cipher or KDF change bumps the
-// version so old rows stay readable while new writes use the new format.
-const (
-	bindingEnvelopeMarker  = "arcie-binding"
-	bindingEnvelopeVersion = "v1"
-	// bindingNonceLen is GCM's recommended 12-byte nonce.
-	bindingNonceLen = 12
+// bindingNonceLen is GCM's recommended 12-byte nonce.
+const bindingNonceLen = 12
+
+// Domain is an envelope's marker and additional-authenticated-data: the
+// separator that stops a ciphertext sealed for one column being relocated to
+// a different one and still authenticating (docs/prds/binding-secret-encryption.md).
+// Domains share the same keyring; only the marker and AAD differ.
+type Domain struct {
+	marker string
+	aad    []byte
+}
+
+var (
+	// BindingDomain seals binding.Binding.Secret and source webhook
+	// secrets -- the original domain this package was built for. It is
+	// deliberately NOT row-bound: these are random HMAC keys, never used
+	// as lookup keys, so cross-row relocation within the domain is not a
+	// meaningful attack.
+	BindingDomain = Domain{marker: "arcie-binding", aad: []byte("arcie-binding-secret")}
+	// HarnessSecretDomain seals harness OAuth token sets
+	// (docs/prds/external-agent-harness.md, Credentials) -- its own
+	// separator, so a row cannot be moved from oauth_secrets into a
+	// bindings-secret column (or back) and still authenticate.
+	HarnessSecretDomain = Domain{marker: "arcie-harness", aad: []byte("arcie-harness-secret")}
 )
 
 // bindingKeyFingerprintLen is the number of hex characters of the
@@ -42,10 +56,17 @@ const bindingKeyFingerprintLen = 16
 // plaintext (legacy behaviour). Implementations must be safe for concurrent
 // use.
 type BindingCipher interface {
-	// Encrypt returns the sealed envelope for a plaintext secret.
+	// Encrypt returns the sealed envelope for a plaintext secret, under
+	// BindingDomain.
 	Encrypt(plaintext string) (string, error)
-	// Decrypt returns the plaintext secret for a sealed envelope.
+	// Decrypt returns the plaintext secret for a sealed envelope sealed
+	// under BindingDomain.
 	Decrypt(envelope string) (string, error)
+	// EncryptDomain and DecryptDomain are Encrypt/Decrypt for a caller-named
+	// domain, so a second column (e.g. harness OAuth secrets) can share this
+	// cipher's keyring without sharing BindingDomain's AAD.
+	EncryptDomain(d Domain, plaintext string) (string, error)
+	DecryptDomain(d Domain, envelope string) (string, error)
 }
 
 // bindingCipher is the AES-256-GCM BindingCipher. Keys are derived as
@@ -84,9 +105,19 @@ func NewBindingCipher(active string, previous []string) (*bindingCipher, error) 
 	return c, nil
 }
 
-// Encrypt seals plaintext with the active key and returns the versioned
-// envelope: "arcie-binding:v1:<fingerprint>:<base64url(nonce‖ct‖tag)>".
+// Encrypt seals plaintext under BindingDomain with the active key.
 func (c *bindingCipher) Encrypt(plaintext string) (string, error) {
+	return c.EncryptDomain(BindingDomain, plaintext)
+}
+
+// Decrypt opens an envelope sealed under BindingDomain.
+func (c *bindingCipher) Decrypt(envelope string) (string, error) {
+	return c.DecryptDomain(BindingDomain, envelope)
+}
+
+// EncryptDomain seals plaintext with the active key and returns the versioned
+// envelope: "<marker>:v1:<fingerprint>:<base64url(nonce‖ct‖tag)>".
+func (c *bindingCipher) EncryptDomain(d Domain, plaintext string) (string, error) {
 	block, err := aes.NewCipher(c.activeKey)
 	if err != nil {
 		return "", fmt.Errorf("store: binding cipher: %w", err)
@@ -99,20 +130,22 @@ func (c *bindingCipher) Encrypt(plaintext string) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("store: binding cipher: nonce: %w", err)
 	}
-	sealed := gcm.Seal(nil, nonce, []byte(plaintext), bindingSecretAAD)
+	sealed := gcm.Seal(nil, nonce, []byte(plaintext), d.aad)
 	payload := make([]byte, 0, bindingNonceLen+len(sealed))
 	payload = append(payload, nonce...)
 	payload = append(payload, sealed...)
-	return fmt.Sprintf("%s:%s:%s:%s", bindingEnvelopeMarker, bindingEnvelopeVersion,
+	return fmt.Sprintf("%s:%s:%s:%s", d.marker, bindingEnvelopeVersion,
 		c.activeFingerprint, base64.RawURLEncoding.EncodeToString(payload)), nil
 }
 
-// Decrypt parses the envelope, looks up the key by its embedded fingerprint,
-// and returns the plaintext. A fingerprint not present in the keyring (an old
-// key dropped from config) fails rather than returning garbage.
-func (c *bindingCipher) Decrypt(envelope string) (string, error) {
+// DecryptDomain parses an envelope sealed under d, looks up the key by its
+// embedded fingerprint, and returns the plaintext. A fingerprint not present
+// in the keyring (an old key dropped from config), or an envelope sealed
+// under a different domain's marker/AAD, fails rather than returning
+// garbage.
+func (c *bindingCipher) DecryptDomain(d Domain, envelope string) (string, error) {
 	parts := strings.SplitN(envelope, ":", 4)
-	if len(parts) != 4 || parts[0] != bindingEnvelopeMarker || parts[1] != bindingEnvelopeVersion {
+	if len(parts) != 4 || parts[0] != d.marker || parts[1] != bindingEnvelopeVersion {
 		return "", errors.New("store: binding cipher: unrecognised envelope")
 	}
 	key, ok := c.keys[parts[2]]
@@ -135,7 +168,7 @@ func (c *bindingCipher) Decrypt(envelope string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("store: binding cipher: %w", err)
 	}
-	plaintext, err := gcm.Open(nil, nonce, sealed, bindingSecretAAD)
+	plaintext, err := gcm.Open(nil, nonce, sealed, d.aad)
 	if err != nil {
 		return "", fmt.Errorf("store: binding cipher: authenticate: %w", err)
 	}

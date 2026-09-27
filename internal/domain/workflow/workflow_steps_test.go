@@ -192,3 +192,104 @@ func TestRunParksWhenAChildStepWriteFails(t *testing.T) {
 		t.Fatalf("transitions = %+v, want the execution parked after the child's recording failed", store.transitions)
 	}
 }
+
+// persistenceFailureStore fails the selected write while retaining the normal
+// recording store's event and step behaviour.
+type persistenceFailureStore struct {
+	recordingStore
+	failUpdate        int
+	updates           int
+	transitionErr     error
+	finishContextErr  error
+	finishHasDeadline bool
+}
+
+func (s *persistenceFailureStore) Update(context.Context, *Task) error {
+	s.updates++
+	if s.updates == s.failUpdate {
+		return errStepWrite
+	}
+	return nil
+}
+
+func (s *persistenceFailureStore) Transition(ctx context.Context, id int64, from, to, detail string) error {
+	if s.transitionErr != nil {
+		return s.transitionErr
+	}
+	return s.recordingStore.Transition(ctx, id, from, to, detail)
+}
+
+func (s *persistenceFailureStore) FinishStep(ctx context.Context, finish StepFinish) (events.Event, error) {
+	s.finishContextErr = ctx.Err()
+	_, s.finishHasDeadline = ctx.Deadline()
+	if ctx.Err() != nil {
+		return events.Event{}, ctx.Err()
+	}
+	return s.recordingStore.FinishStep(ctx, finish)
+}
+
+func TestRunDoesNotReportUnpersistedOutcomes(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		failUpdate    int
+		transitionErr error
+		stageErr      error
+		wantRan       bool
+		wantParked    bool
+	}{
+		{name: "update before stage", failUpdate: 1, wantParked: true},
+		{name: "update before outcome", failUpdate: 2, wantRan: true, wantParked: true},
+		{name: "outcome transition", transitionErr: errStepWrite, wantRan: true},
+		{name: "park transition", transitionErr: errStepWrite, stageErr: errStepWrite, wantRan: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &persistenceFailureStore{failUpdate: tt.failUpdate, transitionErr: tt.transitionErr}
+			bus := events.NewBus()
+			sub := bus.Subscribe(16)
+			defer sub.Close()
+			tc := &TaskContext{Task: &Task{ID: 9, Attempt: 1, Status: StatusRunning}, Store: store, Bus: bus, Log: slog.New(slog.DiscardHandler)}
+			ran := false
+			Run(t.Context(), Workflow{Name: "persist", Stages: []Stage{{Name: "work", Run: func(_ context.Context, tc *TaskContext) error {
+				ran = true
+				tc.Outcome = Outcome{Status: StatusCompleted}
+				return tt.stageErr
+			}}}}, tc)
+			if ran != tt.wantRan {
+				t.Errorf("stage ran = %v, want %v", ran, tt.wantRan)
+			}
+			parked := false
+			for len(sub.C) > 0 {
+				event := <-sub.C
+				if event.Kind == events.KindOutcome {
+					t.Error("published an outcome whose write failed")
+				}
+				if event.Kind == events.KindParked {
+					parked = true
+				}
+			}
+			if parked != tt.wantParked {
+				t.Errorf("published parked = %v, want %v", parked, tt.wantParked)
+			}
+		})
+	}
+}
+
+func TestRunRecordsInterruptionAfterContextCancellation(t *testing.T) {
+	store := &persistenceFailureStore{}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	tc := &TaskContext{Task: &Task{ID: 9, Attempt: 1, Status: StatusRunning}, Store: store, Log: slog.New(slog.DiscardHandler)}
+	Run(ctx, Workflow{Name: "interrupt", Stages: []Stage{{Name: "work", Run: func(context.Context, *TaskContext) error {
+		cancel()
+		return ctx.Err()
+	}}}}, tc)
+	if store.finishContextErr != nil || !store.finishHasDeadline {
+		t.Fatalf("finish context error = %v, bounded = %v; want a live, bounded cleanup context", store.finishContextErr, store.finishHasDeadline)
+	}
+	if len(store.finishes) != 1 || store.finishes[0].To != "interrupted" {
+		t.Fatalf("finishes = %+v, want one interrupted step", store.finishes)
+	}
+	if len(store.transitions) != 0 {
+		t.Fatalf("transitions = %+v, interruption must leave recovery to the store", store.transitions)
+	}
+}

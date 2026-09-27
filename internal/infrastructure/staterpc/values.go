@@ -14,6 +14,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
+	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/source"
@@ -328,6 +329,25 @@ func stepExecutionValue(s *pb.StepExecution) task.StepExecution {
 	}
 }
 
+func harnessSecretProto(s harnesssecret.Secret) *pb.HarnessSecret {
+	return &pb.HarnessSecret{
+		Org: s.Org, Service: s.Service, AccessToken: s.AccessToken,
+		RefreshToken: s.RefreshToken, TokenType: s.TokenType,
+		ExpiresAt: timestamp(s.ExpiresAt), UpdatedAt: timestamp(s.UpdatedAt),
+	}
+}
+
+func harnessSecretValue(s *pb.HarnessSecret) harnesssecret.Secret {
+	if s == nil {
+		return harnesssecret.Secret{}
+	}
+	return harnesssecret.Secret{
+		Org: s.Org, Service: s.Service, AccessToken: s.AccessToken,
+		RefreshToken: s.RefreshToken, TokenType: s.TokenType,
+		ExpiresAt: timeValue(s.ExpiresAt), UpdatedAt: timeValue(s.UpdatedAt),
+	}
+}
+
 func stageStatProto(s storecontract.StageStat) *pb.StageStat {
 	return &pb.StageStat{Workflow: s.Workflow, Stage: s.Stage, Runs: int64(s.Runs), AvgMs: int64(s.AvgMs), Errors: int64(s.Errors)}
 }
@@ -354,21 +374,22 @@ func dayTokensValue(d *pb.DayTokens) storecontract.DayTokens {
 // are the wire contract for sentinel identity -- the client rehydrates by
 // matching (code, message), never by parsing free-form text.
 const (
-	msgStaleTransition   = "stale transition"
-	msgIllegalTransition = "illegal transition"
-	msgInvalidStep       = "step execution invalid"
-	msgBindingNotFound   = "binding not found"
-	msgMappingNotFound   = "mapping not found"
-	msgEventTypeNotFound = "event type not found"
-	msgEventTypeOverlap  = "event type overlap"
-	msgEventTypeInvalid  = "event type invalid"
-	msgBindingOverlap    = "binding overlap"
-	msgBindingTransition = "binding transition rejected"
-	msgAlreadyDispatched = "already dispatched"
-	msgSourceNotFound    = "source not found"
-	msgSourcePathTaken   = "source path taken"
-	msgSourceSigning     = "source signing stale"
-	msgInternal          = "state store: internal error"
+	msgStaleTransition       = "stale transition"
+	msgIllegalTransition     = "illegal transition"
+	msgInvalidStep           = "step execution invalid"
+	msgBindingNotFound       = "binding not found"
+	msgMappingNotFound       = "mapping not found"
+	msgEventTypeNotFound     = "event type not found"
+	msgEventTypeOverlap      = "event type overlap"
+	msgEventTypeInvalid      = "event type invalid"
+	msgBindingOverlap        = "binding overlap"
+	msgBindingTransition     = "binding transition rejected"
+	msgAlreadyDispatched     = "already dispatched"
+	msgSourceNotFound        = "source not found"
+	msgSourcePathTaken       = "source path taken"
+	msgSourceSigning         = "source signing stale"
+	msgHarnessSecretNotFound = "harness secret not found"
+	msgInternal              = "state store: internal error"
 	// msgTaskLogsUnavailable is the public phrase for "this service has no
 	// task-log reader". It is a wire contract like the sentinels above: the
 	// client rehydrates logging.ErrTaskLogsUnavailable from (Unavailable, this
@@ -485,6 +506,7 @@ var wireErrors = []struct {
 	{storecontract.ErrCallCallerNotRunning, codes.FailedPrecondition, storecontract.ErrCallCallerNotRunning.Error()},
 	{storecontract.ErrCallDepthExceeded, codes.FailedPrecondition, storecontract.ErrCallDepthExceeded.Error()},
 	{storecontract.ErrSourcePathTaken, codes.AlreadyExists, msgSourcePathTaken},
+	{storecontract.ErrHarnessSecretNotFound, codes.NotFound, msgHarnessSecretNotFound},
 	{storepkg.ErrNotFound, codes.NotFound, storepkg.ErrNotFound.Error()},
 	{storepkg.ErrInstalled, codes.AlreadyExists, storepkg.ErrInstalled.Error()},
 	{storepkg.ErrRequired, codes.FailedPrecondition, storepkg.ErrRequired.Error()},

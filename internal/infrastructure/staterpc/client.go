@@ -11,6 +11,7 @@ import (
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
@@ -43,6 +44,7 @@ func (c *Client) ControlPlane() controlpb.ControlPlaneServiceClient { return c.c
 func (c *Client) Close() error { return nil }
 
 var (
+	_ storecontract.HarnessSecretStore   = (*Client)(nil)
 	_ task.Store                         = (*Client)(nil)
 	_ task.Caller                        = (*Client)(nil)
 	_ storecontract.TaskStore            = (*Client)(nil)
@@ -712,6 +714,24 @@ func (c *Client) TaskLogContent(ctx context.Context, taskID int64, attempt int, 
 			return found, err
 		}
 	}
+}
+
+// GetHarnessSecret returns the stored OAuth token set for an org/service
+// credential binding, or storecontract.ErrHarnessSecretNotFound.
+func (c *Client) GetHarnessSecret(ctx context.Context, org, service string) (harnesssecret.Secret, error) {
+	r, err := c.client.GetHarnessSecret(ctx, &pb.GetHarnessSecretRequest{Org: org, Service: service})
+	if err != nil {
+		return harnesssecret.Secret{}, unmapError(err)
+	}
+	return harnessSecretValue(r.Secret), nil
+}
+
+// PutHarnessSecret upserts an org/service credential binding's OAuth token
+// set, called by the setup terminal's first capture and by the egress
+// proxy's every refresh.
+func (c *Client) PutHarnessSecret(ctx context.Context, s harnesssecret.Secret) error {
+	_, err := c.client.PutHarnessSecret(ctx, &pb.PutHarnessSecretRequest{Secret: harnessSecretProto(s)})
+	return unmapError(err)
 }
 
 func derefTasks(in []*pb.Task) []task.Task {

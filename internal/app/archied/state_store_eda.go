@@ -17,6 +17,7 @@ type eventCaptureStore interface { //nolint:interfacebloat // composite of the s
 	storecontract.PlaybookDispatcher
 	storecontract.EventTypeStore
 	storecontract.SourceStore
+	storecontract.HarnessSecretStore
 	toolCallWriter
 }
 

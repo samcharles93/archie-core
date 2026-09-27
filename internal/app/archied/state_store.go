@@ -330,6 +330,10 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.EventTypes = b.eda
 		deps.Sources = b.eda
 		deps.MappingMatches = b.eda
+		// HarnessSecrets rides the same encrypted-at-rest store as source
+		// webhook secrets (docs/prds/binding-secret-encryption.md), under its
+		// own domain separator (bindingcipher.HarnessSecretDomain).
+		deps.HarnessSecrets = b.eda
 	}
 	// tool_call events project into the tool_calls collection on the same
 	// event-capture store: this process legitimately owns both, so the
