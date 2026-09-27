@@ -957,10 +957,11 @@ func (c ContainerConfig) ValidateCredentialBindings() error {
 type AgentProfile struct {
 	// Image is the container image; empty means [containers].image.
 	Image string `toml:"image" yaml:"image"`
-	// Kit makes this a harness profile: the workload Kit, then its mixins,
-	// each pinned by digest. The task container is the workload's image and
-	// every agent stage runs on its CLI. Exclusive with Image.
-	Kit []string `toml:"kit" yaml:"kit"`
+	// Kit makes this a harness profile: one workload Kit or published Kit
+	// set, pinned by digest. Mixins are composed by publishing a set, which
+	// merges their layers into one image. The task container runs that
+	// image and every agent stage runs on its CLI. Exclusive with Image.
+	Kit string `toml:"kit" yaml:"kit"`
 	// Adapter names the output adapter reading the Kit's CLI; empty runs it
 	// with no capture tools and no usage.
 	Adapter string `toml:"adapter" yaml:"adapter"`
@@ -988,7 +989,7 @@ func (c ContainerConfig) Profile(name string) (AgentProfile, error) {
 }
 
 // IsKit reports whether the profile runs a Kit harness.
-func (p AgentProfile) IsKit() bool { return len(p.Kit) > 0 }
+func (p AgentProfile) IsKit() bool { return p.Kit != "" }
 
 // ValidateProfiles rejects a profile with an empty name, an empty tool
 // name, or a Kit that is not pinned by digest or also names an image.
@@ -1012,10 +1013,8 @@ func ValidateAgentProfiles(profiles map[string]AgentProfile) error {
 		case !p.IsKit() && p.Adapter != "":
 			return fmt.Errorf("containers.profiles.%s: adapter needs a kit", name)
 		}
-		for _, ref := range p.Kit {
-			if !strings.Contains(ref, "@sha256:") {
-				return fmt.Errorf("containers.profiles.%s.kit: %q must be pinned by digest", name, ref)
-			}
+		if p.IsKit() && !strings.Contains(p.Kit, "@sha256:") {
+			return fmt.Errorf("containers.profiles.%s.kit: %q must be pinned by digest", name, p.Kit)
 		}
 		for _, tool := range p.Tools {
 			if strings.TrimSpace(tool) == "" {

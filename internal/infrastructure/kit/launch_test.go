@@ -38,9 +38,9 @@ const launchKit = `
 
 func plan(t *testing.T) *Plan {
 	t.Helper()
-	p, err := Compose([]spec.Contribution{{Reference: "kit", Descriptor: descriptor(t, spec.KindWorkload, launchKit)}})
+	p, err := admit(t, spec.Contribution{Reference: "kit", Descriptor: descriptor(t, spec.KindWorkload, launchKit)})
 	if err != nil {
-		t.Fatalf("Compose: %v", err)
+		t.Fatalf("admit: %v", err)
 	}
 	return p
 }

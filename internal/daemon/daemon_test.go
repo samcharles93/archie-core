@@ -2364,9 +2364,9 @@ func TestPinTaskProfileRefusesCapturesTheHarnessCannotServe(t *testing.T) {
 	d, s, _ := daemonWithNATS(t)
 	cfg := d.Cfg.Get()
 	cfg.Containers.Profiles = map[string]config.AgentProfile{
-		"serves-captures": {Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode},
-		"no-captures":     {Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterCodex},
-		"no-adapter":      {Kit: []string{"kit@sha256:ab"}},
+		"serves-captures": {Kit: "kit@sha256:ab", Adapter: agentexec.AdapterClaudeCode},
+		"no-captures":     {Kit: "kit@sha256:ab", Adapter: agentexec.AdapterCodex},
+		"no-adapter":      {Kit: "kit@sha256:ab"},
 	}
 	d.Cfg.Set(cfg)
 	d.WorkflowDefinitions = &workflowDefinitionsStub{collection: workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{
@@ -2427,7 +2427,7 @@ func TestWorkflowCallGivesACalleeItsOwnProfile(t *testing.T) {
 	cfg := d.Cfg.Get()
 	cfg.Containers.Profiles = map[string]config.AgentProfile{
 		"net":     {Image: "agent-net:1"},
-		"contain": {Kit: []string{"contain-kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode},
+		"contain": {Kit: "contain-kit@sha256:ab", Adapter: agentexec.AdapterClaudeCode},
 	}
 	d.Cfg.Set(cfg)
 	d.WorkflowDefinitions = &workflowDefinitionsStub{collection: workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{
@@ -2607,7 +2607,7 @@ func TestKitProfileRunsTheTaskOnItsHarness(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	profile := config.AgentProfile{Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode}
+	profile := config.AgentProfile{Kit: "kit@sha256:ab", Adapter: agentexec.AdapterClaudeCode}
 	d.runKitTask(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, t.TempDir(), profile)
 
 	select {
@@ -2618,8 +2618,8 @@ func TestKitProfileRunsTheTaskOnItsHarness(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("archied did not publish a taskrun request")
 	}
-	if !slices.Equal(launcher.got.Kit, profile.Kit) || launcher.got.Adapter != profile.Adapter {
-		t.Fatalf("launch request %+v, want the profile's kits and adapter", launcher.got)
+	if launcher.got.Kit != profile.Kit || launcher.got.Adapter != profile.Adapter {
+		t.Fatalf("launch request %+v, want the profile's kit and adapter", launcher.got)
 	}
 	for _, e := range launcher.got.WorkerEnv {
 		if strings.Contains(e, "sk-real") {
@@ -2666,7 +2666,7 @@ func TestRunKitTaskThreadsGateRetriesToTheLauncher(t *testing.T) {
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
 	d.runKitTask(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"}, t.TempDir(),
-		config.AgentProfile{Kit: []string{"kit@sha256:ab"}, Adapter: agentexec.AdapterClaudeCode})
+		config.AgentProfile{Kit: "kit@sha256:ab", Adapter: agentexec.AdapterClaudeCode})
 
 	if launcher.got.GateRetries != 4 {
 		t.Fatalf("launch request GateRetries = %d, want the workflow's declared 4", launcher.got.GateRetries)

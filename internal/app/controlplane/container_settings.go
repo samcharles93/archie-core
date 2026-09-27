@@ -34,7 +34,7 @@ type containerRuntimePolicies struct {
 // agentProfile is one named execution environment as the document writes it.
 type agentProfile struct {
 	Image   string   `json:"image,omitempty"`
-	Kit     []string `json:"kit,omitempty"`
+	Kit     string   `json:"kit,omitempty"`
 	Adapter string   `json:"adapter,omitempty"`
 	Tools   []string `json:"tools,omitempty"`
 }

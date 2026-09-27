@@ -51,9 +51,9 @@ optional one is skipped and recorded on the step. `credential@1` with
 `passthrough: true` and any credential for a forge service are refused.
 
 The operator's own setup (plugins, subagents, instructions, settings) is a
-mixin Kit the operator builds `FROM` or alongside the harness Kit. It is
-versioned image content, rewritten on every create, never state a run can
-modify.
+mixin Kit, published with the harness Kit as a Kit set: the set merges their
+layers into one image. It is versioned image content, rewritten on every
+create, never state a run can modify.
 
 ## Contract
 
@@ -75,8 +75,9 @@ retry without a `resume` verb.
 
 A harness is an agent profile. `docs/prds/event-automation.md` defines a
 profile as the execution environment a workflow selects; a harness profile
-names a Kit composition (the workload Kit pinned by digest, and zero or more
-mixin Kits) in place of a container image. Everything else about profiles
+names one Kit pinned by digest, a workload Kit or a published Kit set, in
+place of a container image. Archie runs that Kit's image and composes no Kits
+itself; a bare mixin is refused. Everything else about profiles
 holds: a workflow names its profile, a stage may name a different one, and a
 profile holds no secrets.
 

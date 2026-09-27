@@ -73,7 +73,8 @@ type Request struct {
 	// Execution keys the task's Kit volumes and names its container and
 	// network.
 	Execution string
-	Kit       []string
+	// Kit is the digest-pinned workload Kit or published Kit set.
+	Kit       string
 	Adapter   string
 	WorkDir   string
 	WorkerEnv []string
@@ -106,9 +107,9 @@ type Run struct {
 	execution string
 }
 
-// Launch composes the request's Kits and starts its container.
+// Launch reads the request's Kit and starts its container.
 func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
-	if len(req.Kit) == 0 {
+	if req.Kit == "" {
 		return nil, errors.New("kit profile names no kit")
 	}
 	adapter, ok := agentexec.LookupHarnessAdapter(req.Adapter)
@@ -158,7 +159,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	}
 	run.Container, err = l.Pool.AcquireKit(ctx, container.KitSpec{
 		Name:      "archie-kit-" + req.Execution,
-		Image:     req.Kit[0],
+		Image:     req.Kit,
 		Network:   run.network,
 		Worker:    []string{agentPath},
 		WorkerEnv: req.WorkerEnv,
@@ -234,22 +235,18 @@ func (l *Launcher) release(run *Run) {
 	l.Proxy.Revoke(run.token)
 }
 
-// compose assembles the profile's Kits and reads the workload image's
-// config, the first Kit being the workload.
-func (l *Launcher) compose(ctx context.Context, refs []string) (*kit.Plan, kit.ImageConfig, error) {
-	reqs := make([]fetch.Request, len(refs))
-	for i, ref := range refs {
-		reqs[i] = fetch.Request{Reference: ref}
-	}
+// compose reads the profile's Kit and the config of the image it runs.
+func (l *Launcher) compose(ctx context.Context, ref string) (*kit.Plan, kit.ImageConfig, error) {
+	reqs := []fetch.Request{{Reference: ref}}
 	merged, err := l.Fetch.Assemble(ctx, reqs, kit.MergeOptions)
 	if err != nil {
-		return nil, kit.ImageConfig{}, fmt.Errorf("assemble kits: %w", err)
+		return nil, kit.ImageConfig{}, fmt.Errorf("read kit: %w", err)
 	}
 	plan, err := kit.FromMerge(merged.MergeResult)
 	if err != nil {
 		return nil, kit.ImageConfig{}, err
 	}
-	img, err := l.imageConfig(ctx, refs[0])
+	img, err := l.imageConfig(ctx, ref)
 	if err != nil {
 		return nil, kit.ImageConfig{}, err
 	}

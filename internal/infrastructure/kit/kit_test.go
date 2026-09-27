@@ -162,45 +162,41 @@ func TestRefusalNamesTheCapability(t *testing.T) {
 	}
 }
 
-func TestCompose(t *testing.T) {
+// admit reads one Kit the way the launcher does: merged alone, then admitted.
+func admit(t *testing.T, c spec.Contribution) (*Plan, error) {
+	t.Helper()
+	merged, err := spec.Merge([]spec.Contribution{c}, MergeOptions)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	return FromMerge(merged)
+}
+
+func TestFromMerge(t *testing.T) {
 	workload := spec.Contribution{Reference: "workload", Descriptor: descriptor(t, spec.KindWorkload, sessions)}
 	mixin := spec.Contribution{Reference: "mixin", Descriptor: descriptor(t, spec.KindMixin, `
   - type: com.docker.sandbox/network-policy@1
-    config: {runtime: {allow: [api.example.com]}}
-  - type: com.docker.sandbox/credential@1
-    config:
-      service: example
-      phase: runtime
-      apiKey: {name: EXAMPLE_KEY, proxyManaged: true, inject: [{domain: api.example.com, header: x-api-key, format: "%s"}]}`)}
+    config: {runtime: {allow: [api.example.com]}}`)}
 	bareWorkload := spec.Contribution{Reference: "bare", Descriptor: descriptor(t, spec.KindWorkload, `
   - type: com.docker.sandbox/resources@1
     config: {memory: 1g}`)}
 
-	t.Run("a workload and its mixins compose into one plan", func(t *testing.T) {
-		plan, err := Compose([]spec.Contribution{workload, mixin})
-		if err != nil {
-			t.Fatalf("Compose: %v", err)
-		}
-		if !spec.HasCapability(plan.Capabilities, typeCredential) {
-			t.Fatal("the mixin's credential did not reach the plan")
-		}
-		if plan.Sessions == nil || len(plan.Sessions.Prompt) == 0 {
-			t.Fatal("the plan carries no headless prompt verb")
-		}
-	})
+	plan, err := admit(t, workload)
+	if err != nil || plan.Sessions == nil || len(plan.Sessions.Prompt) == 0 {
+		t.Fatalf("admit(workload) = %+v, %v; want a plan with a headless prompt verb", plan, err)
+	}
 
 	tests := []struct {
-		name          string
-		contributions []spec.Contribution
-		want          string
+		name string
+		kit  spec.Contribution
+		want string
 	}{
-		{"no workload", []spec.Contribution{mixin}, "no workload"},
-		{"no headless prompt verb", []spec.Contribution{bareWorkload}, "agent-sessions"},
-		{"two workloads", []spec.Contribution{workload, bareWorkload}, "workload"},
+		{"a bare mixin", mixin, "publish a Kit set"},
+		{"no headless prompt verb", bareWorkload, "agent-sessions"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+" is refused", func(t *testing.T) {
-			_, err := Compose(tt.contributions)
+			_, err := admit(t, tt.kit)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error %v, want one mentioning %q", err, tt.want)
 			}
