@@ -91,6 +91,11 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 			return fail(fmt.Errorf("write kit file %s: %w", f.Path, err))
 		}
 	}
+	for _, f := range s.Launch.Context {
+		if err := writeKitFile(ctx, cli, created.ID, "0", f.Path, f.Content, f.Mode, nil); err != nil {
+			return fail(fmt.Errorf("write agent context %s: %w", f.Path, err))
+		}
+	}
 	for i, h := range s.Launch.Startup {
 		if err := runHook(ctx, cli, created.ID, h); err != nil {
 			return fail(fmt.Errorf("startup hook %d: %w", i+1, err))

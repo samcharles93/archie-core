@@ -71,7 +71,7 @@ func TestAssembleHarness(t *testing.T) {
 	}
 	for _, want := range []string{
 		"PATH=/usr/local/bin:/usr/bin:/bin", "IMAGE_ONLY=kept",
-		"WORKSPACE_DIR=/workspace",
+		"WORKSPACE_DIR=" + WorkspaceDir,
 		"HTTPS_PROXY=http://archie:tok@archie-egress:3128",
 		"SSL_CERT_FILE=/etc/archie/ca.pem",
 		"EXAMPLE_KEY=archie-proxy-managed",
@@ -111,7 +111,7 @@ func TestAssembleHooks(t *testing.T) {
 	if install.User != "0" {
 		t.Errorf("install hook user %q, want root by default", install.User)
 	}
-	if !slices.Contains(install.Env, "WORKSPACE_DIR=/workspace") || !slices.Contains(install.Env, "HTTPS_PROXY=http://archie:tok@archie-egress:3128") {
+	if !slices.Contains(install.Env, "WORKSPACE_DIR="+WorkspaceDir) || !slices.Contains(install.Env, "HTTPS_PROXY=http://archie:tok@archie-egress:3128") {
 		t.Errorf("install env %v, want its declared variable and the egress baseline", install.Env)
 	}
 	warm := l.Startup[0]
@@ -154,4 +154,67 @@ func TestAssembleVolumesArePerExecution(t *testing.T) {
 			t.Errorf("executions share volume %q", a.Volumes[i].Name)
 		}
 	}
+}
+
+func TestAssembleAgentContextProfile(t *testing.T) {
+	assemble := func(t *testing.T, contextYAML string) Launch {
+		t.Helper()
+		p, err := admit(t, spec.Contribution{Reference: "registry/team-set@sha256:ab", Descriptor: descriptor(t, spec.KindWorkload, sessions+contextYAML)})
+		if err != nil {
+			t.Fatalf("admit: %v", err)
+		}
+		l, err := Assemble(p, image, LaunchParams{Execution: "exec-1"})
+		if err != nil {
+			t.Fatalf("Assemble: %v", err)
+		}
+		return l
+	}
+	byPath := func(files []spec.File) map[string]string {
+		out := map[string]string{}
+		for _, f := range files {
+			out[f.Path] = f.Content
+		}
+		return out
+	}
+
+	t.Run("a staged body is indexed where the image holds it", func(t *testing.T) {
+		files := byPath(assemble(t, `
+  - type: com.docker.sandbox/agent-context@1
+    config: {filename: CLAUDE.md, contentFile: /usr/share/sandbox/kit/team/context.md}`).Context)
+		profile, ok := files["/archie/CLAUDE.md"]
+		if !ok || len(files) != 1 {
+			t.Fatalf("context files = %v, want only the profile beside the workspace", files)
+		}
+		if !strings.Contains(profile, "registry/team-set@sha256:ab") || !strings.Contains(profile, "/usr/share/sandbox/kit/team/context.md") {
+			t.Fatalf("profile does not index the Kit's staged body:\n%s", profile)
+		}
+	})
+
+	t.Run("an inline body gets its own file the profile points at", func(t *testing.T) {
+		files := byPath(assemble(t, `
+  - type: com.docker.sandbox/agent-context@1
+    config: {filename: AGENTS.md, content: "Use motd."}`).Context)
+		profile := files["/archie/AGENTS.md"]
+		var body string
+		for path, content := range files {
+			if path != "/archie/AGENTS.md" {
+				body = path
+				if content != "Use motd." {
+					t.Fatalf("%s = %q, want the inline body", path, content)
+				}
+			}
+		}
+		if body == "" || strings.HasPrefix(body, WorkspaceDir+"/") || !strings.Contains(profile, body) {
+			t.Fatalf("files %v: want the inline body outside the workspace and indexed by the profile", files)
+		}
+		if strings.Contains(profile, "Use motd.") {
+			t.Fatal("the profile inlines a Kit's body; it must only point at it")
+		}
+	})
+
+	t.Run("no profile filename materializes nothing", func(t *testing.T) {
+		if files := assemble(t, "").Context; len(files) != 0 {
+			t.Fatalf("context files = %v, want none", files)
+		}
+	})
 }

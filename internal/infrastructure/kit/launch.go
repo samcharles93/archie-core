@@ -3,6 +3,8 @@ package kit
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,8 +19,11 @@ const (
 	// DefaultHarnessUser is the Kit agent user: the harness runs as it when
 	// the image names no user, or names root.
 	DefaultHarnessUser = "1000"
-	// WorkspaceDir is where a Kit container mounts the task worktree.
-	WorkspaceDir = "/workspace"
+	// WorkspaceDir is where a Kit container mounts the task worktree. Its
+	// parent holds the agent-context profile: beside the worktree, not in
+	// it, and below the filesystem root, which some CLIs stop short of when
+	// they look upward for instruction files.
+	WorkspaceDir = "/archie/workspace"
 
 	installHookUser = "0"
 )
@@ -68,6 +73,9 @@ type Launch struct {
 	Install []Hook
 	Startup []Hook
 	Files   []spec.File
+	// Context is the agent-context profile and the inline bodies it points
+	// at, written as root so a run can read but not change them.
+	Context []spec.File
 	Volumes []Volume
 }
 
@@ -123,7 +131,38 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 	for _, v := range volumes {
 		l.Volumes = append(l.Volumes, Volume{Name: volumeName(params.Execution, v.Path), Path: v.Path})
 	}
+	if l.Context, err = contextFiles(p); err != nil {
+		return Launch{}, err
+	}
 	return l, nil
+}
+
+// contextFiles materializes agent-context@1: the workload's profile file
+// beside the workspace, never in it, carrying an index of each Kit's body.
+// A staged body is pointed at where the image holds it; an inline one is
+// written to its own file beside the profile. The profile never inlines a
+// Kit's text, so stacking Kits does not grow what the agent always loads.
+func contextFiles(p *Plan) ([]spec.File, error) {
+	ac, err := spec.AgentContextOf(p.Capabilities)
+	if err != nil || ac == nil || ac.Filename == "" {
+		return nil, err
+	}
+	root := path.Dir(WorkspaceDir)
+	var files []spec.File
+	var index strings.Builder
+	index.WriteString("# Archie\n\nArchie runs this environment. Each task's rules are in its prompt.\n")
+	for i, src := range p.ContextSources {
+		if i == 0 {
+			index.WriteString("\n## Kits\n\nRead a Kit's guidance when its tools are relevant.\n\n")
+		}
+		at := src.Path
+		if at == "" {
+			at = path.Join(root, "archie-kit-context", fmt.Sprintf("%d.md", i+1))
+			files = append(files, spec.File{Path: at, Content: src.Content, Mode: "0644"})
+		}
+		fmt.Fprintf(&index, "- `%s`: %s\n", src.Reference, at)
+	}
+	return append(files, spec.File{Path: path.Join(root, path.Base(ac.Filename)), Content: index.String(), Mode: "0644"}), nil
 }
 
 func harnessUser(imageUser string) string {
