@@ -63,7 +63,10 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 	// per run with exactly the declared-and-granted intersection
 	// (docs/prds/external-agent-harness.md, Credentials; archie-core-egkf.11).
 	grants := egress.NewGrantResolver()
-	proxy := egress.NewProxy(ca, egress.ProxyOptions{Resolver: grants})
+	// Without a harness secret store, Register refuses a Kit with a
+	// required OAuth credential.
+	oauthStore, _ := b.stateStore.(egress.OAuthStore)
+	proxy := egress.NewProxy(ca, egress.ProxyOptions{Resolver: grants, OAuthStore: oauthStore})
 	srv := &http.Server{Handler: proxy, ReadHeaderTimeout: 30 * time.Second}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

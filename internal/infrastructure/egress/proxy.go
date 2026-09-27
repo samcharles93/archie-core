@@ -37,9 +37,11 @@ var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 type Session struct {
 	token      string
 	run        string
+	org        string
 	install    rules
 	runtime    rules
 	injections []injection
+	oauth      []oauthRule
 	atRun      atomic.Bool
 }
 
@@ -66,12 +68,17 @@ type ProxyOptions struct {
 	// Resolver supplies credentials for injection. Without one, a request
 	// that needs a required credential is refused.
 	Resolver Resolver
+	// OAuthStore holds the org token sets OAuth credentials use. Without
+	// one, Register refuses a session with a required OAuth credential.
+	OAuthStore OAuthStore
 }
 
 // SessionOptions describe one container's run: the run credential it acts
-// under, and its Kit's network policy and credential requests.
+// under, the org whose OAuth token sets it uses, and its Kit's network
+// policy and credential requests.
 type SessionOptions struct {
 	Run         string
+	Org         string
 	Network     *spec.PhasedNetwork
 	Credentials []spec.CredentialCapability
 }
@@ -85,6 +92,7 @@ type Proxy struct {
 	dial      func(ctx context.Context, network, addr string) (net.Conn, error)
 	transport *http.Transport
 	resolver  Resolver
+	oauth     OAuthStore
 
 	mu       sync.RWMutex
 	sessions map[string]*Session
@@ -93,7 +101,7 @@ type Proxy struct {
 type sessionKey struct{}
 
 func NewProxy(ca *CA, opts ProxyOptions) *Proxy {
-	p := &Proxy{ca: ca, dial: opts.Dial, resolver: opts.Resolver, sessions: map[string]*Session{}}
+	p := &Proxy{ca: ca, dial: opts.Dial, resolver: opts.Resolver, oauth: opts.OAuthStore, sessions: map[string]*Session{}}
 	p.transport = &http.Transport{
 		DialContext:         p.dialUpstream,
 		TLSClientConfig:     &tls.Config{RootCAs: opts.UpstreamRoots, MinVersion: tls.VersionTLS12},
@@ -110,7 +118,15 @@ func (p *Proxy) Register(opts SessionOptions) (*Session, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return nil, err
 	}
-	s := &Session{token: hex.EncodeToString(raw), run: opts.Run, injections: compileInjections(opts.Credentials)}
+	s := &Session{
+		token: hex.EncodeToString(raw), run: opts.Run, org: opts.Org,
+		injections: compileInjections(opts.Credentials), oauth: compileOAuthRules(opts.Credentials),
+	}
+	for _, rule := range s.oauth {
+		if rule.required && p.oauth == nil {
+			return nil, fmt.Errorf("credential %q is OAuth-managed and no harness secret store is configured", rule.service)
+		}
+	}
 	if opts.Network != nil {
 		s.install, s.runtime = compileRules(opts.Network.Install), compileRules(opts.Network.Runtime)
 	}
@@ -233,9 +249,24 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request, s *Session)
 
 func (p *Proxy) forward(ctx context.Context, w http.ResponseWriter, r *http.Request, s *Session, scheme, host string, port int) {
 	target := net.JoinHostPort(host, strconv.Itoa(port))
+	if rule, ok := tokenEndpointRule(s, r, host, port); ok {
+		granted, err := p.granted(ctx, s, rule)
+		if err != nil {
+			http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		if granted {
+			p.interceptOAuth(ctx, w, r, s, rule, scheme, target)
+			return
+		}
+	}
 	// Injection happens before anything is sent, so a credential that
 	// cannot be resolved never reaches upstream half-applied.
-	if err := p.inject(ctx, s, r, host, port); err != nil {
+	err := p.inject(ctx, s, r, host, port)
+	if err == nil {
+		err = p.injectOAuth(ctx, s, r, host, port)
+	}
+	if err != nil {
 		http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)
 		return
 	}

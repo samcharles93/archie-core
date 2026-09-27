@@ -137,7 +137,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	if l.Grants != nil {
 		l.Grants.Grant(req.Execution, granted)
 	}
-	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Network: network, Credentials: creds})
+	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Org: req.Org, Network: network, Credentials: creds})
 	if err != nil {
 		if l.Grants != nil {
 			l.Grants.RevokeGrant(req.Execution)
@@ -185,10 +185,12 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 // renders sentinel-mode env vars from. A service failing any part of the
 // intersection, or whose binding's secret does not resolve, is simply
 // absent from both: it stays unbound, exactly as if credential@1 named a
-// service nobody configured.
+// service nobody configured. An OAuth-managed service is granted with no
+// value: its tokens are the org's State Store secret, which the proxy reads
+// only for a granted run.
 func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapability) (granted map[string]string, bound []string) {
 	granted = map[string]string{}
-	if l.Secrets == nil || l.Config == nil {
+	if l.Config == nil {
 		return granted, bound
 	}
 	current := l.Config.Get().Containers.Credentials
@@ -196,11 +198,21 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 		return granted, bound
 	}
 	declared := make([]string, len(creds))
+	oauth := map[string]bool{}
 	for i, c := range creds {
 		declared[i] = c.Service
+		oauth[c.Service] = egress.IsOAuthManaged(c)
 	}
 	bindings := config.ContainerConfig{Credentials: current}.BoundCredentials(req.Org, req.GrantedServices, declared)
 	for service, binding := range bindings {
+		if oauth[service] {
+			granted[service] = ""
+			bound = append(bound, service)
+			continue
+		}
+		if l.Secrets == nil {
+			continue
+		}
 		value, err := l.Secrets.Resolve(binding.Secret)
 		if err != nil {
 			continue

@@ -25,6 +25,12 @@ func declaredCred(service string) spec.CredentialCapability {
 	return spec.CredentialCapability{Service: service}
 }
 
+func declaredOAuth(service string) spec.CredentialCapability {
+	c := declaredCred(service)
+	c.OAuth = &spec.OAuth{TokenEndpoint: &spec.TokenEndpoint{Host: "auth.example.com"}}
+	return c
+}
+
 // TestResolveCredentialsReadsTheLiveConfig is the "reads current, not a boot
 // snapshot" requirement: two calls against the same Launcher, differing only
 // in what l.Config now holds, must produce different results. A Launcher
@@ -65,6 +71,7 @@ func TestResolveCredentialsIsAnIntersection(t *testing.T) {
 			Credentials: []config.CredentialBinding{
 				{Service: "openai", Org: "acme", Secret: openaiRef},
 				{Service: "other-org-svc", Org: "other-org", Secret: otherRef},
+				{Service: "claude-code", Org: "acme"},
 			},
 		}}),
 		Secrets: fakeSecretResolver{openaiRef: "sk-acme", otherRef: "sk-other"},
@@ -96,6 +103,18 @@ func TestResolveCredentialsIsAnIntersection(t *testing.T) {
 			want:  map[string]string{},
 		},
 		{
+			name:  "an OAuth service is granted without a config secret",
+			req:   Request{Org: "acme", GrantedServices: []string{"claude-code"}},
+			creds: []spec.CredentialCapability{declaredOAuth("claude-code")},
+			want:  map[string]string{"claude-code": ""},
+		},
+		{
+			name:  "an ungranted OAuth service never resolves",
+			req:   Request{Org: "acme", GrantedServices: nil},
+			creds: []spec.CredentialCapability{declaredOAuth("claude-code")},
+			want:  map[string]string{},
+		},
+		{
 			name:  "not declared by the Kit never resolves even though granted",
 			req:   Request{Org: "acme", GrantedServices: []string{"openai"}},
 			creds: nil,
@@ -109,7 +128,7 @@ func TestResolveCredentialsIsAnIntersection(t *testing.T) {
 				t.Fatalf("resolveCredentials() = %v, want %v", granted, tt.want)
 			}
 			for service, value := range tt.want {
-				if granted[service] != value {
+				if got, ok := granted[service]; !ok || got != value {
 					t.Fatalf("resolveCredentials()[%q] = %q, want %q", service, granted[service], value)
 				}
 			}
