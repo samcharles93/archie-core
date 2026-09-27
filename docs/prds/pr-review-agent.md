@@ -44,8 +44,11 @@ an `agent` StepExecution; fan-out phases record one child per call.
    imported by changed files. One agent writes the PR narrative, risk
    surfaces, changes that do not fit the narrative, and gaps between the
    description and the diff.
-3. **Dimension selection.** Three lens agents run in parallel over the intake,
-   anatomy and diff, each able to read the repository:
+3. **Dimension selection.** Three lens agents run in parallel over the intake
+   (including its machine-written score), anatomy and diff, each able to read
+   the repository. A PR that intake scores as likely machine-written adds a
+   hallucination-check dimension: claims, citations and behaviour the diff
+   does not actually implement.
    - **behaviour:** where the old and new code diverge for any input; API
      contracts, concurrency and state, security, error handling, data flow;
    - **mechanics:** whether the code runs at the language and framework
@@ -62,7 +65,11 @@ an `agent` StepExecution; fan-out phases record one child per call.
    at most 8 at a time. Each reads its target and context files and may
    follow references. Each finding carries file, line range, severity
    (`critical`, `important`, `suggestion`, `nitpick`), title, body, an
-   optional suggested fix, quoted evidence, confidence and tags.
+   optional suggested fix, quoted evidence, confidence and tags. A reviewer
+   that exhausts its turn cap or deadline before its terminal tool call
+   records a distinct StepExecution status from a reviewer that completed
+   and found nothing; synthesis and the posted review treat the two
+   differently (the former is unreviewed, the latter is reviewed-clean).
 5. **Verification layer**, over the review findings:
    - code extracts an evidence package per finding: the code at the cited
      lines and snippets from its callers;
@@ -94,8 +101,9 @@ an `agent` StepExecution; fan-out phases record one child per call.
 8. **Merge gate.** One classification call per finding decides blocking or
    advisory: blocking only for broken builds, security, data loss, contract
    breaks and regressions. A failed call means advisory.
-9. **Output.** One call per comment tightens its wording, keeping the
-   original on failure. The review is posted as one forge review with inline
+9. **Output.** One call per comment tightens its wording, running in a
+   bounded pool at most 8 at a time (matching phase 4), keeping the original
+   on failure. The review is posted as one forge review with inline
    comments. Any blocking finding requests changes; otherwise the review is a
    comment. Archie never posts an approval.
 
