@@ -175,6 +175,13 @@ func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64
 	return nil
 }
 
+// The statuses the cancel path records, taken from the lifecycle's action table
+// so the service cannot drift from the transitions it offers.
+var (
+	declined, _ = taskstate.ActionTarget(taskstate.ActionReject)
+	parked, _   = taskstate.ActionTarget(taskstate.ActionStop)
+)
+
 type outcome struct {
 	event events.Event
 	verb  string
@@ -199,7 +206,7 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 		// A rejection ends the run's work wherever it sits, so it rides the
 		// one cancel path like every other operator stop.
 		o.event.Kind, o.event.Detail, o.verb = rejectedKind(actor), actor.describe("rejected"), "declined"
-		if _, err := s.Store.CancelExecution(ctx, task.ID, actor.describe("rejected"), "closed_wont_do"); err != nil {
+		if _, err := s.Store.CancelExecution(ctx, task.ID, actor.describe("rejected"), declined); err != nil {
 			return o, err
 		}
 		s.deliver(task.ID)
@@ -269,7 +276,7 @@ func (s Service) applyStop(ctx context.Context, task *Task, actor Actor, o outco
 	// context cancel that found nothing executing says so; the parked
 	// execution is recorded either way, and the task's own unwind cannot win
 	// the race any more -- its next step write is already stale.
-	if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, "parked"); err != nil {
+	if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, parked); err != nil {
 		return o, err
 	}
 	if !s.CancelTask(task.ID) {
@@ -283,13 +290,13 @@ func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action ta
 		// Abandoning ends archie's run, not the issue: no verb, so the issue
 		// stays open for a human.
 		o.event.Kind, o.event.Detail = events.KindTaskAbandoned, actor.describe("abandoned")
-		if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, "closed_wont_do"); err != nil {
+		if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, declined); err != nil {
 			return o, err
 		}
 		return o, nil
 	}
 	o.event.Kind, o.event.Detail, o.verb = events.KindTaskCancelled, actor.describe("cancelled"), "cancelled"
-	if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, "closed_wont_do"); err != nil {
+	if _, err := s.Store.CancelExecution(ctx, task.ID, o.event.Detail, declined); err != nil {
 		return o, err
 	}
 	s.deliver(task.ID)

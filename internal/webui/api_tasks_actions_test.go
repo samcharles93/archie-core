@@ -550,6 +550,7 @@ func TestTaskListExposesLifecycleActions(t *testing.T) {
 		workflow.StatusRejected:     {"archive"},
 		workflow.StatusDead:         {"archive"},
 		workflow.StatusClosedWontDo: {"archive"},
+		workflow.StatusCompleted:    {"archive"},
 	}
 
 	number := 1

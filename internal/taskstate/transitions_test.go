@@ -263,3 +263,14 @@ func TestCheckStepStart(t *testing.T) {
 		}
 	}
 }
+
+func TestOfferedActionsAreLegalTransitions(t *testing.T) {
+	for status := range executionTransitions {
+		for _, action := range Actions(status) {
+			to, moves := ActionTarget(action)
+			if moves && !CanTransition(status, to) {
+				t.Errorf("%s offers %s, but %s -> %s is not in the transition table", status, action, status, to)
+			}
+		}
+	}
+}

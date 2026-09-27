@@ -311,9 +311,6 @@ implemented in different packages:
 
 ## Current workflow-feature hazards
 
-- There is no enforced WorkflowExecution state machine. `Store.Transition`
-  guards on the supplied `from` state but accepts any `from` to `to` pair. See
-  `docs/prds/execution-tree-state-machine.md`.
 - State update and transition-history insertion are separate operations, so
   state and audit can diverge.
 - Callers frequently discard persistence and transition errors.

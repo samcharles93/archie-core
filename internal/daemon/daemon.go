@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -1470,7 +1471,11 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow
 func (d *Daemon) worktreeHoldsUncapturedWork(ctx context.Context, trees *worktree.Manager, task *workflow.Task) bool {
 	dir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
 	if _, err := os.Stat(dir); err != nil {
-		return false
+		if errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+		d.Log.Warn("terminal worktree kept: it could not be read", "task", task.ID, "dir", dir, "err", err)
+		return true
 	}
 	uncommitted, err := trees.HasUncommittedChanges(ctx, dir)
 	if err != nil {

@@ -100,6 +100,21 @@ func Actions(status string) []Action {
 	return actions
 }
 
+// ActionTarget returns the status an action moves a task to. Actions that
+// change no status (archive, and the forge links) report false.
+func ActionTarget(action Action) (string, bool) {
+	switch action {
+	case ActionApprove, ActionRetry:
+		return Queued, true
+	case ActionStop:
+		return Parked, true
+	case ActionCancel, ActionReject, ActionAbandon:
+		return Declined, true
+	default:
+		return "", false
+	}
+}
+
 // CheckAction rejects stale, illegal and unknown operator controls.
 func CheckAction(status string, action Action) error {
 	if slices.Contains(Actions(status), action) {
