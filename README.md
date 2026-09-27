@@ -177,3 +177,7 @@ but systemd is optional.
 
 Contributions should follow [AGENTS.md](AGENTS.md), including its testing,
 generated-file, and commit rules.
+
+## License
+
+Copyright 2026 Sam Catlow. Licensed under the [Apache License, Version 2.0](LICENSE). Third-party attributions are in [NOTICE](NOTICE).
