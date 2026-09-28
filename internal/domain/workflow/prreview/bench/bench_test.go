@@ -139,3 +139,32 @@ func TestSummarize(t *testing.T) {
 		t.Errorf("Summarize = %+v\nwant        %+v", got, want)
 	}
 }
+
+type blindReviewer struct{ t *testing.T }
+
+func (r blindReviewer) Review(_ context.Context, p Problem) (Review, error) {
+	if len(p.Goldens) != 0 {
+		r.t.Error("reviewer received golden answers")
+	}
+	if p.ID != "blind" || p.PRURL != "https://example.org/pr/1" {
+		r.t.Error("reviewer lost PR identity")
+	}
+	return Review{}, nil
+}
+
+func TestRunKeepsGoldensFromReviewer(t *testing.T) {
+	p := Problem{ID: "blind", PRURL: "https://example.org/pr/1", Goldens: []Golden{{Comment: "secret answer"}}}
+	r := Run(t.Context(), []Problem{p}, blindReviewer{t}, &fakeJudge{}, 1)
+	if len(r[0].Problem.Goldens) != 1 || len(r[0].Verdicts) != 1 {
+		t.Fatal("scoring lost goldens")
+	}
+}
+
+func TestRunUsesPipelineCommentsWithoutRescoring(t *testing.T) {
+	p := problem("pipeline", 1)
+	comments := []prreview.ScoredFinding{{File: "final.go", LineStart: 4, Severity: prreview.SeverityImportant, Confidence: 0.1, Score: 7}}
+	r := Run(t.Context(), []Problem{p}, fakeReviewer{p.ID: {Comments: comments, SkippedPhases: []string{"merge-gate"}}}, &fakeJudge{verdicts: map[string][]Verdict{p.ID: {{Golden: 0, Comment: 0}}}}, 1)
+	if r[0].Err != "" || len(r[0].Comments) != 1 || r[0].Comments[0].Score != 7 || len(r[0].SkippedPhases) != 1 || r[0].SkippedPhases[0] != "merge-gate" {
+		t.Fatalf("result = %+v", r[0])
+	}
+}

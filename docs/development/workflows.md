@@ -39,3 +39,10 @@ vocabulary it registers, so both must see the same step types.
   behaviour.
 - Examples in `examples/workflows/` are parsed against the registered
   vocabulary by `TestExampleWorkflowsParse`. Add one for a new capability.
+
+## Starting a workflow from chat
+
+`task_spawn` accepts `workflow` and an `inputs` object. The gateway forwards
+inputs through the task creation contract; it does not interpret individual
+workflows. The daemon checks inputs against the pinned `WorkflowInterface`
+before acquiring a container and parks invalid requests with the reason.

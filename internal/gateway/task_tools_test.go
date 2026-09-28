@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -187,12 +188,13 @@ func TestTaskListPropagatesStoreError(t *testing.T) {
 
 func TestTaskSpawn(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     map[string]any
-		creator   *fakeCreator
-		wantErr   bool
-		wantTitle string
-		wantRepo  string
+		name       string
+		input      map[string]any
+		creator    *fakeCreator
+		wantErr    bool
+		wantTitle  string
+		wantRepo   string
+		wantInputs map[string]any
 	}{
 		{
 			name:      "title only",
@@ -206,6 +208,20 @@ func TestTaskSpawn(t *testing.T) {
 			creator:   &fakeCreator{id: 43},
 			wantTitle: "port it",
 			wantRepo:  "acme/app",
+		},
+		{
+			name:       "workflow inputs are forwarded as given",
+			input:      map[string]any{"title": "review it", "repo": "acme/app", "workflow": "pr-review", "inputs": map[string]any{"pr_number": float64(7)}},
+			creator:    &fakeCreator{id: 46},
+			wantTitle:  "review it",
+			wantRepo:   "acme/app",
+			wantInputs: map[string]any{"pr_number": float64(7)},
+		},
+		{
+			name:    "inputs that are not an object are refused",
+			input:   map[string]any{"title": "x", "workflow": "pr-review", "inputs": "pr_number=7"},
+			creator: &fakeCreator{id: 47},
+			wantErr: true,
 		},
 		{
 			name:    "missing title is refused",
@@ -245,6 +261,9 @@ func TestTaskSpawn(t *testing.T) {
 			}
 			if tc.creator.got.Repo != tc.wantRepo {
 				t.Errorf("repo = %q, want %q", tc.creator.got.Repo, tc.wantRepo)
+			}
+			if !reflect.DeepEqual(tc.creator.got.Inputs, tc.wantInputs) {
+				t.Errorf("inputs = %#v, want %#v", tc.creator.got.Inputs, tc.wantInputs)
 			}
 			// Identity is bound, never taken from the model.
 			if tc.creator.got.Identity != "archie" {

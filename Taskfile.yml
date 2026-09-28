@@ -154,7 +154,7 @@ tasks:
       - bash tools/webhook-send.sh {{.CLI_ARGS}}
 
   bench:prreview:
-    desc: Score PR review findings on the Martian benchmark (-- -findings DIR; --help for flags)
+    desc: Review or rescore the Martian benchmark (-- -review-model PROVIDER/MODEL -classification-model PROVIDER/MODEL; --help for flags)
     cmds:
       - go run ./cmd/archie-prbench {{.CLI_ARGS}}
 

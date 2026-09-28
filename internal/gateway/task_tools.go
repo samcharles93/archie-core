@@ -229,8 +229,7 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 	return tools.ToolEntry{
 		Name:    "task_spawn",
 		Toolset: "tasks",
-		Description: "Queue a new task for this instance to work on in its own worktree, " +
-			"opening a pull request for review when it finishes. " +
+		Description: "Queue a workflow task for this instance. The selected workflow determines its outcome. " +
 			"Use it when the user asks for work to be carried out rather than answered in chat.",
 		Classification: tools.ClassMutating,
 		Schema: tools.JSONSchema{
@@ -246,7 +245,11 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 				},
 				"workflow": map[string]any{
 					"type":        "string",
-					"description": "Workflow to run (e.g. implement, tdd, feasibility). Omit to let the daemon route it.",
+					"description": "Workflow to run. Omit to let the daemon route it.",
+				},
+				"inputs": map[string]any{
+					"type":        "object",
+					"description": "Inputs declared by the selected workflow. The daemon validates their names, types and required values before execution.",
 				},
 			},
 			"required": []any{"title"},
@@ -257,10 +260,20 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 				return nil, fmt.Errorf("task_spawn: title is required")
 			}
 
+			var inputs map[string]any
+			if value, supplied := input["inputs"]; supplied {
+				var ok bool
+				inputs, ok = value.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("task_spawn: inputs must be an object")
+				}
+			}
+
 			id, err := creator.CreateTask(ctx, SpawnRequest{
 				Title:    title,
 				Repo:     strings.TrimSpace(asString(input["repo"])),
 				Workflow: strings.TrimSpace(asString(input["workflow"])),
+				Inputs:   inputs,
 				// The bound identity, never input["identity"]. CreateTask
 				// enforces the repository allow-list for it.
 				Identity: identity,

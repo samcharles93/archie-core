@@ -35,10 +35,10 @@ func TestTheSplitIsByAudience(t *testing.T) {
 	development := documentFor(t, generated, developmentDocs)
 
 	publicURLs := urlSet(t, public)
-	if len(publicURLs) != 2 {
-		t.Errorf("public set = %v, want the landing page and the guide", sortedKeys(publicURLs))
+	if len(publicURLs) != 3 {
+		t.Errorf("public set = %v, want the landing page and two guides", sortedKeys(publicURLs))
 	}
-	for _, want := range []string{"/docs/", "/docs/guides/first-playbook/"} {
+	for _, want := range []string{"/docs/", "/docs/guides/first-playbook/", "/docs/guides/pr-review-benchmark/"} {
 		if !publicURLs[want] {
 			t.Errorf("%s is not in the public set", want)
 		}

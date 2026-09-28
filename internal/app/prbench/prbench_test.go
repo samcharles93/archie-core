@@ -63,3 +63,21 @@ func TestFixtureReviewer(t *testing.T) {
 		})
 	}
 }
+
+func TestResumeResultsOnlyReusesCompleteMatchingRun(t *testing.T) {
+	dir := t.TempDir()
+	opts := Options{ReviewModel: "openai/review", ClassifyModel: "openai/classify", JudgeModel: "openai/judge", Resume: dir}
+	p := bench.Problem{ID: "first", PRURL: "https://github.com/acme/repo/pull/1", Goldens: []bench.Golden{{Comment: "defect"}}}
+	other := bench.Problem{ID: "second", PRURL: "https://github.com/acme/repo/pull/2", Goldens: []bench.Golden{{Comment: "other"}}}
+	if err := writeResults(dir, []bench.Result{{Problem: p, Verdicts: []bench.Verdict{{Golden: 0, Comment: bench.NoComment}}}}, bench.Summary{}, opts); err != nil {
+		t.Fatal(err)
+	}
+	results, pending, err := resumeResults([]bench.Problem{p, other}, opts)
+	if err != nil || len(pending) != 1 || pending[0].ID != other.ID || results[0].Problem.ID != p.ID {
+		t.Fatalf("results = %+v, pending = %+v, err = %v", results, pending, err)
+	}
+	opts.JudgeModel = "openai/different"
+	if _, _, err := resumeResults([]bench.Problem{p}, opts); err == nil {
+		t.Fatal("mixed model results were accepted")
+	}
+}

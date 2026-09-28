@@ -2412,6 +2412,52 @@ func TestPinTaskProfileRefusesCapturesTheHarnessCannotServe(t *testing.T) {
 	}
 }
 
+// TestPinTaskProfileRefusesInputsTheWorkflowDoesNotAccept holds every
+// producer to the workflow's declared interface at the one point each task
+// meets its definition. Bindings check inputs before they enqueue; a chat or
+// dashboard spawn cannot, because the Gateway never reads workflow
+// definitions, so without this a spawn missing a required input would run
+// and fail deep inside the workflow instead of parking with the reason.
+func TestPinTaskProfileRefusesInputsTheWorkflowDoesNotAccept(t *testing.T) {
+	d, s, _ := daemonWithNATS(t)
+	d.WorkflowDefinitions = &workflowDefinitionsStub{collection: workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{
+		{ID: "investigate", YAML: investigateYAML},
+	}}, version: 1}
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name   string
+		inputs map[string]any
+		ok     bool
+		reason string
+	}{
+		{"declared inputs run", map[string]any{"src_ip": "10.0.0.1"}, true, ""},
+		{"missing required input parks", nil, false, `input "src_ip" is required`},
+		{"undeclared input parks", map[string]any{"src_ip": "10.0.0.1", "extra": "x"}, false, `input "extra" is not declared`},
+		{"mistyped input parks", map[string]any{"src_ip": 7}, false, `input "src_ip" is number, want string`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := s.EnqueueChatTask(ctx, "acme", "widget", tt.name, "", "investigate", "", tt.inputs); err != nil {
+				t.Fatal(err)
+			}
+			task, err := s.ClaimNext(ctx)
+			if err != nil || task == nil {
+				t.Fatalf("claim: (%v, %v)", task, err)
+			}
+			if _, ok := d.pinTaskProfile(ctx, task); ok != tt.ok {
+				t.Fatalf("pinTaskProfile ok = %v, want %v", ok, tt.ok)
+			}
+			if tt.ok {
+				return
+			}
+			got, err := s.TaskByID(ctx, task.ID)
+			if err != nil || got.Status != workflow.StatusParked || !strings.Contains(got.ParkReason, tt.reason) {
+				t.Fatalf("task = %+v, %v; want parked naming %q", got, err, tt.reason)
+			}
+		})
+	}
+}
+
 // TestWorkflowCallGivesACalleeItsOwnProfile is the harness PRD's "a stage may
 // name a different profile" (docs/prds/external-agent-harness.md, Selection):
 // there is no mid-container runner switch, and none is built here. A stage

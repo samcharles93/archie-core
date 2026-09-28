@@ -547,3 +547,98 @@ index e69de29..4b825dc 100644
 @@ -0,0 +1 @@
 +package main
 `
+
+func TestStagePRIntakeHonoursExplicitDepth(t *testing.T) {
+	for _, tt := range []struct {
+		value   any
+		want    prreview.Depth
+		invalid bool
+	}{
+		{"deep", prreview.DepthDeep, false},
+		{"standard", prreview.DepthStandard, false},
+		{"quick", prreview.DepthQuick, false},
+		{"depe", "", true},
+		{7, "", true},
+	} {
+		t.Run(fmt.Sprint(tt.value), func(t *testing.T) {
+			tc := baseTaskContext(t)
+			tc.Task.Inputs = map[string]any{"depth": tt.value}
+			tc.PRSource = &fakePRSource{diff: smallDiff}
+			tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+				return captureResult("score_ai_generated", map[string]any{"confidence": 0}), nil
+			}}
+			err := stagePRIntake().Run(t.Context(), tc)
+			if tt.invalid {
+				if err == nil {
+					t.Fatal("invalid depth accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.prReview.depth != tt.want {
+				t.Fatalf("depth = %s, want %s", tc.prReview.depth, tt.want)
+			}
+		})
+	}
+}
+
+func TestReviewPullRequestUsesPipelineWithoutPosting(t *testing.T) {
+	for _, mode := range []string{"complete", "lens fails", "reviewer fails", "budget skips merge"} {
+		t.Run(mode, func(t *testing.T) {
+			tc := baseTaskContext(t)
+			tc.Task.Inputs = map[string]any{"depth": "deep"}
+			tc.PRSource = &fakePRSource{diff: smallDiff, files: map[string]string{"a.go": "package a\n"}}
+			var reachedMerge atomic.Bool
+			tc.Agent = &concurrentAgentRunner{byStage: func(stage string) (agentexec.Result, error) {
+				switch {
+				case stage == "intake-ai-score":
+					return captureResult("score_ai_generated", map[string]any{"confidence": 0}), nil
+				case strings.HasPrefix(stage, "lens-"):
+					if mode == "lens fails" {
+						return agentexec.Result{}, fmt.Errorf("lens unavailable")
+					}
+					return captureResult("propose_dimensions", map[string]any{"dimensions": []map[string]any{{"name": "defect", "prompt": "review", "target_files": []string{"a.go"}, "priority": 1}}}), nil
+				case strings.HasPrefix(stage, "reviewer-"):
+					if mode == "reviewer fails" {
+						return agentexec.Result{}, fmt.Errorf("reviewer unavailable")
+					}
+					return captureResult("report_findings", map[string]any{"findings": []map[string]any{{"file": "a.go", "line_start": 1, "severity": "important", "title": "defect", "body": "broken", "evidence": "package a", "confidence": 0.9}}}), nil
+				case stage == "merge-gate":
+					reachedMerge.Store(true)
+					return captureResult("classify_blocking", map[string]any{"blocking": true}), nil
+				case stage == "consistency" && mode == "budget skips merge":
+					return agentexec.Result{Status: agentexec.StatusPassed, TokensUsed: 2_000_000}, nil
+				default:
+					return passedResult("ok"), nil
+				}
+			}}
+			decision, err := ReviewPullRequest(t.Context(), tc)
+			switch mode {
+			case "lens fails":
+				if err == nil || !strings.Contains(err.Error(), "lens unavailable") {
+					t.Fatalf("error = %v", err)
+				}
+			case "reviewer fails":
+				if err == nil || !strings.Contains(err.Error(), "reviewer(s) did not finish") {
+					t.Fatalf("error = %v", err)
+				}
+			case "budget skips merge":
+				if err != nil || len(decision.Comments) != 1 || reachedMerge.Load() || !slices.Contains(decision.SkippedPhases, "merge-gate") {
+					t.Fatalf("decision = %+v, merge = %v, error = %v", decision, reachedMerge.Load(), err)
+				}
+			default:
+				if err != nil || len(decision.Comments) != 1 || !reachedMerge.Load() || !decision.Comments[0].Blocking {
+					t.Fatalf("decision = %+v, merge = %v, error = %v", decision, reachedMerge.Load(), err)
+				}
+			}
+			if tc.prReview == nil || tc.prReview.depth != prreview.DepthDeep {
+				t.Fatal("pipeline did not use explicit deep depth")
+			}
+			if _, err := os.Stat(tc.prReview.snapshotDir); !os.IsNotExist(err) {
+				t.Fatalf("snapshot not cleaned: %v", err)
+			}
+		})
+	}
+}

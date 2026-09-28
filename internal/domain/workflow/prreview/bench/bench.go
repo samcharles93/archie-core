@@ -29,11 +29,16 @@ type Problem struct {
 // Review is what a reviewer returns for one problem: its findings and the run
 // context that scores them.
 type Review struct {
+	// Comments is the pipeline's final selection. Non-nil bypasses fixture scoring.
+	Comments      []prreview.ScoredFinding
+	SkippedPhases []string
+
 	Findings []prreview.Finding
 	Inputs   prreview.ScoreInputs
 }
 
-// Reviewer reviews one problem's pull request blind: it never sees the goldens.
+// Reviewer reviews one problem's pull request blind: Run passes only ID and
+// PRURL, never the goldens.
 type Reviewer interface {
 	Review(ctx context.Context, p Problem) (Review, error)
 }
@@ -61,10 +66,11 @@ type Judge interface {
 // Result is one problem's outcome. Err is set when the reviewer or the judge
 // failed, and then the problem is not scored at all: a failure is not a miss.
 type Result struct {
-	Problem  Problem                  `json:"problem"`
-	Comments []prreview.ScoredFinding `json:"comments"`
-	Verdicts []Verdict                `json:"verdicts"`
-	Err      string                   `json:"error,omitempty"`
+	Problem       Problem                  `json:"problem"`
+	Comments      []prreview.ScoredFinding `json:"comments"`
+	Verdicts      []Verdict                `json:"verdicts"`
+	SkippedPhases []string                 `json:"skipped_phases,omitempty"`
+	Err           string                   `json:"error,omitempty"`
 }
 
 // Hits is how many goldens a posted comment caught.
@@ -90,8 +96,9 @@ func (r Result) MatchedComments() int {
 }
 
 // Run reviews and judges every problem, at most concurrency at a time, and
-// returns one result per problem in the order given.
-func Run(ctx context.Context, problems []Problem, reviewer Reviewer, judge Judge, concurrency int) []Result {
+// returns one result per problem in the order given. onResult, when supplied,
+// runs as each problem finishes and may be called concurrently.
+func Run(ctx context.Context, problems []Problem, reviewer Reviewer, judge Judge, concurrency int, onResult ...func(Result)) []Result {
 	results := make([]Result, len(problems))
 	slots := make(chan struct{}, max(concurrency, 1))
 	var wg sync.WaitGroup
@@ -99,7 +106,11 @@ func Run(ctx context.Context, problems []Problem, reviewer Reviewer, judge Judge
 		wg.Go(func() {
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			results[i] = runOne(ctx, p, reviewer, judge)
+			result := runOne(ctx, p, reviewer, judge)
+			results[i] = result
+			if len(onResult) != 0 {
+				onResult[0](result)
+			}
 		})
 	}
 	wg.Wait()
@@ -108,12 +119,16 @@ func Run(ctx context.Context, problems []Problem, reviewer Reviewer, judge Judge
 
 func runOne(ctx context.Context, p Problem, reviewer Reviewer, judge Judge) Result {
 	res := Result{Problem: p}
-	review, err := reviewer.Review(ctx, p)
+	review, err := reviewer.Review(ctx, Problem{ID: p.ID, PRURL: p.PRURL})
 	if err != nil {
 		res.Err = fmt.Sprintf("review: %v", err)
 		return res
 	}
-	res.Comments = prreview.CapInlineComments(prreview.Score(review.Findings, review.Inputs))
+	res.SkippedPhases = review.SkippedPhases
+	res.Comments = review.Comments
+	if res.Comments == nil {
+		res.Comments = prreview.CapInlineComments(prreview.Score(review.Findings, review.Inputs))
+	}
 	if len(res.Comments) == 0 {
 		res.Verdicts = misses(p)
 		return res

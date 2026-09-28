@@ -313,7 +313,6 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Router.sessionPlatform(in), in.Message)...,
 	)
-	extraTools = append(extraTools, ReviewTools(r.Tasks, r.TaskIdentity)...)
 	// The dashboard tools (page_index, dashboard_navigate) belong to the web
 	// UI only: a non-web channel has no dashboard to point at.
 	extraTools = append(extraTools, PageIndexTools(r.Channel)...)

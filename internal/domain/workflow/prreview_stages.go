@@ -68,10 +68,11 @@ type prReviewState struct {
 	clusters     []prreview.Cluster
 	highExposure []string
 
-	narrative  string
-	dimensions []prreview.Dimension
-	findings   []prreview.Finding
-	scored     []prreview.ScoredFinding
+	narrative        string
+	dimensions       []prreview.Dimension
+	findings         []prreview.Finding
+	scored           []prreview.ScoredFinding
+	reviewerFailures atomic.Int64
 
 	// findingsMu guards findings during phase 6, where the coverage gate and
 	// consistency verification append to it from two goroutines running in
@@ -159,6 +160,7 @@ func PRReview() Workflow {
 		Interface: task.WorkflowInterface{
 			Inputs: map[string]task.InputSpec{
 				"pr_number": {Type: "number", Required: true},
+				"depth":     {Type: "string"},
 			},
 		},
 		Stages: append(prReviewDecisionStages(), stagePROutput()),
@@ -212,6 +214,14 @@ func stagePRIntake() Stage {
 		if tc.Task.PRNumber == 0 && tc.Task.Workflow == "pr-review" {
 			return fmt.Errorf("pr-review: no pull request number (set directly or via the pr_number input)")
 		}
+		var explicit prreview.Depth
+		if value, supplied := tc.Task.Inputs["depth"]; supplied {
+			depth, ok := value.(string)
+			if !ok || (depth != "quick" && depth != "standard" && depth != "deep") {
+				return fmt.Errorf("pr-review: depth must be quick, standard or deep")
+			}
+			explicit = prreview.Depth(depth)
+		}
 		meta, err := tc.PRSource.Metadata(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber)
 		if err != nil {
 			return fmt.Errorf("fetch pull request metadata: %w", err)
@@ -222,7 +232,7 @@ func stagePRIntake() Stage {
 		}
 		files := prreview.ParseDiff(diff)
 		stats := prreview.SummarizeFiles(files)
-		depth := prreview.ResolveDepth(stats.TotalAdditions+stats.TotalDeletions, "")
+		depth := prreview.ResolveDepth(stats.TotalAdditions+stats.TotalDeletions, explicit)
 
 		// tc.prReview must exist before scoreAIGenerated runs: every
 		// pr-review agent call, including this one, records its token spend
@@ -301,11 +311,11 @@ func stagePRAnatomy() Stage {
 		if err != nil {
 			return fmt.Errorf("create pull request snapshot directory: %w", err)
 		}
+		tc.prReview.snapshotDir = dir
 		headSHA, err := tc.PRSource.Snapshot(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, dir)
 		if err != nil {
 			return fmt.Errorf("snapshot pull request head: %w", err)
 		}
-		tc.prReview.snapshotDir = dir
 		tc.prReview.headSHA = headSHA
 
 		changed := make([]string, 0, len(tc.prReview.files))
@@ -498,10 +508,12 @@ func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) [
 	name := "reviewer-" + dim.Name
 	res, runErr := runReviewerAgent(ctx, tc, name, mission, []agentexec.CaptureTool{reportFindingsTool})
 	if runErr != nil || res.Status != agentexec.StatusPassed {
+		tc.prReview.reviewerFailures.Add(1)
 		return nil
 	}
 	findings, err := decodeReportedFindings(res.Captures["report_findings"], dim.Name)
 	if err != nil {
+		tc.prReview.reviewerFailures.Add(1)
 		return nil
 	}
 	return findings

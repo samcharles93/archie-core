@@ -1785,6 +1785,12 @@ func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (confi
 	}
 	iface, err := workflowtask.ParseWorkflowInterface(task.WorkflowDefinitionYAML)
 	if err == nil {
+		// Every producer meets the declared interface here, including the
+		// ones that cannot read definitions when they enqueue (chat and
+		// dashboard spawns go through the Gateway, which never does).
+		err = iface.CheckInputs(task.Inputs)
+	}
+	if err == nil {
 		var profile config.AgentProfile
 		if profile, err = d.configFor(task).Containers.Profile(iface.Profile); err == nil {
 			if err = validateProfileMeetsNeeds(profile, iface.Needs); err == nil {

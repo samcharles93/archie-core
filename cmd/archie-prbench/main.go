@@ -20,13 +20,20 @@ func main() { os.Exit(run()) }
 func run() int {
 	var opts prbench.Options
 	var problems string
-	flag.StringVar(&opts.Config, "config", configuration.DefaultConfigPath(), "configuration file whose providers serve the judge model")
-	flag.StringVar(&opts.Fixtures, "findings", "", "directory of <problem id>.json findings to score")
+	flag.StringVar(&opts.Config, "config", configuration.DefaultConfigPath(), "configuration file whose providers serve the reviewer and judge")
+	flag.StringVar(&opts.Fixtures, "findings", "", "directory of <problem id>.json findings to rescore; omit to review live")
+	flag.StringVar(&opts.ReviewModel, "review-model", "", "provider/model for the review role in live runs")
+	flag.StringVar(&opts.ClassifyModel, "classification-model", "", "provider/model for the classification role in live runs")
 	flag.StringVar(&opts.JudgeModel, "judge-model", "anthropic/claude-sonnet-4.6", "provider/model of the independent judge")
-	flag.StringVar(&opts.Out, "out", "prbench-out", "directory for per-problem results and summary.json")
+	flag.StringVar(&opts.Out, "out", "bin/prbench-results", "directory for per-problem results and summary.json")
+	flag.StringVar(&opts.Resume, "resume", "", "reuse complete results from a previous run with the same models")
 	flag.StringVar(&problems, "problems", "", "comma-separated problem ids (default: all)")
 	flag.IntVar(&opts.Concurrency, "concurrency", 4, "problems judged at once")
 	flag.Parse()
+	opts.GitHubToken = os.Getenv("GH_TOKEN")
+	if opts.GitHubToken == "" {
+		opts.GitHubToken = os.Getenv("GITHUB_TOKEN")
+	}
 	if problems != "" {
 		opts.Problems = strings.Split(problems, ",")
 	}
