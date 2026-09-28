@@ -171,6 +171,27 @@ func (c *GiteaClient) GetPullRequest(ctx context.Context, owner, repo string, nu
 	}, nil
 }
 
+// GetPullRequestDiff fetches the pull request's unified diff over the Gitea
+// API, never a local git clone.
+func (c *GiteaClient) GetPullRequestDiff(_ context.Context, owner, repo string, number int) (string, error) {
+	diff, _, err := c.cli.GetPullRequestDiff(owner, repo, int64(number), gitea.PullRequestDiffOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get pull request diff %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return string(diff), nil
+}
+
+// GetRepoArchive fetches a gzipped tar archive of the repository at ref
+// directly from Gitea's own API -- unlike GitHub, no separate unauthenticated
+// fetch is needed.
+func (c *GiteaClient) GetRepoArchive(_ context.Context, owner, repo, ref string) (io.ReadCloser, error) {
+	body, _, err := c.cli.GetArchiveReader(owner, repo, ref, gitea.TarGZArchive)
+	if err != nil {
+		return nil, fmt.Errorf("get repo archive %s/%s@%s: %w", owner, repo, ref, err)
+	}
+	return body, nil
+}
+
 // ListReviews returns the reviews on a PR with ID > sinceID.
 func (c *GiteaClient) ListReviews(ctx context.Context, owner, repo string, number int, sinceID int64) ([]Review, error) {
 	var out []Review

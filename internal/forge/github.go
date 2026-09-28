@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -188,6 +190,42 @@ func (c *GitHubClient) GetPullRequest(ctx context.Context, owner, repo string, n
 		BaseSHA: pr.GetBase().GetSHA(),
 		State:   state,
 	}, nil
+}
+
+// GetPullRequestDiff fetches the pull request's unified diff over the
+// GitHub API, never a local git clone.
+func (c *GitHubClient) GetPullRequestDiff(ctx context.Context, owner, repo string, number int) (string, error) {
+	diff, _, err := c.gh.PullRequests.GetRaw(ctx, owner, repo, number, github.RawOptions{Type: github.Diff})
+	if err != nil {
+		return "", fmt.Errorf("get pull request diff %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return diff, nil
+}
+
+// GetRepoArchive fetches a gzipped tar archive of the repository at ref.
+// GetArchiveLink only resolves the download's final location; the archive's
+// bytes still have to be fetched with a plain, unauthenticated GET (the URL
+// GitHub redirects to is a pre-signed storage link, not a GitHub API
+// endpoint), so no forge token is attached to this second request.
+func (c *GitHubClient) GetRepoArchive(ctx context.Context, owner, repo, ref string) (io.ReadCloser, error) {
+	url, _, err := c.gh.Repositories.GetArchiveLink(ctx, owner, repo, github.Tarball, &github.RepositoryContentGetOptions{Ref: ref}, 5)
+	if err != nil {
+		return nil, fmt.Errorf("resolve archive link %s/%s@%s: %w", owner, repo, ref, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build archive request %s/%s@%s: %w", owner, repo, ref, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch archive %s/%s@%s: %w", owner, repo, ref, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("fetch archive %s/%s@%s: status %s: %s", owner, repo, ref, resp.Status, body)
+	}
+	return resp.Body, nil
 }
 
 // ListReviews returns the reviews on a PR with ID > sinceID.

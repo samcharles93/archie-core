@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"io"
 	"net/http"
 	"testing"
 )
@@ -379,5 +380,40 @@ func TestLabelNamesGitea(t *testing.T) {
 	names := labelNamesGitea(nil)
 	if names != nil {
 		t.Fatalf("labelNamesGitea(nil) = %v, want nil", names)
+	}
+}
+
+func TestGiteaGetPullRequestDiff(t *testing.T) {
+	c, mux := newTestGiteaClient(t)
+	mux.HandleFunc("GET /api/v1/repos/o/r/pulls/7.diff", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("diff --git a/f.go b/f.go\n+added\n"))
+	})
+
+	diff, err := c.GetPullRequestDiff(t.Context(), "o", "r", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff != "diff --git a/f.go b/f.go\n+added\n" {
+		t.Fatalf("diff = %q", diff)
+	}
+}
+
+func TestGiteaGetRepoArchive(t *testing.T) {
+	c, mux := newTestGiteaClient(t)
+	mux.HandleFunc("GET /api/v1/repos/o/r/archive/deadbeef.tar.gz", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("fake-tar-bytes"))
+	})
+
+	rc, err := c.GetRepoArchive(t.Context(), "o", "r", "deadbeef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	body, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "fake-tar-bytes" {
+		t.Fatalf("archive body = %q", body)
 	}
 }

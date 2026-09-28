@@ -6,6 +6,7 @@ package forge
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -94,6 +95,21 @@ type PullRequest struct {
 // callers type-assert and refuse review when the capability is absent.
 type PullRequestReader interface {
 	GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error)
+}
+
+// PullRequestDiffReader fetches a pull request's unified diff over the
+// forge's HTTP API. Implementations that cannot read PRs do not implement
+// it, matching PullRequestReader.
+type PullRequestDiffReader interface {
+	GetPullRequestDiff(ctx context.Context, owner, repo string, number int) (string, error)
+}
+
+// RepoArchiveReader fetches a gzipped tar archive of a repository at a ref
+// over the forge's HTTP API, with no git-level credential involved: the
+// caller reads the returned stream and closes it. Implementations that
+// cannot read repository contents do not implement it.
+type RepoArchiveReader interface {
+	GetRepoArchive(ctx context.Context, owner, repo, ref string) (io.ReadCloser, error)
 }
 
 // RepoForge is repository-level operations.

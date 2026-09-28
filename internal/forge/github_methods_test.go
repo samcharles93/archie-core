@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"testing"
 )
@@ -380,5 +381,67 @@ func TestAcceptInvitationsListError(t *testing.T) {
 	})
 	if err := c.AcceptInvitations(t.Context()); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestGetPullRequestDiff(t *testing.T) {
+	c, mux := newTestClient(t)
+	mux.HandleFunc("GET /repos/o/r/pulls/7", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Accept"); got == "" {
+			t.Errorf("Accept header not set for a raw diff request")
+		}
+		_, _ = w.Write([]byte("diff --git a/f.go b/f.go\n+added\n"))
+	})
+
+	diff, err := c.GetPullRequestDiff(t.Context(), "o", "r", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff != "diff --git a/f.go b/f.go\n+added\n" {
+		t.Fatalf("diff = %q", diff)
+	}
+}
+
+func TestGetRepoArchive(t *testing.T) {
+	c, mux := newTestClient(t)
+	mux.HandleFunc("GET /repos/o/r/tarball/deadbeef", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "http://"+r.Host+"/archive-blob/deadbeef.tar.gz")
+		w.WriteHeader(http.StatusFound)
+	})
+	mux.HandleFunc("GET /archive-blob/deadbeef.tar.gz", func(w http.ResponseWriter, r *http.Request) {
+		// Real GitHub archive links are unauthenticated storage URLs; assert
+		// no forge token leaks onto this second request.
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization header present on the archive blob request: %q", got)
+		}
+		_, _ = w.Write([]byte("fake-tar-bytes"))
+	})
+
+	rc, err := c.GetRepoArchive(t.Context(), "o", "r", "deadbeef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	body, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "fake-tar-bytes" {
+		t.Fatalf("archive body = %q", body)
+	}
+}
+
+func TestGetRepoArchiveNonOKStatus(t *testing.T) {
+	c, mux := newTestClient(t)
+	mux.HandleFunc("GET /repos/o/r/tarball/badref", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "http://"+r.Host+"/archive-blob/badref.tar.gz")
+		w.WriteHeader(http.StatusFound)
+	})
+	mux.HandleFunc("GET /archive-blob/badref.tar.gz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	if _, err := c.GetRepoArchive(t.Context(), "o", "r", "badref"); err == nil {
+		t.Fatal("want an error for a non-200 archive blob response")
 	}
 }
