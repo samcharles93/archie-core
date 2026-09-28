@@ -75,8 +75,12 @@ func (c *Client) EnqueueIssue(ctx context.Context, owner, repo string, number in
 	return r.Inserted, nil
 }
 
-func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*task.Task, error) {
-	r, err := c.client.EnqueueChatTask(ctx, &pb.EnqueueChatTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity})
+func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*task.Task, error) {
+	encoded, err := task.EncodeInputs(inputs)
+	if err != nil {
+		return nil, err
+	}
+	r, err := c.client.EnqueueChatTask(ctx, &pb.EnqueueChatTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, InputsJson: encoded})
 	if err != nil {
 		return nil, unmapError(err)
 	}

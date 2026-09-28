@@ -156,7 +156,7 @@ func composeUIProcessWithLog(t *testing.T) (*webui.Server, int64, int) {
 	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
-	task, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "a task", "body", "implement", "")
+	task, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "a task", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatalf("seed task: %v", err)
 	}

@@ -41,7 +41,6 @@ type chatSetup struct {
 	ChatTaskLister      gateway.ChatTaskLister
 	ChatTaskLogs        gateway.ChatTaskLogReader
 	ChatTaskActor       gateway.ChatTaskActor
-	ChatPRReviewer      gateway.ChatPRReviewer
 	DefaultChatIdentity string
 	// Bus carries primary-input events (archie-core-035): a completed
 	// chat turn is published here so input-driven curators can wake. Nil
@@ -182,7 +181,6 @@ func newChatTurnRunner(
 		TaskLogs:     s.ChatTaskLogs,
 		TaskActor:    s.ChatTaskActor,
 		TaskIdentity: s.DefaultChatIdentity,
-		PRReviewer:   s.ChatPRReviewer,
 		Bus:          s.Bus,
 		BotUser:      cfg.BotUser,
 		Channel:      channel,

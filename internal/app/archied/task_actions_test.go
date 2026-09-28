@@ -48,7 +48,7 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 			st := pgstore.Open(t)
 			t.Cleanup(func() { _ = st.Close() })
 
-			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "decide on me", "", "", "reviewer")
+			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "decide on me", "", "", "reviewer", nil)
 			if err != nil {
 				t.Fatal(err)
 			}

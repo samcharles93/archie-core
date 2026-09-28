@@ -42,7 +42,10 @@ SELECT status, count(*)::int AS count FROM tasks GROUP BY status;
 -- issue numbers; this allocator is the single source of truth for it.
 -- fallback_issue_number is only the seed for a repo's first chat task -- the
 -- passed value is not the issue number that lands.
-INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id)
+-- inputs is the chat task's own workflow inputs; a binding dispatch passes
+-- its inputs here too, so this insert is the single writer of the column and
+-- StampTaskBinding adds only the provenance.
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, inputs)
 VALUES (
     sqlc.arg(owner), sqlc.arg(repo),
     COALESCE((
@@ -57,12 +60,13 @@ VALUES (
         (SELECT m.org_id FROM memberships m WHERE m.identity_id = sqlc.arg(identity)
          ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
         'default'
-    )
+    ),
+    sqlc.arg(inputs)
 )
 RETURNING *;
 
 -- name: StampTaskBinding :exec
-UPDATE tasks SET binding_id = $2, binding_version = $3, inputs = $4 WHERE id = $1;
+UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1;
 
 -- name: UpdateTask :exec
 UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,

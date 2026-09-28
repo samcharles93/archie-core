@@ -13,13 +13,15 @@ import (
 
 type fakeChatTaskWriter struct {
 	owner, repo, title, body, workflow, identity string
+	inputs                                       map[string]any
 	calls                                        int
 	nextID                                       int64
 	err                                          error
 }
 
-func (f *fakeChatTaskWriter) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (int64, error) {
+func (f *fakeChatTaskWriter) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, inputs map[string]any) (int64, error) {
 	f.owner, f.repo, f.title, f.body, f.workflow, f.identity = owner, repo, title, body, workflow, identity
+	f.inputs = inputs
 	f.calls++
 	if f.err != nil {
 		return 0, f.err
@@ -43,6 +45,26 @@ func TestStoreTaskCreatorCreatesTask(t *testing.T) {
 	}
 	if sw.title != "Fix the login bug" {
 		t.Errorf("title = %q", sw.title)
+	}
+}
+
+func TestStoreTaskCreatorForwardsInputs(t *testing.T) {
+	sw := &fakeChatTaskWriter{}
+	tc := NewStoreTaskCreator(sw, "acme", "example-service", []string{"acme/example-service"})
+	_, err := tc.CreateTask(context.Background(), SpawnRequest{
+		Title:    "review",
+		Repo:     "acme/example-service",
+		Workflow: "pr-review",
+		Inputs:   map[string]any{"pr_number": 7},
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if sw.workflow != "pr-review" {
+		t.Errorf("workflow = %q, want pr-review", sw.workflow)
+	}
+	if n, ok := sw.inputs["pr_number"].(int); !ok || n != 7 {
+		t.Errorf("inputs = %#v, want pr_number 7", sw.inputs)
 	}
 }
 

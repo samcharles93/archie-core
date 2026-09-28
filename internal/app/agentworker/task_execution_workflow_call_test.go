@@ -60,7 +60,7 @@ func TestExecuteTaskRequestStartsWorkflowCallCallee(t *testing.T) {
 	const callerYAML = "id: caller\nrepository: none\ninputs:\n  src_ip: {type: string}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      inputs: {src_ip: \"inputs.src_ip\"}\n      wait: false\n  - type: agent.run\n    settings:\n      mission: report\n"
 	// A real caller row, claimed and running, so the store's enqueue reads
 	// the same row shape production does.
-	task, err := st.EnqueueChatTask(ctx, "", "", "workflow.call integration", "", "caller", "")
+	task, err := st.EnqueueChatTask(ctx, "", "", "workflow.call integration", "", "caller", "", nil)
 	if err != nil {
 		t.Fatalf("seed caller task: %v", err)
 	}

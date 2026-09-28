@@ -251,7 +251,7 @@ func (q *Queries) EnqueueIssue(ctx context.Context, arg EnqueueIssueParams) (int
 }
 
 const insertChatTask = `-- name: InsertChatTask :one
-INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id)
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, inputs)
 VALUES (
     $1, $2,
     COALESCE((
@@ -266,7 +266,8 @@ VALUES (
         (SELECT m.org_id FROM memberships m WHERE m.identity_id = $7
          ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
         'default'
-    )
+    ),
+    $8
 )
 RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth
 `
@@ -279,12 +280,16 @@ type InsertChatTaskParams struct {
 	Body                string
 	Workflow            string
 	Identity            string
+	Inputs              string
 }
 
 // The synthetic issue number keeps chat-sourced tasks off the forge's real
 // issue numbers; this allocator is the single source of truth for it.
 // fallback_issue_number is only the seed for a repo's first chat task -- the
 // passed value is not the issue number that lands.
+// inputs is the chat task's own workflow inputs; a binding dispatch passes
+// its inputs here too, so this insert is the single writer of the column and
+// StampTaskBinding adds only the provenance.
 func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, insertChatTask,
 		arg.Owner,
@@ -294,6 +299,7 @@ func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) 
 		arg.Body,
 		arg.Workflow,
 		arg.Identity,
+		arg.Inputs,
 	)
 	var i Task
 	err := row.Scan(
@@ -599,23 +605,17 @@ func (q *Queries) SetReviewCursors(ctx context.Context, arg SetReviewCursorsPara
 }
 
 const stampTaskBinding = `-- name: StampTaskBinding :exec
-UPDATE tasks SET binding_id = $2, binding_version = $3, inputs = $4 WHERE id = $1
+UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1
 `
 
 type StampTaskBindingParams struct {
 	ID             int64
 	BindingID      string
 	BindingVersion int64
-	Inputs         string
 }
 
 func (q *Queries) StampTaskBinding(ctx context.Context, arg StampTaskBindingParams) error {
-	_, err := q.db.Exec(ctx, stampTaskBinding,
-		arg.ID,
-		arg.BindingID,
-		arg.BindingVersion,
-		arg.Inputs,
-	)
+	_, err := q.db.Exec(ctx, stampTaskBinding, arg.ID, arg.BindingID, arg.BindingVersion)
 	return err
 }
 

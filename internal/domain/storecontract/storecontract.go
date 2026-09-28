@@ -47,7 +47,7 @@ type TaskStore interface {
 // poll, chat spawn, drain loop) do not acquire a binding-specific shape.
 type TaskLifecycle interface {
 	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error)
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*task.Task, error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*task.Task, error)
 	ClaimNext(ctx context.Context) (*task.Task, error)
 	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error)
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error

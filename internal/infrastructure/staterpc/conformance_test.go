@@ -133,9 +133,20 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 
 			// workflow.Store view: EnqueueChatTask, Transition, Update, InsertEvent.
-			task, err := c.EnqueueChatTask(ctx, "acme", "widget", "title", "body", "implement", "")
+			task, err := c.EnqueueChatTask(ctx, "acme", "widget", "title", "body", "implement", "", nil)
 			if err != nil || task == nil {
 				t.Fatalf("EnqueueChatTask: %+v %v", task, err)
+			}
+			// A chat task's workflow inputs travel with it across the wire
+			// and back out of the store: the operator trigger's pr-review
+			// task names its pull request through this input, and drops it
+			// silently if either mapping forgets it.
+			triggered, err := c.EnqueueChatTask(ctx, "acme", "widget", "review", "body", "pr-review", "", map[string]any{"pr_number": 7})
+			if err != nil || triggered == nil {
+				t.Fatalf("EnqueueChatTask with inputs: %+v %v", triggered, err)
+			}
+			if got := triggered.EffectivePRNumber(); got != 7 {
+				t.Fatalf("queued task EffectivePRNumber = %d, want 7 -- inputs did not round trip", got)
 			}
 			if err := c.Transition(ctx, task.ID, task.Status, "running", "started"); err != nil {
 				t.Fatalf("Transition: %v", err)

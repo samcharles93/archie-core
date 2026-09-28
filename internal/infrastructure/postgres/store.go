@@ -148,10 +148,17 @@ func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int
 
 // EnqueueChatTask inserts a queued chat-sourced task and returns the full row.
 // The store allocates the synthetic issue number durably so processes sharing
-// the database cannot generate the same value.
-func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*workflow.Task, error) {
+// the database cannot generate the same value. inputs are the task's workflow
+// inputs (the operator trigger's pr_number, for instance); a chat task carries
+// no binding provenance, so the insert is the only writer of that column.
+func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*workflow.Task, error) {
+	encoded, err := task.EncodeInputs(inputs)
+	if err != nil {
+		return nil, err
+	}
 	t, err := s.queries().InsertChatTask(ctx, postgresdb.InsertChatTaskParams{
 		Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity,
+		Inputs:              encoded,
 		FallbackIssueNumber: syntheticIssueNumberBase - 1,
 	})
 	if err != nil {
@@ -161,24 +168,21 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 }
 
 // EnqueueBindingTask enqueues a binding-triggered task and stamps its binding
-// provenance in a second statement (best-effort, as in the SQLite store).
+// provenance in a second statement (best-effort, as in the SQLite store). The
+// inputs travel with the insert, so a failed stamp leaves a task whose inputs
+// are already right and whose provenance is absent, never the reverse.
 func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*workflow.Task, error) {
-	encoded, err := task.EncodeInputs(inputs)
-	if err != nil {
-		return nil, err
-	}
-	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity)
+	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity, inputs)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.queries().StampTaskBinding(ctx, postgresdb.StampTaskBindingParams{
-		ID: t.ID, BindingID: bindingID, BindingVersion: int64(bindingVersion), Inputs: encoded,
+		ID: t.ID, BindingID: bindingID, BindingVersion: int64(bindingVersion),
 	}); err != nil {
 		return nil, fmt.Errorf("store: stamp binding provenance: %w", err)
 	}
 	t.BindingID = bindingID
 	t.BindingVersion = bindingVersion
-	t.Inputs = inputs
 	return t, nil
 }
 

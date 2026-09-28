@@ -34,7 +34,7 @@ func TestEventAttributionSurvivesTheStateStoreBoundary(t *testing.T) {
 				c = remoteTaskStore(t, local, nil, nil)
 			}
 
-			task, err := c.EnqueueChatTask(ctx, "acme", "widget", "title", "body", "implement", "")
+			task, err := c.EnqueueChatTask(ctx, "acme", "widget", "title", "body", "implement", "", nil)
 			if err != nil || task == nil {
 				t.Fatalf("EnqueueChatTask = (%+v, %v)", task, err)
 			}

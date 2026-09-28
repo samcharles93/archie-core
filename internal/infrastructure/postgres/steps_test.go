@@ -19,7 +19,7 @@ import (
 // runningExecution enqueues and claims one task, the state a step runs in.
 func runningExecution(t *testing.T, s *Store) *workflow.Task {
 	t.Helper()
-	seed, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "")
+	seed, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "", nil)
 	if err != nil || seed == nil {
 		t.Fatalf("EnqueueChatTask: %+v %v", seed, err)
 	}

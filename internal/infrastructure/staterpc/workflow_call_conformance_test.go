@@ -28,7 +28,7 @@ func TestWorkflowCallerConformance(t *testing.T) {
 				c = remoteTaskStore(t, local, nil, nil)
 			}
 
-			caller, err := local.EnqueueChatTask(ctx, "acme", "widget", "caller", "body", "implement", "")
+			caller, err := local.EnqueueChatTask(ctx, "acme", "widget", "caller", "body", "implement", "", nil)
 			if err != nil {
 				t.Fatalf("EnqueueChatTask: %v", err)
 			}

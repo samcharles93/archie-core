@@ -103,7 +103,7 @@ func serveGRPC(t *testing.T, register func(grpc.ServiceRegistrar)) (target strin
 func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	st := pgstore.Open(t)
 	defer st.Close()
-	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", ""); err != nil {
+	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", "", nil); err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
 	// Claimed (not just enqueued): StartStep guards on the execution's own

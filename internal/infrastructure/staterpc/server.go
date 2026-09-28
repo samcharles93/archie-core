@@ -178,7 +178,11 @@ func (s *server) EnqueueIssue(ctx context.Context, r *pb.EnqueueIssueRequest) (*
 }
 
 func (s *server) EnqueueChatTask(ctx context.Context, r *pb.EnqueueChatTaskRequest) (*pb.EnqueueChatTaskResponse, error) {
-	t, err := s.deps.Tasks.EnqueueChatTask(ctx, r.Owner, r.Repo, r.Title, r.Body, r.Workflow, r.Identity)
+	inputs, err := task.DecodeInputs(r.InputsJson)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	t, err := s.deps.Tasks.EnqueueChatTask(ctx, r.Owner, r.Repo, r.Title, r.Body, r.Workflow, r.Identity, inputs)
 	if err != nil {
 		return nil, s.logErr("EnqueueChatTask", err)
 	}

@@ -52,7 +52,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
 
-	task, err := st.EnqueueChatTask(ctx, "acme", "widget", "parked job", "", "", "identity-owner")
+	task, err := st.EnqueueChatTask(ctx, "acme", "widget", "parked job", "", "", "identity-owner", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "test task", "", "", "archie")
+			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "test task", "", "", "archie", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -251,7 +251,7 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 
 			adapter := newChatTaskActorForTest(t, st, config.Config{MaxRetries: 3})
 
-			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "actionable task", "", "", "archie")
+			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "actionable task", "", "", "archie", nil)
 			if err != nil {
 				t.Fatal(err)
 			}

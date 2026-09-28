@@ -310,7 +310,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 	operatorActions(t, srv).issues = closer
 	operatorActions(t, srv).cfg = config.NewHolder(config.Config{MaxRetries: 3})
 
-	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "")
+	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

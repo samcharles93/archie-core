@@ -512,6 +512,10 @@ message EnqueueChatTaskRequest {
   string body = 4;
   string workflow = 5;
   string identity = 6;
+  // inputs_json assigns workflow inputs, a JSON object of the same form
+  // EnqueueBindingTaskRequest carries. A chat task sets them at insert
+  // time: it has no binding provenance to stamp afterwards.
+  string inputs_json = 7;
 }
 message EnqueueChatTaskResponse { Task task = 1; }
 

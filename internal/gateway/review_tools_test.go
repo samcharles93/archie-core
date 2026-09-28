@@ -6,29 +6,14 @@ import (
 	"testing"
 )
 
-type fakePRReviewer struct {
-	gotIdentity *string
-	gotRepo     string
-	gotNumber   int
-	result      PRReviewResult
-	err         error
-}
-
-func (f *fakePRReviewer) ReviewPR(_ context.Context, identity *string, repo string, number int) (PRReviewResult, error) {
-	f.gotIdentity = identity
-	f.gotRepo = repo
-	f.gotNumber = number
-	return f.result, f.err
-}
-
-func TestReviewToolOmittedWhenReviewerNil(t *testing.T) {
+func TestReviewToolOmittedWhenCreatorNil(t *testing.T) {
 	if entries := ReviewTools(nil, "archie"); len(entries) != 0 {
 		t.Fatalf("ReviewTools(nil) = %d entries, want 0 -- a tool that cannot run must not be advertised", len(entries))
 	}
 }
 
-func TestReviewToolAppearsWhenReviewerNonNil(t *testing.T) {
-	entries := ReviewTools(&fakePRReviewer{}, "archie")
+func TestReviewToolAppearsWhenCreatorNonNil(t *testing.T) {
+	entries := ReviewTools(&fakeCreator{}, "archie")
 	if len(entries) != 1 {
 		t.Fatalf("ReviewTools() = %d entries, want 1", len(entries))
 	}
@@ -37,14 +22,9 @@ func TestReviewToolAppearsWhenReviewerNonNil(t *testing.T) {
 	}
 }
 
-func TestReviewPRToolBindsIdentityAndReturnsFindings(t *testing.T) {
-	reviewer := &fakePRReviewer{
-		result: PRReviewResult{
-			Repo: "acme/widget", Number: 7, Model: "openai/gpt-5", Status: "completed",
-			Findings: []PRReviewFinding{{File: "a.go", Line: 3, Defect: "nil deref", FailureScenario: "x", Verdict: "confirmed", Level: "error", Category: "nil-risk", Blocking: true}},
-		},
-	}
-	entry := toolNamed(t, ReviewTools(reviewer, "archie"), "review_pr")
+func TestReviewPRToolQueuesReviewTask(t *testing.T) {
+	creator := &fakeCreator{id: 42}
+	entry := toolNamed(t, ReviewTools(creator, "archie"), "review_pr")
 
 	out, err := entry.Handler(context.Background(), map[string]any{
 		"repo": "acme/widget", "pr_number": float64(7), "identity": "someone-else",
@@ -53,27 +33,37 @@ func TestReviewPRToolBindsIdentityAndReturnsFindings(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	got := creator.got
+	if got.Workflow != "pr-review" {
+		t.Errorf("workflow = %q, want pr-review -- the operator trigger runs the pipeline, it does not review in the turn", got.Workflow)
+	}
+	if got.Repo != "acme/widget" {
+		t.Errorf("repo = %q, want acme/widget -- CreateTask authorizes against it", got.Repo)
+	}
 	// The model supplied an identity; it must be ignored in favour of the
 	// bound identity.
-	if reviewer.gotIdentity == nil || *reviewer.gotIdentity != "archie" {
-		t.Fatalf("identity = %v, want bound \"archie\"", reviewer.gotIdentity)
+	if got.Identity != "archie" {
+		t.Errorf("identity = %q, want bound %q", got.Identity, "archie")
 	}
-	if reviewer.gotRepo != "acme/widget" || reviewer.gotNumber != 7 {
-		t.Fatalf("ReviewPR called with (%q, %d), want (acme/widget, 7)", reviewer.gotRepo, reviewer.gotNumber)
+	if n, ok := got.Inputs["pr_number"].(int); !ok || n != 7 {
+		t.Errorf("inputs[pr_number] = %#v, want int 7", got.Inputs["pr_number"])
+	}
+	if got.Title == "" || got.Body == "" {
+		t.Errorf("title/body = %q/%q, want both set so the queued task is identifiable", got.Title, got.Body)
 	}
 
-	result, ok := out.(PRReviewResult)
+	result, ok := out.(TaskSpawnResult)
 	if !ok {
-		t.Fatalf("handler returned %T, want PRReviewResult", out)
+		t.Fatalf("handler returned %T, want TaskSpawnResult", out)
 	}
-	if result.Status != "completed" || len(result.Findings) != 1 || !result.Findings[0].Blocking {
-		t.Fatalf("result = %+v, want completed with one blocking finding", result)
+	if result.ID != 42 {
+		t.Errorf("result.ID = %d, want 42", result.ID)
 	}
 }
 
 func TestReviewPRToolValidatesInput(t *testing.T) {
-	reviewer := &fakePRReviewer{}
-	entry := toolNamed(t, ReviewTools(reviewer, "archie"), "review_pr")
+	creator := &fakeCreator{}
+	entry := toolNamed(t, ReviewTools(creator, "archie"), "review_pr")
 
 	tests := []struct {
 		name  string
@@ -91,15 +81,18 @@ func TestReviewPRToolValidatesInput(t *testing.T) {
 			}
 		})
 	}
+	if len(creator.got.Inputs) != 0 || creator.got.Repo != "" {
+		t.Errorf("rejected input still reached CreateTask: %+v", creator.got)
+	}
 }
 
-func TestReviewPRToolSurfacesReviewerError(t *testing.T) {
-	reviewer := &fakePRReviewer{err: errors.New("review already in progress")}
-	entry := toolNamed(t, ReviewTools(reviewer, "archie"), "review_pr")
+func TestReviewPRToolSurfacesCreatorError(t *testing.T) {
+	creator := &fakeCreator{err: errors.New("repo not configured")}
+	entry := toolNamed(t, ReviewTools(creator, "archie"), "review_pr")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{
 		"repo": "acme/widget", "pr_number": float64(7),
 	}); err == nil {
-		t.Fatal("handler error = nil, want the reviewer failure surfaced")
+		t.Fatal("handler error = nil, want the creator failure surfaced")
 	}
 }

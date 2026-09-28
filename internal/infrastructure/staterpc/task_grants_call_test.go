@@ -23,11 +23,11 @@ func TestTaskGrantAuthorizesTheWorkflowCallRPCs(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	caller, err := admin.EnqueueChatTask(ctx, "acme", "widget", "caller", "body", "implement", "")
+	caller, err := admin.EnqueueChatTask(ctx, "acme", "widget", "caller", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := admin.EnqueueChatTask(ctx, "acme", "widget", "other", "body", "implement", "")
+	other, err := admin.EnqueueChatTask(ctx, "acme", "widget", "other", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

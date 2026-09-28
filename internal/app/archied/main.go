@@ -539,14 +539,16 @@ type chatTaskWriterAdapter struct {
 	enqueue func(
 		ctx context.Context,
 		owner, repo, title, body, workflow, identity string,
+		inputs map[string]any,
 	) (*workflow.Task, error)
 }
 
 func (a chatTaskWriterAdapter) EnqueueChatTask(
 	ctx context.Context,
 	owner, repo, title, body, workflow, identity string,
+	inputs map[string]any,
 ) (int64, error) {
-	task, err := a.enqueue(ctx, owner, repo, title, body, workflow, identity)
+	task, err := a.enqueue(ctx, owner, repo, title, body, workflow, identity, inputs)
 	if err != nil {
 		return 0, err
 	}

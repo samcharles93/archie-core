@@ -126,16 +126,9 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 	setup := chatSetup{
 		Cfg: config.NewHolder(cfg), LLM: b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks,
-		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
-		ChatTaskLogs:   chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
-		// ChatPRReviewer is nil for now: the synchronous operator-review
-		// implementation (prReviewer) was removed with the adversarial
-		// self-review system it depended on (archie-core-afbk.7). The
-		// review_pr chat tool self-omits when its reviewer is nil, so the
-		// dashboard/chat simply stops advertising the capability until the
-		// operator trigger is rebuilt to enqueue an async pr-review task
-		// instead (tracked in that bead's continuation).
-		ChatTaskActor: actor, ChatPRReviewer: nil,
+		ChatTaskLister:      chatTaskListerAdapter{tasks: b.stateStore.Tasks},
+		ChatTaskLogs:        chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
+		ChatTaskActor:       actor,
 		DefaultChatIdentity: b.defaultChatIdentity,
 		Bus:                 b.bus, Log: b.log,
 		MemoryEngine: b.memoryStore(),

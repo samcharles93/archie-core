@@ -2957,13 +2957,17 @@ func (x *EnqueueIssueResponse) GetInserted() bool {
 }
 
 type EnqueueChatTaskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Owner         string                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
-	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Body          string                 `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
-	Workflow      string                 `protobuf:"bytes,5,opt,name=workflow,proto3" json:"workflow,omitempty"`
-	Identity      string                 `protobuf:"bytes,6,opt,name=identity,proto3" json:"identity,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Owner    string                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	Repo     string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	Title    string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Body     string                 `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
+	Workflow string                 `protobuf:"bytes,5,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	Identity string                 `protobuf:"bytes,6,opt,name=identity,proto3" json:"identity,omitempty"`
+	// inputs_json assigns workflow inputs, a JSON object of the same form
+	// EnqueueBindingTaskRequest carries. A chat task sets them at insert
+	// time: it has no binding provenance to stamp afterwards.
+	InputsJson    string `protobuf:"bytes,7,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3036,6 +3040,13 @@ func (x *EnqueueChatTaskRequest) GetWorkflow() string {
 func (x *EnqueueChatTaskRequest) GetIdentity() string {
 	if x != nil {
 		return x.Identity
+	}
+	return ""
+}
+
+func (x *EnqueueChatTaskRequest) GetInputsJson() string {
+	if x != nil {
+		return x.InputsJson
 	}
 	return ""
 }
@@ -11902,14 +11913,16 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x06labels\x18\x06 \x01(\tR\x06labels\x12\x1a\n" +
 	"\bidentity\x18\a \x01(\tR\bidentity\"2\n" +
 	"\x14EnqueueIssueResponse\x12\x1a\n" +
-	"\binserted\x18\x01 \x01(\bR\binserted\"\xa4\x01\n" +
+	"\binserted\x18\x01 \x01(\bR\binserted\"\xc5\x01\n" +
 	"\x16EnqueueChatTaskRequest\x12\x14\n" +
 	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12\x12\n" +
 	"\x04body\x18\x04 \x01(\tR\x04body\x12\x1a\n" +
 	"\bworkflow\x18\x05 \x01(\tR\bworkflow\x12\x1a\n" +
-	"\bidentity\x18\x06 \x01(\tR\bidentity\"=\n" +
+	"\bidentity\x18\x06 \x01(\tR\bidentity\x12\x1f\n" +
+	"\vinputs_json\x18\a \x01(\tR\n" +
+	"inputsJson\"=\n" +
 	"\x17EnqueueChatTaskResponse\x12\"\n" +
 	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task\"\x12\n" +
 	"\x10ClaimNextRequest\"M\n" +

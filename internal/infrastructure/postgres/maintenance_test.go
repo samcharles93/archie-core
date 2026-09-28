@@ -138,7 +138,7 @@ func titles(t *testing.T, pool *pgxpool.Pool) []string {
 
 func enqueue(t *testing.T, pool *pgxpool.Pool, title string) {
 	t.Helper()
-	if _, err := New(pool).EnqueueChatTask(t.Context(), "acme", "widget", title, "body", "implement", ""); err != nil {
+	if _, err := New(pool).EnqueueChatTask(t.Context(), "acme", "widget", title, "body", "implement", "", nil); err != nil {
 		t.Fatalf("enqueue %q: %v", title, err)
 	}
 }

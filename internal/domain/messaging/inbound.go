@@ -52,10 +52,14 @@ type Inbound struct {
 // Workflow are optional  --  empty means "the daemon's configured
 // default for this identity".
 type SpawnRequest struct {
-	Title    string
-	Body     string // operator instructions carried into the admitted task
-	Repo     string // "owner/name"; empty = identity's default repo
+	Title string
+	Body  string // operator instructions carried into the admitted task
+	Repo  string // "owner/name"; empty = identity's default repo
+	// Workflow may name a workflow whose interface declares inputs
+	// (pr-review's pr_number, for instance). Inputs assigns them; a
+	// workflow that declares none ignores it.
 	Workflow string // empty = daemon's default workflow routing
+	Inputs   map[string]any
 	Identity string // the identity spawning this task; propagated from Router.Identity
 }
 

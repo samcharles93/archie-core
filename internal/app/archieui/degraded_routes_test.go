@@ -171,7 +171,7 @@ func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 	}
 	t.Cleanup(closeClient)
 
-	task, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "a task", "body", "implement", "")
+	task, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "a task", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatalf("seed task: %v", err)
 	}

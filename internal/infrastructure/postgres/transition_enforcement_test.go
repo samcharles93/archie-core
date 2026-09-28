@@ -60,7 +60,7 @@ func TestIllegalTransitionsAreRejected(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := storeFor(t)
-			task, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "")
+			task, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "", nil)
 			if err != nil || task == nil {
 				t.Fatalf("EnqueueChatTask: %+v %v", task, err)
 			}
@@ -91,7 +91,7 @@ func TestIllegalTransitionsAreRejected(t *testing.T) {
 // conformance battery has always asserted).
 func TestStaleFromBeatsIllegalPair(t *testing.T) {
 	s := storeFor(t)
-	task, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "")
+	task, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "", nil)
 	if err != nil || task == nil {
 		t.Fatalf("EnqueueChatTask: %+v %v", task, err)
 	}
@@ -106,7 +106,7 @@ func TestStaleFromBeatsIllegalPair(t *testing.T) {
 // and the audit row is written as before.
 func TestLegalTransitionStillWrites(t *testing.T) {
 	s := storeFor(t)
-	task, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "")
+	task, err := s.EnqueueChatTask(t.Context(), "acme", "widgets", "t", "b", "implement", "", nil)
 	if err != nil || task == nil {
 		t.Fatalf("EnqueueChatTask: %+v %v", task, err)
 	}

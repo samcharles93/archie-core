@@ -52,7 +52,7 @@ func recoveryFixture(t *testing.T) (string, *pgstore.TaskDB) {
 // seedTask writes one task so the database holds more than its settings.
 func seedTask(t *testing.T, st *pgstore.TaskDB, title string) {
 	t.Helper()
-	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", title, "body", "implement", ""); err != nil {
+	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", title, "body", "implement", "", nil); err != nil {
 		t.Fatalf("seed task %q: %v", title, err)
 	}
 }

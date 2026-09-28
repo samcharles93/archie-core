@@ -355,7 +355,7 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 	// Combined task/event/capture view: a task, an event on that task, and an
 	// unrelated capture written through one consumer, read back across all
 	// three surfaces in a single pass (the dashboard/observability read path).
-	task, err := cl.EnqueueChatTask(ctx, "acme", "widget", "verify state store", "body", "implement", "")
+	task, err := cl.EnqueueChatTask(ctx, "acme", "widget", "verify state store", "body", "implement", "", nil)
 	if err != nil || task == nil {
 		t.Fatalf("EnqueueChatTask = %+v, %v", task, err)
 	}
@@ -485,7 +485,7 @@ func TestStateStoreRealProcessRestartRecovery(t *testing.T) {
 
 	first := startStateStoreProcess(t, bin, cfg)
 	s1 := dial(t, first.addr)
-	task, err := s1.EnqueueChatTask(t.Context(), "acme", "widget", "survive restart", "body", "implement", "")
+	task, err := s1.EnqueueChatTask(t.Context(), "acme", "widget", "survive restart", "body", "implement", "", nil)
 	if err != nil || task == nil {
 		t.Fatalf("first EnqueueChatTask = %+v, %v", task, err)
 	}

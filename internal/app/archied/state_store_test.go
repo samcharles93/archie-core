@@ -175,7 +175,7 @@ func TestStateStoreDataSurvivesRestart(t *testing.T) {
 	if err := first.openStateStore(t.Context()); err != nil {
 		t.Fatalf("first openStateStore: %v", err)
 	}
-	task, err := first.st.EnqueueChatTask(t.Context(), "acme", "widget", "restart check", "body", "implement", "")
+	task, err := first.st.EnqueueChatTask(t.Context(), "acme", "widget", "restart check", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatalf("EnqueueChatTask: %v", err)
 	}

@@ -567,7 +567,7 @@ func TestManualRequeueTaskRejectsOtherStatuses(t *testing.T) {
 func TestChatTaskListerAdapterReadsSQLiteIdentity(t *testing.T) {
 	st := pgstore.Open(t)
 	t.Cleanup(func() { _ = st.Close() })
-	want, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "identity task", "", "tdd", "reviewer")
+	want, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "identity task", "", "tdd", "reviewer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,13 +610,14 @@ func TestChatTaskWriterAdapter(t *testing.T) {
 				enqueue: func(
 					context.Context,
 					string, string, string, string, string, string,
+					map[string]any,
 				) (*workflow.Task, error) {
 					return tt.result, tt.err
 				},
 			}
 			id, err := adapter.EnqueueChatTask(
 				context.Background(),
-				"owner", "repo", "title", "body", "workflow", "identity",
+				"owner", "repo", "title", "body", "workflow", "identity", nil,
 			)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("EnqueueChatTask() error = %v, wantErr %t", err, tt.wantErr)

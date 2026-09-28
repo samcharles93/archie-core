@@ -174,11 +174,11 @@ func TestTaskGrantScopesWorkerToItsOwnRPCs(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	taskA, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	taskA, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskB, err := admin.EnqueueChatTask(ctx, "acme", "widget", "b", "body", "implement", "")
+	taskB, err := admin.EnqueueChatTask(ctx, "acme", "widget", "b", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestOnlyAdminPublishesTheConfigSnapshot(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestOnlyAdminReportsApplyStatus(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestOnlyAdminOwnsThePlaybookLedger(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestOnlyAdminCanRegisterOrRevokeTaskGrants(t *testing.T) {
 	ctx := t.Context()
 
 	admin := dial(t, adminToken)
-	taskA, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	taskA, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestRunCredentialRecordsItsOwnSteps(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	own, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	own, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestRunCredentialRecordsItsOwnSteps(t *testing.T) {
 	if err != nil || own == nil {
 		t.Fatalf("TaskByID: %+v %v", own, err)
 	}
-	other, err := admin.EnqueueChatTask(ctx, "acme", "widget", "b", "body", "implement", "")
+	other, err := admin.EnqueueChatTask(ctx, "acme", "widget", "b", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +478,7 @@ func TestTaskGrantCannotCancelAnExecution(t *testing.T) {
 	admin := dial(t, adminToken)
 	ctx := t.Context()
 
-	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

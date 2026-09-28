@@ -83,7 +83,7 @@ func TestWorkRequestRejectsDisabledWorkflow(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
-	if creator.request != (gateway.SpawnRequest{}) {
-		t.Fatalf("creator called with %#v", creator.request)
+	if got := creator.request; got.Title != "" || got.Body != "" || got.Repo != "" || got.Workflow != "" || got.Identity != "" || len(got.Inputs) != 0 {
+		t.Fatalf("creator called with %#v", got)
 	}
 }

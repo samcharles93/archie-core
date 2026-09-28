@@ -45,7 +45,7 @@ type taskProfile struct {
 // internal/domain/workflow; the daemon supplies an adapter closure over
 // the store.TaskStore method of the same name.
 type chatTaskWriter interface {
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (taskID int64, err error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, inputs map[string]any) (taskID int64, err error)
 }
 
 // NewStoreTaskCreator returns a TaskCreator that enqueues chat-spawned
@@ -103,7 +103,7 @@ func (c *StoreTaskCreator) CreateTask(ctx context.Context, req SpawnRequest) (in
 	if owner == "" || repo == "" {
 		return 0, fmt.Errorf("no repo configured for chat-spawned tasks")
 	}
-	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity)
+	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity, req.Inputs)
 }
 
 func splitOwnerRepo(s string) (owner, repo string, ok bool) {

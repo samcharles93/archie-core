@@ -20,7 +20,7 @@ func (s *workflowDefinitionsStub) WorkflowDefinitions(context.Context) (workflow
 func TestWorkflowDefinitionPinSurvivesActiveOverride(t *testing.T) {
 	resources := pgstore.Open(t)
 	defer resources.Close()
-	task, err := resources.EnqueueChatTask(t.Context(), "acme", "widget", "custom", "", "custom", "operator")
+	task, err := resources.EnqueueChatTask(t.Context(), "acme", "widget", "custom", "", "custom", "operator", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
