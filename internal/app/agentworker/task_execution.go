@@ -217,12 +217,11 @@ func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []s
 	runner.AllowTools = allow
 }
 
-// stageRunners builds the runner every agent stage uses, and the reviewer.
-func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, log *slog.Logger) (agentexec.Runner, workflow.Reviewer, error) {
+// stageRunners builds the runner every agent stage uses.
+func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, log *slog.Logger) (agentexec.Runner, error) {
 	if req.Harness != nil {
-		// The built-in loop has no route to a model from a Kit container, so
-		// the review stage parks rather than running on it.
-		return agentexec.HarnessStages{Runner: agentexec.NewHarnessRunner(nil), Spec: *req.Harness}, nil, nil
+		// The built-in loop has no route to a model from a Kit container.
+		return agentexec.HarnessStages{Runner: agentexec.NewHarnessRunner(nil), Spec: *req.Harness}, nil
 	}
 	var agent agentexec.Runner
 	if mcpSet != nil && mcpSet.registry != nil {
@@ -231,10 +230,10 @@ func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerF
 		agent = newRunner(req.Providers, log)
 	}
 	if agent == nil {
-		return nil, nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
+		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
 	}
 	applyToolLimits(agent, req.Cfg.ToolPolicy, req.Tools)
-	return agent, newReviewerFor(req), nil
+	return agent, nil
 }
 
 // routeTask remains available for routing-only callers. Production execution
@@ -286,7 +285,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		log.Warn("mcp providers had errors, continuing with available tools", "err", mcpErr)
 	}
 
-	agent, reviewer, err := stageRunners(req, mcpSet, newRunner, log)
+	agent, err := stageRunners(req, mcpSet, newRunner, log)
 	if err != nil {
 		return nil, err
 	}
@@ -310,17 +309,16 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}
 
 	tc := &workflow.TaskContext{
-		Task:     req.Task,
-		Repo:     req.Repo,
-		Cfg:      req.Cfg.ToConfig(),
-		Forge:    dependencies.forge,
-		Store:    dependencies.store,
-		Calls:    dependencies.calls,
-		Trees:    trees,
-		Agent:    agent,
-		Reviewer: reviewer,
-		Bus:      bus,
-		Log:      log,
+		Task:  req.Task,
+		Repo:  req.Repo,
+		Cfg:   req.Cfg.ToConfig(),
+		Forge: dependencies.forge,
+		Store: dependencies.store,
+		Calls: dependencies.calls,
+		Trees: trees,
+		Agent: agent,
+		Bus:   bus,
+		Log:   log,
 	}
 	if req.Repo.PersistentStorage {
 		memory, readErr := readProjectMemory(storage.MemoryPath)

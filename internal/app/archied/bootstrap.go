@@ -238,15 +238,11 @@ type boot struct {
 	// unrelated call.
 	embeddings domainembedding.Client
 
-	toolReg        *tools.Registry
-	chatModels     *chatModelManager
-	personas       *gateway.PersonaRegistry
-	chatTasks      gateway.TaskCreator
-	chatController *gateway.StoreTaskController
-	// chatPRReviewer is the operator-triggered PR review capability, built
-	// once and shared by every channel so a review in flight on one channel
-	// is deduplicated against the same request on another (single-flight).
-	chatPRReviewer      gateway.ChatPRReviewer
+	toolReg             *tools.Registry
+	chatModels          *chatModelManager
+	personas            *gateway.PersonaRegistry
+	chatTasks           gateway.TaskCreator
+	chatController      *gateway.StoreTaskController
 	defaultChatIdentity string
 	updateService       *releaseupdate.Service
 
@@ -930,10 +926,10 @@ func (b *boot) loadPlugins() error {
 
 // buildWorktreeManager composes the process-wide worktree manager from the
 // resolved primary forge credential and the loaded config. Both process roots
-// own one: the daemon works tasks in it, and the Gateway materialises a pull
-// request head in it when an operator asks for a review (boot.prReviewer
-// refuses to build a reviewer without one, so a Gateway that skips this step
-// advertises no review_pr). It reads only, so it has nothing to report.
+// own one: the daemon works tasks in it, and the Gateway used it to
+// materialise a pull request head for the now-removed synchronous
+// operator-review path (archie-core-afbk.7). It reads only, so it has
+// nothing to report.
 //
 // Identity managers are not built here: buildTreesAndIdentities builds one per
 // identity, each in its own WorkDir, because the Gateway must not own daemon

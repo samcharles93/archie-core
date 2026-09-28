@@ -341,10 +341,12 @@ StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
    separate fresh-context reviewer pass on every change as a matter of course.
    Red-green TDD plus `task check` is the gate; a manual adversarial pass is
    opt-in per request — ask before running one. This is the rule for a human or
-   agent _contributor_. Separately, archied runs the same adversarial review
-   automatically on the PRs it opens (gated per repo by `repo.review_enabled`)
-   — see `docs/architecture/adversarial-review.md`. The two paths are distinct:
-   you run one when asked; archied runs one before it opens a PR.
+   agent _contributor_. Separately, archied runs its own PR review pipeline
+   (`docs/prds/pr-review-agent.md`) before it opens a PR of its own — see that
+   PRD's Triggers section ("archie's own PRs"). It supersedes the older
+   single-reviewer stage `docs/architecture/adversarial-review.md` described
+   (`repo.review_enabled` no longer exists). The two paths are distinct: you
+   run a manual pass when asked; archied runs its own before it opens a PR.
 6. **Linter Guard:**
 
 - When using `errorlint` fixes, ensure boolean predicates (e.g.

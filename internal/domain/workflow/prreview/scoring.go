@@ -127,6 +127,11 @@ type ScoredFinding struct {
 	Score       float64
 	Multipliers []string
 	Blocking    bool
+	// Adversary carries phase 5's verdict through synthesis, so a caller
+	// deciding whether a blocking finding was ever challenged (the pr-review
+	// PRD's archie's-own-PR trigger rule) does not have to cross-reference
+	// back into the pre-synthesis Finding slice.
+	Adversary AdversaryVerdict
 }
 
 // ScoreInputs is the run context that moves every finding's score.
@@ -170,6 +175,7 @@ func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 			Score:       score,
 			Multipliers: applied,
 			Blocking:    finding.Blocking,
+			Adversary:   finding.Adversary,
 		})
 	}
 

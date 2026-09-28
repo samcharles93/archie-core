@@ -149,20 +149,30 @@ const prReviewConcurrency = 8
 // merge gate), both off by default and each gated by its own config flag.
 func PRReview() Workflow {
 	return Workflow{
-		Name: "pr-review",
-		Stages: []Stage{
-			stagePRIntake(),
-			stagePRAnatomy(),
-			stagePRLenses(),
-			stagePRReview(),
-			stagePRPrecisionGate(),
-			stagePRVerification(),
-			stagePRCoverageConsistency(),
-			stagePRSynthesis(),
-			stagePROperatorApproval(),
-			stagePRMergeGate(),
-			stagePROutput(),
-		},
+		Name:   "pr-review",
+		Stages: append(prReviewDecisionStages(), stagePROutput()),
+	}
+}
+
+// prReviewDecisionStages is phases 1 through 8: everything up to and
+// including the merge gate's blocking/advisory verdict, but before phase 9
+// posts anything. Split out from PRReview so the implement workflow can
+// splice it in before StageOpenPR (archie-core-afbk.7's "archie's own PRs"
+// trigger): the decision of whether an unchallenged blocking finding parks
+// the task must happen before a PR exists to post to, while phase 9's
+// posting must happen after, once a PR number exists to anchor comments to.
+func prReviewDecisionStages() []Stage {
+	return []Stage{
+		stagePRIntake(),
+		stagePRAnatomy(),
+		stagePRLenses(),
+		stagePRReview(),
+		stagePRPrecisionGate(),
+		stagePRVerification(),
+		stagePRCoverageConsistency(),
+		stagePRSynthesis(),
+		stagePROperatorApproval(),
+		stagePRMergeGate(),
 	}
 }
 

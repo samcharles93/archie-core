@@ -45,8 +45,6 @@ var outcomeSites = []outcomeSite{
 	{"prreview_stages_verify.go", "StatusWaitingHuman", "review.approve_before_post is set and synthesis produced findings: the run waits for an operator decision before the merge gate"},
 	{"remediate.go", "StatusParked", "the remediation round cap is spent"},
 	{"remediate.go", "StatusPROpen", "a remediation round pushed the task back to its open PR"},
-	{"review.go", "StatusParked", "review is enabled but no reviewer is wired"},
-	{"review.go", "StatusParked", "review confirmed an error-level finding"},
 	{"steps.go", "StatusCompleted", "a no-change build closed the forge issue"},
 	{"steps.go", "StatusCompleted", "a no-change build on a task with no forge issue"},
 	{"steps.go", "StatusPROpen", "the PR opened"},

@@ -266,14 +266,7 @@ func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	// it. This is the one point where the number is known and the worktree is
 	// still there to measure, so it is captured here rather than left for a
 	// read to reconstruct. Reporting only: captureChanges never fails the stage.
-	//
-	// The same read answers which revision this run's line numbers describe:
-	// nothing commits between StageReview and here, so the worktree still holds
-	// the head the review read, and the stage that posts line-anchored comments
-	// needs it to refuse a post once the PR's head has moved past it.
-	if stats := tc.captureChanges(ctx, capturedAfterOpenPR); stats.HeadSHA != "" {
-		tc.ReviewedHeadSHA = stats.HeadSHA
-	}
+	tc.captureChanges(ctx, capturedAfterOpenPR)
 	return nil
 }
 

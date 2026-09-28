@@ -197,9 +197,7 @@ func Implement() Workflow {
 			}),
 			StageYaegiGate(),
 			StageDiffCap(),
-			StageReview(),
 			StageOpenPR(implementPRBody),
-			StagePostReviewComments(),
 		},
 	}
 }
@@ -208,13 +206,16 @@ func Implement() Workflow {
 // reports the fresh-vs-cached breakdown of tc.Task.TokensUsed (see
 // formatTokenUsage) so the operator isn't misled by the raw prompt-token sum
 // -- most of it is typically prefix-cache hits billed at a steep discount,
-// not full price. When the adversarial review ran, its findings section is
-// appended so the PR states what the reviewer checked and found (h019.6).
+// not full price.
+//
+// This used to also append the adversarial self-review's findings section
+// (docs/prds/adversarial-self-review.md, now superseded by
+// docs/prds/pr-review-agent.md per that PRD's own header). archie-core-afbk.7
+// removed the old review stage; hooking the new pr-review pipeline in as
+// this workflow's "archie's own PRs" trigger is tracked separately (see the
+// bead's continuation comment) rather than guessed at here, since it needs
+// the same stage-loop-around-StageOpenPR investigation that bead flagged.
 func implementPRBody(tc *TaskContext) string {
-	summary := tc.BuildSummary
-	if section := renderPRReviewSection(tc.ReviewReport); section != "" {
-		summary += "\n\n" + section
-	}
 	return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
-		summary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
+		tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
 }

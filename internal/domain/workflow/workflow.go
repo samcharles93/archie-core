@@ -54,6 +54,17 @@ type Forger interface {
 	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
+// ReviewComment is one line-anchored comment to post on an open pull
+// request: the repo-relative path, the line in the reviewed revision, and
+// the rendered body -- which may carry a fenced suggestion block. It names
+// nothing forge-specific, so both the pr-review pipeline (prreview_stages.go)
+// and the remediate workflow's callers can hand it to Forger unchanged.
+type ReviewComment struct {
+	Path string
+	Line int
+	Body string
+}
+
 // Trees is the subset of *worktree.Manager that workflow stages call
 // mid-run. *worktree.Manager (the daemon's real manager, holding the push
 // token) and a hybrid RPC-backed implementation (archie-agent proxies
@@ -88,11 +99,6 @@ type TaskContext struct {
 	// workflow.call step: such a step in a runner with no capability
 	// fails the run with a named error (docs/prds/workflow-calls.md).
 	Calls task.Caller
-	// Reviewer runs the adversarial self-review stage (StageReview). Nil
-	// is only safe when Repo.ReviewEnabled is false; StageReview parks
-	// rather than silently skipping if it is enabled with no Reviewer
-	// wired.
-	Reviewer Reviewer
 	// PRSource fetches a pull request under review and its head snapshot for
 	// the pr-review workflow (see prreview_stages.go). Nil is only safe for a
 	// workflow that never runs pr-review's stages: they fail the run with a
@@ -172,20 +178,6 @@ type TaskContext struct {
 	// reported prompt-token sum was cache hits (billed at a steep discount)
 	// rather than fresh, full-price tokens; see formatTokenUsage.
 	RunUsage agentexec.Usage
-	// ReviewReport is the adversarial self-review stage's result, stashed
-	// by StageReview so StageOpenPR can render a findings section on the PR
-	// body (h019.6). Zero value means the review did not run (disabled or
-	// skipped); ReviewReport.Ran() is the test for "render the section".
-	ReviewReport ReviewReport
-	// ReviewedHeadSHA is the worktree head at the moment the pull request was
-	// opened, which is the revision the review's line numbers were measured on
-	// (StageReview runs against that same worktree and commits nothing, so no
-	// revision intervenes). StagePostReviewComments threads it to the forge so
-	// a comment whose line numbers describe a head the pull request has since
-	// moved past is refused instead of attaching to unrelated code. Empty when
-	// the revision could not be read -- posting then proceeds unverified rather
-	// than dropping every finding.
-	ReviewedHeadSHA string
 }
 
 // Emit publishes an observability event stamped with the task's
