@@ -2,8 +2,10 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -191,5 +193,71 @@ func TestCoverageGapCapsAtTwoRounds(t *testing.T) {
 
 	if calls != 2 {
 		t.Errorf("gap reviewer calls = %d, want exactly 2 (the round cap)", calls)
+	}
+}
+
+func TestStagePRMergeGateSetsBlockingIndependentlyPerFinding(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{
+		snapshotDir: t.TempDir(),
+		scored: []prreview.ScoredFinding{
+			{File: "a.go", LineStart: 1, Title: "sql injection"},
+			{File: "b.go", LineStart: 2, Title: "unused variable"},
+		},
+	}
+	// One call per finding: alternate the verdict by call order, so a bug
+	// that broadcasts one verdict to every finding (rather than one call
+	// each) would leave both findings the same instead of split.
+	var calls atomic.Int32
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		n := calls.Add(1)
+		return captureResult("classify_blocking", map[string]any{"blocking": n == 1}), nil
+	}}
+
+	if err := stagePRMergeGate().Run(context.Background(), tc); err != nil {
+		t.Fatalf("merge-gate: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("classification calls = %d, want 2 (one per finding)", calls.Load())
+	}
+	blockingCount := 0
+	for _, f := range tc.prReview.scored {
+		if f.Blocking {
+			blockingCount++
+		}
+	}
+	if blockingCount != 1 {
+		t.Errorf("blocking findings = %d, want exactly 1 (one call returned true, the other false)", blockingCount)
+	}
+}
+
+func TestStagePRMergeGateFailedCallLeavesFindingAdvisory(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{
+		snapshotDir: t.TempDir(),
+		scored:      []prreview.ScoredFinding{{File: "a.go", LineStart: 1, Title: "t", Blocking: true}},
+	}
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		return agentexec.Result{}, errors.New("model unavailable")
+	}}
+
+	if err := stagePRMergeGate().Run(context.Background(), tc); err != nil {
+		t.Fatalf("merge-gate: %v", err)
+	}
+	if tc.prReview.scored[0].Blocking {
+		t.Error("Blocking = true, want false: a failed merge-gate call must leave the finding advisory, per the PRD")
+	}
+}
+
+func TestStagePRMergeGateSkipsEntirelyWhenNoFindings(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{snapshotDir: t.TempDir()}
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		t.Fatal("no agent call should run when there are no findings to classify")
+		return agentexec.Result{}, nil
+	}}
+
+	if err := stagePRMergeGate().Run(context.Background(), tc); err != nil {
+		t.Fatalf("merge-gate: %v", err)
 	}
 }

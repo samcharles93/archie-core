@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
@@ -75,6 +78,60 @@ type prReviewState struct {
 	// parallel (docs/prds/pr-review-agent.md, phase 6). Every other phase
 	// touches findings from a single goroutine and does not need it.
 	findingsMu sync.Mutex
+
+	// runStart is when phase 1 started, the origin every budget-share check
+	// measures elapsed wall-clock against.
+	runStart time.Time
+	// tokensSpent is the run's cumulative token spend so far, across every
+	// agent call any phase has made. It is an atomic because phases 3, 4 and
+	// 9 add to it from concurrent goroutines.
+	tokensSpent atomic.Int64
+	// skippedPhases names every phase a budget check skipped, in the order
+	// they were skipped, so phase 9's output can report them (docs/prds/
+	// pr-review-agent.md, Budget: "The posted review names every skipped
+	// phase, so an exhausted run never reads as a clean one"). Every phase
+	// runs sequentially in the workflow engine's stage loop, so appends here
+	// need no lock.
+	skippedPhases []string
+}
+
+// prReviewTotalBudget bounds the whole pr-review run's cost (tokens, the
+// only spend the agent runtime accounts for) and wall-clock, split evenly
+// across prReviewBudgetPhases in pipeline order (docs/prds/pr-review-agent.md,
+// Budget section). Sized generously: exhausting it is meant to catch a run
+// that is genuinely stuck or unexpectedly expensive, not a typical one.
+var prReviewTotalBudget = prreview.Budget{MaxTokens: 2_000_000, WallClock: 30 * time.Minute}
+
+// prReviewBudgetPhases are the budget-tracked phases, in pipeline order.
+// Intake is not tracked: it must always run, since the depth, the AI-score
+// and the budget's own runStart all come from it, and every later phase and
+// this list itself depend on its output existing.
+var prReviewBudgetPhases = []string{"anatomy", "lenses", "review", "verification", "coverage-consistency", "merge-gate", "output"}
+
+// budgetExhausted reports whether phase has already spent its cumulative
+// share of the run's total budget, checked once before that phase's
+// expensive (agent-call) work starts. A phase absent from
+// prReviewBudgetPhases is a bug in that list, not a runtime condition, and
+// is never treated as exhausted.
+func budgetExhausted(tc *TaskContext, phase string) bool {
+	idx := slices.Index(prReviewBudgetPhases, phase)
+	if idx < 0 {
+		return false
+	}
+	// A zero runStart means the run's clock was never started (a stage
+	// invoked directly against a hand-built prReviewState, as the stage unit
+	// tests do) rather than a run that has been going since the epoch.
+	var elapsed time.Duration
+	if !tc.prReview.runStart.IsZero() {
+		elapsed = time.Since(tc.prReview.runStart)
+	}
+	return prReviewTotalBudget.PhaseExhausted(idx+1, len(prReviewBudgetPhases),
+		int(tc.prReview.tokensSpent.Load()), elapsed)
+}
+
+// skipPhase records phase as budget-skipped.
+func skipPhase(tc *TaskContext, phase string) {
+	tc.prReview.skippedPhases = append(tc.prReview.skippedPhases, phase)
 }
 
 // prReviewConcurrency bounds phases 3 (lenses), 4 (reviewers) and 9 (polish),
@@ -84,8 +141,9 @@ const prReviewConcurrency = 8
 
 // PRReview is the pull request reviewer: a fixed pipeline, not a single
 // agent (docs/prds/pr-review-agent.md). archie-core-afbk.3 wired phases 1, 2,
-// 3, 4, 7 and 9; archie-core-afbk.4 adds 5 and 6 (verification,
-// coverage/consistency); phase 8 (the merge gate) is archie-core-afbk.5.
+// 3, 4, 7 and 9; archie-core-afbk.4 added 5 and 6 (verification,
+// coverage/consistency); archie-core-afbk.5 adds phase 8 (the merge gate)
+// and the budget shares/skipped-phase reporting that run throughout.
 func PRReview() Workflow {
 	return Workflow{
 		Name: "pr-review",
@@ -97,6 +155,7 @@ func PRReview() Workflow {
 			stagePRVerification(),
 			stagePRCoverageConsistency(),
 			stagePRSynthesis(),
+			stagePRMergeGate(),
 			stagePROutput(),
 		},
 	}
@@ -122,15 +181,19 @@ func stagePRIntake() Stage {
 		stats := prreview.SummarizeFiles(files)
 		depth := prreview.ResolveDepth(stats.TotalAdditions+stats.TotalDeletions, "")
 
+		// tc.prReview must exist before scoreAIGenerated runs: every
+		// pr-review agent call, including this one, records its token spend
+		// against tc.prReview.tokensSpent.
+		tc.prReview = &prReviewState{
+			metadata: meta, diff: diff, files: files, stats: stats,
+			depth: depth, runStart: time.Now(),
+		}
+
 		aiGenerated, err := scoreAIGenerated(ctx, tc, meta)
 		if err != nil {
 			return fmt.Errorf("score likely machine-written PR: %w", err)
 		}
-
-		tc.prReview = &prReviewState{
-			metadata: meta, diff: diff, files: files, stats: stats,
-			depth: depth, aiGenerated: aiGenerated,
-		}
+		tc.prReview.aiGenerated = aiGenerated
 		return nil
 	}}
 }
@@ -227,6 +290,10 @@ func stagePRAnatomy() Stage {
 				"Call finish with status \"passed\" and your narrative as the summary.",
 			tc.prReview.metadata.Title, tc.prReview.metadata.Body, clip(tc.prReview.diff, 60000),
 		)
+		if budgetExhausted(tc, "anatomy") {
+			skipPhase(tc, "anatomy")
+			return nil
+		}
 		res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "anatomy", "review", mission, 15, nil)
 		if err != nil {
 			return err
@@ -255,6 +322,10 @@ var prReviewLenses = []struct {
 // -- so it is added before MergeDimensions cuts the tail, never after.
 func stagePRLenses() Stage {
 	return Stage{Name: "lenses", Run: func(ctx context.Context, tc *TaskContext) error {
+		if budgetExhausted(tc, "lenses") {
+			skipPhase(tc, "lenses")
+			return nil
+		}
 		outputs := make([][]prreview.Dimension, len(prReviewLenses))
 		errs := make([]error, len(prReviewLenses))
 		forEachBounded(len(prReviewLenses), len(prReviewLenses), func(i int) {
@@ -347,6 +418,10 @@ func runLens(ctx context.Context, tc *TaskContext, name, angle string) ([]prrevi
 // (docs/prds/pr-review-agent.md, phase 4).
 func stagePRReview() Stage {
 	return Stage{Name: "review", Run: func(ctx context.Context, tc *TaskContext) error {
+		if budgetExhausted(tc, "review") {
+			skipPhase(tc, "review")
+			return nil
+		}
 		dimensions := tc.prReview.dimensions
 		findings := make([][]prreview.Finding, len(dimensions))
 		forEachBounded(prReviewConcurrency, len(dimensions), func(i int) {
@@ -501,6 +576,7 @@ func runReviewerAgent(
 		return agentexec.Result{}, err
 	}
 	res, runErr := tc.Agent.Run(ctx, tc.prReview.snapshotDir, req, tc.toolCallReporter(name))
+	tc.prReview.tokensSpent.Add(int64(res.TokensUsed))
 	to, detail := taskstate.StepSucceeded, res.Summary
 	switch {
 	case runErr != nil:
@@ -511,15 +587,15 @@ func runReviewerAgent(
 	if ferr := tc.finishChildStep(ctx, stepID, to, detail, int64(res.TokensUsed)); ferr != nil {
 		return res, ferr
 	}
+	tc.prReview.tokensSpent.Add(int64(res.TokensUsed))
 	return res, runErr
 }
 
 // stagePRSynthesis is pipeline phase 7, code only: score, drop findings
 // under their severity's confidence floor, merge duplicates, rank, and cap
-// at the inline comment limit. Phase 8 (the merge gate) does not run yet, so
-// every surviving finding's Blocking flag is whatever phase 5/6 left it as
-// (false, since neither sets it -- that is archie-core-afbk.5's decision to
-// make).
+// at the inline comment limit. Phase 8 (the merge gate) runs after this
+// stage, so every surviving finding's Blocking flag is still whatever phase
+// 5/6 left it as (false, since neither sets it) until that stage decides.
 func stagePRSynthesis() Stage {
 	return Stage{Name: "synthesis", Run: func(_ context.Context, tc *TaskContext) error {
 		scored := prreview.Score(tc.prReview.findings, prreview.ScoreInputs{
@@ -534,24 +610,29 @@ func stagePRSynthesis() Stage {
 // stagePROutput is pipeline phase 9: one polish call per comment, at most
 // prReviewConcurrency at a time, keeping the original wording on failure,
 // then posting the surviving inline-anchored findings as one forge review.
-// The merge gate (phase 8) does not run yet, so there is no blocking
-// classification to decide REQUEST_CHANGES; every posted review is a
-// comment until archie-core-afbk.5 lands that decision.
+// The polish pass is what a budget-exhausted run skips; posting itself
+// always runs, since it is the pipeline's only externally visible act and
+// must report what happened even when every other phase was skipped.
 func stagePROutput() Stage {
 	return Stage{Name: "output", Run: func(ctx context.Context, tc *TaskContext) error {
-		polished := make([]prreview.ScoredFinding, len(tc.prReview.scored))
-		forEachBounded(prReviewConcurrency, len(tc.prReview.scored), func(i int) {
-			polished[i] = polishFinding(ctx, tc, tc.prReview.scored[i])
-		})
-		tc.prReview.scored = polished
+		if budgetExhausted(tc, "output") {
+			skipPhase(tc, "output")
+		} else {
+			polished := make([]prreview.ScoredFinding, len(tc.prReview.scored))
+			forEachBounded(prReviewConcurrency, len(tc.prReview.scored), func(i int) {
+				polished[i] = polishFinding(ctx, tc, tc.prReview.scored[i])
+			})
+			tc.prReview.scored = polished
+		}
 
 		if err := postPRReview(ctx, tc); err != nil {
 			return fmt.Errorf("post review: %w", err)
 		}
-		tc.Outcome = Outcome{
-			Status: StatusCompleted,
-			Detail: fmt.Sprintf("posted %d finding(s)", len(polished)),
+		detail := fmt.Sprintf("posted %d finding(s) as %s", len(tc.prReview.scored), prreview.ReviewEventFor(tc.prReview.scored))
+		if len(tc.prReview.skippedPhases) > 0 {
+			detail += fmt.Sprintf("; skipped: %s", strings.Join(tc.prReview.skippedPhases, ", "))
 		}
+		tc.Outcome = Outcome{Status: StatusCompleted, Detail: detail}
 		return nil
 	}}
 }
@@ -593,9 +674,14 @@ func polishFinding(ctx context.Context, tc *TaskContext, f prreview.ScoredFindin
 }
 
 // postPRReview posts every line-anchored finding as one forge review. A
-// finding with no line (LineStart <= 0) has nothing to post yet: the PR-body
-// fallback list is the merge gate stage's concern (archie-core-afbk.5), not
-// this bead's.
+// finding with no line (LineStart <= 0) is dropped rather than posted
+// anywhere -- docs/prds/inline-review.md's PR-body fallback list for
+// whole-file findings, and REQUEST_CHANGES vs COMMENT event submission
+// (workflow.Forger.CreateReviewComments always posts a COMMENT-state
+// review; GitHub's implementation does not submit a review object at all,
+// only per-comment calls, so REQUEST_CHANGES needs a Forger/forge change,
+// not just a caller change here) are both real gaps this bead does not
+// close; see the follow-up bead this bead's commit files.
 func postPRReview(ctx context.Context, tc *TaskContext) error {
 	comments := make([]ReviewComment, 0, len(tc.prReview.scored))
 	for _, f := range tc.prReview.scored {
@@ -657,9 +743,11 @@ func runPRReviewAgentRecorded(
 		Budget:       agentexec.Budget{MaxSteps: maxSteps, WallClock: tc.Cfg.Budgets.WallClock.Std()},
 		CaptureTools: captureTools,
 	}
-	return tc.RunAgentChild(ctx, name, func() (agentexec.Result, error) {
+	res, err := tc.RunAgentChild(ctx, name, func() (agentexec.Result, error) {
 		return tc.Agent.Run(ctx, workspace, req, tc.toolCallReporter(name))
 	})
+	tc.prReview.tokensSpent.Add(int64(res.TokensUsed))
+	return res, err
 }
 
 // forEachBounded runs fn(0), fn(1), ..., fn(n-1), at most limit at a time,

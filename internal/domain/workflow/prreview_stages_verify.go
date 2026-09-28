@@ -486,3 +486,68 @@ func runConsistencyVerification(ctx context.Context, tc *TaskContext) error {
 	tc.prReview.findingsMu.Unlock()
 	return nil
 }
+
+// mergeGateSchema is the merge gate's classification-call capture-tool
+// schema.
+var mergeGateSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"blocking": {"type": "boolean", "description": "true only for a broken build, a security hole, data loss, a contract break or a regression."}
+	},
+	"required": ["blocking"]
+}`)
+
+// stagePRMergeGate is pipeline phase 8: one classification call per
+// surviving finding decides blocking or advisory (docs/prds/pr-review-
+// agent.md, phase 8). Blocking is narrow, and a failed or malformed call
+// leaves a finding advisory -- the same fallback every other pr-review
+// verdict call in this pipeline uses when its agent call could not run.
+func stagePRMergeGate() Stage {
+	return Stage{Name: "merge-gate", Run: func(ctx context.Context, tc *TaskContext) error {
+		if len(tc.prReview.scored) == 0 {
+			return nil
+		}
+		if budgetExhausted(tc, "merge-gate") {
+			skipPhase(tc, "merge-gate")
+			return nil
+		}
+		blocking := make([]bool, len(tc.prReview.scored))
+		forEachBounded(prReviewConcurrency, len(tc.prReview.scored), func(i int) {
+			blocking[i] = runMergeGateCall(ctx, tc, tc.prReview.scored[i])
+		})
+		for i := range tc.prReview.scored {
+			tc.prReview.scored[i].Blocking = blocking[i]
+		}
+		return nil
+	}}
+}
+
+// runMergeGateCall runs one phase-8 classification call over one finding.
+func runMergeGateCall(ctx context.Context, tc *TaskContext, f prreview.ScoredFinding) bool {
+	mission := fmt.Sprintf(
+		"Decide whether this finding must block the change from merging. Blocking is "+
+			"narrow: only a broken build, a security hole, data loss, a contract break, or "+
+			"a regression qualifies. Everything else -- including a real but non-blocking "+
+			"defect -- is advisory.\n\n[%s] %s (%s:%d)\n%s\n\n"+
+			"Call classify_blocking exactly once, then call finish with status \"passed\".",
+		f.Severity, f.Title, f.File, f.LineStart, f.Body,
+	)
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "merge-gate", "classification", mission, 6, []agentexec.CaptureTool{{
+		Name: "classify_blocking", Description: "Record the blocking verdict. Call exactly once, before finish.",
+		Parameters: mergeGateSchema, RequiredFields: []string{"blocking"}, MaxCalls: 1,
+	}})
+	if err != nil || res.Status != agentexec.StatusPassed {
+		return false //nolint:nilerr // a merge-gate call that could not run leaves the finding advisory, per the PRD
+	}
+	calls := res.Captures["classify_blocking"]
+	if len(calls) != 1 {
+		return false
+	}
+	var captured struct {
+		Blocking bool `json:"blocking"`
+	}
+	if json.Unmarshal(calls[0], &captured) != nil {
+		return false
+	}
+	return captured.Blocking
+}

@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -363,6 +366,100 @@ func TestStagePROutputKeepsOriginalBodyWhenPolishFails(t *testing.T) {
 	}
 	if tc.prReview.scored[0].Body != "original" {
 		t.Errorf("body = %q, want the original body kept on polish failure", tc.prReview.scored[0].Body)
+	}
+}
+
+func TestBudgetExhaustedSkipsLensesAndRecordsIt(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{
+		depth: prreview.DepthQuick, snapshotDir: t.TempDir(), runStart: time.Now(),
+	}
+	// Spend past every phase's cumulative token allotment up front, so
+	// lenses (the first budget-tracked phase) is already exhausted before
+	// its own work would start.
+	tc.prReview.tokensSpent.Store(int64(prReviewTotalBudget.MaxTokens))
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		t.Fatal("no lens call should run once the budget is already spent")
+		return agentexec.Result{}, nil
+	}}
+
+	if err := stagePRLenses().Run(context.Background(), tc); err != nil {
+		t.Fatalf("lenses: %v", err)
+	}
+	if len(tc.prReview.dimensions) != 0 {
+		t.Errorf("dimensions = %d, want 0 (lenses skipped, not run)", len(tc.prReview.dimensions))
+	}
+	if len(tc.prReview.skippedPhases) != 1 || tc.prReview.skippedPhases[0] != "lenses" {
+		t.Errorf("skippedPhases = %v, want [\"lenses\"]", tc.prReview.skippedPhases)
+	}
+}
+
+func TestBudgetNotExhaustedRunsLensesNormally(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{depth: prreview.DepthQuick, snapshotDir: t.TempDir(), runStart: time.Now()}
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		return captureResult("propose_dimensions", map[string]any{
+			"dimensions": []map[string]any{{"name": "d", "prompt": "p", "target_files": []string{"a.go"}, "priority": 1.0}},
+		}), nil
+	}}
+
+	if err := stagePRLenses().Run(context.Background(), tc); err != nil {
+		t.Fatalf("lenses: %v", err)
+	}
+	if len(tc.prReview.skippedPhases) != 0 {
+		t.Errorf("skippedPhases = %v, want none: the budget was not spent", tc.prReview.skippedPhases)
+	}
+	if len(tc.prReview.dimensions) == 0 {
+		t.Error("dimensions = 0, want at least the lens's own proposal: lenses should have run")
+	}
+}
+
+func TestStagePROutputReportsSkippedPhasesAndReviewEvent(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{
+		headSHA:       "deadbeef",
+		skippedPhases: []string{"verification", "coverage-consistency"},
+		scored: []prreview.ScoredFinding{
+			{File: "a.go", LineStart: 1, Title: "t", Body: "b", Blocking: true},
+		},
+	}
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		return captureResult("polish", map[string]any{"body": "tightened"}), nil
+	}}
+	tc.Forge = &fakeForger{}
+
+	if err := stagePROutput().Run(context.Background(), tc); err != nil {
+		t.Fatalf("output: %v", err)
+	}
+	if !strings.Contains(tc.Outcome.Detail, "REQUEST_CHANGES") {
+		t.Errorf("outcome detail = %q, want it to name REQUEST_CHANGES (a blocking finding survived)", tc.Outcome.Detail)
+	}
+	if !strings.Contains(tc.Outcome.Detail, "verification") || !strings.Contains(tc.Outcome.Detail, "coverage-consistency") {
+		t.Errorf("outcome detail = %q, want it to name every skipped phase", tc.Outcome.Detail)
+	}
+}
+
+func TestStagePROutputSkipsPolishWhenBudgetExhausted(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.prReview = &prReviewState{
+		runStart: time.Now(),
+		scored:   []prreview.ScoredFinding{{File: "a.go", LineStart: 1, Title: "t", Body: "original"}},
+	}
+	tc.prReview.tokensSpent.Store(int64(prReviewTotalBudget.MaxTokens))
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		t.Fatal("no polish call should run once the budget is already spent")
+		return agentexec.Result{}, nil
+	}}
+	tc.Forge = &fakeForger{}
+
+	if err := stagePROutput().Run(context.Background(), tc); err != nil {
+		t.Fatalf("output: %v", err)
+	}
+	if tc.prReview.scored[0].Body != "original" {
+		t.Errorf("body = %q, want the original (unpolished) body", tc.prReview.scored[0].Body)
+	}
+	if !slices.Contains(tc.prReview.skippedPhases, "output") {
+		t.Errorf("skippedPhases = %v, want it to include \"output\"", tc.prReview.skippedPhases)
 	}
 }
 
