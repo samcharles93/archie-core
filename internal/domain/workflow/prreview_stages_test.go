@@ -196,6 +196,24 @@ func TestStagePRIntakeFailsWithNoPRNumberAnywhere(t *testing.T) {
 	}
 }
 
+func TestStagePRIntakeAllowsNoPRNumberWhenEmbeddedInAnotherWorkflow(t *testing.T) {
+	// Archie's own PRs (StagePRReviewAndOpenPR) embeds this stage inside the
+	// implement workflow, reviewing a change with no PR number yet --
+	// localPRSource ignores the number entirely. The missing-number error
+	// must not fire here, only for the standalone pr-review workflow.
+	tc := baseTaskContext(t)
+	tc.Task.Workflow = "implement"
+	tc.Task.PRNumber = 0
+	tc.PRSource = &fakePRSource{metadata: PRMetadata{Title: "t", Body: "b"}, diff: smallDiff}
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		return captureResult("score_ai_generated", map[string]any{"confidence": 0.1}), nil
+	}}
+
+	if err := stagePRIntake().Run(context.Background(), tc); err != nil {
+		t.Fatalf("intake: %v (archie's own PRs must not require a PR number)", err)
+	}
+}
+
 func TestStagePRAnatomyBuildsSnapshotBlastRadiusAndNarrative(t *testing.T) {
 	tc := baseTaskContext(t)
 	tc.prReview = &prReviewState{

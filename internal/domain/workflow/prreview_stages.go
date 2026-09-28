@@ -200,10 +200,16 @@ func stagePRIntake() Stage {
 		// not PRNumber directly; the daemon's container-acquisition path
 		// already resolves this before dispatch, but an in-process or
 		// subprocess run that bypasses it still needs it resolved here.
+		// Archie's own PRs (Task.Workflow == "implement", embedding this
+		// stage through StagePRReviewAndOpenPR) legitimately has no PR
+		// number at all -- localPRSource ignores it, since the PR does not
+		// exist yet -- so the missing-number error only applies to the
+		// standalone pr-review workflow, which always needs a real,
+		// externally-fetchable pull request to review.
 		if tc.Task.PRNumber == 0 {
 			tc.Task.PRNumber = tc.Task.EffectivePRNumber()
 		}
-		if tc.Task.PRNumber == 0 {
+		if tc.Task.PRNumber == 0 && tc.Task.Workflow == "pr-review" {
 			return fmt.Errorf("pr-review: no pull request number (set directly or via the pr_number input)")
 		}
 		meta, err := tc.PRSource.Metadata(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber)
