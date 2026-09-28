@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/prsource"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
@@ -320,6 +321,16 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Bus:   bus,
 		Log:   log,
 	}
+	// pr-review reads an external pull request's data from workDir, which the
+	// daemon already populated before this task started (daemon's
+	// prefetchPRReview, writing under workDir/.archie-pr-review -- the same
+	// host directory Docker bind-mounts at storage.WorktreeMountDir) -- never
+	// over the network, and never with a forge credential in this process.
+	// See docs/development/agent.md, "Giving the agent something new".
+	if req.Task.Workflow == "pr-review" {
+		tc.PRSource = prsource.NewFromMount(filepath.Join(workDir, prsource.PrefetchDirName))
+	}
+
 	if req.Repo.PersistentStorage {
 		memory, readErr := readProjectMemory(storage.MemoryPath)
 		if readErr != nil {

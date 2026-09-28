@@ -1527,6 +1527,21 @@ func (d *Daemon) acquireTaskContainer(
 		return nil, nil, false
 	}
 
+	// pr-review needs an external pull request's metadata, diff and head
+	// snapshot inside the container, but the container must never hold a
+	// forge credential (docs/development/agent.md, "Giving the agent
+	// something new"). The daemon fetches it here, before the container
+	// exists, using its own credentialed forge client, and writes the result
+	// into workDir -- the same host directory Docker bind-mounts at
+	// storage.WorktreeMountDir -- so the sandboxed pipeline can read it back
+	// with prsource.MountSource and no network call of its own.
+	if task.Workflow == "pr-review" {
+		if err := prefetchPRReview(ctx, d.forgeFor(task), task.Owner, task.Repo, task.PRNumber, workDir); err != nil {
+			park("pr-review prefetch failed", err)
+			return nil, nil, false
+		}
+	}
+
 	// Guard: Storage may be nil if the daemon was wired incorrectly. In
 	// normal operation, Storage is always set when ContainerPool is set.
 	if d.Storage == nil {
