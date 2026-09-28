@@ -28,8 +28,9 @@ Authority: `docs/architecture/agent-system.md`. The status vocabulary lives in
 
 Follow [State Store](state-store.md) for the
 column and the wire. Then decide who writes it: `UpdateTask` writes a fixed
-column set, so a field set at enqueue needs its own statement (as
-`StampTaskBinding` does for binding provenance and inputs).
+column set, so a field set at enqueue belongs in the insert that creates the
+row (as `InsertChatTask` does for inputs), or in its own statement when only
+some producers set it (as `StampTaskBinding` does for binding provenance).
 
 ### Changing what the agent receives
 

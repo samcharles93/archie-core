@@ -34,7 +34,8 @@ func reviewPRTool(creator TaskCreator, identity string) tools.ToolEntry {
 		Toolset: "tasks",
 		Description: "Queue a review of an existing pull request. Use it when the user asks to review a PR, " +
 			"re-check one after a push, or see what the reviewer found. The review runs as a task in its own " +
-			"sandbox and posts its findings to the pull request; this returns the task ID immediately.",
+			"sandbox and posts its findings to the pull request, after operator approval when that is enabled; " +
+			"this returns the task ID immediately.",
 		Classification: tools.ClassMutating,
 		Schema: tools.JSONSchema{
 			"type": "object",
