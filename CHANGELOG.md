@@ -5,6 +5,22 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.44.0] - 2026-09-29
+
+### archied
+
+Archie can now review pull requests.
+
+- **Reviews on request and by watch.** Ask in chat or on the dashboard work form, add a repository to the watch list, or just let archie review its own PRs before it opens them. Review intensity follows a depth dial (quick/standard/deep) classified from the size of the change, and every finished review passes a verification layer — coverage-gap and cross-finding consistency checks — before it is produced.
+- **No forge credential reaches the review sandbox.** The daemon prefetches the pull request's data and rebuilds its source snapshot over the forge's HTTP API, so the agent container works from an isolated copy with no read access to the repository's credentials.
+- **Reviews stop at the operator gate before posting.** `review.precision_gate` / `approve_before_post` decide whether a finished review posts itself or parks for operator approval. With this release the parked state is a stop sign, not a checkpoint: the approve/reject/re-review responses behind the gate are not wired yet, and the gate's settings are not yet editable in the dashboard (configure them in `config.toml`). A parked review sits until that follow-up lands.
+- The adversarial self-review pass archie previously ran before opening its own PRs is superseded by this pipeline and has been removed.
+- Hardened harness input handling: harness identifiers are bounded to integer types.
+
+### archie-agent
+
+The runtime image is rebuilt with this release; it links the shared pr-review workflow packages behind the reviews above. Hosts that run agent containers need `docker compose pull agent` after updating to pick it up.
+
 ## [1.43.0] - 2026-09-28
 
 ### archied
