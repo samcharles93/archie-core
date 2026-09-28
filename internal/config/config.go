@@ -210,6 +210,23 @@ type Forge struct {
 	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
 }
 
+// Review configures the pr-review workflow (docs/prds/pr-review-agent.md).
+// Both fields are off by default: the pipeline is recall-first, and posts
+// automatically, unless an operator opts into either dial.
+type Review struct {
+	// PrecisionGate runs a post-worthiness pass after phase 4 (review) and
+	// before phase 5 (verification): it keeps every concrete, evidenced
+	// defect, drops nitpicks, style and unverifiable claims, and keeps a
+	// finding when unsure. It trades recall for precision and cuts
+	// verification cost by filtering early.
+	PrecisionGate bool `toml:"precision_gate" yaml:"precision_gate"`
+	// ApproveBeforePost ends the pipeline in waiting_human right after
+	// synthesis, before the merge gate runs, so an operator can choose which
+	// findings to post, reject the review, or ask for a re-review with
+	// instructions. A review with no findings never waits.
+	ApproveBeforePost bool `toml:"approve_before_post" yaml:"approve_before_post"`
+}
+
 // Dispatch configures how archied discovers work and reflects task state
 // onto the forge via labels and reactions.
 type Dispatch struct {
@@ -486,6 +503,7 @@ type Config struct {
 
 	Forge    Forge    `toml:"forge" yaml:"forge"`
 	Dispatch Dispatch `toml:"dispatch" yaml:"dispatch"`
+	Review   Review   `toml:"review" yaml:"review"`
 
 	// Models maps a role ("planner", "builder", "triage") to a runtime
 	// model ref ("provider/model").
@@ -604,6 +622,7 @@ type TaskConfig struct {
 	Notify       Notify                 `json:"notify"`
 	Forge        TaskForge              `json:"forge"`
 	ToolPolicy   ToolPolicy             `json:"tool_policy"`
+	Review       Review                 `json:"review"`
 }
 
 // DiffCapOf returns a DiffCapLines value for n. It exists because the field is
@@ -644,6 +663,7 @@ func (c Config) ForTask() TaskConfig {
 		Notify:       c.Notify,
 		Forge:        TaskForge{Host: c.Forge.Host},
 		ToolPolicy:   c.Tools.Policy,
+		Review:       c.Review,
 	}
 }
 
@@ -663,6 +683,7 @@ func (tc TaskConfig) ToConfig() Config {
 		Notify:       tc.Notify,
 		Forge:        Forge{Host: tc.Forge.Host},
 		Tools:        ToolsConfig{Policy: tc.ToolPolicy},
+		Review:       tc.Review,
 	}
 }
 

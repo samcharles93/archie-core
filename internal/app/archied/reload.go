@@ -117,6 +117,7 @@ var reloadableFields = map[string]bool{
 	"Models":       true,
 	"ModelLimits":  true,
 	"Notify":       true,
+	"Review":       true,
 	// BotUser/BotEmail used to be poll-path only; ForTask now carries both
 	// into the task snapshot as well, because the sandboxed worker builds
 	// its own worktree.Manager and signs its own commits (agentworker

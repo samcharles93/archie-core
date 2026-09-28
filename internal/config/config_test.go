@@ -157,8 +157,9 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 		Providers: map[string]Provider{
 			"secret": {APIKeyEnv: "TOP_SECRET_PROVIDER_TOKEN"},
 		},
-		NATS:  NATSConfig{TokenEnv: "TOP_SECRET_NATS_TOKEN"},
-		Tools: ToolsConfig{Policy: ToolPolicy{MaxResultChars: 50_000, SpillDir: "/var/tmp/archie-spill"}},
+		NATS:   NATSConfig{TokenEnv: "TOP_SECRET_NATS_TOKEN"},
+		Tools:  ToolsConfig{Policy: ToolPolicy{MaxResultChars: 50_000, SpillDir: "/var/tmp/archie-spill"}},
+		Review: Review{PrecisionGate: true, ApproveBeforePost: true},
 	}
 
 	want := TaskConfig{
@@ -171,6 +172,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 		Notify:       cfg.Notify,
 		Forge:        TaskForge{Host: cfg.Forge.Host},
 		ToolPolicy:   cfg.Tools.Policy,
+		Review:       cfg.Review,
 	}
 	got := cfg.ForTask()
 	if !reflect.DeepEqual(got, want) {
@@ -197,7 +199,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, data, "bot_user", "bot_email", "models", "budgets", "dispatch", "diff_cap_lines", "notify", "forge", "tool_policy")
+	assertJSONKeys(t, data, "bot_user", "bot_email", "models", "budgets", "dispatch", "diff_cap_lines", "notify", "forge", "tool_policy", "review")
 
 	var forgePayload map[string]json.RawMessage
 	var payload map[string]json.RawMessage

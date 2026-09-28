@@ -44,6 +44,127 @@ func stagePRVerification() Stage {
 	}}
 }
 
+// stagePRPrecisionGate is the PRD's Precision dial: an optional
+// post-worthiness pass, active only when review.precision_gate is set,
+// between phase 4 (review) and phase 5 (verification). It keeps every
+// concrete, evidenced defect and drops nitpicks, style and unverifiable
+// claims, keeping a finding when unsure -- trading recall for precision and
+// cutting verification cost by filtering early. It is off by default: the
+// pipeline is recall-first.
+func stagePRPrecisionGate() Stage {
+	return Stage{Name: "precision-gate", Run: func(ctx context.Context, tc *TaskContext) error {
+		if !tc.Cfg.Review.PrecisionGate || len(tc.prReview.findings) == 0 {
+			return nil
+		}
+		if budgetExhausted(tc, "precision-gate") {
+			skipPhase(tc, "precision-gate")
+			return nil
+		}
+		tc.prReview.findings = runPrecisionGate(ctx, tc, tc.prReview.findings)
+		return nil
+	}}
+}
+
+// precisionGateSchema is the precision gate's capture-tool schema: one
+// keep/drop verdict per finding index, the same index-referencing shape the
+// evidence verifier and adversary already use.
+var precisionGateSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"verdicts": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"index": {"type": "integer"},
+					"keep": {"type": "boolean"}
+				},
+				"required": ["index", "keep"]
+			}
+		}
+	},
+	"required": ["verdicts"]
+}`)
+
+// runPrecisionGate runs the precision gate's single classification-role call
+// over every current finding. A failed or malformed call keeps every finding
+// unfiltered -- the same recall-first fallback runEvidenceVerifier and
+// runAdversary already use: a gate that could not run is not evidence any
+// finding should drop.
+func runPrecisionGate(ctx context.Context, tc *TaskContext, findings []prreview.Finding) []prreview.Finding {
+	var listing strings.Builder
+	for i, f := range findings {
+		fmt.Fprintf(&listing, "Finding %d [%s]: %s (%s:%d)\n%s\nEvidence: %s\n\n",
+			i, f.Severity, f.Title, f.File, f.LineStart, f.Body, f.Evidence)
+	}
+	mission := fmt.Sprintf(
+		"Decide which of these findings are worth posting to a human reviewer. Keep every "+
+			"concrete, evidenced defect. Drop nitpicks, pure style complaints, and any claim "+
+			"you cannot verify from the evidence shown. Keep a finding when you are unsure.\n\n"+
+			"%s"+
+			"Call precision_gate exactly once with one verdict per finding index, then call "+
+			"finish with status \"passed\".",
+		listing.String(),
+	)
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "precision-gate", "classification", mission, 15, []agentexec.CaptureTool{{
+		Name: "precision_gate", Description: "Record each finding's keep/drop verdict. Call exactly once, before finish.",
+		Parameters: precisionGateSchema, RequiredFields: []string{"verdicts"}, MaxCalls: 1,
+	}})
+	if err != nil || res.Status != agentexec.StatusPassed {
+		return findings //nolint:nilerr // recall-first: a gate that could not run is not evidence any finding should drop
+	}
+	calls := res.Captures["precision_gate"]
+	if len(calls) != 1 {
+		return findings
+	}
+	var captured struct {
+		Verdicts []struct {
+			Index int  `json:"index"`
+			Keep  bool `json:"keep"`
+		} `json:"verdicts"`
+	}
+	if json.Unmarshal(calls[0], &captured) != nil {
+		return findings
+	}
+	drop := make(map[int]bool, len(captured.Verdicts))
+	for _, v := range captured.Verdicts {
+		if !v.Keep {
+			drop[v.Index] = true
+		}
+	}
+	kept := make([]prreview.Finding, 0, len(findings))
+	for i, f := range findings {
+		if drop[i] {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return kept
+}
+
+// stagePROperatorApproval is the PRD's Operator approval gate: active only
+// when review.approve_before_post is set, it runs immediately after
+// synthesis and before the merge gate, so an operator's re-review (which
+// reruns phases 3 to 8 with instructions folded in) never has to undo a
+// merge-gate verdict computed on a since-changed finding set. A review with
+// no findings never waits, per the PRD, and continues straight to the merge
+// gate. Setting tc.Outcome here ends the workflow run at this stage --
+// docs/prds/execution-tree-state-machine.md's engine loop stops as soon as a
+// stage sets a non-empty Outcome.Status -- so the merge gate and output
+// stages never run until an operator's response requeues the task.
+func stagePROperatorApproval() Stage {
+	return Stage{Name: "operator-approval", Run: func(_ context.Context, tc *TaskContext) error {
+		if !tc.Cfg.Review.ApproveBeforePost || len(tc.prReview.scored) == 0 {
+			return nil
+		}
+		tc.Outcome = Outcome{
+			Status: StatusWaitingHuman,
+			Detail: fmt.Sprintf("%d finding(s) awaiting operator review before posting", len(tc.prReview.scored)),
+		}
+		return nil
+	}}
+}
+
 // evidencePackageFor extracts a finding's evidence package from the
 // snapshot, reusing afbk.1's ExtractEvidence. A file the snapshot no longer
 // has (a finding pointing at a path that does not exist) extracts an empty

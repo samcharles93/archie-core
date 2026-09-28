@@ -106,7 +106,7 @@ var prReviewTotalBudget = prreview.Budget{MaxTokens: 2_000_000, WallClock: 30 * 
 // Intake is not tracked: it must always run, since the depth, the AI-score
 // and the budget's own runStart all come from it, and every later phase and
 // this list itself depend on its output existing.
-var prReviewBudgetPhases = []string{"anatomy", "lenses", "review", "verification", "coverage-consistency", "merge-gate", "output"}
+var prReviewBudgetPhases = []string{"anatomy", "lenses", "review", "precision-gate", "verification", "coverage-consistency", "merge-gate", "output"}
 
 // budgetExhausted reports whether phase has already spent its cumulative
 // share of the run's total budget, checked once before that phase's
@@ -142,8 +142,11 @@ const prReviewConcurrency = 8
 // PRReview is the pull request reviewer: a fixed pipeline, not a single
 // agent (docs/prds/pr-review-agent.md). archie-core-afbk.3 wired phases 1, 2,
 // 3, 4, 7 and 9; archie-core-afbk.4 added 5 and 6 (verification,
-// coverage/consistency); archie-core-afbk.5 adds phase 8 (the merge gate)
-// and the budget shares/skipped-phase reporting that run throughout.
+// coverage/consistency); archie-core-afbk.5 added phase 8 (the merge gate)
+// and the budget shares/skipped-phase reporting that run throughout;
+// archie-core-afbk.8 adds the precision dial (between review and
+// verification) and the operator-approval gate (between synthesis and the
+// merge gate), both off by default and each gated by its own config flag.
 func PRReview() Workflow {
 	return Workflow{
 		Name: "pr-review",
@@ -152,9 +155,11 @@ func PRReview() Workflow {
 			stagePRAnatomy(),
 			stagePRLenses(),
 			stagePRReview(),
+			stagePRPrecisionGate(),
 			stagePRVerification(),
 			stagePRCoverageConsistency(),
 			stagePRSynthesis(),
+			stagePROperatorApproval(),
 			stagePRMergeGate(),
 			stagePROutput(),
 		},
