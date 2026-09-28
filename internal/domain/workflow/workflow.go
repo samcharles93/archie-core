@@ -261,6 +261,14 @@ type Stage struct {
 type Workflow struct {
 	Name   string
 	Stages []Stage
+	// Interface declares this workflow's inputs, repository mode and agent
+	// profile to whatever starts it -- a binding's CheckWorkflow reads it the
+	// same way it reads a YAML-defined workflow's WorkflowInterface. Zero
+	// value (no declared inputs) is the default every builtin had before
+	// pr-review's triggers needed one; ShippedDefinitions only emits an
+	// inputs: block when this is non-empty, so every other builtin's
+	// generated YAML is byte-identical to before.
+	Interface task.WorkflowInterface
 }
 
 // Registry maps workflow names to definitions.

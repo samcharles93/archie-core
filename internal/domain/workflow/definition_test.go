@@ -3,6 +3,8 @@ package workflow
 import (
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 func TestParseDefinitionRejectsUnsafeDefinitions(t *testing.T) {
@@ -28,6 +30,34 @@ func TestParseDefinitionAllowsRepeatingAnOperation(t *testing.T) {
 	}
 	if len(definition.Steps) != 2 {
 		t.Fatalf("steps = %d, want 2", len(definition.Steps))
+	}
+}
+
+func TestShippedDefinitionsEmitDeclaredInputsForPRReview(t *testing.T) {
+	entry, ok := ShippedDefinitions().DefinitionByID("pr-review")
+	if !ok {
+		t.Fatal("missing shipped workflow \"pr-review\"")
+	}
+	iface, err := task.ParseWorkflowInterface(entry.YAML)
+	if err != nil {
+		t.Fatalf("ParseWorkflowInterface: %v", err)
+	}
+	spec, ok := iface.Inputs["pr_number"]
+	if !ok {
+		t.Fatal("pr-review does not declare a pr_number input")
+	}
+	if spec.Type != "number" || !spec.Required {
+		t.Fatalf("pr_number input = %+v, want {Type: number, Required: true}", spec)
+	}
+}
+
+func TestShippedDefinitionsOmitInputsBlockForWorkflowsThatDeclareNone(t *testing.T) {
+	entry, ok := ShippedDefinitions().DefinitionByID("implement")
+	if !ok {
+		t.Fatal("missing shipped workflow \"implement\"")
+	}
+	if strings.Contains(entry.YAML, "inputs:") {
+		t.Fatalf("implement's generated YAML unexpectedly carries an inputs: block:\n%s", entry.YAML)
 	}
 }
 

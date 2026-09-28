@@ -149,7 +149,18 @@ const prReviewConcurrency = 8
 // merge gate), both off by default and each gated by its own config flag.
 func PRReview() Workflow {
 	return Workflow{
-		Name:   "pr-review",
+		Name: "pr-review",
+		// pr_number is required so a binding (watched-repos) or a chat task
+		// (the operator trigger) can only target pr-review by actually
+		// naming a pull request; stagePRIntake reads it from Task.Inputs
+		// when Task.PRNumber is unset (archie's-own-PRs sets PRNumber
+		// directly and never goes through binding validation, so this
+		// declaration does not affect that path).
+		Interface: task.WorkflowInterface{
+			Inputs: map[string]task.InputSpec{
+				"pr_number": {Type: "number", Required: true},
+			},
+		},
 		Stages: append(prReviewDecisionStages(), stagePROutput()),
 	}
 }
@@ -183,6 +194,17 @@ func stagePRIntake() Stage {
 	return Stage{Name: "intake", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.PRSource == nil {
 			return fmt.Errorf("pr-review: no PRSource configured")
+		}
+		// A watched-repositories binding or the operator chat trigger
+		// assigns the pull request through the declared pr_number input,
+		// not PRNumber directly; the daemon's container-acquisition path
+		// already resolves this before dispatch, but an in-process or
+		// subprocess run that bypasses it still needs it resolved here.
+		if tc.Task.PRNumber == 0 {
+			tc.Task.PRNumber = tc.Task.EffectivePRNumber()
+		}
+		if tc.Task.PRNumber == 0 {
+			return fmt.Errorf("pr-review: no pull request number (set directly or via the pr_number input)")
 		}
 		meta, err := tc.PRSource.Metadata(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber)
 		if err != nil {

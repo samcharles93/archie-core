@@ -1522,6 +1522,16 @@ func (d *Daemon) acquireTaskContainer(
 		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error(), taskstate.ParkTransient)
 	}
 
+	// A watched-repositories binding or the operator chat trigger assigns
+	// the pull request generically through Task.Inputs (its declared
+	// pr_number input); archie's own PRs sets PRNumber directly and never
+	// goes through either path. Resolving here, before the brief is
+	// written, means task.json and the prefetch below always agree with
+	// what every later reader (stagePRIntake, output posting) sees.
+	if task.Workflow == "pr-review" {
+		task.PRNumber = task.EffectivePRNumber()
+	}
+
 	if err := writeTaskBrief(workDir, task); err != nil {
 		park("task.json write failed", err)
 		return nil, nil, false

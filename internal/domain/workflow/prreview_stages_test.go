@@ -170,6 +170,32 @@ func TestStagePRIntakeFailsWithNoPRSource(t *testing.T) {
 	}
 }
 
+func TestStagePRIntakeResolvesPRNumberFromInputsWhenUnset(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.Task.PRNumber = 0
+	tc.Task.Inputs = map[string]any{"pr_number": json.Number("77")}
+	tc.PRSource = &fakePRSource{metadata: PRMetadata{Title: "t", Body: "b"}, diff: smallDiff}
+	tc.Agent = &concurrentAgentRunner{byStage: func(string) (agentexec.Result, error) {
+		return captureResult("score_ai_generated", map[string]any{"confidence": 0.1}), nil
+	}}
+
+	if err := stagePRIntake().Run(context.Background(), tc); err != nil {
+		t.Fatalf("intake: %v", err)
+	}
+	if tc.Task.PRNumber != 77 {
+		t.Errorf("PRNumber = %d, want 77 (resolved from Inputs)", tc.Task.PRNumber)
+	}
+}
+
+func TestStagePRIntakeFailsWithNoPRNumberAnywhere(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.Task.PRNumber = 0
+	tc.PRSource = &fakePRSource{metadata: PRMetadata{Title: "t", Body: "b"}, diff: smallDiff}
+	if err := stagePRIntake().Run(context.Background(), tc); err == nil {
+		t.Fatal("want an error with no PR number set directly or via Inputs")
+	}
+}
+
 func TestStagePRAnatomyBuildsSnapshotBlastRadiusAndNarrative(t *testing.T) {
 	tc := baseTaskContext(t)
 	tc.prReview = &prReviewState{

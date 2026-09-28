@@ -193,9 +193,30 @@ func ShippedDefinitions() WorkflowDefinitionCollection {
 		for _, stage := range wf.Stages {
 			fmt.Fprintf(&builder, "  - type: %s.%s\n", id, stage.Name)
 		}
+		// Only pr-review declares inputs today; every other builtin's
+		// generated YAML stays byte-identical to before this field existed.
+		if len(wf.Interface.Inputs) > 0 {
+			builder.WriteString("inputs:\n")
+			for _, name := range sortedInputNames(wf.Interface.Inputs) {
+				spec := wf.Interface.Inputs[name]
+				fmt.Fprintf(&builder, "  %s:\n    type: %s\n    required: %t\n", name, spec.Type, spec.Required)
+			}
+		}
 		collection.Definitions = append(collection.Definitions, WorkflowDefinitionEntry{ID: id, YAML: builder.String()})
 	}
 	return collection
+}
+
+// sortedInputNames returns a Workflow.Interface's declared input names in a
+// deterministic order, so the generated YAML (and its digest) never depends
+// on map iteration order.
+func sortedInputNames(inputs map[string]task.InputSpec) []string {
+	names := make([]string, 0, len(inputs))
+	for name := range inputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func legacyBuiltinWorkflows() Registry {

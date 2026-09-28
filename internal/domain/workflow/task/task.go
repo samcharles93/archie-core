@@ -9,6 +9,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/org"
@@ -149,6 +150,34 @@ const (
 // IssueNumber and must not be used in forge label/comment/reply calls.
 func (t Task) IsForgeBacked() bool {
 	return t.Source != SourceChat
+}
+
+// EffectivePRNumber resolves the pull request a pr-review task targets:
+// PRNumber when a producer already set it directly (archie's own PRs, which
+// never goes through binding/chat input assignment), otherwise the pr_number
+// input a binding (watched repositories) or a chat task (the operator
+// trigger) assigned generically through Inputs. Returns 0 when neither is
+// set. DecodeInputs (the store's round-trip) decodes a JSON number as
+// json.Number; a caller that built Inputs by hand in Go may use float64 or
+// int instead, so all three are accepted.
+func (t Task) EffectivePRNumber() int {
+	if t.PRNumber != 0 {
+		return t.PRNumber
+	}
+	switch n := t.Inputs["pr_number"].(type) {
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0
+		}
+		return int(i)
+	case float64:
+		return int(n)
+	case int:
+		return n
+	default:
+		return 0
+	}
 }
 
 // Store is the narrow, consumer-owned subset of the State Store contract
