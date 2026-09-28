@@ -414,6 +414,26 @@ func CapInlineComments(findings []ScoredFinding) []ScoredFinding {
 	return findings
 }
 
+// IsAIGenerated reports whether intake's machine-written confidence clears
+// AIGeneratedThreshold: a coin-flip is not evidence, so it takes strictly
+// more than the threshold to count.
+func IsAIGenerated(confidence float64) bool {
+	return confidence > AIGeneratedThreshold
+}
+
+// IsHighPriority reports whether a finding's severity is high enough for
+// phase 5's evidence verifier to check it against its evidence package: a
+// hallucinated nitpick costs a reader little, a hallucinated critical costs
+// them a debugging session chasing a defect that was never there.
+func IsHighPriority(f Finding) bool {
+	switch normalizeSeverity(f.Severity) {
+	case SeverityCritical, SeverityImportant:
+		return true
+	default:
+		return false
+	}
+}
+
 // ReviewEventFor decides the event a review is submitted with: a blocking
 // finding requests changes, and anything else -- including a review that found
 // nothing -- is a comment. A pipeline that found nothing has said nothing about

@@ -51,6 +51,58 @@ func BlastRadius(fsys fs.FS, changed []string) ([]string, error) {
 	return radius, nil
 }
 
+// ExposureCounts returns, for every file the change reaches without touching,
+// how many changed files reach it: a fan-in count computed from the same
+// import graph BlastRadius walks. It is BlastRadius's detail, not its
+// replacement -- the coverage gate needs to tell a file three unrelated
+// changed files each reach apart from one only one of them happens to import.
+func ExposureCounts(fsys fs.FS, changed []string) (map[string]int, error) {
+	graph, err := buildImportGraph(fsys)
+	if err != nil {
+		return nil, err
+	}
+	changedSet := make(map[string]bool, len(changed))
+	for _, file := range changed {
+		changedSet[file] = true
+	}
+
+	counts := map[string]int{}
+	for _, file := range changed {
+		reached := map[string]bool{}
+		for _, imported := range graph.imports[file] {
+			reached[imported] = true
+		}
+		for _, dependent := range graph.dependents[file] {
+			reached[dependent] = true
+		}
+		for target := range reached {
+			if changedSet[target] {
+				continue
+			}
+			counts[target]++
+		}
+	}
+	return counts, nil
+}
+
+// HighExposureThreshold is the fan-in above which a blast-radius file counts
+// as high-exposure for the coverage gate: reached by more than one changed
+// file, so a regression there is not one dimension's problem to have covered.
+const HighExposureThreshold = 1
+
+// HighExposureFiles returns the blast-radius files whose exposure count
+// exceeds HighExposureThreshold, sorted for a deterministic gap-review order.
+func HighExposureFiles(counts map[string]int) []string {
+	var files []string
+	for file, count := range counts {
+		if count > HighExposureThreshold {
+			files = append(files, file)
+		}
+	}
+	sort.Strings(files)
+	return files
+}
+
 // importGraph is a snapshot's file-level dependency graph, in both directions:
 // an edge exists when one file's imports resolve to another file.
 type importGraph struct {

@@ -174,3 +174,25 @@ func TestBlastRadiusJavaScriptAndTypeScript(t *testing.T) {
 		})
 	}
 }
+
+func TestExposureCountsAndHighExposureFiles(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		"go.mod":                  {Data: []byte("module example.com/m\n\ngo 1.27.0\n")},
+		"internal/store/store.go": {Data: []byte("package store\n\nfunc Get() int { return 1 }\n")},
+		"internal/app/app.go":     {Data: []byte("package app\n\nimport \"example.com/m/internal/store\"\n\nfunc Run() int { return store.Get() }\n")},
+		"internal/other/other.go": {Data: []byte("package other\n\nimport \"example.com/m/internal/store\"\n\nfunc Run2() int { return store.Get() }\n")},
+	}
+
+	counts, err := ExposureCounts(fsys, []string{"internal/app/app.go", "internal/other/other.go"})
+	if err != nil {
+		t.Fatalf("ExposureCounts() error = %v", err)
+	}
+	if counts["internal/store/store.go"] != 2 {
+		t.Errorf("store.go exposure = %d, want 2 (reached by both changed files)", counts["internal/store/store.go"])
+	}
+
+	high := HighExposureFiles(counts)
+	wantStrings(t, high, []string{"internal/store/store.go"})
+}
