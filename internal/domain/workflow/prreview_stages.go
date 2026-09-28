@@ -58,11 +58,23 @@ type prReviewState struct {
 	snapshotDir string
 	headSHA     string
 	blastRadius []string
+	// clusters and highExposure are phase 6's coverage-gate inputs, computed
+	// once in anatomy alongside blastRadius: clusters groups changed files by
+	// directory, highExposure is the blastRadius files more than one changed
+	// file reaches.
+	clusters     []prreview.Cluster
+	highExposure []string
 
 	narrative  string
 	dimensions []prreview.Dimension
 	findings   []prreview.Finding
 	scored     []prreview.ScoredFinding
+
+	// findingsMu guards findings during phase 6, where the coverage gate and
+	// consistency verification append to it from two goroutines running in
+	// parallel (docs/prds/pr-review-agent.md, phase 6). Every other phase
+	// touches findings from a single goroutine and does not need it.
+	findingsMu sync.Mutex
 }
 
 // prReviewConcurrency bounds phases 3 (lenses), 4 (reviewers) and 9 (polish),
@@ -71,9 +83,9 @@ type prReviewState struct {
 const prReviewConcurrency = 8
 
 // PRReview is the pull request reviewer: a fixed pipeline, not a single
-// agent (docs/prds/pr-review-agent.md). This bead wires phases 1, 2, 3, 4, 7
-// and 9; phases 5, 6 and 8 (verification, coverage/consistency, merge gate)
-// are archie-core-afbk.4 and .5.
+// agent (docs/prds/pr-review-agent.md). archie-core-afbk.3 wired phases 1, 2,
+// 3, 4, 7 and 9; archie-core-afbk.4 adds 5 and 6 (verification,
+// coverage/consistency); phase 8 (the merge gate) is archie-core-afbk.5.
 func PRReview() Workflow {
 	return Workflow{
 		Name: "pr-review",
@@ -82,6 +94,8 @@ func PRReview() Workflow {
 			stagePRAnatomy(),
 			stagePRLenses(),
 			stagePRReview(),
+			stagePRVerification(),
+			stagePRCoverageConsistency(),
 			stagePRSynthesis(),
 			stagePROutput(),
 		},
@@ -197,6 +211,12 @@ func stagePRAnatomy() Stage {
 			return fmt.Errorf("compute blast radius: %w", err)
 		}
 		tc.prReview.blastRadius = blast
+		tc.prReview.clusters = prreview.ClusterFiles(tc.prReview.files)
+		exposure, err := prreview.ExposureCounts(os.DirFS(dir), changed)
+		if err != nil {
+			return fmt.Errorf("compute exposure counts: %w", err)
+		}
+		tc.prReview.highExposure = prreview.HighExposureFiles(exposure)
 
 		mission := fmt.Sprintf(
 			"Read this pull request's diff and enough of the surrounding repository to "+
@@ -349,31 +369,6 @@ func stagePRReview() Stage {
 // case a distinct StepFailed child step, so a reader of the execution tree
 // (not this slice) can tell "unreviewed" from "reviewed-clean" apart.
 func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) []prreview.Finding {
-	params := json.RawMessage(`{
-		"type": "object",
-		"properties": {
-			"findings": {
-				"type": "array",
-				"items": {
-					"type": "object",
-					"properties": {
-						"file": {"type": "string"},
-						"line_start": {"type": "integer"},
-						"line_end": {"type": "integer"},
-						"severity": {"type": "string", "enum": ["critical", "important", "suggestion", "nitpick"]},
-						"title": {"type": "string"},
-						"body": {"type": "string"},
-						"suggestion": {"type": "string"},
-						"evidence": {"type": "string"},
-						"confidence": {"type": "number"},
-						"tags": {"type": "array", "items": {"type": "string"}}
-					},
-					"required": ["file", "line_start", "severity", "title", "body", "evidence", "confidence"]
-				}
-			}
-		},
-		"required": ["findings"]
-	}`)
 	mission := fmt.Sprintf(
 		"%s\n\nTarget files: %s\n\nRead the target files (and, if useful, the context "+
 			"files) in the snapshot and report every finding for this dimension. Quote the "+
@@ -383,16 +378,62 @@ func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) [
 		dim.Prompt, strings.Join(dim.TargetFiles, ", "),
 	)
 	name := "reviewer-" + dim.Name
-	res, runErr := runReviewerAgent(ctx, tc, name, mission, []agentexec.CaptureTool{{
-		Name: "report_findings", Description: "Record this dimension's findings. Call exactly once, before finish.",
-		Parameters: params, RequiredFields: []string{"findings"}, MaxCalls: 1,
-	}})
+	res, runErr := runReviewerAgent(ctx, tc, name, mission, []agentexec.CaptureTool{reportFindingsTool})
 	if runErr != nil || res.Status != agentexec.StatusPassed {
 		return nil
 	}
-	calls := res.Captures["report_findings"]
-	if len(calls) != 1 {
+	findings, err := decodeReportedFindings(res.Captures["report_findings"], dim.Name)
+	if err != nil {
 		return nil
+	}
+	return findings
+}
+
+// reportFindingsSchema is the finding shape every pr-review agent call that
+// reports findings captures them in: phase 4's reviewer, phase 6's gap
+// reviewers (which reuse runReviewer directly) and consistency verification.
+var reportFindingsSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"findings": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"file": {"type": "string"},
+					"line_start": {"type": "integer"},
+					"line_end": {"type": "integer"},
+					"severity": {"type": "string", "enum": ["critical", "important", "suggestion", "nitpick"]},
+					"title": {"type": "string"},
+					"body": {"type": "string"},
+					"suggestion": {"type": "string"},
+					"evidence": {"type": "string"},
+					"confidence": {"type": "number"},
+					"tags": {"type": "array", "items": {"type": "string"}}
+				},
+				"required": ["file", "line_start", "severity", "title", "body", "evidence", "confidence"]
+			}
+		}
+	},
+	"required": ["findings"]
+}`)
+
+// reportFindingsTool is the capture tool every findings-reporting call
+// registers, at the shape reportFindingsSchema names.
+var reportFindingsTool = agentexec.CaptureTool{
+	Name: "report_findings", Description: "Record findings. Call exactly once, before finish.",
+	Parameters: reportFindingsSchema, RequiredFields: []string{"findings"}, MaxCalls: 1,
+}
+
+// decodeReportedFindings decodes one report_findings capture into findings
+// tagged with dimension, shared by every call site reportFindingsSchema
+// backs. A call that never reported (no captures) or reported malformed JSON
+// decodes to no findings and an error the caller treats as "nothing to add",
+// not as a stage failure -- an agent that could not report is not evidence
+// the code that follows should stop.
+func decodeReportedFindings(calls []json.RawMessage, dimension string) ([]prreview.Finding, error) {
+	if len(calls) != 1 {
+		return nil, fmt.Errorf("report_findings called %d times (want exactly once)", len(calls))
 	}
 	var captured struct {
 		Findings []struct {
@@ -409,7 +450,7 @@ func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) [
 		} `json:"findings"`
 	}
 	if err := json.Unmarshal(calls[0], &captured); err != nil {
-		return nil
+		return nil, fmt.Errorf("decode findings: %w", err)
 	}
 	out := make([]prreview.Finding, len(captured.Findings))
 	for i, f := range captured.Findings {
@@ -418,12 +459,12 @@ func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) [
 			lineEnd = f.LineStart
 		}
 		out[i] = prreview.Finding{
-			Dimension: dim.Name, File: f.File, LineStart: f.LineStart, LineEnd: lineEnd,
+			Dimension: dimension, File: f.File, LineStart: f.LineStart, LineEnd: lineEnd,
 			Severity: prreview.Severity(f.Severity), Title: f.Title, Body: f.Body,
 			Suggestion: f.Suggestion, Evidence: f.Evidence, Confidence: f.Confidence, Tags: f.Tags,
 		}
 	}
-	return out
+	return out, nil
 }
 
 // prReviewMaxSteps bounds one reviewer's tool-loop iterations. Exhausting it
@@ -475,10 +516,10 @@ func runReviewerAgent(
 
 // stagePRSynthesis is pipeline phase 7, code only: score, drop findings
 // under their severity's confidence floor, merge duplicates, rank, and cap
-// at the inline comment limit. Phases 5, 6 and 8 (verification, coverage and
-// consistency, the merge gate) do not run yet, so every surviving finding is
-// scored on phase 4's raw output alone -- no compound, adversary or
-// merge-gate multiplier has anything to apply yet.
+// at the inline comment limit. Phase 8 (the merge gate) does not run yet, so
+// every surviving finding's Blocking flag is whatever phase 5/6 left it as
+// (false, since neither sets it -- that is archie-core-afbk.5's decision to
+// make).
 func stagePRSynthesis() Stage {
 	return Stage{Name: "synthesis", Run: func(_ context.Context, tc *TaskContext) error {
 		scored := prreview.Score(tc.prReview.findings, prreview.ScoreInputs{
