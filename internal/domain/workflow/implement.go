@@ -197,7 +197,7 @@ func Implement() Workflow {
 			}),
 			StageYaegiGate(),
 			StageDiffCap(),
-			StageOpenPR(implementPRBody),
+			StagePRReviewAndOpenPR(implementPRBody),
 		},
 	}
 }

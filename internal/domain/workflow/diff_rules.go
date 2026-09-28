@@ -70,7 +70,7 @@ const (
 
 // diffRuleDetailBytes bounds how much of a park Detail the rendered findings
 // occupy, matching the store's own park-reason cap headroom (see
-// reviewDetailBytes in review.go).
+// parkDetailBytes in prreview_own_pr.go).
 const diffRuleDetailBytes = 4000
 
 // DiffRule is one declarative rule applied to the added lines of the committed

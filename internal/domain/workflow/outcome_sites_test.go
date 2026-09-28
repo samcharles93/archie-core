@@ -41,6 +41,7 @@ var outcomeSites = []outcomeSite{
 	{"diff_rules.go", "StatusParked", "the diff breaks one of the repo's blocking rules"},
 	{"feasibility.go", "StatusClosedWontDo", "feasibility decided this work should not be done"},
 	{"feasibility.go", "StatusWaitingHuman", "the PRD is delivered and the run waits for a go/no-go"},
+	{"prreview_own_pr.go", "StatusParked", "archie's own PR trigger found an unchallenged blocking finding before opening the PR"},
 	{"prreview_stages.go", "StatusCompleted", "the pr-review pipeline posted its findings (or found none to post)"},
 	{"prreview_stages_verify.go", "StatusWaitingHuman", "review.approve_before_post is set and synthesis produced findings: the run waits for an operator decision before the merge gate"},
 	{"remediate.go", "StatusParked", "the remediation round cap is spent"},

@@ -628,28 +628,45 @@ func stagePRSynthesis() Stage {
 // The polish pass is what a budget-exhausted run skips; posting itself
 // always runs, since it is the pipeline's only externally visible act and
 // must report what happened even when every other phase was skipped.
+//
+// Used by the standalone pr-review workflow only. Archie's own PRs trigger
+// (StagePRReviewAndOpenPR, prreview_own_pr.go) needs the same polish-then-post
+// work but must not overwrite the StatusPROpen outcome OpenPR already set, so
+// it calls runPROutputPhase directly instead of this Stage.
 func stagePROutput() Stage {
 	return Stage{Name: "output", Run: func(ctx context.Context, tc *TaskContext) error {
-		if budgetExhausted(tc, "output") {
-			skipPhase(tc, "output")
-		} else {
-			polished := make([]prreview.ScoredFinding, len(tc.prReview.scored))
-			forEachBounded(prReviewConcurrency, len(tc.prReview.scored), func(i int) {
-				polished[i] = polishFinding(ctx, tc, tc.prReview.scored[i])
-			})
-			tc.prReview.scored = polished
-		}
-
-		if err := postPRReview(ctx, tc); err != nil {
-			return fmt.Errorf("post review: %w", err)
-		}
-		detail := fmt.Sprintf("posted %d finding(s) as %s", len(tc.prReview.scored), prreview.ReviewEventFor(tc.prReview.scored))
-		if len(tc.prReview.skippedPhases) > 0 {
-			detail += fmt.Sprintf("; skipped: %s", strings.Join(tc.prReview.skippedPhases, ", "))
+		detail, err := runPROutputPhase(ctx, tc)
+		if err != nil {
+			return err
 		}
 		tc.Outcome = Outcome{Status: StatusCompleted, Detail: detail}
 		return nil
 	}}
+}
+
+// runPROutputPhase is phase 9's actual work, factored out of stagePROutput so
+// a caller that must preserve its own outcome (archie's own PRs, which has
+// already set StatusPROpen by the time findings are ready to post) can run it
+// without stagePROutput's unconditional StatusCompleted assignment.
+func runPROutputPhase(ctx context.Context, tc *TaskContext) (string, error) {
+	if budgetExhausted(tc, "output") {
+		skipPhase(tc, "output")
+	} else {
+		polished := make([]prreview.ScoredFinding, len(tc.prReview.scored))
+		forEachBounded(prReviewConcurrency, len(tc.prReview.scored), func(i int) {
+			polished[i] = polishFinding(ctx, tc, tc.prReview.scored[i])
+		})
+		tc.prReview.scored = polished
+	}
+
+	if err := postPRReview(ctx, tc); err != nil {
+		return "", fmt.Errorf("post review: %w", err)
+	}
+	detail := fmt.Sprintf("posted %d finding(s) as %s", len(tc.prReview.scored), prreview.ReviewEventFor(tc.prReview.scored))
+	if len(tc.prReview.skippedPhases) > 0 {
+		detail += fmt.Sprintf("; skipped: %s", strings.Join(tc.prReview.skippedPhases, ", "))
+	}
+	return detail, nil
 }
 
 // polishFinding runs one phase-9 polish call, tightening a finding's wording.
