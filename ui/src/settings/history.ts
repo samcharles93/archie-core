@@ -12,6 +12,15 @@ export interface HistoryFilter {
   sinceMs?: number;
 }
 
+/**
+ * historyEmptyTitle is what the history table's nothing-to-show row says: a
+ * history with entries whose filters match nothing asks the reader to change
+ * the filters, while a history with nothing recorded at all says so.
+ */
+export function historyEmptyTitle(entriesRecorded: boolean): string {
+  return entriesRecorded ? "No matching changes." : "No changes recorded yet.";
+}
+
 /** filterHistory keeps the audit entries that match every filter set. */
 export function filterHistory<T extends HistoryEntry>(
   entries: T[],

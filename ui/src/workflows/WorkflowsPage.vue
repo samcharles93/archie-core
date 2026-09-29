@@ -4,6 +4,11 @@ import { Plus, RotateCcw } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -139,8 +144,12 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
         </li>
       </ul>
 
-      <section v-if="!selected" class="min-w-0 rounded-lg border border-border bg-card px-5 py-10 text-center" aria-label="Workflow">
-        <p class="font-medium">No workflows</p>
+      <section v-if="!selected" class="min-w-0 rounded-lg border border-border bg-card" aria-label="Workflow">
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No workflows</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       </section>
       <section v-else class="min-w-0 rounded-lg border border-border bg-card px-5 py-4" aria-label="Workflow">
         <header class="mb-2 flex flex-wrap items-center gap-2">
@@ -162,14 +171,22 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
             <WorkflowEditor v-model:selected="selected" />
           </TabsContent>
           <TabsContent value="performance" class="grid gap-4 pt-4">
-            <p v-if="!stages.length" class="text-sm text-fg-muted">No stage timings yet.</p>
+            <Empty v-if="!stages.length">
+              <EmptyHeader>
+                <EmptyTitle>No stage timings yet</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
             <template v-else>
               <SlowestStagesCard :stages="stages" />
               <StageFailuresCard :stages="stages" />
             </template>
           </TabsContent>
           <TabsContent value="runs" class="pt-4">
-            <p v-if="!workflowRuns.length" class="text-sm text-fg-muted">No runs yet.</p>
+            <Empty v-if="!workflowRuns.length">
+              <EmptyHeader>
+                <EmptyTitle>No runs yet</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
             <ul v-else class="divide-y divide-border">
               <li v-for="t in workflowRuns" :key="t.id" class="flex items-center gap-3 py-2 text-sm">
                 <RouterLink :to="`/tasks/${t.id}`" class="min-w-0 flex-1 truncate hover:underline">{{ t.title || `Task ${t.id}` }}</RouterLink>

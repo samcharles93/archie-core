@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -121,7 +122,13 @@ const lifecycle = {
           <Button variant="ghost" size="sm" class="text-danger" :disabled="!!store.busy" @click="retiring = value">Retire</Button>
         </div>
       </li>
-      <li v-if="!store.identities.length" class="px-4 py-8 text-center text-sm text-fg-muted">No identities yet.</li>
+      <li v-if="!store.identities.length">
+        <Empty class="py-6">
+          <EmptyHeader>
+            <EmptyTitle>No identities yet</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      </li>
     </ul>
 
     <AlertDialog :open="!!retiring" @update:open="(open) => !open && (retiring = null)">

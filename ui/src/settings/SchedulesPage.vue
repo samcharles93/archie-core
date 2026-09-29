@@ -5,6 +5,13 @@ import { CalendarClock, Plus, Trash2 } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -83,13 +90,17 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
     </p>
 
     <template v-if="jobs">
-      <div v-if="!jobs.length" class="flex flex-col items-center rounded-lg border border-border bg-card px-6 py-12 text-center">
-        <span class="mb-3 grid size-10 place-items-center rounded-md bg-secondary text-muted-foreground">
-          <CalendarClock class="size-5" aria-hidden="true" />
-        </span>
-        <p class="font-medium">No schedules yet</p>
-        <Button size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
-      </div>
+      <Empty v-if="!jobs?.length">
+        <EmptyMedia variant="icon">
+          <CalendarClock />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyTitle>No schedules yet</EmptyTitle>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
+        </EmptyContent>
+      </Empty>
 
       <section
         v-for="(job, i) in jobs"

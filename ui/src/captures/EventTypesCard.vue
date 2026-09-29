@@ -20,6 +20,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
   Card,
   CardAction,
   CardContent,
@@ -154,15 +160,14 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
         </TableBody>
       </Table>
 
-      <div
-        v-if="!proposals.length && !eventTypes.length"
-        class="flex flex-col items-center py-4 text-center"
-      >
-        <p class="text-sm font-medium">No event types yet</p>
-        <p class="mt-1 max-w-md text-sm text-fg-muted">
-          Create one from a captured event.
-        </p>
-      </div>
+      <Empty v-if="!proposals.length && !eventTypes.length">
+        <EmptyHeader>
+          <EmptyTitle>No event types yet</EmptyTitle>
+          <EmptyDescription>
+            Create one from a captured event.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     </CardContent>
   </Card>
   <EventTypeDialog />
