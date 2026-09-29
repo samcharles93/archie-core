@@ -735,8 +735,8 @@ func evalContext(input DispatchInput) expr.Context {
 //
 // Asymmetry with `when`: `when` is a predicate, so an evaluation error is
 // false (J3: skip + log); `args` is data, so an evaluation error has no
-// meaningful substitute and is returned to the caller to abort the dispatch.
-// Ratifying that rule against a real consumer is tracked by archie-core-1h05.
+// meaningful substitute and is returned to the caller to abort the playbook run
+// (J6, docs/prds/playbook-expression-syntax.md).
 func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) {
 	if s == nil {
 		return map[string]any{}, nil

@@ -4,9 +4,6 @@
 **Date:** 2026-09-03
 **Parent:** `docs/prds/eda-playbook-engine.md`, epic `archie-core-t2db`
 **Beads issue:** `archie-core-t2db.14` (expression environment).
-Unbuilt decisions: `archie-core-t2db.25` (J1 action ids),
-`archie-core-t2db.26` (J2 args as CEL),
-`archie-core-t2db.27` (Result schemas declared to CEL).
 
 **Decision:** CEL via `cel.dev/cel-go` (v0.32.0), pinned. One expression
 mechanism covers both an action's `when` condition and its `args` values.
@@ -222,6 +219,14 @@ cost of CEL is measured and bounded.
   applied to every expression; the linter and daemon use the same value so they
   agree. Alternative considered: exact number is a constant to tune at first
   use.
+- **J6 -- `args` failure semantics.** An `args` value that cannot be evaluated
+  aborts its playbook run: the action and every later action in that playbook do
+  not run, because data has no false value to fall back on and an action run
+  without its arguments is a silent one. Other playbooks matching the same event
+  still run, and the task is unaffected: a playbook run never changes routing.
+  The daemon log reports the failure, naming the task, the playbook and the
+  action; no task event is written. Alternative considered: mirroring J3,
+  rejected because a predicate has a meaningful false and data does not.
 
 ## Interaction with the execution-time gaps
 

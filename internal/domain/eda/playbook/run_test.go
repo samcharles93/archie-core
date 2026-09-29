@@ -124,6 +124,41 @@ func TestRunStopsThePlaybookOnAnInvokeError(t *testing.T) {
 	}
 }
 
+// TestRunAbortsThePlaybookOnAnArgsEvaluationFailure pins J6
+// (docs/prds/playbook-expression-syntax.md): an args value that cannot be
+// evaluated stops its playbook before the action runs, unlike a `when` that
+// errors, which skips the action and continues (J3). The error names the
+// playbook and the action whose args failed.
+func TestRunAbortsThePlaybookOnAnArgsEvaluationFailure(t *testing.T) {
+	mods := &recordingModules{ModuleRegistry: module.New()}
+	store := loadRunStore(t, mods, `
+trigger:
+  kind: bug
+actions:
+  - id: first
+    position: module
+    kind: log
+    args: { message: 'event.absent' }
+  - id: second
+    position: module
+    kind: log
+    args: { message: '"second"' }
+`)
+
+	err := store.Run(t.Context(), &fakePlaybookLedger{}, slog.New(slog.DiscardHandler), bugInput())
+	if err == nil {
+		t.Fatal("Run(args evaluation failure) = nil, want the playbook aborted")
+	}
+	for _, want := range []string{"pb.yaml", "first", "evaluate args"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Run error = %q, want it to contain %q", err.Error(), want)
+		}
+	}
+	if len(mods.messages) != 0 {
+		t.Fatalf("invoked messages = %q, want none: the playbook aborts before the first action runs", mods.messages)
+	}
+}
+
 func TestRunIgnoresNonMatchingAndWorkflowPlaybooks(t *testing.T) {
 	mods := &recordingModules{ModuleRegistry: module.New()}
 	store := loadRunStore(t, mods, twoLogActions)
