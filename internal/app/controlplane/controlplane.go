@@ -31,8 +31,8 @@ var (
 // root asserts the State Store against it, so this is the single definition of
 // what a control-plane backing store must offer.
 type ResourceStore interface {
-	Resource(context.Context, string) (storecontract.Resource, error)
-	ResourceHistory(context.Context, string, int) ([]storecontract.Resource, error)
+	Resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error)
+	ResourceHistory(ctx context.Context, orgID, kind string, limit int) ([]storecontract.Resource, error)
 	Audit(ctx context.Context, table string, keys []string, limit int) ([]storecontract.AuditEntry, error)
 	PutResource(context.Context, storecontract.ResourceWrite) (storecontract.Resource, error)
 }
@@ -78,7 +78,7 @@ func (s *Server) Query(ctx context.Context, request *pb.QueryRequest) (*pb.Query
 	if _, ok := s.definitions[request.GetKind()]; !ok {
 		return nil, status.Error(codes.NotFound, "resource not found")
 	}
-	resource, err := s.store.Resource(ctx, request.Kind)
+	resource, err := s.store.Resource(ctx, requestOrg(request.GetOrgId()), request.Kind)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -96,7 +96,7 @@ func (s *Server) History(ctx context.Context, request *pb.HistoryRequest) (*pb.H
 	if limit <= 0 || limit > defaultHistoryLimit {
 		limit = defaultHistoryLimit
 	}
-	revisions, err := s.store.ResourceHistory(ctx, request.Kind, limit)
+	revisions, err := s.store.ResourceHistory(ctx, requestOrg(request.GetOrgId()), request.Kind, limit)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -149,7 +149,7 @@ func (s *Server) Command(ctx context.Context, request *pb.CommandRequest) (*pb.C
 	if err != nil {
 		return nil, mapError(err)
 	}
-	resource, err := s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
+	resource, err := s.store.PutResource(ctx, storecontract.ResourceWrite{OrgID: requestOrg(request.GetOrgId()), Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -164,7 +164,7 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		resource, err := s.store.Resource(stream.Context(), request.Kind)
+		resource, err := s.store.Resource(stream.Context(), requestOrg(request.GetOrgId()), request.Kind)
 		if err == nil && resource.Version > version {
 			if err := stream.Send(&pb.WatchResponse{Resource: resourceProto(resource)}); err != nil {
 				return err
@@ -182,7 +182,16 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 }
 
 func resourceProto(resource storecontract.Resource) *pb.Resource {
-	return &pb.Resource{Kind: resource.Kind, Version: resource.Version, ValueJson: resource.Value, UpdatedAt: timestamp(resource.At)}
+	return &pb.Resource{OrgId: resource.OrgID, Kind: resource.Kind, Version: resource.Version, ValueJson: resource.Value, UpdatedAt: timestamp(resource.At)}
+}
+
+// requestOrg is the org a request acts in. Until the caller's org is derived
+// server-side (access), a request that names none acts in the default org.
+func requestOrg(orgID string) string {
+	if orgID == "" {
+		return storecontract.DefaultOrgID
+	}
+	return orgID
 }
 
 func timestamp(value time.Time) *timestamppb.Timestamp {

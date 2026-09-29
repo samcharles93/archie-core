@@ -192,7 +192,8 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	resources := resourcesFor(t)
 	firstAt := time.Date(2026, 9, 24, 1, 0, 0, 0, time.UTC)
 	first, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "archie-ui",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "archie-ui",
 		RequestID: "r1", ExpectedVersion: 0, At: firstAt,
 	})
 	if err != nil {
@@ -203,7 +204,8 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	}
 
 	replay, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
 		RequestID: "r1", ExpectedVersion: 0, At: firstAt.Add(time.Minute),
 	})
 	if err != nil {
@@ -214,14 +216,16 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	}
 
 	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "archie-ui",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "archie-ui",
 		RequestID: "r2", ExpectedVersion: 0, At: firstAt.Add(2 * time.Minute),
 	}); !errors.Is(err, storecontract.ErrResourceVersionConflict) {
 		t.Fatalf("stale PutResource = %v, want ErrResourceVersionConflict", err)
 	}
 
 	second, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "messaging",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "settings", Value: []byte(`{"v":2}`), Actor: "operator", Source: "messaging",
 		RequestID: "r2", ExpectedVersion: 1, At: firstAt.Add(3 * time.Minute),
 	})
 	if err != nil {
@@ -231,7 +235,8 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 		t.Fatalf("second write = %+v, want version 2 from version 1", second)
 	}
 	lateReplay, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "settings", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
 		RequestID: "r1", ExpectedVersion: 0, At: firstAt.Add(4 * time.Minute),
 	})
 	if err != nil {
@@ -240,7 +245,7 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	if lateReplay.Version != first.Version || string(lateReplay.Value) != string(first.Value) {
 		t.Fatalf("late replay = %+v, want original %+v", lateReplay, first)
 	}
-	live, err := resources.Resource(t.Context(), "settings")
+	live, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, "settings")
 	if err != nil {
 		t.Fatalf("Resource: %v", err)
 	}
@@ -248,21 +253,21 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 		t.Fatalf("live resource after replay = %+v, want second write %+v", live, second)
 	}
 
-	history, err := resources.ResourceHistory(t.Context(), "settings", 1)
+	history, err := resources.ResourceHistory(t.Context(), storecontract.DefaultOrgID, "settings", 1)
 	if err != nil {
 		t.Fatalf("ResourceHistory: %v", err)
 	}
 	if len(history) != 1 || history[0].Version != 2 || history[0].Source != "messaging" {
 		t.Fatalf("limited history = %+v, want newest revision only", history)
 	}
-	history, err = resources.ResourceHistory(t.Context(), "settings", 0)
+	history, err = resources.ResourceHistory(t.Context(), storecontract.DefaultOrgID, "settings", 0)
 	if err != nil {
 		t.Fatalf("unlimited ResourceHistory: %v", err)
 	}
 	if len(history) != 2 {
 		t.Fatalf("history after late replay = %+v, want two revisions", history)
 	}
-	if _, err := resources.Resource(t.Context(), "missing"); !errors.Is(err, storecontract.ErrResourceNotFound) {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, "missing"); !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Fatalf("missing Resource = %v, want ErrResourceNotFound", err)
 	}
 }
@@ -278,7 +283,8 @@ func TestResourceReplayRecreatesARemovedResource(t *testing.T) {
 	resources := NewResources(pool)
 	at := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
 	write := storecontract.ResourceWrite{
-		Kind: "workflow-definitions", Value: []byte(`{"definitions":[]}`), Actor: "system:migration",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "workflow-definitions", Value: []byte(`{"definitions":[]}`), Actor: "system:migration",
 		Source: "legacy-config", RequestID: "import:workflow-definitions", ExpectedVersion: 0, At: at,
 	}
 	seeded, err := resources.PutResource(t.Context(), write)
@@ -289,7 +295,7 @@ func TestResourceReplayRecreatesARemovedResource(t *testing.T) {
 	if _, err := pool.Exec(t.Context(), `DELETE FROM resources WHERE kind = $1`, write.Kind); err != nil {
 		t.Fatalf("remove the resource: %v", err)
 	}
-	if _, err := resources.Resource(t.Context(), write.Kind); !errors.Is(err, storecontract.ErrResourceNotFound) {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, write.Kind); !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Fatalf("resource after the removal = %v, want ErrResourceNotFound", err)
 	}
 
@@ -300,7 +306,7 @@ func TestResourceReplayRecreatesARemovedResource(t *testing.T) {
 	if replayed.Version != seeded.Version || string(replayed.Value) != string(seeded.Value) {
 		t.Fatalf("replay = %+v, want the revision the ledger records, %+v", replayed, seeded)
 	}
-	live, err := resources.Resource(t.Context(), write.Kind)
+	live, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, write.Kind)
 	if err != nil {
 		t.Fatalf("the replay did not re-create the resource: %v", err)
 	}
@@ -309,7 +315,7 @@ func TestResourceReplayRecreatesARemovedResource(t *testing.T) {
 	}
 	// The repair re-creates the row the write produced; it does not append a
 	// second ledger entry, which idx_resource_history_kind_request would refuse.
-	history, err := resources.ResourceHistory(t.Context(), write.Kind, 0)
+	history, err := resources.ResourceHistory(t.Context(), storecontract.DefaultOrgID, write.Kind, 0)
 	if err != nil {
 		t.Fatalf("ResourceHistory: %v", err)
 	}
@@ -320,7 +326,8 @@ func TestResourceReplayRecreatesARemovedResource(t *testing.T) {
 	// A resource the store still holds is answered from the ledger, unchanged:
 	// the idempotent replay the index exists for.
 	again, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: write.Kind, Value: []byte(`{"definitions":[{"id":"different"}]}`), Actor: "other",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  write.Kind, Value: []byte(`{"definitions":[{"id":"different"}]}`), Actor: "other",
 		Source: "retry", RequestID: write.RequestID, ExpectedVersion: 0, At: at.Add(time.Minute),
 	})
 	if err != nil {
@@ -340,14 +347,16 @@ func TestResourceRequestIDIsIdempotentPerKind(t *testing.T) {
 	resources := resourcesFor(t)
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	first, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "provider-settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "import",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "provider-settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "import",
 		RequestID: "shared", ExpectedVersion: 0, At: at,
 	})
 	if err != nil {
 		t.Fatalf("first PutResource: %v", err)
 	}
 	second, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "scheduling-policy", Value: []byte(`{"v":2}`), Actor: "operator", Source: "import",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "scheduling-policy", Value: []byte(`{"v":2}`), Actor: "operator", Source: "import",
 		RequestID: "shared", ExpectedVersion: 0, At: at,
 	})
 	if err != nil {
@@ -358,7 +367,8 @@ func TestResourceRequestIDIsIdempotentPerKind(t *testing.T) {
 	}
 
 	replay, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "scheduling-policy", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  "scheduling-policy", Value: []byte(`{"v":999}`), Actor: "other", Source: "retry",
 		RequestID: "shared", ExpectedVersion: 0, At: at.Add(time.Minute),
 	})
 	if err != nil {
@@ -368,7 +378,7 @@ func TestResourceRequestIDIsIdempotentPerKind(t *testing.T) {
 		t.Fatalf("replay = %+v, want scheduling-policy's original %+v", replay, second)
 	}
 
-	live, err := resources.Resource(t.Context(), "scheduling-policy")
+	live, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, "scheduling-policy")
 	if err != nil {
 		t.Fatalf("Resource: %v", err)
 	}
@@ -389,7 +399,8 @@ func TestConcurrentResourceWritesAcceptOnlyOneExpectedVersion(t *testing.T) {
 		go func() {
 			<-start
 			_, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-				Kind: "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "test",
+				OrgID: storecontract.DefaultOrgID,
+				Kind:  "settings", Value: []byte(`{"v":1}`), Actor: "operator", Source: "test",
 				RequestID: requestID, ExpectedVersion: 0,
 			})
 			results <- result{err: err}
@@ -413,7 +424,7 @@ func TestConcurrentResourceWritesAcceptOnlyOneExpectedVersion(t *testing.T) {
 		t.Fatalf("concurrent writes = %d succeeded, %d conflicted; want 1 each", succeeded, conflicted)
 	}
 
-	history, err := resources.ResourceHistory(t.Context(), "settings", 0)
+	history, err := resources.ResourceHistory(t.Context(), storecontract.DefaultOrgID, "settings", 0)
 	if err != nil {
 		t.Fatalf("ResourceHistory: %v", err)
 	}
@@ -429,7 +440,8 @@ func TestResourceWritesRecordFieldLevelAudit(t *testing.T) {
 	put := func(value string, expected int64, request string) {
 		t.Helper()
 		if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-			Kind: "settings", Value: []byte(value), Actor: "sam", Source: "archie-ui",
+			OrgID: storecontract.DefaultOrgID,
+			Kind:  "settings", Value: []byte(value), Actor: "sam", Source: "archie-ui",
 			RequestID: request, ExpectedVersion: expected,
 		}); err != nil {
 			t.Fatalf("PutResource(%s): %v", value, err)
@@ -453,5 +465,68 @@ func TestResourceWritesRecordFieldLevelAudit(t *testing.T) {
 	}
 	if strings.Join(got, "; ") != strings.Join(want, "; ") {
 		t.Fatalf("audit =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A kind is one document per org: two orgs write the same kind under the same
+// request ID and each keeps its own value, revision, history and audit trail.
+func TestResourcesAreIndependentPerOrg(t *testing.T) {
+	resources := resourcesFor(t)
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	put := func(orgID, value string, expected int64) storecontract.Resource {
+		t.Helper()
+		got, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+			OrgID: orgID, Kind: "workflow-definitions", Value: []byte(value), Actor: "operator",
+			Source: "test", RequestID: "shared-" + value, ExpectedVersion: expected, At: at,
+		})
+		if err != nil {
+			t.Fatalf("PutResource(%s): %v", orgID, err)
+		}
+		return got
+	}
+	put("acme", `{"v":"a1"}`, 0)
+	acme := put("acme", `{"v":"a2"}`, 1)
+	globex := put("globex", `{"v":"g1"}`, 0)
+	if acme.Version != 2 || globex.Version != 1 {
+		t.Fatalf("versions acme=%d globex=%d, want 2 and 1: orgs must not share a revision counter", acme.Version, globex.Version)
+	}
+	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+		OrgID: "globex", Kind: "workflow-definitions", Value: []byte(`{}`), Actor: "operator",
+		Source: "test", RequestID: "stale", ExpectedVersion: 2, At: at,
+	}); !errors.Is(err, storecontract.ErrResourceVersionConflict) {
+		t.Fatalf("globex write expecting acme's version = %v, want ErrResourceVersionConflict", err)
+	}
+
+	live, err := resources.Resource(t.Context(), "globex", "workflow-definitions")
+	if err != nil || string(live.Value) != `{"v":"g1"}` || live.OrgID != "globex" {
+		t.Fatalf("globex Resource = %+v, %v", live, err)
+	}
+	if _, err := resources.Resource(t.Context(), "initech", "workflow-definitions"); !errors.Is(err, storecontract.ErrResourceNotFound) {
+		t.Fatalf("an org that never wrote the kind reads %v, want ErrResourceNotFound", err)
+	}
+	history, err := resources.ResourceHistory(t.Context(), "acme", "workflow-definitions", 0)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("acme history = %d entries, %v; want its own 2", len(history), err)
+	}
+	audit, err := resources.Audit(t.Context(), storecontract.AuditTableResources,
+		[]string{storecontract.ResourceAuditKey("globex", "workflow-definitions")}, 0)
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	for _, entry := range audit {
+		if entry.Version != 1 {
+			t.Fatalf("globex audit entry at version %d: acme's revisions leaked into its trail", entry.Version)
+		}
+	}
+	if len(audit) == 0 {
+		t.Fatal("globex audit is empty, want its first write")
+	}
+}
+
+func TestPutResourceRefusesNoOrg(t *testing.T) {
+	if _, err := resourcesFor(t).PutResource(t.Context(), storecontract.ResourceWrite{
+		Kind: "settings", Value: []byte(`{}`), Actor: "operator", Source: "test", RequestID: "r",
+	}); err == nil {
+		t.Fatal("a write naming no org was accepted")
 	}
 }

@@ -11,19 +11,25 @@ import (
 )
 
 const insertResource = `-- name: InsertResource :one
-INSERT INTO resources (kind, value, version, updated_at)
-VALUES ($1, $2, 1, $3)
+INSERT INTO resources (org_id, kind, value, version, updated_at)
+VALUES ($1, $2, $3, 1, $4)
 RETURNING kind, value, version, updated_at, org_id
 `
 
 type InsertResourceParams struct {
+	OrgID     string
 	Kind      string
 	Value     []byte
 	UpdatedAt time.Time
 }
 
 func (q *Queries) InsertResource(ctx context.Context, arg InsertResourceParams) (Resource, error) {
-	row := q.db.QueryRow(ctx, insertResource, arg.Kind, arg.Value, arg.UpdatedAt)
+	row := q.db.QueryRow(ctx, insertResource,
+		arg.OrgID,
+		arg.Kind,
+		arg.Value,
+		arg.UpdatedAt,
+	)
 	var i Resource
 	err := row.Scan(
 		&i.Kind,
@@ -37,15 +43,16 @@ func (q *Queries) InsertResource(ctx context.Context, arg InsertResourceParams) 
 
 const insertResourceHistory = `-- name: InsertResourceHistory :one
 INSERT INTO resource_history (
-	kind, value, version, actor, source, request_id, expected_version,
+	org_id, kind, value, version, actor, source, request_id, expected_version,
 	current_version, at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING kind, value, version, actor, source, request_id, expected_version,
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING org_id, kind, value, version, actor, source, request_id, expected_version,
 	current_version, at
 `
 
 type InsertResourceHistoryParams struct {
+	OrgID           string
 	Kind            string
 	Value           []byte
 	Version         int64
@@ -58,6 +65,7 @@ type InsertResourceHistoryParams struct {
 }
 
 type InsertResourceHistoryRow struct {
+	OrgID           string
 	Kind            string
 	Value           []byte
 	Version         int64
@@ -71,6 +79,7 @@ type InsertResourceHistoryRow struct {
 
 func (q *Queries) InsertResourceHistory(ctx context.Context, arg InsertResourceHistoryParams) (InsertResourceHistoryRow, error) {
 	row := q.db.QueryRow(ctx, insertResourceHistory,
+		arg.OrgID,
 		arg.Kind,
 		arg.Value,
 		arg.Version,
@@ -83,6 +92,7 @@ func (q *Queries) InsertResourceHistory(ctx context.Context, arg InsertResourceH
 	)
 	var i InsertResourceHistoryRow
 	err := row.Scan(
+		&i.OrgID,
 		&i.Kind,
 		&i.Value,
 		&i.Version,
@@ -97,24 +107,31 @@ func (q *Queries) InsertResourceHistory(ctx context.Context, arg InsertResourceH
 }
 
 const lockResourceWrite = `-- name: LockResourceWrite :exec
-SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
+SELECT pg_advisory_xact_lock(hashtextextended($1::text || '/' || $2::text, 0))
 `
+
+type LockResourceWriteParams struct {
+	OrgID string
+	Kind  string
+}
 
 // This lock is acquired in its own statement before a resource read. PostgreSQL
 // takes a fresh Read Committed snapshot for the subsequent read, so concurrent
 // optimistic writers see the committed revision rather than both writing v1.
-func (q *Queries) LockResourceWrite(ctx context.Context, hashtextextended string) error {
-	_, err := q.db.Exec(ctx, lockResourceWrite, hashtextextended)
+// The lock is per (org, kind): two orgs writing the same kind do not contend.
+func (q *Queries) LockResourceWrite(ctx context.Context, arg LockResourceWriteParams) error {
+	_, err := q.db.Exec(ctx, lockResourceWrite, arg.OrgID, arg.Kind)
 	return err
 }
 
 const reinsertResource = `-- name: ReinsertResource :one
-INSERT INTO resources (kind, value, version, updated_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO resources (org_id, kind, value, version, updated_at)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING kind, value, version, updated_at, org_id
 `
 
 type ReinsertResourceParams struct {
+	OrgID     string
 	Kind      string
 	Value     []byte
 	Version   int64
@@ -124,11 +141,12 @@ type ReinsertResourceParams struct {
 // Re-creates the current row for a revision resource_history already records.
 // The ledger outlives the row it describes, so a resource an operator removed
 // still has its revisions; putting one back needs the row re-created without a
-// second ledger entry, which idx_resource_history_kind_request would refuse.
+// second ledger entry, which idx_resource_history_org_kind_request would refuse.
 // The revision is the ledger's, not a fresh one: this is the row that write
 // produced, restored.
 func (q *Queries) ReinsertResource(ctx context.Context, arg ReinsertResourceParams) (Resource, error) {
 	row := q.db.QueryRow(ctx, reinsertResource,
+		arg.OrgID,
 		arg.Kind,
 		arg.Value,
 		arg.Version,
@@ -146,11 +164,17 @@ func (q *Queries) ReinsertResource(ctx context.Context, arg ReinsertResourcePara
 }
 
 const resourceByKind = `-- name: ResourceByKind :one
-SELECT kind, value, version, updated_at, org_id FROM resources WHERE kind = $1
+SELECT kind, value, version, updated_at, org_id FROM resources
+WHERE org_id = $1 AND kind = $2
 `
 
-func (q *Queries) ResourceByKind(ctx context.Context, kind string) (Resource, error) {
-	row := q.db.QueryRow(ctx, resourceByKind, kind)
+type ResourceByKindParams struct {
+	OrgID string
+	Kind  string
+}
+
+func (q *Queries) ResourceByKind(ctx context.Context, arg ResourceByKindParams) (Resource, error) {
+	row := q.db.QueryRow(ctx, resourceByKind, arg.OrgID, arg.Kind)
 	var i Resource
 	err := row.Scan(
 		&i.Kind,
@@ -163,18 +187,20 @@ func (q *Queries) ResourceByKind(ctx context.Context, kind string) (Resource, er
 }
 
 const resourceByRequest = `-- name: ResourceByRequest :one
-SELECT kind, value, version, actor, source, request_id, expected_version,
+SELECT org_id, kind, value, version, actor, source, request_id, expected_version,
        current_version, at
 FROM resource_history
-WHERE kind = $1 AND request_id = $2
+WHERE org_id = $1 AND kind = $2 AND request_id = $3
 `
 
 type ResourceByRequestParams struct {
+	OrgID     string
 	Kind      string
 	RequestID string
 }
 
 type ResourceByRequestRow struct {
+	OrgID           string
 	Kind            string
 	Value           []byte
 	Version         int64
@@ -187,9 +213,10 @@ type ResourceByRequestRow struct {
 }
 
 func (q *Queries) ResourceByRequest(ctx context.Context, arg ResourceByRequestParams) (ResourceByRequestRow, error) {
-	row := q.db.QueryRow(ctx, resourceByRequest, arg.Kind, arg.RequestID)
+	row := q.db.QueryRow(ctx, resourceByRequest, arg.OrgID, arg.Kind, arg.RequestID)
 	var i ResourceByRequestRow
 	err := row.Scan(
+		&i.OrgID,
 		&i.Kind,
 		&i.Value,
 		&i.Version,
@@ -204,20 +231,22 @@ func (q *Queries) ResourceByRequest(ctx context.Context, arg ResourceByRequestPa
 }
 
 const resourceHistory = `-- name: ResourceHistory :many
-SELECT kind, value, version, actor, source, request_id, expected_version,
+SELECT org_id, kind, value, version, actor, source, request_id, expected_version,
        current_version, at
 FROM resource_history
-WHERE kind = $1
+WHERE org_id = $1 AND kind = $2
 ORDER BY version DESC
-LIMIT NULLIF($2::bigint, 0)
+LIMIT NULLIF($3::bigint, 0)
 `
 
 type ResourceHistoryParams struct {
+	OrgID      string
 	Kind       string
 	EntryLimit int64
 }
 
 type ResourceHistoryRow struct {
+	OrgID           string
 	Kind            string
 	Value           []byte
 	Version         int64
@@ -230,7 +259,7 @@ type ResourceHistoryRow struct {
 }
 
 func (q *Queries) ResourceHistory(ctx context.Context, arg ResourceHistoryParams) ([]ResourceHistoryRow, error) {
-	rows, err := q.db.Query(ctx, resourceHistory, arg.Kind, arg.EntryLimit)
+	rows, err := q.db.Query(ctx, resourceHistory, arg.OrgID, arg.Kind, arg.EntryLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +268,7 @@ func (q *Queries) ResourceHistory(ctx context.Context, arg ResourceHistoryParams
 	for rows.Next() {
 		var i ResourceHistoryRow
 		if err := rows.Scan(
+			&i.OrgID,
 			&i.Kind,
 			&i.Value,
 			&i.Version,
@@ -260,11 +290,16 @@ func (q *Queries) ResourceHistory(ctx context.Context, arg ResourceHistoryParams
 }
 
 const resourceVersion = `-- name: ResourceVersion :one
-SELECT version FROM resources WHERE kind = $1
+SELECT version FROM resources WHERE org_id = $1 AND kind = $2
 `
 
-func (q *Queries) ResourceVersion(ctx context.Context, kind string) (int64, error) {
-	row := q.db.QueryRow(ctx, resourceVersion, kind)
+type ResourceVersionParams struct {
+	OrgID string
+	Kind  string
+}
+
+func (q *Queries) ResourceVersion(ctx context.Context, arg ResourceVersionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, resourceVersion, arg.OrgID, arg.Kind)
 	var version int64
 	err := row.Scan(&version)
 	return version, err
@@ -272,12 +307,13 @@ func (q *Queries) ResourceVersion(ctx context.Context, kind string) (int64, erro
 
 const updateResource = `-- name: UpdateResource :one
 UPDATE resources
-SET value = $2, version = version + 1, updated_at = $3
-WHERE kind = $1 AND version = $4
+SET value = $3, version = version + 1, updated_at = $4
+WHERE org_id = $1 AND kind = $2 AND version = $5
 RETURNING kind, value, version, updated_at, org_id
 `
 
 type UpdateResourceParams struct {
+	OrgID     string
 	Kind      string
 	Value     []byte
 	UpdatedAt time.Time
@@ -286,6 +322,7 @@ type UpdateResourceParams struct {
 
 func (q *Queries) UpdateResource(ctx context.Context, arg UpdateResourceParams) (Resource, error) {
 	row := q.db.QueryRow(ctx, updateResource,
+		arg.OrgID,
 		arg.Kind,
 		arg.Value,
 		arg.UpdatedAt,

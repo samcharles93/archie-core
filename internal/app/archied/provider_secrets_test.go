@@ -13,6 +13,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -51,7 +52,7 @@ func TestStateStoreBootSeedsProviderSourceReference(t *testing.T) {
 	go func() { errCh <- RunStateStore(ctx, StateStoreOptions{Config: path, Listen: "127.0.0.1:0"}) }()
 	deadline := time.After(10 * time.Second)
 	for {
-		resource, err := store.Resource(t.Context(), controlplane.ProviderSettingsKind)
+		resource, err := store.Resource(t.Context(), storecontract.DefaultOrgID, controlplane.ProviderSettingsKind)
 		if err == nil {
 			if strings.Contains(string(resource.Value), "ARCHIE_PROVIDER_") || !strings.Contains(string(resource.Value), ref.Key) {
 				t.Fatalf("stored provider settings = %s, want source reference and no derived env name", resource.Value)

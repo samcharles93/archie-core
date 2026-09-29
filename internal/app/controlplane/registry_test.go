@@ -46,13 +46,14 @@ func staleWorkflowDefinitions(t *testing.T) []byte {
 // -- so a test does not restate a key or an identity it would then be pinning.
 func writeSeeded(t *testing.T, resources *pgstore.TaskDB, kind string, value []byte) storecontract.Resource {
 	t.Helper()
-	if current, err := resources.Resource(t.Context(), kind); err == nil {
+	if current, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, kind); err == nil {
 		t.Fatalf("%s already holds version %d; a seeded fixture writes the first revision", kind, current.Version)
 	} else if !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Fatalf("read %s: %v", kind, err)
 	}
 	seeded, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: kind, Value: value, ExpectedVersion: 0,
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  kind, Value: value, ExpectedVersion: 0,
 		Actor: seedActor, Source: seedSource, RequestID: seedRequestID(kind, value),
 	})
 	if err != nil {
@@ -66,7 +67,8 @@ func writeSeeded(t *testing.T, resources *pgstore.TaskDB, kind string, value []b
 func replaceAsOperator(t *testing.T, resources *pgstore.TaskDB, kind string, value []byte, expected int64) storecontract.Resource {
 	t.Helper()
 	replaced, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: kind, Value: value, ExpectedVersion: expected,
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  kind, Value: value, ExpectedVersion: expected,
 		Actor: "operator", Source: "archie-ui", RequestID: "operator-replace-" + kind,
 	})
 	if err != nil {
@@ -96,7 +98,7 @@ func TestImportConfigRefreshesAStaleShippedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportConfig: %v", err)
 	}
-	refreshed, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
+	refreshed, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +117,7 @@ func TestImportConfigRefreshesAStaleShippedValue(t *testing.T) {
 	}
 	// A refresh is a write like any other: what it replaced stays a revision, so
 	// the value the previous release shipped is still readable.
-	history, err := resources.ResourceHistory(t.Context(), WorkflowDefinitionsKind, 0)
+	history, err := resources.ResourceHistory(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +140,7 @@ func TestImportConfigLeavesASeededValueAloneOnceItMatches(t *testing.T) {
 		if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 			t.Fatalf("ImportConfig %d: %v", attempt, err)
 		}
-		stored, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
+		stored, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -220,7 +222,7 @@ func TestImportConfigKeepsAStoredValueThatIsNotTheSeeds(t *testing.T) {
 				if _, _, err := testServer(t, resources).ImportConfig(t.Context(), resolved); err != nil {
 					t.Fatal(err)
 				}
-				stored, err := resources.Resource(t.Context(), RepositoryPoliciesKind)
+				stored, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, RepositoryPoliciesKind)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -243,7 +245,7 @@ func TestImportConfigKeepsAStoredValueThatIsNotTheSeeds(t *testing.T) {
 			defer resources.Close()
 			server := testServer(t, resources)
 			want := tt.settle(t, resources)
-			before, err := resources.Resource(t.Context(), tt.kind)
+			before, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, tt.kind)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -253,7 +255,7 @@ func TestImportConfigKeepsAStoredValueThatIsNotTheSeeds(t *testing.T) {
 				if err != nil {
 					t.Fatalf("ImportConfig %d: %v", attempt, err)
 				}
-				after, err := resources.Resource(t.Context(), tt.kind)
+				after, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, tt.kind)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -284,11 +286,11 @@ func TestImportConfigRecreatesAKindAnOperatorRemoved(t *testing.T) {
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	seeded, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
+	seeded, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
-	history, err := resources.ResourceHistory(t.Context(), WorkflowDefinitionsKind, 0)
+	history, err := resources.ResourceHistory(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,14 +301,14 @@ func TestImportConfigRecreatesAKindAnOperatorRemoved(t *testing.T) {
 	if _, err := resources.Pool.Exec(t.Context(), `DELETE FROM resources WHERE kind = $1`, WorkflowDefinitionsKind); err != nil {
 		t.Fatalf("remove the resource: %v", err)
 	}
-	if _, err := resources.Resource(t.Context(), WorkflowDefinitionsKind); !errors.Is(err, storecontract.ErrResourceNotFound) {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind); !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Fatalf("resource after the removal = %v, want ErrResourceNotFound", err)
 	}
 
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatalf("ImportConfig after the removal: %v", err)
 	}
-	restored, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
+	restored, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind)
 	if err != nil {
 		t.Fatalf("the removed %s was not re-seeded: %v", WorkflowDefinitionsKind, err)
 	}

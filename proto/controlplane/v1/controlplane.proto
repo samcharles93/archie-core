@@ -36,8 +36,14 @@ message Resource {
   int64 version = 2;
   bytes value_json = 3;
   google.protobuf.Timestamp updated_at = 4;
+  string org_id = 5;
 }
-message QueryRequest { string kind = 1; }
+// Every request that names a resource acts in one org's copy of it. An empty
+// org_id is the default org.
+message QueryRequest {
+  string kind = 1;
+  string org_id = 2;
+}
 message QueryResponse { Resource resource = 1; }
 
 // Revision is one entry of a resource's audit trail: the value that version
@@ -55,6 +61,7 @@ message HistoryRequest {
   // Limit caps the revisions returned, newest first. Zero means the server's
   // own default.
   int32 limit = 2;
+  string org_id = 3;
 }
 message HistoryResponse { repeated Revision revisions = 1; }
 
@@ -92,12 +99,14 @@ message CommandRequest {
   // from browser/request JSON.
   string actor = 6;
   string source = 7;
+  string org_id = 8;
 }
 message CommandResponse { Resource resource = 1; }
 
 message WatchRequest {
   string kind = 1;
   int64 after_version = 2;
+  string org_id = 3;
 }
 message WatchResponse {
   Resource resource = 1;

@@ -79,7 +79,7 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	resource, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
+	resource, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,13 +95,13 @@ func TestImportConfigSeedsWorkflowDefinitionsWithoutOverwritingOverride(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{Kind: WorkflowDefinitionsKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "override"}); err != nil {
+	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{OrgID: storecontract.DefaultOrgID, Kind: WorkflowDefinitionsKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "override"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resources.Resource(t.Context(), WorkflowDefinitionsKind)
+	got, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	resource, err := resources.Resource(t.Context(), PersonasKind)
+	resource, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, PersonasKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,13 +132,13 @@ func TestImportConfigSeedsPersonasWithoutOverwritingEdits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{Kind: PersonasKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "persona-edit"}); err != nil {
+	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{OrgID: storecontract.DefaultOrgID, Kind: PersonasKind, Value: value, ExpectedVersion: resource.Version, Actor: "test", Source: "test", RequestID: "persona-edit"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resources.Resource(t.Context(), PersonasKind)
+	got, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, PersonasKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestImportWorkflowExecutionSettingsDoesNotOverwriteExistingValue(t *testing
 	if _, err := server.ImportWorkflowExecutionSettings(t.Context(), workflow.ExecutionSettings{MaxModelToolSteps: 99, MaxRuntime: time.Hour, MaxConsecutiveGateFailures: 9}); err != nil {
 		t.Fatal(err)
 	}
-	resource, err := resources.Resource(t.Context(), WorkflowExecutionSettingsKind)
+	resource, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowExecutionSettingsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestRegistryRoutesAndValidatesDefinitions(t *testing.T) {
 	if _, _, err := server.ImportConfig(t.Context(), config.Config{Containers: config.ContainerConfig{Image: "archie-agent:test", PullPolicy: "missing"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.Resource(t.Context(), ContainerRuntimePoliciesKind); err != nil {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, ContainerRuntimePoliciesKind); err != nil {
 		t.Fatalf("container runtime policies were not seeded: %v", err)
 	}
 
@@ -220,7 +220,7 @@ func TestProviderSeedKeepsReferencesAndNeverResolvedSecrets(t *testing.T) {
 	if _, _, err := server.ImportConfig(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	resource, err := resources.Resource(t.Context(), ProviderSettingsKind)
+	resource, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, ProviderSettingsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,12 +308,38 @@ func TestImportConfigSkipsASeedItCannotValidate(t *testing.T) {
 	if len(skipped) != 1 || skipped[0].Kind != RepositoryPoliciesKind || skipped[0].Err == nil {
 		t.Fatalf("skipped = %+v, want the repository policies and the reason", skipped)
 	}
-	if _, err := resources.Resource(t.Context(), RepositoryPoliciesKind); !errors.Is(err, storecontract.ErrResourceNotFound) {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, RepositoryPoliciesKind); !errors.Is(err, storecontract.ErrResourceNotFound) {
 		t.Errorf("repository policies Resource = %v, want ErrResourceNotFound: an invalid seed must not be stored", err)
 	}
 	// Kinds that are fine are still seeded: one skipped kind does not abandon
 	// the rest of the migration.
-	if _, err := resources.Resource(t.Context(), WorkflowDefinitionsKind); err != nil {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind); err != nil {
 		t.Errorf("workflow definitions: %v, want them seeded alongside the skipped kind", err)
+	}
+}
+
+// A request names the org whose copy of a kind it acts on; one naming none acts
+// in the default org, so a write for one org is invisible to the others.
+func TestControlPlaneRequestsActInTheirOrg(t *testing.T) {
+	t.Parallel()
+
+	resources := pgstore.Open(t)
+	defer resources.Close()
+	server := testServer(t, resources)
+	written, err := server.Command(t.Context(), &pb.CommandRequest{
+		Kind: WorkflowEnablementKind, Command: "replace", ValueJson: []byte(`{"orgs":{}}`),
+		Actor: "test", Source: "test", RequestId: "acme-write", OrgId: "acme",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written.Resource.OrgId != "acme" || written.Resource.Version != 1 {
+		t.Fatalf("written = %+v, want acme at version 1", written.Resource)
+	}
+	if _, err := server.Query(t.Context(), &pb.QueryRequest{Kind: WorkflowEnablementKind, OrgId: "acme"}); err != nil {
+		t.Fatalf("acme Query: %v", err)
+	}
+	if _, err := server.Query(t.Context(), &pb.QueryRequest{Kind: WorkflowEnablementKind}); status.Code(err) != codes.NotFound {
+		t.Fatalf("default-org Query = %v, want NotFound: acme's write leaked into the default org", err)
 	}
 }

@@ -521,11 +521,12 @@ var (
 	ErrResourceVersionConflict = errors.New("resource version conflict")
 )
 
-// Resource is one control-plane resource document: the stored value for a
-// kind, its revision, and the audit record written with the last write.
+// Resource is one control-plane resource document: the stored value for an
+// org's kind, its revision, and the audit record written with the last write.
 // Resource and ResourceWrite live here so the UI-side consumers can reference
 // them without linking the PostgreSQL implementation.
 type Resource struct {
+	OrgID           string
 	Kind            string
 	Value           []byte
 	Version         int64
@@ -538,8 +539,22 @@ type Resource struct {
 }
 
 // AuditTableResources is the sys_audit table name for control-plane resources,
-// keyed by resource kind.
+// keyed by ResourceAuditKey.
 const AuditTableResources = "resources"
+
+// DefaultOrgID is the org every resource written before orgs existed belongs
+// to, and the org a request that names none acts in.
+const DefaultOrgID = "default"
+
+// ResourceAuditKey is the sys_audit record key of one org's resource kind. The
+// default org keeps the bare kind, so audit rows written before resources were
+// per-org still resolve.
+func ResourceAuditKey(orgID, kind string) string {
+	if orgID == DefaultOrgID {
+		return kind
+	}
+	return orgID + "/" + kind
+}
 
 // AuditEntry is one changed field of one record, as sys_audit holds it. Any
 // store table may write entries; Table and RecordKey locate the record.
@@ -562,6 +577,7 @@ type AuditEntry struct {
 // the optimistic-concurrency guard: a write whose expectation does not match
 // the stored revision is refused with ErrResourceVersionConflict.
 type ResourceWrite struct {
+	OrgID           string
 	Kind            string
 	Value           []byte
 	Actor           string

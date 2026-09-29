@@ -47,7 +47,7 @@ func (s *outageStore) down(stall time.Duration) {
 	s.failing, s.stall = true, stall
 }
 
-func (s *outageStore) Resource(ctx context.Context, kind string) (storecontract.Resource, error) {
+func (s *outageStore) Resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error) {
 	s.mu.Lock()
 	failing, stall := s.failing, s.stall
 	s.mu.Unlock()
@@ -55,7 +55,7 @@ func (s *outageStore) Resource(ctx context.Context, kind string) (storecontract.
 		time.Sleep(stall)
 		return storecontract.Resource{}, errors.New("state store unreachable")
 	}
-	return s.TaskDB.Resource(ctx, kind)
+	return s.TaskDB.Resource(ctx, orgID, kind)
 }
 
 // TestWatchRetryGrowsWhileTheStateStoreIsDown is the outage this reconnect

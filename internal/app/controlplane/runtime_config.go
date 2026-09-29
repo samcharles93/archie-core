@@ -71,7 +71,7 @@ type storeReader struct {
 }
 
 func (r storeReader) Query(ctx context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
-	resource, err := r.resources.Resource(ctx, kind)
+	resource, err := r.resources.Resource(ctx, storecontract.DefaultOrgID, kind)
 	if errors.Is(err, storecontract.ErrResourceNotFound) {
 		seed, ok := r.seeds[kind]
 		if !ok {

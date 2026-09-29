@@ -33,7 +33,7 @@ type executionSettingsDocument struct {
 // holds is left alone, and a kind it does not hold is seeded under the one seed
 // identity (see seedActor and seedRequestID).
 func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings) (int64, error) {
-	resource, err := s.store.Resource(ctx, WorkflowExecutionSettingsKind)
+	resource, err := s.store.Resource(ctx, storecontract.DefaultOrgID, WorkflowExecutionSettingsKind)
 	if err == nil {
 		return resource.Version, nil
 	}
@@ -48,7 +48,7 @@ func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings w
 	if err != nil {
 		return 0, err
 	}
-	resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, Actor: seedActor, Source: seedSource, RequestID: seedRequestID(WorkflowExecutionSettingsKind, value), ExpectedVersion: 0, At: time.Now().UTC()})
+	resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{OrgID: storecontract.DefaultOrgID, Kind: WorkflowExecutionSettingsKind, Value: value, Actor: seedActor, Source: seedSource, RequestID: seedRequestID(WorkflowExecutionSettingsKind, value), ExpectedVersion: 0, At: time.Now().UTC()})
 	return resource.Version, err
 }
 

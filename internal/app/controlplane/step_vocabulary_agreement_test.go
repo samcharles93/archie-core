@@ -34,6 +34,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/app/agentworker"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
@@ -267,7 +268,7 @@ func admitThroughStateStore(t *testing.T, steps *workflow.Manager, stepType stri
 		t.Fatalf("build control plane server: %v", err)
 	}
 
-	if resource, resourceErr := resources.Resource(t.Context(), WorkflowDefinitionsKind); resourceErr == nil {
+	if resource, resourceErr := resources.Resource(t.Context(), storecontract.DefaultOrgID, WorkflowDefinitionsKind); resourceErr == nil {
 		before = resource.Version
 	}
 	value, err := json.Marshal(probeCollection(stepType))

@@ -45,7 +45,7 @@ func TestImportConfigRefusesAResolvedProviderSnapshot(t *testing.T) {
 	if !reported {
 		t.Errorf("skipped = %+v, want provider-settings reported", skipped)
 	}
-	if _, err := resources.Resource(t.Context(), ProviderSettingsKind); err == nil {
+	if _, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, ProviderSettingsKind); err == nil {
 		t.Fatal("provider-settings was stored from a resolved snapshot")
 	} else if !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("Resource = %v, want %v", err, storecontract.ErrResourceNotFound)

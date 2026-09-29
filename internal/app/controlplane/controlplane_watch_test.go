@@ -285,7 +285,7 @@ func TestWatchServesOnlyVersionsAfterTheRequestedOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resources.PutResource(ctx, storecontract.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, ExpectedVersion: version, Actor: "test", Source: "test", RequestID: "watch-next"}); err != nil {
+	if _, err := resources.PutResource(ctx, storecontract.ResourceWrite{OrgID: storecontract.DefaultOrgID, Kind: WorkflowExecutionSettingsKind, Value: value, ExpectedVersion: version, Actor: "test", Source: "test", RequestID: "watch-next"}); err != nil {
 		t.Fatal(err)
 	}
 	select {

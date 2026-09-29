@@ -259,7 +259,7 @@ func TestRecoveryRollbackReplaysTheRevisionThroughReplace(t *testing.T) {
 	if !strings.Contains(stdout, controlplane.ModelRoleAssignmentsKind) {
 		t.Errorf("rollback must name the resource it replayed; stdout = %q", stdout)
 	}
-	resource, err := st.Resource(t.Context(), controlplane.ModelRoleAssignmentsKind)
+	resource, err := st.Resource(t.Context(), storecontract.DefaultOrgID, controlplane.ModelRoleAssignmentsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestRecoveryRollbackReplaysTheRevisionThroughReplace(t *testing.T) {
 	if resource.Version != 3 {
 		t.Errorf("resource version = %d, want a new revision (3) rather than a rewrite of the old one", resource.Version)
 	}
-	history, err := st.ResourceHistory(t.Context(), controlplane.ModelRoleAssignmentsKind, 0)
+	history, err := st.ResourceHistory(t.Context(), storecontract.DefaultOrgID, controlplane.ModelRoleAssignmentsKind, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestRecoveryRollbackRestoresANamedRevision(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("rollback exited %d: %s", code, stderr)
 	}
-	resource, err := st.Resource(t.Context(), controlplane.ModelRoleAssignmentsKind)
+	resource, err := st.Resource(t.Context(), storecontract.DefaultOrgID, controlplane.ModelRoleAssignmentsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func storedResourceCount(t *testing.T, stdout string) int {
 // a silent no-op.
 func seedResource(t *testing.T, st *pgstore.TaskDB, kind, value, label string) {
 	t.Helper()
-	current, err := st.Resource(t.Context(), kind)
+	current, err := st.Resource(t.Context(), storecontract.DefaultOrgID, kind)
 	expected := int64(0)
 	if err == nil {
 		expected = current.Version
@@ -477,7 +477,8 @@ func seedResource(t *testing.T, st *pgstore.TaskDB, kind, value, label string) {
 		t.Fatal(err)
 	}
 	if _, err := st.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: kind, Value: encoded, Actor: label, Source: "test",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  kind, Value: encoded, Actor: label, Source: "test",
 		RequestID: fmt.Sprintf("%s-%d", label, expected+1), ExpectedVersion: expected,
 	}); err != nil {
 		t.Fatalf("seed resource %s: %v", kind, err)

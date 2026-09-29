@@ -30,7 +30,7 @@ import (
 
 type liveResourceStore struct{ controlplane.ResourceStore }
 
-func (*liveResourceStore) Resource(_ context.Context, kind string) (storecontract.Resource, error) {
+func (*liveResourceStore) Resource(_ context.Context, _, kind string) (storecontract.Resource, error) {
 	if kind == controlplane.PersonasKind {
 		return storecontract.Resource{Kind: kind, Version: 1, Value: []byte(`{"default":"archie","personas":[]}`)}, nil
 	}

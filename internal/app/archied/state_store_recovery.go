@@ -135,7 +135,7 @@ func replayRevision(ctx context.Context, resources controlplane.ResourceStore, o
 	if !server.Owns(options.Kind) {
 		return "", fmt.Errorf("unknown resource kind %q", options.Kind)
 	}
-	current, err := resources.Resource(ctx, options.Kind)
+	current, err := resources.Resource(ctx, storecontract.DefaultOrgID, options.Kind)
 	if errors.Is(err, storecontract.ErrResourceNotFound) {
 		return "", fmt.Errorf("%s has no stored value to roll back", options.Kind)
 	}
@@ -165,7 +165,7 @@ func replayRevision(ctx context.Context, resources controlplane.ResourceStore, o
 // revisionToReplay picks the value to put back: the revision the operator
 // named, or the newest one older than the value the resource carries now.
 func revisionToReplay(ctx context.Context, st controlplane.ResourceStore, kind string, current, requested int64) (storecontract.Resource, error) {
-	history, err := st.ResourceHistory(ctx, kind, 0)
+	history, err := st.ResourceHistory(ctx, storecontract.DefaultOrgID, kind, 0)
 	if err != nil {
 		return storecontract.Resource{}, fmt.Errorf("read %s history: %w", kind, err)
 	}

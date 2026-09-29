@@ -54,11 +54,12 @@ func putResource(t *testing.T, pool *pgxpool.Pool, kind, value, label string) {
 	t.Helper()
 	resources := postgres.NewResources(pool)
 	expected := int64(0)
-	if current, err := resources.Resource(t.Context(), kind); err == nil {
+	if current, err := resources.Resource(t.Context(), storecontract.DefaultOrgID, kind); err == nil {
 		expected = current.Version
 	}
 	if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: kind, Value: []byte(value), Actor: label, Source: "test",
+		OrgID: storecontract.DefaultOrgID,
+		Kind:  kind, Value: []byte(value), Actor: label, Source: "test",
 		RequestID: fmt.Sprintf("%s-%d", label, expected+1), ExpectedVersion: expected,
 	}); err != nil {
 		t.Fatalf("put %s: %v", kind, err)
@@ -125,7 +126,7 @@ func TestPostgresRecoveryBackupAndRestore(t *testing.T) {
 	if !strings.Contains(summary, "after the snapshot") {
 		t.Errorf("restore must say writes after the snapshot are lost; summary = %q", summary)
 	}
-	current, err := postgres.NewResources(pool).Resource(t.Context(), controlplane.ModelRoleAssignmentsKind)
+	current, err := postgres.NewResources(pool).Resource(t.Context(), storecontract.DefaultOrgID, controlplane.ModelRoleAssignmentsKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +189,7 @@ func TestPostgresRecoveryRollback(t *testing.T) {
 	if _, err := RunStateStoreRecovery(t.Context(), options); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
-	current, err := postgres.NewResources(pool).Resource(t.Context(), kind)
+	current, err := postgres.NewResources(pool).Resource(t.Context(), storecontract.DefaultOrgID, kind)
 	if err != nil {
 		t.Fatal(err)
 	}

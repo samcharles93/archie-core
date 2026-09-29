@@ -2,11 +2,11 @@
 -- Records the fields one resource write changed, against the version it
 -- replaced. Runs in the write's own transaction.
 INSERT INTO sys_audit (at, table_name, record_key, field, old_value, new_value, record_version, actor, source, request_id)
-SELECT sqlc.arg(at)::timestamptz, 'resources', sqlc.arg(kind)::text, d.field, d.old_value, d.new_value,
+SELECT sqlc.arg(at)::timestamptz, 'resources', sqlc.arg(record_key)::text, d.field, d.old_value, d.new_value,
        sqlc.arg(version)::bigint, sqlc.arg(actor)::text, sqlc.arg(source)::text, sqlc.arg(request_id)::text
 FROM audit_json_diff(
 	(SELECT convert_from(h.value, 'UTF8')::jsonb FROM resource_history h
-	 WHERE h.kind = sqlc.arg(kind)::text AND h.version = sqlc.arg(previous_version)::bigint),
+	 WHERE h.org_id = sqlc.arg(org_id)::text AND h.kind = sqlc.arg(kind)::text AND h.version = sqlc.arg(previous_version)::bigint),
 	convert_from(sqlc.arg(value)::bytea, 'UTF8')::jsonb
 ) d
 ORDER BY d.field;

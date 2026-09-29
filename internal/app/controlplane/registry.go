@@ -156,7 +156,7 @@ func (r *seedRefusal) Unwrap() error { return r.err }
 // value this build derived is not one the resource's validator accepts, and
 // nothing was written.
 func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config.Config) (int64, error) {
-	stored, storedErr := s.store.Resource(ctx, definition.Kind)
+	stored, storedErr := s.store.Resource(ctx, storecontract.DefaultOrgID, definition.Kind)
 	absent := errors.Is(storedErr, storecontract.ErrResourceNotFound)
 	if storedErr != nil && !absent {
 		return 0, storedErr
@@ -188,7 +188,7 @@ func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config
 		}
 	}
 	write := storecontract.ResourceWrite{
-		Kind: definition.Kind, Value: value,
+		OrgID: storecontract.DefaultOrgID, Kind: definition.Kind, Value: value,
 		Actor: seedActor, Source: seedSource,
 		RequestID:       seedRequestID(definition.Kind, value),
 		ExpectedVersion: expectedVersion(stored, absent), At: time.Now().UTC(),
@@ -226,7 +226,7 @@ func (s *Server) shippedValueIsStale(ctx context.Context, definition Definition)
 // seed. It reads the ledger rather than the current row because the ledger is
 // what records who wrote a value, and the row does not.
 func (s *Server) seedWroteNewest(ctx context.Context, kind string) (bool, error) {
-	history, err := s.store.ResourceHistory(ctx, kind, 1)
+	history, err := s.store.ResourceHistory(ctx, storecontract.DefaultOrgID, kind, 1)
 	if err != nil {
 		return false, fmt.Errorf("read %s history: %w", kind, err)
 	}
@@ -305,7 +305,7 @@ func (s *Server) ValidateStored(ctx context.Context) (int, error) {
 	checked := 0
 	var failures []error
 	for _, definition := range s.ordered {
-		resource, err := s.store.Resource(ctx, definition.Kind)
+		resource, err := s.store.Resource(ctx, storecontract.DefaultOrgID, definition.Kind)
 		if errors.Is(err, storecontract.ErrResourceNotFound) {
 			continue
 		}

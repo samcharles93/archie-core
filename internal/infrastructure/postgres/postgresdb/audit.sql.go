@@ -62,19 +62,21 @@ SELECT $1::timestamptz, 'resources', $2::text, d.field, d.old_value, d.new_value
        $3::bigint, $4::text, $5::text, $6::text
 FROM audit_json_diff(
 	(SELECT convert_from(h.value, 'UTF8')::jsonb FROM resource_history h
-	 WHERE h.kind = $2::text AND h.version = $7::bigint),
-	convert_from($8::bytea, 'UTF8')::jsonb
+	 WHERE h.org_id = $7::text AND h.kind = $8::text AND h.version = $9::bigint),
+	convert_from($10::bytea, 'UTF8')::jsonb
 ) d
 ORDER BY d.field
 `
 
 type InsertResourceAuditParams struct {
 	At              time.Time
-	Kind            string
+	RecordKey       string
 	Version         int64
 	Actor           string
 	Source          string
 	RequestID       string
+	OrgID           string
+	Kind            string
 	PreviousVersion int64
 	Value           []byte
 }
@@ -84,11 +86,13 @@ type InsertResourceAuditParams struct {
 func (q *Queries) InsertResourceAudit(ctx context.Context, arg InsertResourceAuditParams) error {
 	_, err := q.db.Exec(ctx, insertResourceAudit,
 		arg.At,
-		arg.Kind,
+		arg.RecordKey,
 		arg.Version,
 		arg.Actor,
 		arg.Source,
 		arg.RequestID,
+		arg.OrgID,
+		arg.Kind,
 		arg.PreviousVersion,
 		arg.Value,
 	)
