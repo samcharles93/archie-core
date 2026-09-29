@@ -19,6 +19,9 @@ func senderInbound(senderID, text string) Inbound {
 func TestRouteRateLimitBlocksOverBudget(t *testing.T) {
 	r := NewRouter(nil, fakeLLM, "test")
 	r.Limiter = ratelimit.New(time.Minute, 1)
+	// The batcher is off: nothing here is about coalescing, and its window
+	// must not sit between a dispatch and this test's assertions.
+	r.Batches = nil
 
 	reply, err := r.Route(context.Background(), senderInbound("u1", "hello"))
 	if err != nil {
@@ -40,6 +43,9 @@ func TestRouteRateLimitBlocksOverBudget(t *testing.T) {
 func TestRouteRateLimitIsPerSender(t *testing.T) {
 	r := NewRouter(nil, fakeLLM, "test")
 	r.Limiter = ratelimit.New(time.Minute, 1)
+	// The batcher is off: these dispatches must be immediate, and each new
+	// sender would otherwise wait out its own quiet window.
+	r.Batches = nil
 
 	if _, err := r.Route(context.Background(), senderInbound("u1", "hi")); err != nil {
 		t.Fatalf("Route: %v", err)
@@ -55,6 +61,8 @@ func TestRouteRateLimitIsPerSender(t *testing.T) {
 
 func TestRouteNoLimiterConfiguredNeverBlocks(t *testing.T) {
 	r := NewRouter(nil, fakeLLM, "test")
+	// The batcher is off: each allowed dispatch must be immediate here.
+	r.Batches = nil
 
 	for i := range 5 {
 		reply, err := r.Route(context.Background(), senderInbound("u1", "hello"))
@@ -139,6 +147,8 @@ func TestRouteBudgetKeyLimitsWithoutSenderID(t *testing.T) {
 func TestRouteStreamLocalCommandChargesExactlyOnce(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{}}, nil, "test")
 	r.Limiter = ratelimit.New(time.Minute, 2)
+	// The batcher is off: the charge being pinned is per message, not per batch.
+	r.Batches = nil
 	r.LLMStream = func(context.Context, Inbound, TurnStream) (string, error) {
 		return "streamed", nil
 	}
@@ -169,6 +179,8 @@ func TestRouteStreamLocalCommandChargesExactlyOnce(t *testing.T) {
 func TestRouteStreamRateLimitBlocksStreamedReply(t *testing.T) {
 	r := NewRouter(nil, nil, "test")
 	r.Limiter = ratelimit.New(time.Minute, 1)
+	// The batcher is off: the blocked call must not wait on a batch window.
+	r.Batches = nil
 	streamCalls := 0
 	r.LLMStream = func(context.Context, Inbound, TurnStream) (string, error) {
 		streamCalls++

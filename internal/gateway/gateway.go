@@ -216,7 +216,16 @@ type Router struct {
 	// The window is deliberately not a config knob here: the durable
 	// prior-reply replay in turn.go is the backstop for duplicates that
 	// outlive it, and no composition choice between them needs exposing.
-	Dedup          *MessageDeduplicator
+	Dedup *MessageDeduplicator
+	// Batches coalesces rapid-fire plain-text fragments from one sender into
+	// a single turn (internal/gateway/text_batch.go), so a chat client that
+	// splits one thought across several messages costs one agent turn, not
+	// one per fragment. It sits after the per-message gates (dedup, rate
+	// limit) and before the responder: each fragment passes the gates as
+	// the message it is, and the batch's single turn is the only dispatch.
+	// NewRouter wires the package default, so a production router batches;
+	// nil disables coalescing (test setups).
+	Batches        *TextBatchAggregator
 	sessionTracker *sessionTracker
 	gatewayName    string
 	// titlingMu guards titling, the set of sessions with a title proposal
@@ -230,7 +239,8 @@ type Router struct {
 func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router {
 	return &Router{
 		Store: store, LLM: llm, gatewayName: gatewayName,
-		Dedup: NewMessageDeduplicator(0, 0, nil),
+		Dedup:   NewMessageDeduplicator(0, 0, nil),
+		Batches: NewTextBatchAggregator(0, 0, 0, nil, nil),
 	}
 }
 
@@ -296,7 +306,18 @@ func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rat
 	if r.checkRateLimit(in) {
 		return rateLimitReply, true, nil
 	}
-	reply, err = r.route(ctx, in)
+	ready, mine, err := r.CollectTurn(ctx, in)
+	if err != nil {
+		return "", false, err
+	}
+	if !mine {
+		// A covered fragment: the batch's one turn answers the batch through
+		// the call that dispatched it. This caller renders nothing of its
+		// own; where the reply leaves as text (email is the only such
+		// channel today), nothing is sent rather than the join sent twice.
+		return "", false, nil
+	}
+	reply, err = r.route(ctx, ready)
 	return reply, false, err
 }
 
@@ -307,6 +328,20 @@ func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rat
 // inbound budget. A nil Dedup (disabled) never blocks.
 func (r *Router) duplicateDelivery(in Inbound) bool {
 	return r.Dedup != nil && !r.Dedup.Admit(in)
+}
+
+// CollectTurn hands a gated inbound to the text batcher and returns the
+// payload this call is responsible for dispatching. Every gate has already
+// run by the time it is called -- a gate reply like the dedup prose is
+// computed for the message it is and never waits on a batch window, and
+// then the batch's single turn dispatches without running the gates again
+// (their answer is already recorded). A nil Batches passes through, as do
+// messages that are no fragment (internal/gateway/text_batch.go).
+func (r *Router) CollectTurn(ctx context.Context, in Inbound) (Inbound, bool, error) {
+	if r.Batches == nil {
+		return in, true, nil
+	}
+	return r.Batches.Collect(ctx, in)
 }
 
 // route is Route's continuation once the caller has already cleared the
@@ -488,13 +523,35 @@ func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream)
 	if r.checkRateLimit(in) {
 		return rateLimitReply, nil
 	}
+	return r.StreamTurn(ctx, in, stream)
+}
+
+// StreamTurn dispatches one streaming turn for an inbound whose per-message
+// gates have already run. RouteStream splits it off so the text batcher's
+// dispatcher can carry the joined payload for its whole batch through here
+// without the gates answering a second time for a message they already saw
+// -- in particular so the combined payload's first-fragment source ID, which
+// the dedup gate already recorded, does not read back as a redelivery.
+func (r *Router) StreamTurn(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
 	cmd, _ := parseCmd(strings.TrimSpace(in.Message.Text), r.gatewayName)
 	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
 		return r.route(ctx, in)
 	}
-	reply, err := r.LLMStream(ctx, in, stream)
+	ready, mine, err := r.CollectTurn(ctx, in)
+	if err != nil {
+		return "", err
+	}
+	if !mine {
+		// A covered fragment: the batch's one turn streams on the call that
+		// dispatched it, so this caller's stream renders nothing. The empty
+		// final reply is what every renderer drops (Telegram's finalizer has
+		// no message and abandons; a dashboard client shows the turn that
+		// actually ran).
+		return "", nil
+	}
+	reply, err := r.LLMStream(ctx, ready, stream)
 	if err == nil {
-		r.maybeAutoTitle(ctx, in.Message)
+		r.maybeAutoTitle(ctx, ready.Message)
 	}
 	return reply, err
 }

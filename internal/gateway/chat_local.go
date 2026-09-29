@@ -141,17 +141,54 @@ func (a *LocalChatAdapter) Stream(ctx context.Context, in Inbound) (<-chan ChatE
 		return nil, err
 	}
 	events := make(chan ChatEvent, 32)
-	events <- ChatEvent{Kind: "started", SessionID: id}
 	go a.stream(ctx, in, id, events)
 	return events, nil
 }
 
 func (a *LocalChatAdapter) stream(ctx context.Context, in Inbound, id string, events chan ChatEvent) {
 	defer close(events)
+
+	// The per-message gates run here, per fragment, on this call's own
+	// goroutine -- before the batch and before the session lane. A
+	// redelivered fragment is a declined delivery to the gate it always
+	// reached and never joins the batch it repeats; the rate budget is
+	// charged per fragment the way it always was; and since the reply a
+	// gate returns renders today, the prose is the done event of this very
+	// stream rather than a turn output.
+	if a.Router.duplicateDelivery(in) {
+		events <- ChatEvent{Kind: "done", Text: dedupReply, SessionID: id}
+		return
+	}
+	if a.Router.checkRateLimit(in) {
+		events <- ChatEvent{Kind: "done", Text: rateLimitReply, SessionID: id}
+		return
+	}
+
+	// Rapid-fire text fragments of one thought coalesce here, before the
+	// session lane exists: waiting inside a lane would make every fragment
+	// queue behind the first fragment's batch window instead of joining it.
+	ready, mine, err := a.Router.CollectTurn(ctx, in)
+	if err != nil {
+		events <- ChatEvent{Kind: "error", Text: err.Error(), SessionID: id}
+		return
+	}
+	if !mine {
+		// A covered fragment: the batch's turn runs on the call that
+		// dispatched it. This caller contributes its text to that turn and
+		// renders nothing of its own -- not even the started event, which
+		// announces a turn that does not exist here.
+		return
+	}
+	in = ready
+
+	// started announces the turn that runs; it comes now, after the gates and
+	// the batch, and always before the first delta or the terminal event.
+	events <- ChatEvent{Kind: "started", SessionID: id}
+
 	pending := make(chan ChatEvent, 32)
 	stream := localChatStream{done: ctx.Done(), events: pending, sessionID: id}
 	run := func(turnCtx context.Context) ChatEvent {
-		reply, err := a.Router.RouteStream(turnCtx, in, stream)
+		reply, err := a.Router.StreamTurn(turnCtx, in, stream)
 		if err != nil {
 			return ChatEvent{Kind: "error", Text: err.Error(), SessionID: id}
 		}
