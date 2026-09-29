@@ -163,7 +163,7 @@ func PRReview() Workflow {
 				"depth":     {Type: "string"},
 			},
 		},
-		Stages: append(prReviewDecisionStages(), stagePROutput()),
+		Stages: append(prReviewDecisionStages(true), stagePROutput()),
 	}
 }
 
@@ -174,8 +174,17 @@ func PRReview() Workflow {
 // trigger): the decision of whether an unchallenged blocking finding parks
 // the task must happen before a PR exists to post to, while phase 9's
 // posting must happen after, once a PR number exists to anchor comments to.
-func prReviewDecisionStages() []Stage {
-	return []Stage{
+//
+// withOperatorApproval splices the operator-approval gate in between
+// synthesis and the merge gate. Only the standalone pr-review workflow passes
+// true: there the operator's response re-reviews the pull request, and the
+// run is re-entered from the start anyway, which is safe because that
+// pipeline has no write-then-close stage. Archie's own PRs has no PR to give
+// the operator a posting decision about yet, and a park there would end the
+// implement run before it opened one (archie-core-7nst), so the splice drops
+// the gate instead.
+func prReviewDecisionStages(withOperatorApproval bool) []Stage {
+	stages := []Stage{
 		stagePRIntake(),
 		stagePRAnatomy(),
 		stagePRLenses(),
@@ -184,9 +193,11 @@ func prReviewDecisionStages() []Stage {
 		stagePRVerification(),
 		stagePRCoverageConsistency(),
 		stagePRSynthesis(),
-		stagePROperatorApproval(),
-		stagePRMergeGate(),
 	}
+	if withOperatorApproval {
+		stages = append(stages, stagePROperatorApproval())
+	}
+	return append(stages, stagePRMergeGate())
 }
 
 // stagePRIntake is pipeline phase 1: PR metadata and diff statistics, the

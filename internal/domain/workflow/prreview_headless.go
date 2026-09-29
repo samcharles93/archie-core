@@ -16,6 +16,8 @@ type PRReviewDecision struct {
 	SkippedPhases []string
 }
 
+// ReviewPullRequest refuses operator approval outright, so the gate is left
+// out of the stage list rather than reached and skipped.
 func ReviewPullRequest(ctx context.Context, tc *TaskContext) (PRReviewDecision, error) {
 	if tc.Cfg.Review.ApproveBeforePost {
 		return PRReviewDecision{}, fmt.Errorf("headless review cannot wait for operator approval")
@@ -27,7 +29,7 @@ func ReviewPullRequest(ctx context.Context, tc *TaskContext) (PRReviewDecision, 
 			_ = os.RemoveAll(tc.prReview.snapshotDir)
 		}
 	}()
-	for _, stage := range prReviewDecisionStages() {
+	for _, stage := range prReviewDecisionStages(false) {
 		if err := ctx.Err(); err != nil {
 			return PRReviewDecision{}, err
 		}
