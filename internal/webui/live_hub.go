@@ -10,6 +10,7 @@ import (
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 // liveUpdate is one topic's payload. Only durable tasks and the bounded log
@@ -116,7 +117,7 @@ func (s *Server) watchResource(ctx context.Context, kind string) {
 	for ctx.Err() == nil {
 		started := time.Now()
 		progressed := false
-		stream, err := s.ControlPlane.Watch(ctx, &controlpb.WatchRequest{Kind: kind, AfterVersion: version})
+		stream, err := s.ControlPlane.Watch(ctx, controlplanerpc.WatchRequest(ctx, kind, version))
 		if err == nil {
 			for ctx.Err() == nil {
 				response, recvErr := stream.Recv()

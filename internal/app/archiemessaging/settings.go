@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 type messagingControlPlane struct{ client pb.ControlPlaneServiceClient }
@@ -46,7 +47,7 @@ func (c messagingControlPlane) Catalog(ctx context.Context) ([]messaging.Setting
 }
 
 func (c messagingControlPlane) Query(ctx context.Context, kind string) (messaging.SettingResource, error) {
-	response, err := c.client.Query(ctx, &pb.QueryRequest{Kind: kind})
+	response, err := c.client.Query(ctx, controlplanerpc.QueryRequest(ctx, kind))
 	if err != nil {
 		return messaging.SettingResource{}, settingsRPCError(err)
 	}
@@ -62,7 +63,7 @@ func (c messagingControlPlane) Command(ctx context.Context, command messaging.Se
 	if err != nil {
 		return messaging.SettingResource{}, errors.Join(messaging.ErrSettingsValidation, err)
 	}
-	response, err := c.client.Command(ctx, &pb.CommandRequest{Kind: command.Kind, Command: "replace", ValueJson: value, ExpectedVersion: command.ExpectedVersion, RequestId: command.RequestID, Actor: command.Actor, Source: command.Source})
+	response, err := c.client.Command(ctx, controlplanerpc.CommandRequest(ctx, &pb.CommandRequest{Kind: command.Kind, Command: "replace", ValueJson: value, ExpectedVersion: command.ExpectedVersion, RequestId: command.RequestID, Actor: command.Actor, Source: command.Source}))
 	if err != nil {
 		return messaging.SettingResource{}, settingsRPCError(err)
 	}

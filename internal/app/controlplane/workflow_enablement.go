@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
@@ -28,7 +27,7 @@ func workflowEnablementDefinition() Definition {
 
 // WorkflowEnablement returns which workflows each org has disabled.
 func (c *Client) WorkflowEnablement(ctx context.Context) (task.WorkflowEnablement, error) {
-	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowEnablementKind})
+	response, err := c.rpc.Query(ctx, controlplanerpc.QueryRequest(ctx, WorkflowEnablementKind))
 	if err != nil {
 		return task.WorkflowEnablement{}, controlplanerpc.ClientError(err)
 	}
