@@ -33,6 +33,58 @@ func TestParseDefinitionAllowsRepeatingAnOperation(t *testing.T) {
 	}
 }
 
+// TestDefinitionIDReadsTheDeclaredWorkflowName covers the identity a stored
+// definition carries: DefinitionID answers "which workflow is this" for a
+// reader holding only YAML, without a step registry and without rejecting a
+// definition written against a vocabulary this process does not have (which is
+// why a daemon cannot answer it by compiling).
+func TestDefinitionIDReadsTheDeclaredWorkflowName(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		err  string
+	}{
+		{
+			name: "the shipped feasibility definition names itself",
+			src:  "id: feasibility\nsteps:\n  - type: feasibility.assess\n",
+			want: "feasibility",
+		},
+		{
+			name: "an unregistered step type is still an answerable id",
+			src:  "id: operator-local\nsteps:\n  - type: plugin.step\n",
+			want: "operator-local",
+		},
+		{
+			name: "a definition with no id is refused",
+			src:  "steps:\n  - type: feasibility.assess\n",
+			err:  "id is required",
+		},
+		{
+			name: "malformed YAML is refused",
+			src:  "id: [unterminated\n",
+			err:  "parse workflow YAML",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DefinitionID(tt.src)
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Fatalf("DefinitionID() error = %v, want %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DefinitionID: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("DefinitionID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestShippedDefinitionsEmitDeclaredInputsForPRReview(t *testing.T) {
 	entry, ok := ShippedDefinitions().DefinitionByID("pr-review")
 	if !ok {
