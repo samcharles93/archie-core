@@ -235,7 +235,8 @@ func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[st
 // CEL expression reads is the same Go struct the expression environment typed
 // (`actions.<id>.result.<field>`). The map is keyed by the lower-cased Go
 // field name, the same spelling expr registers as the CEL field name. An
-// unknown field or a wrong-typed value is a reported error.
+// unknown field, an absent declared field, or a value that is not already the
+// field's type is a reported error.
 func (r *ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, error) {
 	k, ok := registry[kind]
 	if !ok {
@@ -246,7 +247,11 @@ func (r *ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, err
 
 // decodeResultStruct marshals raw into a new value of the kind's Result
 // struct type, keyed by the lower-cased Go field name -- the same spelling
-// expr registers as the CEL field name.
+// expr registers as the CEL field name. Every declared field must be present
+// and every value must already carry that field's type: a missing field would
+// read as the zero value, and a conversion would change the value's
+// representation, so both are reported rather than becoming a quietly wrong
+// value in a later expression.
 func decodeResultStruct(kind string, t reflect.Type, raw map[string]any) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("module %s: result schema is not set", kind)
@@ -259,40 +264,55 @@ func decodeResultStruct(kind string, t reflect.Type, raw map[string]any) (any, e
 	}
 
 	out := reflect.New(t).Elem()
-	fields := make(map[string]reflect.Value, t.NumField())
+	type declaredField struct {
+		name  string
+		value reflect.Value
+	}
+	declared := make([]declaredField, 0, t.NumField())
+	byName := make(map[string]reflect.Value, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
 		if !out.Field(i).CanSet() {
 			continue
 		}
-		fields[strings.ToLower(f.Name)] = out.Field(i)
+		name := strings.ToLower(t.Field(i).Name)
+		declared = append(declared, declaredField{name: name, value: out.Field(i)})
+		byName[name] = out.Field(i)
 	}
-	for key, val := range raw {
-		fv, ok := fields[key]
-		if !ok {
+
+	keys := make([]string, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, ok := byName[key]; !ok {
 			return nil, fmt.Errorf("module %s: unknown result field %q", kind, key)
 		}
-		if err := setResultField(kind, key, fv, val); err != nil {
+	}
+	for _, f := range declared {
+		val, ok := raw[f.name]
+		if !ok {
+			return nil, fmt.Errorf("module %s: result field %q is missing, want %s", kind, f.name, f.value.Type())
+		}
+		if err := setResultField(kind, f.name, f.value, val); err != nil {
 			return nil, err
 		}
 	}
 	return out.Interface(), nil
 }
 
-// setResultField assigns val to fv, converting compatible Go types. A nil or
-// incompatible value is a reported error, never a silent zero-value fill.
+// setResultField assigns val to fv only when val's type is the field's type. A
+// conversion would change the value's representation -- a number silently
+// becoming a string is the named case -- so it is refused, as are a nil and a
+// wrong-typed value. Nothing here zero-fills.
 func setResultField(kind, field string, fv reflect.Value, val any) error {
 	if val == nil {
 		return fmt.Errorf("module %s: result.%s is nil, want %s", kind, field, fv.Type())
 	}
 	rv := reflect.ValueOf(val)
-	if rv.Type().AssignableTo(fv.Type()) {
-		fv.Set(rv)
-		return nil
+	if !rv.Type().AssignableTo(fv.Type()) {
+		return fmt.Errorf("module %s: result.%s is %T, want %s", kind, field, val, fv.Type())
 	}
-	if rv.Type().ConvertibleTo(fv.Type()) {
-		fv.Set(rv.Convert(fv.Type()))
-		return nil
-	}
-	return fmt.Errorf("module %s: result.%s is %T, want %s", kind, field, val, fv.Type())
+	fv.Set(rv)
+	return nil
 }

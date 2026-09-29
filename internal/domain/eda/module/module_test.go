@@ -169,9 +169,71 @@ func Run(a log.Args) log.Result {
 	}
 }
 
+// TestDecodeResultRejectsSchemaViolations pins the strict schema boundary:
+// every declared Result field must be present, and a value is accepted only
+// when its type is the field's type. An absent field would read as the zero
+// value, and a conversion changes the value's representation -- a number
+// silently becoming a string is the named case -- so both are failures rather
+// than a quietly wrong value in a later expression.
+func TestDecodeResultRejectsSchemaViolations(t *testing.T) {
+	tests := []struct {
+		name  string
+		raw   map[string]any
+		wants []string
+	}{
+		{
+			name:  "absent field",
+			raw:   map[string]any{"written": true},
+			wants: []string{"log", `result field "level"`, "missing"},
+		},
+		{
+			name:  "number where a string field is declared",
+			raw:   map[string]any{"written": true, "level": 42},
+			wants: []string{"log", "result.level", "int", "want string"},
+		},
+		{
+			name:  "string where a bool field is declared",
+			raw:   map[string]any{"written": "true", "level": "info"},
+			wants: []string{"log", "result.written", "want bool"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := New()
+			got, err := r.DecodeResult("log", tc.raw)
+			if err == nil {
+				t.Fatalf("DecodeResult(%v) = %#v, want an error", tc.raw, got)
+			}
+			for _, want := range tc.wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("DecodeResult error = %q, want it to contain %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestDecodeResultAcceptsEveryFieldAtItsType is the other half of the strict
+// boundary: a complete map whose values already carry the schema's types
+// decodes unchanged.
+func TestDecodeResultAcceptsEveryFieldAtItsType(t *testing.T) {
+	r := New()
+	got, err := r.DecodeResult("log", map[string]any{"written": true, "level": "info"})
+	if err != nil {
+		t.Fatalf("DecodeResult: %v", err)
+	}
+	result, ok := got.(log.Result)
+	if !ok {
+		t.Fatalf("DecodeResult returned %T, want log.Result", got)
+	}
+	if want := (log.Result{Written: true, Level: "info"}); result != want {
+		t.Fatalf("DecodeResult = %#v, want %#v", result, want)
+	}
+}
+
 func TestDecodeResultUnknownFieldIsError(t *testing.T) {
 	r := New()
-	_, err := r.DecodeResult("log", map[string]any{"written": true, "bogus": "x"})
+	_, err := r.DecodeResult("log", map[string]any{"written": true, "level": "info", "bogus": "x"})
 	if err == nil {
 		t.Fatal("DecodeResult(unknown field) = nil, want error")
 	}

@@ -118,7 +118,12 @@ typed values are checked at load; `dyn` values are checked by the module decode.
 
 **D5 — where the result map becomes the `Result` struct.** Settled:
 `ModuleRegistry` stays schema-agnostic. `ModuleRegistry.DecodeResult`
-(`internal/domain/eda/module`) is the conversion site.
+(`internal/domain/eda/module`) is the conversion site. It accepts a value only
+when it already carries the field's declared type, and a map only when it
+carries every declared field. A conversion changes the value's representation --
+a number for a string field is the named case -- and an absent field reads as the
+zero value, so each is reported rather than becoming a quietly wrong value in a
+later expression.
 
 ## Verification
 
@@ -128,5 +133,8 @@ typed values are checked at load; `dyn` values are checked by the module decode.
   dynamically indexed `actions` read fails.
 - An arg KEY the kind's `Args` schema does not define fails the load, and so
   does `message: '123'` for the `log` kind. `message: event.title` loads.
+- A result map missing a declared field, and one whose value is not already the
+  field's type, are both reported by the decode; a value that would only be
+  convertible (a number for a string field) is not accepted.
 - The one-action `workflow` playbook shape, its dispatch, and its existing
   load-time checks are unchanged.
