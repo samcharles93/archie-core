@@ -10,7 +10,6 @@ import (
 	"maps"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/docker/sandbox-kit-spec/v3/fetch"
 	"github.com/docker/sandbox-kit-spec/v3/spec"
@@ -141,7 +140,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		return nil, err
 	}
 	granted, bound := l.resolveCredentials(req, k.creds)
-	expiries, err := l.oauthExpiries(ctx, req.Org, k.creds, bound)
+	facts, err := l.oauthFacts(ctx, req.Org, k.creds, bound)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +155,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		return nil, err
 	}
 	run := &Run{network: "archie-kit-" + req.Execution, token: session.Token(), execution: req.Execution}
-	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound, OAuthExpiries: expiries})
+	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound, OAuth: facts})
 	if err != nil {
 		l.release(run)
 		return nil, err
@@ -234,12 +233,12 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 	return granted, bound
 }
 
-// oauthExpiries reads the stored token set's expiry for each bound OAuth
-// credential whose Kit renders a credential file. The store is read only for a
-// service the run credential carries, and only the expiry leaves here: the
-// tokens stay behind, so the renderer has no way to write one.
-func (l *Launcher) oauthExpiries(ctx context.Context, org string, creds []spec.CredentialCapability, bound []string) (map[string]time.Time, error) {
-	expiries := map[string]time.Time{}
+// oauthFacts reads the stored token set's scopes and expiry for each bound
+// OAuth credential whose Kit renders a credential file. The store is read only
+// for a service the run credential carries, and only those facts leave here:
+// the tokens stay behind, so the renderer has no way to write one.
+func (l *Launcher) oauthFacts(ctx context.Context, org string, creds []spec.CredentialCapability, bound []string) (map[string]kit.OAuthFacts, error) {
+	facts := map[string]kit.OAuthFacts{}
 	for _, c := range creds {
 		if c.OAuth == nil || c.OAuth.CredentialFile == nil || !egress.IsOAuthManaged(c) || !slices.Contains(bound, c.Service) {
 			continue
@@ -251,9 +250,9 @@ func (l *Launcher) oauthExpiries(ctx context.Context, org string, creds []spec.C
 		if err != nil {
 			return nil, fmt.Errorf("credential %q renders a credential file and has no captured OAuth token (run the setup terminal first): %w", c.Service, err)
 		}
-		expiries[c.Service] = secret.ExpiresAt
+		facts[c.Service] = kit.OAuthFacts{Scopes: secret.Scopes, ExpiresAt: secret.ExpiresAt}
 	}
-	return expiries, nil
+	return facts, nil
 }
 
 // release undoes what Launch already did for run: the egress grant, then the
