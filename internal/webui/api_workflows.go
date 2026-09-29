@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"strings"
 
-	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 const workflowDefinitionsKind = "workflow-definitions"
@@ -118,10 +118,9 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // enabledWorkflowInterface returns the interface workflow id declares, and
-// whether it is defined and enabled for the default org -- the org every
-// dashboard caller acts in until access resolves a caller's own. The interface
-// is what the work-request handler checks a request's inputs against, so a task
-// whose workflow declaration the request cannot satisfy is refused before it is
+// whether it is defined and enabled for the caller's org. The interface is what
+// the work-request handler checks a request's inputs against, so a task whose
+// workflow declaration the request cannot satisfy is refused before it is
 // admitted.
 func (s *Server) enabledWorkflowInterface(ctx context.Context, id string) (task.WorkflowInterface, bool, error) {
 	entry, found, err := s.workflowEntry(ctx, id)
@@ -129,7 +128,7 @@ func (s *Server) enabledWorkflowInterface(ctx context.Context, id string) (task.
 		return task.WorkflowInterface{}, false, err
 	}
 	enablement, _, err := s.workflowEnablement(ctx)
-	if err != nil || !enablement.Enabled(org.DefaultOrgID, id) {
+	if err != nil || !enablement.Enabled(org.OrgFromContext(ctx), id) {
 		return task.WorkflowInterface{}, false, err
 	}
 	iface, err := task.ParseWorkflowInterface(entry.YAML)
@@ -158,7 +157,7 @@ func (s *Server) workflowCollection(ctx context.Context) (task.WorkflowDefinitio
 	if s.ControlPlane == nil {
 		return task.WorkflowDefinitionCollection{}, nil
 	}
-	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: workflowDefinitionsKind})
+	response, err := s.ControlPlane.Query(ctx, controlplanerpc.QueryRequest(ctx, workflowDefinitionsKind))
 	if err != nil {
 		return task.WorkflowDefinitionCollection{}, err
 	}
@@ -186,7 +185,7 @@ func (s *Server) workflowDefinitions(ctx context.Context) ([]task.Definition, er
 	}
 	definitions := make([]task.Definition, 0, len(collection.Definitions))
 	for _, entry := range collection.Definitions {
-		definition := task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: enablement.Enabled(org.DefaultOrgID, entry.ID), Repository: task.RepositoryRequired}
+		definition := task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: enablement.Enabled(org.OrgFromContext(ctx), entry.ID), Repository: task.RepositoryRequired}
 		if iface, err := task.ParseWorkflowInterface(entry.YAML); err == nil {
 			definition.Inputs, definition.Repository = iface.Inputs, iface.RepositoryMode()
 		}

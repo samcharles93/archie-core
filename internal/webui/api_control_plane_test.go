@@ -20,8 +20,12 @@ import (
 )
 
 type controlPlaneClientStub struct {
-	command   *controlpb.CommandRequest
+	command *controlpb.CommandRequest
+	// query is the resource a kind-less Query falls back to; queries is every
+	// request Query was handed, so a test can read back the org each one
+	// carried.
 	query     *controlpb.Resource
+	queries   []*controlpb.QueryRequest
 	history   *controlpb.HistoryRequest
 	revisions []*controlpb.Revision
 	audit     *controlpb.AuditRequest
@@ -38,6 +42,7 @@ func (f *controlPlaneClientStub) Catalog(context.Context, *controlpb.CatalogRequ
 }
 
 func (f *controlPlaneClientStub) Query(_ context.Context, request *controlpb.QueryRequest, _ ...grpc.CallOption) (*controlpb.QueryResponse, error) {
+	f.queries = append(f.queries, request)
 	if resource, ok := f.resources[request.Kind]; ok {
 		return &controlpb.QueryResponse{Resource: resource}, f.err
 	}
