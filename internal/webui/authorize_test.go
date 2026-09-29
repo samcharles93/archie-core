@@ -49,6 +49,58 @@ func newAccessServer(t *testing.T, engine access.Authorizer, denials access.Deni
 	return &Server{Access: engine, Principals: nil, Denials: denials, Token: ""}
 }
 
+// stubPrincipalSource answers with one fixed principal: the middleware test
+// only needs to see that principal's org reach the request context.
+type stubPrincipalSource struct{ principal access.Principal }
+
+func (s stubPrincipalSource) PrincipalFor(context.Context, identity.IdentityID) (access.Principal, error) {
+	return s.principal, nil
+}
+
+func orgEcho(w http.ResponseWriter, r *http.Request) {
+	_, _ = w.Write([]byte(org.OrgFromContext(r.Context())))
+}
+
+// TestAuthorizeAttachesPrincipalOrgToRequestContext: the org a control-plane
+// call acts in is the principal's, and it travels on the context the handler
+// receives -- so every downstream request inherits it without naming it.
+func TestAuthorizeAttachesPrincipalOrgToRequestContext(t *testing.T) {
+	namedOrg := access.Principal{
+		IdentityID:  testActingIdentity.ID,
+		Kind:        identity.KindUser,
+		Org:         "acme",
+		Memberships: []org.Membership{{IdentityID: testActingIdentity.ID, OrgID: "acme", Role: org.RoleOwner}},
+	}
+	tests := []struct {
+		name      string
+		principal access.Principal
+		acting    bool
+		want      org.OrgID
+	}{
+		{name: "shared token acts in the default org", principal: TokenOwnerPrincipal(), want: org.DefaultOrgID},
+		{name: "an identity acts in its own org", principal: namedOrg, acting: true, want: "acme"},
+		{name: "an identity in the default org yields the default", principal: TokenOwnerPrincipal(), acting: true, want: org.DefaultOrgID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{Access: &fakeAuthorizer{decision: access.Allowed()}, Principals: stubPrincipalSource{tt.principal}}
+			h := s.authorize(http.HandlerFunc(orgEcho))
+			ctx := t.Context()
+			if tt.acting {
+				ctx = WithActingIdentity(ctx, testActingIdentity)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/tasks", nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("authorized request served %d, want 200", rec.Code)
+			}
+			if got := rec.Body.String(); got != string(tt.want) {
+				t.Fatalf("request org = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAuthorizeNilEngineServesEverything(t *testing.T) {
 	s := &Server{}
 	h := s.authorize(http.HandlerFunc(handlerEcho))

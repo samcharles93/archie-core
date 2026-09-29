@@ -60,7 +60,7 @@ type ResourceReader interface {
 }
 
 func (c *Client) Query(ctx context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
-	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: kind})
+	response, err := c.rpc.Query(ctx, QueryRequest(ctx, kind))
 	if err != nil {
 		mapped := ClientError(err)
 		if errors.Is(mapped, ErrNotFound) {

@@ -70,7 +70,7 @@ func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) 
 }
 
 func (c *WorkflowDefinitionsClient) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefinitionCollection, int64, error) {
-	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowDefinitionsKind})
+	response, err := c.rpc.Query(ctx, controlplanerpc.QueryRequest(ctx, WorkflowDefinitionsKind))
 	if err != nil {
 		return workflow.WorkflowDefinitionCollection{}, 0, controlplanerpc.ClientError(err)
 	}
@@ -90,7 +90,7 @@ func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Conte
 	if err != nil {
 		return 0, err
 	}
-	response, err := c.rpc.Command(ctx, &pb.CommandRequest{Kind: WorkflowDefinitionsKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID})
+	response, err := c.rpc.Command(ctx, controlplanerpc.CommandRequest(ctx, &pb.CommandRequest{Kind: WorkflowDefinitionsKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID}))
 	if err != nil {
 		return 0, controlplanerpc.ClientError(err)
 	}
@@ -98,7 +98,7 @@ func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Conte
 }
 
 func (c *Client) WorkflowExecutionSettings(ctx context.Context) (workflow.ExecutionSettings, int64, error) {
-	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowExecutionSettingsKind})
+	response, err := c.rpc.Query(ctx, controlplanerpc.QueryRequest(ctx, WorkflowExecutionSettingsKind))
 	if err != nil {
 		return workflow.ExecutionSettings{}, 0, controlplanerpc.ClientError(err)
 	}
@@ -114,7 +114,7 @@ func (c *Client) ReplaceWorkflowExecutionSettings(ctx context.Context, settings 
 	if err != nil {
 		return 0, err
 	}
-	response, err := c.rpc.Command(ctx, &pb.CommandRequest{Kind: WorkflowExecutionSettingsKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID})
+	response, err := c.rpc.Command(ctx, controlplanerpc.CommandRequest(ctx, &pb.CommandRequest{Kind: WorkflowExecutionSettingsKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID}))
 	if err != nil {
 		return 0, controlplanerpc.ClientError(err)
 	}
@@ -122,7 +122,7 @@ func (c *Client) ReplaceWorkflowExecutionSettings(ctx context.Context, settings 
 }
 
 func (c *Client) WatchWorkflowExecutionSettings(ctx context.Context, afterVersion int64) (<-chan AppliedSettings, error) {
-	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: WorkflowExecutionSettingsKind, AfterVersion: afterVersion})
+	stream, err := c.rpc.Watch(ctx, controlplanerpc.WatchRequest(ctx, WorkflowExecutionSettingsKind, afterVersion))
 	if err != nil {
 		return nil, controlplanerpc.ClientError(err)
 	}
@@ -152,7 +152,7 @@ type AppliedResource struct {
 // refused to decode -- the store answered with that version, and resuming
 // before it would re-offer it on every reconnect.
 func (c *Client) WatchResource(ctx context.Context, kind string, afterVersion int64) (<-chan AppliedResource, error) {
-	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: kind, AfterVersion: afterVersion})
+	stream, err := c.rpc.Watch(ctx, controlplanerpc.WatchRequest(ctx, kind, afterVersion))
 	if err != nil {
 		return nil, controlplanerpc.ClientError(err)
 	}
@@ -168,7 +168,7 @@ type AppliedSettings struct {
 }
 
 func (c *Client) Personas(ctx context.Context) (agent.PersonaCollection, int64, error) {
-	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: PersonasKind})
+	response, err := c.rpc.Query(ctx, controlplanerpc.QueryRequest(ctx, PersonasKind))
 	if err != nil {
 		return agent.PersonaCollection{}, 0, controlplanerpc.ClientError(err)
 	}
@@ -183,7 +183,7 @@ type AppliedPersonas struct {
 }
 
 func (c *Client) WatchPersonas(ctx context.Context, afterVersion int64) (<-chan AppliedPersonas, error) {
-	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: PersonasKind, AfterVersion: afterVersion})
+	stream, err := c.rpc.Watch(ctx, controlplanerpc.WatchRequest(ctx, PersonasKind, afterVersion))
 	if err != nil {
 		return nil, controlplanerpc.ClientError(err)
 	}
@@ -241,7 +241,7 @@ func sendUpdate[T any](ctx context.Context, out chan<- T, update T) bool {
 }
 
 func (c *Client) Schedules(ctx context.Context) ([]scheduling.JobSpec, int64, error) {
-	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: SchedulesKind})
+	response, err := c.rpc.Query(ctx, controlplanerpc.QueryRequest(ctx, SchedulesKind))
 	if err != nil {
 		return nil, 0, controlplanerpc.ClientError(err)
 	}
@@ -257,7 +257,7 @@ func (c *Client) ReplaceSchedules(ctx context.Context, jobs []scheduling.JobSpec
 	if err != nil {
 		return 0, err
 	}
-	response, err := c.rpc.Command(ctx, &pb.CommandRequest{Kind: SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID})
+	response, err := c.rpc.Command(ctx, controlplanerpc.CommandRequest(ctx, &pb.CommandRequest{Kind: SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: expectedVersion, Actor: actor, Source: source, RequestId: requestID}))
 	if err != nil {
 		return 0, controlplanerpc.ClientError(err)
 	}

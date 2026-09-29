@@ -30,6 +30,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 // The audit identity every offline rollback records. A rollback is one more
@@ -146,7 +147,7 @@ func replayRevision(ctx context.Context, resources controlplane.ResourceStore, o
 	if err != nil {
 		return "", err
 	}
-	replaced, err := server.Command(ctx, &pb.CommandRequest{
+	replaced, err := server.Command(ctx, controlplanerpc.CommandRequest(ctx, &pb.CommandRequest{
 		Kind:            options.Kind,
 		Command:         "replace",
 		ValueJson:       revision.Value,
@@ -154,7 +155,7 @@ func replayRevision(ctx context.Context, resources controlplane.ResourceStore, o
 		Actor:           OfflineRollbackActor,
 		Source:          OfflineRollbackSource,
 		RequestId:       fmt.Sprintf("recovery-rollback-%s-%d", options.Kind, time.Now().UTC().UnixNano()),
-	})
+	}))
 	if err != nil {
 		return "", fmt.Errorf("replay %s at revision %d: %w", options.Kind, revision.Version, err)
 	}

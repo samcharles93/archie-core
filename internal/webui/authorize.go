@@ -84,7 +84,10 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		h.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+		// The org the request acts in is the principal's, attached on the same
+		// context the handler receives so every control-plane call downstream
+		// inherits it (org.OrgFromContext).
+		h.ServeHTTP(w, r.WithContext(org.WithOrg(WithPrincipal(r.Context(), principal), principal.Org)))
 	})
 }
 
