@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,6 +26,9 @@ func NewResources(pool *pgxpool.Pool) *Resources {
 }
 
 func (s *Resources) Resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error) {
+	if err := checkResourceKey(orgID, kind); err != nil {
+		return storecontract.Resource{}, err
+	}
 	resource, err := postgresdb.New(s.pool).ResourceByKind(ctx, postgresdb.ResourceByKindParams{OrgID: orgID, Kind: kind})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return storecontract.Resource{}, storecontract.ErrResourceNotFound
@@ -36,6 +40,9 @@ func (s *Resources) Resource(ctx context.Context, orgID, kind string) (storecont
 }
 
 func (s *Resources) ResourceHistory(ctx context.Context, orgID, kind string, limit int) ([]storecontract.Resource, error) {
+	if err := checkResourceKey(orgID, kind); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		limit = 0
 	}
@@ -53,6 +60,17 @@ func (s *Resources) ResourceHistory(ctx context.Context, orgID, kind string, lim
 		))
 	}
 	return resources, nil
+}
+
+// checkResourceKey refuses a key the audit record key could not tell apart from
+// another: an empty org or kind, or either containing the "/" that joins them
+// in storecontract.ResourceAuditKey. A forgotten org fails here rather than
+// reading as an absent resource.
+func checkResourceKey(orgID, kind string) error {
+	if orgID == "" || kind == "" || strings.Contains(orgID, "/") || strings.Contains(kind, "/") {
+		return fmt.Errorf("invalid resource key: org %q, kind %q", orgID, kind)
+	}
+	return nil
 }
 
 // Audit returns the field-level audit of the named records of one table,
@@ -90,8 +108,8 @@ func (s *Resources) Audit(ctx context.Context, table string, keys []string, limi
 // caller cannot tell the difference, and a kind can stay gone while every
 // process believes it holds a value.
 func (s *Resources) PutResource(ctx context.Context, write storecontract.ResourceWrite) (_ storecontract.Resource, retErr error) {
-	if write.OrgID == "" {
-		return storecontract.Resource{}, errors.New("resource write names no org")
+	if err := checkResourceKey(write.OrgID, write.Kind); err != nil {
+		return storecontract.Resource{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

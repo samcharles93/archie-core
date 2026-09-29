@@ -523,10 +523,18 @@ func TestResourcesAreIndependentPerOrg(t *testing.T) {
 	}
 }
 
-func TestPutResourceRefusesNoOrg(t *testing.T) {
-	if _, err := resourcesFor(t).PutResource(t.Context(), storecontract.ResourceWrite{
-		Kind: "settings", Value: []byte(`{}`), Actor: "operator", Source: "test", RequestID: "r",
-	}); err == nil {
-		t.Fatal("a write naming no org was accepted")
+// A key the audit record key could not tell apart from another, or one naming
+// no org, is refused on both paths rather than reading as an absent resource.
+func TestResourceKeysAreValidated(t *testing.T) {
+	resources := resourcesFor(t)
+	for _, key := range [][2]string{{"", "settings"}, {"acme", ""}, {"a/b", "settings"}, {"a", "b/settings"}} {
+		if _, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+			OrgID: key[0], Kind: key[1], Value: []byte(`{}`), Actor: "operator", Source: "test", RequestID: "r",
+		}); err == nil {
+			t.Errorf("write %q/%q accepted", key[0], key[1])
+		}
+		if _, err := resources.Resource(t.Context(), key[0], key[1]); errors.Is(err, storecontract.ErrResourceNotFound) || err == nil {
+			t.Errorf("read %q/%q = %v, want a key error, not not-found", key[0], key[1], err)
+		}
 	}
 }
