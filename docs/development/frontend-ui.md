@@ -31,6 +31,50 @@ should look.
    after visiting Settings and Logs: the UI process serves HTTP/1.1 and six
    persistent streams can starve every later browser request.
 
+## Testing the dashboard
+
+Authority: the runner itself is `ui/package.json`'s `test` script: `node --test
+--experimental-strip-types test/*.test.ts` over `ui/test/*.test.ts`. It runs
+pure TypeScript modules with `node`'s type stripping — no SFC loader, no DOM,
+no second dependency beyond what the app already carries. That is the standard,
+and a decision record for when it is deliberately not enough:
+
+- **Test archie's logic in a module; leave SFC wiring alone.** Wire shapes,
+  draft state, copy conditions, filters and payload building live in plain
+  `.ts` files beside the components and are tested in `ui/test/`. Components
+  stay thin, so there is normally nothing in an SFC that is archie logic.
+- **Installed primitives are upstream-tested, not re-tested here.**
+  `reka-ui` (2.10.5 here) maintains colocated tests per component in its own
+  repo (Vitest/jsdom + axe: Switch, TagsInput, NumberField, Select, the
+  arrow-navigation composables). The npm package ships none of those files, so
+  this coverage is inherited through the version bound, not the tarball —
+  `grep -l test node_modules/reka-ui` finds nothing. Duplicating them as local
+  mount tests would test a dependency.
+- **A `.vue` import cannot run under the module runner.** `node --test` fails
+  such a module with `ERR_UNKNOWN_FILE_EXTENSION: .vue` and the runner has no
+  built-in loader for SFCs. A file under `ui/test/` that imports a `.vue` is
+  therefore a broken test, not a weak one.
+- **If a DOM mount harness is ever needed** (a page-level accessibility
+  contract, cross-component interaction, focus behaviour): `happy-dom` +
+  `@vue/test-utils` + `vitest` scoped to a separate DOM test glob, keeping the
+  module runner for everything else. Measured on the ui tree (vitest 5.0.2,
+  happy-dom 20.14.5, @vue/test-utils 2.5.1): they add 24 top-level
+  `node_modules` entries and 27 MB on a 296 MB install, a working 2-test mount
+  suite (role=radiogroup vs role=switch, aria-label, click activation against
+  the real SFCs) runs in 1.2 s on top of the current 0.5 s module suite, and
+  `vue-tsc` (7.4 s) dominates `task test:ui` either way. The single-runner
+  alternative (absorbing the existing suite into vitest) was measured
+  infeasible as-is: all 29 existing files import `node:test`, which vitest
+  cannot collect ("No test suite found in file" for every one), so it would be
+  a rewrite of the whole suite, and its runtime was not measured. Nothing in
+  `ui/dist` or CI changes either way; happy-dom is pure JS, no browser binary.
+- **What the module standard does not verify:** whether a call site passes an
+  `aria-label` or which `v-if` branch shows. Those live in SFC templates and
+  are only visible with a mount. If a page's accessible-name wiring is the
+  risk, say so in the page's task and reach for the harness decision above
+  rather than quietly growing mount tests. Never suppress a lint rule or a
+  test to keep SFC behaviour out of the gate.
+
 ## Adding an API route
 
 1. The handler goes in the `internal/webui/api_<concern>.go` file for its
