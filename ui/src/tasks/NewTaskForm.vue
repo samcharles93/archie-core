@@ -20,6 +20,11 @@ import { api } from "@/lib/api";
 import { delivered } from "@/lib/delivered";
 import { useIdentitiesStore } from "@/stores/identities";
 import type { WorkflowDefinition, WorkflowStats } from "@/workflows/workflow-rows";
+import {
+  declaredInputs,
+  inputValues,
+  missingRequiredInputs,
+} from "@/workflows/work-request";
 
 /** Starting work enters Archie's normal admitted task queue, not a side door. */
 const emit = defineEmits<{ started: [taskId: number]; cancel: [] }>();
@@ -52,10 +57,17 @@ const workflow = ref("");
 const title = ref("");
 const instructions = ref("");
 const identity = ref("");
+// One text field per declared input, by input name: the chosen workflow's
+// declaration decides what is rendered and what the request carries.
+const inputText = ref<Record<string, string>>({});
 watchEffect(() => {
   if (!workflow.value && definitions.value[0]) workflow.value = definitions.value[0].id;
   if (!identity.value && actors.value[0]) identity.value = actors.value[0].id;
 });
+
+const selected = computed(() => definitions.value.find((d) => d.id === workflow.value));
+const declared = computed(() => declaredInputs(selected.value));
+const missing = computed(() => missingRequiredInputs(declared.value, inputText.value));
 
 const statFor = (id: string) => stats.value.find((s) => s.workflow === id);
 const identityName = computed(() => actors.value.find((a) => a.id === identity.value)?.display_name ?? "nobody");
@@ -63,7 +75,9 @@ const identityName = computed(() => actors.value.find((a) => a.id === identity.v
 const submitting = ref(false);
 const error = ref("");
 const ready = computed(
-  () => !!(repository.value.trim() && workflow.value && title.value.trim() && instructions.value.trim() && identity.value),
+  () =>
+    !!(repository.value.trim() && workflow.value && title.value.trim() && instructions.value.trim() && identity.value) &&
+    missing.value.length === 0,
 );
 async function submit() {
   if (!ready.value || submitting.value) return;
@@ -76,6 +90,7 @@ async function submit() {
       workflow: workflow.value,
       title: title.value.trim(),
       instructions: instructions.value,
+      inputs: inputValues(declared.value, inputText.value),
     });
     emit("started", result.task_id);
   } catch (err) {
@@ -126,6 +141,27 @@ async function submit() {
         </RadioGroupItem>
       </RadioGroupRoot>
       <p v-if="!definitions.length && !loadError" class="text-xs text-fg-subtle">No enabled workflows.</p>
+    </div>
+
+    <!-- One field per input the chosen workflow declares: pr-review cannot run
+         without its pr_number, and the server refuses a request that does not
+         set what the workflow declares. The declared type is the hint, so the
+         value is typed the way the workflow reads it. -->
+    <div v-if="declared.length" class="grid gap-3">
+      <div v-for="field in declared" :key="field.name" class="grid gap-1.5">
+        <label :for="`${uid}-input-${field.name}`" class="text-[13px] font-medium">
+          <span class="font-mono">{{ field.name }}</span>
+          <span v-if="field.required" class="text-fg-subtle"> · required</span>
+        </label>
+        <Input
+          :id="`${uid}-input-${field.name}`"
+          v-model="inputText[field.name]"
+          :type="field.type === 'number' ? 'number' : 'text'"
+          class="font-mono"
+          :required="field.required"
+        />
+        <p class="text-xs text-fg-subtle">{{ field.type }}</p>
+      </div>
     </div>
 
     <div class="grid gap-1.5">

@@ -26,6 +26,11 @@ export interface WorkflowDefinition {
   name?: string;
   origin?: string;
   enabled?: boolean;
+  /** The inputs the workflow declares, by name. A workflow that declares none
+   * is started without any, which is every workflow but pr-review today. */
+  inputs?: Record<string, { type: string; required?: boolean }>;
+  /** none, optional or required; a workflow that declares none needs a repository. */
+  repository?: string;
 }
 
 /** One table row: a definition, its statistics, or both. */

@@ -50,6 +50,12 @@ type workRequest struct {
 	Workflow     string `json:"workflow"`
 	Title        string `json:"title"`
 	Instructions string `json:"instructions"`
+	// Inputs assigns the inputs the named workflow declares -- pr-review's
+	// pr_number, for instance. The handler checks the assignment against the
+	// declaration before the task is admitted, so a request that could only
+	// fail at the workflow's first stage is refused here instead
+	// (archie-core-06nq).
+	Inputs map[string]any `json:"inputs"`
 }
 
 func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
@@ -85,18 +91,22 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "identity, repository, workflow, title, and instructions are required", http.StatusBadRequest)
 		return
 	}
-	available, err := s.hasWorkflow(r.Context(), request.Workflow)
+	iface, enabled, err := s.enabledWorkflowInterface(r.Context(), request.Workflow)
 	if err != nil {
 		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if !available {
+	if !enabled {
 		http.Error(w, "workflow is not enabled", http.StatusConflict)
+		return
+	}
+	if err := iface.CheckInputs(request.Inputs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	taskID, err := s.WorkRequests.CreateTask(r.Context(), messaging.SpawnRequest{
 		Identity: request.Identity, Repo: request.Repository, Workflow: request.Workflow,
-		Title: request.Title, Body: request.Instructions,
+		Title: request.Title, Body: request.Instructions, Inputs: request.Inputs,
 	})
 	if err != nil {
 		http.Error(w, "work request rejected", http.StatusBadRequest)
@@ -107,16 +117,26 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "task_id": taskID})
 }
 
-// hasWorkflow reports whether workflow id is defined and enabled for the
-// default org, the org every dashboard caller acts in until access resolves
-// a caller's own.
-func (s *Server) hasWorkflow(ctx context.Context, id string) (bool, error) {
-	found, err := s.hasWorkflowDefinition(ctx, id)
+// enabledWorkflowInterface returns the interface workflow id declares, and
+// whether it is defined and enabled for the default org -- the org every
+// dashboard caller acts in until access resolves a caller's own. The interface
+// is what the work-request handler checks a request's inputs against, so a task
+// whose workflow declaration the request cannot satisfy is refused before it is
+// admitted.
+func (s *Server) enabledWorkflowInterface(ctx context.Context, id string) (task.WorkflowInterface, bool, error) {
+	entry, found, err := s.workflowEntry(ctx, id)
 	if err != nil || !found {
-		return false, err
+		return task.WorkflowInterface{}, false, err
 	}
 	enablement, _, err := s.workflowEnablement(ctx)
-	return enablement.Enabled(org.DefaultOrgID, id), err
+	if err != nil || !enablement.Enabled(org.DefaultOrgID, id) {
+		return task.WorkflowInterface{}, false, err
+	}
+	iface, err := task.ParseWorkflowInterface(entry.YAML)
+	if err != nil {
+		return task.WorkflowInterface{}, false, err
+	}
+	return iface, true, nil
 }
 
 func (s *Server) hasWorkflowDefinition(ctx context.Context, id string) (bool, error) {
