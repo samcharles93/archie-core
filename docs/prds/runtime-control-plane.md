@@ -45,6 +45,14 @@ version being edited. The API layer sets the actor; the request body cannot.
 The server validates the change, then writes it with its audit record. It rejects
 edits to an old version.
 
+The request ID is the write's idempotency key, and it is scoped per org and
+per kind, never global. The key is `(org_id, kind, request_id)` — the unique
+index `idx_resource_history_org_kind_request` (migration `0021_resources_per_org.sql`)
+— so replaying a request ID is the same org's prior write of the same kind, and
+a request ID reused across orgs or across kinds is a separate write. This is the
+same scoping as the task idempotency key `org/identity/owner/repo/number`
+(`docs/prds/orgs-and-access.md`).
+
 ## API
 
 The API has four operations:
