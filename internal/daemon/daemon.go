@@ -1419,6 +1419,16 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		}
 		return dir, true
 	}
+	// A task that continues an already-open PR branch -- the remediate
+	// workflow -- resumes that branch's remote tip instead of resetting onto
+	// base. Preparing one the ordinary way discarded the commits the implement
+	// run had already pushed, so the agent remediated a PR from a tree that no
+	// longer contained it. This runs before Acquire, because the daemon holds
+	// the forge credential that fetches the branch and the container must find
+	// the PR's work already in place.
+	if continuesOpenPRBranch(task) {
+		return d.resumePRBranchWorkspace(ctx, task, trees)
+	}
 	// Every task gets an independent full clone. The former
 	// PreparePersistent path shared objects with a per-repo bare cache;
 	// go-git has no --dissociate, so a shared cache would stay a live
@@ -1433,6 +1443,41 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 	task.Branch = branch
 	if err := d.Store.Update(ctx, task); err != nil {
 		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
+	}
+	return dir, true
+}
+
+// continuesOpenPRBranch reports whether the task must continue a branch archie
+// already pushed rather than start from base. Only the remediate workflow does:
+// it addresses review feedback on an open archie-owned PR and reuses that PR's
+// branch (docs/prds/pr-review-remediation.md decision 4), while every other
+// workflow starts fresh work. The workflow is read from the task row, where the
+// reaction consumer wrote it before queueing the run -- a decision about this
+// task that no later routing may overturn.
+func continuesOpenPRBranch(task *workflow.Task) bool {
+	return task.Workflow == "remediate"
+}
+
+// resumePRBranchWorkspace prepares a task's worktree on the branch its row
+// names, never on a branch recomputed from the title or labels: the PR was
+// opened from the persisted branch, and a retitled issue or relabelled task
+// would otherwise name a branch that does not exist. It fails closed -- there
+// is deliberately no fallback to preparing base, because that fallback is the
+// defect this route removes.
+func (d *Daemon) resumePRBranchWorkspace(ctx context.Context, task *workflow.Task, trees *worktree.Manager) (string, bool) {
+	if task.Branch == "" {
+		// A remediation task is queued against the branch its implement run
+		// pushed, so an empty branch is a dispatch bug upstream and no retry
+		// can fix it.
+		d.Log.Error("remediate task has no persisted branch", "task", task.ID)
+		d.parkRunningTask(ctx, task.ID, "worktree resume failed: remediate task has no branch to resume", taskstate.ParkNeedsHuman)
+		return "", false
+	}
+	dir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+	if err := trees.Resume(ctx, dir, task.Branch); err != nil {
+		d.Log.Error("worktree resume failed", "task", task.ID, "branch", task.Branch, "err", err)
+		d.parkRunningTask(ctx, task.ID, "worktree resume failed: "+err.Error(), taskstate.ParkTransient)
+		return "", false
 	}
 	return dir, true
 }
