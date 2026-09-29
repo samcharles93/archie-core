@@ -66,6 +66,14 @@ packages the moment it merged; formatting and lint drifted the same way, and onl
 the repository gate saw it. Both failures are paid for inside the lane when the
 gate runs the build and the linter, and at merge when it does not.
 
+Gate the **candidate** before `main` moves. Check the merge candidate out
+detached — or gate the lane branch — and advance the ref only on a green result:
+gating after a fast-forward lands the failure on the branch of record and leaves
+only fix-forward or reset as exits. The lane brief must name the linter as well,
+`golangci-lint run ./<package>/...` beside the scoped tests, because a scoped
+test run cannot see a complexity or style limit and `task check` is where that
+failure otherwise surfaces — once it is already merged.
+
 A copy of the script under `.pi/control-plane-run/` is that run's disposable
 state and may lag the skill's version. The skill's copy is the one to trust.
 
@@ -126,6 +134,36 @@ ln -sfn /work/apps/archie-core/.pi/agents /work/apps/cp-<lane>/.pi/agents
 `.pi/` is gitignored, so the worktree stays clean and the symlink cannot reach a
 commit. This costs an hour to rediscover.
 
+## Peer sessions over intercom
+
+A fleet here can also run as **sibling sessions** coordinated over `intercom` —
+a peer per lane — rather than pi-subagents children under one orchestrator.
+These facts are peer-specific, and each has cost a real run.
+
+- **Name the channel in the brief.** A peer's knowledge of how to report lives in
+  its context, not its configuration. Write "report to <peer> over intercom" as
+  an instruction; a convention that is only assumed evaporates.
+- **A compaction erases conventions, not just facts.** A peer that compacts
+  mid-task keeps its task state and loses its transport: it reverts to
+  addressing its operator, and the coordinator reads that as idleness or death.
+  **Peer silence is not evidence of either** — ask for a one-line ack over the
+  channel before concluding anything. Re-priming restores the channel; the
+  transport itself survives compaction intact.
+- **Match the task's shape to the session's window, not its strength.** A sweep
+  over hundreds of items needs the largest window available; a bounded hard
+  artifact (a PRD, a conformance review, a design decision) belongs in a smaller,
+  reasoning-strong session. A wide task in a small window stalls the task — too
+  wide is not the same as too hard, and it is the coordinator's assignment error,
+  not the peer's failure.
+- **Checkpoint at ~70%, never compact mid-task.** A terse ledger sent to the
+  coordinator before the window fills survives; one reconstructed afterwards
+  loses exactly the identifiers — bead IDs, exact counts — that made it worth
+  having. Instruct every long-running peer to report and stop there.
+- **One writer per resource.** Exactly one session writes the tracker. Two
+  writers produce double-closes, contradictory verdicts, and counts nobody can
+  reconcile. When a sweep changes hands, the successor re-derives them rather
+  than inheriting the predecessor's ledger as fact.
+
 ## Traps worth carrying
 
 - **`touch` does not invalidate a Task source.** Task hashes file _content_, so a
@@ -147,6 +185,32 @@ build` still reports the binary up to date, shipping the old value. Tracked as
   scratch (`docs/prds/rules.jsonl`), editor state, and gate-written artifacts
   appear and vanish under a lane. Never chase, add, stage or commit them: a
   merge train's scope is its own lanes' files, and nothing else.
+
+## codegraph answers symbol questions cheaply
+
+The maintainer's `codegraph` MCP server indexes this repository. Prefer it to
+grep or whole-file reading for "who calls X", "is this dead", "what does this
+change touch": it enumerates call sites that a grep only summarises, and labels
+each caller's confidence so interface fan-out is not mistaken for direct calls.
+
+- **`pr_impact <base> <head>`** lists changed symbols with per-symbol caller and
+  test counts. Read `interface_dispatch` and the inferred tests alongside
+  `test_count`: a method reached through an interface reports a low direct test
+  count while many indirect tests reach it, and the compact line alone invites
+  the wrong conclusion.
+- **It is a derived cache.** `scip-go` and tree-sitter rebuild it, and a query
+  indexes the revisions it names, so a cold query is slow and losing the index
+  costs a rebuild rather than data. `list_repositories` reports the indexed
+  revision — compare it with the tree before trusting a default-revision answer.
+- **Stagger heavy queries.** Concurrent sessions share one instance, and
+  **name-based** `symbol_context` is what locks: it returns `database is locked`
+  or times out, while the same symbol **by id** returns immediately. Query
+  serially and retry rather than assuming a hang.
+- **Report problems one line at a time** in
+  `/work/apps/codegraph/data/feedback.jsonl` — one JSON object per line, keys
+  `date`, `repo`, `task`, `tools`, `helped`, `missed`, `wrong`, `slow`. A raw
+  newline inside a string makes the line invalid and breaks every reader; a
+  multi-line entry corrupted that file once. Validate, append, never rewrite.
 
 ## Tracker conventions
 
