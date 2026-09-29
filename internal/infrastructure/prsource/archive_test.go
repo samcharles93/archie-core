@@ -96,6 +96,36 @@ func TestExtractTarGzRefusesPathTraversal(t *testing.T) {
 	}
 }
 
+func TestExtractTarGzRefusesAnAbsoluteEntryPath(t *testing.T) {
+	data := buildTarGz(t, "", map[string]string{"/etc/passwd-clone": "evil"})
+	dest := t.TempDir()
+
+	if err := extractTarGz(bytes.NewReader(data), dest); err == nil {
+		t.Fatal("want an error for an absolute archive entry, not a silent write")
+	}
+}
+
+func TestExtractTarGzWritesNothingOutsideDestWhenAnEntryEscapes(t *testing.T) {
+	base := t.TempDir()
+	dest := filepath.Join(base, "snapshot")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Two entries with different top-level components keep the wrapper
+	// prefix empty, so the leading ".." is preserved rather than stripped.
+	data := buildTarGz(t, "", map[string]string{
+		"../escaped.txt": "evil",
+		"keep.txt":       "ok",
+	})
+
+	if err := extractTarGz(bytes.NewReader(data), dest); err == nil {
+		t.Fatal("want an error for an entry that escapes destDir")
+	}
+	if _, err := os.Stat(filepath.Join(base, "escaped.txt")); err == nil {
+		t.Fatal("an escaping entry must not be written outside destDir")
+	}
+}
+
 func TestExtractTarGzLeavesNoDotGit(t *testing.T) {
 	data := buildTarGz(t, "wrapper", map[string]string{
 		"a.go":           "package a\n",

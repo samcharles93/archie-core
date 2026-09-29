@@ -28,13 +28,18 @@ func extractTarGz(r io.Reader, destDir string) error {
 	}
 	defer gz.Close()
 
+	dest, err := filepath.Abs(destDir)
+	if err != nil {
+		return fmt.Errorf("prsource: resolve destination directory: %w", err)
+	}
+
 	tr := tar.NewReader(gz)
 	prefix, entries, err := planExtraction(tr)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if err := writeEntry(destDir, prefix, e); err != nil {
+		if err := writeEntry(dest, prefix, e); err != nil {
 			return err
 		}
 	}
@@ -96,8 +101,9 @@ func planExtraction(tr *tar.Reader) (prefix string, entries []tarEntry, err erro
 }
 
 // writeEntry writes one archive entry under destDir, with prefix (if any)
-// stripped from its name. Directories, regular files, and nothing else are
-// written: a symlink or device entry from an untrusted PR archive is
+// stripped from its name. destDir is the absolute destination directory
+// resolved by extractTarGz. Directories, regular files, and nothing else
+// are written: a symlink or device entry from an untrusted PR archive is
 // skipped rather than followed.
 func writeEntry(destDir, prefix string, e tarEntry) error {
 	name := path.Clean(filepath.ToSlash(e.header.Name))
@@ -118,9 +124,16 @@ func writeEntry(destDir, prefix string, e tarEntry) error {
 		return nil
 	}
 
+	// Refuse a name that is itself absolute, and one that escapes destDir
+	// through "..". The escape is checked on the joined target rather than
+	// on a relative path derived from it: filepath.Join folds a leading
+	// ".." away, so only the joined result catches a name like "../x".
+	if path.IsAbs(name) {
+		return fmt.Errorf("prsource: archive entry %q escapes the destination directory", e.header.Name)
+	}
 	target := filepath.Join(destDir, filepath.FromSlash(name))
-	rel, err := filepath.Rel(destDir, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	destRoot := strings.TrimSuffix(destDir, string(filepath.Separator)) + string(filepath.Separator)
+	if !strings.HasPrefix(target, destRoot) {
 		return fmt.Errorf("prsource: archive entry %q escapes the destination directory", e.header.Name)
 	}
 
