@@ -56,6 +56,50 @@ type chatMessageView struct {
 	From      string
 	Text      string
 	At        time.Time
+	// Tagged, alone among these fields: a transcript written before
+	// attachments persisted must keep the payload it has always had, so a
+	// message with no media omits the key rather than serving null.
+	Media []chatMediaView `json:"media,omitempty"`
+}
+
+// chatMediaView is one attachment a message carried, as the dashboard reads
+// it. The bytes are turn-scoped and are gone before a record is stored, so
+// this view carries only what survived persistence, and FileID is left out on
+// purpose: it is the platform's download handle, not an address, so handing
+// it to a browser only invites a fetch that cannot work. URL is present
+// exactly when the attachment itself carried one.
+type chatMediaView struct {
+	Type     string `json:"type"`
+	FileName string `json:"file_name,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
+	FileSize *int64 `json:"file_size,omitempty"`
+	Width    *int   `json:"width,omitempty"`
+	Height   *int   `json:"height,omitempty"`
+	Duration *int   `json:"duration,omitempty"`
+	URL      string `json:"url,omitempty"`
+}
+
+// chatMediaViews maps a message's stored attachments onto the transcript
+// view, keeping the descriptive fields a reader needs to know a file was
+// there.
+func chatMediaViews(media []messaging.MediaAttachment) []chatMediaView {
+	if len(media) == 0 {
+		return nil
+	}
+	views := make([]chatMediaView, 0, len(media))
+	for _, attachment := range media {
+		views = append(views, chatMediaView{
+			Type:     attachment.Type,
+			FileName: attachment.FileName,
+			MIMEType: attachment.MIMEType,
+			FileSize: attachment.FileSize,
+			Width:    attachment.Width,
+			Height:   attachment.Height,
+			Duration: attachment.Duration,
+			URL:      attachment.URL,
+		})
+	}
+	return views
 }
 
 type chatPersonaRequest struct {
@@ -189,6 +233,7 @@ func (s *Server) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		views = append(views, chatMessageView{
 			MessageID: string(message.ID), SourceID: message.SourceID,
 			From: message.Sender, Text: message.Text, At: message.At,
+			Media: chatMediaViews(message.Media),
 		})
 	}
 	writeJSON(w, views)
