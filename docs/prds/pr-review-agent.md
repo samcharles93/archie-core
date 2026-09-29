@@ -121,7 +121,11 @@ With `review.approve_before_post = true`, synthesis ends in
 `waiting_human`. The operator chooses which findings to post, rejects the
 review, or asks for a re-review with instructions. A re-review reruns phases
 3 to 8 with the instructions added to the lens and reviewer prompts, at most
-2 times. A review with no findings posts nothing and does not wait.
+2 times. A review with no findings posts nothing and does not wait. The gate
+belongs to the standalone `pr-review` workflow only; archie's own-PR stage list
+drops it, because a park there would end an implement run before its PR
+exists (`docs/prds/pr-review-operator-response.md`,
+"The gate is not reachable from archie's own PRs").
 
 ## Isolation
 
