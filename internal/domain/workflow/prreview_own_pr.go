@@ -104,6 +104,12 @@ func renderBlockingFindingsDetail(findings []prreview.ScoredFinding) string {
 // the outcome the PR's existence already earned -- the same best-effort
 // convention the deleted StagePostReviewComments followed.
 //
+// The operator-approval gate is deliberately not spliced in here: it belongs
+// to the standalone pr-review workflow, where an operator's response
+// re-reviews a pull request that already exists to post to. This trigger
+// reviews a change with no PR and no place to post yet, so a wait here would
+// end the implement run before its PR was opened (archie-core-7nst).
+//
 // This must run every decision stage from inside one Stage.Run body rather
 // than as separate Stage entries in the workflow's list: the engine ends a
 // run the instant any stage sets tc.Outcome (workflow.go's Run loop), so a
@@ -111,7 +117,7 @@ func renderBlockingFindingsDetail(findings []prreview.ScoredFinding) string {
 // spliced in as their own preceding stages -- OpenPR's own doc comment names
 // this exact pattern ("call this and then do so in the same stage").
 func StagePRReviewAndOpenPR(body func(*TaskContext) string) Stage {
-	return stagePRReviewAndOpenPR(prReviewDecisionStages(), body)
+	return stagePRReviewAndOpenPR(prReviewDecisionStages(false), body)
 }
 
 // stagePRReviewAndOpenPR is StagePRReviewAndOpenPR's implementation, taking
@@ -127,10 +133,8 @@ func stagePRReviewAndOpenPR(decisionStages []Stage, body func(*TaskContext) stri
 				return fmt.Errorf("pr-review (%s): %w", stage.Name, err)
 			}
 			if tc.Outcome.Status != "" {
-				// A decision stage ended the run itself (operator-approval's
-				// waiting_human, or a decision stage's own park). Honor it
-				// rather than proceed to open a PR the operator has not
-				// cleared yet.
+				// A decision stage ended the run itself. Honor it rather than
+				// proceed to open a PR the run has already decided against.
 				return nil
 			}
 		}

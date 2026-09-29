@@ -363,6 +363,10 @@ func (f *fakeForge) VerifyPush(ctx context.Context, owner, repo string) error { 
 // TestStageCommitPushClosesIssueWhenBuildNoChanges verifies that
 // StageCommitPush closes the issue with a comment when BuildNoChanges
 // is true, instead of trying to commit and failing.
+//
+// This is also the terminal half of the hazard archie-core-7nst describes: a
+// run re-entered against a worktree that already carries the change reaches
+// this path, and it must close the issue without ever opening a pull request.
 func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 	f := &fakeForge{}
 
@@ -388,6 +392,9 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 		t.Errorf("expected CloseIssue to be called once, got %d", f.closed)
 	} else {
 		t.Log("CloseIssue called (no changes needed)")
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("forge calls = %v, want none: a no-changes run closes the issue and opens no pull request", f.calls)
 	}
 	if tc.Outcome.Status != StatusCompleted {
 		t.Errorf("expected Outcome=Completed, got %s", tc.Outcome.Status)

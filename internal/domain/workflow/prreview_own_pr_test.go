@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 )
@@ -165,6 +167,92 @@ func TestLocalPRSourceReadsFromTheTasksOwnWorktree(t *testing.T) {
 	}
 	if headSHA != "" {
 		t.Errorf("headSHA = %q, want empty: fakeTrees does not implement changeStatsReader", headSHA)
+	}
+}
+
+// scriptedPRReviewPipeline answers every agent call the full decision
+// pipeline makes with the minimum its decoder accepts, ending with one
+// advisory (non-blocking) finding: enough for the pipeline to reach the point
+// of opening a PR, and nothing that parks on its own.
+func scriptedPRReviewPipeline() *concurrentAgentRunner {
+	return &concurrentAgentRunner{byStage: func(stage string) (agentexec.Result, error) {
+		switch {
+		case stage == "intake-ai-score":
+			return captureResult("score_ai_generated", map[string]any{"confidence": 0.1}), nil
+		case strings.HasPrefix(stage, "lens-"):
+			return captureResult("propose_dimensions", map[string]any{"dimensions": []map[string]any{{
+				"name": "defect", "prompt": "review main.go", "target_files": []string{"main.go"}, "priority": 1.0,
+			}}}), nil
+		case strings.HasPrefix(stage, "reviewer-"):
+			return captureResult("report_findings", map[string]any{"findings": []map[string]any{{
+				"file": "main.go", "line_start": 1, "severity": "important", "title": "defect",
+				"body": "broken", "evidence": "package main", "confidence": 0.9,
+			}}}), nil
+		case stage == "evidence-verifier":
+			return captureResult("verify_findings", map[string]any{"verdicts": []map[string]any{{"index": 0, "supported": true}}}), nil
+		case stage == "adversary":
+			return captureResult("adversary_verdicts", map[string]any{"verdicts": []map[string]any{{"index": 0, "verdict": "confirmed"}}}), nil
+		case stage == "consistency":
+			return captureResult("report_findings", map[string]any{"findings": []any{}}), nil
+		case stage == "merge-gate":
+			return captureResult("classify_blocking", map[string]any{"blocking": false}), nil
+		case stage == "polish":
+			return captureResult("polish", map[string]any{"body": "tightened"}), nil
+		default:
+			return passedResult("phase complete"), nil
+		}
+	}}
+}
+
+// TestStagePRReviewAndOpenPRDoesNotParkOnOperatorApproval is the regression
+// test for archie-core-7nst. The own-PR trigger splices the pr-review
+// decision stages into the implement workflow before it opens its PR, and
+// with review.approve_before_post set the operator-approval gate used to end
+// that run in waiting_human with no PR in existence. Approving such a park
+// re-runs the whole implement workflow against a worktree that already
+// carries the change; a builder that then finds nothing to do makes
+// StageCommitPush close the issue, so the run completes and the PR is never
+// opened. The gate belongs to the standalone pipeline only.
+func TestStagePRReviewAndOpenPRDoesNotParkOnOperatorApproval(t *testing.T) {
+	tc, forge := ownPRTaskContext(t)
+	tc.Task.Workflow = "implement"
+	tc.Cfg.Review.ApproveBeforePost = true
+	tc.Cfg.Models = map[string]string{"review": "provider/review", "classification": "provider/classification"}
+	tc.Agent = scriptedPRReviewPipeline()
+
+	if err := StagePRReviewAndOpenPR(implementPRBody).Run(context.Background(), tc); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+	if tc.Outcome.Status == StatusWaitingHuman {
+		t.Fatalf("outcome = %q: the own-PR splice must not park on the operator-approval gate, there is no PR to post to yet", tc.Outcome.Status)
+	}
+	if tc.Outcome.Status != StatusPROpen {
+		t.Fatalf("outcome = %q, want %q", tc.Outcome.Status, StatusPROpen)
+	}
+	if forge.prNumber == 0 {
+		t.Fatal("no PR was opened")
+	}
+}
+
+// TestPRReviewWorkflowStillParksOnOperatorApproval is the other half of the
+// archie-core-7nst fix: the gate is dropped from the own-PR splice, not from
+// the pipeline. The standalone pr-review workflow still waits for the
+// operator before it posts and before its merge gate runs.
+func TestPRReviewWorkflowStillParksOnOperatorApproval(t *testing.T) {
+	tc := baseTaskContext(t)
+	tc.Cfg.Review.ApproveBeforePost = true
+	tc.PRSource = &fakePRSource{diff: smallDiff, files: map[string]string{"main.go": "package main\n"}}
+	tc.Agent = scriptedPRReviewPipeline()
+	forge := &fakeForge{}
+	tc.Forge = forge
+
+	Run(context.Background(), PRReview(), tc)
+
+	if tc.Outcome.Status != StatusWaitingHuman {
+		t.Fatalf("outcome = %q, want %q: the standalone pipeline must still wait for the operator", tc.Outcome.Status, StatusWaitingHuman)
+	}
+	if len(forge.calls) != 0 || forge.reviewCalls != 0 {
+		t.Errorf("forge calls = %v (reviews %d), want none: nothing posts before the operator responds", forge.calls, forge.reviewCalls)
 	}
 }
 
