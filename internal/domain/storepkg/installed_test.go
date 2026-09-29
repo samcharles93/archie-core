@@ -57,6 +57,17 @@ func (s *fakeInstalledStore) Remove(_ context.Context, org, name string) error {
 	return nil
 }
 
+func (s *fakeInstalledStore) Accept(_ context.Context, org, name string, authority Authority) error {
+	record, ok := s.records[org+"/"+name]
+	if !ok {
+		return ErrNotFound
+	}
+	accepted := authority
+	record.AcceptedAuthority = &accepted
+	s.records[org+"/"+name] = record
+	return nil
+}
+
 func TestServiceInstall(t *testing.T) {
 	ctx := context.Background()
 	valid, err := Decode(strings.NewReader(validDescriptor))
@@ -99,6 +110,73 @@ func TestServiceInstall(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServiceAcceptPackageAuthority(t *testing.T) {
+	ctx := context.Background()
+	declared, err := Decode(strings.NewReader(validDescriptor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared.Authority = Authority{ForgePermissions: []string{"read", "comment"}, Tools: []string{"shell"}}
+	declared.Requires = nil
+	install := func(t *testing.T) (Service, *fakeInstalledStore) {
+		t.Helper()
+		store := &fakeInstalledStore{records: map[string]Installed{}}
+		svc := Service{Registry: &fakeRegistry{descriptor: declared}, Store: store}
+		if _, err := svc.Install(ctx, "org-a", "review", "localhost:5000/review", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != nil {
+			t.Fatal(err)
+		}
+		return svc, store
+	}
+	t.Run("records the accepted authority against the pin", func(t *testing.T) {
+		svc, store := install(t)
+		accepted := Authority{ForgePermissions: []string{"read"}}
+		record, err := svc.AcceptPackageAuthority(ctx, "org-a", "review", accepted)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.AcceptedAuthority == nil || !record.AcceptedAuthority.Covers(accepted) {
+			t.Fatalf("accepted record = %#v", record.AcceptedAuthority)
+		}
+		stored, err := store.Get(ctx, "org-a", "review")
+		if err != nil || stored.AcceptedAuthority == nil || !stored.AcceptedAuthority.Covers(accepted) {
+			t.Fatalf("stored record = %#v, %v", stored.AcceptedAuthority, err)
+		}
+		// The acceptance record is the bound the package is later checked
+		// against: the operator accepted a narrowed set, so the package's full
+		// declaration now exceeds the accepted authority.
+		if record.AcceptedAuthority.Covers(declared.Authority) {
+			t.Fatal("accepted record covers authority the operator did not accept")
+		}
+	})
+	t.Run("refuses grants the package does not declare", func(t *testing.T) {
+		svc, store := install(t)
+		_, err := svc.AcceptPackageAuthority(ctx, "org-a", "review", Authority{EgressHosts: []string{"internal.invalid"}})
+		if !errors.Is(err, ErrAuthorityNotDeclared) {
+			t.Fatalf("undeclared grant error = %v", err)
+		}
+		stored, err := store.Get(ctx, "org-a", "review")
+		if err != nil || stored.AcceptedAuthority != nil {
+			t.Fatalf("refused acceptance changed the record: %#v, %v", stored.AcceptedAuthority, err)
+		}
+	})
+	t.Run("refuses an acceptance nothing installed", func(t *testing.T) {
+		svc, _ := install(t)
+		if _, err := svc.AcceptPackageAuthority(ctx, "org-a", "missing", Authority{}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("unknown package error = %v", err)
+		}
+	})
+	t.Run("rejects an invalid acceptance", func(t *testing.T) {
+		svc, store := install(t)
+		if _, err := svc.AcceptPackageAuthority(ctx, "org-a", "review", Authority{ForgePermissions: []string{"admin"}}); err == nil {
+			t.Fatal("invalid forge permission accepted")
+		}
+		stored, err := store.Get(ctx, "org-a", "review")
+		if err != nil || stored.AcceptedAuthority != nil {
+			t.Fatalf("rejected acceptance changed the record: %#v, %v", stored.AcceptedAuthority, err)
+		}
+	})
 }
 
 func TestServiceInstallRequiresPinnedDependency(t *testing.T) {
