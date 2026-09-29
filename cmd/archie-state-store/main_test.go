@@ -338,6 +338,7 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
+	t.Parallel()
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeConfigWithServiceListen(t, dir)
@@ -453,6 +454,7 @@ func TestStateStoreRealProcessDeadline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
+	t.Parallel()
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
@@ -479,6 +481,7 @@ func TestStateStoreRealProcessRestartRecovery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
+	t.Parallel()
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
@@ -525,6 +528,7 @@ func TestStateStoreRealProcessTokenProtectedCaptureStream(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
+	t.Parallel()
 	const token = "operator-secret-token"
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
@@ -572,6 +576,7 @@ func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
+	t.Parallel()
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
