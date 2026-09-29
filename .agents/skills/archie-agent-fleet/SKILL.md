@@ -181,6 +181,10 @@ build` still reports the binary up to date, shipping the old value. Tracked as
   reaches, or changes a wire type, passes its own gate and fails
   `task check` on a missing `tools/go.sum` entry or a stale schema. Such a
   lane runs `go -C tools mod tidy` and `task docs:generate` and commits both.
+  Adding or editing a page under `docs/` — a PRD included — changes
+  `docs/data/generated/dev-docs.json`, which gains or loses a page: regenerate it
+  and commit it in the same commit, or `docs:artifact:check` fails. That failure
+  lands on `main`, not in the lane, if the ref moves first.
 - **Untracked files in the shared checkout are other sessions'.** prdlint
   scratch (`docs/prds/rules.jsonl`), editor state, and gate-written artifacts
   appear and vanish under a lane. Never chase, add, stage or commit them: a
