@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 )
 
 // TestUnmapErrorPreservesContextIdentity pins the §6 deadline contract that
@@ -86,6 +87,7 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 		{name: "already dispatched", store: storecontract.ErrAlreadyDispatched, rehyd: storecontract.ErrAlreadyDispatched},
 		{name: "source not found", store: storecontract.ErrSourceNotFound, rehyd: storecontract.ErrSourceNotFound},
 		{name: "source path taken", store: storecontract.ErrSourcePathTaken, rehyd: storecontract.ErrSourcePathTaken},
+		{name: "package authority not declared", store: storepkg.ErrAuthorityNotDeclared, rehyd: storepkg.ErrAuthorityNotDeclared},
 		{name: "source signing stale", store: storecontract.ErrSourceSigningStale, rehyd: storecontract.ErrSourceSigningStale},
 	}
 	for _, tt := range tests {

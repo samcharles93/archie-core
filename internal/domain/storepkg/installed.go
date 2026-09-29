@@ -11,6 +11,11 @@ var (
 	ErrNotFound  = errors.New("store package not found")
 	ErrInstalled = errors.New("store package already installed")
 	ErrRequired  = errors.New("store package is required by another installed package")
+	// ErrAuthorityNotDeclared: the operator asked to accept authority the
+	// package itself does not declare, which is not an acceptance of that
+	// package. Acceptance records the package's own declared grants against
+	// the pinned digest (docs/prds/store.md, "Authority").
+	ErrAuthorityNotDeclared = errors.New("store package does not declare this authority")
 )
 
 // Installed is one organisation's pinned Archie package.
@@ -22,6 +27,10 @@ type Installed struct {
 	Descriptor   Descriptor
 	Layer        []byte
 	UpdatePolicy string
+	// AcceptedAuthority is the operator's acceptance, recorded against the
+	// pinned digest. A nil Authority means the operator has not accepted;
+	// until then the package's authority at use time is nothing.
+	AcceptedAuthority *Authority
 }
 
 // Repository owns installed package records and dependency-safe deletion.
@@ -30,6 +39,9 @@ type Repository interface {
 	Get(context.Context, string, string) (Installed, error)
 	List(context.Context, string) ([]Installed, error)
 	Remove(context.Context, string, string) error
+	// Accept records the operator's accepted authority against the package's
+	// currently pinned digest.
+	Accept(context.Context, string, string, Authority) error
 }
 
 // Registry reads a package by immutable OCI manifest digest.
@@ -43,6 +55,7 @@ type Manager interface {
 	GetInstalled(context.Context, string, string) (Installed, error)
 	ListInstalled(context.Context, string) ([]Installed, error)
 	RemoveInstalled(context.Context, string, string) error
+	AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted Authority) (Installed, error)
 }
 
 // Service validates the registry content before persisting an installation.
@@ -67,6 +80,30 @@ func (s Service) ListInstalled(ctx context.Context, orgID string) ([]Installed, 
 
 func (s Service) RemoveInstalled(ctx context.Context, orgID, name string) error {
 	return s.Remove(ctx, orgID, name)
+}
+
+// AcceptPackageAuthority records the operator's acceptance against the pinned
+// digest. Only grants the package declares are acceptable, and the accepted
+// record may be narrower than the declaration: the record, not the descriptor,
+// is the authority the package is later checked against.
+func (s Service) AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted Authority) (Installed, error) {
+	if strings.TrimSpace(orgID) == "" || strings.TrimSpace(name) == "" {
+		return Installed{}, errors.New("org and name are required")
+	}
+	if err := accepted.Validate(); err != nil {
+		return Installed{}, fmt.Errorf("accepted authority: %w", err)
+	}
+	installed, err := s.Store.Get(ctx, orgID, name)
+	if err != nil {
+		return Installed{}, fmt.Errorf("installed package %q: %w", name, err)
+	}
+	if !installed.Descriptor.Authority.Covers(accepted) {
+		return Installed{}, fmt.Errorf("package %q: %w", name, ErrAuthorityNotDeclared)
+	}
+	if err := s.Store.Accept(ctx, orgID, name, accepted); err != nil {
+		return Installed{}, err
+	}
+	return s.Store.Get(ctx, orgID, name)
 }
 
 func (s Service) Install(ctx context.Context, orgID, name, reference, digest string) (Installed, error) {

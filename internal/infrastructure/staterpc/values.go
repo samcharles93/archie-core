@@ -510,6 +510,7 @@ var wireErrors = []struct {
 	{storepkg.ErrNotFound, codes.NotFound, storepkg.ErrNotFound.Error()},
 	{storepkg.ErrInstalled, codes.AlreadyExists, storepkg.ErrInstalled.Error()},
 	{storepkg.ErrRequired, codes.FailedPrecondition, storepkg.ErrRequired.Error()},
+	{storepkg.ErrAuthorityNotDeclared, codes.FailedPrecondition, storepkg.ErrAuthorityNotDeclared.Error()},
 	{logging.ErrTaskLogsUnavailable, codes.Unavailable, msgTaskLogsUnavailable},
 }
 

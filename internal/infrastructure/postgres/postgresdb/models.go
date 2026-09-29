@@ -186,14 +186,15 @@ type IdentitySubject struct {
 }
 
 type InstalledPackage struct {
-	OrgID        string
-	Name         string
-	Reference    string
-	Digest       string
-	Descriptor   []byte
-	Layer        []byte
-	UpdatePolicy string
-	InstalledAt  time.Time
+	OrgID             string
+	Name              string
+	Reference         string
+	Digest            string
+	Descriptor        []byte
+	Layer             []byte
+	UpdatePolicy      string
+	InstalledAt       time.Time
+	AcceptedAuthority []byte
 }
 
 type InstalledPackageRequirement struct {

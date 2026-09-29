@@ -9,6 +9,25 @@ import (
 	"context"
 )
 
+const acceptInstalledPackageAuthority = `-- name: AcceptInstalledPackageAuthority :execrows
+UPDATE installed_packages SET accepted_authority = $3
+WHERE org_id = $1 AND name = $2
+`
+
+type AcceptInstalledPackageAuthorityParams struct {
+	OrgID             string
+	Name              string
+	AcceptedAuthority []byte
+}
+
+func (q *Queries) AcceptInstalledPackageAuthority(ctx context.Context, arg AcceptInstalledPackageAuthorityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, acceptInstalledPackageAuthority, arg.OrgID, arg.Name, arg.AcceptedAuthority)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteInstalledPackage = `-- name: DeleteInstalledPackage :execrows
 DELETE FROM installed_packages WHERE org_id = $1 AND name = $2
 `
@@ -27,7 +46,7 @@ func (q *Queries) DeleteInstalledPackage(ctx context.Context, arg DeleteInstalle
 }
 
 const getInstalledPackage = `-- name: GetInstalledPackage :one
-SELECT org_id, name, reference, digest, descriptor, layer, update_policy
+SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority
 FROM installed_packages WHERE org_id = $1 AND name = $2
 `
 
@@ -37,13 +56,14 @@ type GetInstalledPackageParams struct {
 }
 
 type GetInstalledPackageRow struct {
-	OrgID        string
-	Name         string
-	Reference    string
-	Digest       string
-	Descriptor   []byte
-	Layer        []byte
-	UpdatePolicy string
+	OrgID             string
+	Name              string
+	Reference         string
+	Digest            string
+	Descriptor        []byte
+	Layer             []byte
+	UpdatePolicy      string
+	AcceptedAuthority []byte
 }
 
 func (q *Queries) GetInstalledPackage(ctx context.Context, arg GetInstalledPackageParams) (GetInstalledPackageRow, error) {
@@ -57,6 +77,7 @@ func (q *Queries) GetInstalledPackage(ctx context.Context, arg GetInstalledPacka
 		&i.Descriptor,
 		&i.Layer,
 		&i.UpdatePolicy,
+		&i.AcceptedAuthority,
 	)
 	return i, err
 }
@@ -130,18 +151,19 @@ func (q *Queries) InsertInstalledRequirement(ctx context.Context, arg InsertInst
 }
 
 const listInstalledPackages = `-- name: ListInstalledPackages :many
-SELECT org_id, name, reference, digest, descriptor, layer, update_policy
+SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority
 FROM installed_packages WHERE org_id = $1 ORDER BY name
 `
 
 type ListInstalledPackagesRow struct {
-	OrgID        string
-	Name         string
-	Reference    string
-	Digest       string
-	Descriptor   []byte
-	Layer        []byte
-	UpdatePolicy string
+	OrgID             string
+	Name              string
+	Reference         string
+	Digest            string
+	Descriptor        []byte
+	Layer             []byte
+	UpdatePolicy      string
+	AcceptedAuthority []byte
 }
 
 func (q *Queries) ListInstalledPackages(ctx context.Context, orgID string) ([]ListInstalledPackagesRow, error) {
@@ -161,6 +183,7 @@ func (q *Queries) ListInstalledPackages(ctx context.Context, orgID string) ([]Li
 			&i.Descriptor,
 			&i.Layer,
 			&i.UpdatePolicy,
+			&i.AcceptedAuthority,
 		); err != nil {
 			return nil, err
 		}

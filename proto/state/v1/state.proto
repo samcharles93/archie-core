@@ -16,6 +16,10 @@ service StateStoreService {
   rpc InstallPackage(InstallPackageRequest) returns (InstallPackageResponse);
   rpc GetInstalledPackage(GetInstalledPackageRequest) returns (GetInstalledPackageResponse);
   rpc ListInstalledPackages(ListInstalledPackagesRequest) returns (ListInstalledPackagesResponse);
+  // AcceptPackageAuthority records the operator's accepted authority against
+  // the pinned digest (the approve action; install is the create action).
+  // Administrative until org-scoped principals land.
+  rpc AcceptPackageAuthority(AcceptPackageAuthorityRequest) returns (AcceptPackageAuthorityResponse);
   rpc RemoveInstalledPackage(RemoveInstalledPackageRequest) returns (RemoveInstalledPackageResponse);
   // Administrative task credential lifecycle. Worker credentials cannot call these.
   rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
@@ -1049,6 +1053,18 @@ message InstalledPackage {
   bytes descriptor_json = 5;
   bytes layer = 6;
   string update_policy = 7;
+  // The operator's accepted authority, recorded against the pinned digest.
+  // Absent until the operator accepts (docs/prds/store.md, "Authority").
+  PackageAuthority accepted_authority = 8;
+}
+// PackageAuthority mirrors storepkg.Authority: the grants a package needs to
+// operate. An acceptance record is an upper bound, checked field by field.
+message PackageAuthority {
+  repeated string credential_services = 1;
+  repeated string egress_hosts = 2;
+  repeated string forge_permissions = 3;
+  repeated string triggers = 4;
+  repeated string tools = 5;
 }
 message InstallPackageRequest {
   string org_id = 1;
@@ -1061,6 +1077,12 @@ message GetInstalledPackageRequest { string org_id = 1; string name = 2; }
 message GetInstalledPackageResponse { InstalledPackage package = 1; }
 message ListInstalledPackagesRequest { string org_id = 1; }
 message ListInstalledPackagesResponse { repeated InstalledPackage packages = 1; }
+message AcceptPackageAuthorityRequest {
+  string org_id = 1;
+  string name = 2;
+  PackageAuthority accepted = 3;
+}
+message AcceptPackageAuthorityResponse { InstalledPackage package = 1; }
 message RemoveInstalledPackageRequest { string org_id = 1; string name = 2; }
 message RemoveInstalledPackageResponse {}
 

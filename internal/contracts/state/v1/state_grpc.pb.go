@@ -22,6 +22,7 @@ const (
 	StateStoreService_InstallPackage_FullMethodName             = "/state.v1.StateStoreService/InstallPackage"
 	StateStoreService_GetInstalledPackage_FullMethodName        = "/state.v1.StateStoreService/GetInstalledPackage"
 	StateStoreService_ListInstalledPackages_FullMethodName      = "/state.v1.StateStoreService/ListInstalledPackages"
+	StateStoreService_AcceptPackageAuthority_FullMethodName     = "/state.v1.StateStoreService/AcceptPackageAuthority"
 	StateStoreService_RemoveInstalledPackage_FullMethodName     = "/state.v1.StateStoreService/RemoveInstalledPackage"
 	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
 	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
@@ -131,6 +132,10 @@ type StateStoreServiceClient interface {
 	InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageResponse, error)
 	GetInstalledPackage(ctx context.Context, in *GetInstalledPackageRequest, opts ...grpc.CallOption) (*GetInstalledPackageResponse, error)
 	ListInstalledPackages(ctx context.Context, in *ListInstalledPackagesRequest, opts ...grpc.CallOption) (*ListInstalledPackagesResponse, error)
+	// AcceptPackageAuthority records the operator's accepted authority against
+	// the pinned digest (the approve action; install is the create action).
+	// Administrative until org-scoped principals land.
+	AcceptPackageAuthority(ctx context.Context, in *AcceptPackageAuthorityRequest, opts ...grpc.CallOption) (*AcceptPackageAuthorityResponse, error)
 	RemoveInstalledPackage(ctx context.Context, in *RemoveInstalledPackageRequest, opts ...grpc.CallOption) (*RemoveInstalledPackageResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
@@ -329,6 +334,16 @@ func (c *stateStoreServiceClient) ListInstalledPackages(ctx context.Context, in 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListInstalledPackagesResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_ListInstalledPackages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) AcceptPackageAuthority(ctx context.Context, in *AcceptPackageAuthorityRequest, opts ...grpc.CallOption) (*AcceptPackageAuthorityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AcceptPackageAuthorityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_AcceptPackageAuthority_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1288,6 +1303,10 @@ type StateStoreServiceServer interface {
 	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error)
 	GetInstalledPackage(context.Context, *GetInstalledPackageRequest) (*GetInstalledPackageResponse, error)
 	ListInstalledPackages(context.Context, *ListInstalledPackagesRequest) (*ListInstalledPackagesResponse, error)
+	// AcceptPackageAuthority records the operator's accepted authority against
+	// the pinned digest (the approve action; install is the create action).
+	// Administrative until org-scoped principals land.
+	AcceptPackageAuthority(context.Context, *AcceptPackageAuthorityRequest) (*AcceptPackageAuthorityResponse, error)
 	RemoveInstalledPackage(context.Context, *RemoveInstalledPackageRequest) (*RemoveInstalledPackageResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
@@ -1470,6 +1489,9 @@ func (UnimplementedStateStoreServiceServer) GetInstalledPackage(context.Context,
 }
 func (UnimplementedStateStoreServiceServer) ListInstalledPackages(context.Context, *ListInstalledPackagesRequest) (*ListInstalledPackagesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListInstalledPackages not implemented")
+}
+func (UnimplementedStateStoreServiceServer) AcceptPackageAuthority(context.Context, *AcceptPackageAuthorityRequest) (*AcceptPackageAuthorityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AcceptPackageAuthority not implemented")
 }
 func (UnimplementedStateStoreServiceServer) RemoveInstalledPackage(context.Context, *RemoveInstalledPackageRequest) (*RemoveInstalledPackageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveInstalledPackage not implemented")
@@ -1815,6 +1837,24 @@ func _StateStoreService_ListInstalledPackages_Handler(srv interface{}, ctx conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).ListInstalledPackages(ctx, req.(*ListInstalledPackagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_AcceptPackageAuthority_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptPackageAuthorityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).AcceptPackageAuthority(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_AcceptPackageAuthority_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).AcceptPackageAuthority(ctx, req.(*AcceptPackageAuthorityRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3454,6 +3494,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListInstalledPackages",
 			Handler:    _StateStoreService_ListInstalledPackages_Handler,
+		},
+		{
+			MethodName: "AcceptPackageAuthority",
+			Handler:    _StateStoreService_AcceptPackageAuthority_Handler,
 		},
 		{
 			MethodName: "RemoveInstalledPackage",

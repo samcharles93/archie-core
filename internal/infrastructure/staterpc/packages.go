@@ -48,6 +48,17 @@ func (s *server) ListInstalledPackages(ctx context.Context, request *pb.ListInst
 	return result, nil
 }
 
+func (s *server) AcceptPackageAuthority(ctx context.Context, request *pb.AcceptPackageAuthorityRequest) (*pb.AcceptPackageAuthorityResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	p, err := s.deps.Packages.AcceptPackageAuthority(ctx, request.GetOrgId(), request.GetName(), authorityValue(request.GetAccepted()))
+	if err != nil {
+		return nil, s.logErr("AcceptPackageAuthority", err)
+	}
+	return &pb.AcceptPackageAuthorityResponse{Package: packageProto(p, true)}, nil
+}
+
 func (s *server) RemoveInstalledPackage(ctx context.Context, request *pb.RemoveInstalledPackageRequest) (*pb.RemoveInstalledPackageResponse, error) {
 	if s.deps.Packages == nil {
 		return nil, status.Error(codes.Unavailable, "package store unavailable")
@@ -95,16 +106,52 @@ func (c *Client) RemoveInstalled(ctx context.Context, orgID, name string) error 
 	return unmapError(err)
 }
 
+func (c *Client) AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted storepkg.Authority) (storepkg.Installed, error) {
+	response, err := c.client.AcceptPackageAuthority(ctx, &pb.AcceptPackageAuthorityRequest{
+		OrgId: orgID, Name: name, Accepted: authorityProto(accepted),
+	})
+	if err != nil {
+		return storepkg.Installed{}, unmapError(err)
+	}
+	return packageValue(response.GetPackage())
+}
+
 func packageProto(p storepkg.Installed, includeLayer bool) *pb.InstalledPackage {
 	descriptor, _ := json.Marshal(p.Descriptor)
 	value := &pb.InstalledPackage{
 		OrgId: p.OrgID, Name: p.Name, Reference: p.Reference, Digest: p.Digest,
 		DescriptorJson: descriptor, UpdatePolicy: p.UpdatePolicy,
 	}
+	if p.AcceptedAuthority != nil {
+		value.AcceptedAuthority = authorityProto(*p.AcceptedAuthority)
+	}
 	if includeLayer {
 		value.Layer = p.Layer
 	}
 	return value
+}
+
+func authorityProto(a storepkg.Authority) *pb.PackageAuthority {
+	return &pb.PackageAuthority{
+		CredentialServices: a.CredentialServices,
+		EgressHosts:        a.EgressHosts,
+		ForgePermissions:   a.ForgePermissions,
+		Triggers:           a.Triggers,
+		Tools:              a.Tools,
+	}
+}
+
+func authorityValue(value *pb.PackageAuthority) storepkg.Authority {
+	if value == nil {
+		return storepkg.Authority{}
+	}
+	return storepkg.Authority{
+		CredentialServices: value.GetCredentialServices(),
+		EgressHosts:        value.GetEgressHosts(),
+		ForgePermissions:   value.GetForgePermissions(),
+		Triggers:           value.GetTriggers(),
+		Tools:              value.GetTools(),
+	}
 }
 
 func packageValue(value *pb.InstalledPackage) (storepkg.Installed, error) {
@@ -115,6 +162,14 @@ func packageValue(value *pb.InstalledPackage) (storepkg.Installed, error) {
 	return storepkg.Installed{
 		OrgID: value.GetOrgId(), Name: value.GetName(), Reference: value.GetReference(),
 		Digest: value.GetDigest(), Descriptor: descriptor, Layer: value.GetLayer(),
-		UpdatePolicy: value.GetUpdatePolicy(),
+		UpdatePolicy: value.GetUpdatePolicy(), AcceptedAuthority: authorityPtr(value.GetAcceptedAuthority()),
 	}, nil
+}
+
+func authorityPtr(value *pb.PackageAuthority) *storepkg.Authority {
+	if value == nil {
+		return nil
+	}
+	authority := authorityValue(value)
+	return &authority
 }

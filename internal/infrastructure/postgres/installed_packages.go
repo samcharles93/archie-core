@@ -96,7 +96,7 @@ func (s *InstalledPackages) Get(ctx context.Context, orgID, name string) (storep
 	if err != nil {
 		return storepkg.Installed{}, err
 	}
-	return installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy)
+	return installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy, row.AcceptedAuthority)
 }
 
 func (s *InstalledPackages) List(ctx context.Context, orgID string) ([]storepkg.Installed, error) {
@@ -106,7 +106,7 @@ func (s *InstalledPackages) List(ctx context.Context, orgID string) ([]storepkg.
 	}
 	packages := make([]storepkg.Installed, 0, len(rows))
 	for _, row := range rows {
-		p, err := installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy)
+		p, err := installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy, row.AcceptedAuthority)
 		if err != nil {
 			return nil, err
 		}
@@ -138,12 +138,50 @@ func (s *InstalledPackages) Remove(ctx context.Context, orgID, name string) erro
 	return tx.Commit(ctx)
 }
 
-func installedFromRow(orgID, name, reference, digest string, raw, layer []byte, updatePolicy string) (storepkg.Installed, error) {
+func (s *InstalledPackages) Accept(ctx context.Context, orgID, name string, authority storepkg.Authority) error {
+	if orgID == "" || name == "" {
+		return errors.New("org and name are required")
+	}
+	if err := authority.Validate(); err != nil {
+		return fmt.Errorf("accepted authority: %w", err)
+	}
+	encoded, err := json.Marshal(authority)
+	if err != nil {
+		return err
+	}
+	rows, err := postgresdb.New(s.pool).AcceptInstalledPackageAuthority(ctx, postgresdb.AcceptInstalledPackageAuthorityParams{
+		OrgID: orgID, Name: name, AcceptedAuthority: encoded,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return storepkg.ErrNotFound
+	}
+	return nil
+}
+
+func installedFromRow(orgID, name, reference, digest string, raw, layer []byte, updatePolicy string, accepted []byte) (storepkg.Installed, error) {
 	var descriptor storepkg.Descriptor
 	if err := json.Unmarshal(raw, &descriptor); err != nil {
 		return storepkg.Installed{}, fmt.Errorf("decode installed package: %w", err)
 	}
-	return storepkg.Installed{OrgID: orgID, Name: name, Reference: reference, Digest: digest, Descriptor: descriptor, Layer: layer, UpdatePolicy: updatePolicy}, nil
+	authority, err := acceptedFromRow(accepted)
+	if err != nil {
+		return storepkg.Installed{}, err
+	}
+	return storepkg.Installed{OrgID: orgID, Name: name, Reference: reference, Digest: digest, Descriptor: descriptor, Layer: layer, UpdatePolicy: updatePolicy, AcceptedAuthority: authority}, nil
+}
+
+func acceptedFromRow(raw []byte) (*storepkg.Authority, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var authority storepkg.Authority
+	if err := json.Unmarshal(raw, &authority); err != nil {
+		return nil, fmt.Errorf("decode accepted authority: %w", err)
+	}
+	return &authority, nil
 }
 
 func pgCode(err error) string {
