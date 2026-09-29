@@ -1,6 +1,6 @@
 # Workflow step vocabulary: what a step type is and how binaries agree on it
 
-**Status:** Approved
+**Status:** Draft
 **Date:** 2026-09-29
 **Beads:** `archie-core-m7oc` (agreement between separately deployed binaries), `archie-core-ze7y` (the deleted `.archie/stages/*.go` equivalent)
 **Extends:** `docs/architecture/plugins-and-extensions.md` (plugin engine rule), `docs/prds/event-automation.md` (the workflow model step types serve)
