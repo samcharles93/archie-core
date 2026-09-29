@@ -21,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { ago } from "@/lib/format";
 import CuratorAction from "./CuratorAction.vue";
 
@@ -72,7 +73,11 @@ function healthKind(status: string | undefined): StatusKind {
           :action="a"
         />
       </ul>
-      <p v-else class="text-sm text-fg-subtle">No recorded activity yet.</p>
+      <Empty v-else>
+        <EmptyHeader>
+          <EmptyTitle>No recorded activity yet</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     </CardContent>
   </Card>
 </template>

@@ -5,6 +5,7 @@ import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Select,
   SelectContent,
@@ -15,7 +16,7 @@ import {
 import { ago } from "@/lib/format";
 import { useControlPlaneStore, type AuditEntry } from "@/stores/control-plane";
 import { formatValue } from "./changes";
-import { filterHistory } from "./history";
+import { filterHistory, historyEmptyTitle } from "./history";
 
 /**
  * Every settings change, one row per changed field, newest first. Restore
@@ -189,8 +190,12 @@ async function restoreBefore(entry: AuditEntry): Promise<void> {
             </td>
           </tr>
           <tr v-if="!rows.length">
-            <td colspan="7" class="px-4 py-8 text-center text-sm text-fg-muted">
-              {{ entries.length ? "No matching changes." : "No changes recorded yet." }}
+            <td colspan="7">
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>{{ historyEmptyTitle(entries.length > 0) }}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             </td>
           </tr>
         </tbody>
