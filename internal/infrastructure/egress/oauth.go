@@ -242,12 +242,18 @@ func (rule oauthRule) capture(org string, body []byte, previous harnesssecret.Se
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return harnesssecret.Secret{}, fmt.Errorf("parse token response: %w", err)
 	}
-	secret := harnesssecret.Secret{Org: org, Service: rule.service, RefreshToken: previous.RefreshToken}
+	secret := harnesssecret.Secret{Org: org, Service: rule.service, RefreshToken: previous.RefreshToken, Scopes: previous.Scopes}
 	secret.AccessToken, _ = parsed[access].(string)
 	if v, ok := parsed[refresh].(string); ok && v != "" {
 		secret.RefreshToken = v
 	}
 	secret.TokenType, _ = parsed["token_type"].(string)
+	// A provider may report the granted scopes only on the login exchange, so
+	// an absent (or empty) scope keeps the set the previous capture held --
+	// the same rule the refresh token follows.
+	if v, ok := parsed["scope"].(string); ok && v != "" {
+		secret.Scopes = strings.Fields(v)
+	}
 	if v, ok := parsed[expiresIn].(float64); ok {
 		secret.ExpiresAt = time.Now().Add(time.Duration(v) * time.Second)
 	}

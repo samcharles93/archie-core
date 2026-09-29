@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -225,7 +226,11 @@ func TestOAuthUngrantedRunNeitherReadsNorWritesTheOrgToken(t *testing.T) {
 			if strings.Contains(sent, "real-refresh") {
 				t.Fatalf("upstream saw the org's refresh token: %q", sent)
 			}
-			if stored, _ := h.oauth.GetHarnessSecret(t.Context(), "org-1", "claude-code"); stored != seed {
+			stored, _ := h.oauth.GetHarnessSecret(t.Context(), "org-1", "claude-code")
+			if stored.Org != seed.Org || stored.Service != seed.Service ||
+				stored.AccessToken != seed.AccessToken || stored.RefreshToken != seed.RefreshToken ||
+				stored.TokenType != seed.TokenType || !stored.ExpiresAt.Equal(seed.ExpiresAt) ||
+				!slices.Equal(stored.Scopes, seed.Scopes) {
 				t.Fatalf("stored = %+v, want it unchanged", stored)
 			}
 		})

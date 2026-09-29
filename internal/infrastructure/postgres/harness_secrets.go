@@ -24,6 +24,7 @@ type harnessSecretPayload struct {
 	RefreshToken string    `json:"refresh_token"`
 	TokenType    string    `json:"token_type"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	Scopes       []string  `json:"scopes,omitempty"`
 }
 
 // GetHarnessSecret returns the stored OAuth token set for an org/service
@@ -44,6 +45,7 @@ func (s *EDA) GetHarnessSecret(ctx context.Context, org, service string) (harnes
 		Org: row.Org, Service: row.Service,
 		AccessToken: payload.AccessToken, RefreshToken: payload.RefreshToken,
 		TokenType: payload.TokenType, ExpiresAt: payload.ExpiresAt,
+		Scopes:    payload.Scopes,
 		UpdatedAt: row.UpdatedAt,
 	}, nil
 }
@@ -58,6 +60,7 @@ func (s *EDA) PutHarnessSecret(ctx context.Context, secret harnesssecret.Secret)
 	sealed, err := s.sealHarnessSecret(harnessSecretPayload{
 		AccessToken: secret.AccessToken, RefreshToken: secret.RefreshToken,
 		TokenType: secret.TokenType, ExpiresAt: secret.ExpiresAt,
+		Scopes: secret.Scopes,
 	})
 	if err != nil {
 		return err

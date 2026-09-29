@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -334,6 +335,7 @@ func harnessSecretProto(s harnesssecret.Secret) *pb.HarnessSecret {
 		Org: s.Org, Service: s.Service, AccessToken: s.AccessToken,
 		RefreshToken: s.RefreshToken, TokenType: s.TokenType,
 		ExpiresAt: timestamp(s.ExpiresAt), UpdatedAt: timestamp(s.UpdatedAt),
+		Scopes: s.Scopes,
 	}
 }
 
@@ -345,6 +347,7 @@ func harnessSecretValue(s *pb.HarnessSecret) harnesssecret.Secret {
 		Org: s.Org, Service: s.Service, AccessToken: s.AccessToken,
 		RefreshToken: s.RefreshToken, TokenType: s.TokenType,
 		ExpiresAt: timeValue(s.ExpiresAt), UpdatedAt: timeValue(s.UpdatedAt),
+		Scopes: slices.Clone(s.Scopes),
 	}
 }
 

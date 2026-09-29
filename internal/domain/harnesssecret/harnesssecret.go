@@ -21,7 +21,11 @@ type Secret struct {
 	RefreshToken string
 	TokenType    string
 	ExpiresAt    time.Time
-	UpdatedAt    time.Time
+	// Scopes are the scopes the provider granted, as the token response's
+	// space-delimited `scope` field reported them (RFC 6749 section 5.1).
+	// The set is kept across a refresh that does not repeat the field.
+	Scopes    []string
+	UpdatedAt time.Time
 }
 
 // Validate rejects a Secret with no identity or no access token: the setup

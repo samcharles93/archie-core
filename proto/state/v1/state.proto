@@ -639,6 +639,7 @@ message HarnessSecret {
   string token_type = 5;
   google.protobuf.Timestamp expires_at = 6;
   google.protobuf.Timestamp updated_at = 7;
+  repeated string scopes = 8;
 }
 
 message GetHarnessSecretRequest {
