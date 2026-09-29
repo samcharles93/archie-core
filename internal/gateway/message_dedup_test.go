@@ -178,7 +178,7 @@ func TestMessageDeduplicatorConcurrent(t *testing.T) {
 		var admitted atomic.Int64
 		var wg sync.WaitGroup
 		wg.Add(workers)
-		for i := 0; i < workers; i++ {
+		for range workers {
 			go func() {
 				defer wg.Done()
 				if d.Admit(in) {
@@ -197,7 +197,7 @@ func TestMessageDeduplicatorConcurrent(t *testing.T) {
 		const workers = 64
 		var wg sync.WaitGroup
 		wg.Add(workers)
-		for i := 0; i < workers; i++ {
+		for i := range workers {
 			go func(i int) {
 				defer wg.Done()
 				fresh.Admit(dedupInbound("telegram", "1", "", strconv.Itoa(i)))
@@ -286,7 +286,7 @@ func TestRouterRejectsRedeliveredMessage(t *testing.T) {
 		r := NewRouter(nil, (&countingLLM{reply: "pong", calls: &calls}).respond, "web")
 		r.Dedup = nil
 		in := dedupInbound("telegram", "100", "7", "42")
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			if _, err := r.Route(context.Background(), in); err != nil {
 				t.Fatal(err)
 			}
