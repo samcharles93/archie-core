@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ func TestHarnessSecretRoundTripEncrypts(t *testing.T) {
 		Org: "org-1", Service: "claude-code",
 		AccessToken: "at-0123456789abcdef", RefreshToken: "rt-0123456789abcdef",
 		TokenType: "Bearer", ExpiresAt: time.Now().Add(time.Hour).UTC().Truncate(time.Second),
+		Scopes: []string{"user:inference", "user:profile"},
 	}
 	if err := s.PutHarnessSecret(t.Context(), in); err != nil {
 		t.Fatalf("PutHarnessSecret() error = %v", err)
@@ -53,7 +55,8 @@ func TestHarnessSecretRoundTripEncrypts(t *testing.T) {
 		t.Fatalf("GetHarnessSecret() error = %v", err)
 	}
 	if got.AccessToken != in.AccessToken || got.RefreshToken != in.RefreshToken ||
-		got.TokenType != in.TokenType || !got.ExpiresAt.Equal(in.ExpiresAt) {
+		got.TokenType != in.TokenType || !got.ExpiresAt.Equal(in.ExpiresAt) ||
+		!slices.Equal(got.Scopes, in.Scopes) {
 		t.Fatalf("GetHarnessSecret() = %+v, want %+v", got, in)
 	}
 }

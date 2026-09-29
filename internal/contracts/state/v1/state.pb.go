@@ -4040,6 +4040,7 @@ type HarnessSecret struct {
 	TokenType     string                 `protobuf:"bytes,5,opt,name=token_type,json=tokenType,proto3" json:"token_type,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Scopes        []string               `protobuf:"bytes,8,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4119,6 +4120,13 @@ func (x *HarnessSecret) GetExpiresAt() *timestamppb.Timestamp {
 func (x *HarnessSecret) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *HarnessSecret) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
 	}
 	return nil
 }
@@ -12191,7 +12199,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\fexecution_id\x18\x01 \x01(\x03R\vexecutionId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"B\n" +
 	"\x11ListStepsResponse\x12-\n" +
-	"\x05steps\x18\x01 \x03(\v2\x17.state.v1.StepExecutionR\x05steps\"\x98\x02\n" +
+	"\x05steps\x18\x01 \x03(\v2\x17.state.v1.StepExecutionR\x05steps\"\xb0\x02\n" +
 	"\rHarnessSecret\x12\x10\n" +
 	"\x03org\x18\x01 \x01(\tR\x03org\x12\x18\n" +
 	"\aservice\x18\x02 \x01(\tR\aservice\x12!\n" +
@@ -12202,7 +12210,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"E\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
+	"\x06scopes\x18\b \x03(\tR\x06scopes\"E\n" +
 	"\x17GetHarnessSecretRequest\x12\x10\n" +
 	"\x03org\x18\x01 \x01(\tR\x03org\x12\x18\n" +
 	"\aservice\x18\x02 \x01(\tR\aservice\"K\n" +

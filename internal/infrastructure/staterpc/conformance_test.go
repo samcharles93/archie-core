@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -637,7 +638,7 @@ func TestHarnessSecretConformance(t *testing.T) {
 			if mode == "grpc" {
 				store = remoteEDA(t, pgstore.Open(t), eda)
 			}
-			secret := harnesssecret.Secret{Org: "org-a", Service: "service", AccessToken: "access", RefreshToken: "refresh", TokenType: "Bearer", ExpiresAt: time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour)}
+			secret := harnesssecret.Secret{Org: "org-a", Service: "service", AccessToken: "access", RefreshToken: "refresh", TokenType: "Bearer", ExpiresAt: time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour), Scopes: []string{"user:inference", "user:profile"}}
 			for _, token := range []string{"access", "refreshed-access"} {
 				secret.AccessToken = token
 				if err := store.PutHarnessSecret(t.Context(), secret); err != nil {
@@ -651,7 +652,10 @@ func TestHarnessSecretConformance(t *testing.T) {
 					t.Fatal("missing store timestamp")
 				}
 				got.UpdatedAt = time.Time{}
-				if got != secret {
+				if got.Org != secret.Org || got.Service != secret.Service ||
+					got.AccessToken != secret.AccessToken || got.RefreshToken != secret.RefreshToken ||
+					got.TokenType != secret.TokenType || !got.ExpiresAt.Equal(secret.ExpiresAt) ||
+					!slices.Equal(got.Scopes, secret.Scopes) {
 					t.Fatalf("round trip mismatch: got %+v, want %+v", got, secret)
 				}
 			}
