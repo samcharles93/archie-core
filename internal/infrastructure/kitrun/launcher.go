@@ -10,6 +10,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/docker/sandbox-kit-spec/v3/fetch"
 	"github.com/docker/sandbox-kit-spec/v3/spec"
@@ -17,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kit"
 	"github.com/samcharles93/archie-core/internal/skill"
@@ -35,6 +37,15 @@ type SecretResolver interface {
 type Grants interface {
 	Grant(run string, secrets map[string]string)
 	RevokeGrant(run string)
+}
+
+// OAuthSecrets reads an org's stored OAuth token set for a bound service, so a
+// Kit's credential file can render that set's expiry. It is the store's read
+// half only: kitrun never writes a token set, and nothing but the expiry
+// leaves oauthExpiries, so a real token cannot reach the credential file
+// (docs/prds/external-agent-harness.md, "Verification").
+type OAuthSecrets interface {
+	GetHarnessSecret(ctx context.Context, org, service string) (harnesssecret.Secret, error)
 }
 
 const (
@@ -64,6 +75,11 @@ type Launcher struct {
 	Config  *config.Holder
 	Secrets SecretResolver
 	Grants  Grants
+	// OAuth reads the stored token set whose expiry a Kit's credential file
+	// renders. A nil OAuth refuses the launch of a Kit that renders one, the
+	// same way a nil OAuthStore makes the proxy refuse a required OAuth
+	// credential.
+	OAuth OAuthSecrets
 
 	mu      sync.Mutex
 	started bool
@@ -125,6 +141,10 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		return nil, err
 	}
 	granted, bound := l.resolveCredentials(req, k.creds)
+	expiries, err := l.oauthExpiries(ctx, req.Org, k.creds, bound)
+	if err != nil {
+		return nil, err
+	}
 	if l.Grants != nil {
 		l.Grants.Grant(req.Execution, granted)
 	}
@@ -136,7 +156,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		return nil, err
 	}
 	run := &Run{network: "archie-kit-" + req.Execution, token: session.Token(), execution: req.Execution}
-	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound})
+	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound, OAuthExpiries: expiries})
 	if err != nil {
 		l.release(run)
 		return nil, err
@@ -212,6 +232,28 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 		bound = append(bound, service)
 	}
 	return granted, bound
+}
+
+// oauthExpiries reads the stored token set's expiry for each bound OAuth
+// credential whose Kit renders a credential file. The store is read only for a
+// service the run credential carries, and only the expiry leaves here: the
+// tokens stay behind, so the renderer has no way to write one.
+func (l *Launcher) oauthExpiries(ctx context.Context, org string, creds []spec.CredentialCapability, bound []string) (map[string]time.Time, error) {
+	expiries := map[string]time.Time{}
+	for _, c := range creds {
+		if c.OAuth == nil || c.OAuth.CredentialFile == nil || !egress.IsOAuthManaged(c) || !slices.Contains(bound, c.Service) {
+			continue
+		}
+		if l.OAuth == nil {
+			return nil, fmt.Errorf("credential %q renders a credential file, but no harness secret store is configured", c.Service)
+		}
+		secret, err := l.OAuth.GetHarnessSecret(ctx, org, c.Service)
+		if err != nil {
+			return nil, fmt.Errorf("credential %q renders a credential file and has no captured OAuth token (run the setup terminal first): %w", c.Service, err)
+		}
+		expiries[c.Service] = secret.ExpiresAt
+	}
+	return expiries, nil
 }
 
 // release undoes what Launch already did for run: the egress grant, then the
