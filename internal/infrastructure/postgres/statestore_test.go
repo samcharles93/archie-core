@@ -267,6 +267,70 @@ func TestResourceWritesPreserveOptimisticAndIdempotentSemantics(t *testing.T) {
 	}
 }
 
+// A write is idempotent per request ID, and the ledger holding those IDs
+// outlives the row it describes. So a replay whose resource is gone must
+// re-create it: answering with the ledger's revision alone reports a version for
+// a kind the store does not hold, and a caller cannot tell that apart from a
+// resource that is there. An operator removing a resource and restarting the
+// process that seeds it is the shape this repairs.
+func TestResourceReplayRecreatesARemovedResource(t *testing.T) {
+	pool, _ := migrated(t)
+	resources := NewResources(pool)
+	at := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	write := storecontract.ResourceWrite{
+		Kind: "workflow-definitions", Value: []byte(`{"definitions":[]}`), Actor: "system:migration",
+		Source: "legacy-config", RequestID: "import:workflow-definitions", ExpectedVersion: 0, At: at,
+	}
+	seeded, err := resources.PutResource(t.Context(), write)
+	if err != nil {
+		t.Fatalf("seed PutResource: %v", err)
+	}
+
+	if _, err := pool.Exec(t.Context(), `DELETE FROM resources WHERE kind = $1`, write.Kind); err != nil {
+		t.Fatalf("remove the resource: %v", err)
+	}
+	if _, err := resources.Resource(t.Context(), write.Kind); !errors.Is(err, storecontract.ErrResourceNotFound) {
+		t.Fatalf("resource after the removal = %v, want ErrResourceNotFound", err)
+	}
+
+	replayed, err := resources.PutResource(t.Context(), write)
+	if err != nil {
+		t.Fatalf("replay PutResource: %v", err)
+	}
+	if replayed.Version != seeded.Version || string(replayed.Value) != string(seeded.Value) {
+		t.Fatalf("replay = %+v, want the revision the ledger records, %+v", replayed, seeded)
+	}
+	live, err := resources.Resource(t.Context(), write.Kind)
+	if err != nil {
+		t.Fatalf("the replay did not re-create the resource: %v", err)
+	}
+	if live.Version != seeded.Version || string(live.Value) != string(seeded.Value) {
+		t.Fatalf("live resource after the replay = %+v, want the restored %+v", live, seeded)
+	}
+	// The repair re-creates the row the write produced; it does not append a
+	// second ledger entry, which idx_resource_history_kind_request would refuse.
+	history, err := resources.ResourceHistory(t.Context(), write.Kind, 0)
+	if err != nil {
+		t.Fatalf("ResourceHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history after the replay = %d revisions, want the one the write made", len(history))
+	}
+
+	// A resource the store still holds is answered from the ledger, unchanged:
+	// the idempotent replay the index exists for.
+	again, err := resources.PutResource(t.Context(), storecontract.ResourceWrite{
+		Kind: write.Kind, Value: []byte(`{"definitions":[{"id":"different"}]}`), Actor: "other",
+		Source: "retry", RequestID: write.RequestID, ExpectedVersion: 0, At: at.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("second replay: %v", err)
+	}
+	if again.Version != seeded.Version || string(again.Value) != string(seeded.Value) {
+		t.Fatalf("second replay = %+v, want the original %+v", again, seeded)
+	}
+}
+
 // A request ID is idempotent per kind: the store API, the resource_history
 // UNIQUE(kind, request_id) index and every production caller treat it as one,
 // so a caller that mints one request ID for two different kinds must get two

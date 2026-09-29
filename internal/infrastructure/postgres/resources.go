@@ -78,6 +78,17 @@ func (s *Resources) Audit(ctx context.Context, table string, keys []string, limi
 	return entries, nil
 }
 
+// PutResource applies one control-plane resource write.
+//
+// It is idempotent per request ID: a write whose (kind, request_id) is already
+// in resource_history returns that revision instead of writing a second one, so a
+// retry that reached the store twice is still one revision. The ledger is what
+// carries the key -- resource_history outlives the row it describes -- so a
+// replay of a revision whose resource an operator removed re-creates that row
+// rather than answering with a revision the store no longer holds. The
+// alternative is a write that reports a version for a kind that is absent: the
+// caller cannot tell the difference, and a kind can stay gone while every
+// process believes it holds a value.
 func (s *Resources) PutResource(ctx context.Context, write storecontract.ResourceWrite) (_ storecontract.Resource, retErr error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -91,10 +102,11 @@ func (s *Resources) PutResource(ctx context.Context, write storecontract.Resourc
 	if existing, err := queries.ResourceByRequest(ctx, postgresdb.ResourceByRequestParams{
 		Kind: write.Kind, RequestID: write.RequestID,
 	}); err == nil {
-		return resourceFromAudit(
-			existing.Kind, existing.Value, existing.Version, existing.Actor, existing.Source,
-			existing.RequestID, existing.ExpectedVersion, existing.CurrentVersion, existing.At,
-		), nil
+		resource, err := s.replayedResource(ctx, queries, tx, existing)
+		if err != nil {
+			return storecontract.Resource{}, err
+		}
+		return resource, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return storecontract.Resource{}, err
 	}
@@ -147,6 +159,32 @@ func (s *Resources) PutResource(ctx context.Context, write storecontract.Resourc
 	return resourceFromAudit(
 		history.Kind, history.Value, history.Version, history.Actor, history.Source,
 		history.RequestID, history.ExpectedVersion, history.CurrentVersion, history.At,
+	), nil
+}
+
+// replayedResource answers a write whose request ID resource_history already
+// holds. The ledger's revision is the answer and a replay writes nothing, with
+// one repair: when the resource that revision describes is no longer the current
+// row, the row is re-created from it. That is the state an operator removing a
+// resource leaves behind, and without the repair the store answers with a
+// revision it does not hold, so the caller reads a version for a kind that is
+// absent and the kind stays absent.
+func (s *Resources) replayedResource(ctx context.Context, queries *postgresdb.Queries, tx pgx.Tx, existing postgresdb.ResourceByRequestRow) (storecontract.Resource, error) {
+	if _, err := queries.ResourceByKind(ctx, existing.Kind); errors.Is(err, pgx.ErrNoRows) {
+		if _, err := queries.ReinsertResource(ctx, postgresdb.ReinsertResourceParams{
+			Kind: existing.Kind, Value: existing.Value, Version: existing.Version, UpdatedAt: existing.At,
+		}); err != nil {
+			return storecontract.Resource{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return storecontract.Resource{}, err
+		}
+	} else if err != nil {
+		return storecontract.Resource{}, err
+	}
+	return resourceFromAudit(
+		existing.Kind, existing.Value, existing.Version, existing.Actor, existing.Source,
+		existing.RequestID, existing.ExpectedVersion, existing.CurrentVersion, existing.At,
 	), nil
 }
 

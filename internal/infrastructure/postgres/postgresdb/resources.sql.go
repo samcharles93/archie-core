@@ -108,6 +108,43 @@ func (q *Queries) LockResourceWrite(ctx context.Context, hashtextextended string
 	return err
 }
 
+const reinsertResource = `-- name: ReinsertResource :one
+INSERT INTO resources (kind, value, version, updated_at)
+VALUES ($1, $2, $3, $4)
+RETURNING kind, value, version, updated_at, org_id
+`
+
+type ReinsertResourceParams struct {
+	Kind      string
+	Value     []byte
+	Version   int64
+	UpdatedAt time.Time
+}
+
+// Re-creates the current row for a revision resource_history already records.
+// The ledger outlives the row it describes, so a resource an operator removed
+// still has its revisions; putting one back needs the row re-created without a
+// second ledger entry, which idx_resource_history_kind_request would refuse.
+// The revision is the ledger's, not a fresh one: this is the row that write
+// produced, restored.
+func (q *Queries) ReinsertResource(ctx context.Context, arg ReinsertResourceParams) (Resource, error) {
+	row := q.db.QueryRow(ctx, reinsertResource,
+		arg.Kind,
+		arg.Value,
+		arg.Version,
+		arg.UpdatedAt,
+	)
+	var i Resource
+	err := row.Scan(
+		&i.Kind,
+		&i.Value,
+		&i.Version,
+		&i.UpdatedAt,
+		&i.OrgID,
+	)
+	return i, err
+}
+
 const resourceByKind = `-- name: ResourceByKind :one
 SELECT kind, value, version, updated_at, org_id FROM resources WHERE kind = $1
 `

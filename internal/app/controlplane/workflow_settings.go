@@ -28,7 +28,10 @@ type executionSettingsDocument struct {
 }
 
 // ImportWorkflowExecutionSettings preserves the focused bootstrap API for callers
-// that do not own the complete legacy configuration document.
+// that do not own the complete legacy configuration document. It is the same
+// producer rule as ImportConfig, at this narrower entry point: a kind the store
+// holds is left alone, and a kind it does not hold is seeded under the one seed
+// identity (see seedActor and seedRequestID).
 func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings) (int64, error) {
 	resource, err := s.store.Resource(ctx, WorkflowExecutionSettingsKind)
 	if err == nil {
@@ -45,7 +48,7 @@ func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings w
 	if err != nil {
 		return 0, err
 	}
-	resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + WorkflowExecutionSettingsKind, ExpectedVersion: 0, At: time.Now().UTC()})
+	resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: WorkflowExecutionSettingsKind, Value: value, Actor: seedActor, Source: seedSource, RequestID: seedRequestID(WorkflowExecutionSettingsKind, value), ExpectedVersion: 0, At: time.Now().UTC()})
 	return resource.Version, err
 }
 
