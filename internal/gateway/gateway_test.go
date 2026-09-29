@@ -349,15 +349,18 @@ func TestRouterRejectsUnknownCommand(t *testing.T) {
 				return "fabricated streaming behavior", nil
 			}
 
-			reply, err := r.RouteStream(context.Background(), inbound("", text), DeltaFunc(func(string) {}))
+			_, kind, text, err := drainStreamed(t, streamChat(r), inbound("", text))
 			if err != nil {
-				t.Fatalf("RouteStream: %v", err)
+				t.Fatalf("Stream: %v", err)
 			}
 			if llmCalls != 0 {
 				t.Fatalf("unknown command invoked LLM %d times", llmCalls)
 			}
-			if !strings.Contains(reply, "/frobnicate") || !strings.Contains(reply, "/help") {
-				t.Errorf("reply = %q, want unknown command and /help guidance", reply)
+			if kind != "done" {
+				t.Fatalf("terminal kind = %s, want a local done reply", kind)
+			}
+			if !strings.Contains(text, "/frobnicate") || !strings.Contains(text, "/help") {
+				t.Errorf("reply = %q, want unknown command and /help guidance", text)
 			}
 		})
 	}

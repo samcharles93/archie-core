@@ -167,9 +167,9 @@ type Router struct {
 	// reporting a value it does not have.
 	Health HealthSource
 	LLM    LLMResponder // nil = LLM not wired yet
-	// LLMStream is the optional streaming responder. When set, adapters
-	// that can render partial output (see RouteStream) show the reply as
-	// it generates; when nil, everything falls back to LLM.
+	// LLMStream is the optional streaming responder. When set, the streamed
+	// chat adapter (internal/gateway/chat_local.go) shows the reply as it
+	// generates; when nil, everything falls back to LLM.
 	LLMStream LLMStreamResponder
 	// Identity is the archie identity this router belongs to (empty in
 	// single-identity deployments). Propagated into SpawnRequest and
@@ -345,8 +345,9 @@ func (r *Router) CollectTurn(ctx context.Context, in Inbound) (Inbound, bool, er
 }
 
 // route is Route's continuation once the caller has already cleared the
-// rate-limit check (or is deliberately skipping it, as RouteStream's
-// local-command fallthrough does to avoid charging one message twice).
+// rate-limit check (or is deliberately skipping it, as streamTurn's
+// local-command fallthrough and the streamed adapter's degraded-to-non-
+// streaming path do, to avoid charging one message twice).
 func (r *Router) route(ctx context.Context, in Inbound) (string, error) {
 	text := strings.TrimSpace(in.Message.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
@@ -502,56 +503,25 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Messa
 	return "", false, nil
 }
 
-// RouteStream is Route for adapters that can render a reply progressively.
-// stream receives each new fragment of an LLM reply as it is generated, plus
-// each completed tool call, in the order the model produced them; the
-// complete reply is returned as usual.
-//
-// Only free-text messages stream. Gateway-local commands (/status, /model,
-// …) answer from local state in a single step, so they return through the
-// normal path with no delta callbacks. When no streaming responder is
-// configured, RouteStream is exactly Route  --  callers get the whole reply
-// at the end and simply never see a delta, so an adapter can always call
-// RouteStream without checking first.
-func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
-	if r.LLMStream == nil || stream == nil {
-		return r.Route(ctx, in)
-	}
-	if r.duplicateDelivery(in) {
-		return dedupReply, nil
-	}
-	if r.checkRateLimit(in) {
-		return rateLimitReply, nil
-	}
-	return r.streamTurn(ctx, in, stream)
-}
-
-// streamTurn dispatches one streaming turn for an inbound whose per-message
-// gates have already run. RouteStream splits it off so the text batcher's
-// dispatcher can carry the joined payload for its whole batch through here
-// without the gates answering a second time for a message they already saw
-// -- in particular so the combined payload's first-fragment source ID, which
-// the dedup gate already recorded, does not read back as a redelivery.
+// streamTurn dispatches one streamed turn for an inbound the streamed chat
+// adapter has already prepared: the per-message gates (dedup, rate limit)
+// ran per fragment in the adapter's prelude, and the text batcher has
+// settled the turn's payload -- prelude's dispatcher carries the joined
+// payload for its whole batch here, so the gates answer no second time for
+// messages they already saw, and in particular the combined payload's
+// first-fragment source ID, which the dedup gate already recorded, does
+// not read back as a redelivery.
 func (r *Router) streamTurn(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
+	if r.LLMStream == nil || stream == nil {
+		return r.route(ctx, in)
+	}
 	cmd, _ := parseCmd(strings.TrimSpace(in.Message.Text), r.gatewayName)
 	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
 		return r.route(ctx, in)
 	}
-	ready, mine, err := r.CollectTurn(ctx, in)
-	if err != nil {
-		return "", err
-	}
-	if !mine {
-		// A covered fragment: the batch's one turn streams on the call that
-		// dispatched it, so this caller's stream renders nothing. The empty
-		// final reply is what every renderer drops (Telegram's finalizer has
-		// no message and abandons; a dashboard client shows the turn that
-		// actually ran).
-		return "", nil
-	}
-	reply, err := r.LLMStream(ctx, ready, stream)
+	reply, err := r.LLMStream(ctx, in, stream)
 	if err == nil {
-		r.maybeAutoTitle(ctx, ready.Message)
+		r.maybeAutoTitle(ctx, in.Message)
 	}
 	return reply, err
 }

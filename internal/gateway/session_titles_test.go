@@ -345,7 +345,7 @@ func TestRouteAutoTitleInFlightGuard(t *testing.T) {
 	waitForTitle(t, store, sessionID, "Deploy worker")
 }
 
-func TestRouteStreamAutoTitlesUntitledSession(t *testing.T) {
+func TestStreamAutoTitlesUntitledSession(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	store := newFakeSessionStore()
 	r.InitSessions(store)
@@ -361,8 +361,8 @@ func TestRouteStreamAutoTitlesUntitledSession(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 	gen.titles[sessionID] = "Stream topic"
-	if _, err := r.RouteStream(ctx, inboundFrom("ch", "u", "stream me"), DeltaFunc(func(string) {})); err != nil {
-		t.Fatalf("RouteStream: %v", err)
+	if _, _, _, err := drainStreamed(t, streamChat(r), inboundFrom("ch", "u", "stream me")); err != nil {
+		t.Fatalf("Stream: %v", err)
 	}
 	waitForTitle(t, store, sessionID, "Stream topic")
 }

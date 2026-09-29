@@ -140,11 +140,11 @@ func TestRouteBudgetKeyLimitsWithoutSenderID(t *testing.T) {
 	}
 }
 
-// TestRouteStreamLocalCommandChargesExactlyOnce pins RouteStream's local
-// command fallthrough (into route, not Route) against double-charging the
-// budget: a status query must consume the same one unit whether it goes
-// through Route or RouteStream.
-func TestRouteStreamLocalCommandChargesExactlyOnce(t *testing.T) {
+// TestStreamLocalCommandChargesExactlyOnce pins the streamed adapter's local
+// command fallthrough (into route, not the streaming responder) against
+// double-charging the budget: a status query must consume the same one unit
+// whether it goes through Route or the adapter's Stream.
+func TestStreamLocalCommandChargesExactlyOnce(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{}}, nil, "test")
 	r.Limiter = ratelimit.New(time.Minute, 2)
 	// The batcher is off: the charge being pinned is per message, not per batch.
@@ -152,31 +152,30 @@ func TestRouteStreamLocalCommandChargesExactlyOnce(t *testing.T) {
 	r.LLMStream = func(context.Context, Inbound, TurnStream) (string, error) {
 		return "streamed", nil
 	}
-
-	if _, err := r.RouteStream(context.Background(), senderInbound("u1", "/status"), DeltaFunc(func(string) {})); err != nil {
-		t.Fatalf("RouteStream: %v", err)
+	if _, _, _, err := drainStreamed(t, streamChat(r), senderInbound("u1", "/status")); err != nil {
+		t.Fatalf("Stream: %v", err)
 	}
 
 	// Budget was 2; the local command must have consumed exactly one, so
 	// exactly one more free-text message should still get through.
-	reply, err := r.RouteStream(context.Background(), senderInbound("u1", "hello"), DeltaFunc(func(string) {}))
+	_, kind, text, err := drainStreamed(t, streamChat(r), senderInbound("u1", "hello"))
 	if err != nil {
-		t.Fatalf("RouteStream: %v", err)
+		t.Fatalf("Stream: %v", err)
 	}
-	if reply != "streamed" {
-		t.Fatalf("second call reply = %q, want it to have budget left", reply)
+	if kind != "done" || text != "streamed" {
+		t.Fatalf("second call terminal = (%s, %q), want it to have budget left", kind, text)
 	}
 
-	reply, err = r.RouteStream(context.Background(), senderInbound("u1", "hello again"), DeltaFunc(func(string) {}))
+	_, kind, text, err = drainStreamed(t, streamChat(r), senderInbound("u1", "hello again"))
 	if err != nil {
-		t.Fatalf("RouteStream: %v", err)
+		t.Fatalf("Stream: %v", err)
 	}
-	if reply != rateLimitReply {
-		t.Fatalf("third call reply = %q, want the budget exhausted after 2 charged calls", reply)
+	if kind != "done" || text != rateLimitReply {
+		t.Fatalf("third call terminal = (%s, %q), want the budget exhausted after 2 charged calls", kind, text)
 	}
 }
 
-func TestRouteStreamRateLimitBlocksStreamedReply(t *testing.T) {
+func TestStreamRateLimitBlocksStreamedReply(t *testing.T) {
 	r := NewRouter(nil, nil, "test")
 	r.Limiter = ratelimit.New(time.Minute, 1)
 	// The batcher is off: the blocked call must not wait on a batch window.
@@ -187,15 +186,15 @@ func TestRouteStreamRateLimitBlocksStreamedReply(t *testing.T) {
 		return "streamed", nil
 	}
 
-	if _, err := r.RouteStream(context.Background(), senderInbound("u1", "hello"), DeltaFunc(func(string) {})); err != nil {
-		t.Fatalf("RouteStream: %v", err)
+	if _, _, _, err := drainStreamed(t, streamChat(r), senderInbound("u1", "hello")); err != nil {
+		t.Fatalf("Stream: %v", err)
 	}
-	reply, err := r.RouteStream(context.Background(), senderInbound("u1", "hello again"), DeltaFunc(func(string) {}))
+	_, kind, text, err := drainStreamed(t, streamChat(r), senderInbound("u1", "hello again"))
 	if err != nil {
-		t.Fatalf("RouteStream: %v", err)
+		t.Fatalf("Stream: %v", err)
 	}
-	if reply != rateLimitReply {
-		t.Fatalf("reply = %q, want the rate-limit reply", reply)
+	if kind != "done" || text != rateLimitReply {
+		t.Fatalf("terminal = (%s, %q), want the rate-limit reply", kind, text)
 	}
 	if streamCalls != 1 {
 		t.Fatalf("LLMStream called %d times, want exactly 1 (the blocked call must not reach it)", streamCalls)

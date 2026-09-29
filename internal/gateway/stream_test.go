@@ -25,7 +25,7 @@ func TestDeltaFuncIsTextOnly(t *testing.T) {
 	}
 }
 
-// RouteStream and TurnRunner accept a nil sink to mean "not streaming", so a
+// streamTurn and TurnRunner accept a nil sink to mean "not streaming", so a
 // nil DeltaFunc must be inert rather than a panic waiting for the first token.
 func TestDeltaFuncNilIsInert(t *testing.T) {
 	stream := DeltaFunc(nil)

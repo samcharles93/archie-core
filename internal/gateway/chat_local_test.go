@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+// streamChat builds the local chat adapter the way the composition wires
+// it, pointed at the router under test; it is the production streaming
+// entry these streamed-turn tests drive.
+func streamChat(r *Router) *LocalChatAdapter {
+	return &LocalChatAdapter{Router: r}
+}
+
+// drainStreamed runs one streamed turn through the production chat adapter
+// and returns what its stream rendered: the deltas, then the terminal
+// event's kind and text.
+func drainStreamed(t *testing.T, chat *LocalChatAdapter, in Inbound) ([]string, string, string, error) {
+	t.Helper()
+	events, err := chat.Stream(context.Background(), in)
+	if err != nil {
+		return nil, "", "", err
+	}
+	rendered, drainErr := drained(events)
+	if drainErr != nil {
+		return nil, "", "", drainErr
+	}
+	var deltas []string
+	kind, text := "", ""
+	for _, event := range rendered {
+		switch event.Kind {
+		case "delta":
+			deltas = append(deltas, event.Text)
+		case "done", "error":
+			kind, text = event.Kind, event.Text
+		}
+	}
+	return deltas, kind, text, nil
+}
+
 func TestLocalChatSnapshotAndStream(t *testing.T) {
 	ctx := t.Context()
 	sessions := NewSessionStoreMemory()

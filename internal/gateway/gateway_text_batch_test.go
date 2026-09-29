@@ -29,13 +29,35 @@ func fragment(n int, sender, text string) Inbound {
 	}
 }
 
-// routeOutcome records one RouteStream caller's reply and how its own
-// stream rendered, so the dispatcher can be told apart from fragments whose
-// turn another call covered.
-type routeOutcome struct {
-	reply  string
+// streamOutcome records one streamed caller's rendered events, so the
+// dispatcher -- started, its deltas, its done -- can be told apart from a
+// covered fragment whose stream renders nothing at all.
+type streamOutcome struct {
+	events []ChatEvent
 	err    error
-	deltas int
+}
+
+// drained reads a streamed turn's events until its channel closes. The
+// deadline is only a hang watchdog: a turn whose dispatch never lands must
+// fail the test with what it rendered so far, never stall the suite. The
+// timeout is returned, not raised with FailNow: draining runs on a helper
+// goroutine, and FailNow from one strands the outcome channel.
+func drained(events <-chan ChatEvent) ([]ChatEvent, error) {
+	var got []ChatEvent
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return got, nil
+			}
+			got = append(got, event)
+		case <-time.After(time.Second):
+		}
+		if time.Now().After(deadline) {
+			return got, fmt.Errorf("the streamed turn never closed its events; rendered so far %+v", got)
+		}
+	}
 }
 
 // batchOf reads the open batch for a key, if one is open. Test-only: it is
@@ -165,35 +187,57 @@ func TestRapidFireFragmentsTakeOneTurn(t *testing.T) {
 		return "the answer", nil
 	}
 
+	chat := &LocalChatAdapter{Router: r}
 	key := batchKey{Platform: "telegram", Conversation: "chat:1", SenderID: "sam"}
 	texts := []string{"first think", "about it", "then act"}
-	outcomes := make(chan routeOutcome, len(texts))
+	outcomes := make(chan streamOutcome, len(texts))
 	for i, text := range texts {
 		go func(i int, text string) {
-			deltas := 0
-			reply, err := r.RouteStream(context.Background(), fragment(i, "sam", text), DeltaFunc(func(string) {
-				deltas++
-			}))
-			outcomes <- routeOutcome{reply: reply, err: err, deltas: deltas}
+			events, err := chat.Stream(context.Background(), fragment(i, "sam", text))
+			if err != nil {
+				outcomes <- streamOutcome{err: err}
+				return
+			}
+			rendered, drainErr := drained(events)
+			outcomes <- streamOutcome{events: rendered, err: drainErr}
 		}(i, text)
 		waitForFragments(t, r.Batches, key, i+1)
 	}
 	clock.Advance(2 * time.Hour)
 
-	answerers := 0
+	dispatchers, covered := 0, 0
 	for range texts {
 		outcome := <-outcomes
 		if outcome.err != nil {
-			t.Errorf("RouteStream: %v", outcome.err)
+			t.Errorf("Stream: %v", outcome.err)
 			continue
 		}
-		if outcome.reply == "the answer" {
-			answerers++
-			if outcome.deltas == 0 {
+		reply, sawStarted, sawDelta := "", false, false
+		for _, event := range outcome.events {
+			switch event.Kind {
+			case "started":
+				sawStarted = true
+			case "delta":
+				sawDelta = true
+			case "done":
+				reply = event.Text
+			case "error":
+				reply = "error: " + event.Text
+			}
+		}
+		switch {
+		case reply == "the answer":
+			dispatchers++
+			if !sawStarted {
+				t.Error("the turn that ran must open its stream with a started event")
+			}
+			if !sawDelta {
 				t.Error("the fragment whose turn ran must see the reply stream through it, but no delta arrived")
 			}
-		} else if outcome.reply != "" {
-			t.Errorf("a covered fragment answered %q, want an empty reply", outcome.reply)
+		case len(outcome.events) != 0:
+			t.Errorf("a covered fragment's stream rendered %+v, want nothing at all", outcome.events)
+		default:
+			covered++
 		}
 	}
 	mu.Lock()
@@ -201,8 +245,11 @@ func TestRapidFireFragmentsTakeOneTurn(t *testing.T) {
 	if turns != 1 {
 		t.Errorf("rapid-fire fragments from one sender started %d agent turns, want 1 (dispatched %q)", turns, dispatched)
 	}
-	if answerers != 1 {
-		t.Errorf("%d of %d fragments returned the turn's own reply, want exactly 1 dispatcher", answerers, len(texts))
+	if dispatchers != 1 {
+		t.Errorf("%d of %d fragments rendered the turn's own reply, want exactly 1 dispatcher", dispatchers, len(texts))
+	}
+	if covered != len(texts)-1 {
+		t.Errorf("%d fragments rendered nothing, want %d covered ones", covered, len(texts)-1)
 	}
 	if turns == 1 && dispatched[0] != strings.Join(texts, "\n") {
 		t.Errorf("the turn dispatched %q, want the fragments joined in arrival order", dispatched[0])

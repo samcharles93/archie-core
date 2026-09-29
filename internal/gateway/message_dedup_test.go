@@ -221,16 +221,6 @@ func (c *countingLLM) respond(ctx context.Context, in Inbound) (string, error) {
 	return c.reply, nil
 }
 
-// countingStream is a TurnStream stub satisfying the interface, so the
-// streaming router path runs without a renderer.
-type countingStream struct {
-	deltas atomic.Int64
-}
-
-func (s *countingStream) Delta(text string)                      { s.deltas.Add(1) }
-func (s *countingStream) ToolCall(event messaging.ToolCallEvent) {}
-func (s *countingStream) Media(event messaging.MediaEvent)       {}
-
 // TestRouterRejectsRedeliveredMessage wires the gate where its owner
 // lives: the Router declines a second delivery of the same platform
 // message without reaching the LLM again, honours the TTL with an
@@ -254,14 +244,20 @@ func TestRouterRejectsRedeliveredMessage(t *testing.T) {
 			t.Fatalf("LLM called %d times for one accepted delivery, want 1", calls)
 		}
 
-		stream := &countingStream{}
-		if reply, err := r.RouteStream(context.Background(), in, stream); err != nil {
+		// The streamed repeat must render the gate's prose, never the turn:
+		// the declines happen before any stream exists.
+		chat := &LocalChatAdapter{Router: r}
+		deltas, kind, text, err := drainStreamed(t, chat, in)
+		if err != nil {
 			t.Fatalf("streamed repeat delivery: unexpected error %v", err)
-		} else if reply == "pong" {
+		} else if text == "pong" {
 			t.Fatal("the streamed repeat delivery was streamed again instead of being declined")
 		}
-		if calls != 1 || stream.deltas.Load() != 0 {
-			t.Fatalf("streamed repeat reached the stream (calls %d, deltas %d), want none", calls, stream.deltas.Load())
+		if calls != 1 || len(deltas) != 0 {
+			t.Fatalf("streamed repeat reached the stream (calls %d, deltas %d), want none", calls, len(deltas))
+		}
+		if kind != "done" || text != dedupReply {
+			t.Fatalf("streamed repeat terminal = (%s, %q), want the dedup prose", kind, text)
 		}
 	})
 
