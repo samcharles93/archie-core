@@ -76,8 +76,11 @@ and encryption-key references. State Store and control-plane RPCs use the same
 endpoint.
 
 When upgraded, existing instances are migrated to the database. Existing
-database values are not overwritten. After migration, settings in TOML are
-ignored and cannot block State Store startup.
+database values are not overwritten, with one exception: a resource whose
+document the build ships is refreshed when the seed itself wrote the stored
+copy, because that copy is a previous release's document rather than an
+operator's. After migration, settings in TOML are ignored and cannot block
+State Store startup.
 
 The Web UI remains available when `archied` or Gateway is down. It shows failed
 changes and can correct or roll them back.

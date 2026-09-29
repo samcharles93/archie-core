@@ -5,6 +5,39 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.44.1] - 2026-09-29
+
+### archied
+
+Two fixes to tasks that could not get past their workflow definition.
+
+- **Approving a task no longer parks it again.** A task requeued under a
+  different workflow kept the previous run's definition pinned, so the worker
+  refused to compile the dispatch — it named `feasibility` while the row named
+  `implement` — and the task parked immediately, identically on every further
+  approval, which left `decline` as the only working operator action.
+  The daemon now re-pins whenever the pinned definition's id disagrees with the
+  task's workflow. A pin that is present, digest-valid and id-consistent is
+  still a strict no-op, so an operator's own definition override survives a
+  dispatch unchanged.
+- **A shipped workflow definition now reaches an existing install.** A stored
+  seed was consulted only for a resource the store did not already hold, so a
+  document that changed in the build never reached a database an earlier
+  release had seeded. For workflow definitions that is a total outage rather
+  than a stale setting: the collection validates as one document, so a stored
+  step type this build no longer has failed every task's pin, whatever workflow
+  the task named — and the documented recovery, removing the resource and
+  restarting, wrote nothing either, because the store answered the seed's known
+  request ID from a history that outlives the resource. A seed now refreshes a
+  kind it wrote the newest revision of and re-creates a resource that is gone,
+  while an operator's own replacement is never undone.
+
+### archie-agent
+
+The runtime image is rebuilt with this release and links the shared workflow
+package carrying the definition-id helper above. Hosts that run agent
+containers need `docker compose pull agent` after updating to pick it up.
+
 ## [1.44.0] - 2026-09-29
 
 ### archied

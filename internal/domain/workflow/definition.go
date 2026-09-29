@@ -105,6 +105,28 @@ func DigestDefinition(src string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// DefinitionID returns the workflow id a definition declares without compiling
+// it. It is the identity half of DigestDefinition, for the readers that hold
+// only stored YAML: a pin's id and the task's workflow column have to agree
+// before a dispatch runs, and DigestDefinition cannot answer that.
+//
+// It reads the single declared id and ignores the rest, so it neither needs a
+// step registry nor rejects a definition written against a vocabulary the
+// caller does not have. ParseDefinition stays the validator; this is only the
+// name.
+func DefinitionID(src string) (string, error) {
+	var declared struct {
+		ID string `yaml:"id"`
+	}
+	if err := yaml.Unmarshal([]byte(src), &declared); err != nil {
+		return "", fmt.Errorf("parse workflow YAML: %w", err)
+	}
+	if strings.TrimSpace(declared.ID) == "" {
+		return "", fmt.Errorf("workflow id is required")
+	}
+	return declared.ID, nil
+}
+
 // WorkflowDefinitionEntry and WorkflowDefinitionCollection are defined in
 // package task so dashboards can decode the stored projection without linking
 // the engine. Validation and compilation stay here.

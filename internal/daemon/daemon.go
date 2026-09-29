@@ -1842,11 +1842,33 @@ func (d *Daemon) publicationGrant(ctx context.Context, task *workflow.Task) (str
 	return grant, revoke, true
 }
 
+// pinWorkflowDefinition puts the task's workflow definition pin in the state
+// the worker's compile requires before it runs a dispatch: a stored definition
+// that names the workflow the task row names
+// (agentworker.CompilePinnedWorkflow).
+//
+// A pin that is present, hash-valid and id-consistent is reused unchanged, so
+// the definition an operator had active when the task was pinned survives every
+// later dispatch even after the active definition moved on. Anything else -- no
+// pin, or a pin naming a workflow this task no longer runs -- is resolved again
+// from the active collection for the workflow the task names.
+//
+// The re-pin is what makes the waiting_human -> approved requeue dispatchable:
+// RequeueTask writes the new workflow column and leaves the previous run's
+// definition pinned, so the requeued row carries the two half-state values the
+// worker refuses to run. Resolving here, at the write, is where the row
+// becomes valid; a consumer that repaired it would only be tolerating a state
+// this producer is responsible for.
+//
+// An already-pinned definition is deliberately NOT refreshed to the operator's
+// current active one: a run's definition is pinned once, so a mid-flight
+// change to a definition never alters work already in progress.
 func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
-	if task.WorkflowDefinitionYAML != "" {
-		if workflow.DigestDefinition(task.WorkflowDefinitionYAML) != task.WorkflowDefinitionDigest {
-			return fmt.Errorf("stored workflow definition digest mismatch")
-		}
+	pinned, ok, err := pinnedDefinitionID(task)
+	if err != nil {
+		return err
+	}
+	if ok && pinned == task.Workflow {
 		return nil
 	}
 	d.runActionPlaybooks(ctx, task)
@@ -1858,6 +1880,25 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 		return err
 	}
 	return d.pinWorkflowFromCollection(ctx, task, collection, version)
+}
+
+// pinnedDefinitionID reports the workflow a task's stored definition pin names,
+// with ok false for a task carrying no pin. It enforces what this package owns
+// about a stored pin: the YAML hashes to the digest recorded beside it, and it
+// declares an id at all. A pin failing either is a row an operator has to
+// resolve, not one to silently overwrite.
+func pinnedDefinitionID(task *workflow.Task) (string, bool, error) {
+	if task.WorkflowDefinitionYAML == "" {
+		return "", false, nil
+	}
+	if workflow.DigestDefinition(task.WorkflowDefinitionYAML) != task.WorkflowDefinitionDigest {
+		return "", false, fmt.Errorf("stored workflow definition digest mismatch")
+	}
+	id, err := workflow.DefinitionID(task.WorkflowDefinitionYAML)
+	if err != nil {
+		return "", false, fmt.Errorf("stored workflow definition: %w", err)
+	}
+	return id, true, nil
 }
 
 // runActionPlaybooks runs the action playbooks matching a task that is about

@@ -13,6 +13,17 @@ SELECT kind, value, version, actor, source, request_id, expected_version,
 FROM resource_history
 WHERE kind = $1 AND request_id = $2;
 
+-- name: ReinsertResource :one
+-- Re-creates the current row for a revision resource_history already records.
+-- The ledger outlives the row it describes, so a resource an operator removed
+-- still has its revisions; putting one back needs the row re-created without a
+-- second ledger entry, which idx_resource_history_kind_request would refuse.
+-- The revision is the ledger's, not a fresh one: this is the row that write
+-- produced, restored.
+INSERT INTO resources (kind, value, version, updated_at)
+VALUES ($1, $2, $3, $4)
+RETURNING kind, value, version, updated_at, org_id;
+
 -- name: ResourceHistory :many
 SELECT kind, value, version, actor, source, request_id, expected_version,
        current_version, at
