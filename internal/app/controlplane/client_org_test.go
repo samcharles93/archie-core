@@ -53,26 +53,33 @@ type eofWatchStream struct{ grpc.ClientStream }
 func (eofWatchStream) Recv() (*pb.WatchResponse, error) { return nil, io.EOF }
 
 func TestClientStampsCallerOrgOnEveryRequestShape(t *testing.T) {
+	// The table holds the org, not a context: a stored context.Context field is
+	// what containedctx rejects, and each case only needs to say what the caller
+	// put on its context.
 	tests := []struct {
-		name string
-		ctx  context.Context
-		want string
+		name  string
+		orgID string
+		want  string
 	}{
-		{name: "no org on the context is the default org", ctx: context.Background(), want: string(org.DefaultOrgID)},
-		{name: "org on the context travels on the wire", ctx: org.WithOrg(context.Background(), "acme"), want: "acme"},
+		{name: "no org on the context is the default org", want: string(org.DefaultOrgID)},
+		{name: "org on the context travels on the wire", orgID: "acme", want: "acme"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			if tt.orgID != "" {
+				ctx = org.WithOrg(ctx, org.OrgID(tt.orgID))
+			}
 			rpc := &orgRecordingClient{}
 			client := NewRPCClient(rpc)
 
-			if _, _, err := client.Query(tt.ctx, ChannelSettingsKind, func([]byte) error { return nil }); err != nil {
+			if _, _, err := client.Query(ctx, ChannelSettingsKind, func([]byte) error { return nil }); err != nil {
 				t.Fatalf("Query: %v", err)
 			}
-			if _, err := client.ReplaceSchedules(tt.ctx, nil, 0, "actor", "source", "request"); err != nil {
+			if _, err := client.ReplaceSchedules(ctx, nil, 0, "actor", "source", "request"); err != nil {
 				t.Fatalf("ReplaceSchedules: %v", err)
 			}
-			if _, err := client.WatchResource(tt.ctx, WorkflowExecutionSettingsKind, 0); err != nil {
+			if _, err := client.WatchResource(ctx, WorkflowExecutionSettingsKind, 0); err != nil {
 				t.Fatalf("WatchResource: %v", err)
 			}
 
