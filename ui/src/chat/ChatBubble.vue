@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { cn } from "@/lib/utils";
+import ChatAttachment from "./ChatAttachment.vue";
 import ChatMarkdown from "./ChatMarkdown.vue";
 import ChatToolCall from "./ChatToolCall.vue";
-import type { ChatToolCall as ToolCall } from "./state";
+import type { ChatMedia, ChatToolCall as ToolCall } from "./state";
 
 /**
  * One message, from either side of the conversation. There is no speaker
@@ -14,11 +15,13 @@ withDefaults(
   defineProps<{
     text: string;
     tools?: ToolCall[];
+    /** Attachments the message carried, which have no bytes left to render. */
+    media?: ChatMedia[];
     assistant?: boolean;
     /** The turn is still arriving: a tool call with no outcome is running. */
     streaming?: boolean;
   }>(),
-  { tools: () => [], assistant: false, streaming: false },
+  { tools: () => [], media: () => [], assistant: false, streaming: false },
 );
 </script>
 
@@ -38,6 +41,13 @@ withDefaults(
           :key="i"
           :tool="tool"
           :streaming="streaming"
+        />
+      </div>
+      <div v-if="media.length" class="mb-2 flex flex-wrap gap-1.5">
+        <ChatAttachment
+          v-for="(attachment, i) in media"
+          :key="i"
+          :attachment="attachment"
         />
       </div>
       <ChatMarkdown v-if="assistant" :text="text" />

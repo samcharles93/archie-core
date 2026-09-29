@@ -58,10 +58,31 @@ export interface ChatToolCall {
   err?: string;
 }
 
+/**
+ * One attachment a message carried, as a recorded transcript serves it. The
+ * bytes are turn-scoped and never reach a browser, so this is metadata only;
+ * `url` is present exactly when the attachment itself carried one, and a
+ * platform file id never appears here because it is a handle, not an address.
+ */
+export interface ChatMedia {
+  type: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  url?: string;
+}
+
 /** One message in the transcript, from either side. */
 export interface ChatMessage {
   from?: string;
   text?: string;
+  // Attachments only ever arrive in the served transcript, never from this
+  // browser's composer, so unlike the fields below this one has no second
+  // spelling to read.
+  media?: ChatMedia[];
   tool_calls?: ChatToolCall[];
   // The same view reaches the browser from more than one composition, so both
   // spellings are read rather than assuming one serialiser.

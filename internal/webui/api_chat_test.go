@@ -509,6 +509,113 @@ func TestChatSessionsFiltersNonWeb(t *testing.T) {
 	}
 }
 
+// chatMediaWire is the attachment block a transcript message carries, spelled
+// out here rather than reusing the handler's own type: the response's field
+// names are the contract, so renaming one has to break this test rather than
+// be silently decoded away.
+type chatMediaWire struct {
+	Type     string `json:"type"`
+	FileName string `json:"file_name"`
+	MIMEType string `json:"mime_type"`
+	FileSize *int64 `json:"file_size"`
+	Width    *int   `json:"width"`
+	Height   *int   `json:"height"`
+	Duration *int   `json:"duration"`
+	URL      string `json:"url"`
+}
+
+// oneTranscriptMessage serves the single-message transcript the attachment
+// tests below build, keeping each message's raw keys so a field the handler
+// invents -- or omits -- is visible here.
+func oneTranscriptMessage(t *testing.T, server *Server, sessionID string) map[string]json.RawMessage {
+	t.Helper()
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/sessions/"+sessionID+"/messages", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+	}
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(res.Body.Bytes(), &messages); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("transcript = %#v, want the one saved message", messages)
+	}
+	return messages[0]
+}
+
+// A message's attachments reach the transcript as metadata and nothing else.
+// The bytes are turn-scoped by design and are stripped at the persist
+// boundary, and the platform's file id is a download handle rather than an
+// address -- so the view carries the descriptive fields, and a URL only when
+// the attachment itself had one.
+func TestChatMessagesServeAttachmentMetadataNotDownloadHandles(t *testing.T) {
+	t.Parallel()
+
+	save := func(t *testing.T, msg messaging.Message) map[string]json.RawMessage {
+		t.Helper()
+		server, sessions := chatTestServer(t)
+		saveWebSession(t, sessions, "web-1")
+		if err := sessions.SaveMessage(context.Background(), "web-1", msg); err != nil {
+			t.Fatal(err)
+		}
+		return oneTranscriptMessage(t, server, "web-1")
+	}
+
+	t.Run("an inbound attachment keeps its metadata and loses its handle and bytes", func(t *testing.T) {
+		t.Parallel()
+		record := save(t, messaging.Message{
+			SourceID: "42",
+			Sender:   "sam",
+			Text:     "[photo]\nwhat is this?",
+			At:       time.Now().UTC(),
+			Media: []messaging.MediaAttachment{{
+				Type: "image", FileID: "AgAD-file-handle", MIMEType: "image/jpeg",
+				FileSize: new(int64(2024)), Width: new(int(1280)), Height: new(int(960)),
+				Data: []byte{0xff, 0xd8, 0xff, 0xe0},
+			}},
+		})
+		want := `[{"type":"image","mime_type":"image/jpeg","file_size":2024,"width":1280,"height":960}]`
+		if got := string(record["media"]); got != want {
+			t.Fatalf("media = %s, want %s", got, want)
+		}
+		var media []chatMediaWire
+		if err := json.Unmarshal(record["media"], &media); err != nil {
+			t.Fatal(err)
+		}
+		if len(media) != 1 || media[0].FileName != "" || media[0].URL != "" {
+			t.Fatalf("media = %+v, want one attachment with no name and no URL", media)
+		}
+		for _, forbidden := range []string{"file_id", "data"} {
+			if _, ok := record[forbidden]; ok {
+				t.Errorf("transcript message carries %q", forbidden)
+			}
+		}
+	})
+
+	t.Run("an attachment that genuinely has a URL keeps it", func(t *testing.T) {
+		t.Parallel()
+		record := save(t, messaging.Message{
+			SourceID: "43",
+			Sender:   "archie",
+			At:       time.Now().UTC(),
+			Media:    []messaging.MediaAttachment{{Type: "video", URL: "https://example.com/v.mp4", Duration: new(int(12))}},
+		})
+		want := `[{"type":"video","duration":12,"url":"https://example.com/v.mp4"}]`
+		if got := string(record["media"]); got != want {
+			t.Fatalf("media = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("a message with no attachments is served exactly as before", func(t *testing.T) {
+		t.Parallel()
+		record := save(t, messaging.Message{SourceID: "44", Sender: "web", Text: "hello", At: time.Now().UTC()})
+		if raw, ok := record["media"]; ok {
+			t.Fatalf("a text-only message grew a media field: %s", raw)
+		}
+	})
+}
+
 // chatSSEEvent is one parsed `data: {...}` frame from the stream endpoint.
 type chatSSEEvent struct {
 	Type       string `json:"type"`

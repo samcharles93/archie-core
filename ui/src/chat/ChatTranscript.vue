@@ -37,6 +37,9 @@ function parts(message: ChatMessage) {
   return {
     text: message.text ?? message.Text ?? "",
     tools: message.tool_calls || message.ToolCalls || [],
+    // Attachments have no bytes left to render -- the record kept their
+    // metadata only -- so the bubble labels them.
+    media: message.media || [],
     assistant: from !== "web",
   };
 }
@@ -63,6 +66,7 @@ const bubbles = computed(() => messages.value.map(parts));
               <ChatBubble
                 :text="bubble.text"
                 :tools="bubble.tools"
+                :media="bubble.media"
                 :assistant="bubble.assistant"
               />
             </MessageScrollerItem>
