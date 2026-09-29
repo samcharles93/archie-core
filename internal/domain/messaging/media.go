@@ -50,4 +50,10 @@ type MediaAttachment struct {
 	// Raw carries platform-specific fields the common vocabulary does not
 	// cover, so adapters never need a second attachment type.
 	Raw map[string]any `json:"raw,omitempty"`
+
+	// Data carries the attachment bytes in-process. An inbound path sets
+	// it after downloading the file; outbound senders never set it and
+	// read Path or URL instead. It never crosses a wire or persistence
+	// boundary -- it is a turn-scoped value, not a stored one.
+	Data []byte `json:"data,omitempty"`
 }

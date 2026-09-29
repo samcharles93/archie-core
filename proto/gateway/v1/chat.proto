@@ -63,6 +63,11 @@ message Message {
   // Source.Platform -- the first component of the session natural key -- a
   // constant. Transport-only, never persisted: the session record keeps it.
   string platform = 10;
+  // media carries attachment metadata for a message that arrived with a
+  // file. The attachment's bytes never cross this wire: a stored Media
+  // with tool_name empty is a sender attachment, and the tool_name on
+  // tool-produced events stays a stream-only field.
+  repeated Media media = 11;
 }
 message ToolCall {
   string id = 1;

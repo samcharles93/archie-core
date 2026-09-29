@@ -110,8 +110,8 @@ func (q *Queries) FinalizeTurn(ctx context.Context, arg FinalizeTurnParams) (int
 }
 
 const insertMessageAt = `-- name: InsertMessageAt :exec
-INSERT INTO messages (message_id, session_id, source_id, sender, sender_id, role, text, ts)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO messages (message_id, session_id, source_id, sender, sender_id, role, text, media, ts)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (session_id, message_id) DO NOTHING
 `
 
@@ -123,6 +123,7 @@ type InsertMessageAtParams struct {
 	SenderID  string
 	Role      string
 	Text      string
+	Media     []byte
 	Ts        int64
 }
 
@@ -136,17 +137,18 @@ func (q *Queries) InsertMessageAt(ctx context.Context, arg InsertMessageAtParams
 		arg.SenderID,
 		arg.Role,
 		arg.Text,
+		arg.Media,
 		arg.Ts,
 	)
 	return err
 }
 
 const insertMessageClamped = `-- name: InsertMessageClamped :exec
-INSERT INTO messages (message_id, session_id, source_id, sender, sender_id, role, text, ts)
-VALUES ($1, $2, $3, $4, $5, $6, $7, (
+INSERT INTO messages (message_id, session_id, source_id, sender, sender_id, role, text, media, ts)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (
 	SELECT CASE
-		WHEN MAX(m.ts) IS NOT NULL AND MAX(m.ts) >= $8 THEN MAX(m.ts) + 1
-		ELSE $8
+		WHEN MAX(m.ts) IS NOT NULL AND MAX(m.ts) >= $9 THEN MAX(m.ts) + 1
+		ELSE $9
 	END
 	FROM messages m WHERE m.session_id = $2
 ))
@@ -161,6 +163,7 @@ type InsertMessageClampedParams struct {
 	SenderID  string
 	Role      string
 	Text      string
+	Media     []byte
 	Ts        int64
 }
 
@@ -177,6 +180,7 @@ func (q *Queries) InsertMessageClamped(ctx context.Context, arg InsertMessageCla
 		arg.SenderID,
 		arg.Role,
 		arg.Text,
+		arg.Media,
 		arg.Ts,
 	)
 	return err
@@ -365,10 +369,10 @@ func (q *Queries) NextReplyAfterTs(ctx context.Context, arg NextReplyAfterTsPara
 }
 
 const recentMessages = `-- name: RecentMessages :many
-SELECT m.message_id, m.source_id, m.sender, m.sender_id, m.role, m.text, m.ts,
+SELECT m.message_id, m.source_id, m.sender, m.sender_id, m.role, m.text, m.ts, m.media::text AS media,
 	COALESCE(s.channel_id, '') AS channel_id, COALESCE(s.thread_id, '') AS thread_id
 FROM (
-	SELECT msg.message_id, msg.source_id, msg.sender, msg.sender_id, msg.role, msg.text, msg.ts, msg.session_id
+	SELECT msg.message_id, msg.source_id, msg.sender, msg.sender_id, msg.role, msg.text, msg.ts, msg.media::text AS media, msg.session_id
 	FROM messages msg WHERE msg.session_id = $1 ORDER BY msg.ts DESC LIMIT $2
 ) m
 LEFT JOIN sessions s ON s.session_id = m.session_id
@@ -388,6 +392,7 @@ type RecentMessagesRow struct {
 	Role      string
 	Text      string
 	Ts        int64
+	Media     string
 	ChannelID string
 	ThreadID  string
 }
@@ -409,6 +414,7 @@ func (q *Queries) RecentMessages(ctx context.Context, arg RecentMessagesParams) 
 			&i.Role,
 			&i.Text,
 			&i.Ts,
+			&i.Media,
 			&i.ChannelID,
 			&i.ThreadID,
 		); err != nil {
@@ -633,7 +639,7 @@ func (q *Queries) SearchMessagesCount(ctx context.Context, arg SearchMessagesCou
 }
 
 const searchMessagesPage = `-- name: SearchMessagesPage :many
-SELECT m.message_id, m.source_id, m.sender, m.sender_id, m.role, m.text, m.ts,
+SELECT m.message_id, m.source_id, m.sender, m.sender_id, m.role, m.text, m.ts, m.media::text AS media,
 	COALESCE(s.channel_id, '') AS channel_id, COALESCE(s.thread_id, '') AS thread_id
 FROM messages m
 LEFT JOIN sessions s ON s.session_id = m.session_id
@@ -657,6 +663,7 @@ type SearchMessagesPageRow struct {
 	Role      string
 	Text      string
 	Ts        int64
+	Media     string
 	ChannelID string
 	ThreadID  string
 }
@@ -683,6 +690,7 @@ func (q *Queries) SearchMessagesPage(ctx context.Context, arg SearchMessagesPage
 			&i.Role,
 			&i.Text,
 			&i.Ts,
+			&i.Media,
 			&i.ChannelID,
 			&i.ThreadID,
 		); err != nil {

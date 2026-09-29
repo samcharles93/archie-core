@@ -75,6 +75,7 @@ func runSessionStoreSuite(t *testing.T, newStore func(t *testing.T) SessionStore
 	t.Run("ReplyCannotPrecedeItsPrompt", func(t *testing.T) { testReplyCannotPrecedeItsPrompt(t, newStore) })
 	t.Run("UpstreamRedeliveryKeepsOriginalTime", func(t *testing.T) { testUpstreamRedeliveryKeepsOriginalTime(t, newStore) })
 	t.Run("SaveMessageStampsMissingTimestamp", func(t *testing.T) { testSaveMessageStampsMissingTimestamp(t, newStore) })
+	t.Run("AttachmentMetadataPersistsWithoutBytes", func(t *testing.T) { testAttachmentMetadataPersistsWithoutBytes(t, newStore) })
 	t.Run("CanonicalMessageIDIsStable", func(t *testing.T) { testCanonicalMessageIDIsStable(t, newStore) })
 	t.Run("SourceIDRoundTrips", func(t *testing.T) { testSourceIDRoundTrips(t, newStore) })
 	t.Run("SourceIDIsNotSearchable", func(t *testing.T) { testSourceIDIsNotSearchable(t, newStore) })
@@ -532,6 +533,49 @@ func testUpstreamRedeliveryKeepsOriginalTime(t *testing.T, newStore func(t *test
 	}
 	if !got[0].At.Equal(original) {
 		t.Errorf("redelivery moved the message from %s to %s", original, got[0].At)
+	}
+}
+
+// testAttachmentMetadataPersistsWithoutBytes pins what kind of media
+// record the session log keeps: the attachment's metadata (what it is,
+// where it lives on the platform, how big it is) persists as data, while
+// the in-process bytes -- turn-scoped by design -- must never enter the
+// store. Losing the bytes across turns is deliberate; losing the fact that
+// a photo was sent is not.
+func testAttachmentMetadataPersistsWithoutBytes(t *testing.T, newStore func(t *testing.T) SessionStore) {
+	ctx := context.Background()
+	s := newStore(t)
+	t.Cleanup(func() { _ = s.Close() })
+
+	size, width, duration := int64(150000), 1280, 12
+	media := []messaging.MediaAttachment{{
+		Type: "image", FileID: "tg-file-1", MIMEType: "image/jpeg",
+		FileName: "cat.jpg", FileSize: &size, Width: &width, Duration: &duration,
+		Data: []byte("in-process bytes"),
+	}}
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{
+		Role: messaging.RoleUser, Text: "[photo]\nlook at this", Media: media,
+	}); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	got, err := s.RecentMessages(ctx, "sess", 1)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	if len(got) != 1 || len(got[0].Media) != 1 {
+		t.Fatalf("stored message = %#v, want one message with one attachment", got)
+	}
+	att := got[0].Media[0]
+	if att.Type != "image" || att.FileID != "tg-file-1" || att.MIMEType != "image/jpeg" ||
+		att.FileName != "cat.jpg" || att.FileSize == nil || *att.FileSize != size ||
+		att.Width == nil || *att.Width != width || att.Duration == nil || *att.Duration != duration {
+		t.Errorf("stored attachment = %#v, want the full metadata", att)
+	}
+	if len(att.Data) != 0 {
+		t.Errorf("stored message carries %d attachment bytes, want none", len(att.Data))
+	}
+	if got[0].Text != "[photo]\nlook at this" {
+		t.Errorf("Text = %q, want the placeholder note preserved", got[0].Text)
 	}
 }
 

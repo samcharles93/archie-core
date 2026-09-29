@@ -240,6 +240,7 @@ type Message struct {
 	Text      string
 	Ts        int64
 	Search    interface{}
+	Media     []byte
 }
 
 type Org struct {

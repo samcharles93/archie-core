@@ -46,6 +46,15 @@ type Inbound struct {
 	// record keeps the platform. Empty means the sender did not name its
 	// channel, and the Gateway falls back to its own name.
 	Platform string
+
+	// Media carries files the sender attached to this message (photos,
+	// documents, voice, video) with their in-process bytes already
+	// downloaded. Like Page and BudgetKey it is transport-only: it never
+	// crosses a gRPC or persistence boundary, and the stored Message
+	// records the attachment as a short textual note in its Text instead,
+	// because download URLs expire and raw media bytes must not silently
+	// inflate the transcript store. nil for a text-only message.
+	Media []MediaAttachment
 }
 
 // SpawnRequest is a chat-originated task creation request. Repo and

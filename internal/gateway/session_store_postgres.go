@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -238,11 +239,16 @@ func saveMessagePG(ctx context.Context, q *postgresdb.Queries, sessionID string,
 		}
 	}
 	at := stamp(msg)
+	mediaJSON, err := marshalMediaMeta(msg.Media)
+	if err != nil {
+		return "", err
+	}
 	if clamp {
 		err := q.InsertMessageClamped(ctx, postgresdb.InsertMessageClampedParams{
 			MessageID: id, SessionID: sessionID, SourceID: msg.SourceID,
 			Sender: msg.Sender, SenderID: msg.SenderID, Role: role, Text: msg.Text,
-			Ts: at.UnixMilli(),
+			Media: mediaJSON,
+			Ts:    at.UnixMilli(),
 		})
 		if err != nil {
 			return "", fmt.Errorf("sessionstore: save message: %w", err)
@@ -263,7 +269,8 @@ func saveMessagePG(ctx context.Context, q *postgresdb.Queries, sessionID string,
 	err = q.InsertMessageAt(ctx, postgresdb.InsertMessageAtParams{
 		MessageID: id, SessionID: sessionID, SourceID: msg.SourceID,
 		Sender: msg.Sender, SenderID: msg.SenderID, Role: role, Text: msg.Text,
-		Ts: at.UnixMilli(),
+		Media: mediaJSON,
+		Ts:    at.UnixMilli(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("sessionstore: save message: %w", err)
@@ -393,7 +400,7 @@ func (s *postgresSessionStore) MessageCount(ctx context.Context, sessionID strin
 func recentMessagesFromRows(rows []postgresdb.RecentMessagesRow) []messaging.Message {
 	out := make([]messaging.Message, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, messaging.Message{
+		out = append(out, rowMessage(messaging.Message{
 			ID:       messaging.MessageID(row.MessageID),
 			SourceID: row.SourceID,
 			Sender:   row.Sender,
@@ -404,9 +411,64 @@ func recentMessagesFromRows(rows []postgresdb.RecentMessagesRow) []messaging.Mes
 			ConversationID: messaging.ConversationID{
 				ChannelID: row.ChannelID, ThreadID: row.ThreadID,
 			},
-		})
+		}, row.Media))
 	}
 	return out
+}
+
+// stripMediaBytes returns the attachment list with in-process bytes
+// removed -- the shared persist-boundary rule both stores apply. Data is a
+// turn-scoped in-process value: a transcript that quietly retained
+// megabytes of base64 would corrupt the context-budget model the message
+// text assumes. Metadata survives; bytes do not.
+func stripMediaBytes(media []messaging.MediaAttachment) []messaging.MediaAttachment {
+	if len(media) == 0 {
+		return nil
+	}
+	stripped := make([]messaging.MediaAttachment, len(media))
+	for i, att := range media {
+		stripped[i] = att
+		stripped[i].Data = nil
+	}
+	return stripped
+}
+
+// marshalMediaMeta serialises a message's attachment metadata for the
+// database JSON column.
+func marshalMediaMeta(media []messaging.MediaAttachment) ([]byte, error) {
+	if len(media) == 0 {
+		return []byte("[]"), nil
+	}
+	encoded, err := json.Marshal(stripMediaBytes(media))
+	if err != nil {
+		return nil, fmt.Errorf("sessionstore: marshal message media: %w", err)
+	}
+	return encoded, nil
+}
+
+// unmarshalMediaMeta decodes the media JSON column a message row carries.
+func unmarshalMediaMeta(raw string) ([]messaging.MediaAttachment, error) {
+	if raw == "" || raw == "[]" {
+		return nil, nil
+	}
+	var media []messaging.MediaAttachment
+	if err := json.Unmarshal([]byte(raw), &media); err != nil {
+		return nil, fmt.Errorf("sessionstore: unmarshal message media: %w", err)
+	}
+	return media, nil
+}
+
+// rowMessage attaches a message row's decoded media to its base record;
+// a row's media column can only fail to decode through corruption, which
+// is surfaced rather than silently dropping the attachments.
+func rowMessage(base messaging.Message, mediaRaw string) messaging.Message {
+	media, err := unmarshalMediaMeta(mediaRaw)
+	if err != nil {
+		base.Text += " [unreadable media metadata]"
+		return base
+	}
+	base.Media = media
+	return base
 }
 
 // SearchMessages runs a tsvector search over the session's entire message
@@ -461,7 +523,7 @@ func (s *postgresSessionStore) SearchMessages(ctx context.Context, sessionID str
 
 	msgs := make([]messaging.Message, 0, len(rows))
 	for _, row := range rows {
-		msgs = append(msgs, messaging.Message{
+		msgs = append(msgs, rowMessage(messaging.Message{
 			ID:       messaging.MessageID(row.MessageID),
 			SourceID: row.SourceID,
 			Sender:   row.Sender,
@@ -472,7 +534,7 @@ func (s *postgresSessionStore) SearchMessages(ctx context.Context, sessionID str
 			ConversationID: messaging.ConversationID{
 				ChannelID: row.ChannelID, ThreadID: row.ThreadID,
 			},
-		})
+		}, row.Media))
 	}
 
 	next := offset + len(msgs)

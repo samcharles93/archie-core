@@ -161,7 +161,12 @@ type Message struct {
 	// channel, so its own name is "web" even for a Telegram turn, which made
 	// Source.Platform -- the first component of the session natural key -- a
 	// constant. Transport-only, never persisted: the session record keeps it.
-	Platform      string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
+	// media carries attachment metadata for a message that arrived with a
+	// file. The attachment's bytes never cross this wire: a stored Media
+	// with tool_name empty is a sender attachment, and the tool_name on
+	// tool-produced events stays a stream-only field.
+	Media         []*Media `protobuf:"bytes,11,rep,name=media,proto3" json:"media,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -264,6 +269,13 @@ func (x *Message) GetPlatform() string {
 		return x.Platform
 	}
 	return ""
+}
+
+func (x *Message) GetMedia() []*Media {
+	if x != nil {
+		return x.Media
+	}
+	return nil
 }
 
 type ToolCall struct {
@@ -2818,7 +2830,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12@\n" +
 	"\x0elast_active_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xa4\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xcd\x02\n" +
 	"\aMessage\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1b\n" +
@@ -2833,7 +2845,8 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"budget_key\x18\t \x01(\tR\tbudgetKey\x12\x1a\n" +
 	"\bplatform\x18\n" +
-	" \x01(\tR\bplatform\"|\n" +
+	" \x01(\tR\bplatform\x12'\n" +
+	"\x05media\x18\v \x03(\v2\x11.gateway.v1.MediaR\x05media\"|\n" +
 	"\bToolCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1e\n" +
@@ -3127,74 +3140,75 @@ var file_gateway_v1_chat_proto_depIdxs = []int32{
 	50, // 0: gateway.v1.Session.created_at:type_name -> google.protobuf.Timestamp
 	50, // 1: gateway.v1.Session.last_active_at:type_name -> google.protobuf.Timestamp
 	50, // 2: gateway.v1.Message.at:type_name -> google.protobuf.Timestamp
-	2,  // 3: gateway.v1.Turn.tool_calls:type_name -> gateway.v1.ToolCall
-	50, // 4: gateway.v1.Turn.created_at:type_name -> google.protobuf.Timestamp
-	50, // 5: gateway.v1.Turn.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 6: gateway.v1.SnapshotResponse.sessions:type_name -> gateway.v1.Session
-	48, // 7: gateway.v1.SnapshotResponse.models_by_provider:type_name -> gateway.v1.SnapshotResponse.ModelsByProviderEntry
-	49, // 8: gateway.v1.SnapshotResponse.active_personas:type_name -> gateway.v1.SnapshotResponse.ActivePersonasEntry
-	0,  // 9: gateway.v1.GetSessionResponse.session:type_name -> gateway.v1.Session
-	1,  // 10: gateway.v1.RecentMessagesResponse.messages:type_name -> gateway.v1.Message
-	4,  // 11: gateway.v1.RecentTurnsResponse.turns:type_name -> gateway.v1.Turn
-	1,  // 12: gateway.v1.RouteRequest.message:type_name -> gateway.v1.Message
-	1,  // 13: gateway.v1.StreamRequest.message:type_name -> gateway.v1.Message
-	2,  // 14: gateway.v1.StreamResponse.tool:type_name -> gateway.v1.ToolCall
-	3,  // 15: gateway.v1.StreamResponse.media:type_name -> gateway.v1.Media
-	0,  // 16: gateway.v1.SaveSessionRequest.session:type_name -> gateway.v1.Session
-	0,  // 17: gateway.v1.GetSessionsByChannelResponse.sessions:type_name -> gateway.v1.Session
-	0,  // 18: gateway.v1.ListSessionsResponse.sessions:type_name -> gateway.v1.Session
-	1,  // 19: gateway.v1.SaveMessageRequest.message:type_name -> gateway.v1.Message
-	1,  // 20: gateway.v1.SaveMessagesRequest.messages:type_name -> gateway.v1.Message
-	1,  // 21: gateway.v1.ReplaceMessagesRequest.messages:type_name -> gateway.v1.Message
-	1,  // 22: gateway.v1.SearchMessagesResponse.messages:type_name -> gateway.v1.Message
-	5,  // 23: gateway.v1.SnapshotResponse.ModelsByProviderEntry.value:type_name -> gateway.v1.StringList
-	6,  // 24: gateway.v1.ChatService.Snapshot:input_type -> gateway.v1.SnapshotRequest
-	8,  // 25: gateway.v1.ChatService.GetSession:input_type -> gateway.v1.GetSessionRequest
-	10, // 26: gateway.v1.ChatService.RecentMessages:input_type -> gateway.v1.RecentMessagesRequest
-	12, // 27: gateway.v1.ChatService.RecentTurns:input_type -> gateway.v1.RecentTurnsRequest
-	14, // 28: gateway.v1.ChatService.Route:input_type -> gateway.v1.RouteRequest
-	16, // 29: gateway.v1.ChatService.Stream:input_type -> gateway.v1.StreamRequest
-	18, // 30: gateway.v1.ChatService.Cancel:input_type -> gateway.v1.CancelRequest
-	20, // 31: gateway.v1.ChatService.SetPersona:input_type -> gateway.v1.SetPersonaRequest
-	22, // 32: gateway.v1.ChatService.ApplyTaskAction:input_type -> gateway.v1.ApplyTaskActionRequest
-	24, // 33: gateway.v1.ChatService.ApplyOperatorTaskAction:input_type -> gateway.v1.ApplyOperatorTaskActionRequest
-	27, // 34: gateway.v1.ChatService.SaveSession:input_type -> gateway.v1.SaveSessionRequest
-	28, // 35: gateway.v1.ChatService.GetSessionsByChannel:input_type -> gateway.v1.GetSessionsByChannelRequest
-	36, // 36: gateway.v1.ChatService.DeleteSession:input_type -> gateway.v1.DeleteSessionRequest
-	37, // 37: gateway.v1.ChatService.TouchSession:input_type -> gateway.v1.TouchSessionRequest
-	38, // 38: gateway.v1.ChatService.ListSessions:input_type -> gateway.v1.ListSessionsRequest
-	39, // 39: gateway.v1.ChatService.SaveMessage:input_type -> gateway.v1.SaveMessageRequest
-	40, // 40: gateway.v1.ChatService.DeleteRecentMessages:input_type -> gateway.v1.DeleteRecentMessagesRequest
-	42, // 41: gateway.v1.ChatService.MessageCount:input_type -> gateway.v1.MessageCountRequest
-	44, // 42: gateway.v1.ChatService.SaveMessages:input_type -> gateway.v1.SaveMessagesRequest
-	45, // 43: gateway.v1.ChatService.ReplaceMessages:input_type -> gateway.v1.ReplaceMessagesRequest
-	46, // 44: gateway.v1.ChatService.SearchMessages:input_type -> gateway.v1.SearchMessagesRequest
-	7,  // 45: gateway.v1.ChatService.Snapshot:output_type -> gateway.v1.SnapshotResponse
-	9,  // 46: gateway.v1.ChatService.GetSession:output_type -> gateway.v1.GetSessionResponse
-	11, // 47: gateway.v1.ChatService.RecentMessages:output_type -> gateway.v1.RecentMessagesResponse
-	13, // 48: gateway.v1.ChatService.RecentTurns:output_type -> gateway.v1.RecentTurnsResponse
-	15, // 49: gateway.v1.ChatService.Route:output_type -> gateway.v1.RouteResponse
-	17, // 50: gateway.v1.ChatService.Stream:output_type -> gateway.v1.StreamResponse
-	19, // 51: gateway.v1.ChatService.Cancel:output_type -> gateway.v1.CancelResponse
-	21, // 52: gateway.v1.ChatService.SetPersona:output_type -> gateway.v1.SetPersonaResponse
-	23, // 53: gateway.v1.ChatService.ApplyTaskAction:output_type -> gateway.v1.ApplyTaskActionResponse
-	25, // 54: gateway.v1.ChatService.ApplyOperatorTaskAction:output_type -> gateway.v1.ApplyOperatorTaskActionResponse
-	26, // 55: gateway.v1.ChatService.SaveSession:output_type -> gateway.v1.SaveSessionResponse
-	29, // 56: gateway.v1.ChatService.GetSessionsByChannel:output_type -> gateway.v1.GetSessionsByChannelResponse
-	31, // 57: gateway.v1.ChatService.DeleteSession:output_type -> gateway.v1.DeleteSessionResponse
-	32, // 58: gateway.v1.ChatService.TouchSession:output_type -> gateway.v1.TouchSessionResponse
-	30, // 59: gateway.v1.ChatService.ListSessions:output_type -> gateway.v1.ListSessionsResponse
-	33, // 60: gateway.v1.ChatService.SaveMessage:output_type -> gateway.v1.SaveMessageResponse
-	41, // 61: gateway.v1.ChatService.DeleteRecentMessages:output_type -> gateway.v1.DeleteRecentMessagesResponse
-	43, // 62: gateway.v1.ChatService.MessageCount:output_type -> gateway.v1.MessageCountResponse
-	34, // 63: gateway.v1.ChatService.SaveMessages:output_type -> gateway.v1.SaveMessagesResponse
-	35, // 64: gateway.v1.ChatService.ReplaceMessages:output_type -> gateway.v1.ReplaceMessagesResponse
-	47, // 65: gateway.v1.ChatService.SearchMessages:output_type -> gateway.v1.SearchMessagesResponse
-	45, // [45:66] is the sub-list for method output_type
-	24, // [24:45] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	3,  // 3: gateway.v1.Message.media:type_name -> gateway.v1.Media
+	2,  // 4: gateway.v1.Turn.tool_calls:type_name -> gateway.v1.ToolCall
+	50, // 5: gateway.v1.Turn.created_at:type_name -> google.protobuf.Timestamp
+	50, // 6: gateway.v1.Turn.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 7: gateway.v1.SnapshotResponse.sessions:type_name -> gateway.v1.Session
+	48, // 8: gateway.v1.SnapshotResponse.models_by_provider:type_name -> gateway.v1.SnapshotResponse.ModelsByProviderEntry
+	49, // 9: gateway.v1.SnapshotResponse.active_personas:type_name -> gateway.v1.SnapshotResponse.ActivePersonasEntry
+	0,  // 10: gateway.v1.GetSessionResponse.session:type_name -> gateway.v1.Session
+	1,  // 11: gateway.v1.RecentMessagesResponse.messages:type_name -> gateway.v1.Message
+	4,  // 12: gateway.v1.RecentTurnsResponse.turns:type_name -> gateway.v1.Turn
+	1,  // 13: gateway.v1.RouteRequest.message:type_name -> gateway.v1.Message
+	1,  // 14: gateway.v1.StreamRequest.message:type_name -> gateway.v1.Message
+	2,  // 15: gateway.v1.StreamResponse.tool:type_name -> gateway.v1.ToolCall
+	3,  // 16: gateway.v1.StreamResponse.media:type_name -> gateway.v1.Media
+	0,  // 17: gateway.v1.SaveSessionRequest.session:type_name -> gateway.v1.Session
+	0,  // 18: gateway.v1.GetSessionsByChannelResponse.sessions:type_name -> gateway.v1.Session
+	0,  // 19: gateway.v1.ListSessionsResponse.sessions:type_name -> gateway.v1.Session
+	1,  // 20: gateway.v1.SaveMessageRequest.message:type_name -> gateway.v1.Message
+	1,  // 21: gateway.v1.SaveMessagesRequest.messages:type_name -> gateway.v1.Message
+	1,  // 22: gateway.v1.ReplaceMessagesRequest.messages:type_name -> gateway.v1.Message
+	1,  // 23: gateway.v1.SearchMessagesResponse.messages:type_name -> gateway.v1.Message
+	5,  // 24: gateway.v1.SnapshotResponse.ModelsByProviderEntry.value:type_name -> gateway.v1.StringList
+	6,  // 25: gateway.v1.ChatService.Snapshot:input_type -> gateway.v1.SnapshotRequest
+	8,  // 26: gateway.v1.ChatService.GetSession:input_type -> gateway.v1.GetSessionRequest
+	10, // 27: gateway.v1.ChatService.RecentMessages:input_type -> gateway.v1.RecentMessagesRequest
+	12, // 28: gateway.v1.ChatService.RecentTurns:input_type -> gateway.v1.RecentTurnsRequest
+	14, // 29: gateway.v1.ChatService.Route:input_type -> gateway.v1.RouteRequest
+	16, // 30: gateway.v1.ChatService.Stream:input_type -> gateway.v1.StreamRequest
+	18, // 31: gateway.v1.ChatService.Cancel:input_type -> gateway.v1.CancelRequest
+	20, // 32: gateway.v1.ChatService.SetPersona:input_type -> gateway.v1.SetPersonaRequest
+	22, // 33: gateway.v1.ChatService.ApplyTaskAction:input_type -> gateway.v1.ApplyTaskActionRequest
+	24, // 34: gateway.v1.ChatService.ApplyOperatorTaskAction:input_type -> gateway.v1.ApplyOperatorTaskActionRequest
+	27, // 35: gateway.v1.ChatService.SaveSession:input_type -> gateway.v1.SaveSessionRequest
+	28, // 36: gateway.v1.ChatService.GetSessionsByChannel:input_type -> gateway.v1.GetSessionsByChannelRequest
+	36, // 37: gateway.v1.ChatService.DeleteSession:input_type -> gateway.v1.DeleteSessionRequest
+	37, // 38: gateway.v1.ChatService.TouchSession:input_type -> gateway.v1.TouchSessionRequest
+	38, // 39: gateway.v1.ChatService.ListSessions:input_type -> gateway.v1.ListSessionsRequest
+	39, // 40: gateway.v1.ChatService.SaveMessage:input_type -> gateway.v1.SaveMessageRequest
+	40, // 41: gateway.v1.ChatService.DeleteRecentMessages:input_type -> gateway.v1.DeleteRecentMessagesRequest
+	42, // 42: gateway.v1.ChatService.MessageCount:input_type -> gateway.v1.MessageCountRequest
+	44, // 43: gateway.v1.ChatService.SaveMessages:input_type -> gateway.v1.SaveMessagesRequest
+	45, // 44: gateway.v1.ChatService.ReplaceMessages:input_type -> gateway.v1.ReplaceMessagesRequest
+	46, // 45: gateway.v1.ChatService.SearchMessages:input_type -> gateway.v1.SearchMessagesRequest
+	7,  // 46: gateway.v1.ChatService.Snapshot:output_type -> gateway.v1.SnapshotResponse
+	9,  // 47: gateway.v1.ChatService.GetSession:output_type -> gateway.v1.GetSessionResponse
+	11, // 48: gateway.v1.ChatService.RecentMessages:output_type -> gateway.v1.RecentMessagesResponse
+	13, // 49: gateway.v1.ChatService.RecentTurns:output_type -> gateway.v1.RecentTurnsResponse
+	15, // 50: gateway.v1.ChatService.Route:output_type -> gateway.v1.RouteResponse
+	17, // 51: gateway.v1.ChatService.Stream:output_type -> gateway.v1.StreamResponse
+	19, // 52: gateway.v1.ChatService.Cancel:output_type -> gateway.v1.CancelResponse
+	21, // 53: gateway.v1.ChatService.SetPersona:output_type -> gateway.v1.SetPersonaResponse
+	23, // 54: gateway.v1.ChatService.ApplyTaskAction:output_type -> gateway.v1.ApplyTaskActionResponse
+	25, // 55: gateway.v1.ChatService.ApplyOperatorTaskAction:output_type -> gateway.v1.ApplyOperatorTaskActionResponse
+	26, // 56: gateway.v1.ChatService.SaveSession:output_type -> gateway.v1.SaveSessionResponse
+	29, // 57: gateway.v1.ChatService.GetSessionsByChannel:output_type -> gateway.v1.GetSessionsByChannelResponse
+	31, // 58: gateway.v1.ChatService.DeleteSession:output_type -> gateway.v1.DeleteSessionResponse
+	32, // 59: gateway.v1.ChatService.TouchSession:output_type -> gateway.v1.TouchSessionResponse
+	30, // 60: gateway.v1.ChatService.ListSessions:output_type -> gateway.v1.ListSessionsResponse
+	33, // 61: gateway.v1.ChatService.SaveMessage:output_type -> gateway.v1.SaveMessageResponse
+	41, // 62: gateway.v1.ChatService.DeleteRecentMessages:output_type -> gateway.v1.DeleteRecentMessagesResponse
+	43, // 63: gateway.v1.ChatService.MessageCount:output_type -> gateway.v1.MessageCountResponse
+	34, // 64: gateway.v1.ChatService.SaveMessages:output_type -> gateway.v1.SaveMessagesResponse
+	35, // 65: gateway.v1.ChatService.ReplaceMessages:output_type -> gateway.v1.ReplaceMessagesResponse
+	47, // 66: gateway.v1.ChatService.SearchMessages:output_type -> gateway.v1.SearchMessagesResponse
+	46, // [46:67] is the sub-list for method output_type
+	25, // [25:46] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_gateway_v1_chat_proto_init() }

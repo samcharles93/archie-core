@@ -45,7 +45,12 @@ type PreparedTurnModel interface {
 // TurnModelRequest is the provider-neutral request assembled by the gateway.
 // Messages include the system prompt as their first entry.
 type TurnModelRequest struct {
-	Messages        []CompressedMessage
+	Messages []CompressedMessage
+	// Media carries the media attachments of this turn's inbound message.
+	// They belong to the final user message and are never part of stored
+	// history, so the model seam must merge them into that message when
+	// building its provider request. Empty for a text-only turn.
+	Media           []messaging.MediaAttachment
 	MaxOutputTokens int
 }
 
@@ -294,13 +299,15 @@ func (r *TurnRunner) recordInboundMessage(
 }
 
 // preparedTurn is the generation-ready state built from a turn's history:
-// the prepared model, its resolved details, and the compressed message
-// view (system prompt already prepended).
+// the prepared model, its resolved details, the compressed message view
+// (system prompt already prepended), and the current turn's media which
+// lives outside stored history and so must ride the prepared turn itself.
 type preparedTurn struct {
 	prepared     PreparedTurnModel
 	modelName    string
 	modelDetails ModelDetails
 	view         CompressedView
+	media        []messaging.MediaAttachment
 }
 
 // prepareTurn builds the tools, system prompt, and compressed history view
@@ -383,7 +390,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	view.Messages = append(
 		[]CompressedMessage{{Role: "system", Content: systemPrompt}}, view.Messages...,
 	)
-	return preparedTurn{prepared: prepared, modelName: modelName, modelDetails: modelDetails, view: view}, nil
+	return preparedTurn{prepared: prepared, modelName: modelName, modelDetails: modelDetails, view: view, media: in.Media}, nil
 }
 
 // compressSessionAtBudget compresses the session's stored history when it has
@@ -490,6 +497,7 @@ func (r *TurnRunner) generateAndComplete(
 	recorder := &toolCallRecorder{next: stream}
 	text, err := prep.prepared.Generate(ctx, TurnModelRequest{
 		Messages:        prep.view.Messages,
+		Media:           prep.media,
 		MaxOutputTokens: prep.modelDetails.MaxOutputTokens,
 	}, recorder)
 	if err != nil {

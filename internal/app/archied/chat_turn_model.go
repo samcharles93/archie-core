@@ -100,6 +100,80 @@ func (m *preparedChatTurnModel) ToolSummaries() []gateway.ToolSummary {
 	return append([]gateway.ToolSummary(nil), m.toolInfo...)
 }
 
+// buildTurnMessages maps the gateway's compressed history onto ai-sdk chat
+// messages. The turn's inbound media is not part of stored history, so it
+// is merged here into the final user message as content parts: the model
+// sees the caption text plus each attachment's bytes (or URL), exactly for
+// the turn it arrived in.
+func buildTurnMessages(request gateway.TurnModelRequest) []chat.Message {
+	messages := make([]chat.Message, len(request.Messages))
+	for i, message := range request.Messages {
+		role := chat.RoleUser
+		switch message.Role {
+		case "assistant":
+			role = chat.RoleAssistant
+		case "system":
+			role = chat.RoleSystem
+		}
+		messages[i] = chat.Message{Role: role, Content: message.Content}
+	}
+	parts := mediaParts(request.Media)
+	if len(parts) == 0 {
+		return messages
+	}
+	last := len(messages) - 1
+	// The media belongs to the inbound message, which is always the final
+	// user entry; if the view ever ends differently, content stays intact
+	// over silently attaching parts to an unrelated message.
+	if last < 0 || messages[last].Role != chat.RoleUser {
+		return messages
+	}
+	userMessages := messages[last]
+	userMessages.Parts = append(chat.Parts{chat.TextPart{Text: userMessages.Content}}, parts...)
+	userMessages.Content = ""
+	messages[last] = userMessages
+	return messages
+}
+
+// mediaParts converts inbound media attachments into ai-sdk content
+// parts: images get ImagePart, everything else FilePart. An attachment
+// carrying neither bytes nor a URL names nothing consumable and is
+// dropped -- the turn's text still reaches the model.
+func mediaParts(media []gateway.MediaAttachment) []chat.Part {
+	if len(media) == 0 {
+		return nil
+	}
+	parts := make([]chat.Part, 0, len(media))
+	for _, att := range media {
+		if att.Type == "image" {
+			switch {
+			case len(att.Data) > 0 && att.MIMEType != "":
+				parts = append(parts, chat.ImagePart{Data: att.Data, MediaType: att.MIMEType})
+			case att.URL != "":
+				parts = append(parts, chat.ImagePart{URL: att.URL})
+			}
+			continue
+		}
+		part := chat.FilePart{Name: att.FileName, MediaType: att.MIMEType}
+		if len(att.Data) > 0 {
+			part.Data = att.Data
+		} else {
+			part.URL = att.URL
+		}
+		if len(part.Data) == 0 && part.URL == "" {
+			continue
+		}
+		if part.MediaType == "" {
+			part.MediaType = "application/octet-stream"
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return parts
+}
+
 func (m *preparedChatTurnModel) ToolSchemaTokens() int {
 	return m.toolTokens
 }
@@ -110,17 +184,7 @@ func (m *preparedChatTurnModel) Generate(
 	stream gateway.TurnStream,
 ) (string, error) {
 	options := m.options
-	options.Messages = make([]chat.Message, len(request.Messages))
-	for i, message := range request.Messages {
-		role := chat.RoleUser
-		switch message.Role {
-		case "assistant":
-			role = chat.RoleAssistant
-		case "system":
-			role = chat.RoleSystem
-		}
-		options.Messages[i] = chat.Message{Role: role, Content: message.Content}
-	}
+	options.Messages = buildTurnMessages(request)
 	// This is one provider response's output allowance, not a turn-
 	// continuation budget. Tool loops remain free to continue.
 	options.MaxTokens = request.MaxOutputTokens

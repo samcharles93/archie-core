@@ -519,7 +519,7 @@ func (g *Gateway) startHandler() bot.HandlerFunc {
 	}
 }
 
-// ── default handler (non-command text → router) ─────────────
+// ── default handler (commands and non-command messages → router) ─────
 
 func (g *Gateway) defaultHandler(client messaging.ChatContract) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -529,7 +529,20 @@ func (g *Gateway) defaultHandler(client messaging.ChatContract) bot.HandlerFunc 
 		}
 
 		msg, ok := g.authorizedMessage(ctx, b, update)
-		if !ok || msg.Text == "" {
+		if !ok {
+			return
+		}
+		// Media messages arrive before the text gates: a photo has no text,
+		// so checking it first is what keeps attachments from being dropped.
+		if _, isMedia := extractInboundMedia(msg); isMedia {
+			g.submitTurn(ctx, b, msg, client)
+			return
+		}
+		if notice := unsupportedMediaNotice(msg); notice != "" {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, notice)
+			return
+		}
+		if msg.Text == "" {
 			return
 		}
 		if isModelSelectorRequest(msg.Text) {
@@ -584,27 +597,52 @@ func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models
 // running here would block delivery of every later update -- including the
 // /stop meant to cancel it, which would sit unread until the turn it was
 // aimed at had already finished.
+// turnInbound renders a Telegram message as the channel-neutral inbound a
+// chat turn is built from, with media attachments attached. ok is false
+// for messages with neither text nor media, which are not turns at all.
+func turnInbound(msg *models.Message) (messaging.Inbound, bool) {
+	media, hasMedia := extractInboundMedia(msg)
+	if !hasMedia && msg.Text == "" {
+		return messaging.Inbound{}, false
+	}
+	gm := messaging.Inbound{
+		Platform: "telegram",
+		Message: messaging.Message{
+			// Telegram's message ID makes persistence idempotent: the store
+			// derives a canonical ID from it, so a redelivered update is a
+			// no-op rather than appending a duplicate or overwriting the
+			// stored record, which must stay immutable. Date is the sender's
+			// clock reading and is what history should be ordered by.
+			SourceID:       fmt.Sprintf("%d", msg.ID),
+			ConversationID: conversationID(msg),
+			Sender:         msg.From.Username,
+			SenderID:       fmt.Sprintf("%d", msg.From.ID),
+			Role:           messaging.RoleUser,
+			Text:           turnMessageText(msg, media, hasMedia),
+			At:             time.Unix(int64(msg.Date), 0).UTC(),
+		},
+	}
+	if hasMedia {
+		gm.Media = []messaging.MediaAttachment{media.attachment}
+	}
+	return gm, true
+}
+
 func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, client messaging.ChatContract) {
-	gm := messaging.Inbound{Platform: "telegram", Message: messaging.Message{
-		// Telegram's message ID makes persistence idempotent: the store
-		// derives a canonical ID from it, so a redelivered update is a
-		// no-op rather than appending a duplicate or overwriting the
-		// stored record, which must stay immutable. Date is the sender's
-		// clock reading and is what history should be ordered by.
-		SourceID:       fmt.Sprintf("%d", msg.ID),
-		ConversationID: conversationID(msg),
-		Sender:         msg.From.Username,
-		SenderID:       fmt.Sprintf("%d", msg.From.ID),
-		Role:           messaging.RoleUser,
-		Text:           msg.Text,
-		At:             time.Unix(int64(msg.Date), 0).UTC(),
-	}}
+	gm, isTurn := turnInbound(msg)
+	if !isTurn {
+		return
+	}
 
 	// The lane key must be the session, so that /stop -- which resolves
 	// the same key -- reaches the turn the sender is actually watching.
 	session := conversationID(msg).String()
 	chatID, threadID := msg.Chat.ID, msg.MessageThreadID
 	g.turns.Submit(ctx, session, func(turnCtx context.Context) {
+		if !g.fetchTurnMedia(turnCtx, b, &gm, chatID, threadID) {
+			return
+		}
+
 		// If the turn invokes a tool that requires human approval,
 		// the dispatch layer blocks on this approver. Nil is fine
 		// — most turns need no gating.
@@ -629,53 +667,92 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 			return
 		}
 
-		var reply string
-		var streamErr error
-		for ev := range events {
-			switch ev.Kind {
-			case "delta":
-				live.Delta(ev.Text)
-			case "tool":
-				live.ToolCall(ev.Tool)
-			case "media":
-				live.Media(turnCtx, ev.Media)
-			case "done":
-				reply = ev.Text
-			case "error":
-				streamErr = errors.New(ev.Text)
-			}
-		}
-		stopTyping()
-
-		// A cancelled turn is a /stop, not a fault. The stop handler has
-		// already acknowledged it, and turnCtx is dead, so there is
-		// nothing useful left to send from here  --  but whatever was
-		// already streamed stays, minus the cursor that would otherwise
-		// claim the answer is still being written. abandon strips turnCtx's
-		// own cancellation before it edits, so the cursor-drop is not itself
-		// aborted by the /stop that triggered it.
-		//
-		// errors.Is(err, context.Canceled) reliably separates a /stop from a
-		// fault; either way turnCtx is dead by the time we get here. A
-		// genuine fault is marked as failed rather than left as a clean
-		// partial: /stop is an acknowledged interruption, a provider error
-		// is not, and an unmarked partial reads as a finished answer either
-		// way.
-		if streamErr != nil || turnCtx.Err() != nil {
-			if errors.Is(turnCtx.Err(), context.Canceled) || (streamErr != nil && errors.Is(streamErr, context.Canceled)) {
-				g.log.Info("chat turn stopped", "session", session)
-				live.abandon(turnCtx)
-			} else {
-				g.log.Error("stream turn failed", "error", streamErr)
-				live.abandonFailed(turnCtx)
-			}
+		reply, aborted := g.drainTurnEvents(turnCtx, session, live, stopTyping, events)
+		if aborted {
 			return
 		}
 		live.finalize(turnCtx, reply)
 	})
 }
 
-// ── helpers ──────────────────────────────────────────────────
+// drainTurnEvents consumes a streamed turn, rendering deltas, tool calls
+// and media as they arrive, and returns the final reply.
+//
+// A cancelled turn is a /stop, not a fault. The stop handler has already
+// acknowledged it, and turnCtx is dead, so there is
+// nothing useful left to send from here  --  but whatever was
+// already streamed stays, minus the cursor that would otherwise
+// claim the answer is still being written. abandon strips turnCtx's
+// own cancellation before it edits, so the cursor-drop is not itself
+// aborted by the /stop that triggered it.
+//
+// errors.Is(err, context.Canceled) reliably separates a /stop from a
+// fault; either way turnCtx is dead by the time we get here. A
+// genuine fault is marked as failed rather than left as a clean
+// partial: /stop is an acknowledged interruption, a provider error
+// is not, and an unmarked partial reads as a finished answer either
+// way.
+//
+// aborted means the turn was abandoned (as a stop or a failure) and its
+// reply must not be finalized.
+func (g *Gateway) drainTurnEvents(
+	turnCtx context.Context, session string,
+	live *liveReply, stopTyping func(), events <-chan messaging.ChatEvent,
+) (string, bool) {
+	var reply string
+	var streamErr error
+	for ev := range events {
+		switch ev.Kind {
+		case "delta":
+			live.Delta(ev.Text)
+		case "tool":
+			live.ToolCall(ev.Tool)
+		case "media":
+			live.Media(turnCtx, ev.Media)
+		case "done":
+			reply = ev.Text
+		case "error":
+			streamErr = errors.New(ev.Text)
+		}
+	}
+	stopTyping()
+
+	if streamErr != nil || turnCtx.Err() != nil {
+		if errors.Is(turnCtx.Err(), context.Canceled) || (streamErr != nil && errors.Is(streamErr, context.Canceled)) {
+			g.log.Info("chat turn stopped", "session", session)
+			live.abandon(turnCtx)
+		} else {
+			g.log.Error("stream turn failed", "error", streamErr)
+			live.abandonFailed(turnCtx)
+		}
+		return "", true
+	}
+	return reply, false
+}
+
+// fetchTurnMedia downloads the turn's inbound attachment onto the lane,
+// where waiting for the Telegram API belongs: the update worker stays free
+// to serve other messages and a /stop while this download progresses. A
+// failed download is reported as a failed attachment without starting the
+// turn, so the answer does not pretend the media was read -- a later
+// turn's history only knows the note, not the picture, and the model must
+// not reason from what it never saw.
+func (g *Gateway) fetchTurnMedia(ctx context.Context, b *bot.Bot, gm *messaging.Inbound, chatID int64, threadID int) bool {
+	if len(gm.Media) == 0 || gm.Media[0].Data != nil {
+		return true
+	}
+	data, err := g.downloadMedia(ctx, b, gm.Media[0])
+	if err != nil {
+		g.log.Warn("inbound media download failed", "media_type", gm.Media[0].Type, "error", err)
+		g.sendMessage(ctx, b, chatID, threadID,
+			mediaReplyLabel(gm.Media[0])+"but I couldn't download it — try sending it again.")
+		return false
+	}
+	gm.Media[0].Data = data
+	return true
+}
+
+// ── helpers ──────────────────────────────────────────────────────
 
 // conversationID addresses the chat a Telegram message arrived in: the
 // chat ID, and the topic thread within it for supergroups.

@@ -182,6 +182,7 @@ func (s *memorySessionStore) saveMessage(sessionID string, msg messaging.Message
 	stored := messaging.Message{
 		ID: messaging.MessageID(id), SourceID: msg.SourceID, Sender: msg.Sender,
 		SenderID: msg.SenderID, Role: role, Text: msg.Text,
+		Media: stripMediaBytes(msg.Media),
 	}
 	history = append(history, memoryMessage{seq: s.seq, ts: ts, msg: stored})
 	slices.SortStableFunc(history, func(a, b memoryMessage) int {

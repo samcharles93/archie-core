@@ -35,6 +35,7 @@ func storedProto(m messaging.Message) *pb.Message {
 		From:      m.Sender,
 		Text:      m.Text,
 		At:        timestamp(m.At),
+		Media:     attachmentProtoList(m.Media),
 	}
 }
 
@@ -51,6 +52,7 @@ func storedValue(v *pb.Message) messaging.Message {
 		Sender:         v.From,
 		Text:           v.Text,
 		At:             timeValue(v.At),
+		Media:          attachmentValueList(v.GetMedia()),
 	}
 }
 
@@ -62,6 +64,7 @@ func inboundProto(v messaging.Inbound) *pb.Message {
 	m.Page = v.Page
 	m.BudgetKey = v.BudgetKey
 	m.Platform = v.Platform
+	m.Media = attachmentProtoList(v.Media)
 	return m
 }
 
@@ -75,7 +78,7 @@ func inboundValue(v *pb.Message) messaging.Inbound {
 	}
 	msg := storedValue(v)
 	msg.Role = messaging.RoleUser
-	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey, Platform: v.Platform}
+	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey, Platform: v.Platform, Media: attachmentValueList(v.GetMedia())}
 }
 
 func toolProto(v messaging.ToolCallEvent) *pb.ToolCall {
@@ -172,16 +175,48 @@ func intPointer(v *int64) *int {
 	return &n
 }
 
+// attachmentProtoList renders a message's attachments in wire shape. Data
+// is deliberately unmapped: it is a turn-scoped in-process value and must
+// never cross the wire, matching the persisted record which strips it too.
+// An attachment with no fields beyond Data would produce an empty wire
+// message, which is still the honest encoding of "metadata was stripped",
+// and never happens for a real attachment.
+func attachmentProtoList(media []messaging.MediaAttachment) []*pb.Media {
+	if len(media) == 0 {
+		return nil
+	}
+	return mapValues(media, attachmentProto)
+}
+
+func attachmentValueList(list []*pb.Media) []messaging.MediaAttachment {
+	if len(list) == 0 {
+		return nil
+	}
+	return mapValues(list, attachmentValue)
+}
+
+func attachmentProto(a messaging.MediaAttachment) *pb.Media {
+	return &pb.Media{Type: a.Type, FileId: a.FileID, Url: a.URL, Path: a.Path, MimeType: a.MIMEType, FileName: a.FileName, FileSize: a.FileSize, Width: int64Pointer(a.Width), Height: int64Pointer(a.Height), Duration: int64Pointer(a.Duration)}
+}
+
+func attachmentValue(v *pb.Media) messaging.MediaAttachment {
+	if v == nil {
+		return messaging.MediaAttachment{}
+	}
+	return messaging.MediaAttachment{Type: v.Type, FileID: v.FileId, URL: v.Url, Path: v.Path, MIMEType: v.MimeType, FileName: v.FileName, FileSize: v.FileSize, Width: intPointer(v.Width), Height: intPointer(v.Height), Duration: intPointer(v.Duration)}
+}
+
 func mediaProto(v messaging.MediaEvent) *pb.Media {
-	a := v.Attachment
-	return &pb.Media{ToolName: v.ToolName, Type: a.Type, FileId: a.FileID, Url: a.URL, Path: a.Path, MimeType: a.MIMEType, FileName: a.FileName, FileSize: a.FileSize, Width: int64Pointer(a.Width), Height: int64Pointer(a.Height), Duration: int64Pointer(a.Duration)}
+	pm := attachmentProto(v.Attachment)
+	pm.ToolName = v.ToolName
+	return pm
 }
 
 func mediaValue(v *pb.Media) messaging.MediaEvent {
 	if v == nil {
 		return messaging.MediaEvent{}
 	}
-	return messaging.MediaEvent{ToolName: v.ToolName, Attachment: messaging.MediaAttachment{Type: v.Type, FileID: v.FileId, URL: v.Url, Path: v.Path, MIMEType: v.MimeType, FileName: v.FileName, FileSize: v.FileSize, Width: intPointer(v.Width), Height: intPointer(v.Height), Duration: intPointer(v.Duration)}}
+	return messaging.MediaEvent{ToolName: v.ToolName, Attachment: attachmentValue(v)}
 }
 
 func eventProto(v messaging.ChatEvent) *pb.StreamResponse {

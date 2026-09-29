@@ -105,6 +105,16 @@ type Message struct {
 	Role Role
 	Text string
 
+	// Media carries attachment metadata for messages that arrived with a
+	// file (photo, document, video, audio): the platform attachment id, its
+	// name, type, and size, so the transcript records what was sent as
+	// data rather than as prose. The attachment bytes and any embedded
+	// Data field are deliberately NOT persisted -- they are turn-scoped --
+	// so this is the metadata a later reader (search, transcript, a
+	// re-look capability) can act on, including re-fetching through
+	// FileID where the platform allows it.
+	Media []MediaAttachment `json:"media,omitempty"`
+
 	// ToolCall and ToolResult are populated instead of Text for their
 	// respective Roles; a Message carries exactly one of Text, ToolCall, or
 	// ToolResult content.
