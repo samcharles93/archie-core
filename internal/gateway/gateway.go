@@ -206,7 +206,17 @@ type Router struct {
 	// has a stable source but no person), else against Message.SenderID.
 	// A message with neither is never limited: there is no key to charge
 	// it against.
-	Limiter        *ratelimit.Limiter
+	Limiter *ratelimit.Limiter
+	// Dedup declines a redelivered platform message (same platform,
+	// conversation and channel-native ID, delivered again inside the TTL
+	// window from internal/gateway/message_dedup.go) before it re-enters
+	// the turn pipeline. NewRouter wires the package default, so a
+	// production router is always guarded; set a differently configured
+	// gate to tune it, or nil to disable dedup entirely (test setups).
+	// The window is deliberately not a config knob here: the durable
+	// prior-reply replay in turn.go is the backstop for duplicates that
+	// outlive it, and no composition choice between them needs exposing.
+	Dedup          *MessageDeduplicator
 	sessionTracker *sessionTracker
 	gatewayName    string
 	// titlingMu guards titling, the set of sessions with a title proposal
@@ -218,7 +228,10 @@ type Router struct {
 // NewRouter returns a Router. llm is optional  --  when nil, non-command
 // messages get a "not configured" response.
 func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router {
-	return &Router{Store: store, LLM: llm, gatewayName: gatewayName}
+	return &Router{
+		Store: store, LLM: llm, gatewayName: gatewayName,
+		Dedup: NewMessageDeduplicator(0, 0, nil),
+	}
 }
 
 // InitSessions wires the session store and starts tracking sessions.
@@ -277,11 +290,23 @@ func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
 // echoing the rate-limit prose as a successful delivery, or accepting an
 // event that was actually dropped (archie-core-1173).
 func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rateLimited bool, err error) {
+	if r.duplicateDelivery(in) {
+		return dedupReply, false, nil
+	}
 	if r.checkRateLimit(in) {
 		return rateLimitReply, true, nil
 	}
 	reply, err = r.route(ctx, in)
 	return reply, false, err
+}
+
+// duplicateDelivery reports whether in is a repeat delivery inside the
+// dedup window, and records the delivery so later repeats see this one.
+// The check runs before the rate limit: a repeated delivery is the
+// channel's doing, not the sender's, so it must not spend the sender's
+// inbound budget. A nil Dedup (disabled) never blocks.
+func (r *Router) duplicateDelivery(in Inbound) bool {
+	return r.Dedup != nil && !r.Dedup.Admit(in)
 }
 
 // route is Route's continuation once the caller has already cleared the
@@ -456,6 +481,9 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Messa
 func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
 	if r.LLMStream == nil || stream == nil {
 		return r.Route(ctx, in)
+	}
+	if r.duplicateDelivery(in) {
+		return dedupReply, nil
 	}
 	if r.checkRateLimit(in) {
 		return rateLimitReply, nil
