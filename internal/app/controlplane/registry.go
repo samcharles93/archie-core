@@ -3,6 +3,8 @@ package controlplane
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,14 +75,47 @@ type SeedSkip struct {
 	Err  error
 }
 
-// ImportConfig seeds every control-plane resource that has no stored value yet
-// from the file config, and reports the version of every kind it left alone.
+// The audit identity every seed writes under. It is a constant rather than a
+// literal at each call site because a later boot reads it back: it is how a
+// stored value is told apart from one an operator replaced (seedWroteNewest),
+// and a writer whose identity its own reader cannot name cannot make that
+// distinction at all.
+const (
+	seedActor  = "system:migration"
+	seedSource = "legacy-config"
+)
+
+// ImportConfig brings every control-plane resource up to date with the value
+// this build seeds for it, and reports the version each kind is left at.
 //
-// A seed the resource's own validator refuses is SKIPPED and returned in skipped,
-// not fatal. Nothing is written for that kind, so it stays ABSENT and the file
-// document's value stays the one in effect (Client.RuntimeConfig leaves an absent
-// kind alone), with the fix still in the file. The seed is retried on the next
-// start of this process, so correcting config.toml re-seeds it.
+// For a kind the store does not hold, that is the seed itself. For a kind it
+// does hold, the stored value wins and the seed writes nothing -- with one
+// exception, because the two ways a kind gets its content are not symmetric:
+//
+//   - A kind derived from the file config is seeded once and then owned by the
+//     store. Editing config.toml does not reach a database that holds a value
+//     for it, which is the whole point of the file being only a seed.
+//   - A kind whose document the build ships (the ones that set Definition.Defaults,
+//     the same set the catalog offers as "restore shipped") is not derived from
+//     operator input at all, so a stored copy is a copy of an older build's
+//     document and nothing else. A value like that is brought up to date, or a
+//     State Store upgraded under a running deployment keeps serving the previous
+//     release's document forever. For workflow-definitions that is not a stale
+//     setting but an outage: the collection validates as one document, so a
+//     stored step type this build no longer has fails every task's pin, whatever
+//     workflow the task names.
+//
+// A refreshed kind keeps its history: the value it replaced stays a revision in
+// resource_history. What is replaced is only the seed's own work -- a
+// definition set an operator replaced is theirs and is left alone, on the boot
+// that finds it and on every boot after.
+//
+// A seed the resource's own validator refuses is SKIPPED and returned in
+// skipped, not fatal. Nothing is written for that kind, so it stays ABSENT and
+// the file document's value stays the one in effect (Client.RuntimeConfig
+// leaves an absent kind alone), with the fix still in the file. The seed is
+// retried on the next start of this process, so correcting config.toml re-seeds
+// it.
 // docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
 // after migration, settings in TOML are ignored and cannot block State Store
 // startup -- and this import runs on the State Store's startup path. Fail closed
@@ -91,33 +126,128 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 	versions := make(map[string]int64, len(s.ordered))
 	var skipped []SeedSkip
 	for _, definition := range s.ordered {
-		resource, err := s.store.Resource(ctx, definition.Kind)
-		if err == nil {
-			versions[definition.Kind] = resource.Version
-			continue
-		}
-		if !errors.Is(err, storecontract.ErrResourceNotFound) {
+		version, err := s.seedKind(ctx, definition, cfg)
+		var refusal *seedRefusal
+		switch {
+		case errors.As(err, &refusal):
+			skipped = append(skipped, SeedSkip{Kind: definition.Kind, Err: refusal.err})
+		case err != nil:
 			return nil, nil, err
+		default:
+			versions[definition.Kind] = version
 		}
-		value, err := definition.seededValue(cfg)
-		if err != nil {
-			// Skipped and reported, not fatal: nothing is written, so the kind
-			// stays absent and the file document's value is the one in effect,
-			// while the process that would RUN the value still fails closed on
-			// it (boot.runtimeConfig validates the effective document).
-			// seededValue wraps a seed's encode and validation failures together,
-			// which is why both take this path: the alternative is a second seed
-			// implementation here to tell them apart.
-			skipped = append(skipped, SeedSkip{Kind: definition.Kind, Err: err})
-			continue
-		}
-		resource, err = s.store.PutResource(ctx, storecontract.ResourceWrite{Kind: definition.Kind, Value: value, Actor: "system:migration", Source: "legacy-config", RequestID: "import:" + definition.Kind, ExpectedVersion: 0, At: time.Now().UTC()})
-		if err != nil {
-			return nil, nil, fmt.Errorf("seed %s: %w", definition.Kind, err)
-		}
-		versions[definition.Kind] = resource.Version
 	}
 	return versions, skipped, nil
+}
+
+// seedRefusal is the seed's own validation refusing the value this build
+// derived. It is an error because it is one -- there is nothing to write -- and a
+// distinct type because ImportConfig answers it by reporting the kind rather
+// than failing the boot (see ImportConfig on why a bad seed is not fatal).
+type seedRefusal struct{ err error }
+
+func (r *seedRefusal) Error() string { return r.err.Error() }
+
+func (r *seedRefusal) Unwrap() error { return r.err }
+
+// seedKind seeds one kind if the store holds nothing for it, refreshes a
+// shipped document the seed itself wrote, and otherwise leaves the stored value
+// alone, returning the version the kind is left at. A *seedRefusal means the
+// value this build derived is not one the resource's validator accepts, and
+// nothing was written.
+func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config.Config) (int64, error) {
+	stored, storedErr := s.store.Resource(ctx, definition.Kind)
+	absent := errors.Is(storedErr, storecontract.ErrResourceNotFound)
+	if storedErr != nil && !absent {
+		return 0, storedErr
+	}
+	value, err := definition.seededValue(cfg)
+	if err != nil {
+		// Skipped and reported, not fatal: nothing is written, so the kind
+		// stays absent and the file document's value is the one in effect,
+		// while the process that would RUN the value still fails closed on
+		// it (boot.runtimeConfig validates the effective document).
+		// seededValue wraps a seed's encode and validation failures together,
+		// which is why both take this path: the alternative is a second seed
+		// implementation here to tell them apart.
+		return 0, &seedRefusal{err: err}
+	}
+	if !absent && bytes.Equal(stored.Value, value) {
+		// The store already holds what this build seeds. Comparing the values
+		// rather than re-writing them is what keeps a boot from adding a
+		// revision for a document that did not change.
+		return stored.Version, nil
+	}
+	if !absent {
+		refresh, err := s.shippedValueIsStale(ctx, definition)
+		if err != nil {
+			return 0, err
+		}
+		if !refresh {
+			return stored.Version, nil
+		}
+	}
+	write := storecontract.ResourceWrite{
+		Kind: definition.Kind, Value: value,
+		Actor: seedActor, Source: seedSource,
+		RequestID:       seedRequestID(definition.Kind, value),
+		ExpectedVersion: expectedVersion(stored, absent), At: time.Now().UTC(),
+	}
+	resource, err := s.store.PutResource(ctx, write)
+	if err != nil {
+		return 0, fmt.Errorf("seed %s: %w", definition.Kind, err)
+	}
+	return resource.Version, nil
+}
+
+// expectedVersion is the optimistic-concurrency guard a seed writes under: the
+// revision it is replacing, or nothing at all for a kind that has none.
+func expectedVersion(stored storecontract.Resource, absent bool) int64 {
+	if absent {
+		return 0
+	}
+	return stored.Version
+}
+
+// shippedValueIsStale reports whether a stored value is the build's to replace:
+// the kind ships a document of its own (Defaults is set exactly for those, and
+// a file-derived seed never overwrites a stored value) and the revision the
+// seed itself wrote is the newest one. A newer revision carrying any other
+// identity is an operator's replacement, and an operator's replacement is not
+// the seed's to undo.
+func (s *Server) shippedValueIsStale(ctx context.Context, definition Definition) (bool, error) {
+	if definition.Defaults == nil {
+		return false, nil
+	}
+	return s.seedWroteNewest(ctx, definition.Kind)
+}
+
+// seedWroteNewest reports whether the newest revision of kind was written by a
+// seed. It reads the ledger rather than the current row because the ledger is
+// what records who wrote a value, and the row does not.
+func (s *Server) seedWroteNewest(ctx context.Context, kind string) (bool, error) {
+	history, err := s.store.ResourceHistory(ctx, kind, 1)
+	if err != nil {
+		return false, fmt.Errorf("read %s history: %w", kind, err)
+	}
+	if len(history) == 0 {
+		return false, nil
+	}
+	return history[0].Actor == seedActor && history[0].Source == seedSource, nil
+}
+
+// seedRequestID is the idempotency key a seed writes under. It is derived from
+// the value rather than from the kind alone, because the key is spent the
+// moment it is in the ledger (resource_history's UNIQUE (kind, request_id), and
+// PutResource answers a known key from that ledger): a key derived from the
+// kind makes every later value a replay of the first one ever written, which is
+// how a document that changed in the build never reached a database the seed
+// had already written. Deriving it from the value keeps the write idempotent --
+// the same document twice is still one revision -- without making the second
+// document impossible.
+func seedRequestID(kind string, value []byte) string {
+	sum := sha256.Sum256(value)
+	return "import:" + kind + ":" + hex.EncodeToString(sum[:])
 }
 
 // seededValue is the value the State Store writes for a kind it does not hold

@@ -17,7 +17,12 @@ that reads it and the path the value takes to get there.
   channels, containers). The file only seeds it. Once the State Store holds the
   control-plane resource, the stored document is layered over the file
   (`controlplane.Client.RuntimeConfig`) and the file key stops mattering. It is
-  checked by `validateDatabaseOwned` and by the resource's validator.
+  checked by `validateDatabaseOwned` and by the resource's validator. A stored
+  value is refreshed from the file only when the store has no value for the kind
+  at all; a kind that ships a document of its own (workflow definitions,
+  personas) is refreshed whenever the seed itself wrote the stored copy, since
+  that copy is a previous release's document rather than an operator's
+  (`controlplane.Server.seedKind`).
 - **Worker-carried.** A value the agent container needs travels in
   `config.TaskConfig` (`Config.ForTask`) or on `taskrun.Request`. Never pass it
   as an environment variable the daemon did not already define, and never carry
