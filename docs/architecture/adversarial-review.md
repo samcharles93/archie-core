@@ -1,6 +1,29 @@
 # Adversarial self-review
 
-Archie runs a fresh adversarial review of the diff before it opens a pull
+> **Removed, not shipped (2026-09-28, `d73e0748`). This page records a system
+> that no longer exists in the tree.**
+>
+> `d73e0748` ("remove the superseded adversarial-self-review system") deleted the
+> stage and its contract: `workflow.Reviewer`, `ReviewRequest`, `ReviewReport`
+> and `StageReview` are gone from `internal/domain/workflow`, so everything under
+> "Contract" below describes types that cannot be found.
+>
+> The authority is `docs/prds/pr-review-agent.md`, which says so itself: it
+> "supersedes the reviewer executor and blocking rule in
+> `docs/architecture/adversarial-review.md`". archied now runs its PR review
+> pipeline before it opens a pull request; there is no separate adversarial
+> self-review pass and no `repo.review_enabled` setting.
+>
+> The page is kept rather than deleted because PRDs link to it
+> (`docs/prds/adversarial-self-review.md`, `docs/prds/inline-review.md`,
+> `docs/prds/pr-review-agent.md`). Read it as history.
+>
+> One section is stale in a second, older way: "Operator-triggered review" below
+> describes the synchronous `review_pr` (fetch the head, snapshot it, run the
+> reviewer, return findings), which `archie-core-afbk.14` replaced with a queued
+> pr-review task.
+
+Archie ran a fresh adversarial review of the diff before it opened a pull
 request, so a PR arrives with a findings record rather than an unreviewed
 claim. The reviewer provably cannot see the implementer's context: it reviews a
 `.git`-free snapshot of the committed tree, not the worktree, the commit
