@@ -3,6 +3,7 @@ package kitrun
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,24 +78,28 @@ func planCredentials(t *testing.T, p *kit.Plan) []spec.CredentialCapability {
 // real values must not appear anywhere in the rendered file.
 func TestCredentialFileNeverCarriesARealToken(t *testing.T) {
 	expires := time.UnixMilli(1700000000123)
+	ancestors := []string{"user:inference", "user:profile"}
 	l := &Launcher{OAuth: fakeOAuthSecrets{secret: harnesssecret.Secret{
 		Org: "acme", Service: "claude-code",
 		AccessToken: "real-access-token", RefreshToken: "real-refresh-token",
-		ExpiresAt: expires,
+		ExpiresAt: expires, Scopes: ancestors,
 	}}}
 	p := credentialFilePlan(t)
 	bound := []string{"claude-code"}
 
-	expiries, err := l.oauthExpiries(context.Background(), "acme", planCredentials(t, p), bound)
+	facts, err := l.oauthFacts(context.Background(), "acme", planCredentials(t, p), bound)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := expiries["claude-code"]; got != expires {
-		t.Fatalf("oauthExpiries[claude-code] = %v, want the stored expiry %v", got, expires)
+	if got := facts["claude-code"].ExpiresAt; got != expires {
+		t.Fatalf("oauthFacts[claude-code].ExpiresAt = %v, want the stored expiry %v", got, expires)
+	}
+	if got := facts["claude-code"].Scopes; !slices.Equal(got, ancestors) {
+		t.Fatalf("oauthFacts[claude-code].Scopes = %v, want the stored scopes %v", got, ancestors)
 	}
 
 	launch, err := kit.Assemble(p, kit.ImageConfig{User: "agent"}, kit.LaunchParams{
-		Execution: "exec-1", Bound: bound, OAuthExpiries: expiries,
+		Execution: "exec-1", Bound: bound, OAuth: facts,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -124,11 +129,11 @@ func TestOAuthExpiriesFailsClosed(t *testing.T) {
 	bound := []string{"claude-code"}
 	ctx := context.Background()
 
-	if _, err := (&Launcher{}).oauthExpiries(ctx, "acme", creds, bound); err == nil {
-		t.Fatal("oauthExpiries with no store = nil error, want a refusal")
+	if _, err := (&Launcher{}).oauthFacts(ctx, "acme", creds, bound); err == nil {
+		t.Fatal("oauthFacts with no store = nil error, want a refusal")
 	}
 	l := &Launcher{OAuth: fakeOAuthSecrets{err: errors.New("no captured token")}}
-	if _, err := l.oauthExpiries(ctx, "acme", creds, bound); err == nil {
-		t.Fatal("oauthExpiries with no stored token = nil error, want a refusal")
+	if _, err := l.oauthFacts(ctx, "acme", creds, bound); err == nil {
+		t.Fatal("oauthFacts with no stored token = nil error, want a refusal")
 	}
 }

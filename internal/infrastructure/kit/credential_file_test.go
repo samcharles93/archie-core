@@ -98,7 +98,7 @@ func TestAssembleRendersTheStoredExpiry(t *testing.T) {
 	expires := time.UnixMilli(1700000000123)
 	l, err := Assemble(credentialFilePlan(t), image, LaunchParams{
 		Execution: "exec-42", ProxyToken: "tok", CAPath: "/etc/archie/ca.pem",
-		Bound: []string{"claude-code"}, OAuthExpiries: map[string]time.Time{"claude-code": expires},
+		Bound: []string{"claude-code"}, OAuth: map[string]OAuthFacts{"claude-code": {ExpiresAt: expires}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestAssembleRendersATOMLCredentialFile(t *testing.T) {
 // not supply must refuse the launch rather than leave the literal standing in
 // the file, which the CLI would read as a credential.
 func TestAssembleRefusesAPlaceholderItCannotRender(t *testing.T) {
-	const scopesKit = sessions + `
+	const unknownKit = sessions + `
   - type: com.docker.sandbox/credential@1
     config:
       service: example
@@ -181,14 +181,14 @@ func TestAssembleRefusesAPlaceholderItCannotRender(t *testing.T) {
         credentialFile:
           path: /home/agent/credentials.json
           structure:
-            scopes: "{{.Scopes}}"`
-	p, err := Admit(descriptor(t, spec.KindWorkload, scopesKit))
+            mystery: "{{.NotAPlaceholder}}"`
+	p, err := Admit(descriptor(t, spec.KindWorkload, unknownKit))
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
 	_, err = Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: []string{"example"}})
-	if err == nil || !strings.Contains(err.Error(), "{{.Scopes}}") {
-		t.Fatalf("Assemble = %v, want a refusal naming {{.Scopes}}", err)
+	if err == nil || !strings.Contains(err.Error(), "{{.NotAPlaceholder}}") {
+		t.Fatalf("Assemble = %v, want a refusal naming {{.NotAPlaceholder}}", err)
 	}
 }
 

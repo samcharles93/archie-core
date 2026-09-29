@@ -43,6 +43,15 @@ type ImageConfig struct {
 	User       string
 }
 
+// OAuthFacts is the non-secret part of a bound OAuth credential's stored
+// token set that a credential file renders: the scopes the provider granted
+// and when the access token expires. The tokens themselves never cross into
+// kit, so a real token cannot be written to the file.
+type OAuthFacts struct {
+	Scopes    []string
+	ExpiresAt time.Time
+}
+
 // LaunchParams are the run-specific inputs to a Kit container.
 type LaunchParams struct {
 	// Execution keys the Kit's volumes, so they survive retries of one
@@ -52,11 +61,11 @@ type LaunchParams struct {
 	CAPath     string
 	// Bound lists the credential services the run credential carries.
 	Bound []string
-	// OAuthExpiries is the stored token set's expiry for each bound OAuth
-	// credential whose Kit renders a credentialFile, keyed by service. It is
-	// the only fact about a token set the renderer receives: the tokens
-	// themselves never cross into kit, so a real token cannot be written.
-	OAuthExpiries map[string]time.Time
+	// OAuth is the non-secret facts of each bound OAuth credential's stored
+	// token set, keyed by service, that a Kit's credentialFile renders: the
+	// granted scopes and the expiry. The tokens themselves never cross into
+	// kit, so a real token cannot be written.
+	OAuth map[string]OAuthFacts
 }
 
 // Hook is one lifecycle hook, ready to exec in the container.
@@ -134,7 +143,7 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 		}
 		l.Files = lifecycle.Files
 	}
-	credential, err := credentialFiles(creds, params.Bound, params.OAuthExpiries)
+	credential, err := credentialFiles(creds, params.Bound, params.OAuth)
 	if err != nil {
 		return Launch{}, err
 	}
@@ -150,15 +159,15 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 
 // credentialFiles renders the credential file of every bound OAuth credential
 // whose Kit declares one: the path and structure the Kit names, with the
-// stored token set's expiry. A service the run credential does not carry
-// produces no file.
-func credentialFiles(creds []spec.CredentialCapability, bound []string, expiries map[string]time.Time) ([]spec.File, error) {
+// stored token set's scopes and expiry. A service the run credential does not
+// carry produces no file.
+func credentialFiles(creds []spec.CredentialCapability, bound []string, oauth map[string]OAuthFacts) ([]spec.File, error) {
 	var files []spec.File
 	for _, c := range creds {
 		if c.OAuth == nil || c.OAuth.CredentialFile == nil || !slices.Contains(bound, c.Service) {
 			continue
 		}
-		content, err := renderCredentialFile(c, expiries[c.Service])
+		content, err := renderCredentialFile(c, oauth[c.Service])
 		if err != nil {
 			return nil, err
 		}
