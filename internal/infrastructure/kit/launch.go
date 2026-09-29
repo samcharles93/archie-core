@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
@@ -51,6 +52,11 @@ type LaunchParams struct {
 	CAPath     string
 	// Bound lists the credential services the run credential carries.
 	Bound []string
+	// OAuthExpiries is the stored token set's expiry for each bound OAuth
+	// credential whose Kit renders a credentialFile, keyed by service. It is
+	// the only fact about a token set the renderer receives: the tokens
+	// themselves never cross into kit, so a real token cannot be written.
+	OAuthExpiries map[string]time.Time
 }
 
 // Hook is one lifecycle hook, ready to exec in the container.
@@ -128,6 +134,11 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 		}
 		l.Files = lifecycle.Files
 	}
+	credential, err := credentialFiles(creds, params.Bound, params.OAuthExpiries)
+	if err != nil {
+		return Launch{}, err
+	}
+	l.Files = append(l.Files, credential...)
 	for _, v := range volumes {
 		l.Volumes = append(l.Volumes, Volume{Name: volumeName(params.Execution, v.Path), Path: v.Path})
 	}
@@ -135,6 +146,25 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 		return Launch{}, err
 	}
 	return l, nil
+}
+
+// credentialFiles renders the credential file of every bound OAuth credential
+// whose Kit declares one: the path and structure the Kit names, with the
+// stored token set's expiry. A service the run credential does not carry
+// produces no file.
+func credentialFiles(creds []spec.CredentialCapability, bound []string, expiries map[string]time.Time) ([]spec.File, error) {
+	var files []spec.File
+	for _, c := range creds {
+		if c.OAuth == nil || c.OAuth.CredentialFile == nil || !slices.Contains(bound, c.Service) {
+			continue
+		}
+		content, err := renderCredentialFile(c, expiries[c.Service])
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, spec.File{Path: c.OAuth.CredentialFile.Path, Content: content, Mode: credentialFileMode})
+	}
+	return files, nil
 }
 
 // contextFiles materializes agent-context@1: the workload's profile file

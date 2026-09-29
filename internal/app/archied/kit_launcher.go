@@ -81,7 +81,7 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 	b.kitLauncher = &kitrun.Launcher{
 		Pool: pool, Fetch: fetcher, Proxy: proxy, Networks: networks,
 		AgentBinary: agentBinary, CAFile: egress.CACertPath(caDir),
-		Config: b.cfgHolder, Secrets: b.secrets, Grants: grants,
+		Config: b.cfgHolder, Secrets: b.secrets, Grants: grants, OAuth: oauthStore,
 	}
 	log.Info("kit harness runs enabled", "proxy", ln.Addr().String())
 }
