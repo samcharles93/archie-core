@@ -29,6 +29,15 @@ func (d *Daemon) activeWorkflows(ctx context.Context) (workflow.WorkflowDefiniti
 	return collection, err
 }
 
+// workflowEnablement returns which workflows each org has disabled; with no
+// source wired every workflow is enabled.
+func (d *Daemon) workflowEnablement(ctx context.Context) (workflowtask.WorkflowEnablement, error) {
+	if d.WorkflowEnablement == nil {
+		return workflowtask.WorkflowEnablement{}, nil
+	}
+	return d.WorkflowEnablement.WorkflowEnablement(ctx)
+}
+
 // resolveBindingTarget checks a matched binding against the workflow it
 // targets and resolves the task's repository and inputs. A non-empty reason
 // means the binding does not dispatch and the reason is recorded on it; ok

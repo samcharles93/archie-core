@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
@@ -421,4 +422,37 @@ func assertDispatchRecorded(t *testing.T, s *dispatchStores, bindingID string) {
 		Scan(&gotBindingID); err != nil {
 		t.Fatalf("binding_dispatches row missing: %v", err)
 	}
+}
+
+type staticEnablement struct {
+	value workflowtask.WorkflowEnablement
+}
+
+func (e staticEnablement) WorkflowEnablement(context.Context) (workflowtask.WorkflowEnablement, error) {
+	return e.value, nil
+}
+
+// A binding whose org disabled its workflow does not dispatch, and the capture
+// waits: re-enabling the workflow dispatches it on the next cycle.
+func TestDispatchBindingsSkipsWorkflowItsOrgDisabled(t *testing.T) {
+	s := openDispatchTestStore(t)
+	mappingID := seedMapping(t, s, "sentry", mapping.Field{Name: "title", Path: "title", Type: mapping.TypeString, Required: true})
+	bindingID, _ := seedArmedBinding(t, s, "sentry", mappingID)
+	seedCapture(t, s, "sentry", true, `{"title":"hello"}`)
+	stored, err := s.EdaStore.GetBinding(t.Context(), bindingID)
+	if err != nil {
+		t.Fatalf("GetBinding: %v", err)
+	}
+
+	d := newDispatchDaemon(t, s)
+	var enablement workflowtask.WorkflowEnablement
+	d.WorkflowEnablement = staticEnablement{enablement.SetEnabled(stored.OrgID, stored.Workflow, false)}
+	d.dispatchBindings(t.Context())
+	if tasks, _ := s.Tasks(t.Context(), 10); len(tasks) != 0 {
+		t.Fatalf("Tasks len = %d, want 0 while the workflow is disabled", len(tasks))
+	}
+
+	d.WorkflowEnablement = staticEnablement{enablement.SetEnabled(stored.OrgID, stored.Workflow, true)}
+	d.dispatchBindings(t.Context())
+	assertDispatchRecorded(t, s, bindingID)
 }

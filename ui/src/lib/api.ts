@@ -158,6 +158,12 @@ export const api = {
   setup: <T = unknown>() => request<T>("/api/setup"),
   capabilities: <T = unknown>() => request<T>("/api/capabilities"),
   workflows: <T = unknown>() => request<T>("/api/workflows"),
+  workflowEnabled: (id: string, enabled: boolean) =>
+    request<void>(`/api/workflows/${encodeURIComponent(id)}/enabled`, {
+      method: "PUT",
+      body: { enabled },
+      parse: false,
+    }),
   workRequest: <T = unknown>(workRequest: Payload) =>
     request<T>("/api/work-requests", { method: "POST", body: workRequest }),
   skills: <T = unknown>() => request<T>("/api/skills"),

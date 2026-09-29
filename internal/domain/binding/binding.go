@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // Status is the binding lifecycle state. Mirrors telegram's
@@ -65,11 +67,14 @@ type Binding struct {
 	// Inputs assigns the workflow's declared inputs, each from a mapped
 	// parameter or a constant; CheckWorkflow checks them when the binding is
 	// saved.
-	Inputs    map[string]InputSource `json:"inputs,omitempty"`
-	Version   int                    `json:"version"`
-	Status    Status                 `json:"status"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
+	Inputs map[string]InputSource `json:"inputs,omitempty"`
+	// OrgID is the org that owns the binding; the store sets it and a
+	// binding may target only a workflow that org has enabled.
+	OrgID     org.OrgID `json:"org_id"`
+	Version   int       `json:"version"`
+	Status    Status    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Validate checks a binding is well-formed before it is persisted: a

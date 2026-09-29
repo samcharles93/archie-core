@@ -10,6 +10,7 @@ import (
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -106,7 +107,19 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "task_id": taskID})
 }
 
+// hasWorkflow reports whether workflow id is defined and enabled for the
+// default org, the org every dashboard caller acts in until access resolves
+// a caller's own.
 func (s *Server) hasWorkflow(ctx context.Context, id string) (bool, error) {
+	found, err := s.hasWorkflowDefinition(ctx, id)
+	if err != nil || !found {
+		return false, err
+	}
+	enablement, _, err := s.workflowEnablement(ctx)
+	return enablement.Enabled(org.DefaultOrgID, id), err
+}
+
+func (s *Server) hasWorkflowDefinition(ctx context.Context, id string) (bool, error) {
 	_, found, err := s.workflowEntry(ctx, id)
 	return found, err
 }
@@ -147,9 +160,13 @@ func (s *Server) workflowDefinitions(ctx context.Context) ([]task.Definition, er
 	if err != nil {
 		return nil, err
 	}
+	enablement, _, err := s.workflowEnablement(ctx)
+	if err != nil {
+		return nil, err
+	}
 	definitions := make([]task.Definition, 0, len(collection.Definitions))
 	for _, entry := range collection.Definitions {
-		definition := task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: true, Repository: task.RepositoryRequired}
+		definition := task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: enablement.Enabled(org.DefaultOrgID, entry.ID), Repository: task.RepositoryRequired}
 		if iface, err := task.ParseWorkflowInterface(entry.YAML); err == nil {
 			definition.Inputs, definition.Repository = iface.Inputs, iface.RepositoryMode()
 		}

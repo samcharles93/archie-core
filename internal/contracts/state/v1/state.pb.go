@@ -2371,7 +2371,9 @@ type Binding struct {
 	// {"param": name} or {"value": constant} per input.
 	InputsJson string `protobuf:"bytes,14,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	// repo_param names the mapped parameter holding "owner/name".
-	RepoParam     string `protobuf:"bytes,15,opt,name=repo_param,json=repoParam,proto3" json:"repo_param,omitempty"`
+	RepoParam string `protobuf:"bytes,15,opt,name=repo_param,json=repoParam,proto3" json:"repo_param,omitempty"`
+	// org_id is the org that owns the binding; it is read-only here.
+	OrgId         string `protobuf:"bytes,16,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2500,6 +2502,13 @@ func (x *Binding) GetInputsJson() string {
 func (x *Binding) GetRepoParam() string {
 	if x != nil {
 		return x.RepoParam
+	}
+	return ""
+}
+
+func (x *Binding) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
 	}
 	return ""
 }
@@ -11854,7 +11863,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"matchCount\x12B\n" +
 	"\x0flast_matched_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastMatchedAt\"(\n" +
 	"\x0eBindingMatcher\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\"\xd4\x03\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\"\xeb\x03\n" +
 	"\aBinding\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +
@@ -11874,7 +11883,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\vinputs_json\x18\x0e \x01(\tR\n" +
 	"inputsJson\x12\x1d\n" +
 	"\n" +
-	"repo_param\x18\x0f \x01(\tR\trepoParamJ\x04\b\n" +
+	"repo_param\x18\x0f \x01(\tR\trepoParam\x12\x15\n" +
+	"\x06org_id\x18\x10 \x01(\tR\x05orgIdJ\x04\b\n" +
 	"\x10\vR\x06secret\"\xc4\x01\n" +
 	"\x06Source\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +

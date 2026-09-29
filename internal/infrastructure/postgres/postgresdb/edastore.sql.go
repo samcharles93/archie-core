@@ -11,7 +11,7 @@ import (
 )
 
 const armedBindingsForSource = `-- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC
 `
 
@@ -30,6 +30,7 @@ type ArmedBindingsForSourceRow struct {
 	Filter    string
 	Inputs    string
 	RepoParam string
+	OrgID     string
 }
 
 func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]ArmedBindingsForSourceRow, error) {
@@ -56,6 +57,7 @@ func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]
 			&i.Filter,
 			&i.Inputs,
 			&i.RepoParam,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +179,7 @@ func (q *Queries) EventTypesForSource(ctx context.Context, source string) ([]Eve
 }
 
 const getBinding = `-- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings WHERE id = $1
 `
 
@@ -196,6 +198,7 @@ type GetBindingRow struct {
 	Filter    string
 	Inputs    string
 	RepoParam string
+	OrgID     string
 }
 
 func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, error) {
@@ -216,6 +219,7 @@ func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, err
 		&i.Filter,
 		&i.Inputs,
 		&i.RepoParam,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -524,7 +528,7 @@ func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) 
 }
 
 const listBindings = `-- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings ORDER BY created_at DESC
 `
 
@@ -543,6 +547,7 @@ type ListBindingsRow struct {
 	Filter    string
 	Inputs    string
 	RepoParam string
+	OrgID     string
 }
 
 func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
@@ -569,6 +574,7 @@ func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
 			&i.Filter,
 			&i.Inputs,
 			&i.RepoParam,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}

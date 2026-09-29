@@ -46,7 +46,12 @@ const emit = defineEmits<{
     >
       {{ props.binding.filter || "—" }}
     </TableCell>
-    <TableCell>{{ props.binding.workflow || "—" }}</TableCell>
+    <TableCell>
+      <div class="flex items-center gap-2">
+        {{ props.binding.workflow || "—" }}
+        <Badge v-if="props.binding.workflow_disabled" variant="warn">Disabled</Badge>
+      </div>
+    </TableCell>
     <TableCell class="font-mono text-fg-muted">{{
       repoPin(props.binding)
     }}</TableCell>

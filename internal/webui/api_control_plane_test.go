@@ -28,13 +28,19 @@ type controlPlaneClientStub struct {
 	entries   []*controlpb.AuditEntry
 	watch     grpc.ServerStreamingClient[controlpb.WatchResponse]
 	err       error
+	// resources, when set, answers Query per kind and keeps what Command
+	// writes, falling back to query for a kind it does not hold.
+	resources map[string]*controlpb.Resource
 }
 
 func (f *controlPlaneClientStub) Catalog(context.Context, *controlpb.CatalogRequest, ...grpc.CallOption) (*controlpb.CatalogResponse, error) {
 	return &controlpb.CatalogResponse{}, f.err
 }
 
-func (f *controlPlaneClientStub) Query(context.Context, *controlpb.QueryRequest, ...grpc.CallOption) (*controlpb.QueryResponse, error) {
+func (f *controlPlaneClientStub) Query(_ context.Context, request *controlpb.QueryRequest, _ ...grpc.CallOption) (*controlpb.QueryResponse, error) {
+	if resource, ok := f.resources[request.Kind]; ok {
+		return &controlpb.QueryResponse{Resource: resource}, f.err
+	}
 	return &controlpb.QueryResponse{Resource: f.query}, f.err
 }
 
@@ -53,7 +59,11 @@ func (f *controlPlaneClientStub) Command(_ context.Context, request *controlpb.C
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &controlpb.CommandResponse{Resource: &controlpb.Resource{Kind: request.Kind, Version: 2, ValueJson: request.ValueJson}}, nil
+	resource := &controlpb.Resource{Kind: request.Kind, Version: request.ExpectedVersion + 1, ValueJson: request.ValueJson}
+	if f.resources != nil {
+		f.resources[request.Kind] = resource
+	}
+	return &controlpb.CommandResponse{Resource: resource}, nil
 }
 
 func (f *controlPlaneClientStub) Watch(context.Context, *controlpb.WatchRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[controlpb.WatchResponse], error) {

@@ -40,6 +40,17 @@ vocabulary it registers, so both must see the same step types.
 - Examples in `examples/workflows/` are parsed against the registered
   vocabulary by `TestExampleWorkflowsParse`. Add one for a new capability.
 
+## Enabling and disabling
+
+The `workflow-enablement` control-plane resource lists, per org, the workflows
+that org has disabled; anything unlisted is enabled. Its readers are the
+daemon's binding dispatch (a disabled workflow's binding is skipped like an
+unarmed one), the dashboard's binding save (refused) and binding list
+(`workflow_disabled`), and work requests. A new reader of "may this org run
+this workflow" goes through `task.WorkflowEnablement.Enabled`, never a second
+list. The dashboard acts in the default org until access resolves a caller's
+own.
+
 ## Starting a workflow from chat
 
 `task_spawn` accepts `workflow` and an `inputs` object. The gateway forwards

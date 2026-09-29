@@ -246,7 +246,7 @@ func bindingProto(b binding.Binding) *pb.Binding {
 	return &pb.Binding{
 		Id: b.ID, Name: b.Name, Matcher: &pb.BindingMatcher{Source: b.Matcher.Source},
 		MappingId: b.MappingID, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		RepoParam: b.RepoParam, InputsJson: bindingInputsJSON(b.Inputs),
+		RepoParam: b.RepoParam, InputsJson: bindingInputsJSON(b.Inputs), OrgId: string(b.OrgID),
 		Version: int64(b.Version), Status: string(b.Status),
 		CreatedAt: timestamp(b.CreatedAt), UpdatedAt: timestamp(b.UpdatedAt),
 	}
@@ -263,7 +263,7 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	return binding.Binding{
 		ID: b.Id, Name: b.Name, Matcher: binding.Matcher{Source: source},
 		MappingID: b.MappingId, Filter: b.Filter, Workflow: b.Workflow, Owner: b.Owner, Repo: b.Repo,
-		RepoParam: b.RepoParam, Inputs: bindingInputsValue(b.InputsJson),
+		RepoParam: b.RepoParam, Inputs: bindingInputsValue(b.InputsJson), OrgID: org.OrgID(b.OrgId),
 		Version: int(b.Version), Status: binding.Status(b.Status),
 		CreatedAt: timeValue(b.CreatedAt), UpdatedAt: timeValue(b.UpdatedAt),
 	}

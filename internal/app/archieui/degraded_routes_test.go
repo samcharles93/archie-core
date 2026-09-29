@@ -88,6 +88,11 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 			want: http.StatusOK, emptyJSON: `"definitions":null`,
 		},
 		{
+			name: "workflow enabled toggle", method: http.MethodPut, path: "/api/workflows/implement/enabled",
+			body: `{"enabled":false}`,
+			want: http.StatusServiceUnavailable,
+		},
+		{
 			name: "dashboard work request", method: http.MethodPost, path: "/api/work-requests",
 			body: `{"repository":"acme/widget","workflow":"implement","title":"do it"}`,
 			want: http.StatusServiceUnavailable,

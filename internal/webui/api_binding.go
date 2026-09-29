@@ -1,11 +1,13 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
@@ -35,6 +37,9 @@ type bindingRequest struct {
 type bindingView struct {
 	binding.Binding
 	Unsigned bool `json:"unsigned"`
+	// WorkflowDisabled marks a binding whose org has disabled the workflow it
+	// targets; it does not dispatch until the workflow is enabled again.
+	WorkflowDisabled bool `json:"workflow_disabled"`
 }
 
 func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
@@ -54,9 +59,15 @@ func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "list bindings failed", http.StatusInternalServerError)
 		return
 	}
+	enablement, _, err := s.workflowEnablement(r.Context())
+	if err != nil {
+		s.Log.Error("workflow enablement", "err", err)
+		http.Error(w, "list bindings failed", http.StatusInternalServerError)
+		return
+	}
 	views := make([]bindingView, 0, len(bindings))
 	for _, b := range bindings {
-		views = append(views, bindingView{Binding: b, Unsigned: unsigned[b.Matcher.Source]})
+		views = append(views, bindingView{Binding: b, Unsigned: unsigned[b.Matcher.Source], WorkflowDisabled: !enablement.Enabled(b.OrgID, b.Workflow)})
 	}
 	writeJSON(w, map[string]any{"bindings": views})
 }
@@ -248,6 +259,15 @@ func (s *Server) checkedBinding(w http.ResponseWriter, r *http.Request, id strin
 		http.Error(w, "binding: workflow not found: "+req.Workflow, http.StatusBadRequest)
 		return binding.Binding{}, false
 	}
+	enabled, err := s.bindingWorkflowEnabled(r.Context(), id, req.Workflow)
+	if err != nil {
+		http.Error(w, "workflow enablement unavailable", http.StatusServiceUnavailable)
+		return binding.Binding{}, false
+	}
+	if !enabled {
+		http.Error(w, "binding: workflow is disabled: "+req.Workflow, http.StatusConflict)
+		return binding.Binding{}, false
+	}
 	iface, err := task.ParseWorkflowInterface(entry.YAML)
 	if err != nil {
 		http.Error(w, "binding: workflow "+req.Workflow+": "+err.Error(), http.StatusBadRequest)
@@ -276,4 +296,21 @@ func (s *Server) checkedBinding(w http.ResponseWriter, r *http.Request, id strin
 		return binding.Binding{}, false
 	}
 	return b, true
+}
+
+// bindingWorkflowEnabled reports whether the org owning binding id (the
+// default org for a binding not yet created) has workflow enabled.
+func (s *Server) bindingWorkflowEnabled(ctx context.Context, id, workflow string) (bool, error) {
+	owner := org.DefaultOrgID
+	if id != "" {
+		existing, err := s.Bindings.GetBinding(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		if existing != nil {
+			owner = existing.OrgID
+		}
+	}
+	enablement, _, err := s.workflowEnablement(ctx)
+	return enablement.Enabled(owner, workflow), err
 }

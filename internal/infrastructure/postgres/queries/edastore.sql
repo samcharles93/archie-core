@@ -67,15 +67,15 @@ INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, 
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11);
 
 -- name: GetBinding :one
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings WHERE id = $1;
 
 -- name: ListBindings :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings ORDER BY created_at DESC;
 
 -- name: ArmedBindingsForSource :many
-SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param
+SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC;
 
 -- name: UpdateBinding :execrows

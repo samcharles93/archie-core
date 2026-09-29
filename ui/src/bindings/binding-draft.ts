@@ -29,6 +29,8 @@ export interface Binding {
   status?: string;
   version?: number;
   unsigned?: boolean;
+  /** Set when the binding's org has disabled the workflow it targets. */
+  workflow_disabled?: boolean;
 }
 
 /** One workflow input's assignment on the wire. */

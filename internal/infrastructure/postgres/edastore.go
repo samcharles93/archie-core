@@ -17,6 +17,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/bindingcipher"
@@ -317,6 +318,7 @@ func bindingValue(r postgresdb.GetBindingRow) (binding.Binding, error) {
 		Repo:      r.Repo,
 		RepoParam: r.RepoParam,
 		Inputs:    inputs,
+		OrgID:     org.OrgID(r.OrgID),
 		Version:   int(r.Version),
 		Status:    binding.Status(r.Status),
 		CreatedAt: r.CreatedAt,

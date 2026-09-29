@@ -250,6 +250,12 @@ type Daemon struct {
 	WorkflowDefinitions interface {
 		WorkflowDefinitions(context.Context) (workflow.WorkflowDefinitionCollection, int64, error)
 	}
+	// WorkflowEnablement supplies which workflows each org has disabled. A
+	// binding targeting a workflow its org disabled does not dispatch. Nil
+	// means every workflow is enabled.
+	WorkflowEnablement interface {
+		WorkflowEnablement(context.Context) (workflowtask.WorkflowEnablement, error)
+	}
 
 	// ToolRegistry is the central tool registry, wired by the composition
 	// root. MCP-discovered tools and built-in tools are registered here
@@ -667,16 +673,27 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 		d.Log.Warn("binding dispatch: workflow definitions unavailable", "error", err)
 		return
 	}
+	enablement, err := d.workflowEnablement(ctx)
+	if err != nil {
+		d.Log.Warn("binding dispatch: workflow enablement unavailable", "error", err)
+		return
+	}
 	for _, c := range captures {
-		armed, err := d.BindingDispatcher.ArmedBindingsForSource(ctx, c.Source)
-		if err != nil {
-			d.Log.Warn("armed bindings lookup", "source", c.Source, "error", err)
-			continue
-		}
-		for _, b := range armed {
-			if !b.Matcher.Matches(c.Source, c.Dispatchable()) {
-				continue
-			}
+		d.dispatchCapture(ctx, c, workflows, enablement)
+	}
+}
+
+// dispatchCapture offers one capture to every armed binding on its source. A
+// disabled workflow's binding is skipped like an unarmed one, so the capture
+// waits rather than recording a failure every cycle.
+func (d *Daemon) dispatchCapture(ctx context.Context, c storecontract.CapturedEvent, workflows workflow.WorkflowDefinitionCollection, enablement workflowtask.WorkflowEnablement) {
+	armed, err := d.BindingDispatcher.ArmedBindingsForSource(ctx, c.Source)
+	if err != nil {
+		d.Log.Warn("armed bindings lookup", "source", c.Source, "error", err)
+		return
+	}
+	for _, b := range armed {
+		if b.Matcher.Matches(c.Source, c.Dispatchable()) && enablement.Enabled(b.OrgID, b.Workflow) {
 			d.dispatchOneBinding(ctx, b, c, workflows)
 		}
 	}

@@ -5,6 +5,7 @@ import { Plus, RotateCcw } from "@lucide/vue";
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { delivered } from "@/lib/delivered";
@@ -72,6 +73,17 @@ watchEffect(() => {
   if (!selected.value && rows.value.length) selected.value = rows.value[0]!.id;
 });
 const current = computed(() => rows.value.find((r) => r.id === selected.value));
+// A workflow the server does not list yet (a new, unsaved one) has no
+// enabled state to show.
+const enabled = computed(() => data.value.definitions?.find((d) => d.id === selected.value)?.enabled);
+async function setEnabled(value: boolean) {
+  try {
+    await api.workflowEnabled(selected.value, value);
+    await load();
+  } catch (err) {
+    error.value = String((err as Error).message || err);
+  }
+}
 const stages = computed(() => (data.value.stages ?? []).filter((s) => s.workflow === selected.value));
 const workflowRuns = computed(() => runs.value.filter((t) => t.workflow === selected.value));
 const tab = ref("definition");
@@ -135,6 +147,10 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
           <h2 class="font-mono text-[15px] font-medium">{{ selected }}</h2>
           <StatusPill v-if="current?.origin">{{ current.origin }}</StatusPill>
           <span v-if="current" class="ml-auto text-xs text-fg-subtle">{{ current.runs || 0 }} runs</span>
+          <label v-if="enabled !== undefined" class="flex items-center gap-2 text-xs text-fg-muted">
+            Enabled
+            <Switch :model-value="enabled" aria-label="Workflow enabled" @update:model-value="setEnabled" />
+          </label>
         </header>
         <Tabs v-model="tab">
           <TabsList>

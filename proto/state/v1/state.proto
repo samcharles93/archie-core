@@ -455,6 +455,8 @@ message Binding {
   string inputs_json = 14;
   // repo_param names the mapped parameter holding "owner/name".
   string repo_param = 15;
+  // org_id is the org that owns the binding; it is read-only here.
+  string org_id = 16;
 }
 
 // Source mirrors internal/domain/source.Source.
