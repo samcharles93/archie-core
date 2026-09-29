@@ -197,6 +197,13 @@ type InstalledPackage struct {
 	AcceptedAuthority []byte
 }
 
+type InstalledPackageContribution struct {
+	OrgID       string
+	PackageName string
+	Family      string
+	EntryID     string
+}
+
 type InstalledPackageRequirement struct {
 	OrgID          string
 	PackageName    string

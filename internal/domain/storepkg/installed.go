@@ -16,6 +16,10 @@ var (
 	// package. Acceptance records the package's own declared grants against
 	// the pinned digest (docs/prds/store.md, "Authority").
 	ErrAuthorityNotDeclared = errors.New("store package does not declare this authority")
+	// ErrContributionCollision: the package contributes an entry the org
+	// resource already holds under an id the package never projected. The
+	// contribution is refused rather than replacing the operator's entry.
+	ErrContributionCollision = errors.New("package contribution replaces an entry it does not own")
 )
 
 // Installed is one organisation's pinned Archie package.
@@ -62,6 +66,11 @@ type Manager interface {
 type Service struct {
 	Registry Registry
 	Store    Repository
+	// Projections carries, per descriptor family, the projector that applies
+	// a package's contribution to the org resource that family projects to,
+	// and withdraws it again on removal. A family with no entry is stored but
+	// never projected: installing leaves it unused until a projector lands.
+	Projections map[string]FamilyProjector
 }
 
 var _ Manager = Service{}
@@ -133,8 +142,18 @@ func (s Service) Install(ctx context.Context, orgID, name, reference, digest str
 		OrgID: orgID, Name: name, Reference: reference, Digest: digest,
 		Descriptor: descriptor, Layer: layer, UpdatePolicy: "manual",
 	}
+	contents, err := s.resolveFamilyContents(descriptor, layer)
+	if err != nil {
+		return Installed{}, err
+	}
 	if err := s.Store.Install(ctx, installed); err != nil {
 		return Installed{}, err
+	}
+	if err := s.project(ctx, installed, contents); err != nil {
+		// An install without its projected contributions is not usable. Take
+		// whatever was projected back out, then the installation itself, so the
+		// org is left with no package at all rather than a half-usable one.
+		return Installed{}, errors.Join(err, s.withdraw(ctx, installed), s.Store.Remove(ctx, orgID, name))
 	}
 	return installed, nil
 }
@@ -142,6 +161,16 @@ func (s Service) Install(ctx context.Context, orgID, name, reference, digest str
 func (s Service) Remove(ctx context.Context, orgID, name string) error {
 	if strings.TrimSpace(orgID) == "" || strings.TrimSpace(name) == "" {
 		return errors.New("org and name are required")
+	}
+	installed, err := s.Store.Get(ctx, orgID, name)
+	if err != nil {
+		return fmt.Errorf("installed package %q: %w", name, err)
+	}
+	// Withdraw before the record goes: the package's contributions must stop
+	// being usable only once its installation stops being true. A withdrawal
+	// that fails keeps the package installed and its record kept.
+	if err := s.withdraw(ctx, installed); err != nil {
+		return err
 	}
 	return s.Store.Remove(ctx, orgID, name)
 }
