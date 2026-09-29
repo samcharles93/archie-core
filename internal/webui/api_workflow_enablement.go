@@ -38,9 +38,8 @@ type workflowEnabledRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
-// handleWorkflowEnabled enables or disables a workflow for the dashboard's
-// org. Every dashboard caller acts in the default org until access resolves a
-// caller's own.
+// handleWorkflowEnabled enables or disables a workflow for the caller's org
+// (org.OrgFromContext).
 func (s *Server) handleWorkflowEnabled(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeTaskMutation(w, r) {
 		return
@@ -69,7 +68,7 @@ func (s *Server) handleWorkflowEnabled(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "workflow enablement unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	value, err := json.Marshal(enablement.SetEnabled(org.DefaultOrgID, id, request.Enabled))
+	value, err := json.Marshal(enablement.SetEnabled(org.OrgFromContext(r.Context()), id, request.Enabled))
 	if err != nil {
 		http.Error(w, "encode workflow enablement", http.StatusInternalServerError)
 		return
