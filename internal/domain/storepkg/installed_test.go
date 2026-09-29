@@ -224,3 +224,16 @@ func TestServiceRemove(t *testing.T) {
 		t.Fatalf("other org package removed: %v", err)
 	}
 }
+
+// fakeLayeredRegistry is a registry returning a descriptor with its layer
+// bytes, the way a fetched package carries both.
+type fakeLayeredRegistry struct {
+	descriptor Descriptor
+	layer      []byte
+}
+
+func (r *fakeLayeredRegistry) Fetch(context.Context, string, string) (Descriptor, []byte, error) {
+	return r.descriptor, r.layer, nil
+}
+
+var _ Registry = (*fakeLayeredRegistry)(nil)

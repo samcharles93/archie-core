@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
@@ -289,10 +290,20 @@ func (b *boot) openStateStore(ctx context.Context) error {
 func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
 	if b.pg != nil {
-		deps.Packages = storepkg.Service{
+		packages := storepkg.Service{
 			Registry: registry.LocalRegistry{},
 			Store:    postgres.NewInstalledPackages(b.pg),
 		}
+		// A projection failure degrades the org resources a package would have
+		// contributed to, the way a group above degrades: the State Store boots
+		// and reports, rather than refusing to serve the task tables.
+		projections, err := newPackageProjections(b.pg)
+		if err != nil {
+			b.log.Error("build package projections", "err", err)
+		} else {
+			packages.Projections = projections
+		}
+		deps.Packages = packages
 	}
 	if identities, ok := b.st.(identity.Repository); ok {
 		deps.Identities = identities
@@ -493,4 +504,23 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(token)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token)),
 	}, false, nil
+}
+
+// newPackageProjections builds the family projectors an installed package's
+// contributions apply through: workflows become org workflow definitions, the
+// one resource kind the runtime reads live today. The step vocabulary
+// (stepVocabulary) is the same one this process's control plane validates
+// dashboard edits with, so a definition the projector admits is compilable
+// where it dispatches (openStateStoreControlPlane for the pairing).
+func newPackageProjections(pool *pgxpool.Pool) (map[string]storepkg.FamilyProjector, error) {
+	steps, err := stepVocabulary()
+	if err != nil {
+		return nil, fmt.Errorf("register workflow step vocabulary: %w", err)
+	}
+	workflows, err := controlplane.NewWorkflowPackageProjector(
+		postgres.NewResources(pool), postgres.NewPackageContributions(pool), steps)
+	if err != nil {
+		return nil, fmt.Errorf("build workflow package projector: %w", err)
+	}
+	return map[string]storepkg.FamilyProjector{storepkg.FamilyWorkflows: workflows}, nil
 }

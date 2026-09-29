@@ -88,6 +88,7 @@ func TestUnmapErrorSentinelFidelity(t *testing.T) {
 		{name: "source not found", store: storecontract.ErrSourceNotFound, rehyd: storecontract.ErrSourceNotFound},
 		{name: "source path taken", store: storecontract.ErrSourcePathTaken, rehyd: storecontract.ErrSourcePathTaken},
 		{name: "package authority not declared", store: storepkg.ErrAuthorityNotDeclared, rehyd: storepkg.ErrAuthorityNotDeclared},
+		{name: "package contribution collision", store: storepkg.ErrContributionCollision, rehyd: storepkg.ErrContributionCollision},
 		{name: "source signing stale", store: storecontract.ErrSourceSigningStale, rehyd: storecontract.ErrSourceSigningStale},
 	}
 	for _, tt := range tests {
