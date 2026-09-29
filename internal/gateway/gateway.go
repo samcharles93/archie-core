@@ -523,16 +523,16 @@ func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream)
 	if r.checkRateLimit(in) {
 		return rateLimitReply, nil
 	}
-	return r.StreamTurn(ctx, in, stream)
+	return r.streamTurn(ctx, in, stream)
 }
 
-// StreamTurn dispatches one streaming turn for an inbound whose per-message
+// streamTurn dispatches one streaming turn for an inbound whose per-message
 // gates have already run. RouteStream splits it off so the text batcher's
 // dispatcher can carry the joined payload for its whole batch through here
 // without the gates answering a second time for a message they already saw
 // -- in particular so the combined payload's first-fragment source ID, which
 // the dedup gate already recorded, does not read back as a redelivery.
-func (r *Router) StreamTurn(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
+func (r *Router) streamTurn(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
 	cmd, _ := parseCmd(strings.TrimSpace(in.Message.Text), r.gatewayName)
 	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
 		return r.route(ctx, in)

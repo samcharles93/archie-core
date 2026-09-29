@@ -148,47 +148,38 @@ func (a *LocalChatAdapter) Stream(ctx context.Context, in Inbound) (<-chan ChatE
 func (a *LocalChatAdapter) stream(ctx context.Context, in Inbound, id string, events chan ChatEvent) {
 	defer close(events)
 
-	// The per-message gates run here, per fragment, on this call's own
-	// goroutine -- before the batch and before the session lane. A
-	// redelivered fragment is a declined delivery to the gate it always
-	// reached and never joins the batch it repeats; the rate budget is
-	// charged per fragment the way it always was; and since the reply a
-	// gate returns renders today, the prose is the done event of this very
-	// stream rather than a turn output.
-	if a.Router.duplicateDelivery(in) {
-		events <- ChatEvent{Kind: "done", Text: dedupReply, SessionID: id}
+	started := a.prelude(ctx, in, id)
+	if started.event != nil {
+		events <- *started.event
 		return
 	}
-	if a.Router.checkRateLimit(in) {
-		events <- ChatEvent{Kind: "done", Text: rateLimitReply, SessionID: id}
-		return
-	}
-
-	// Rapid-fire text fragments of one thought coalesce here, before the
-	// session lane exists: waiting inside a lane would make every fragment
-	// queue behind the first fragment's batch window instead of joining it.
-	ready, mine, err := a.Router.CollectTurn(ctx, in)
-	if err != nil {
-		events <- ChatEvent{Kind: "error", Text: err.Error(), SessionID: id}
-		return
-	}
-	if !mine {
+	if !started.proceeds {
 		// A covered fragment: the batch's turn runs on the call that
 		// dispatched it. This caller contributes its text to that turn and
 		// renders nothing of its own -- not even the started event, which
 		// announces a turn that does not exist here.
 		return
 	}
-	in = ready
+	in = started.ready
 
-	// started announces the turn that runs; it comes now, after the gates and
+	// started announces the turn that runs; it comes after the gates and
 	// the batch, and always before the first delta or the terminal event.
 	events <- ChatEvent{Kind: "started", SessionID: id}
 
+	a.runStreamedTurn(ctx, in, id, events)
+}
+
+// runStreamedTurn dispatches one turn whose payload the prelude produced and
+// pumps its events to the caller. The turn runs on its session lane -- the
+// lane key is the session, so /stop reaches the turn the sender is actually
+// watching -- while the pump stays on the caller's goroutine, so a
+// caller-cancelled stream stops the lane it is serving. The terminal event
+// lands after every mid-turn event that was already queued.
+func (a *LocalChatAdapter) runStreamedTurn(ctx context.Context, in Inbound, id string, events chan ChatEvent) {
 	pending := make(chan ChatEvent, 32)
 	stream := localChatStream{done: ctx.Done(), events: pending, sessionID: id}
 	run := func(turnCtx context.Context) ChatEvent {
-		reply, err := a.Router.StreamTurn(turnCtx, in, stream)
+		reply, err := a.Router.streamTurn(turnCtx, in, stream)
 		if err != nil {
 			return ChatEvent{Kind: "error", Text: err.Error(), SessionID: id}
 		}
@@ -204,6 +195,14 @@ func (a *LocalChatAdapter) stream(ctx context.Context, in Inbound, id string, ev
 	} else {
 		a.Turns.Submit(ctx, id, func(turnCtx context.Context) { result <- run(turnCtx) })
 	}
+	a.pumpTurnEvents(ctx, id, events, pending, result)
+}
+
+// pumpTurnEvents streams one turn's events into its caller's channel: every
+// delta and tool event as it arrives, then the terminal event after them.
+// A caller whose context ends mid-stream has stopped the turn, and the lane
+// it occupies is stopped so the turn cannot keep running unobserved.
+func (a *LocalChatAdapter) pumpTurnEvents(ctx context.Context, id string, events chan ChatEvent, pending, result <-chan ChatEvent) {
 	emit := func(event ChatEvent) {
 		select {
 		case events <- event:
@@ -233,6 +232,52 @@ func (a *LocalChatAdapter) stream(ctx context.Context, in Inbound, id string, ev
 	}
 }
 
+// streamPrelude is what one streamed caller's turn is before any turn
+// exists: render a terminal event and stop, render nothing, or dispatch.
+type streamPrelude struct {
+	// event is the terminal event the caller's stream renders when no turn
+	// exists for it: a gate's prose or the batch's collection error. nil on
+	// every path that proceeds.
+	event *ChatEvent
+	// ready is the payload the turn dispatches, and stays zero for every
+	// caller whose stream renders no turn.
+	ready Inbound
+	// proceeds reports whether this caller dispatches the turn. A covered
+	// fragment does not: it contributes only text to the dispatcher's turn,
+	// so it renders nothing -- not even the started event, which announces
+	// a turn that does not exist here.
+	proceeds bool
+}
+
+// prelude runs the per-message gates and the text batcher for one streamed
+// fragment, on this call's own goroutine and before the session lane, and
+// returns what this caller's stream does next.
+//
+// The gates run here rather than inside the session lane: a redelivered
+// fragment is a declined delivery to the gate it always reached and never
+// joins the batch it repeats; the rate budget is charged per fragment the
+// way it always was; and since the reply a gate returns renders today, the
+// prose is the done event of this very stream rather than a turn output.
+// Rapid-fire text fragments of one thought coalesce before the session lane
+// exists for the same reason: waiting inside a lane would make every
+// fragment queue behind the first fragment's batch window instead of
+// joining it.
+func (a *LocalChatAdapter) prelude(ctx context.Context, in Inbound, id string) streamPrelude {
+	if a.Router.duplicateDelivery(in) {
+		return streamPrelude{event: &ChatEvent{Kind: "done", Text: dedupReply, SessionID: id}}
+	}
+	if a.Router.checkRateLimit(in) {
+		return streamPrelude{event: &ChatEvent{Kind: "done", Text: rateLimitReply, SessionID: id}}
+	}
+	ready, mine, err := a.Router.CollectTurn(ctx, in)
+	if err != nil {
+		return streamPrelude{event: &ChatEvent{Kind: "error", Text: err.Error(), SessionID: id}}
+	}
+	return streamPrelude{ready: ready, proceeds: mine}
+}
+
+// localChatStream is the TurnStream piped into the router for one streamed
+// turn; its events move to the caller's channel below.
 type localChatStream struct {
 	done      <-chan struct{}
 	events    chan<- ChatEvent
