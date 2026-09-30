@@ -223,6 +223,9 @@ func DefaultConfigPath() string {
 // section.
 func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	cfg.SecretEngineDir = expandHomePath(cfg.SecretEngineDir)
+	cfg.PluginDir = expandHomePath(cfg.PluginDir)
+	cfg.ModuleDir = expandHomePath(cfg.ModuleDir)
+	cfg.SkillsDir = expandHomePath(cfg.SkillsDir)
 	cfg.WorkDir = expandHomePath(cfg.WorkDir)
 	cfg.StateDir = expandHomePath(cfg.StateDir)
 	cfg.Chat.Workspace = expandHomePath(cfg.Chat.Workspace)

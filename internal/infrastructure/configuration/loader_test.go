@@ -42,16 +42,17 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 }
 
 func TestLoadExpandsConfiguredHomePaths(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := `
 bot_user = "widget"
 work_dir = "~/archie/work"
 state_dir = "~/archie/state"
+plugin_dir = "~/archie/plugins"
+module_dir = "~/archie/modules"
+skills_dir = "~/archie/skills"
 
 [chat]
 workspace = "~/archie/workspace"
@@ -75,6 +76,14 @@ name = "app"
 		"work_dir":       {got: cfg.WorkDir, want: filepath.Join(home, "archie", "work")},
 		"state_dir":      {got: cfg.StateDir, want: filepath.Join(home, "archie", "state")},
 		"chat.workspace": {got: cfg.Chat.Workspace, want: filepath.Join(home, "archie", "workspace")},
+		// The operator-facing plugin, module and skills directories take the
+		// same ~ as every other path in the file: config.example.toml tells
+		// operators to write them that way, and a value that stays literal is
+		// a directory that silently does not exist (no plugins load, no
+		// modules load, no skills beyond the built-ins).
+		"plugin_dir": {got: cfg.PluginDir, want: filepath.Join(home, "archie", "plugins")},
+		"module_dir": {got: cfg.ModuleDir, want: filepath.Join(home, "archie", "modules")},
+		"skills_dir": {got: cfg.SkillsDir, want: filepath.Join(home, "archie", "skills")},
 	}
 	for name, tt := range wants {
 		t.Run(name, func(t *testing.T) {
