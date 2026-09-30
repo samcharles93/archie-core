@@ -13,7 +13,9 @@ import {
 import { StatusPill } from "@/components/ui/status-pill";
 import { statusKind, statusLabel } from "@/lib/task-meta";
 import StartNewRun from "./StartNewRun.vue";
+import TaskRowActions from "./TaskRowActions.vue";
 import { pillFor } from "./status-pill";
+import { shownActionIds } from "./task-actions";
 import { useTaskRun } from "./use-task-run";
 
 /**
@@ -28,6 +30,14 @@ const title = computed(() => run.task?.title || `Task #${props.id}`);
 const status = computed(() => run.task?.status ?? "");
 const pill = computed(() => pillFor(statusKind(status.value)));
 const parked = computed(() => status.value === "parked" && !!run.task?.park_reason);
+
+// The head has room for one control: the reap an operator reaches for once a
+// task is finished with. Whether this task offers it at all is the server's
+// action list, never this page's opinion about the status.
+const HEAD_ACTIONS = ["archive"];
+const headerActions = computed(() =>
+  shownActionIds(run.task?.actions, HEAD_ACTIONS),
+);
 </script>
 
 <template>
@@ -63,7 +73,15 @@ const parked = computed(() => status.value === "parked" && !!run.task?.park_reas
           /></a>
         </div>
       </div>
-      <StartNewRun compact :id="id" />
+      <div class="flex flex-wrap items-center gap-2">
+        <TaskRowActions
+          v-if="run.task && headerActions.length"
+          :task="run.task"
+          :only="HEAD_ACTIONS"
+          @done="run.refreshAll()"
+        />
+        <StartNewRun compact :id="id" />
+      </div>
     </div>
 
     <div

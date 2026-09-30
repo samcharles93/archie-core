@@ -3,6 +3,7 @@ import {
   fmtValue,
   LEVEL_COLOR,
   levelKind,
+  rowClass,
   shortTime,
   type LogEntry,
 } from "@/lib/log";
@@ -19,7 +20,8 @@ const fields = () => Object.entries(props.entry.fields ?? {});
 
 <template>
   <div
-    class="grid grid-cols-[62px_52px_1fr] items-baseline gap-3 border-b border-border px-1 py-2 hover:bg-accent"
+    class="grid grid-cols-[62px_52px_1fr] items-baseline gap-3 border-b border-b-border border-l-2 px-1 py-2 hover:bg-accent"
+    :class="rowClass(props.entry.level)"
   >
     <span class="font-mono text-fg-subtle">{{
       shortTime(props.entry.time)

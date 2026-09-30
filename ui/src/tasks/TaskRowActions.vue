@@ -23,11 +23,14 @@ import {
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
 import { actionFor, type ActionMeta } from "@/lib/task-meta";
 import type { Task } from "./TaskRow.vue";
+import { shownActionIds } from "./task-actions";
 
 /**
  * The lifecycle controls for one task. A task offers whatever the server says
  * it offers, so the decisions here are presentation only: which variant a
- * control wears, whether it needs confirming, and how a refusal reads.
+ * control wears, whether it needs confirming, and how a refusal reads. A
+ * caller may narrow the list to the controls it has room for (`only`), and
+ * narrowing can only remove -- see task-actions.ts.
  */
 
 /** A control with its forge target already resolved. */
@@ -41,7 +44,11 @@ interface Control {
 
 type ControlVariant = "default" | "ghost" | "destructive";
 
-const props = defineProps<{ task: Task }>();
+const props = defineProps<{
+  task: Task;
+  /** Render only these action ids, still only if the server offered them. */
+  only?: string[];
+}>();
 const emit = defineEmits<{ done: [taskId: Task["id"]] }>();
 
 const inFlight = ref(false);
@@ -54,7 +61,7 @@ const confirming = ref<string | null>(null);
 const confirmingId = ref<string | null>(null);
 
 const controls = computed<Control[]>(() =>
-  (props.task.actions ?? [])
+  shownActionIds(props.task.actions, props.only)
     .map((id) => actionFor(id))
     .filter((meta): meta is ActionMeta => meta !== null)
     .map((meta) => ({

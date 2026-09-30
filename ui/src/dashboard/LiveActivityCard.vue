@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
-import { computed, reactive } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { ChevronDown, ChevronRight } from "@lucide/vue";
@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Table,
   TableBody,
@@ -25,14 +26,19 @@ import { ago } from "@/lib/format";
 import { useLiveUpdatesStore } from "@/stores/live-updates";
 import ActivityRow from "./ActivityRow.vue";
 import { activityDetail } from "./activity-detail";
+import {
+  ACTIVITY_FILTERS,
+  activityEmptyTitle,
+  filterActivity,
+  type ActivityFilter,
+} from "./activity-filter";
 import { groupActivity, type ActivityGroup } from "./activity-group";
 
 /**
- * The last 50 events, newest first, with the stream's own state on the card.
- * Runs of consecutive same-kind same-task events (the daemon's background
- * telemetry) collapse into one group row carrying an ×N badge; expanding one
- * reveals its events. The grouping lives in activity-group.ts and is tested
- * there; this card only renders it.
+ * The last 50 events, newest first, with the stream's own state on the card and
+ * the All / Tasks / System filter over it. The filter and the grouping rules
+ * live in activity-filter.ts and activity-group.ts and are tested there; this
+ * card only renders their result.
  */
 
 const router = useRouter();
@@ -40,10 +46,18 @@ const { activity, streamKind, streamState } = storeToRefs(
   useLiveUpdatesStore(),
 );
 
+/** Which view of the feed is showing: everything, task runs, or the daemon's
+ * own background work. */
+const filter = ref<ActivityFilter>("all");
+const shown = computed(() => filterActivity(activity.value, filter.value));
+const emptyTitle = computed(() =>
+  activityEmptyTitle(shown.value.length, filter.value),
+);
+
 // Expansion is keyed on label:taskID, so a live run stays open as its events
 // arrive, and a collapsed group re-collapses only when the run breaks.
 const expanded = reactive(new Set<string>());
-const groups = computed(() => groupActivity(activity.value));
+const groups = computed(() => groupActivity(shown.value));
 
 function toggle(key: string) {
   if (expanded.has(key)) expanded.delete(key);
@@ -73,7 +87,12 @@ function openTask(taskID: number) {
   <Card>
     <CardHeader>
       <CardTitle>Live activity</CardTitle>
-      <CardAction>
+      <CardAction class="flex items-center gap-2">
+        <SegmentedControl
+          v-model="filter"
+          label="Filter activity"
+          :options="ACTIVITY_FILTERS"
+        />
         <Badge :variant="streamKind">{{ streamState }}</Badge>
       </CardAction>
     </CardHeader>
@@ -105,16 +124,16 @@ function openTask(taskID: number) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-if="!activity.length">
+              <TableRow v-if="!shown.length">
                 <TableCell colspan="4">
                   <Empty>
                     <EmptyHeader>
-                      <EmptyTitle>Waiting for activity</EmptyTitle>
+                      <EmptyTitle>{{ emptyTitle }}</EmptyTitle>
                     </EmptyHeader>
                   </Empty>
                 </TableCell>
               </TableRow>
-              <template v-if="activity.length">
+              <template v-if="shown.length">
                 <template v-for="group in groups" :key="group.key">
                   <!-- A singleton is exactly the row the raw feed would show. -->
                   <ActivityRow
