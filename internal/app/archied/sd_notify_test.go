@@ -18,7 +18,15 @@ import (
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
+	"github.com/samcharles93/archie-core/internal/sdnotify"
 )
+
+// The protocol-level properties of the notify client -- the '@' address form,
+// the disabled and unusable socket contract, and the half-of-WatchdogSec
+// heartbeat -- are pinned in internal/sdnotify, where the client now lives.
+// These tests pin what is the daemon's: that its three serving entry points
+// announce, that the sampler samples daemon.LastPollAt, and that the whole
+// path stays silent and harmless without a NOTIFY_SOCKET.
 
 // notifyRecorder captures every record at every level. The other recording
 // handler in this package keeps warnings only; these tests need "this path
@@ -49,6 +57,7 @@ func (h *notifyRecorder) all() []slog.Record {
 	return append([]slog.Record(nil), h.records...)
 }
 
+// at returns the captured records at one level.
 func (h *notifyRecorder) at(level slog.Level) []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -83,7 +92,7 @@ func listenNotify(t *testing.T, addr string) *notifyListener {
 		t.Fatalf("listen for notify datagrams at %q: %v", addr, err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	t.Setenv(notifySocketEnv, addr)
+	t.Setenv(sdnotify.NotifySocketEnv, addr)
 	return &notifyListener{conn: conn}
 }
 
@@ -174,93 +183,12 @@ func pollPasses(ctx context.Context, d *daemon.Daemon, on *atomic.Bool, every ti
 	}
 }
 
-// TestNotifyReachesAbstractSocket pins the '@' address form. systemd is not
-// restricted to filesystem paths, and a client that stripped the prefix would
-// connect to a file that does not exist instead of the abstract namespace.
-func TestNotifyReachesAbstractSocket(t *testing.T) {
-	listener := listenNotify(t, fmt.Sprintf("@archie-notify-test-%d", os.Getpid()))
-
-	(&boot{log: slog.New(slog.DiscardHandler)}).announceReady()
-
-	if states := listener.states(t, 300*time.Millisecond); !slices.Contains(states, readyState) {
-		t.Errorf("states received = %v, want %q among them", states, readyState)
-	}
-}
-
-// TestNotifierDisabledIsSilentAndUnusableSocketWarns pins the two ends of the
-// delivery contract: no socket means nothing is attempted and nothing is said,
-// while a socket that cannot be written to is reported once and then ignored.
-// Neither may ever be fatal.
-func TestNotifierDisabledIsSilentAndUnusableSocketWarns(t *testing.T) {
-	rec := &notifyRecorder{}
-	log := slog.New(rec)
-
-	newNotifier(func(string) string { return "" }, log).send(readyState)
-	if got := rec.all(); len(got) != 0 {
-		t.Errorf("a notifier with no socket logged %d records, want none: %v", len(got), got)
-	}
-
-	missing := filepath.Join(t.TempDir(), "absent", "n.sock")
-	newNotifier(func(string) string { return missing }, log).send(readyState)
-	warns := rec.at(slog.LevelWarn)
-	if len(warns) != 1 {
-		t.Fatalf("sends to an unusable socket logged %d warnings, want exactly 1", len(warns))
-	}
-	if errs := rec.at(slog.LevelError); len(errs) != 0 {
-		t.Errorf("sends to an unusable socket logged %d errors, want none", len(errs))
-	}
-}
-
-// TestWatchdogHeartbeatInterval pins the interval convention: systemd passes
-// WatchdogSec as WATCHDOG_USEC and sd_notify(3) heartbeats at half of it, and
-// WATCHDOG_PID names the process whose beats count.
-func TestWatchdogHeartbeatInterval(t *testing.T) {
-	const self = 42
-	tests := []struct {
-		name   string
-		usec   string
-		pidEnv string
-		want   time.Duration
-		wantOK bool
-	}{
-		{name: "no watchdog requested", wantOK: false},
-		{name: "half of a 30s watchdog", usec: "30000000", want: 15 * time.Second, wantOK: true},
-		{name: "sub-second watchdog", usec: "20000", want: 10 * time.Millisecond, wantOK: true},
-		{name: "unparseable", usec: "soon", wantOK: false},
-		{name: "zero", usec: "0", wantOK: false},
-		{name: "negative", usec: "-1", wantOK: false},
-		{name: "watchdog pid is this process", usec: "20000", pidEnv: "42", want: 10 * time.Millisecond, wantOK: true},
-		{name: "watchdog pid is another process", usec: "20000", pidEnv: "7", wantOK: false},
-		{name: "watchdog pid is unreadable", usec: "20000", pidEnv: "seven", wantOK: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			getenv := func(key string) string {
-				switch key {
-				case watchdogUsecEnv:
-					return tt.usec
-				case watchdogPIDEnv:
-					return tt.pidEnv
-				default:
-					return ""
-				}
-			}
-			got, ok := watchdogHeartbeat(getenv, self, slog.New(slog.DiscardHandler))
-			if ok != tt.wantOK || got != tt.want {
-				t.Errorf("watchdogHeartbeat(usec=%q, pid=%q) = %v, %v; want %v, %v",
-					tt.usec, tt.pidEnv, got, ok, tt.want, tt.wantOK)
-			}
-		})
-	}
-}
-
 // TestNotifyReadyAndWatchdogHeartbeat is the run-loop path end to end: a real
 // NOTIFY_SOCKET, the daemon's own boot path announcing READY, and the run
 // loop's own progress marker producing WATCHDOG heartbeats.
 func TestNotifyReadyAndWatchdogHeartbeat(t *testing.T) {
 	listener := newNotifyListener(t)
-	t.Setenv(watchdogUsecEnv, "20000") // 20ms watchdog: heartbeat every 10ms
+	t.Setenv(sdnotify.WatchdogUsecEnv, "20000") // 20ms watchdog: heartbeat every 10ms
 
 	b, d := newNotifyTestBoot(t, 50*time.Millisecond)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -274,11 +202,11 @@ func TestNotifyReadyAndWatchdogHeartbeat(t *testing.T) {
 	b.startWatchdog(ctx)
 
 	states := listener.states(t, 300*time.Millisecond)
-	if !slices.Contains(states, readyState) {
-		t.Errorf("states received = %v, want %q among them", states, readyState)
+	if !slices.Contains(states, sdnotify.ReadyState) {
+		t.Errorf("states received = %v, want %q among them", states, sdnotify.ReadyState)
 	}
-	if countState(states, watchdogState) == 0 {
-		t.Errorf("states received = %v, want at least one %q among them", states, watchdogState)
+	if countState(states, sdnotify.WatchdogState) == 0 {
+		t.Errorf("states received = %v, want at least one %q among them", states, sdnotify.WatchdogState)
 	}
 }
 
@@ -288,7 +216,7 @@ func TestNotifyReadyAndWatchdogHeartbeat(t *testing.T) {
 // kept alive by an independent ticker.
 func TestWatchdogWithholdsHeartbeatWhenRunLoopStalls(t *testing.T) {
 	listener := newNotifyListener(t)
-	t.Setenv(watchdogUsecEnv, "20000") // 20ms watchdog: heartbeat every 10ms
+	t.Setenv(sdnotify.WatchdogUsecEnv, "20000") // 20ms watchdog: heartbeat every 10ms
 
 	const cadence = 50 * time.Millisecond
 	b, d := newNotifyTestBoot(t, cadence)
@@ -300,7 +228,7 @@ func TestWatchdogWithholdsHeartbeatWhenRunLoopStalls(t *testing.T) {
 	go pollPasses(ctx, d, &polling, 5*time.Millisecond)
 
 	b.startWatchdog(ctx)
-	if beats := countState(listener.states(t, 200*time.Millisecond), watchdogState); beats == 0 {
+	if beats := countState(listener.states(t, 200*time.Millisecond), sdnotify.WatchdogState); beats == 0 {
 		t.Fatal("no WATCHDOG=1 within 200ms while the run loop was polling")
 	}
 
@@ -323,12 +251,12 @@ func TestWatchdogWithholdsHeartbeatWhenRunLoopStalls(t *testing.T) {
 // terminal, and a systemd unit with no WatchdogSec all take this path, and none
 // of them may see a datagram, a warning, or a failed start.
 func TestNotifyUnsetIsNoOp(t *testing.T) {
-	t.Setenv(watchdogUsecEnv, "20000")
+	t.Setenv(sdnotify.WatchdogUsecEnv, "20000")
 	// t.Setenv cannot unset a variable: register the restoration first, then
 	// remove it for real so "unset" means unset.
-	t.Setenv(notifySocketEnv, "")
-	if err := os.Unsetenv(notifySocketEnv); err != nil {
-		t.Fatalf("unset %s: %v", notifySocketEnv, err)
+	t.Setenv(sdnotify.NotifySocketEnv, "")
+	if err := os.Unsetenv(sdnotify.NotifySocketEnv); err != nil {
+		t.Fatalf("unset %s: %v", sdnotify.NotifySocketEnv, err)
 	}
 
 	rec := &notifyRecorder{}
@@ -349,8 +277,8 @@ func TestNotifyUnsetIsNoOp(t *testing.T) {
 // would be a regression on every deployment that has no systemd at all.
 func TestNotifySocketFailureIsNotFatal(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "absent", "n.sock")
-	t.Setenv(notifySocketEnv, missing)
-	t.Setenv(watchdogUsecEnv, "20000")
+	t.Setenv(sdnotify.NotifySocketEnv, missing)
+	t.Setenv(sdnotify.WatchdogUsecEnv, "20000")
 
 	rec := &notifyRecorder{}
 	b, d := newNotifyTestBoot(t, 50*time.Millisecond)
@@ -405,7 +333,7 @@ func TestStateStoreBootAnnouncesReady(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- RunStateStore(ctx, StateStoreOptions{Config: path, Listen: "127.0.0.1:0"}) }()
 
-	if !listener.waitForState(t, 15*time.Second, readyState) {
+	if !listener.waitForState(t, 15*time.Second, sdnotify.ReadyState) {
 		select {
 		case bootErr := <-errCh:
 			t.Fatalf("RunStateStore exited before announcing ready: %v", bootErr)

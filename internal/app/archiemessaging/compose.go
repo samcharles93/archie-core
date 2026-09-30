@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/sdnotify"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -198,6 +199,18 @@ func (s *Service) Start(ctx context.Context) error {
 			s.status.MarkStopped(c.name, "")
 		})
 	}
+
+	// Every configured channel has been handed its lifetime and the service
+	// blocks here serving them. systemd's READY=1 asserts the same fact this
+	// line has just established, so the announcement goes out here rather than
+	// from a second notion of "started" (the convention archie-core-1174 set
+	// for the daemon, the Gateway and the State Store; archie-core-g5g8 is this
+	// process joining them). Not earlier: a channel whose configuration is
+	// invalid fails composition, above, and READY must not precede it. Not
+	// later: a unit whose TimeoutStartSec expires first would restart a healthy
+	// process. Nothing is consumed until the unit says Type=notify, so this is
+	// inert on today's install.
+	sdnotify.Ready(s.log)
 
 	<-ctx.Done()
 

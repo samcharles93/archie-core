@@ -13,6 +13,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
+	"github.com/samcharles93/archie-core/internal/sdnotify"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -116,7 +117,7 @@ func TestGatewayServingAnnouncesReady(t *testing.T) {
 	serveCh := make(chan error, 1)
 	go func() { serveCh <- b.serveGatewayListener(ctx, ln, true, stubGatewayContract{}, nil) }()
 
-	if !listener.waitForState(t, 5*time.Second, readyState) {
+	if !listener.waitForState(t, 5*time.Second, sdnotify.ReadyState) {
 		t.Fatal("no READY=1 datagram within 5s of the Gateway serving")
 	}
 
