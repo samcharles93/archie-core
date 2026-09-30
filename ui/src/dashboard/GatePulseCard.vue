@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { delivered } from "@/lib/delivered";
-import { workflows } from "./state";
+import { STATUS_FILL } from "@/lib/status";
+import { passBar } from "./pass-bar";
+import { workflows, type WorkflowStat } from "./state";
 
 /** Sharer of runs: how much of the work that finished passed its gates. */
 const stats = computed(() => workflows.value?.workflows ?? []);
@@ -26,6 +27,11 @@ const pct = computed(() => {
   if (!totals.value.runs) return 0;
   return Math.round((totals.value.merged / totals.value.runs) * 100);
 });
+
+/** One row's bar: the share of that gate's runs which got through, and whether
+ * the gate is failing -- both decided in pass-bar.ts. */
+const rowBar = (stat: WorkflowStat) =>
+  passBar(delivered(stat), stat.runs || 0);
 </script>
 
 <template>
@@ -59,22 +65,29 @@ const pct = computed(() => {
             <li
               v-for="(w, i) in stats.slice(0, 3)"
               :key="i"
-              class="flex items-center justify-between gap-3 border-b border-hairline py-1.5 text-sm last:border-b-0"
+              class="flex flex-col gap-1.5 border-b border-hairline py-2 last:border-b-0"
             >
-              <span class="truncate text-fg-muted">{{
-                w.workflow || "workflow"
-              }}</span>
-              <Badge
-                :variant="
-                  delivered(w) === (w.runs || 0)
-                    ? 'ok'
-                    : (w.parked || 0) > 0
-                      ? 'warn'
-                      : 'info'
-                "
+              <span class="flex items-baseline justify-between gap-3 text-sm">
+                <span class="truncate text-fg-muted">{{
+                  w.workflow || "workflow"
+                }}</span>
+                <span class="shrink-0 font-mono text-xs text-fg-subtle">{{
+                  delivered(w)
+                }}/{{ w.runs || 0 }}</span>
+              </span>
+              <!-- The bar restates the counts as a length: a gate drifting down
+                   is visible before the two numbers are read. Its track carries
+                   the failure when there is no width to show. -->
+              <span
+                class="block h-1.5 overflow-hidden rounded-full"
+                :class="STATUS_FILL[rowBar(w).track]"
               >
-                {{ delivered(w) }}/{{ w.runs || 0 }}
-              </Badge>
+                <span
+                  class="block h-full rounded-full"
+                  :class="STATUS_FILL[rowBar(w).kind]"
+                  :style="`width:${rowBar(w).pct}%`"
+                />
+              </span>
             </li>
           </ul>
         </div>

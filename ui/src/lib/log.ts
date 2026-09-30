@@ -51,6 +51,33 @@ export function levelKind(level: string | null | undefined): LevelKind {
   }
 }
 
+/**
+ * The row's own treatment, by level. The level label carries the colour; the row
+ * carries the weight: an ERROR line is a block the eye lands on, not red text
+ * in a column of grey. Every row keeps a left edge of the same width, coloured
+ * or not, so the three columns never shift between rows.
+ */
+export const LEVEL_ROW: Record<LevelKind, string> = {
+  danger: "border-l-danger bg-danger-soft",
+  warn: "border-l-transparent",
+  info: "border-l-transparent",
+  idle: "border-l-transparent",
+};
+
+/** The classes one row wears for its level. */
+export function rowClass(level: string | null | undefined): string {
+  return LEVEL_ROW[levelKind(level)];
+}
+
+/**
+ * The end of an attempt's log: which attempt, and how much it wrote. The count
+ * is the lines on screen, so a filtered pane says how much the filter left.
+ */
+export function attemptFooter(attempt: number, lines: number): string {
+  const count = Math.max(0, Math.trunc(lines) || 0);
+  return `End of attempt ${attempt} \u00b7 ${count} line${count === 1 ? "" : "s"}`;
+}
+
 export function fmtValue(v: unknown): string {
   if (v == null) return "";
   return typeof v === "object" ? JSON.stringify(v) : String(v);

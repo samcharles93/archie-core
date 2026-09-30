@@ -5,6 +5,7 @@ import LogRow from "@/base/LogRow.vue";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api } from "@/lib/api";
+import { attemptFooter } from "@/lib/log";
 
 import PanelLoading from "./PanelLoading.vue";
 import TaskLogFilters from "./TaskLogFilters.vue";
@@ -169,6 +170,11 @@ const download = computed(() =>
       >
         <LogRow v-for="(entry, i) in view.entries" :key="i" :entry="entry" />
       </div>
+      <!-- Below the frame, not inside it: the log scrolls, and where an attempt
+           ended is the one line that must stay put while it does. -->
+      <p class="px-1 pt-2 text-xs text-fg-subtle">
+        {{ attemptFooter(resolvedAttempt, view.entries.length) }}
+      </p>
       <Button v-if="download" variant="outline" size="sm" class="mt-3" as-child>
         <a :href="download" download>Download log</a>
       </Button>

@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
 import MappingsPage from "@/mappings/MappingsPage.vue";
 import { activeTab, availableTabs } from "./tab-selection";
+import { loadEventCounts, type EventsCounts } from "./counts";
 
 /**
  * The Events surfaces: what arrived, how its fields are read, and which workflow
@@ -56,24 +57,14 @@ function show(id: unknown): void {
 // there.
 watch(active, (tab) => show(tab), { immediate: true });
 
-// One count per step of the chain, for the strip and the tab chips. A count
-// that could not be read stays blank rather than reading as zero.
-const counts = ref<Record<string, number | undefined>>({});
+// One count per step of the chain, for the strip and the tab chips. The reads
+// and the counting live in counts.ts, so the strip, the chips and the test all
+// read one source rather than three.
+const counts = ref<EventsCounts>({});
 async function loadCounts() {
-  const [captures, mappings, bindings] = await Promise.allSettled([
-    api.captures<{ captures?: unknown[] | null }>(100),
-    api.mappings<{ mappings?: unknown[] }>(),
-    api.bindings<{ bindings?: unknown[] }>(),
-  ]);
-  const size = (r: PromiseSettledResult<Record<string, unknown[] | null | undefined>>, key: string) =>
-    r.status === "fulfilled" ? (r.value?.[key]?.length ?? 0) : undefined;
-  counts.value = {
-    inspector: size(captures as never, "captures"),
-    mappings: size(mappings as never, "mappings"),
-    bindings: size(bindings as never, "bindings"),
-  };
+  counts.value = await loadEventCounts(api);
 }
-onMounted(loadCounts);
+onMounted(() => void loadCounts());
 useLiveResource(null, () => void loadCounts(), 1000);
 
 const steps = [
