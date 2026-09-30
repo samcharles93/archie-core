@@ -53,12 +53,33 @@ func operationalDefinitions() []Definition {
 	}
 }
 
-// validatePluginSettings accepts every value: the four directories are free-form
-// operator paths with no cross-field rule and no rule the configuration package
-// applies either (configuration.Validate has no say over them), so there is
-// nothing yet for this validator to enforce. It stays a real function rather than
-// an inline no-op so the place to add a rule is obvious when one exists -- e.g.
-// "a path that is absolute" or "a skills dir under the plugin dir".
+// validatePluginSettings accepts every value, deliberately. The four directories
+// are free-form operator paths, and that is the decision recorded for
+// archie-core #1143 rather than a validator nobody has written yet.
+//
+// Two candidate rules were considered and are refused:
+//
+//   - That the directory must exist. Every consumer reads a missing directory as
+//     an empty one by design: plugin.LoadDir and secret.Registry.LoadDir return
+//     no entries and no error on os.IsNotExist, loadModules skips a kind whose
+//     file is absent, and playbook.Load returns an empty store. The no-error half
+//     is pinned by internal/secret's TestLoadDirNonexistent. An existence rule
+//     would turn each of those deliberate no-ops into a refused startup.
+//   - That the path must be absolute, or that skills_dir must sit under
+//     plugin_dir. No directory setting in this repository is validated for shape
+//     (work_dir, state_dir, chat.workspace, the routing and playbook paths and an
+//     MCP server's work_dir are all free-form), so a rule for these four alone
+//     would be arbitrary. It would also fail closed in the wrong place: a stored
+//     document is layered over the file and the boot path validates the result,
+//     so a rule added here refuses to start a daemon whose only problem is a
+//     value the store already holds.
+//
+// A "~/..." value is not the missing rule either: it is a path-expansion
+// concern, handled where the file is read (configuration.applyGeneralDefaults),
+// not a reason to refuse the document.
+//
+// It stays a real function rather than an inline no-op so that a rule, if one is
+// ever settled, has one obvious home.
 func validatePluginSettings(input []byte) error {
 	return validateAs(input, func(pluginSettings) error { return nil })
 }
