@@ -5,6 +5,47 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.45.0] - 2026-09-30
+
+### archied
+
+- fix(eda): reject a result map missing a field or needing a conversion
+- feat(eda): per-org workflow enable/disable gating bindings
+- feat(telegram): carry inbound media through the chat turn
+- fix(prsource): use a CodeQL-recognised containment guard when extracting archives
+- feat(store): key control-plane resources by (org, kind)
+- fix(store): refuse resource keys the audit key cannot disambiguate
+- fix(daemon): resume the task branch before container acquisition
+- feat(webui): show attachment metadata in the session transcript
+- feat(webui): name a workflow's declared inputs on the work-request form
+- feat(controlplane): carry the caller org from the request principal
+- fix(webui): the workflow handlers act in the caller's org
+- feat(kitrun): render the OAuth credential file with sentinels
+- feat(store): record accepted package authority against the pin
+- fix(workflow): the own-PR flow no longer parks on the operator-approval gate
+- feat(gateway): a TTL-bounded dedup gate for redelivered platform messages
+- feat(egress): capture the OAuth scope set and carry it to the harness secret
+- feat(kitrun): render the OAuth scopes and omit an uncaptured primary key
+- feat(store): project installed package contributions into org resources
+- feat(gateway): coalesce rapid-fire text events into one turn
+- fix(config): expand plugin, module and skills dirs like every other operator path
+- fix(webui): drop the config schema's editability advert
+- feat(webui): events counts, YAML reading, log rows and dashboard filters
+
+### archie-agent
+
+- feat(eda): per-org workflow enable/disable gating bindings
+- feat(telegram): carry inbound media through the chat turn
+- fix(prsource): use a CodeQL-recognised containment guard when extracting archives
+- feat(store): key control-plane resources by (org, kind)
+- feat(controlplane): carry the caller org from the request principal
+- feat(kitrun): render the OAuth credential file with sentinels
+- feat(store): record accepted package authority against the pin
+- fix(workflow): the own-PR flow no longer parks on the operator-approval gate
+- feat(egress): capture the OAuth scope set and carry it to the harness secret
+- feat(kitrun): render the OAuth scopes and omit an uncaptured primary key
+- feat(store): project installed package contributions into org resources
+
 ## [1.44.1] - 2026-09-29
 
 ### archied
