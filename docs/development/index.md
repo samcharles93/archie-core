@@ -34,9 +34,13 @@ restating them.
   index, so stage regenerated contracts before running it.
 - Stage by path, or read `git status` before `git add -A`. Tests that start
   embedded NATS or write logs must use `t.TempDir()`; anything they leave in the
-  tree gets committed. `task check` also adds linter-tool lines to `go.sum`
-  (bead 1e37); restore `go.sum` before committing unless you changed a
-  dependency.
+  tree gets committed. `task check` writes no module file on a consistent tree,
+  root or `tools/` (verified at HEAD with `GOFLAGS` unset and with `-mod=mod`):
+  a stale `go.mod` or `go.sum` fails it, with `missing go.sum entry` or
+  `updates to go.mod needed`, rather than being repaired. Only a global
+  `GOFLAGS=-mod=mod` in `go env` re-enables that repair, which is why the
+  `go -C tools` steps pass `-mod=readonly`; if `go.sum` goes dirty, run
+  `go mod tidy` and commit the result on its own.
 - A change to `docs/prds/`, `docs/architecture/` **or `docs/development/`**
   carries the regenerated `docs/data/generated/dev-docs.json`: run
   `task docs:artifact` (not `task docs:check`, which checks contracts only).
