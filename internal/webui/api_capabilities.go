@@ -32,8 +32,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 			// and its definition list from the local registry, so it is
 			// worth showing with only the former.
 			"workflows": true,
-			// Configuration renders from whichever source is wired; the
-			// page reports its own editability (see ConfigView.Editable).
+			// Configuration renders from whichever source is wired.
 			"settings": true,
 		},
 	})
