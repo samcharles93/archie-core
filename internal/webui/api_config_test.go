@@ -382,9 +382,6 @@ func TestHandleConfigIncludesSchemaWithLiveValues(t *testing.T) {
 	if botUser.Value != got.Identity.BotUser {
 		t.Errorf("Schema[bot_user].Value = %v, want %v (ConfigView.Identity.BotUser)", botUser.Value, got.Identity.BotUser)
 	}
-	if !botUser.Editable {
-		t.Error("Schema[bot_user].Editable = false, want true")
-	}
 
 	// A locked field's schema entry carries the reason the flat Locked map
 	// carries, so the generic renderer does not need to cross-reference it.
@@ -399,19 +396,51 @@ func TestHandleConfigIncludesSchemaWithLiveValues(t *testing.T) {
 		t.Errorf("Schema[work_dir].LockedReason = %q, want %q (ConfigView.Locked[work_dir])", workDir.LockedReason, got.Locked["work_dir"])
 	}
 
-	// Structured fields still carry their value (for the dedicated editors
-	// archie-core-b6ew.4 adds) but are not marked editable by the generic
-	// scalar renderer.
+	// Structured fields still carry their value, for the dedicated editors
+	// archie-core-b6ew.4 adds.
 	repos, ok := fields["repos"]
 	if !ok {
 		t.Fatal(`Schema has no "repos" field`)
 	}
-	if repos.Editable {
-		t.Error("Schema[repos].Editable = true, want false (structured fields need a dedicated editor)")
-	}
 	reposValue, ok := repos.Value.([]any)
 	if !ok || len(reposValue) != 1 {
 		t.Errorf("Schema[repos].Value = %#v, want the one configured repository", repos.Value)
+	}
+}
+
+// TestHandleConfigSchemaCarriesNoEditabilityAdvert pins that the schema
+// response stops advertising a write capability no process has. Configuration
+// settings are written through the control plane, not the dashboard (see
+// docs/architecture/configuration.md, "Settings writes go through the
+// control plane"), and ui/src/settings/types.ts's ConfigField -- the
+// reader-side declaration of this wire shape -- carries every descriptor
+// property except an editability one. A descriptor that emits one offers the
+// dashboard an affordance nothing on the server can honour.
+func TestHandleConfigSchemaCarriesNoEditabilityAdvert(t *testing.T) {
+	srv := newTestServer(t)
+	localConfig(srv, configWithFakeSecrets())
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var wire struct {
+		Schema []struct {
+			Fields []map[string]any `json:"fields"`
+		} `json:"schema"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &wire); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(wire.Schema) == 0 {
+		t.Fatal("schema is empty, want the field descriptor catalog")
+	}
+	for _, section := range wire.Schema {
+		for _, field := range section.Fields {
+			if editable, ok := field["editable"]; ok {
+				t.Errorf("schema field %v carries editable=%v; nothing writes configuration through the dashboard, so the descriptor must not offer the affordance", field["key"], editable)
+			}
+		}
 	}
 }
 
@@ -502,9 +531,7 @@ func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
 
 // TestRemoteConfigViewRendersThePublishedSnapshot: the UI process has no
 // configuration of its own, so the page it serves is whatever the owner
-// published. Whether that page is editable is decided by the process that
-// renders it, not by the document -- see
-// TestConfigViewEditableFollowsThisProcessWritePath.
+// published.
 func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
 	published := ConfigView{
 		Identity:   IdentityView{BotUser: "archie", ForgeType: "github"},

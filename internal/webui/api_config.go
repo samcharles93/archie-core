@@ -3,7 +3,6 @@ package webui
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -13,21 +12,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-)
-
-// Sentinel errors for handleConfigUpdate status classification. The
-// composition root wraps its UpdateConfig errors with these so the
-// handler can answer 400 (invalid input) or 503 (unavailable) without
-// reaching into infrastructure internals.
-var (
-	// ErrConfigUpdateUnavailable reports that config editing is not
-	// wired (no UpdateConfig seam, or the overlay is skipped by the
-	// recovery flag).
-	ErrConfigUpdateUnavailable = errors.New("config editing unavailable")
-	// ErrConfigUpdateInvalid reports a rejected update: a denylisted
-	// key, a failed validation of the materialised config, or an
-	// unparseable value.
-	ErrConfigUpdateInvalid = errors.New("config update invalid")
 )
 
 // ChannelView is one conversational front-end as shown on the dashboard's
@@ -168,12 +152,12 @@ type ConfigView struct {
 	// deployment, whose forge is Identity above.
 	Identities []ForgeIdentityView `json:"identities,omitempty"`
 	// Schema is the field-descriptor catalog (archie-core-b6ew) attached to
-	// this view's own values, locked reasons, and overridden markers -- see
-	// config_schema.go. The dashboard's generic renderer (archie-core-b6ew.3)
-	// reads this instead of the flat fields above to decide labels,
-	// sections, types, and editability; the flat fields stay for existing
-	// consumers (structured cards, provenance, reload/lock plumbing) rather
-	// than being removed in the same change that adds their replacement.
+	// this view's own values and locked reasons -- see config_schema.go. It
+	// carries the labels, sections and types a generic configuration renderer
+	// needs, instead of making each rendering process hardcode them; the flat
+	// fields stay for existing consumers (structured cards, provenance,
+	// reload/lock plumbing) rather than being removed in the same change that
+	// adds their replacement.
 	Schema []ConfigSection `json:"schema"`
 }
 
@@ -363,9 +347,6 @@ type CatalogProviderView struct {
 // It is deliberately a function, not a method: rendering the view is not a
 // property of an HTTP server, and the process that owns configuration is not
 // the process that serves this page (archie-core-ml30).
-//
-// Editable is not set here. It describes the rendering process's own write
-// path, so handleConfig decides it -- see ConfigView.Editable.
 func BuildConfigView(in ConfigViewInput) ConfigView {
 	cfg := in.Config
 	provenance := append([]ConfigOrigin(nil), in.Provenance...)

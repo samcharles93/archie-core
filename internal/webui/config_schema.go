@@ -30,24 +30,17 @@ const (
 	FieldStructured ConfigFieldType = "structured"
 )
 
-// ConfigField is one field's rendering and editing contract: what it is,
-// what it means, and whether the dashboard may change it right now. Value
-// is attached by the caller building the schema against a live ConfigView
-// (archie-core-b6ew.2) -- the descriptor itself is data-independent.
+// ConfigField is one field's rendering contract: what it is, what it means,
+// and what changing it would require. Value is attached by the caller
+// building the schema against a live ConfigView (archie-core-b6ew.2) -- the
+// descriptor itself is data-independent.
 type ConfigField struct {
-	// Key is the dotted path this field is addressed by, matching the key
-	// space handleConfigUpdate/UpdateConfig already accepts.
+	// Key is the dotted path this field is addressed by.
 	Key         string          `json:"key"`
 	Label       string          `json:"label"`
 	Description string          `json:"description,omitempty"`
 	Type        ConfigFieldType `json:"type"`
 	Value       any             `json:"value,omitempty"`
-	// Editable is false for a field this page shows but the dashboard
-	// cannot change yet (structured fields without an editor). It is
-	// distinct from LockedReason: Editable is a schema-time property of
-	// the field itself; LockedReason is a runtime property of the running
-	// config (configuration.DeniedKeys).
-	Editable bool `json:"editable"`
 	// LockedReason is set per instance from the running config's denied
 	// keys (configuration.DeniedKeys), not hand-authored here.
 	LockedReason string `json:"locked_reason,omitempty"`
@@ -76,16 +69,16 @@ type ConfigSection struct {
 // ConfigView exposes today, in the section grouping settings.js already
 // renders. Values and LockedReason are attached separately
 // against a live ConfigView (archie-core-b6ew.2); this list is the
-// data-independent half of the contract -- key, label, type, and the two
-// safety-relevant properties (editable, restart_required) that must be
-// decided deliberately rather than defaulted.
+// data-independent half of the contract -- key, label, type, and the
+// safety-relevant property (restart_required) that must be decided
+// deliberately rather than defaulted.
 //
 // RestartRequired is set from internal/app/archied/reload.go as of this
 // writing:
 //   - reloadableFields lists BotUser, BotEmail, Label, DiffCapLines, Budgets,
 //     Models -- all reloadable.
 //   - reloadableSubFields["Forge"] allows only Host -- Forge.Type requires a
-//     restart even though the dashboard already renders it as editable.
+//     restart.
 //   - Web is absent from both allowlists entirely, so it requires a restart.
 //   - WorkDir and DatabaseURL are locked (configuration.DeniedKeys), not merely
 //     restart-required -- the dashboard cannot change them at all.
@@ -96,12 +89,12 @@ func configFieldDescriptors() []ConfigSection {
 			Label:       "Identity",
 			Description: "Who Archie is on the forge, and how it addresses commits and comments.",
 			Fields: []ConfigField{
-				{Key: "bot_user", Label: "Bot account", Type: FieldString, Editable: true},
-				{Key: "bot_email", Label: "Commit author email", Type: FieldString, Editable: true},
-				{Key: "label", Label: "Pickup label", Type: FieldString, Editable: true},
-				{Key: "forge.type", Label: "Forge type", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "forge.host", Label: "Forge host", Type: FieldString, Editable: true},
-				{Key: "diff_cap_lines", Label: "Max diff size (lines)", Description: "0 switches the cap off; leave unset for the default.", Type: FieldInt, Editable: true},
+				{Key: "bot_user", Label: "Bot account", Type: FieldString},
+				{Key: "bot_email", Label: "Commit author email", Type: FieldString},
+				{Key: "label", Label: "Pickup label", Type: FieldString},
+				{Key: "forge.type", Label: "Forge type", Type: FieldString, RestartRequired: true},
+				{Key: "forge.host", Label: "Forge host", Type: FieldString},
+				{Key: "diff_cap_lines", Label: "Max diff size (lines)", Description: "0 switches the cap off; leave unset for the default.", Type: FieldInt},
 			},
 		},
 		{
@@ -114,7 +107,6 @@ func configFieldDescriptors() []ConfigSection {
 					Label:       "Repositories",
 					Description: "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request.",
 					Type:        FieldStructured,
-					Editable:    false,
 				},
 			},
 		},
@@ -123,8 +115,8 @@ func configFieldDescriptors() []ConfigSection {
 			Label:       "Models & providers",
 			Description: "Which model handles each stage of work. Only the environment variable NAME is shown, never its value.",
 			Fields: []ConfigField{
-				{Key: "models", Label: "Model roles", Type: FieldStructured, Editable: false},
-				{Key: "providers", Label: "Providers", Type: FieldStructured, Editable: false},
+				{Key: "models", Label: "Model roles", Type: FieldStructured},
+				{Key: "providers", Label: "Providers", Type: FieldStructured},
 			},
 		},
 		{
@@ -132,9 +124,9 @@ func configFieldDescriptors() []ConfigSection {
 			Label:       "Budgets",
 			Description: "The limits every autonomous stage runs under, so a stuck task cannot run forever.",
 			Fields: []ConfigField{
-				{Key: "budgets.max_steps", Label: "Max steps", Description: "0 means unlimited.", Type: FieldInt, Editable: true},
-				{Key: "budgets.wall_clock", Label: "Wall clock", Type: FieldDuration, Editable: true},
-				{Key: "budgets.gate_max_failures", Label: "Max gate failures before parking", Description: "0 means unlimited.", Type: FieldInt, Editable: true},
+				{Key: "budgets.max_steps", Label: "Max steps", Description: "0 means unlimited.", Type: FieldInt},
+				{Key: "budgets.wall_clock", Label: "Wall clock", Type: FieldDuration},
+				{Key: "budgets.gate_max_failures", Label: "Max gate failures before parking", Description: "0 means unlimited.", Type: FieldInt},
 			},
 		},
 		{
@@ -142,9 +134,9 @@ func configFieldDescriptors() []ConfigSection {
 			Label:       "Storage",
 			Description: "Where archied keeps its state.",
 			Fields: []ConfigField{
-				{Key: "work_dir", Label: "Work directory", Type: FieldString, Editable: false},
-				{Key: "state_dir", Label: "State directory", Description: "Embedded NATS store, task logs and the readiness disk probe.", Type: FieldString, Editable: false},
-				{Key: "database_url", Label: "PostgreSQL URL", Description: "The State Store's database connection; set at boot, restart required.", Type: FieldString, Editable: false},
+				{Key: "work_dir", Label: "Work directory", Type: FieldString},
+				{Key: "state_dir", Label: "State directory", Description: "Embedded NATS store, task logs and the readiness disk probe.", Type: FieldString},
+				{Key: "database_url", Label: "PostgreSQL URL", Description: "The State Store's database connection; set at boot, restart required.", Type: FieldString},
 			},
 		},
 		{
@@ -152,7 +144,7 @@ func configFieldDescriptors() []ConfigSection {
 			Label:       "Dashboard",
 			Description: "This dashboard's listen address.",
 			Fields: []ConfigField{
-				{Key: "web.listen", Label: "Listen address", Description: `"off" disables the dashboard.`, Type: FieldString, Editable: true, RestartRequired: true},
+				{Key: "web.listen", Label: "Listen address", Description: `"off" disables the dashboard.`, Type: FieldString, RestartRequired: true},
 			},
 		},
 	}
@@ -185,8 +177,8 @@ func configFieldValues(view ConfigView) map[string]any {
 	}
 }
 
-// buildConfigSchema attaches a live ConfigView's values, locked reasons, and
-// overridden markers to the static descriptor catalog, producing the
+// buildConfigSchema attaches a live ConfigView's values and locked reasons to
+// the static descriptor catalog, producing the
 // sections handleConfig returns to the dashboard. The catalog
 // (configFieldDescriptors) and the per-request state (configFieldValues,
 // view.Locked) are kept as two separate functions deliberately: one is

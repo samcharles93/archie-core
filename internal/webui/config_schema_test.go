@@ -4,12 +4,12 @@ import "testing"
 
 // TestConfigFieldDescriptorsAreComplete guards the deliberateness the design
 // doc asks for (docs/prds/config-schema.md): every field must carry a key,
-// label, and type, and every field's Editable/RestartRequired must have been
-// set by a case in configFieldDescriptors rather than defaulted to Go's
-// zero value. Since Go cannot distinguish "explicitly false" from
-// "unset," this test instead pins the exact set of keys and their
-// deliberate values, so a new field added to the catalog without visiting
-// this test fails loudly rather than silently inheriting Editable: false.
+// label, and type, and every field's RestartRequired must have been set by a
+// case in configFieldDescriptors rather than defaulted to Go's zero value.
+// Since Go cannot distinguish "explicitly false" from "unset," this test
+// instead pins the exact set of keys and their deliberate values, so a new
+// field added to the catalog without visiting this test fails loudly rather
+// than silently inheriting a zero value.
 func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 	seen := map[string]bool{}
 	for _, section := range configFieldDescriptors() {
@@ -106,38 +106,6 @@ func TestConfigFieldDescriptorsRestartRequiredIsDeliberate(t *testing.T) {
 			}
 			if f.RestartRequired != wantRestart {
 				t.Errorf("field %q RestartRequired = %v, want %v", f.Key, f.RestartRequired, wantRestart)
-			}
-		}
-	}
-}
-
-// TestConfigFieldDescriptorsStructuredFieldsAreNotEditable pins the design
-// decision that structured fields (repositories, models, providers) stay
-// read-only until archie-core-b6ew.4 gives them a dedicated editor -- the
-// generic scalar renderer (archie-core-b6ew.3) must skip them, not attempt
-// a text-input edit on a field whose Value is an array or map.
-func TestConfigFieldDescriptorsStructuredFieldsAreNotEditable(t *testing.T) {
-	for _, section := range configFieldDescriptors() {
-		for _, f := range section.Fields {
-			if f.Type == FieldStructured && f.Editable {
-				t.Errorf("field %q is type structured but marked editable; structured fields need archie-core-b6ew.4's dedicated editor first", f.Key)
-			}
-		}
-	}
-}
-
-// TestConfigFieldDescriptorsLockedStorageFieldsAreNotEditable pins
-// work_dir/database_url as Editable: false in the static catalog. They are also
-// reported LockedReason at runtime via overlay.DeniedKeys (api_config.go),
-// but the catalog marks them non-editable independently so the generic
-// renderer does not need runtime state to know not to offer an edit
-// affordance for a key that can never succeed.
-func TestConfigFieldDescriptorsLockedStorageFieldsAreNotEditable(t *testing.T) {
-	locked := map[string]bool{"work_dir": true, "state_dir": true, "database_url": true}
-	for _, section := range configFieldDescriptors() {
-		for _, f := range section.Fields {
-			if locked[f.Key] && f.Editable {
-				t.Errorf("field %q is denied at runtime (overlay.DeniedKeys) but marked editable in the static catalog", f.Key)
 			}
 		}
 	}
