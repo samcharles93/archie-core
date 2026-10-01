@@ -6,6 +6,7 @@ import PageHeader from "@/base/PageHeader.vue";
 import { Input } from "@/components/ui/input";
 import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
 const KIND = "plugin-settings";
@@ -36,16 +37,28 @@ const error = computed(() => store.stateFor(KIND).error);
 
     <template v-if="dirs">
       <SettingRow label="Plugin directory" for="pl-plugins">
-        <Input id="pl-plugins" v-model="dirs.plugin_dir" class="max-w-md font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="pl-plugins" v-model="dirs.plugin_dir" class="max-w-md font-mono" />
+          <DraftHint :kind="KIND" path="plugin_dir" />
+        </div>
       </SettingRow>
       <SettingRow label="Module directory" for="pl-modules">
-        <Input id="pl-modules" v-model="dirs.module_dir" class="max-w-md font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="pl-modules" v-model="dirs.module_dir" class="max-w-md font-mono" />
+          <DraftHint :kind="KIND" path="module_dir" />
+        </div>
       </SettingRow>
       <SettingRow label="Secret engine directory" for="pl-secrets" hint="Empty: built-in engines only.">
-        <Input id="pl-secrets" v-model="dirs.secret_engine_dir" class="max-w-md font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="pl-secrets" v-model="dirs.secret_engine_dir" class="max-w-md font-mono" />
+          <DraftHint :kind="KIND" path="secret_engine_dir" />
+        </div>
       </SettingRow>
       <SettingRow label="Skills directory" for="pl-skills" hint="Empty: work directory.">
-        <Input id="pl-skills" v-model="dirs.skills_dir" class="max-w-md font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="pl-skills" v-model="dirs.skills_dir" class="max-w-md font-mono" />
+          <DraftHint :kind="KIND" path="skills_dir" />
+        </div>
       </SettingRow>
     </template>
   </div>

@@ -4,7 +4,7 @@ import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { DurationInput, parseGoDuration } from "@/components/ui/duration-input";
+import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import {
   NumberField,
@@ -16,6 +16,7 @@ import {
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 
 const KIND = "scheduling-policy";
 
@@ -51,13 +52,10 @@ const states = [
   { key: "dead", name: "Dead", swatch: "bg-danger" },
 ];
 
-const intervalInvalid = computed(() => {
-  const ms = parseGoDuration(policy.value?.poll_interval ?? "");
-  return ms === null || ms <= 0;
-});
-const labelMissing = computed(
-  () => policy.value !== undefined && policy.value.dispatch.trigger !== "assignee" && !policy.value.label,
-);
+const issues = computed(() => store.issuesFor(KIND));
+const issue = (path: string) => issues.value.find((entry) => entry.path === path);
+const intervalIssue = computed(() => issue("poll_interval"));
+const labelIssue = computed(() => issue("label"));
 </script>
 
 <template>
@@ -73,26 +71,35 @@ const labelMissing = computed(
     <template v-if="policy">
       <h2 class="mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Dispatch</h2>
       <SettingRow label="Trigger">
-        <SegmentedControl v-model="policy.dispatch.trigger" label="Trigger" :options="triggers" />
+        <div class="flex flex-wrap items-center gap-3">
+          <SegmentedControl v-model="policy.dispatch.trigger" label="Trigger" :options="triggers" />
+          <DraftHint :kind="KIND" path="dispatch.trigger" />
+        </div>
       </SettingRow>
       <SettingRow
         v-if="policy.dispatch.trigger !== 'assignee'"
         label="Label"
         for="sp-label"
       >
-        <Input
-          id="sp-label"
-          :model-value="policy.label ?? ''"
-          class="max-w-sm font-mono"
-          :aria-invalid="labelMissing || undefined"
-          @update:model-value="policy.label = String($event)"
-        />
-        <p v-if="labelMissing" class="mt-1.5 text-xs text-danger">
-          Required: an empty label matches every open issue.
+        <div class="flex flex-wrap items-center gap-3">
+          <Input
+            id="sp-label"
+            :model-value="policy.label ?? ''"
+            class="max-w-sm font-mono"
+            :aria-invalid="labelIssue ? true : undefined"
+            @update:model-value="policy.label = String($event)"
+          />
+          <DraftHint :kind="KIND" path="label" />
+        </div>
+        <p v-if="labelIssue" class="mt-1.5 text-xs text-danger">
+          {{ labelIssue.message }}
         </p>
       </SettingRow>
       <SettingRow label="Ack reaction" for="sp-ack" hint="Empty: none.">
-        <Input id="sp-ack" v-model="policy.dispatch.ack_reaction" class="max-w-xs font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="sp-ack" v-model="policy.dispatch.ack_reaction" class="max-w-xs font-mono" />
+          <DraftHint :kind="KIND" path="dispatch.ack_reaction" />
+        </div>
       </SettingRow>
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">State labels</h2>
@@ -107,12 +114,15 @@ const labelMissing = computed(
                 </span>
               </td>
               <td class="py-1.5">
-                <Input
-                  :id="`sp-state-${state.key}`"
-                  :model-value="policy.dispatch.labels[state.key] ?? ''"
-                  class="font-mono"
-                  @update:model-value="policy.dispatch.labels[state.key] = String($event)"
-                />
+                <div class="flex flex-wrap items-center gap-3">
+                  <Input
+                    :id="`sp-state-${state.key}`"
+                    :model-value="policy.dispatch.labels[state.key] ?? ''"
+                    class="font-mono"
+                    @update:model-value="policy.dispatch.labels[state.key] = String($event)"
+                  />
+                  <DraftHint :kind="KIND" :path="`dispatch.labels.${state.key}`" />
+                </div>
               </td>
             </tr>
           </tbody>
@@ -121,17 +131,23 @@ const labelMissing = computed(
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Retries and polling</h2>
       <SettingRow label="Max retries" hint="Then marked dead.">
-        <NumberField v-model="policy.max_retries" :min="0" class="w-32">
-          <NumberFieldContent>
-            <NumberFieldDecrement />
-            <NumberFieldInput class="font-mono" aria-label="Max retries" />
-            <NumberFieldIncrement />
-          </NumberFieldContent>
-        </NumberField>
+        <div class="flex flex-wrap items-center gap-3">
+          <NumberField v-model="policy.max_retries" :min="0" class="w-32">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput class="font-mono" aria-label="Max retries" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+          <DraftHint :kind="KIND" path="max_retries" />
+        </div>
       </SettingRow>
       <SettingRow label="Poll interval" for="sp-poll">
-        <DurationInput id="sp-poll" v-model="policy.poll_interval" :units="['s', 'm', 'h']" />
-        <p v-if="intervalInvalid" class="mt-1.5 text-xs text-danger">Must be longer than zero.</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <DurationInput id="sp-poll" v-model="policy.poll_interval" :units="['s', 'm', 'h']" />
+          <DraftHint :kind="KIND" path="poll_interval" />
+        </div>
+        <p v-if="intervalIssue" class="mt-1.5 text-xs text-danger">{{ intervalIssue.message }}</p>
       </SettingRow>
     </template>
 

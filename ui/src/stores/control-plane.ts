@@ -3,6 +3,12 @@ import { computed, onScopeDispose, reactive, ref, watch } from "vue";
 import { useLiveUpdatesStore } from "./live-updates.ts";
 
 import { diffValues, saveInOrder, type Change } from "../settings/changes.ts";
+import {
+  collectIssues,
+  draftValidators,
+  type BlockingField,
+  type FieldIssue,
+} from "../settings/validation.ts";
 
 export interface ResourceDescriptor {
   kind: string;
@@ -288,9 +294,24 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
       drafts[kind] = { base: resource, value: cloneControlPlaneValue(resource.value) };
   }
 
+  // The diff for every draft, computed once per change. The save bar, the
+  // inline "was old" hint, the inline errors and the route guard all read
+  // this one map, so no consumer forks its own notion of what is dirty.
+  const changesByKind = computed<Record<string, Change[]>>(() => {
+    const byKind: Record<string, Change[]> = {};
+    for (const [kind, draft] of Object.entries(drafts))
+      byKind[kind] = diffValues(draft.base.value, draft.value);
+    return byKind;
+  });
+
   function changesFor(kind: string): Change[] {
-    const draft = drafts[kind];
-    return draft ? diffValues(draft.base.value, draft.value) : [];
+    return changesByKind.value[kind] ?? [];
+  }
+
+  /** The change for one dotted leaf path, the lookup the inline "was old"
+   * hint uses. */
+  function changeFor(kind: string, path: string): Change | undefined {
+    return changesFor(kind).find((change) => change.path === path);
   }
 
   const dirtyKinds = computed(() =>
@@ -298,6 +319,20 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
       .map(({ kind }) => kind)
       .filter((kind) => changesFor(kind).length > 0),
   );
+
+  /** Invalid fields across every dirty section. Derived from dirtyKinds, so a
+   * save can only be blocked by a section that has something to save. */
+  const invalidFields = computed<BlockingField[]>(() =>
+    collectIssues(dirtyKinds.value, (kind) => drafts[kind]?.value, draftValidators),
+  );
+
+  /** The issues for one section, empty unless it has unsaved changes. The
+   * pages read this, so an inline error and the save bar can never disagree. */
+  function issuesFor(kind: string): FieldIssue[] {
+    if (changesFor(kind).length === 0) return [];
+    const validate = draftValidators[kind];
+    return validate ? validate(drafts[kind]?.value) : [];
+  }
 
   async function saveDraft(kind: string): Promise<boolean> {
     const draft = drafts[kind];
@@ -450,7 +485,10 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
   return {
     applyStatusFor,
     changesFor,
+    changeFor,
     dirtyKinds,
+    invalidFields,
+    issuesFor,
     drafts,
     resetDraft,
     saveDrafts,

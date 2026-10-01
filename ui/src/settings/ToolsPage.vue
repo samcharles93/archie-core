@@ -18,6 +18,7 @@ import {
 import { SettingRow } from "@/components/ui/setting-row";
 import { Switch } from "@/components/ui/switch";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 import McpServerEditor, { type McpServer } from "./McpServerEditor.vue";
 import SecretRefField from "./SecretRefField.vue";
 
@@ -95,7 +96,10 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
 
       <h2 :class="[eyebrow, 'mt-10']">MiniMax</h2>
       <SettingRow label="Enabled">
-        <Switch v-model="tools.minimax.enabled" aria-label="MiniMax enabled" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Switch v-model="tools.minimax.enabled" aria-label="MiniMax enabled" />
+          <DraftHint :kind="KIND" path="minimax.enabled" />
+        </div>
       </SettingRow>
       <SettingRow label="API key">
         <SecretRefField
@@ -107,37 +111,55 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
 
       <h2 :class="[eyebrow, 'mt-10']">Web fetch</h2>
       <SettingRow label="Enabled">
-        <Switch v-model="webFetchOn" aria-label="Web fetch enabled" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Switch v-model="webFetchOn" aria-label="Web fetch enabled" />
+          <DraftHint :kind="KIND" path="web_fetch.enabled" />
+        </div>
       </SettingRow>
       <SettingRow label="Max download" for="wf-bytes">
-        <ByteSizeInput id="wf-bytes" v-model="tools.web_fetch.max_bytes" :disabled="!webFetchOn" />
+        <div class="flex flex-wrap items-center gap-3">
+          <ByteSizeInput id="wf-bytes" v-model="tools.web_fetch.max_bytes" :disabled="!webFetchOn" />
+          <DraftHint :kind="KIND" path="web_fetch.max_bytes" />
+        </div>
       </SettingRow>
       <SettingRow label="Timeout" for="wf-timeout">
-        <DurationInput id="wf-timeout" v-model="tools.web_fetch.timeout" :units="['s', 'm']" :disabled="!webFetchOn" />
+        <div class="flex flex-wrap items-center gap-3">
+          <DurationInput id="wf-timeout" v-model="tools.web_fetch.timeout" :units="['s', 'm']" :disabled="!webFetchOn" />
+          <DraftHint :kind="KIND" path="web_fetch.timeout" />
+        </div>
       </SettingRow>
       <SettingRow
         label="Allow private networks"
         hint="Reaches this host's dashboard and Docker API."
         :tone="tools.web_fetch.allow_private_networks ? 'danger' : 'default'"
       >
-        <Switch
-          v-model="tools.web_fetch.allow_private_networks"
-          aria-label="Allow private networks"
-          :disabled="!webFetchOn"
-        />
+        <div class="flex flex-wrap items-center gap-3">
+          <Switch
+            v-model="tools.web_fetch.allow_private_networks"
+            aria-label="Allow private networks"
+            :disabled="!webFetchOn"
+          />
+          <DraftHint :kind="KIND" path="web_fetch.allow_private_networks" />
+        </div>
       </SettingRow>
 
       <h2 :class="[eyebrow, 'mt-10']">Tool output</h2>
       <SettingRow label="Max result length" for="tp-chars" :hint="`≈ ${Math.round(tools.policy.max_result_chars / 4).toLocaleString()} tokens`">
-        <InputGroup class="w-48">
-          <InputGroupInput id="tp-chars" v-model.number="tools.policy.max_result_chars" type="number" min="0" class="font-mono" />
-          <InputGroupAddon align="inline-end">
-            <InputGroupText class="font-mono text-xs">chars</InputGroupText>
-          </InputGroupAddon>
-        </InputGroup>
+        <div class="flex flex-wrap items-center gap-3">
+          <InputGroup class="w-48">
+            <InputGroupInput id="tp-chars" v-model.number="tools.policy.max_result_chars" type="number" min="0" class="font-mono" />
+            <InputGroupAddon align="inline-end">
+              <InputGroupText class="font-mono text-xs">chars</InputGroupText>
+            </InputGroupAddon>
+          </InputGroup>
+          <DraftHint :kind="KIND" path="policy.max_result_chars" />
+        </div>
       </SettingRow>
       <SettingRow label="Spill directory" for="tp-spill" hint="Empty: truncate.">
-        <Input id="tp-spill" v-model="tools.policy.spill_dir" class="max-w-md font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="tp-spill" v-model="tools.policy.spill_dir" class="max-w-md font-mono" />
+          <DraftHint :kind="KIND" path="policy.spill_dir" />
+        </div>
       </SettingRow>
     </template>
 

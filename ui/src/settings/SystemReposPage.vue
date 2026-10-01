@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/tags-input";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import CommandListEditor from "./CommandListEditor.vue";
+import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
 const KIND = "repository-policies";
@@ -92,60 +93,86 @@ const protectOf = (repo: Repo) => repo.protect ?? [];
           <Button variant="ghost" size="icon" :aria-label="`Remove ${repo.owner}/${repo.name}`" @click="repos.splice(i, 1)"><Trash2 /></Button>
         </header>
         <SettingRow label="Base branch" :for="`repo-${i}-base`">
-          <Input :id="`repo-${i}-base`" v-model="repo.base" class="max-w-56 font-mono" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Input :id="`repo-${i}-base`" v-model="repo.base" class="max-w-56 font-mono" />
+            <DraftHint :kind="KIND" :path="`${i}.base`" />
+          </div>
         </SettingRow>
         <SettingRow label="Ecosystem">
-          <Select v-model="repo.ecosystem">
-            <SelectTrigger class="w-40 font-mono" :aria-label="`Ecosystem for ${repo.name}`"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="e in ecosystems" :key="e" :value="e">{{ e }}</SelectItem>
-            </SelectContent>
-          </Select>
+          <div class="flex flex-wrap items-center gap-3">
+            <Select v-model="repo.ecosystem">
+              <SelectTrigger class="w-40 font-mono" :aria-label="`Ecosystem for ${repo.name}`"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="e in ecosystems" :key="e" :value="e">{{ e }}</SelectItem>
+              </SelectContent>
+            </Select>
+            <DraftHint :kind="KIND" :path="`${i}.ecosystem`" />
+          </div>
         </SettingRow>
         <SettingRow label="Quality gate" hint="Last command runs the tests.">
           <CommandListEditor v-model="repo.gate" label="Gate" empty-text="No gate." />
+          <DraftHint :kind="KIND" :path="`${i}.gate`" />
         </SettingRow>
         <SettingRow label="Preflight" hint="Empty: ecosystem default.">
           <CommandListEditor v-model="repo.preflight" label="Preflight" empty-text="Ecosystem default." />
+          <DraftHint :kind="KIND" :path="`${i}.preflight`" />
         </SettingRow>
         <SettingRow label="Test files" :for="`repo-${i}-glob`" hint="Empty: ecosystem default.">
-          <Input :id="`repo-${i}-glob`" v-model="repo.test_glob" class="max-w-56 font-mono" placeholder="*_test.go" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Input :id="`repo-${i}-glob`" v-model="repo.test_glob" class="max-w-56 font-mono" placeholder="*_test.go" />
+            <DraftHint :kind="KIND" :path="`${i}.test_glob`" />
+          </div>
         </SettingRow>
         <SettingRow label="Protected paths" hint="Suffixes agents never write.">
-          <TagsInput
-            :model-value="protectOf(repo)"
-            class="font-mono"
-            :aria-label="`Protected paths for ${repo.name}`"
-            @update:model-value="(v) => (repo.protect = v as string[])"
-          >
-            <TagsInputItem v-for="p in protectOf(repo)" :key="p" :value="p">
-              <TagsInputItemText />
-              <TagsInputItemDelete />
-            </TagsInputItem>
-            <TagsInputInput placeholder="_templ.go" />
-          </TagsInput>
+          <div class="flex flex-wrap items-center gap-3">
+            <TagsInput
+              :model-value="protectOf(repo)"
+              class="font-mono"
+              :aria-label="`Protected paths for ${repo.name}`"
+              @update:model-value="(v) => (repo.protect = v as string[])"
+            >
+              <TagsInputItem v-for="p in protectOf(repo)" :key="p" :value="p">
+                <TagsInputItemText />
+                <TagsInputItemDelete />
+              </TagsInputItem>
+              <TagsInputInput placeholder="_templ.go" />
+            </TagsInput>
+            <DraftHint :kind="KIND" :path="`${i}.protect`" />
+          </div>
         </SettingRow>
         <SettingRow label="Max retries" hint="0 = scheduling policy value.">
-          <NumberField v-model="repo.max_retries" :min="0" class="w-32">
-            <NumberFieldContent>
-              <NumberFieldDecrement />
-              <NumberFieldInput class="font-mono" :aria-label="`Max retries for ${repo.name}`" />
-              <NumberFieldIncrement />
-            </NumberFieldContent>
-          </NumberField>
+          <div class="flex flex-wrap items-center gap-3">
+            <NumberField v-model="repo.max_retries" :min="0" class="w-32">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput class="font-mono" :aria-label="`Max retries for ${repo.name}`" />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+            <DraftHint :kind="KIND" :path="`${i}.max_retries`" />
+          </div>
         </SettingRow>
         <SettingRow label="Adversarial review">
-          <Switch v-model="repo.review_enabled" :aria-label="`Adversarial review for ${repo.name}`" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Switch v-model="repo.review_enabled" :aria-label="`Adversarial review for ${repo.name}`" />
+            <DraftHint :kind="KIND" :path="`${i}.review_enabled`" />
+          </div>
         </SettingRow>
         <SettingRow label="Persistent storage" hint="Kept across tasks.">
-          <Switch v-model="repo.persistent_storage" :aria-label="`Persistent storage for ${repo.name}`" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Switch v-model="repo.persistent_storage" :aria-label="`Persistent storage for ${repo.name}`" />
+            <DraftHint :kind="KIND" :path="`${i}.persistent_storage`" />
+          </div>
         </SettingRow>
         <SettingRow
           label="Concurrent tasks"
           hint="Only if worktrees cannot collide."
           :tone="repo.allow_concurrent ? 'danger' : 'default'"
         >
-          <Switch v-model="repo.allow_concurrent" :aria-label="`Concurrent tasks for ${repo.name}`" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Switch v-model="repo.allow_concurrent" :aria-label="`Concurrent tasks for ${repo.name}`" />
+            <DraftHint :kind="KIND" :path="`${i}.allow_concurrent`" />
+          </div>
         </SettingRow>
       </section>
 

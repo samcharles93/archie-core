@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 import { availableProviders, roleModelOptions } from "./model-choices";
 import SecretRefField from "./SecretRefField.vue";
@@ -85,8 +86,9 @@ function setEmbedding(provider: string, model: string) {
   embeddingModel.value = model;
   setRole("embedding", provider && model ? `${provider}/${model}` : "");
 }
-const roleValid = (model: string) => /^[^/\s]+\/\S+$/.test(model);
 const providerKnown = (model: string) => configuredIds.value.includes(model.split("/")[0]!);
+const roleIssues = computed(() => store.issuesFor("model-role-assignments"));
+const roleIssue = (role: string) => roleIssues.value.find((entry) => entry.path === role);
 
 const newRole = ref("");
 function addRole() {
@@ -158,10 +160,11 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
               list="role-models"
               class="max-w-md flex-1 font-mono"
               placeholder="unset"
-              :aria-invalid="(roles[role] && !roleValid(roles[role])) || undefined"
+              :aria-invalid="roleIssue(role) ? true : undefined"
               @update:model-value="(v) => setRole(role, String(v))"
             />
-            <span v-if="roles[role] && !roleValid(roles[role])" class="text-xs text-danger">Use provider/model.</span>
+            <DraftHint kind="model-role-assignments" :path="role" />
+            <span v-if="roleIssue(role)" class="text-xs text-danger">{{ roleIssue(role)?.message }}</span>
             <span v-else-if="roles[role] && !providerKnown(roles[role])" class="text-xs text-warn">Provider not configured.</span>
           </template>
           <Button v-if="!KNOWN_ROLES.includes(role)" variant="ghost" size="icon" class="ml-auto" :aria-label="`Remove role ${role}`" @click="delete roles[role]">
@@ -192,15 +195,21 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
             </AccordionTrigger>
             <AccordionContent>
               <SettingRow label="Class" class="border-t-0 pt-0">
-                <Select v-model="provider.class">
-                  <SelectTrigger class="w-48 font-mono" :aria-label="`Class for ${name}`"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="c in CLASSES.includes(provider.class) ? CLASSES : [provider.class, ...CLASSES]" :key="c" :value="c">{{ c }}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div class="flex flex-wrap items-center gap-3">
+                  <Select v-model="provider.class">
+                    <SelectTrigger class="w-48 font-mono" :aria-label="`Class for ${name}`"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="c in CLASSES.includes(provider.class) ? CLASSES : [provider.class, ...CLASSES]" :key="c" :value="c">{{ c }}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <DraftHint kind="provider-settings" :path="`${name}.class`" />
+                </div>
               </SettingRow>
               <SettingRow label="Base URL" :for="`prov-${name}-url`" hint="Empty: provider default.">
-                <Input :id="`prov-${name}-url`" v-model="provider.base_url" class="max-w-md font-mono" />
+                <div class="flex flex-wrap items-center gap-3">
+                  <Input :id="`prov-${name}-url`" v-model="provider.base_url" class="max-w-md font-mono" />
+                  <DraftHint kind="provider-settings" :path="`${name}.base_url`" />
+                </div>
               </SettingRow>
               <SettingRow label="API key">
                 <SecretRefField

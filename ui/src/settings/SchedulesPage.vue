@@ -18,6 +18,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingRow } from "@/components/ui/setting-row";
 import { Textarea } from "@/components/ui/textarea";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
 const KIND = "schedules";
@@ -41,6 +42,8 @@ onMounted(store.load);
 const resources = computed(() => resourcesForPage(catalog.value, "schedules"));
 const jobs = computed(() => store.drafts[KIND]?.value as Job[] | undefined);
 const error = computed(() => store.stateFor(KIND).error);
+const issues = computed(() => store.issuesFor(KIND));
+const jobIssue = (i: number) => issues.value.find((entry) => entry.path === `${i}.id`);
 
 const whenKinds = [
   { value: "interval", label: "Every" },
@@ -114,13 +117,21 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
           <Button variant="ghost" size="icon" aria-label="Delete schedule" @click="jobs.splice(i, 1)"><Trash2 /></Button>
         </header>
         <SettingRow label="ID" :for="`job-${i}-id`">
-          <Input :id="`job-${i}-id`" v-model="job.id" class="max-w-sm font-mono" :aria-invalid="!job.id.trim() || undefined" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Input :id="`job-${i}-id`" v-model="job.id" class="max-w-sm font-mono" :aria-invalid="jobIssue(i) ? true : undefined" />
+            <DraftHint :kind="KIND" :path="`${i}.id`" />
+          </div>
+          <p v-if="jobIssue(i)" class="mt-1.5 text-xs text-danger">{{ jobIssue(i)?.message }}</p>
         </SettingRow>
         <SettingRow label="Task title" :for="`job-${i}-title`" hint="Empty: the ID.">
-          <Input :id="`job-${i}-title`" v-model="job.detail" class="max-w-md" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Input :id="`job-${i}-title`" v-model="job.detail" class="max-w-md" />
+            <DraftHint :kind="KIND" :path="`${i}.detail`" />
+          </div>
         </SettingRow>
         <SettingRow label="Instructions" :for="`job-${i}-text`">
           <Textarea :id="`job-${i}-text`" v-model="job.payload.text" :rows="3" />
+          <DraftHint :kind="KIND" :path="`${i}.payload.text`" />
         </SettingRow>
         <SettingRow label="When">
           <div class="flex flex-wrap items-center gap-3">
@@ -146,10 +157,18 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
               :model-value="toLocalInput(job.schedule.at)"
               @update:model-value="(v) => (job.schedule.at = fromLocalInput(String(v)))"
             />
+            <DraftHint
+              :kind="KIND"
+              :path="whenKind(job) === 'cron' ? `${i}.schedule.cron` : whenKind(job) === 'once' ? `${i}.schedule.at` : `${i}.schedule.interval`"
+            />
+            <DraftHint :kind="KIND" :path="`${i}.schedule.kind`" />
           </div>
         </SettingRow>
         <SettingRow label="Overlap">
-          <SegmentedControl :model-value="job.pool ?? ''" label="Overlap" :options="pools" @update:model-value="(p: string) => (job.pool = p)" />
+          <div class="flex flex-wrap items-center gap-3">
+            <SegmentedControl :model-value="job.pool ?? ''" label="Overlap" :options="pools" @update:model-value="(p: string) => (job.pool = p)" />
+            <DraftHint :kind="KIND" :path="`${i}.pool`" />
+          </div>
         </SettingRow>
       </section>
     </template>

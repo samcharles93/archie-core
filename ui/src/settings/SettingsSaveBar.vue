@@ -26,6 +26,7 @@ const sections = computed(() =>
     kind,
     title: titleOf(kind),
     changes: store.changesFor(kind),
+    issues: store.issuesFor(kind),
     error: store.stateFor(kind).error,
     restart:
       store.catalog.find((item) => item.kind === kind)?.apply_mode ===
@@ -35,6 +36,9 @@ const sections = computed(() =>
 const count = computed(() =>
   sections.value.reduce((n, s) => n + s.changes.length, 0),
 );
+// Invalid fields block Save, and are listed in the bar so the operator knows
+// before opening the review. Both read the store's one draft diff.
+const invalid = computed(() => store.invalidFields);
 const needsRestart = computed(() => sections.value.some((s) => s.restart));
 
 function discardAll() {
@@ -43,6 +47,7 @@ function discardAll() {
 }
 
 async function save() {
+  if (invalid.value.length) return;
   saving.value = true;
   try {
     const outcome = await store.saveDrafts();
@@ -56,17 +61,33 @@ async function save() {
 <template>
   <div
     v-if="count > 0"
-    class="sticky bottom-4 z-30 mt-6 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-3 shadow-[var(--shadow-md)]"
+    class="sticky bottom-4 z-30 mt-6 rounded-lg border border-border bg-popover shadow-[var(--shadow-md)]"
     role="region"
     aria-label="Unsaved changes"
   >
-    <span class="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-    <p class="min-w-0 flex-1 truncate text-sm">
-      <span class="font-medium">{{ count }} unsaved {{ count === 1 ? "change" : "changes" }}</span>
-      <span class="text-fg-subtle"> · {{ sections.map((s) => s.title).join(", ") }}</span>
-    </p>
-    <Button variant="ghost" size="sm" @click="discardAll">Discard</Button>
-    <Button size="sm" @click="reviewing = true">Review and save</Button>
+    <div class="flex items-center gap-3 px-4 py-3">
+      <span
+        class="size-2 shrink-0 rounded-full"
+        :class="invalid.length ? 'bg-danger' : 'bg-primary'"
+        aria-hidden="true"
+      />
+      <p class="min-w-0 flex-1 truncate text-sm">
+        <span class="font-medium">{{ count }} unsaved {{ count === 1 ? "change" : "changes" }}</span>
+        <span class="text-fg-subtle"> · {{ sections.map((s) => s.title).join(", ") }}</span>
+      </p>
+      <Button variant="ghost" size="sm" @click="discardAll">Discard</Button>
+      <Button size="sm" @click="reviewing = true">Review and save</Button>
+    </div>
+    <ul
+      v-if="invalid.length"
+      class="space-y-0.5 border-t border-danger/30 px-4 py-2 text-xs text-danger"
+      role="alert"
+    >
+      <li v-for="issue in invalid" :key="`${issue.kind}.${issue.path}`">
+        <span class="font-medium">{{ titleOf(issue.kind) }} · {{ issue.label }}</span>:
+        {{ issue.message }}
+      </li>
+    </ul>
   </div>
 
   <Sheet v-model:open="reviewing">
@@ -84,6 +105,13 @@ async function save() {
           class="rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-sm text-warn"
         >
           Some changes apply after restart.
+        </p>
+        <p
+          v-if="invalid.length"
+          class="rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger"
+          role="alert"
+        >
+          {{ invalid.length }} invalid {{ invalid.length === 1 ? "field" : "fields" }} must be fixed before saving.
         </p>
         <section
           v-for="section in sections"
@@ -104,6 +132,15 @@ async function save() {
               <p class="truncate text-ok">+ {{ formatValue(change.after) }}</p>
             </li>
           </ul>
+          <ul
+            v-if="section.issues.length"
+            class="space-y-0.5 border-t border-border px-3 py-2 text-xs text-danger"
+            role="alert"
+          >
+            <li v-for="issue in section.issues" :key="issue.path">
+              <span class="font-medium">{{ issue.label }}</span>: {{ issue.message }}
+            </li>
+          </ul>
           <p v-if="section.error" class="border-t border-border px-3 py-2 text-sm text-danger" role="alert">
             {{ section.error }}
           </p>
@@ -111,7 +148,7 @@ async function save() {
       </div>
       <SheetFooter class="flex-row justify-end gap-2 border-t border-border">
         <Button variant="ghost" @click="discardAll">Discard all</Button>
-        <Button :disabled="saving" @click="save">
+        <Button :disabled="saving || invalid.length > 0" @click="save">
           <Spinner v-if="saving" data-icon="inline-start" /> Save
         </Button>
       </SheetFooter>

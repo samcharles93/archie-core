@@ -24,6 +24,7 @@ import {
   TagsInputItemText,
 } from "@/components/ui/tags-input";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
 const KIND = "container-runtime-policies";
@@ -80,28 +81,46 @@ function addProfile() {
 
     <template v-if="runtime">
       <SettingRow label="Image" for="cr-image">
-        <Input id="cr-image" v-model="runtime.Image" class="font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="cr-image" v-model="runtime.Image" class="font-mono" />
+          <DraftHint :kind="KIND" path="Image" />
+        </div>
       </SettingRow>
       <SettingRow label="Pull policy">
-        <SegmentedControl v-model="pullPolicy" label="Pull policy" :options="pullPolicies" />
+        <div class="flex flex-wrap items-center gap-3">
+          <SegmentedControl v-model="pullPolicy" label="Pull policy" :options="pullPolicies" />
+          <DraftHint :kind="KIND" path="PullPolicy" />
+        </div>
       </SettingRow>
       <SettingRow label="Max concurrency" hint="0 = no limit.">
-        <NumberField v-model="runtime.MaxConcurrency" :min="0" class="w-32">
-          <NumberFieldContent>
-            <NumberFieldDecrement />
-            <NumberFieldInput class="font-mono" aria-label="Max concurrency" />
-            <NumberFieldIncrement />
-          </NumberFieldContent>
-        </NumberField>
+        <div class="flex flex-wrap items-center gap-3">
+          <NumberField v-model="runtime.MaxConcurrency" :min="0" class="w-32">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput class="font-mono" aria-label="Max concurrency" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+          <DraftHint :kind="KIND" path="MaxConcurrency" />
+        </div>
       </SettingRow>
       <SettingRow label="Max uptime" for="cr-uptime">
-        <DurationInput id="cr-uptime" v-model="runtime.MaxUptime" :units="['m', 'h']" />
+        <div class="flex flex-wrap items-center gap-3">
+          <DurationInput id="cr-uptime" v-model="runtime.MaxUptime" :units="['m', 'h']" />
+          <DraftHint :kind="KIND" path="MaxUptime" />
+        </div>
       </SettingRow>
       <SettingRow label="Volume retention" for="cr-ttl">
-        <DurationInput id="cr-ttl" v-model="runtime.VolumeTTL" :units="['h']" />
+        <div class="flex flex-wrap items-center gap-3">
+          <DurationInput id="cr-ttl" v-model="runtime.VolumeTTL" :units="['h']" />
+          <DraftHint :kind="KIND" path="VolumeTTL" />
+        </div>
       </SettingRow>
       <SettingRow label="Network" for="cr-network" hint="Empty: auto-detect.">
-        <Input id="cr-network" v-model="runtime.Network" class="max-w-sm font-mono" />
+        <div class="flex flex-wrap items-center gap-3">
+          <Input id="cr-network" v-model="runtime.Network" class="max-w-sm font-mono" />
+          <DraftHint :kind="KIND" path="Network" />
+        </div>
       </SettingRow>
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Profiles</h2>
@@ -116,21 +135,27 @@ function addProfile() {
           <Button variant="ghost" size="icon" :aria-label="`Remove profile ${name}`" @click="delete runtime.Profiles![name]"><Trash2 /></Button>
         </header>
         <SettingRow label="Image" :for="`prof-${name}-image`" hint="Empty: default image.">
-          <Input :id="`prof-${name}-image`" v-model="profile.Image" class="font-mono" />
+          <div class="flex flex-wrap items-center gap-3">
+            <Input :id="`prof-${name}-image`" v-model="profile.Image" class="font-mono" />
+            <DraftHint :kind="KIND" :path="`Profiles.${name}.Image`" />
+          </div>
         </SettingRow>
         <SettingRow label="Tools" hint="Empty allows all.">
-          <TagsInput
-            :model-value="profile.Tools ?? []"
-            class="font-mono"
-            :aria-label="`Tools for ${name}`"
-            @update:model-value="(v) => (profile.Tools = v as string[])"
-          >
-            <TagsInputItem v-for="tool in profile.Tools ?? []" :key="tool" :value="tool">
-              <TagsInputItemText />
-              <TagsInputItemDelete />
-            </TagsInputItem>
-            <TagsInputInput placeholder="tool name" />
-          </TagsInput>
+          <div class="flex flex-wrap items-center gap-3">
+            <TagsInput
+              :model-value="profile.Tools ?? []"
+              class="font-mono"
+              :aria-label="`Tools for ${name}`"
+              @update:model-value="(v) => (profile.Tools = v as string[])"
+            >
+              <TagsInputItem v-for="tool in profile.Tools ?? []" :key="tool" :value="tool">
+                <TagsInputItemText />
+                <TagsInputItemDelete />
+              </TagsInputItem>
+              <TagsInputInput placeholder="tool name" />
+            </TagsInput>
+            <DraftHint :kind="KIND" :path="`Profiles.${name}.Tools`" />
+          </div>
         </SettingRow>
       </section>
       <div class="flex gap-2">

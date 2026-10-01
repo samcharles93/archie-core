@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/number-field";
 import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
 const KIND = "workflow-execution-settings";
@@ -58,28 +59,40 @@ const taskRuntime = seconds("max_task_runtime_seconds");
 
     <template v-if="limits">
       <SettingRow label="Task time limit" for="te-task" hint="Parked after this. 0 disables.">
-        <DurationInput id="te-task" v-model="taskRuntime" :units="['m', 'h']" />
+        <div class="flex flex-wrap items-center gap-3">
+          <DurationInput id="te-task" v-model="taskRuntime" :units="['m', 'h']" />
+          <DraftHint :kind="KIND" path="max_task_runtime_seconds" />
+        </div>
       </SettingRow>
       <SettingRow label="Agent call time limit" for="te-call" hint="0 disables.">
-        <DurationInput id="te-call" v-model="callRuntime" :units="['s', 'm', 'h']" />
+        <div class="flex flex-wrap items-center gap-3">
+          <DurationInput id="te-call" v-model="callRuntime" :units="['s', 'm', 'h']" />
+          <DraftHint :kind="KIND" path="max_runtime_seconds" />
+        </div>
       </SettingRow>
       <SettingRow label="Model tool steps" hint="Per agent call. 0 disables.">
-        <NumberField v-model="limits.max_model_tool_steps" :min="0" class="w-32">
-          <NumberFieldContent>
-            <NumberFieldDecrement />
-            <NumberFieldInput class="font-mono" aria-label="Model tool steps" />
-            <NumberFieldIncrement />
-          </NumberFieldContent>
-        </NumberField>
+        <div class="flex flex-wrap items-center gap-3">
+          <NumberField v-model="limits.max_model_tool_steps" :min="0" class="w-32">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput class="font-mono" aria-label="Model tool steps" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+          <DraftHint :kind="KIND" path="max_model_tool_steps" />
+        </div>
       </SettingRow>
       <SettingRow label="Gate failures in a row" hint="In a row, then parked.">
-        <NumberField v-model="limits.max_consecutive_gate_failures" :min="0" class="w-32">
-          <NumberFieldContent>
-            <NumberFieldDecrement />
-            <NumberFieldInput class="font-mono" aria-label="Gate failures in a row" />
-            <NumberFieldIncrement />
-          </NumberFieldContent>
-        </NumberField>
+        <div class="flex flex-wrap items-center gap-3">
+          <NumberField v-model="limits.max_consecutive_gate_failures" :min="0" class="w-32">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput class="font-mono" aria-label="Gate failures in a row" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+          <DraftHint :kind="KIND" path="max_consecutive_gate_failures" />
+        </div>
       </SettingRow>
     </template>
   </div>
