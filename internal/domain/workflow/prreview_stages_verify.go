@@ -10,6 +10,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 // stagePRVerification is pipeline phase 5, over the review findings phase 4
@@ -152,11 +153,34 @@ func runPrecisionGate(ctx context.Context, tc *TaskContext, findings []prreview.
 // docs/prds/execution-tree-state-machine.md's engine loop stops as soon as a
 // stage sets a non-empty Outcome.Status -- so the merge gate and output
 // stages never run until an operator's response requeues the task.
+//
+// Before it waits, the gate records the review it is holding on the task's
+// review_gate column: the scored findings, the head SHA, the pull request's
+// identity and the workflow the wait resumes. The recorded document is what
+// makes the operator's answer mean the review they saw -- the engine cannot
+// resume a run partway, so a resumed pipeline recomputes its findings with
+// agent calls (docs/prds/pr-review-operator-response.md, "The review the
+// operator answers").
+//
+// An approve resume is the same run re-entered: its review_gate carries the
+// answer already, so the gate must not wait a second time -- it continues to
+// the merge gate and output, where the recorded review posts.
 func stagePROperatorApproval() Stage {
 	return Stage{Name: "operator-approval", Run: func(_ context.Context, tc *TaskContext) error {
 		if !tc.Cfg.Review.ApproveBeforePost || len(tc.prReview.scored) == 0 {
 			return nil
 		}
+		if tc.prReview.approvedReview != nil {
+			return nil
+		}
+		tc.Task.ReviewGate = task.EncodeReviewGate(task.ReviewGate{
+			Findings: prreview.GateFindings(tc.prReview.scored),
+			HeadSHA:  tc.prReview.headSHA,
+			Owner:    tc.Task.Owner,
+			Repo:     tc.Task.Repo,
+			PRNumber: tc.Task.PRNumber,
+			Workflow: tc.Task.Workflow,
+		})
 		tc.Outcome = Outcome{
 			Status: StatusWaitingHuman,
 			Detail: fmt.Sprintf("%d finding(s) awaiting operator review before posting", len(tc.prReview.scored)),

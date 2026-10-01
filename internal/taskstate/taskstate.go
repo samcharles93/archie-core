@@ -31,6 +31,7 @@ const (
 	ActionStop      Action = "stop"
 	ActionApprove   Action = "approve"
 	ActionReject    Action = "reject"
+	ActionRereview  Action = "rereview"
 	ActionRetry     Action = "retry"
 	ActionAbandon   Action = "abandon"
 	ActionOpenPR    Action = "open_pr"
@@ -89,7 +90,7 @@ func Actions(status string) []Action {
 	case Running:
 		actions = []Action{ActionStop, ActionReject}
 	case WaitingHuman:
-		actions = []Action{ActionApprove, ActionReject}
+		actions = []Action{ActionApprove, ActionReject, ActionRereview}
 	case Parked:
 		actions = []Action{ActionRetry, ActionAbandon, ActionReject}
 	case PROpen:
@@ -104,7 +105,7 @@ func Actions(status string) []Action {
 // change no status (archive, and the forge links) report false.
 func ActionTarget(action Action) (string, bool) {
 	switch action {
-	case ActionApprove, ActionRetry:
+	case ActionApprove, ActionRetry, ActionRereview:
 		return Queued, true
 	case ActionStop:
 		return Parked, true
@@ -206,6 +207,7 @@ func ActionCatalog() []ActionMeta {
 		{ID: string(ActionCancel), Label: "Cancel", Kind: "quiet", Confirm: `Cancel "{title}"? This closes the forge issue.`},
 		{ID: string(ActionStop), Label: "Stop", Kind: "primary", Confirm: `Stop "{title}"? Recoverable work will remain parked.`},
 		{ID: string(ActionApprove), Label: "Approve", Kind: "primary"},
+		{ID: string(ActionRereview), Label: "Re-review", Kind: "quiet"},
 		{ID: string(ActionReject), Label: "Reject", Kind: "quiet", Confirm: `Reject "{title}"? This closes the forge issue.`},
 		{ID: string(ActionRetry), Label: "Retry", Kind: "primary"},
 		{ID: string(ActionAbandon), Label: "Abandon", Kind: "quiet", Confirm: `Abandon "{title}"? Archie stops working on it; the forge issue stays open.`},

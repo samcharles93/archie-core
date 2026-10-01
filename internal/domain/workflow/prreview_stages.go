@@ -74,6 +74,22 @@ type prReviewState struct {
 	scored           []prreview.ScoredFinding
 	reviewerFailures atomic.Int64
 
+	// operatorInstructions is the re-review's instructions, restored from the
+	// task's review_gate document at intake. Phase 3's lens missions and phase
+	// 4's reviewer missions append it as one labelled block
+	// (docs/prds/pr-review-operator-response.md, Decision 3); nothing else
+	// reads it, so a first run -- or any run the operator did not instruct --
+	// leaves every other mission untouched.
+	operatorInstructions string
+	// approvedReview is the review the operator approved, restored from the
+	// task's review_gate document at intake. When set, this run IS the
+	// approve resume: the gate must not wait a second time, and phase 9 posts
+	// the recorded review filtered by the operator's selection rather than
+	// the review the resumed phases recomputed. The resumed pipeline has no
+	// partway resume, so the recomputed findings are unavoidable; not posting
+	// them is what makes "the findings the operator selected" true.
+	approvedReview *task.ReviewGate
+
 	// findingsMu guards findings during phase 6, where the coverage gate and
 	// consistency verification append to it from two goroutines running in
 	// parallel (docs/prds/pr-review-agent.md, phase 6). Every other phase
@@ -265,6 +281,7 @@ func stagePRIntake() Stage {
 			metadata: meta, diff: diff, files: files, stats: stats,
 			depth: depth, runStart: time.Now(),
 		}
+		restoreReviewGate(tc)
 
 		aiGenerated, err := scoreAIGenerated(ctx, tc, meta)
 		if err != nil {
@@ -324,6 +341,35 @@ func scoreAIGenerated(ctx context.Context, tc *TaskContext, meta PRMetadata) (fl
 		return 0, fmt.Errorf("decode machine-written confidence: %w", err)
 	}
 	return captured.Confidence, nil
+}
+
+// restoreReviewGate reads the task's review_gate document back into the
+// run's scratch state at intake: the instructions a re-review must carry into
+// phases 3 and 4, and the approved review an approve resume must post. Called
+// once, where the review the run works on is established
+// (docs/prds/pr-review-operator-response.md, Decision 3).
+func restoreReviewGate(tc *TaskContext) {
+	gate, ok := task.DecodeReviewGate(tc.Task.ReviewGate)
+	if !ok {
+		return
+	}
+	tc.prReview.operatorInstructions = gate.Instructions
+	if gate.Approved() {
+		approved := gate
+		tc.prReview.approvedReview = &approved
+	}
+}
+
+// operatorInstructionsBlock renders the re-review's operator instructions as
+// the labelled block phase 3's and phase 4's missions carry. It is empty --
+// and therefore absent -- on a run the operator did not instruct, which is
+// what keeps "a first run's do not" true.
+func operatorInstructionsBlock(tc *TaskContext) string {
+	if tc.prReview == nil || tc.prReview.operatorInstructions == "" {
+		return ""
+	}
+	return "Operator instructions for this re-review, written by the operator who read the " +
+		"previous findings. Address them in your work:\n" + tc.prReview.operatorInstructions + "\n\n"
 }
 
 // stagePRAnatomy is pipeline phase 2: the read-only snapshot every later
@@ -446,13 +492,14 @@ func runLens(ctx context.Context, tc *TaskContext, name, angle string) ([]prrevi
 	}`)
 	mission := fmt.Sprintf(
 		"You are the %s lens over this pull request: %s.\n\n"+
-			"Title: %s\n\nDescription:\n%s\n\nDiff:\n%s\n\n"+
+			"Title: %s\n\nDescription:\n%s\n\nDiff:\n%s\n\n%s"+
 			"Propose the review dimensions this angle needs, each with a reviewer prompt "+
 			"written for this specific PR, its target files, any context files a reviewer "+
 			"should also read, and a priority (higher runs first when the depth caps how "+
 			"many dimensions survive). Call propose_dimensions exactly once, then call "+
 			"finish with status \"passed\".",
 		name, angle, tc.prReview.metadata.Title, tc.prReview.metadata.Body, clip(tc.prReview.diff, 60000),
+		operatorInstructionsBlock(tc),
 	)
 	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "lens-"+name, "review", mission, 15, []agentexec.CaptureTool{{
 		Name: "propose_dimensions", Description: "Record this lens's proposed review dimensions. Call exactly once, before finish.",
@@ -522,12 +569,12 @@ func stagePRReview() Stage {
 // (not this slice) can tell "unreviewed" from "reviewed-clean" apart.
 func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) []prreview.Finding {
 	mission := fmt.Sprintf(
-		"%s\n\nTarget files: %s\n\nRead the target files (and, if useful, the context "+
+		"%s\n\nTarget files: %s\n\n%sRead the target files (and, if useful, the context "+
 			"files) in the snapshot and report every finding for this dimension. Quote the "+
 			"exact evidence for each finding; do not report anything you cannot point at in "+
 			"the code. Call report_findings exactly once (an empty array is a valid, "+
 			"complete report), then call finish with status \"passed\".",
-		dim.Prompt, strings.Join(dim.TargetFiles, ", "),
+		dim.Prompt, strings.Join(dim.TargetFiles, ", "), operatorInstructionsBlock(tc),
 	)
 	name := "reviewer-" + dim.Name
 	res, runErr := runReviewerAgent(ctx, tc, name, mission, []agentexec.CaptureTool{reportFindingsTool})
@@ -712,7 +759,16 @@ func stagePROutput() Stage {
 // a caller that must preserve its own outcome (archie's own PRs, which has
 // already set StatusPROpen by the time findings are ready to post) can run it
 // without stagePROutput's unconditional StatusCompleted assignment.
+//
+// An approve resume posts the recorded review the operator answered, not the
+// one this run recomputed: the engine has no partway resume, so the resumed
+// phases recompute every finding, and only the recorded document is the
+// review the operator saw (docs/prds/pr-review-operator-response.md, "The
+// review the operator answers").
 func runPROutputPhase(ctx context.Context, tc *TaskContext) (string, error) {
+	if approved := tc.prReview.approvedReview; approved != nil {
+		return postApprovedReview(ctx, tc, *approved)
+	}
 	if budgetExhausted(tc, "output") {
 		skipPhase(tc, "output")
 	} else {
@@ -769,23 +825,47 @@ func polishFinding(ctx context.Context, tc *TaskContext, f prreview.ScoredFindin
 	return f
 }
 
-// postPRReview posts every line-anchored finding as one forge review. A
-// finding with no line (LineStart <= 0) is dropped rather than posted
-// anywhere -- docs/prds/inline-review.md's PR-body fallback list for
+// postApprovedReview posts the review the operator approved, filtered by
+// their selection, against the pull request and head the offer recorded. It
+// polishes nothing: the wording the operator approved is the wording that
+// posts.
+func postApprovedReview(ctx context.Context, tc *TaskContext, gate task.ReviewGate) (string, error) {
+	posted := prreview.PostedFindings(gate.Posted())
+	comments := reviewComments(posted)
+	if len(comments) == 0 {
+		return fmt.Sprintf("operator approved %d finding(s); none to post with a line anchor", len(posted)), nil
+	}
+	if err := tc.Forge.CreateReviewComments(ctx, gate.Owner, gate.Repo, gate.PRNumber, gate.HeadSHA, comments); err != nil {
+		return "", fmt.Errorf("post approved review: %w", err)
+	}
+	return fmt.Sprintf("posted %d finding(s) approved by the operator", len(comments)), nil
+}
+
+// reviewComments renders every line-anchored finding as one forge review
+// comment. A finding with no line (LineStart <= 0) is dropped rather than
+// posted anywhere -- docs/prds/inline-review.md's PR-body fallback list for
 // whole-file findings, and REQUEST_CHANGES vs COMMENT event submission
 // (workflow.Forger.CreateReviewComments always posts a COMMENT-state
 // review; GitHub's implementation does not submit a review object at all,
 // only per-comment calls, so REQUEST_CHANGES needs a Forger/forge change,
 // not just a caller change here) are both real gaps this bead does not
 // close; see the follow-up bead this bead's commit files.
-func postPRReview(ctx context.Context, tc *TaskContext) error {
-	comments := make([]ReviewComment, 0, len(tc.prReview.scored))
-	for _, f := range tc.prReview.scored {
+func reviewComments(findings []prreview.ScoredFinding) []ReviewComment {
+	comments := make([]ReviewComment, 0, len(findings))
+	for _, f := range findings {
 		if f.LineStart <= 0 {
 			continue
 		}
 		comments = append(comments, ReviewComment{Path: f.File, Line: f.LineStart, Body: f.Body})
 	}
+	return comments
+}
+
+// postPRReview posts every line-anchored finding as one forge review. A
+// finding with no line (LineStart <= 0) is dropped rather than posted
+// anywhere (see reviewComments).
+func postPRReview(ctx context.Context, tc *TaskContext) error {
+	comments := reviewComments(tc.prReview.scored)
 	if len(comments) == 0 {
 		return nil
 	}
