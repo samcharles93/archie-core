@@ -148,6 +148,11 @@ const prReviewConcurrency = 8
 // archie-core-afbk.8 adds the precision dial (between review and
 // verification) and the operator-approval gate (between synthesis and the
 // merge gate), both off by default and each gated by its own config flag.
+//
+// The operator-approval gate is this workflow's OWN stage-list entry, not a
+// shared one (docs/prds/pr-review-operator-response.md): the implement
+// workflow splices the shared decision stages, and a gate there would end an
+// implement run before its PR exists.
 func PRReview() Workflow {
 	return Workflow{
 		Name: "pr-review",
@@ -163,28 +168,40 @@ func PRReview() Workflow {
 				"depth":     {Type: "string"},
 			},
 		},
-		Stages: append(prReviewDecisionStages(true), stagePROutput()),
+		Stages: prReviewStandaloneStages(),
 	}
 }
 
 // prReviewDecisionStages is phases 1 through 8: everything up to and
 // including the merge gate's blocking/advisory verdict, but before phase 9
-// posts anything. Split out from PRReview so the implement workflow can
-// splice it in before StageOpenPR (archie-core-afbk.7's "archie's own PRs"
-// trigger): the decision of whether an unchallenged blocking finding parks
-// the task must happen before a PR exists to post to, while phase 9's
-// posting must happen after, once a PR number exists to anchor comments to.
-//
-// withOperatorApproval splices the operator-approval gate in between
-// synthesis and the merge gate. Only the standalone pr-review workflow passes
-// true: there the operator's response re-reviews the pull request, and the
-// run is re-entered from the start anyway, which is safe because that
-// pipeline has no write-then-close stage. Archie's own PRs has no PR to give
-// the operator a posting decision about yet, and a park there would end the
-// implement run before it opened one (archie-core-7nst), so the splice drops
-// the gate instead.
-func prReviewDecisionStages(withOperatorApproval bool) []Stage {
-	stages := []Stage{
+// posts anything, and WITHOUT the operator-approval gate. Split out from
+// PRReview so the implement workflow can splice it in before StageOpenPR
+// (archie-core-afbk.7's "archie's own PRs" trigger) -- and so the operator
+// gate can never ride along on that splice
+// (docs/prds/pr-review-operator-response.md, "The gate is not reachable from
+// archie's own PRs"): there the gate's question (which findings to post) has
+// no pull request to post to yet, and a park would end the implement run
+// before it opened one (archie-core-7nst).
+func prReviewDecisionStages() []Stage {
+	return append(prReviewPipelineStages(), stagePRMergeGate())
+}
+
+// prReviewStandaloneStages is the standalone pr-review workflow's full stage
+// list: the shared decision phases with the operator-approval gate inserted
+// between synthesis and the merge gate -- the gate runs before the merge
+// gate's verdict, so an operator's re-review never has to undo one computed
+// on a since-changed finding set -- followed by phase 9's posting.
+func prReviewStandaloneStages() []Stage {
+	pipeline := prReviewPipelineStages()
+	stages := make([]Stage, 0, len(pipeline)+3)
+	stages = append(stages, pipeline...)
+	return append(stages, stagePROperatorApproval(), stagePRMergeGate(), stagePROutput())
+}
+
+// prReviewPipelineStages is phases 1 through 7: intake through synthesis, the
+// stages every pr-review trigger shares.
+func prReviewPipelineStages() []Stage {
+	return []Stage{
 		stagePRIntake(),
 		stagePRAnatomy(),
 		stagePRLenses(),
@@ -194,10 +211,6 @@ func prReviewDecisionStages(withOperatorApproval bool) []Stage {
 		stagePRCoverageConsistency(),
 		stagePRSynthesis(),
 	}
-	if withOperatorApproval {
-		stages = append(stages, stagePROperatorApproval())
-	}
-	return append(stages, stagePRMergeGate())
 }
 
 // stagePRIntake is pipeline phase 1: PR metadata and diff statistics, the

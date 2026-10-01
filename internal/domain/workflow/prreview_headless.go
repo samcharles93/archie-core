@@ -29,7 +29,7 @@ func ReviewPullRequest(ctx context.Context, tc *TaskContext) (PRReviewDecision, 
 			_ = os.RemoveAll(tc.prReview.snapshotDir)
 		}
 	}()
-	for _, stage := range prReviewDecisionStages(false) {
+	for _, stage := range prReviewDecisionStages() {
 		if err := ctx.Err(); err != nil {
 			return PRReviewDecision{}, err
 		}

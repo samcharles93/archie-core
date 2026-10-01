@@ -117,7 +117,7 @@ func renderBlockingFindingsDetail(findings []prreview.ScoredFinding) string {
 // spliced in as their own preceding stages -- OpenPR's own doc comment names
 // this exact pattern ("call this and then do so in the same stage").
 func StagePRReviewAndOpenPR(body func(*TaskContext) string) Stage {
-	return stagePRReviewAndOpenPR(prReviewDecisionStages(false), body)
+	return stagePRReviewAndOpenPR(prReviewDecisionStages(), body)
 }
 
 // stagePRReviewAndOpenPR is StagePRReviewAndOpenPR's implementation, taking

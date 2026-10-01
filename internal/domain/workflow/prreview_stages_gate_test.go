@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -87,6 +88,33 @@ func TestStagePRPrecisionGateRunsNoAgentCallWhenNoFindings(t *testing.T) {
 
 	if err := stagePRPrecisionGate().Run(context.Background(), tc); err != nil {
 		t.Fatalf("precision-gate: %v", err)
+	}
+}
+
+// TestOperatorApprovalGateLeavesTheSharedDecisionStages pins the PRD's
+// structural guarantee (docs/prds/pr-review-operator-response.md, "The gate
+// is not reachable from archie's own PRs"): the shared decision-stage list
+// the implement workflow's splice takes never carries the gate, and the
+// standalone pipeline adds it itself, immediately before its merge gate.
+// A future edit that re-shares the gate would let an approval re-enter the
+// implement workflow against a worktree that already carries the change,
+// whose no-changes build closes the issue with no PR ever opened.
+func TestOperatorApprovalGateLeavesTheSharedDecisionStages(t *testing.T) {
+	names := func(stages []Stage) []string {
+		out := make([]string, len(stages))
+		for i, s := range stages {
+			out[i] = s.Name
+		}
+		return out
+	}
+	shared := names(prReviewDecisionStages())
+	if slices.Contains(shared, "operator-approval") {
+		t.Fatalf("shared decision stages = %v: the gate belongs in PRReview()'s own stage list, not in the list the implement workflow splices", shared)
+	}
+	standalone := names(PRReview().Stages)
+	gate, mergeGate := slices.Index(standalone, "operator-approval"), slices.Index(standalone, "merge-gate")
+	if gate < 0 || mergeGate < 0 || gate+1 != mergeGate {
+		t.Fatalf("pr-review stages = %v, want operator-approval immediately before merge-gate", standalone)
 	}
 }
 
