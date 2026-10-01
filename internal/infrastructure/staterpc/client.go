@@ -652,12 +652,12 @@ func (c *Client) StartCall(ctx context.Context, callerTaskID int64, wf string, i
 	return taskValue(r.Task), nil
 }
 
-func (c *Client) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, error) {
+func (c *Client) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, map[string]any, error) {
 	r, err := c.client.WorkflowCallStatus(ctx, &pb.WorkflowCallStatusRequest{CallerTaskId: callerTaskID, CallTaskId: callTaskID})
 	if err != nil {
-		return "", "", unmapError(err)
+		return "", "", nil, unmapError(err)
 	}
-	return r.Status, r.Detail, nil
+	return r.Status, r.Detail, outputsValue(r.OutputsJson), nil
 }
 
 // Task log

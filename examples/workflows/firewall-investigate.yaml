@@ -2,17 +2,24 @@
 # src_ip from a mapped parameter and runs one agent mission in a scratch
 # workspace under the network-investigator profile. Paste it into the
 # dashboard's workflow definitions.
+#
+# Its declared output (summary) is offered to the agent stages as a capture
+# tool named after it; a wait:true caller publishes it as one of its own
+# outputs (docs/prds/workflow-call-outputs.md).
 id: firewall-investigate
 repository: none
 profile: network-investigator
 inputs:
   src_ip: { type: string, required: true }
   severity: { type: string }
+outputs:
+  summary: { type: string }
 steps:
   - type: agent.run
     settings:
       mission: >-
         Investigate the source address in the inputs: who owns it, what it
         resolves to, and whether it is reachable. Report what you found and
-        how serious it looks given the severity.
+        how serious it looks given the severity, and write your one-line
+        conclusion with the summary tool.
       read_only: true

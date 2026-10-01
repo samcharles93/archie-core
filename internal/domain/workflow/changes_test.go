@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,8 @@ type recordingStore struct {
 	transitions  []transition
 	steps        []StepStart
 	finishes     []StepFinish
+	updates      []Task
+	sequence     []string
 	insertEr     error
 	stepEr       error
 	finishEr     error
@@ -37,10 +40,19 @@ type recordingStore struct {
 // never parks the task" a test rather than a reading of the code.
 type transition struct{ from, to, detail string }
 
-func (s *recordingStore) Update(context.Context, *Task) error { return nil }
+func (s *recordingStore) Update(_ context.Context, t *Task) error {
+	clone := *t
+	outputs := make(map[string]any, len(t.Outputs))
+	maps.Copy(outputs, t.Outputs)
+	clone.Outputs = outputs
+	s.updates = append(s.updates, clone)
+	s.sequence = append(s.sequence, "update")
+	return nil
+}
 
 func (s *recordingStore) Transition(_ context.Context, _ int64, from, to, detail string) error {
 	s.transitions = append(s.transitions, transition{from: from, to: to, detail: detail})
+	s.sequence = append(s.sequence, "transition:"+to)
 	return nil
 }
 

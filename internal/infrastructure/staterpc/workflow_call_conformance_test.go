@@ -1,6 +1,7 @@
 package staterpc
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -59,9 +60,12 @@ func TestWorkflowCallerConformance(t *testing.T) {
 
 			// A callee that has not moved yet answers its queued status with
 			// no detail; after a transition the detail is the latest one.
-			status, detail, err := c.CallStatus(ctx, caller.ID, callee.ID)
+			status, detail, outputs, err := c.CallStatus(ctx, caller.ID, callee.ID)
 			if err != nil || status != workflow.StatusQueued || detail != "" {
 				t.Fatalf("CallStatus queued = (%q, %q, %v), want (queued, \"\", nil)", status, detail, err)
+			}
+			if outputs != nil {
+				t.Fatalf("CallStatus queued outputs = %+v, want none", outputs)
 			}
 			if err := local.Transition(ctx, callee.ID, callee.Status, workflow.StatusRunning, "started"); err != nil {
 				t.Fatalf("Transition callee to running: %v", err)
@@ -69,17 +73,40 @@ func TestWorkflowCallerConformance(t *testing.T) {
 			if err := local.Transition(ctx, callee.ID, workflow.StatusRunning, workflow.StatusCompleted, "contained 10.0.0.9"); err != nil {
 				t.Fatalf("Transition callee to completed: %v", err)
 			}
-			status, detail, err = c.CallStatus(ctx, caller.ID, callee.ID)
+			status, detail, _, err = c.CallStatus(ctx, caller.ID, callee.ID)
 			if err != nil || status != workflow.StatusCompleted || detail != "contained 10.0.0.9" {
 				t.Fatalf("CallStatus completed = (%q, %q, %v), want the terminal status and detail", status, detail, err)
 			}
 
+			// The callee's written outputs ride the same answer
+			// (docs/prds/workflow-call-outputs.md, "Storage and wire"):
+			// decoded from the callee's row, carried beside status and detail,
+			// over both adapters identically.
+			if row, err := local.TaskByID(ctx, callee.ID); err != nil {
+				t.Fatalf("TaskByID callee: %v", err)
+			} else {
+				row.Outputs = map[string]any{"contained": true, "detail_number": 3}
+				if err := local.Update(ctx, row); err != nil {
+					t.Fatalf("Update callee outputs: %v", err)
+				}
+			}
+			_, _, outputs, err = c.CallStatus(ctx, caller.ID, callee.ID)
+			if err != nil {
+				t.Fatalf("CallStatus with outputs: %v", err)
+			}
+			if outputs["contained"] != true {
+				t.Fatalf("CallStatus outputs = %+v, want the callee's written set", outputs)
+			}
+			if got, ok := outputs["detail_number"].(json.Number); !ok || got != "3" {
+				t.Fatalf("CallStatus outputs.detail_number = %v/%T, want the exact number", outputs["detail_number"], outputs["detail_number"])
+			}
+
 			// A caller reads only its own callees, over both adapters.
-			_, _, err = c.CallStatus(ctx, 99999, callee.ID)
+			_, _, _, err = c.CallStatus(ctx, 99999, callee.ID)
 			if !errors.Is(err, storecontract.ErrCallNotYours) {
 				t.Fatalf("CallStatus foreign caller = %v, want ErrCallNotYours", err)
 			}
-			_, _, err = c.CallStatus(ctx, caller.ID, 99999)
+			_, _, _, err = c.CallStatus(ctx, caller.ID, 99999)
 			if !errors.Is(err, storecontract.ErrCallNotYours) {
 				t.Fatalf("CallStatus missing callee = %v, want ErrCallNotYours", err)
 			}

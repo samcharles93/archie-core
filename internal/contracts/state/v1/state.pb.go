@@ -1336,8 +1336,14 @@ type Task struct {
 	// writer reads as a depth-0 root run.
 	CallParentTaskId int64 `protobuf:"varint,36,opt,name=call_parent_task_id,json=callParentTaskId,proto3" json:"call_parent_task_id,omitempty"`
 	CallDepth        int32 `protobuf:"varint,37,opt,name=call_depth,json=callDepth,proto3" json:"call_depth,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// outputs_json is the JSON object of declared-output values this run wrote
+	// (task.EncodeOutputs), empty for a run that wrote none. The container's
+	// Update sends the whole row, so a column the message cannot carry is a
+	// column that write drops (docs/prds/workflow-call-outputs.md, "Storage and
+	// wire").
+	OutputsJson   string `protobuf:"bytes,38,opt,name=outputs_json,json=outputsJson,proto3" json:"outputs_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1628,6 +1634,13 @@ func (x *Task) GetCallDepth() int32 {
 		return x.CallDepth
 	}
 	return 0
+}
+
+func (x *Task) GetOutputsJson() string {
+	if x != nil {
+		return x.OutputsJson
+	}
+	return ""
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -10221,9 +10234,13 @@ func (x *WorkflowCallStatusRequest) GetCallTaskId() int64 {
 type WorkflowCallStatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// status is the callee's task status and detail its latest transition
-	// detail (empty before the callee first moves).
+	// detail (empty before the callee first moves). outputs_json is the
+	// callee's written outputs (task.EncodeOutputs), so a wait:true caller can
+	// publish one as its own (docs/prds/workflow-call-outputs.md, "Storage and
+	// wire").
 	Status        string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	Detail        string `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
+	OutputsJson   string `protobuf:"bytes,3,opt,name=outputs_json,json=outputsJson,proto3" json:"outputs_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10268,6 +10285,13 @@ func (x *WorkflowCallStatusResponse) GetStatus() string {
 func (x *WorkflowCallStatusResponse) GetDetail() string {
 	if x != nil {
 		return x.Detail
+	}
+	return ""
+}
+
+func (x *WorkflowCallStatusResponse) GetOutputsJson() string {
+	if x != nil {
+		return x.OutputsJson
 	}
 	return ""
 }
@@ -11939,7 +11963,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12-\n" +
 	"\x05audit\x18\x04 \x01(\v2\x17.state.v1.IdentityAuditR\x05audit\"M\n" +
 	"\x1bBindIdentitySubjectResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xde\t\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\x81\n" +
+	"\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -11989,7 +12014,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x03org\x18# \x01(\tR\x03org\x12-\n" +
 	"\x13call_parent_task_id\x18$ \x01(\x03R\x10callParentTaskId\x12\x1d\n" +
 	"\n" +
-	"call_depth\x18% \x01(\x05R\tcallDepth\"\xf8\x02\n" +
+	"call_depth\x18% \x01(\x05R\tcallDepth\x12!\n" +
+	"\foutputs_json\x18& \x01(\tR\voutputsJson\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -12541,10 +12567,11 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x19WorkflowCallStatusRequest\x12$\n" +
 	"\x0ecaller_task_id\x18\x01 \x01(\x03R\fcallerTaskId\x12 \n" +
 	"\fcall_task_id\x18\x02 \x01(\x03R\n" +
-	"callTaskId\"L\n" +
+	"callTaskId\"o\n" +
 	"\x1aWorkflowCallStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xa2\x02\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\x12!\n" +
+	"\foutputs_json\x18\x03 \x01(\tR\voutputsJson\"\xa2\x02\n" +
 	"\x10InstalledPackage\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +

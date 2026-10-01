@@ -182,7 +182,7 @@ func (d deadlineCaller) StartCall(ctx context.Context, callerTaskID int64, wf st
 	return d.Caller.StartCall(ctx, callerTaskID, wf, inputs)
 }
 
-func (d deadlineCaller) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, error) {
+func (d deadlineCaller) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, map[string]any, error) {
 	ctx, cancel := d.withDeadline(ctx)
 	defer cancel()
 	return d.Caller.CallStatus(ctx, callerTaskID, callTaskID)

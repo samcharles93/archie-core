@@ -1,0 +1,28 @@
+# The containment workflow a firewall-investigate run calls:
+# firewall-investigate (workflow.call, wait: true) hands its findings upward
+# from its declared summary, and this workflow's own agent stage decides and
+# records the containment as its own declared outputs. Paste it into the
+# dashboard's workflow definitions alongside firewall-investigate
+# (docs/prds/workflow-call-outputs.md).
+id: firewall-contain
+repository: none
+profile: network-investigator
+inputs:
+  src_ip: { type: string, required: true }
+outputs:
+  contained: { type: bool, required: true }
+  summary: { type: string }
+steps:
+  - type: workflow.call
+    settings:
+      workflow: firewall-investigate
+      wait: true
+      inputs: { src_ip: "inputs.src_ip" }
+      outputs: { summary: "outputs.summary" }
+  - type: agent.run
+    settings:
+      mission: >-
+        Using the investigation summary the called workflow returned, decide
+        whether the source address in the inputs should be contained. Write
+        your decision with the contained tool, and a one-line rationale with
+        the summary tool.

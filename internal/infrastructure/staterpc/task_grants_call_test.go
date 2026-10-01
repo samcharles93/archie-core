@@ -48,10 +48,10 @@ func TestTaskGrantAuthorizesTheWorkflowCallRPCs(t *testing.T) {
 	if callee.CallParentTaskID != caller.ID || callee.CallDepth != 1 {
 		t.Fatalf("callee = %+v, want the parent link and depth 1", callee)
 	}
-	if _, _, err := worker.CallStatus(ctx, caller.ID, callee.ID); err != nil {
+	if _, _, _, err := worker.CallStatus(ctx, caller.ID, callee.ID); err != nil {
 		t.Fatalf("task grant should authorize CallStatus on its own callees: %v", err)
 	}
-	if _, _, err := worker.CallStatus(ctx, caller.ID, other.ID); !errors.Is(err, storecontract.ErrCallNotYours) {
+	if _, _, _, err := worker.CallStatus(ctx, caller.ID, other.ID); !errors.Is(err, storecontract.ErrCallNotYours) {
 		t.Fatalf("CallStatus for a task that is not this caller's callee = %v, want ErrCallNotYours", err)
 	}
 
@@ -61,7 +61,7 @@ func TestTaskGrantAuthorizesTheWorkflowCallRPCs(t *testing.T) {
 	if _, err := worker.StartCall(ctx, other.ID, "callee", nil); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("StartCall for another task = %v, want PermissionDenied", err)
 	}
-	if _, _, err := worker.CallStatus(ctx, other.ID, callee.ID); status.Code(err) != codes.PermissionDenied {
+	if _, _, _, err := worker.CallStatus(ctx, other.ID, callee.ID); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("CallStatus for another task = %v, want PermissionDenied", err)
 	}
 

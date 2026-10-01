@@ -73,8 +73,9 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		Attempt: int64(t.Attempt), ParkReason: t.ParkReason, RetryCount: int64(t.RetryCount),
 		WatchCommentId: t.WatchCommentID, Source: t.Source, Identity: t.Identity,
 		BindingId: t.BindingID, BindingVersion: int64(t.BindingVersion),
-		InputsJson: inputsJSON(t.Inputs),
-		CreatedAt:  timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
+		InputsJson:  inputsJSON(t.Inputs),
+		OutputsJson: outputsJSON(t.Outputs),
+		CreatedAt:   timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
 		ReviewCursor:              t.ReviewCursor,
 		ParkClass:                 t.ParkClass,
@@ -101,6 +102,7 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		WatchCommentID: t.WatchCommentId, Source: t.Source, Identity: t.Identity,
 		BindingID: t.BindingId, BindingVersion: int(t.BindingVersion),
 		Inputs:    inputsValue(t.InputsJson),
+		Outputs:   outputsValue(t.OutputsJson),
 		CreatedAt: timeValue(t.CreatedAt), UpdatedAt: timeValue(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
 		ReviewCursor:              t.ReviewCursor,
@@ -126,6 +128,18 @@ func inputsJSON(inputs map[string]any) string {
 func inputsValue(s string) map[string]any {
 	inputs, _ := task.DecodeInputs(s)
 	return inputs
+}
+
+// outputsJSON and outputsValue carry a task's written outputs in
+// task.EncodeOutputs form, exactly as inputsJSON/inputsValue carry inputs.
+func outputsJSON(outputs map[string]any) string {
+	s, _ := task.EncodeOutputs(outputs)
+	return s
+}
+
+func outputsValue(s string) map[string]any {
+	outputs, _ := task.DecodeOutputs(s)
+	return outputs
 }
 
 // eventDataJSON and eventDataValue convert events.Event.Data (map[string]any)

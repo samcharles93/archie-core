@@ -2,8 +2,11 @@
 -- FOR UPDATE SKIP LOCKED replaces the SQLite single-writer assumption: two
 -- claimers running at once take different rows instead of blocking, so the
 -- daemon no longer depends on holding the only connection to the file.
+-- The claim also starts the attempt's output set empty: outputs is
+-- attempt-scoped, so nothing the previous attempt wrote survives
+-- (docs/prds/workflow-call-outputs.md).
 UPDATE tasks
-SET status = 'running', attempt = attempt + 1, updated_at = now()
+SET status = 'running', attempt = attempt + 1, outputs = '', updated_at = now()
 WHERE id = (
     SELECT id FROM tasks
     WHERE status = 'queued'
@@ -28,10 +31,13 @@ SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status
 -- name: ListTaskSummaries :many
 -- The dashboard's list. This projection is deliberately narrow: Plan gates
 -- the "Decision required" panel and Source labels the row, and widening it
--- back would send rows without them.
+-- back would send rows without them. outputs rides it because the task row's
+-- own structured result is part of the summary a caller or the dashboard
+-- reads (docs/prds/workflow-call-outputs.md, "Storage and wire").
 SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
-       created_at, updated_at, plan, source, identity, binding_id, binding_version
+       created_at, updated_at, plan, source, identity, binding_id, binding_version,
+       outputs
 FROM tasks ORDER BY updated_at DESC LIMIT $1;
 
 -- name: CountTasksByStatus :many
@@ -74,6 +80,7 @@ UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
     watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
     review_payload = $13, workflow_definition_version = $14,
     workflow_definition_digest = $15, workflow_definition_yaml = $16,
+    outputs = $17,
     updated_at = now()
 WHERE id = $1;
 
@@ -128,7 +135,9 @@ VALUES (
 ON CONFLICT (org_id, identity, owner, repo, issue_number) DO NOTHING;
 
 -- name: ClaimByIssue :one
-UPDATE tasks SET status = 'running', attempt = attempt + 1, updated_at = now()
+-- The claim starts the attempt's output set empty, as ClaimNextTask does:
+-- outputs is attempt-scoped (docs/prds/workflow-call-outputs.md).
+UPDATE tasks SET status = 'running', attempt = attempt + 1, outputs = '', updated_at = now()
 WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
 RETURNING *;
 
@@ -160,5 +169,5 @@ WHERE id = @id AND status = @from_status;
 DELETE FROM tasks WHERE id = $1 AND status = $2;
 
 -- name: ListOpenPRs :many
-SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt, review_cursor, watch_comment_id
+SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt, review_cursor, watch_comment_id, outputs
 FROM tasks WHERE status = 'pr_open';

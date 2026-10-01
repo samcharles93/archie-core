@@ -40,11 +40,22 @@ type workflowCallSettings struct {
 	Workflow string         `yaml:"workflow"`
 	Inputs   map[string]any `yaml:"inputs,omitempty"`
 	Wait     bool           `yaml:"wait,omitempty"`
+	// Outputs publishes a callee output as one of the caller's own: the key
+	// names the callee's declared output, the value an outputs.<name>
+	// reference naming the caller's declared output
+	// (docs/prds/workflow-call-outputs.md, "How a caller receives one").
+	Outputs map[string]string `yaml:"outputs,omitempty"`
 }
 
 // callReference is the prefix an inputs value must carry to be read as a
 // reference to the calling workflow's declared input.
 const callReference = "inputs."
+
+// outputReference is the prefix a call step's outputs value must carry to be
+// read as a reference to the caller's own declared output (the mirror image
+// of callReference: there the prefixed side is the caller's, here the map
+// key is the callee's).
+const outputReference = "outputs."
 
 // refName is the identifier grammar a reference suffix must match, shared
 // with the workflow interface's input names.
@@ -73,6 +84,14 @@ func newWorkflowCallStage(settings yaml.Node) (Stage, error) {
 		if ref, ok := value.(string); ok && strings.HasPrefix(ref, callReference) && !refName.MatchString(strings.TrimPrefix(ref, callReference)) {
 			return Stage{}, fmt.Errorf("%s: input %q reference %q must name an input as inputs.<name>", WorkflowCallStepName, name, ref)
 		}
+	}
+	for name, ref := range s.Outputs {
+		if !strings.HasPrefix(ref, outputReference) || !refName.MatchString(strings.TrimPrefix(ref, outputReference)) {
+			return Stage{}, fmt.Errorf("%s: output %q must name a declared output as outputs.<name>", WorkflowCallStepName, name)
+		}
+	}
+	if !s.Wait && len(s.Outputs) > 0 {
+		return Stage{}, fmt.Errorf("%s: outputs on a wait:false call can never be read: nothing has finished when the caller moves on", WorkflowCallStepName)
 	}
 	return Stage{Name: WorkflowCallStepName, Run: func(ctx context.Context, tc *TaskContext) error {
 		return runWorkflowCall(ctx, s, tc)
@@ -126,7 +145,7 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 	// caller itself being cancelled -- its CancelExecution already swept this
 	// step with the other non-terminal ones, so a late write here must not
 	// pretend the wait is still the caller's business.
-	waitErr := awaitCallee(ctx, s, tc, callee.ID)
+	calleeOutputs, waitErr := awaitCallee(ctx, s, tc, callee.ID)
 	if waitErr != nil {
 		if ctx.Err() == nil {
 			if ferr := tc.finishChildStep(ctx, callStep, taskstate.StepFailed, waitErr.Error(), 0); ferr != nil {
@@ -134,6 +153,16 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 			}
 		}
 		return waitErr
+	}
+	// The callee succeeded: the outputs its finished run wrote are what
+	// this call publishes into the caller's own output set. A publish
+	// failure is the caller's failure, not the call's, so the call step
+	// closes failed and the run parks naming the output.
+	if err := tc.publishCalleeOutputs(s.Outputs, calleeOutputs); err != nil {
+		if ferr := tc.finishChildStep(ctx, callStep, taskstate.StepFailed, err.Error(), 0); ferr != nil {
+			return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, ferr)
+		}
+		return err
 	}
 	if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded,
 		fmt.Sprintf("%q (task %d) finished", s.Workflow, callee.ID), 0); err != nil {
@@ -199,14 +228,17 @@ func callEnded(status string) bool {
 }
 
 // awaitCallee polls the callee until it is terminal, failing the stage with
-// the callee's detail when the callee did not succeed. The caller's own wall
-// clock bounds the wait.
-func awaitCallee(ctx context.Context, s workflowCallSettings, tc *TaskContext, callTaskID int64) error {
+// the callee's detail when the callee did not succeed, and returning the
+// callee's written outputs when it did. The caller's own wall clock bounds
+// the wait.
+func awaitCallee(ctx context.Context, s workflowCallSettings, tc *TaskContext, callTaskID int64) (map[string]any, error) {
+	var outputs map[string]any
 	for {
-		status, detail, err := tc.Calls.CallStatus(ctx, tc.Task.ID, callTaskID)
+		status, detail, latestOutputs, err := tc.Calls.CallStatus(ctx, tc.Task.ID, callTaskID)
 		if err != nil {
-			return fmt.Errorf("%s: read task %d: %w", WorkflowCallStepName, callTaskID, err)
+			return nil, fmt.Errorf("%s: read task %d: %w", WorkflowCallStepName, callTaskID, err)
 		}
+		outputs = latestOutputs
 		if callEnded(status) {
 			if callSucceeded(status) {
 				if err := tc.EmitDurable(ctx, events.KindWorkflowCallFinished, WorkflowCallStepName,
@@ -214,13 +246,13 @@ func awaitCallee(ctx context.Context, s workflowCallSettings, tc *TaskContext, c
 					map[string]any{"callee_task_id": callTaskID, "workflow": s.Workflow, "status": status, "detail": detail}); err != nil {
 					tc.Log.Warn("workflow call finish not persisted", "err", err)
 				}
-				return nil
+				return outputs, nil
 			}
-			return fmt.Errorf("%s: callee %q (task %d) ended %s: %s", WorkflowCallStepName, s.Workflow, callTaskID, status, detail)
+			return nil, fmt.Errorf("%s: callee %q (task %d) ended %s: %s", WorkflowCallStepName, s.Workflow, callTaskID, status, detail)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(callPollInterval):
 		}
 	}
@@ -258,6 +290,9 @@ func validateWorkflowCalls(parsed map[string]YAMLDefinition) error {
 				return fmt.Errorf("workflow %q step %d calls %q, which is not defined", id, i+1, s.Workflow)
 			}
 			if err := checkCallInputs(id, i, d.WorkflowInterface, callee, s.Inputs); err != nil {
+				return err
+			}
+			if err := checkCallOutputs(id, i, d.WorkflowInterface, callee, s.Outputs); err != nil {
 				return err
 			}
 			calls[id] = append(calls[id], s.Workflow)
@@ -299,6 +334,30 @@ func checkCallInputs(callerID string, index int, caller task.WorkflowInterface, 
 	for name, spec := range callee.Inputs {
 		if _, assigned := inputs[name]; !assigned && spec.Required {
 			return fmt.Errorf("workflow %q step %d: input %q is required by %q", callerID, index+1, name, callee.ID)
+		}
+	}
+	return nil
+}
+
+// checkCallOutputs validates one call's saved outputs assignment: the key
+// must be declared by the callee, the reference must name an output the
+// caller declares, and the callee's declared type must satisfy the caller's
+// (docs/prds/workflow-call-outputs.md, "Save time"). The shape of the value
+// (a well-formed outputs.<name> reference) is the factory's refusal; only
+// the declarations are the collection's to judge, exactly as for inputs.
+func checkCallOutputs(callerID string, index int, caller task.WorkflowInterface, callee YAMLDefinition, outputs map[string]string) error {
+	for calleeName, ref := range outputs {
+		calleeSpec, ok := callee.Outputs[calleeName]
+		if !ok {
+			return fmt.Errorf("workflow %q step %d: output %q is not declared by %q", callerID, index+1, calleeName, callee.ID)
+		}
+		callerName := strings.TrimPrefix(ref, outputReference)
+		callerSpec, ok := caller.Outputs[callerName]
+		if !ok {
+			return fmt.Errorf("workflow %q step %d: output %q references %q, which the calling workflow does not declare", callerID, index+1, calleeName, ref)
+		}
+		if !task.TypeAccepts(callerSpec.Type, calleeSpec.Type) {
+			return fmt.Errorf("workflow %q step %d: output %q is %s, want %s", callerID, index+1, calleeName, calleeSpec.Type, callerSpec.Type)
 		}
 	}
 	return nil

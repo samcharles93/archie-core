@@ -32,6 +32,15 @@ type InputSpec struct {
 	Required bool   `yaml:"required,omitempty" json:"required,omitempty"`
 }
 
+// OutputSpec declares one workflow output: the same type vocabulary an
+// input uses. A required output the run never writes parks it before any
+// terminal state (docs/prds/workflow-call-outputs.md, "Failure rules");
+// required defaults to false.
+type OutputSpec struct {
+	Type     string `yaml:"type" json:"type"`
+	Required bool   `yaml:"required,omitempty" json:"required,omitempty"`
+}
+
 // WorkflowInterface is what a workflow declares to whatever starts it: the
 // inputs it takes, whether it works on a repository, and the agent profile it
 // runs under. It lives beside the definition entry so a process that does not
@@ -39,6 +48,11 @@ type InputSpec struct {
 type WorkflowInterface struct {
 	Inputs     map[string]InputSpec `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 	Repository RepositoryMode       `yaml:"repository,omitempty" json:"repository,omitempty"`
+	// Outputs declares the named, typed structured results a run writes
+	// once each (docs/prds/workflow-call-outputs.md). A wait:true caller
+	// reads them through WorkflowCallStatus; a call step publishes one as
+	// one of the caller's own outputs.
+	Outputs map[string]OutputSpec `yaml:"outputs,omitempty" json:"outputs,omitempty"`
 	// Profile names a [containers.profiles] entry. It is resolved when a task
 	// is dispatched, not when the workflow is saved.
 	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
@@ -78,8 +92,8 @@ func ParseWorkflowInterface(src string) (WorkflowInterface, error) {
 	return w, w.Validate()
 }
 
-// Validate rejects an unknown repository mode, a malformed input name and an
-// unknown input type.
+// Validate rejects an unknown repository mode, a malformed input or output
+// name and an unknown input or output type.
 func (w WorkflowInterface) Validate() error {
 	switch w.Repository {
 	case "", RepositoryRequired, RepositoryOptional, RepositoryNone:
@@ -92,6 +106,14 @@ func (w WorkflowInterface) Validate() error {
 		}
 		if !slices.Contains(inputTypes, spec.Type) {
 			return fmt.Errorf("workflow input %q type %q must be one of %s", name, spec.Type, strings.Join(inputTypes, ", "))
+		}
+	}
+	for name, spec := range w.Outputs {
+		if !inputName.MatchString(name) {
+			return fmt.Errorf("workflow output %q must be a letter or underscore followed by letters, digits or underscores", name)
+		}
+		if !slices.Contains(inputTypes, spec.Type) {
+			return fmt.Errorf("workflow output %q type %q must be one of %s", name, spec.Type, strings.Join(inputTypes, ", "))
 		}
 	}
 	if w.Needs.GateRetries < 0 {
@@ -125,6 +147,31 @@ func (w WorkflowInterface) CheckInputs(values map[string]any) error {
 		}
 		if got := ValueType(v); v != nil && !TypeAccepts(spec.Type, got) {
 			return fmt.Errorf("input %q is %s, want %s", name, got, spec.Type)
+		}
+	}
+	return nil
+}
+
+// CheckOutputs rejects declared-output values that do not satisfy the
+// declared outputs: the same rules CheckInputs applies to inputs (required,
+// undeclared, wrong type), read from the other side of the interface
+// (docs/prds/workflow-call-outputs.md, "Failure rules"). A written null
+// counts as not written, as CheckInputs treats a null input; an unwritten
+// optional output leaves its key absent rather than null.
+func (w WorkflowInterface) CheckOutputs(values map[string]any) error {
+	for name, spec := range w.Outputs {
+		v, ok := values[name]
+		if spec.Required && (!ok || v == nil) {
+			return fmt.Errorf("output %q is required", name)
+		}
+	}
+	for name, v := range values {
+		spec, ok := w.Outputs[name]
+		if !ok {
+			return fmt.Errorf("output %q is not declared by the workflow", name)
+		}
+		if got := ValueType(v); v != nil && !TypeAccepts(spec.Type, got) {
+			return fmt.Errorf("output %q is %s, want %s", name, got, spec.Type)
 		}
 	}
 	return nil
@@ -182,4 +229,32 @@ func DecodeInputs(s string) (map[string]any, error) {
 		return nil, fmt.Errorf("decode task inputs: %w", err)
 	}
 	return inputs, nil
+}
+
+// EncodeOutputs is the stored and wire form of a task's written outputs: a
+// JSON object, or empty for none (docs/prds/workflow-call-outputs.md,
+// "Storage and wire").
+func EncodeOutputs(outputs map[string]any) (string, error) {
+	if len(outputs) == 0 {
+		return "", nil
+	}
+	data, err := json.Marshal(outputs)
+	if err != nil {
+		return "", fmt.Errorf("encode task outputs: %w", err)
+	}
+	return string(data), nil
+}
+
+// DecodeOutputs reverses EncodeOutputs, keeping numbers exact.
+func DecodeOutputs(s string) (map[string]any, error) {
+	if s == "" {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(s))
+	decoder.UseNumber()
+	var outputs map[string]any
+	if err := decoder.Decode(&outputs); err != nil {
+		return nil, fmt.Errorf("decode task outputs: %w", err)
+	}
+	return outputs, nil
 }

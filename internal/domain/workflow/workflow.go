@@ -161,6 +161,15 @@ type TaskContext struct {
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 
+	// runInterface is the declaration the run's compiled workflow carries
+	// (Workflow.Interface, set by Run), so the declared-outputs pieces
+	// (outputs.go) read one source: the engine's own compile of the pinned
+	// YAML. A stage body invoked outside Run falls back to parsing the
+	// pinned YAML once, memoized here.
+	runInterface    task.WorkflowInterface
+	runInterfaceSet bool
+	ifaceParsed     *task.WorkflowInterface
+
 	// SystemPrompt, when non-nil, returns additional context to inject
 	// before the agent's mission in every agent stage request. Wired by
 	// the composition root (cmd/archied) from the MemoryManager.
@@ -320,6 +329,10 @@ func Route(t *Task, reg Registry) Workflow {
 func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	t := tc.Task
 	t.Workflow = wf.Name
+	// The run's declared interface (outputs.go) is the compiled definition's
+	// own, so every write/publish/finish check judges the YAML the task row
+	// pinned.
+	tc.runInterface, tc.runInterfaceSet = wf.Interface, true
 	log := tc.Log.With("workflow", wf.Name, "repo", tc.Repo.FullName(), "issue", t.IssueNumber)
 
 	for _, stage := range wf.Stages {
@@ -435,6 +448,15 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	t := tc.Task
 	if tc.Outcome.Status == StatusParked {
 		park(ctx, tc, tc.Outcome.Detail)
+		return
+	}
+	// The attempt's declared outputs are validated before the outcome
+	// transition: an undeclared, mistyped or required-but-missing value
+	// parks the run here, so no caller observes a terminal state that
+	// breaks the workflow's own promise
+	// (docs/prds/workflow-call-outputs.md, "Failure rules").
+	if err := tc.validateFinishOutputs(); err != nil {
+		park(ctx, tc, err.Error())
 		return
 	}
 	if err := tc.Store.Update(ctx, t); err != nil {

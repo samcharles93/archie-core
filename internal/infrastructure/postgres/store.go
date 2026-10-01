@@ -74,12 +74,21 @@ func (s *Store) Close() error { return nil }
 // JSON-safe floor that keeps synthetic issue numbers clear of real ones.
 const syntheticIssueNumberBase = 1_000_000_000_000_000
 
+// structuredPayloadBytes is the write-side bound the store applies to a
+// structured payload (review_payload today, task outputs now). A value that
+// would exceed it is refused for outputs -- clipped JSON does not parse, and a
+// caller must receive an object or nothing -- where the legacy review payload
+// is still clipped (docs/prds/workflow-call-outputs.md, "Storage and wire").
+const structuredPayloadBytes = 4000
+
 // taskFromRow maps the generated task row to the workflow.Task the daemon and
 // webui consume.
 func taskFromRow(t postgresdb.Task) *workflow.Task {
-	// The inputs column is only ever written by EncodeInputs, so a decode
-	// failure cannot arise from stored data this package produced.
+	// The inputs and outputs columns are only ever written by EncodeInputs and
+	// EncodeOutputs, so a decode failure cannot arise from stored data this
+	// package produced.
 	inputs, _ := task.DecodeInputs(t.Inputs)
+	outputs, _ := task.DecodeOutputs(t.Outputs)
 	return &workflow.Task{
 		ID:                        t.ID,
 		Owner:                     t.Owner,
@@ -110,6 +119,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		BindingID:                 t.BindingID,
 		BindingVersion:            int(t.BindingVersion),
 		Inputs:                    inputs,
+		Outputs:                   outputs,
 		ReviewPayload:             t.ReviewPayload,
 		ParkClass:                 t.ParkClass,
 		RemediationRounds:         int(t.RemediationRounds),
@@ -282,6 +292,18 @@ func (s *Store) ParkTask(ctx context.Context, taskID int64, from, detail, class 
 
 // Update persists mutable task fields written by workflows.
 func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
+	// The row write is where a run's outputs land (docs/prds/workflow-call-outputs.md).
+	// An encoded set past the bound the store applies to a structured payload
+	// is refused rather than clipped: clipped JSON does not parse, and a caller
+	// would receive a broken object as a value. The engine turns the refusal
+	// into a park, so nothing silently loses its structured result.
+	outputs, err := task.EncodeOutputs(t.Outputs)
+	if err != nil {
+		return fmt.Errorf("store: encode task %d outputs: %w", t.ID, err)
+	}
+	if len(outputs) > structuredPayloadBytes {
+		return fmt.Errorf("store: task %d outputs are %d bytes, past the %d-byte structured-payload bound; refuse rather than clip", t.ID, len(outputs), structuredPayloadBytes)
+	}
 	return s.queries().UpdateTask(ctx, postgresdb.UpdateTaskParams{
 		ID:                        t.ID,
 		Workflow:                  t.Workflow,
@@ -299,6 +321,7 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,
+		Outputs:                   outputs,
 	})
 }
 
@@ -504,11 +527,13 @@ func (s *Store) OpenPRs(ctx context.Context) ([]workflow.Task, error) {
 	}
 	tasks := make([]workflow.Task, 0, len(rows))
 	for _, r := range rows {
+		outputs, _ := task.DecodeOutputs(r.Outputs)
 		tasks = append(tasks, workflow.Task{
 			ID: r.ID, Owner: r.Owner, Repo: r.Repo, IssueNumber: int(r.IssueNumber),
 			PRNumber: int(r.PrNumber), Status: r.Status, Source: r.Source,
 			Identity: r.Identity, Attempt: int(r.Attempt),
 			ReviewCursor: r.ReviewCursor, WatchCommentID: r.WatchCommentID,
+			Outputs: outputs,
 		})
 	}
 	return tasks, nil
@@ -527,6 +552,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 	}
 	tasks := make([]workflow.Task, 0, len(rows))
 	for _, r := range rows {
+		outputs, _ := task.DecodeOutputs(r.Outputs)
 		tasks = append(tasks, workflow.Task{
 			ID: r.ID, Owner: r.Owner, Repo: r.Repo, IssueNumber: int(r.IssueNumber),
 			Title: r.Title, Status: r.Status, Workflow: r.Workflow,
@@ -534,6 +560,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 			Attempt: int(r.Attempt), ParkReason: r.ParkReason, RetryCount: int(r.RetryCount),
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, Plan: r.Plan, Source: r.Source,
 			Identity: r.Identity, BindingID: r.BindingID, BindingVersion: int(r.BindingVersion),
+			Outputs: outputs,
 		})
 	}
 	return tasks, nil
@@ -643,28 +670,34 @@ func (s *Store) callRefusal(ctx context.Context, callerTaskID int64) error {
 	return fmt.Errorf("store: workflow.call from task %d at depth %d: %w", callerTaskID, caller.CallDepth, storecontract.ErrCallDepthExceeded)
 }
 
-// CallStatus reads one call's callee for a waiting caller: its status and
-// latest transition detail. The parent check is the row check the wire grant
-// cannot do: a caller reads only the tasks it started.
-func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, error) {
+// CallStatus reads one call's callee for a waiting caller: its status, its
+// latest transition detail and the outputs its finished run wrote. The parent
+// check is the row check the wire grant cannot do: a caller reads only the
+// tasks it started.
+func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, map[string]any, error) {
 	callee, err := s.queries().TaskByID(ctx, callTaskID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", storecontract.ErrCallNotYours
+		return "", "", nil, storecontract.ErrCallNotYours
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if callee.CallParentTaskID != callerTaskID {
-		return "", "", storecontract.ErrCallNotYours
+		return "", "", nil, storecontract.ErrCallNotYours
 	}
+	// The row is the callee's own; its outputs travel beside status and detail
+	// (docs/prds/workflow-call-outputs.md, "Storage and wire"). The caller
+	// decides whether to use them -- only a successful terminal state's values
+	// reach it.
+	outputs, _ := task.DecodeOutputs(callee.Outputs)
 	// A callee that has not moved yet has no transition row; its queue
 	// status is the whole answer, and the empty detail says so.
 	detail, err := s.queries().CallStatusDetail(ctx, callTaskID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return callee.Status, "", nil
+		return callee.Status, "", outputs, nil
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
-	return callee.Status, detail, nil
+	return callee.Status, detail, outputs, nil
 }

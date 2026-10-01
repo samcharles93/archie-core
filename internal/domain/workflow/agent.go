@@ -70,7 +70,10 @@ func (a AgentStage) Stage() Stage {
 		if err != nil {
 			return err
 		}
-		req := a.buildRequest(tc, modelRef)
+		req, buildErr := a.buildRequest(tc, modelRef)
+		if buildErr != nil {
+			return buildErr
+		}
 		// The agent call is a child of the stage's recorded step: the store
 		// says what the stage's runtime did, not just what the stage did.
 		res, runErr := tc.RunAgentChild(ctx, a.Name, func() (agentexec.Result, error) {
@@ -94,7 +97,7 @@ func (a AgentStage) resolveModel(tc *TaskContext) (string, error) {
 }
 
 // buildRequest assembles the agentexec.Request for this stage's run.
-func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) agentexec.Request {
+func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) (agentexec.Request, error) {
 	budget := agentexec.Budget{
 		MaxSteps:  tc.Cfg.Budgets.MaxSteps,
 		WallClock: tc.Cfg.Budgets.WallClock.Std(),
@@ -110,6 +113,10 @@ func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) agentexec.Req
 	var captureTools []agentexec.CaptureTool
 	if a.CaptureTools != nil {
 		captureTools = a.CaptureTools(tc)
+	}
+	captureTools, err := tc.appendOutputTools(captureTools)
+	if err != nil {
+		return agentexec.Request{}, err
 	}
 
 	protection := agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)}
@@ -146,7 +153,7 @@ func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) agentexec.Req
 		Notes:         tc.Task.Notes,
 		CaptureTools:  captureTools,
 		Plugins:       pluginSpecs(tc.SkillPlugins),
-	}
+	}, nil
 }
 
 // buildExtraRules prepends memory context, if the daemon wired a memory
@@ -235,6 +242,9 @@ func (a AgentStage) deliverResult(tc *TaskContext, res agentexec.Result) error {
 		if err := a.ReviewResult(tc, res); err != nil {
 			return fmt.Errorf("review: %w", err)
 		}
+	}
+	if err := tc.applyOutputCaptures(res); err != nil {
+		return err
 	}
 	if a.OnResult != nil {
 		return a.OnResult(tc, res)

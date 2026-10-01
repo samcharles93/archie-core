@@ -951,11 +951,11 @@ func (s *server) WorkflowCallStatus(ctx context.Context, r *pb.WorkflowCallStatu
 	if s.deps.WorkflowCalls == nil {
 		return nil, errWorkflowCallerUnavailable
 	}
-	status, detail, err := s.deps.WorkflowCalls.CallStatus(ctx, r.CallerTaskId, r.CallTaskId)
+	status, detail, outputs, err := s.deps.WorkflowCalls.CallStatus(ctx, r.CallerTaskId, r.CallTaskId)
 	if err != nil {
 		return nil, s.logErr("WorkflowCallStatus", err)
 	}
-	return &pb.WorkflowCallStatusResponse{Status: status, Detail: detail}, nil
+	return &pb.WorkflowCallStatusResponse{Status: status, Detail: detail, OutputsJson: outputsJSON(outputs)}, nil
 }
 
 // Task log

@@ -335,6 +335,12 @@ message Task {
   // writer reads as a depth-0 root run.
   int64 call_parent_task_id = 36;
   int32 call_depth = 37;
+  // outputs_json is the JSON object of declared-output values this run wrote
+  // (task.EncodeOutputs), empty for a run that wrote none. The container's
+  // Update sends the whole row, so a column the message cannot carry is a
+  // column that write drops (docs/prds/workflow-call-outputs.md, "Storage and
+  // wire").
+  string outputs_json = 38;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -1041,9 +1047,13 @@ message WorkflowCallStatusRequest {
 }
 message WorkflowCallStatusResponse {
   // status is the callee's task status and detail its latest transition
-  // detail (empty before the callee first moves).
+  // detail (empty before the callee first moves). outputs_json is the
+  // callee's written outputs (task.EncodeOutputs), so a wait:true caller can
+  // publish one as its own (docs/prds/workflow-call-outputs.md, "Storage and
+  // wire").
   string status = 1;
   string detail = 2;
+  string outputs_json = 3;
 }
 
 message InstalledPackage {

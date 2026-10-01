@@ -37,8 +37,9 @@ type startCall struct {
 }
 
 type statusAt struct {
-	status string
-	detail string
+	status  string
+	detail  string
+	outputs map[string]any
 }
 
 func (f *fakeCaller) StartCall(_ context.Context, callerID int64, workflow string, inputs map[string]any) (*task.Task, error) {
@@ -50,19 +51,19 @@ func (f *fakeCaller) StartCall(_ context.Context, callerID int64, workflow strin
 	return callee, nil
 }
 
-func (f *fakeCaller) CallStatus(_ context.Context, callerID, callID int64) (string, string, error) {
+func (f *fakeCaller) CallStatus(_ context.Context, callerID, callID int64) (string, string, map[string]any, error) {
 	if f.statusErr != nil {
-		return "", "", f.statusErr
+		return "", "", nil, f.statusErr
 	}
 	seq := f.statuses[callID]
 	if len(seq) == 0 {
-		return "", "", nil
+		return "", "", nil, nil
 	}
 	at := seq[0]
 	if len(seq) > 1 {
 		f.statuses[callID] = seq[1:]
 	}
-	return at.status, at.detail, nil
+	return at.status, at.detail, at.outputs, nil
 }
 
 func callerYAML(callee string, extra ...string) string {
@@ -252,7 +253,7 @@ func TestWorkflowCallWaitFalseStartsAndContinues(t *testing.T) {
 func TestWorkflowCallWaitTrueWaitsForTerminalCallee(t *testing.T) {
 	wf := compileCaller(t, "id: caller\nrepository: none\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n  - type: agent.run\n    settings:\n      mission: report\n")
 	caller := &fakeCaller{statuses: map[int64][]statusAt{
-		101: {{StatusQueued, ""}, {StatusRunning, ""}, {StatusCompleted, "contained 10.0.0.9"}},
+		101: {{status: StatusQueued}, {status: StatusRunning}, {status: StatusCompleted, detail: "contained 10.0.0.9"}},
 	}}
 	store := &recordingStore{}
 	tc := &TaskContext{
@@ -276,7 +277,7 @@ func TestWorkflowCallWaitTrueWaitsForTerminalCallee(t *testing.T) {
 func TestWorkflowCallWaitTrueFailsWhenCalleeFails(t *testing.T) {
 	wf := compileCaller(t, "id: caller\nrepository: none\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n")
 	caller := &fakeCaller{statuses: map[int64][]statusAt{
-		101: {{StatusParked, "needs an operator"}},
+		101: {{status: StatusParked, detail: "needs an operator"}},
 	}}
 	store := &recordingStore{}
 	tc := &TaskContext{
@@ -325,5 +326,188 @@ func TestWorkflowCallSettingsValidation(t *testing.T) {
 				t.Fatalf("ParseDefinition() error = %v, want containing %q", err, test.want)
 			}
 		})
+	}
+}
+
+// ---- Save-time: declared outputs ----
+
+// TestValidateCollectionWorkflowCallOutputs pins checkCallOutputs beside
+// checkCallInputs (docs/prds/workflow-call-outputs.md, "Save time"): the key
+// must be declared by the callee, the value must name an output the caller
+// declares, and the callee's declared type must satisfy the caller's.
+func TestValidateCollectionWorkflowCallOutputs(t *testing.T) {
+	const callee = "id: callee\noutputs:\n  contained: {type: bool, required: true}\n  summary: {type: string}\nsteps:\n  - type: agent.run\n    settings:\n      mission: m\n"
+	tests := []struct {
+		name       string
+		yamls      []string
+		want       string
+		notViaCall bool // the refusal is the definition's own, not a call check
+	}{
+		{
+			name: "callee does not declare the published output",
+			yamls: []string{
+				"id: caller\noutputs:\n  contained: {type: bool}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      outputs: {contained: \"outputs.contained\"}\n",
+				"id: callee\nsteps:\n  - type: agent.run\n    settings:\n      mission: m\n",
+			},
+			want: `output "contained" is not declared by "callee"`,
+		},
+		{
+			name: "caller does not declare the referenced output",
+			yamls: []string{
+				"id: caller\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      outputs: {contained: \"outputs.contained\"}\n",
+				callee,
+			},
+			want: `output "contained" references "outputs.contained", which the calling workflow does not declare`,
+		},
+		{
+			name: "callee type cannot satisfy the caller's",
+			yamls: []string{
+				"id: caller\noutputs:\n  contained: {type: string}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      outputs: {contained: \"outputs.contained\"}\n",
+				callee,
+			},
+			want: `output "contained" is bool, want string`,
+		},
+		{
+			name:       "outputs over a wait:false call",
+			yamls:      []string{"id: caller\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      outputs: {contained: \"outputs.contained\"}\n", callee},
+			want:       "outputs on a wait:false call",
+			notViaCall: true,
+		},
+		{
+			name:       "output value is not an outputs.<name> reference",
+			yamls:      []string{"id: caller\noutputs:\n  contained: {type: bool}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      outputs: {contained: \"inputs.src_ip\"}\n", callee},
+			want:       `must name a declared output as outputs.<name>`,
+			notViaCall: true,
+		},
+		{
+			name:       "output reference is malformed",
+			yamls:      []string{"id: caller\noutputs:\n  contained: {type: bool}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      outputs: {contained: \"outputs.con-tained\"}\n", callee},
+			want:       `must name a declared output as outputs.<name>`,
+			notViaCall: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.notViaCall {
+				_, err := ParseDefinition(test.yamls[0], callRegistry())
+				if err == nil || !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("ParseDefinition() error = %v, want containing %q", err, test.want)
+				}
+				return
+			}
+			err := ValidateDefinitionCollection(collectionOf(append([]string{test.yamls[0]}, test.yamls[1:]...)...), callRegistry())
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ValidateDefinitionCollection() error = %v, want containing %q", err, test.want)
+			}
+		})
+	}
+	// The valid publication: both sides declare, the types agree.
+	valid := collectionOf(
+		"id: caller\nrepository: none\noutputs:\n  contained: {type: bool}\n  summary: {type: string}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      inputs: {}\n      outputs: {contained: \"outputs.contained\", summary: \"outputs.summary\"}\n",
+		callee,
+	)
+	if err := ValidateDefinitionCollection(valid, callRegistry()); err != nil {
+		t.Fatalf("ValidateDefinitionCollection(matching publication) = %v, want nil", err)
+	}
+}
+
+// outputsCallerYAML declares the caller's own outputs and publishes a
+// callee output as one of them (docs/prds/workflow-call-outputs.md, "How a
+// caller receives one"). The trailing agent.run gives the caller an outcome
+// of its own, so its finish check judges its declared outputs.
+const outputsCallerYAML = "id: caller\nrepository: none\ninputs:\n  src_ip: {type: string}\noutputs:\n  contained: {type: bool, required: true}\n  summary: {type: string}\nsteps:\n  - type: workflow.call\n    settings:\n      workflow: callee\n      wait: true\n      inputs: {src_ip: \"inputs.src_ip\"}\n      outputs: {contained: \"outputs.contained\", summary: \"outputs.summary\"}\n  - type: agent.run\n    settings:\n      mission: report\n"
+
+// TestWorkflowCallWaitTruePublishesCalleeOutputs pins the receive-and-publish
+// path: a wait:true caller reads the outputs its successful callee wrote
+// through CallStatus, the published ones enter the caller's own set, and the
+// caller's finish write persists them into the caller's row before its own
+// outcome transition.
+func TestWorkflowCallWaitTruePublishesCalleeOutputs(t *testing.T) {
+	wf := compileCaller(t, outputsCallerYAML)
+	caller := &fakeCaller{statuses: map[int64][]statusAt{
+		101: {{status: StatusCompleted, detail: "contained 10.0.0.9", outputs: map[string]any{
+			"contained": true, "summary": "blocked the address", "extra": "not assigned",
+		}}},
+	}}
+	store := &recordingStore{}
+	tc := &TaskContext{
+		Task:  &Task{ID: 3, Attempt: 1, WorkflowDefinitionYAML: outputsCallerYAML, Inputs: map[string]any{"src_ip": "10.0.0.9"}},
+		Calls: caller, Store: store, Trees: &fakeTrees{dir: "/scratch/3"}, Log: slog.New(slog.DiscardHandler),
+		Agent: &fakeAgentRunner{result: agentexec.Result{Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed, Summary: "reported"}},
+		Cfg:   config.Config{Models: map[string]string{"builder": "p/m"}},
+	}
+	Run(context.Background(), wf, tc)
+	if tc.Outcome.Status != StatusCompleted {
+		t.Fatalf("outcome = %+v, want completed after the callee succeeded", tc.Outcome)
+	}
+	if tc.Task.Outputs["contained"] != true {
+		t.Fatalf("caller outputs = %+v, want the callee's bool restored as its own", tc.Task.Outputs)
+	}
+	if got := tc.Task.Outputs["summary"]; got != "blocked the address" {
+		t.Fatalf("caller outputs.summary = %v, want the callee's value", got)
+	}
+	if _, undeclared := tc.Task.Outputs["extra"]; undeclared {
+		t.Fatalf("caller outputs = %+v, want the assignment only, not the callee's whole set", tc.Task.Outputs)
+	}
+	// The caller's row carries the published values before its outcome
+	// transition, so the status its own caller sees when its wait ends
+	// already carries them.
+	if len(store.updates) == 0 || store.updates[len(store.updates)-1].Outputs["contained"] != true {
+		t.Fatalf("row updates = %+v, want the published outputs written", store.updates)
+	}
+	if seq := updatesBeforeTransition(store.sequence, "completed"); seq == -1 {
+		t.Fatalf("sequence = %v, want an update before the completed transition", store.sequence)
+	} else if store.updates[seq].Outputs["contained"] != true {
+		t.Fatal("the row write carrying the outputs did not precede the outcome transition")
+	}
+}
+
+// TestCallPublishSkipsUnwrittenOutputAndRequiredParks pins both halves of
+// "declared but never written" on the caller side: a callee output the
+// callee never wrote leaves the caller's output absent, and the caller's own
+// required judgment then parks it naming the output.
+func TestCallPublishSkipsUnwrittenOutputAndRequiredParks(t *testing.T) {
+	wf := compileCaller(t, outputsCallerYAML)
+	caller := &fakeCaller{statuses: map[int64][]statusAt{
+		101: {{status: StatusCompleted, detail: "done", outputs: map[string]any{"summary": "x"}}},
+	}}
+	store := &recordingStore{}
+	tc := &TaskContext{
+		Task:  &Task{ID: 3, Attempt: 1, WorkflowDefinitionYAML: outputsCallerYAML, Inputs: map[string]any{"src_ip": "10.0.0.9"}},
+		Calls: caller, Store: store, Trees: &fakeTrees{}, Log: slog.New(slog.DiscardHandler),
+		Agent: &fakeAgentRunner{result: agentexec.Result{Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed, Summary: "reported"}},
+		Cfg:   config.Config{Models: map[string]string{"builder": "p/m"}},
+	}
+	Run(context.Background(), wf, tc)
+	if got := tc.Task.Outputs["summary"]; got != "x" {
+		t.Fatalf("caller outputs.summary = %v, want the one value the callee wrote", got)
+	}
+	if _, absent := tc.Task.Outputs["contained"]; absent {
+		t.Fatal("the unwritten callee output was published anyway")
+	}
+	if !strings.Contains(tc.Task.ParkReason, `output "contained" is required`) {
+		t.Fatalf("park reason %q, want the caller's missing required output named", tc.Task.ParkReason)
+	}
+	if len(store.transitions) == 0 || store.transitions[len(store.transitions)-1].to != StatusParked {
+		t.Fatalf("transitions = %+v, want the caller parked rather than reaching a terminal state", store.transitions)
+	}
+}
+
+// TestCallPublishTypeMismatchParks pins the run-time re-check: a published
+// callee value is re-checked against the caller's declared type before it
+// enters the caller's set; a mismatch parks the caller naming the output.
+func TestCallPublishTypeMismatchParks(t *testing.T) {
+	wf := compileCaller(t, outputsCallerYAML)
+	caller := &fakeCaller{statuses: map[int64][]statusAt{
+		101: {{status: StatusCompleted, detail: "done", outputs: map[string]any{"contained": "yes"}}},
+	}}
+	store := &recordingStore{}
+	tc := &TaskContext{
+		Task:  &Task{ID: 3, Attempt: 1, WorkflowDefinitionYAML: outputsCallerYAML, Inputs: map[string]any{"src_ip": "10.0.0.9"}},
+		Calls: caller, Store: store, Trees: &fakeTrees{}, Log: slog.New(slog.DiscardHandler),
+	}
+	Run(context.Background(), wf, tc)
+	if !strings.Contains(tc.Task.ParkReason, "contained") {
+		t.Fatalf("park reason %q, want the mismatched output named", tc.Task.ParkReason)
 	}
 }

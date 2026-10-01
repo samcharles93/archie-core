@@ -102,6 +102,12 @@ type Task struct {
 	// the workflow's declared inputs at dispatch. They reach the agent as
 	// structured data, never as body text.
 	Inputs map[string]any `json:"inputs,omitempty"`
+	// Outputs are the structured results this run wrote to the workflow's
+	// declared outputs (docs/prds/workflow-call-outputs.md). The set is
+	// attempt-scoped: a claim starts the next attempt with an empty set and
+	// the finish write replaces the row's set wholesale. Callers read these
+	// only from a successful terminal state, through WorkflowCallStatus.
+	Outputs map[string]any `json:"outputs,omitempty"`
 	// ReviewPayload is the JSON-encoded review unit (the forge review's
 	// actionable comments) the remediate workflow's current run must
 	// address. The daemon's reaction consumer injects it before queuing a

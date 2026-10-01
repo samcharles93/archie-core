@@ -87,7 +87,7 @@ func Compile(definition YAMLDefinition, registry StepRegistry) (Workflow, error)
 		}
 		stages = append(stages, stage)
 	}
-	return Workflow{Name: definition.ID, Stages: stages}, nil
+	return Workflow{Name: definition.ID, Stages: stages, Interface: definition.WorkflowInterface}, nil
 }
 
 // ParseAndCompile validates and compiles one definition in a single operation.
