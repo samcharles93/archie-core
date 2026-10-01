@@ -18,10 +18,13 @@ type chatModelManager struct {
 	mu     sync.RWMutex
 	models []string
 	active string
-	// catalogs are the non-role sources the model set is derived from, kept
-	// so SetConfigured can rebuild it after a live settings update without a
-	// caller re-passing them.
-	catalogs      [][]string
+	// configured, explicit and catalog are the sources the offered set is
+	// derived from: the role assignments (live via SetConfigured), the
+	// [chat].models catalog (fixed for the process), and the model catalog's
+	// own refs (replaced wholesale by SetModelCatalog).
+	configured    map[string]string
+	explicit      []string
+	catalog       []string
 	details       map[string]gateway.ModelDetails
 	providerNames map[string]string
 }
@@ -63,12 +66,28 @@ func mergeModelRefs(configured map[string]string, catalogs ...[]string) []string
 }
 
 func newChatModelManager(configured map[string]string, catalogs ...[]string) *chatModelManager {
-	return &chatModelManager{
-		models:        mergeModelRefs(configured, catalogs...),
-		active:        pickChatDefault(configured),
-		catalogs:      append([][]string(nil), catalogs...),
+	explicit := make([]string, 0, len(catalogs))
+	for _, catalog := range catalogs {
+		explicit = append(explicit, catalog...)
+	}
+	m := &chatModelManager{
+		configured:    configured,
+		explicit:      explicit,
 		details:       make(map[string]gateway.ModelDetails),
 		providerNames: make(map[string]string),
+	}
+	m.active = pickChatDefault(configured)
+	m.setModelsLocked()
+	return m
+}
+
+// setModelsLocked re-derives the offered set from the three sources and keeps
+// the active selection when the new set still carries it, falling back the way
+// construction does when it does not.
+func (m *chatModelManager) setModelsLocked() {
+	m.models = mergeModelRefs(m.configured, m.explicit, m.catalog)
+	if !slices.Contains(m.models, m.active) {
+		m.active = pickChatDefault(m.configured)
 	}
 }
 
@@ -81,16 +100,22 @@ func newChatModelManager(configured map[string]string, catalogs ...[]string) *ch
 func (m *chatModelManager) SetConfigured(configured map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	models := mergeModelRefs(configured, m.catalogs...)
-	if !slices.Contains(models, m.active) {
-		m.active = pickChatDefault(configured)
-	}
-	m.models = models
+	m.configured = configured
+	m.setModelsLocked()
 }
 
-func (m *chatModelManager) ApplyModelCatalog(snapshot modelcatalog.Snapshot) {
+// SetModelCatalog replaces the model catalog's contribution to the manager:
+// the references it offers, the provider display names and the per-model
+// details. The previous snapshot's entries are dropped rather than merged --
+// a model or provider the catalog no longer publishes must stop being offered
+// and described, and these maps are the manager's own state rather than a
+// second catalogue to fall back on.
+func (m *chatModelManager) SetModelCatalog(snapshot modelcatalog.Snapshot, models []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.catalog = slices.Clone(models)
+	m.details = make(map[string]gateway.ModelDetails)
+	m.providerNames = make(map[string]string)
 	for _, provider := range snapshot.Providers {
 		m.providerNames[provider.ID] = provider.Name
 		for _, model := range provider.Models {
@@ -104,6 +129,7 @@ func (m *chatModelManager) ApplyModelCatalog(snapshot modelcatalog.Snapshot) {
 			}
 		}
 	}
+	m.setModelsLocked()
 }
 
 func (m *chatModelManager) ProviderDisplayName(provider string) string {

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -165,8 +166,22 @@ type boot struct {
 	// closes; the Gateway also holds its serve claim on it.
 	chatPool *pgxpool.Pool
 
+	// catalog, catalogModels and catalogMu are the model catalog the process
+	// last loaded and the model references it contributes. The refresh loop
+	// replaces both together while the config paths read them, so they are one
+	// value behind one lock rather than two fields that can disagree.
+	catalogMu     sync.RWMutex
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
+	// catalogCachePath is where the catalog's last download is cached, beside
+	// the config file. Empty when boot had no file path to derive it from.
+	catalogCachePath string
+	// catalogURL overrides the catalog endpoint. Zero in production:
+	// modelcatalog defaults to models.dev. Set only by tests.
+	catalogURL string
+	// catalogRefreshInterval is how often the running daemon re-reads the
+	// catalog. The daemon's refresh loop reads it; zero means the default.
+	catalogRefreshInterval time.Duration
 
 	bus *events.Bus
 	// taskActionsConn is the standalone Gateway process's own NATS connection:
@@ -530,19 +545,128 @@ func (b *boot) handleRequeue(ctx context.Context, requeue int64, once bool) (boo
 	return !once, nil
 }
 
+// catalogState returns the model catalog the process is running and the model
+// references it contributes. Both together, under one lock: the refresh loop
+// replaces them as a pair.
+func (b *boot) catalogState() (modelcatalog.Snapshot, []string) {
+	b.catalogMu.RLock()
+	defer b.catalogMu.RUnlock()
+	return b.catalog, b.catalogModels
+}
+
+// setCatalogState installs a loaded catalog. Called only after everything it
+// has to reach has been built, so a read that fails leaves the previous
+// snapshot running.
+func (b *boot) setCatalogState(snapshot modelcatalog.Snapshot, models []string) {
+	b.catalogMu.Lock()
+	defer b.catalogMu.Unlock()
+	b.catalog = snapshot
+	b.catalogModels = models
+}
+
+// loadCatalog reads the model catalog once at boot and merges it into the
+// running config. A catalog that cannot be read is not fatal -- the configured
+// providers and models keep running, and the refresh loop retries the same
+// read -- but a catalog that *is* read must reach the config the process runs
+// on, not just the boot struct the chat runtime was built from.
 func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
-	catalog, err := modelcatalog.Load(ctx, modelcatalog.Options{
-		CachePath:  filepath.Join(filepath.Dir(cfgPath), "models.json"),
-		Getenv:     b.secrets.Getenv,
-		Configured: b.cfg.Providers,
-	})
-	b.catalog = catalog
+	b.catalogCachePath = filepath.Join(filepath.Dir(cfgPath), "models.json")
+	catalog, err := modelcatalog.Load(ctx, b.catalogOptions(b.catalogCachePath))
 	if err != nil {
 		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
 		return
 	}
-	b.catalogModels = applyModelCatalog(&b.cfg, catalog)
-	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
+	models := applyModelCatalog(&b.cfg, catalog)
+	// applyModelCatalog writes into the boot struct, while every consumer
+	// reads config.Holder. Publishing the merged copy here is what puts the
+	// catalog's model limits and discovered providers into the running config;
+	// without it the first live update would be the first snapshot to carry
+	// them.
+	b.cfgHolder.Set(b.cfg.Clone())
+	b.setCatalogState(catalog, models)
+	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(models))
+}
+
+// refreshModelCatalog re-reads the catalog and republishes everything derived
+// from it, so a credential that becomes resolvable after boot or a model added
+// upstream reaches the running config, the dashboard and the chat runtime
+// without a restart. It is the live half of loadCatalog.
+//
+// A failed read keeps the snapshot already running: the model list must not go
+// blank because the catalog service had a bad minute. The caller decides
+// whether the failure is fatal to it -- the refresh loop logs and retries.
+func (b *boot) refreshModelCatalog(ctx context.Context) error {
+	catalog, err := modelcatalog.Load(ctx, b.catalogOptions(b.catalogCachePath))
+	if err != nil {
+		return err
+	}
+	base := b.cfgHolder.Get().Clone()
+	models := applyModelCatalog(&base, catalog)
+	cfg, _, err := b.runtimeConfig(ctx, base)
+	if err != nil {
+		return err
+	}
+	// Committed only once the layered config passed validation, so a refused
+	// layering leaves the catalog the process is running alone.
+	b.setCatalogState(catalog, models)
+	b.publishConfig(ctx, cfg)
+	b.rebuildChatModelRuntime(cfg)
+	b.log.Info("model catalog refreshed", "providers", len(catalog.Providers), "models", len(models))
+	return nil
+}
+
+// catalogOptions is the one place the catalog read options are built: boot and
+// every live refresh read the same endpoint, the same cache file and the same
+// credential lookup. Getenv is the secrets registry, not the raw process
+// environment, so a key a secret engine starts resolving after boot is visible
+// to the next refresh. A variable exported into the shell after the process
+// started is not, and cannot be: the process environment is fixed at exec.
+func (b *boot) catalogOptions(cachePath string) modelcatalog.Options {
+	opts := modelcatalog.Options{
+		URL:       b.catalogURL,
+		CachePath: cachePath,
+	}
+	if b.secrets != nil {
+		opts.Getenv = b.secrets.Getenv
+	}
+	if b.cfgHolder != nil {
+		opts.Configured = b.cfgHolder.Get().Providers
+	}
+	return opts
+}
+
+// modelCatalogRefreshInterval is how often the running daemon re-reads the
+// model catalog. The document itself changes on the order of weeks, but a
+// credential a secret engine starts resolving can appear at any moment, so the
+// interval trades one cheap HTTP read against how long an operator waits for a
+// newly usable provider to show up. It is deliberately the daemon's own
+// cadence and not an operator setting: the catalog is derived state, not a
+// stored resource, and a knob with no second consumer would be a setting that
+// parses and does nothing.
+const modelCatalogRefreshInterval = time.Hour
+
+// startModelCatalogRefresh re-reads the catalog on an interval for the life of
+// the process. It belongs to the daemon, which owns the published
+// configuration; the standalone Gateway reads the catalog once at boot.
+func (b *boot) startModelCatalogRefresh(ctx context.Context) {
+	every := b.catalogRefreshInterval
+	if every <= 0 {
+		every = modelCatalogRefreshInterval
+	}
+	go func() {
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := b.refreshModelCatalog(ctx); err != nil {
+					b.log.Warn("model catalog refresh failed; keeping the loaded catalog", "err", err)
+				}
+			}
+		}
+	}()
 }
 
 // setupObservability builds the event bus and dashboard server. Every event is persisted (stamped with its row id) and
@@ -1556,10 +1680,11 @@ func (b *boot) configOrigins() []webui.ConfigOrigin {
 // the daemon's own configuration state. The daemon is the configuration
 // owner, so it is the process that renders this view (archie-core-ml30).
 func (b *boot) configViewInput(ctx context.Context) webui.ConfigViewInput {
+	catalog, _ := b.catalogState()
 	in := webui.ConfigViewInput{
 		Config:     b.cfgHolder.Get(),
 		Provenance: b.configOrigins(),
-		Catalog:    catalogView(b.catalog),
+		Catalog:    catalogView(catalog),
 	}
 	if b.lastReload != nil {
 		status := b.lastReload()

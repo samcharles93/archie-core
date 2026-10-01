@@ -388,6 +388,11 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.setupLLMAndChat(ctx); err != nil {
 		return 1
 	}
+	// The catalog's consumers exist from here on, and the daemon is the
+	// process that owns the published configuration, so this is where the
+	// live catalog refresh belongs. The standalone Gateway reads the catalog
+	// once at boot and runs no control-plane watches (RunGateway).
+	b.startModelCatalogRefresh(ctx)
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}

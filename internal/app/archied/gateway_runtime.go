@@ -26,8 +26,9 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	providers := executionProviders(cfg)
 	b.setLLM(agentexec.NewRuntime(providers))
 	b.toolReg = tools.NewRegistry()
-	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, b.catalogModels)
-	chatModels.ApplyModelCatalog(b.catalog)
+	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models)
+	catalog, catalogModels := b.catalogState()
+	chatModels.SetModelCatalog(catalog, catalogModels)
 	b.chatModels = chatModels
 
 	// ── Persona registry ─────────────────────────────────────────────

@@ -75,7 +75,8 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	// drop them from the running config even though the file is
 	// unchanged. Re-apply the same merge (idempotent: a catalog that
 	// failed to load merges to identity).
-	applyModelCatalog(&doc.Config, b.catalog)
+	catalog, _ := b.catalogState()
+	applyModelCatalog(&doc.Config, catalog)
 	// Bounded: this runs on the signal loop, which handles nothing else
 	// while it waits, and a State Store that has stopped answering must
 	// surface as a failed reload rather than a SIGHUP that never returns.
@@ -324,7 +325,8 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	// this read returns can lack the catalog's model limits and discovered
 	// providers. The merge is idempotent, and reloadConfig re-applies it
 	// before layering for the same reason.
-	applyModelCatalog(&base, b.catalog)
+	catalog, _ := b.catalogState()
+	applyModelCatalog(&base, catalog)
 	cfg, _, err := b.runtimeConfig(ctx, base)
 	if err != nil {
 		// runtimeConfig reported the refusal through apply status for every
@@ -344,12 +346,14 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 // after a live change to provider-settings or model-role-assignments. The
 // turn runner reads the runtime through boot.chatLLM, so the swap reaches its
 // next turn without rebuilding the runner, and the model manager re-derives
-// the references it offers from the new role assignments.
+// the references it offers from the new role assignments and the catalog.
 func (b *boot) rebuildChatModelRuntime(cfg config.Config) {
 	if b.chatModels == nil {
 		return // this process serves no chat turns
 	}
 	b.setLLM(agentexec.NewRuntime(executionProviders(cfg)))
 	b.chatModels.SetConfigured(cfg.Models)
+	catalog, models := b.catalogState()
+	b.chatModels.SetModelCatalog(catalog, models)
 	b.log.Info("chat model runtime rebuilt", "providers", len(cfg.Providers), "models", len(cfg.Models))
 }
