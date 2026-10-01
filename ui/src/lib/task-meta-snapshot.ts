@@ -56,6 +56,7 @@ export const DEFAULT_ACTIONS: ActionMeta[] = [
     confirm: `Stop "{title}"? Recoverable work will remain parked.`,
   },
   { id: "approve", label: "Approve", kind: "primary" },
+  { id: "rereview", label: "Re-review", kind: "quiet" },
   {
     id: "reject",
     label: "Reject",

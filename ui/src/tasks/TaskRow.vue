@@ -23,6 +23,11 @@ export interface Task {
   created_at?: string;
   updated_at?: string;
   actions?: string[];
+  /** The operator-approval gate's document, as JSON. The rereview dialog
+   * reads its round count; a task without one never answers a gate. */
+  review_gate?: string;
+  /** How many re-reviews this gate has granted, against the server's cap. */
+  rereview_rounds?: number;
 }
 </script>
 

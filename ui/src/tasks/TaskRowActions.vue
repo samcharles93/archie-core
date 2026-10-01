@@ -15,11 +15,21 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
 import { actionFor, type ActionMeta } from "@/lib/task-meta";
 import type { Task } from "./TaskRow.vue";
@@ -59,6 +69,13 @@ const error = ref<{ kind: ActionErrorKind; message: string } | null>(null);
 // before the action's own handler reads it.
 const confirming = ref<string | null>(null);
 const confirmingId = ref<string | null>(null);
+
+// A re-review carries instructions the plain confirm dialog cannot collect
+// (docs/prds/pr-review-operator-response.md, Decision 1), and the server
+// refuses a re-review without them, so it opens a dialog of its own.
+const rereviewOpen = ref(false);
+const rereviewId = ref<string | null>(null);
+const instructions = ref("");
 
 const controls = computed<Control[]>(() =>
   shownActionIds(props.task.actions, props.only)
@@ -139,9 +156,15 @@ function variantFor(kind: string): ControlVariant {
 }
 
 // A control that names a consequence is confirmed first; the two that only open
-// a forge page are not, because they change nothing.
+// a forge page are not, because they change nothing. A re-review needs
+// instructions, which its own dialog collects.
 function request(id: string) {
   error.value = null;
+  if (id === "rereview") {
+    rereviewId.value = id;
+    rereviewOpen.value = true;
+    return;
+  }
   if (actionFor(id)?.confirm) {
     confirmingId.value = id;
     confirming.value = id;
@@ -150,20 +173,33 @@ function request(id: string) {
   void run(id);
 }
 
-async function run(id: string) {
+async function run(id: string, payload?: { instructions?: string }) {
   confirming.value = null;
   inFlight.value = true;
   error.value = null;
   try {
     // The route path and the API both address a task by string; the list serves
     // ids as numbers, so the row's own id is narrowed once, here.
-    await api.taskAction(String(props.task.id), id);
+    await api.taskAction(String(props.task.id), id, payload);
     emit("done", props.task.id);
   } catch (err) {
     error.value = classifyActionError(err);
   } finally {
     inFlight.value = false;
   }
+}
+
+function onRereviewOpen(open: boolean) {
+  rereviewOpen.value = open;
+  if (!open) instructions.value = "";
+}
+
+function submitRereview() {
+  const id = rereviewId.value;
+  const text = instructions.value.trim();
+  if (!id || !text) return;
+  rereviewOpen.value = false;
+  void run(id, { instructions: text });
 }
 
 function onConfirmationOpen(open: boolean) {
@@ -256,6 +292,42 @@ function requestFromMenu(id: string) {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+
+    <Dialog :open="rereviewOpen" @update:open="onRereviewOpen">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Re-review this pull request?</DialogTitle>
+          <DialogDescription>
+            The review phases run again with your instructions. Two re-reviews
+            are allowed; this is
+            {{ props.task.rereview_rounds ? "the next" : "the first" }} one.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex flex-col gap-2">
+          <Label for="review-instructions"
+            >What should the reviewers focus on?</Label
+          >
+          <Textarea
+            id="review-instructions"
+            v-model="instructions"
+            class="min-h-24"
+            placeholder="e.g. check the migration ordering and the SQL path"
+            :disabled="inFlight"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" :disabled="inFlight" @click="onRereviewOpen(false)">
+            Keep waiting
+          </Button>
+          <Button
+            :disabled="inFlight || !instructions.trim()"
+            @click="submitRereview"
+          >
+            Re-review
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <AlertDialog :open="confirming !== null" @update:open="onConfirmationOpen">
       <AlertDialogContent>

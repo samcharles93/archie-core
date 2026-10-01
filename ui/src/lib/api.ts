@@ -150,10 +150,18 @@ export const api = {
     request<T>(`/api/tasks/${encodeURIComponent(id)}/changes` + qs(params)),
   taskDebug: <T = unknown>(id: string, params?: QueryParams) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/debug` + qs(params)),
-  taskAction: <T = unknown>(id: string, action: string) =>
+  // taskAction posts an operator action. A review-gate answer may carry a
+  // payload: the instructions a rereview requires, and the finding keys an
+  // approve posts (an absent selection means every offered finding). Every
+  // other action sends neither.
+  taskAction: <T = unknown>(
+    id: string,
+    action: string,
+    payload?: { instructions?: string; findings?: string[] },
+  ) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/action`, {
       method: "POST",
-      body: { action },
+      body: { action, ...payload },
     }),
   setup: <T = unknown>() => request<T>("/api/setup"),
   capabilities: <T = unknown>() => request<T>("/api/capabilities"),

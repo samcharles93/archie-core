@@ -27,7 +27,11 @@ export interface DashboardApi {
   tasks<T = unknown>(): Promise<T>;
   task<T = unknown>(id: string): Promise<T>;
   captures<T = unknown>(limit?: number): Promise<T>;
-  taskAction<T = unknown>(id: string, action: string): Promise<T>;
+  taskAction<T = unknown>(
+    id: string,
+    action: string,
+    payload?: { instructions?: string; findings?: string[] },
+  ): Promise<T>;
 }
 
 /** The MCP-shaped envelope a tool result is returned in. */
