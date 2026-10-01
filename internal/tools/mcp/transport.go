@@ -119,6 +119,26 @@ type StdioTransport struct {
 	// permissions, etc.). Reset to 0 on a successful spawn. When MaxRetries
 	// is set and this exceeds it, the transport enters StateError.
 	startupFailures int
+
+	// serverRequestHandler answers requests the server sends to this client
+	// (sampling/createMessage). Nil until a Client registers itself.
+	serverRequestHandler ServerRequestHandler
+	// handlerCancel ends the lifecycle context handed to the server-request
+	// handler, so an in-flight sampling completion is not left running after
+	// the transport is gone. The handler context itself is carried through
+	// the reader call chain rather than stored.
+	handlerCancel context.CancelFunc
+	// serverRequestWg tracks in-flight handler goroutines so Stop can wait
+	// for their responses to be written before the transport goes away.
+	serverRequestWg sync.WaitGroup
+}
+
+// SetServerRequestHandler registers the handler for server-initiated
+// requests. It implements serverRequestRouter.
+func (t *StdioTransport) SetServerRequestHandler(handler ServerRequestHandler) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.serverRequestHandler = handler
 }
 
 // NewStdioTransport creates a new transport with the given config.
@@ -173,12 +193,18 @@ func (t *StdioTransport) Start(ctx context.Context) error {
 		}
 	}
 	t.stopCh = make(chan struct{})
+	// The reader (and thus every server-request handler it dispatches) runs
+	// on a cancelable context derived from the caller's, decoupled from the
+	// caller's own cancellation the same way the subprocess is. Stop cancels
+	// it so an in-flight sampling completion ends with the transport.
+	handlerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	t.handlerCancel = cancel
 	// Reset crash and failure counters on explicit user start.
 	t.crashCount = 0
 	t.startupFailures = 0
 	t.mu.Unlock()
 
-	return t.startSubprocess(context.WithoutCancel(ctx))
+	return t.startSubprocess(handlerCtx)
 }
 
 // stopSubprocess kills the current subprocess and waits for it to exit.
@@ -235,13 +261,21 @@ func (t *StdioTransport) Stop(_ context.Context) error {
 			close(t.stopCh)
 		}
 	}
+	cancel := t.handlerCancel
 	t.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 
 	// Kill the subprocess.
 	t.stopSubprocess()
 
-	// Wait for the reader goroutine to finish.
+	// Wait for the reader goroutine to finish, then for any in-flight
+	// server-request handler it dispatched. Waiting for the reader first
+	// guarantees no further handler goroutines can be added.
 	t.readerWg.Wait()
+	t.serverRequestWg.Wait()
 
 	// Fail all pending requests.
 	t.mu.Lock()
@@ -456,21 +490,28 @@ func (t *StdioTransport) runReader(ctx context.Context, reader *bufio.Reader) {
 			return
 		}
 
-		t.deliverResponse(body)
+		t.deliverResponse(ctx, body)
 	}
 }
 
-// deliverResponse routes a response body to the caller waiting for it.
-func (t *StdioTransport) deliverResponse(body []byte) {
-	msgID, err := extractMessageID(body)
-	if err != nil {
-		// Cannot route a message without an ID. This could be a server
-		// notification (no ID)  --  we silently drop it rather than blocking.
-		// In a full MCP client implementation, notifications would be
-		// handled via a callback.
+// deliverResponse routes one message read from the subprocess's stdout. A
+// response goes to the caller waiting on its id; a server-initiated request
+// goes to the registered handler; a notification has no response to route.
+func (t *StdioTransport) deliverResponse(ctx context.Context, body []byte) {
+	var msg Message
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return
+	}
+	if msg.IsRequest() {
+		t.dispatchServerRequest(ctx, msg)
+		return
+	}
+	if len(msg.ID) == 0 {
+		// A server notification carries no response to route.
 		return
 	}
 
+	msgID := string(msg.ID)
 	t.mu.Lock()
 	ch, ok := t.pending[msgID]
 	if ok {
@@ -488,6 +529,55 @@ func (t *StdioTransport) deliverResponse(body []byte) {
 			// Caller is no longer waiting  --  discard.
 		}
 	}
+}
+
+// dispatchServerRequest runs the registered handler for a server-initiated
+// request without blocking the reader, and writes its response back. A
+// missing handler is answered method-not-found, never dropped: the server is
+// blocked on a reply for its own request id.
+func (t *StdioTransport) dispatchServerRequest(ctx context.Context, msg Message) {
+	t.mu.Lock()
+	handler := t.serverRequestHandler
+	t.mu.Unlock()
+
+	t.serverRequestWg.Add(1)
+	go func() {
+		defer t.serverRequestWg.Done()
+		var (
+			result json.RawMessage
+			rpcErr *ErrorData
+		)
+		if handler == nil {
+			rpcErr = &ErrorData{Code: ErrCodeMethodNotFound, Message: "method not found: " + msg.Method}
+		} else {
+			result, rpcErr = handler(ctx, msg.Method, msg.Params)
+		}
+		t.respondToServerRequest(msg.ID, result, rpcErr)
+	}()
+}
+
+// respondToServerRequest writes a JSON-RPC response for a server-initiated
+// request back to the subprocess's stdin.
+func (t *StdioTransport) respondToServerRequest(id, result json.RawMessage, rpcErr *ErrorData) {
+	data, err := json.Marshal(Message{JSONRPC: "2.0", ID: id, Result: result, Error: rpcErr})
+	if err != nil {
+		return
+	}
+
+	t.mu.Lock()
+	stdin := t.stdin
+	running := t.state == StateRunning
+	t.mu.Unlock()
+	if !running || stdin == nil {
+		return
+	}
+
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	// The error is unreportable here: the transport's only job is to answer
+	// the server's own request, and a failed write is exactly a subprocess
+	// that has already gone away (its reader handles the restart).
+	_ = writeMessageWithTimeout(stdin, data, t.config.SendTimeout)
 }
 
 // handleProcessDeath is called when the reader detects the subprocess

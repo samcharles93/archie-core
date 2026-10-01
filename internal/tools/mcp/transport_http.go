@@ -34,7 +34,11 @@ func (c HTTPTransportConfig) effectiveTimeout() time.Duration {
 // body — notifications don't expect a JSON-RPC reply.
 //
 // This transport is stateless (no persistent connection), so Start/Stop
-// are not needed. It satisfies the [Transport] interface directly.
+// are not needed. It satisfies the [Transport] interface directly. Being
+// stateless, it has no server→client channel and therefore does not
+// implement serverRequestRouter: a server-initiated request (MCP sampling)
+// cannot arrive over it at all, rather than arriving and being dropped.
+// A deployment that needs sampling must use stdio or SSE.
 type HTTPTransport struct {
 	config HTTPTransportConfig
 	client *http.Client

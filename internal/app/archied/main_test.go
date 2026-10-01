@@ -434,7 +434,7 @@ func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := configuredMCPProvider(tt.server, t.TempDir())
+			provider, err := configuredMCPProvider(tt.server, t.TempDir(), nil)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("configuredMCPProvider() error = %v, wantErr %t", err, tt.wantErr)
 			}

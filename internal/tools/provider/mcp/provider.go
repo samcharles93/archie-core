@@ -52,18 +52,38 @@ type Provider struct {
 	// mediaCallSeq disambiguates concurrent calls to the same tool so
 	// their written media files never share a directory.
 	mediaCallSeq atomic.Int64
+
+	// samplingHandler answers server-initiated sampling/createMessage
+	// requests. Nil leaves the method refused, which is the clean failure
+	// for a server that asks without a sampling handler configured.
+	samplingHandler protocol.SamplingHandler
+}
+
+// Option adjusts a Provider at construction.
+type Option func(*Provider)
+
+// WithSamplingHandler answers server-initiated sampling/createMessage
+// requests from the supplied handler. It is the daemon's configured model
+// path, so an MCP server's sampling request is answered by the same model
+// a chat turn uses rather than a second provider client.
+func WithSamplingHandler(handler protocol.SamplingHandler) Option {
+	return func(p *Provider) { p.samplingHandler = handler }
 }
 
 // New creates an MCP tool provider. parallelToolCalls mirrors the
 // configured server's own flag: false (the default) has the provider's
 // client serialize tools/call, true lets them overlap.
-func New(name string, transport LifecycleTransport, parallelToolCalls bool) *Provider {
-	return &Provider{
+func New(name string, transport LifecycleTransport, parallelToolCalls bool, opts ...Option) *Provider {
+	p := &Provider{
 		name:              strings.TrimSpace(name),
 		segment:           sanitizeToolSegment(name),
 		transport:         transport,
 		parallelToolCalls: parallelToolCalls,
 	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // Manifest declares the MCP provider's tool capability.
@@ -103,7 +123,8 @@ func (p *Provider) Start(ctx context.Context) error {
 	if err := p.transport.Start(ctx); err != nil {
 		return fmt.Errorf("start MCP server %q: %w", p.name, err)
 	}
-	client := protocol.NewClient(p.transport, p.name, p.parallelToolCalls)
+	client := protocol.NewClient(p.transport, p.name, p.parallelToolCalls,
+		protocol.WithSamplingHandler(p.samplingHandler))
 	if _, err := client.Initialize(ctx); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		stopErr := p.transport.Stop(cleanupCtx)

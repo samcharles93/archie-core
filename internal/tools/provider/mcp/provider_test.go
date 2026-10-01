@@ -378,6 +378,16 @@ type fakeTransport struct {
 	// overlap.
 	callEntered chan struct{}
 	callRelease chan struct{}
+
+	// serverRequestHandler is captured from the client at construction; a
+	// test invokes it to stand in for a server-initiated request.
+	serverRequestHandler protocol.ServerRequestHandler
+}
+
+func (t *fakeTransport) SetServerRequestHandler(handler protocol.ServerRequestHandler) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.serverRequestHandler = handler
 }
 
 func newFakeTransport() *fakeTransport {
@@ -475,6 +485,43 @@ func (t *fakeTransport) Send(_ context.Context, body []byte) ([]byte, error) {
 		ID:      request.ID,
 		Result:  resultJSON,
 	})
+}
+
+// TestProviderWiresSamplingHandlerToClient proves the handler a daemon
+// supplies reaches the client the provider builds, so a server-initiated
+// sampling request is answered from the daemon's model path rather than
+// refused (or silently dropped).
+func TestProviderWiresSamplingHandlerToClient(t *testing.T) {
+	transport := newFakeTransport()
+	provider := New("sampling-server", transport, false, WithSamplingHandler(
+		func(context.Context, protocol.SamplingRequest) (protocol.SamplingResult, error) {
+			return protocol.SamplingResult{
+				Model:   "openai/gpt-5.6",
+				Role:    "assistant",
+				Content: protocol.SamplingContent{Type: "text", Text: "four"},
+			}, nil
+		},
+	))
+	if err := provider.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	handler := transport.serverRequestHandler
+	if handler == nil {
+		t.Fatal("provider did not pass the sampling handler to its client")
+	}
+	result, rpcErr := handler(context.Background(), "sampling/createMessage",
+		json.RawMessage(`{"messages":[{"role":"user","content":{"type":"text","text":"2+2?"}}]}`))
+	if rpcErr != nil {
+		t.Fatalf("sampling answered with RPC error %+v, want a result", rpcErr)
+	}
+	var decoded protocol.SamplingResult
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if decoded.Content.Text != "four" {
+		t.Errorf("sampling result = %+v, want the handler's completion", decoded)
+	}
 }
 
 func (t *fakeTransport) Notify(_ context.Context, body []byte) error {

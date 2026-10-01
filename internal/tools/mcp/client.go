@@ -37,6 +37,21 @@ type Client struct {
 	// whose config declares it handles concurrent requests gets no callMu:
 	// nil means this server's calls are never held apart.
 	callMu *sync.Mutex
+	// samplingHandler answers server-initiated sampling/createMessage
+	// requests. Set once at construction, so reading it from a transport
+	// reader goroutine needs no lock. Nil means the method is refused.
+	samplingHandler SamplingHandler
+}
+
+// ClientOption adjusts a Client at construction.
+type ClientOption func(*Client)
+
+// WithSamplingHandler answers server-initiated sampling/createMessage
+// requests from the supplied handler. Without it the client answers the
+// method with a JSON-RPC method-not-found error, per the MCP spec -- never
+// a silent drop.
+func WithSamplingHandler(handler SamplingHandler) ClientOption {
+	return func(c *Client) { c.samplingHandler = handler }
 }
 
 // NewClient builds a Client over transport. serverName identifies this
@@ -44,12 +59,52 @@ type Client struct {
 // self-reported name. parallelToolCalls drops the per-server serialization
 // of tools/call: false (the default) keeps one call in flight at a time,
 // true lets the caller's own concurrency through.
-func NewClient(transport Transport, serverName string, parallelToolCalls bool) *Client {
+//
+// A transport that can receive server-initiated requests gets this client
+// registered as their handler; one that cannot (the stateless HTTP
+// transport) has no server→client channel for them to arrive on.
+func NewClient(transport Transport, serverName string, parallelToolCalls bool, opts ...ClientOption) *Client {
 	c := &Client{transport: transport, serverName: serverName}
 	if !parallelToolCalls {
 		c.callMu = &sync.Mutex{}
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	if router, ok := transport.(serverRequestRouter); ok {
+		router.SetServerRequestHandler(c.handleServerRequest)
+	}
 	return c
+}
+
+// handleServerRequest dispatches one server-initiated request. The MCP spec
+// defines sampling/createMessage as the request a server sends to a client;
+// everything else is method-not-found. A request this client cannot answer
+// always gets an explicit JSON-RPC error response -- dropping it would leave
+// the server blocked on a reply that never comes.
+func (c *Client) handleServerRequest(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, *ErrorData) {
+	if method != "sampling/createMessage" {
+		return nil, &ErrorData{Code: ErrCodeMethodNotFound, Message: "method not found: " + method}
+	}
+	if c.samplingHandler == nil {
+		return nil, &ErrorData{
+			Code:    ErrCodeMethodNotFound,
+			Message: "sampling/createMessage is not supported: no sampling handler is configured",
+		}
+	}
+	var req SamplingRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, &ErrorData{Code: ErrCodeInvalidParams, Message: "invalid sampling/createMessage params: " + err.Error()}
+	}
+	result, err := c.samplingHandler(ctx, req)
+	if err != nil {
+		return nil, &ErrorData{Code: ErrCodeInternal, Message: err.Error()}
+	}
+	body, err := json.Marshal(result)
+	if err != nil {
+		return nil, &ErrorData{Code: ErrCodeInternal, Message: "marshal sampling result: " + err.Error()}
+	}
+	return body, nil
 }
 
 // InitializeResult is the server's response to initialize.

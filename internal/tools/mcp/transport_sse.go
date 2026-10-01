@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,6 +86,23 @@ type SSETransport struct {
 	readerWg sync.WaitGroup
 	// Track HTTP response body so Stop can close it.
 	respBody io.Closer
+
+	// serverRequestHandler answers requests the server sends to this client
+	// (sampling/createMessage). Nil until a Client registers itself.
+	serverRequestHandler ServerRequestHandler
+	// serverRequestWg tracks in-flight handler goroutines so Stop waits for
+	// their responses to be posted before the connection is closed. The
+	// handler context is the SSE lifecycle context, carried through the
+	// reader call chain and cancelled by Stop.
+	serverRequestWg sync.WaitGroup
+}
+
+// SetServerRequestHandler registers the handler for server-initiated
+// requests. It implements serverRequestRouter.
+func (t *SSETransport) SetServerRequestHandler(handler ServerRequestHandler) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.serverRequestHandler = handler
 }
 
 // NewSSETransport creates a new SSE transport with the given config.
@@ -141,6 +159,10 @@ func (t *SSETransport) Stop(_ context.Context) error {
 	t.mu.Unlock()
 
 	t.readerWg.Wait()
+
+	// The reader is done, so no further handler goroutines can be added;
+	// wait for the responses of any already dispatched.
+	t.serverRequestWg.Wait()
 
 	t.mu.Lock()
 	for id, ch := range t.pending {
@@ -281,7 +303,7 @@ func (t *SSETransport) runReader(ctx context.Context, body io.Closer, reader *bu
 		}
 		switch event {
 		case "message":
-			t.deliverMessage(data)
+			t.deliverMessage(ctx, data)
 		case "endpoint":
 			// Server sent a new endpoint URL (session refresh).
 			// Already handled on connect; accept mid-stream updates too.
@@ -379,14 +401,23 @@ func nextBackoff(d, ceiling time.Duration) time.Duration {
 
 // ── Delivery ─────────────────────────────────────────────────────────────
 
-// deliverMessage routes an incoming SSE message event to the caller waiting
-// for it, keyed by JSON-RPC ID.
-func (t *SSETransport) deliverMessage(data string) {
-	msgID, err := extractMessageID([]byte(data))
-	if err != nil {
+// deliverMessage routes an incoming SSE message event. A response goes to
+// the caller waiting on its id; a server-initiated request goes to the
+// registered handler; a notification has no response to route.
+func (t *SSETransport) deliverMessage(ctx context.Context, data string) {
+	var msg Message
+	if err := json.Unmarshal([]byte(data), &msg); err != nil {
+		return
+	}
+	if msg.IsRequest() {
+		t.dispatchServerRequest(ctx, msg)
+		return
+	}
+	if len(msg.ID) == 0 {
 		return
 	}
 
+	msgID := string(msg.ID)
 	t.mu.Lock()
 	ch, ok := t.pending[msgID]
 	if ok {
@@ -400,6 +431,37 @@ func (t *SSETransport) deliverMessage(data string) {
 		default:
 		}
 	}
+}
+
+// dispatchServerRequest runs the registered handler for a server-initiated
+// request without blocking the reader, and posts its response back to the
+// message endpoint.
+func (t *SSETransport) dispatchServerRequest(ctx context.Context, msg Message) {
+	t.mu.Lock()
+	handler := t.serverRequestHandler
+	t.mu.Unlock()
+
+	t.serverRequestWg.Add(1)
+	go func() {
+		defer t.serverRequestWg.Done()
+		var (
+			result json.RawMessage
+			rpcErr *ErrorData
+		)
+		if handler == nil {
+			rpcErr = &ErrorData{Code: ErrCodeMethodNotFound, Message: "method not found: " + msg.Method}
+		} else {
+			result, rpcErr = handler(ctx, msg.Method, msg.Params)
+		}
+		body, err := json.Marshal(Message{JSONRPC: "2.0", ID: msg.ID, Result: result, Error: rpcErr})
+		if err != nil {
+			return
+		}
+		// Unreportable here: the server's request has no other answer path,
+		// and a failed POST is a connection the reader is already
+		// reconnecting.
+		_ = t.postJSON(ctx, body)
+	}()
 }
 
 // ── POST ─────────────────────────────────────────────────────────────────

@@ -56,7 +56,7 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		// root was decomposed; the receiver makes the arg expressions
 		// carry the b. prefix there.
 		"toolprovider.NewRegistry(b.toolReg)",
-		"configuredMCPProvider(srv, cfg.WorkDir)",
+		"configuredMCPProvider(srv, cfg.WorkDir, b.mcpSamplingHandler())",
 		"capabilityHost.Register(b.providerRegistry)",
 		// The chat turn builds its toolset from the registry before the
 		// system prompt is rendered, so the prompt can advertise exactly

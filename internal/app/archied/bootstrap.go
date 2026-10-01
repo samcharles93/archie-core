@@ -1370,7 +1370,7 @@ func (b *boot) registerTools(ctx context.Context) error {
 		log.Info("workspace tools disabled (chat.workspace is unset)")
 	}
 	for _, srv := range cfg.Tools.MCPServers {
-		provider, err := configuredMCPProvider(srv, cfg.WorkDir)
+		provider, err := configuredMCPProvider(srv, cfg.WorkDir, b.mcpSamplingHandler())
 		if err != nil {
 			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
 			continue
