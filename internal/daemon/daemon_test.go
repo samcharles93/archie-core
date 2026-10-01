@@ -2373,6 +2373,11 @@ func TestPinTaskProfileRefusesCapturesTheHarnessCannotServe(t *testing.T) {
 		{ID: "needs-captures-served", YAML: "id: needs-captures-served\nrepository: none\nprofile: serves-captures\nneeds: {captures: true}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
 		{ID: "needs-captures-codex", YAML: "id: needs-captures-codex\nrepository: none\nprofile: no-captures\nneeds: {captures: true}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
 		{ID: "needs-captures-bare", YAML: "id: needs-captures-bare\nrepository: none\nprofile: no-adapter\nneeds: {captures: true}\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
+		// A declared output is written through a capture tool, so it forces
+		// the captures need whether or not the author also wrote
+		// needs.captures (docs/prds/workflow-call-outputs.md).
+		{ID: "outputs-served", YAML: "id: outputs-served\nrepository: none\nprofile: serves-captures\noutputs: { summary: {type: string} }\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
+		{ID: "outputs-codex", YAML: "id: outputs-codex\nrepository: none\nprofile: no-captures\noutputs: { summary: {type: string, required: true} }\nsteps:\n  - type: agent.run\n    settings: {mission: go}\n"},
 	}}, version: 1}
 	ctx := context.Background()
 
@@ -2389,17 +2394,20 @@ func TestPinTaskProfileRefusesCapturesTheHarnessCannotServe(t *testing.T) {
 		return task
 	}
 
-	served := claim(51, "needs-captures-served")
-	if _, ok := d.pinTaskProfile(ctx, served); !ok {
-		t.Fatal("a Kit profile whose adapter serves captures was refused")
+	for i, servedWorkflow := range []string{"needs-captures-served", "outputs-served"} {
+		served := claim(51+i, servedWorkflow)
+		if _, ok := d.pinTaskProfile(ctx, served); !ok {
+			t.Fatalf("a Kit profile whose adapter serves captures was refused for %s", servedWorkflow)
+		}
 	}
 
 	for _, tt := range []struct {
 		number   int
 		workflow string
 	}{
-		{52, "needs-captures-codex"},
-		{53, "needs-captures-bare"},
+		{53, "needs-captures-codex"},
+		{54, "needs-captures-bare"},
+		{55, "outputs-codex"},
 	} {
 		task := claim(tt.number, tt.workflow)
 		if _, ok := d.pinTaskProfile(ctx, task); ok {

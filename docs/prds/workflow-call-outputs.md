@@ -58,6 +58,9 @@ same values in Go, and the run's finish check validates them identically.
 **Forced by:** a run's only structured results are capture calls
 (`agentexec.CaptureTool`, `Result.Captures`), and the workflow interface
 already declares when a stage needs them (`task.WorkflowNeeds.Captures`).
+`WorkflowInterface.Needs` reports `captures` for a non-empty `Outputs`, so
+declaring an output alone requires the capability and a Kit profile that
+serves no capture tools is refused before dispatch.
 Deriving the tools from the declaration means an output cannot be written
 under a name nobody declared, and it keeps one route to structured agent
 output rather than adding a second beside the capture path. The row write is

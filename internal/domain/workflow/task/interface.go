@@ -56,15 +56,24 @@ type WorkflowInterface struct {
 	// Profile names a [containers.profiles] entry. It is resolved when a task
 	// is dispatched, not when the workflow is saved.
 	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
-	// Needs declares what this workflow's agent stages require of the
-	// profile they run under -- checked against the profile's actual
-	// capabilities before dispatch (docs/prds/external-agent-harness.md,
-	// "Contract"): a stage that returns structured output needs a harness
-	// with a capture-tools-capable output adapter, and a gated stage that
-	// may retry needs the Kit's agent-sessions resume verb. Only a Kit
-	// profile is checked against it -- an image profile's built-in agent
-	// loop always supports both.
-	Needs WorkflowNeeds `yaml:"needs" json:"needs"`
+	// DeclaredNeeds is what the definition's needs: block declares. Read
+	// Needs, not this, when deciding a harness requirement: a declared output
+	// forces the captures capability and Needs resolves it.
+	DeclaredNeeds WorkflowNeeds `yaml:"needs" json:"needs"`
+}
+
+// Needs reports the harness requirements the interface carries: the declared
+// needs, plus the captures a declared output forces, because an output is
+// written through a capture tool (docs/prds/workflow-call-outputs.md, "How a
+// run writes one"). Profile selection reads this rather than DeclaredNeeds,
+// so a workflow that declares outputs cannot name a Kit profile whose harness
+// serves no capture tools (docs/prds/external-agent-harness.md, "Contract").
+func (w WorkflowInterface) Needs() WorkflowNeeds {
+	needs := w.DeclaredNeeds
+	if len(w.Outputs) > 0 {
+		needs.Captures = true
+	}
+	return needs
 }
 
 // WorkflowNeeds is WorkflowInterface's declared harness requirements.
@@ -116,7 +125,7 @@ func (w WorkflowInterface) Validate() error {
 			return fmt.Errorf("workflow output %q type %q must be one of %s", name, spec.Type, strings.Join(inputTypes, ", "))
 		}
 	}
-	if w.Needs.GateRetries < 0 {
+	if w.DeclaredNeeds.GateRetries < 0 {
 		return fmt.Errorf("workflow needs.gate_retries must not be negative")
 	}
 	return nil

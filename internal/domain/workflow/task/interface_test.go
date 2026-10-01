@@ -47,8 +47,22 @@ func TestParseWorkflowInterfaceNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !w.Needs.Captures || w.Needs.GateRetries != 3 {
-		t.Fatalf("Needs = %+v, want {Captures:true GateRetries:3}", w.Needs)
+	if needs := w.Needs(); !needs.Captures || needs.GateRetries != 3 {
+		t.Fatalf("Needs() = %+v, want {Captures:true GateRetries:3}", needs)
+	}
+}
+
+// TestParseWorkflowInterfaceOutputsForceCaptures: an output is written
+// through a capture tool, so declaring one forces the captures need whether
+// or not the author also wrote needs.captures
+// (docs/prds/workflow-call-outputs.md, "How a run writes one").
+func TestParseWorkflowInterfaceOutputsForceCaptures(t *testing.T) {
+	w, err := ParseWorkflowInterface("id: a\noutputs:\n  summary: {type: string}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if needs := w.Needs(); !needs.Captures {
+		t.Fatalf("Needs() = %+v, want Captures for a workflow that declares an output", needs)
 	}
 }
 

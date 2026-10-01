@@ -72,7 +72,7 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 		Adapter:         profile.Adapter,
 		WorkDir:         workDir,
 		WorkerEnv:       env,
-		GateRetries:     iface.Needs.GateRetries,
+		GateRetries:     iface.Needs().GateRetries,
 		Org:             taskCfg.Org,
 		GrantedServices: taskCfg.GrantedCredentials,
 	})

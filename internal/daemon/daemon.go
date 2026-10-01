@@ -1921,7 +1921,7 @@ func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (confi
 	if err == nil {
 		var profile config.AgentProfile
 		if profile, err = d.configFor(task).Containers.Profile(iface.Profile); err == nil {
-			if err = validateProfileMeetsNeeds(profile, iface.Needs); err == nil {
+			if err = validateProfileMeetsNeeds(profile, iface.Needs()); err == nil {
 				return profile, true
 			}
 		}

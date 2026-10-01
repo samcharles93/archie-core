@@ -37,6 +37,10 @@ vocabulary it registers, so both must see the same step types.
 - The YAML decoder rejects unknown keys. Existing stored definitions must keep
   parsing, so a new key is optional with a default that preserves today's
   behaviour.
+- A declared `outputs:` entry is written through a capture tool, so it forces
+  the captures need: `task.WorkflowInterface.Needs` resolves that from the
+  declaration rather than the author also writing `needs.captures`. A Kit
+  profile whose harness serves no capture tools is refused before dispatch.
 - Examples in `examples/workflows/` are parsed against the registered
   vocabulary by `TestExampleWorkflowsParse`. Add one for a new capability.
 
