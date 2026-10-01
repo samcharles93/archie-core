@@ -21,6 +21,20 @@ type AdapterCapabilities struct {
 	// cannot delete still delivers ephemeral replies, it just leaves them
 	// in place.
 	Delete bool
+	// Clarify reports whether the sender can pose a clarifying question and
+	// carry the human's answer back (ClarifyRequester). The capability is
+	// about carrying the interaction, not about native widgets: an adapter
+	// with no button UI fulfils it through the text fallback rather than
+	// reporting false and stranding the question.
+	Clarify bool
+	// Picker reports whether the sender can present a single-choice
+	// selection and carry the chosen option back (PickerRequester), on the
+	// same native-or-fallback rule as Clarify.
+	Picker bool
+	// Approval reports whether the sender renders approval prompts through
+	// the ApprovalRequester contract, so a caller can know a sender can
+	// present an approve/deny prompt before a gated action needs one.
+	Approval bool
 }
 
 // MediaSender delivers a MessageEvent carrying MediaAttachments through a

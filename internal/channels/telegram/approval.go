@@ -54,7 +54,19 @@ type approvalResult struct {
 }
 
 // Compile-time guard.
-var _ messaging.ApprovalRequester = (*telegramApprover)(nil)
+var (
+	_ messaging.ApprovalRequester  = (*telegramApprover)(nil)
+	_ messaging.CapabilityReporter = (*telegramApprover)(nil)
+)
+
+// Capabilities reports that this approver renders a native approval prompt.
+// It claims Approval only: clarify and picker have no native Telegram UI
+// wired yet, so claiming them would advertise an interaction this type
+// cannot carry. A caller that sees Clarify/Picker false uses the shared text
+// fallback instead of silently dropping the question.
+func (a *telegramApprover) Capabilities() messaging.AdapterCapabilities {
+	return messaging.AdapterCapabilities{Approval: true}
+}
 
 // NewApprover returns an ApprovalRequester that renders prompts in the
 // given chat. recipient is the Telegram user who may approve; in a private

@@ -413,3 +413,23 @@ func TestParseApprovalCallback(t *testing.T) {
 		})
 	}
 }
+
+// The approver renders a native approval prompt, so it must report the
+// Approval capability -- and must not claim the interactive capabilities it
+// has no native UI for. A caller seeing Clarify/Picker false uses the shared
+// text fallback rather than dropping the question.
+func TestApproverReportsApprovalCapability(t *testing.T) {
+	g, b, _ := newApprovalTestGateway(t)
+	approver := newTestApprover(g, b)
+
+	caps := messaging.CapabilitiesOf(approver)
+	if !caps.Approval {
+		t.Error("telegram approver does not report the Approval capability")
+	}
+	if caps.Clarify || caps.Picker {
+		t.Errorf("telegram approver over-claims interactive capabilities: %+v", caps)
+	}
+	if _, ok := messaging.ApproverOf(approver); !ok {
+		t.Error("ApproverOf rejected an approver that reports the Approval capability")
+	}
+}
