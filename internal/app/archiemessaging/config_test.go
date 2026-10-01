@@ -72,6 +72,70 @@ allowed_user_ids = [12345]
 	}
 }
 
+func TestResolveBuildsTranscriberFromModelRole(t *testing.T) {
+	write := func(t *testing.T, extra string) string {
+		t.Helper()
+		tmp := t.TempDir()
+		path := filepath.Join(tmp, "config.toml")
+		content := `
+bot_user = "testbot"
+
+[services.gateway]
+target = "127.0.0.1:8999"
+` + extra
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("configured role wires a transcriber", func(t *testing.T) {
+		path := write(t, `
+[models]
+transcription = "local/whisper-large-v3"
+
+[providers.local]
+class = "openai-compatible"
+base_url = "http://127.0.0.1:8080/v1"
+`)
+		resolved, err := Resolve(Options{Config: path}, slog.Default())
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if resolved.Transcriber == nil {
+			t.Error("Transcriber = nil, want a client built from [models].transcription")
+		}
+	})
+
+	t.Run("absent role degrades to nil", func(t *testing.T) {
+		resolved, err := Resolve(Options{Config: write(t, "")}, slog.Default())
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if resolved.Transcriber != nil {
+			t.Errorf("Transcriber = %v, want nil when no role is configured", resolved.Transcriber)
+		}
+	})
+
+	t.Run("configured but unusable role degrades to nil", func(t *testing.T) {
+		path := write(t, `
+[models]
+transcription = "openai/whisper-1"
+
+[providers.openai]
+class = "openai"
+api_key_env = "TRANSCRIPTION_TEST_UNSET_KEY"
+`)
+		resolved, err := Resolve(Options{Config: path}, slog.Default())
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if resolved.Transcriber != nil {
+			t.Errorf("Transcriber = %v, want nil when the credential is missing", resolved.Transcriber)
+		}
+	})
+}
+
 func TestServiceStartAndStop(t *testing.T) {
 	d := deps{
 		Config: ResolvedConfig{

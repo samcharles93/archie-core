@@ -333,6 +333,168 @@ func TestDefaultHandlerSilentForNonContentMessages(t *testing.T) {
 	}
 }
 
+// fakeTranscriber records the audio it was handed and returns a fixed
+// transcript, so a test can assert both that transcription ran on the
+// downloaded bytes and what the turn then carried.
+type fakeTranscriber struct {
+	text  string
+	err   error
+	calls int
+	audio []byte
+}
+
+var _ messaging.Transcriber = (*fakeTranscriber)(nil)
+
+func (f *fakeTranscriber) Transcribe(_ context.Context, audio []byte) (string, error) {
+	f.calls++
+	f.audio = append([]byte(nil), audio...)
+	return f.text, f.err
+}
+
+// voiceUpdate is a Telegram voice note from the authorized sender.
+func voiceUpdate(fileID string) *models.Message {
+	return &models.Message{
+		ID:    11,
+		Date:  1,
+		From:  &models.User{ID: 42, Username: "sam"},
+		Chat:  models.Chat{ID: 7, Type: "private"},
+		Voice: &models.Voice{FileID: fileID, MimeType: "audio/ogg", Duration: 8},
+	}
+}
+
+// TestDefaultHandlerTranscribesVoiceNoteIntoText drives the behaviour this
+// feature exists for: a configured Transcriber turns the downloaded voice
+// note into the turn's text, behind a provenance marker so the agent knows
+// it is reading a machine transcript.
+func TestDefaultHandlerTranscribesVoiceNoteIntoText(t *testing.T) {
+	voiceBytes := []byte("ogg-voice-bytes")
+	b, _ := newRecordedAPI(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.HasPrefix(r.URL.Path, "/file/bot1:test/") {
+			_, _ = w.Write(voiceBytes)
+			return true
+		}
+		return false
+	})
+
+	inboundCh := make(chan messaging.Inbound, 1)
+	client := &fakeChatContract{
+		streamFunc: func(_ context.Context, in messaging.Inbound) (<-chan messaging.ChatEvent, error) {
+			inboundCh <- in
+			ch := make(chan messaging.ChatEvent, 1)
+			ch <- messaging.ChatEvent{Kind: "done", Text: "done", SessionID: "s1"}
+			close(ch)
+			return ch, nil
+		},
+	}
+	transcriber := &fakeTranscriber{text: "turn the lights on"}
+	g := testMediaGateway(b)
+	g.Transcriber = transcriber
+
+	g.defaultHandler(client)(context.Background(), b, &models.Update{Message: voiceUpdate("voice1")})
+
+	select {
+	case in := <-inboundCh:
+		want := "[voice transcription]\nturn the lights on"
+		if in.Message.Text != want {
+			t.Errorf("Text = %q, want %q", in.Message.Text, want)
+		}
+		if len(in.Media) != 1 || in.Media[0].Type != "audio" {
+			t.Fatalf("inbound media = %#v, want the voice attachment", in.Media)
+		}
+		if transcriber.calls != 1 {
+			t.Fatalf("Transcribe calls = %d, want 1", transcriber.calls)
+		}
+		if string(transcriber.audio) != string(voiceBytes) {
+			t.Errorf("Transcribe received %q, want the downloaded voice bytes", transcriber.audio)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("voice note never reached the chat turn")
+	}
+}
+
+// TestDefaultHandlerKeepsVoiceNoteWhenTranscriptionUnavailable pins the
+// degradation the config contract requires: with no Transcriber the voice
+// note still becomes a turn, carrying today's "[voice message]" note rather
+// than failing or going silent.
+func TestDefaultHandlerKeepsVoiceNoteWhenTranscriptionUnavailable(t *testing.T) {
+	b, _ := newRecordedAPI(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.HasPrefix(r.URL.Path, "/file/bot1:test/") {
+			_, _ = w.Write([]byte("ogg-voice-bytes"))
+			return true
+		}
+		return false
+	})
+
+	inboundCh := make(chan messaging.Inbound, 1)
+	client := &fakeChatContract{
+		streamFunc: func(_ context.Context, in messaging.Inbound) (<-chan messaging.ChatEvent, error) {
+			inboundCh <- in
+			ch := make(chan messaging.ChatEvent, 1)
+			ch <- messaging.ChatEvent{Kind: "done", Text: "done", SessionID: "s1"}
+			close(ch)
+			return ch, nil
+		},
+	}
+	g := testMediaGateway(b) // Transcriber left nil on purpose
+
+	g.defaultHandler(client)(context.Background(), b, &models.Update{Message: voiceUpdate("voice1")})
+
+	select {
+	case in := <-inboundCh:
+		if in.Message.Text != "[voice message]" {
+			t.Errorf("Text = %q, want the media note preserved", in.Message.Text)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("voice note was dropped when transcription was unavailable")
+	}
+}
+
+// TestDefaultHandlerDoesNotTranscribePlainAudio keeps the flag scoped to
+// voice notes: a forwarded music file must not spend a transcription call.
+func TestDefaultHandlerDoesNotTranscribePlainAudio(t *testing.T) {
+	b, _ := newRecordedAPI(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.HasPrefix(r.URL.Path, "/file/bot1:test/") {
+			_, _ = w.Write([]byte("mp3-bytes"))
+			return true
+		}
+		return false
+	})
+
+	inboundCh := make(chan messaging.Inbound, 1)
+	client := &fakeChatContract{
+		streamFunc: func(_ context.Context, in messaging.Inbound) (<-chan messaging.ChatEvent, error) {
+			inboundCh <- in
+			ch := make(chan messaging.ChatEvent, 1)
+			ch <- messaging.ChatEvent{Kind: "done", Text: "done", SessionID: "s1"}
+			close(ch)
+			return ch, nil
+		},
+	}
+	transcriber := &fakeTranscriber{text: "should not be used"}
+	g := testMediaGateway(b)
+	g.Transcriber = transcriber
+
+	g.defaultHandler(client)(context.Background(), b, &models.Update{Message: &models.Message{
+		ID:    12,
+		Date:  1,
+		From:  &models.User{ID: 42, Username: "sam"},
+		Chat:  models.Chat{ID: 7, Type: "private"},
+		Audio: &models.Audio{FileID: "aud1", FileName: "song.mp3", MimeType: "audio/mpeg", Duration: 200},
+	}})
+
+	select {
+	case in := <-inboundCh:
+		if in.Message.Text != "[audio]" {
+			t.Errorf("Text = %q, want the plain audio note", in.Message.Text)
+		}
+		if transcriber.calls != 0 {
+			t.Errorf("Transcribe calls = %d, want 0 for non-voice audio", transcriber.calls)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("audio update never reached the chat turn")
+	}
+}
+
 // TestDownloadMediaCoversSuccessAndLimits exercises the download the turn
 // relies on: the Bot API getFile lookup, the file fetch, and the size gate.
 func TestDownloadMediaCoversSuccessAndLimits(t *testing.T) {

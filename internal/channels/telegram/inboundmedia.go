@@ -21,6 +21,9 @@ type inboundMedia struct {
 	// note is a bracketed, self-describing placeholder such as "[photo]"
 	// or "[document: report.pdf]".
 	note string
+	// transcribe marks audio a configured Transcriber should turn into text
+	// (a Telegram voice note). False leaves the note as-is.
+	transcribe bool
 }
 
 // extractInboundMedia maps a Telegram message onto the attachment it
@@ -40,42 +43,42 @@ func extractInboundMedia(msg *models.Message) (inboundMedia, bool) {
 				}
 			}
 		}
-		return inboundMedia{att, "[photo]"}, true
+		return inboundMedia{attachment: att, note: "[photo]"}, true
 
 	case msg.Document != nil:
-		return inboundMedia{messaging.MediaAttachment{
+		return inboundMedia{attachment: messaging.MediaAttachment{
 			Type:     "document",
 			FileID:   msg.Document.FileID,
 			MIMEType: msg.Document.MimeType,
 			FileName: msg.Document.FileName,
 			FileSize: nilIfZero(msg.Document.FileSize),
-		}, documentNote(msg.Document.FileName)}, true
+		}, note: documentNote(msg.Document.FileName)}, true
 
 	case msg.Video != nil:
-		return inboundMedia{videoAttachment(msg.Video.FileID, msg.Video.MimeType, nilIfZero(msg.Video.FileSize), &msg.Video.Width, &msg.Video.Height, &msg.Video.Duration), "[video]"}, true
+		return inboundMedia{attachment: videoAttachment(msg.Video.FileID, msg.Video.MimeType, nilIfZero(msg.Video.FileSize), &msg.Video.Width, &msg.Video.Height, &msg.Video.Duration), note: "[video]"}, true
 
 	case msg.VideoNote != nil:
 		size := int64(msg.VideoNote.FileSize)
-		return inboundMedia{videoAttachment(msg.VideoNote.FileID, "video/mp4", nilIfZero(size), nil, nil, &msg.VideoNote.Duration), "[video message]"}, true
+		return inboundMedia{attachment: videoAttachment(msg.VideoNote.FileID, "video/mp4", nilIfZero(size), nil, nil, &msg.VideoNote.Duration), note: "[video message]"}, true
 
 	case msg.Audio != nil:
-		return inboundMedia{messaging.MediaAttachment{
+		return inboundMedia{attachment: messaging.MediaAttachment{
 			Type:     "audio",
 			FileID:   msg.Audio.FileID,
 			MIMEType: msg.Audio.MimeType,
 			FileName: msg.Audio.FileName,
 			FileSize: nilIfZero(msg.Audio.FileSize),
 			Duration: &msg.Audio.Duration,
-		}, "[audio]"}, true
+		}, note: "[audio]"}, true
 
 	case msg.Voice != nil:
-		return inboundMedia{messaging.MediaAttachment{
+		return inboundMedia{attachment: messaging.MediaAttachment{
 			Type:     "audio",
 			FileID:   msg.Voice.FileID,
 			MIMEType: msg.Voice.MimeType,
 			FileSize: nilIfZero(msg.Voice.FileSize),
 			Duration: &msg.Voice.Duration,
-		}, "[voice message]"}, true
+		}, note: "[voice message]", transcribe: true}, true
 	}
 	return inboundMedia{}, false
 }
