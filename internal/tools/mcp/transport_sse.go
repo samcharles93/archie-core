@@ -441,9 +441,7 @@ func (t *SSETransport) dispatchServerRequest(ctx context.Context, msg Message) {
 	handler := t.serverRequestHandler
 	t.mu.Unlock()
 
-	t.serverRequestWg.Add(1)
-	go func() {
-		defer t.serverRequestWg.Done()
+	t.serverRequestWg.Go(func() {
 		var (
 			result json.RawMessage
 			rpcErr *ErrorData
@@ -461,7 +459,7 @@ func (t *SSETransport) dispatchServerRequest(ctx context.Context, msg Message) {
 		// and a failed POST is a connection the reader is already
 		// reconnecting.
 		_ = t.postJSON(ctx, body)
-	}()
+	})
 }
 
 // ── POST ─────────────────────────────────────────────────────────────────

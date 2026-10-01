@@ -540,9 +540,7 @@ func (t *StdioTransport) dispatchServerRequest(ctx context.Context, msg Message)
 	handler := t.serverRequestHandler
 	t.mu.Unlock()
 
-	t.serverRequestWg.Add(1)
-	go func() {
-		defer t.serverRequestWg.Done()
+	t.serverRequestWg.Go(func() {
 		var (
 			result json.RawMessage
 			rpcErr *ErrorData
@@ -553,7 +551,7 @@ func (t *StdioTransport) dispatchServerRequest(ctx context.Context, msg Message)
 			result, rpcErr = handler(ctx, msg.Method, msg.Params)
 		}
 		t.respondToServerRequest(msg.ID, result, rpcErr)
-	}()
+	})
 }
 
 // respondToServerRequest writes a JSON-RPC response for a server-initiated
