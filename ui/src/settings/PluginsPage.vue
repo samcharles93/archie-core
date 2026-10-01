@@ -6,6 +6,7 @@ import PageHeader from "@/base/PageHeader.vue";
 import { Input } from "@/components/ui/input";
 import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import ApplyStatusRows from "./ApplyStatusRows.vue";
 import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
@@ -60,6 +61,9 @@ const error = computed(() => store.stateFor(KIND).error);
           <DraftHint :kind="KIND" path="skills_dir" />
         </div>
       </SettingRow>
+      <!-- A live-apply kind earns no restart banner, so its per-process
+           versions are where a process still on an older one shows. -->
+      <ApplyStatusRows :kind="KIND" class="border-t border-border py-4" />
     </template>
   </div>
 </template>

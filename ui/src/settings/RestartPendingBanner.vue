@@ -2,18 +2,16 @@
 import { computed } from "vue";
 
 import { useControlPlaneStore } from "@/stores/control-plane";
+import { restartPendingTitles } from "./apply-status";
 
 const store = useControlPlaneStore();
 
 // Read from what each process reports it is running, never from this page's
-// own saves: a restart that already happened clears it.
+// own saves: a restart that already happened clears it. Only a process-binding
+// change earns this banner; a live-apply kind reports its lag in its own
+// applied-version rows rather than here.
 const pending = computed(() =>
-  store.genericResources
-    .filter((item) => item.apply_mode === "restart-required")
-    .filter((item) =>
-      store.applyStatusFor(item.kind).some((row) => row.state === "pending-restart"),
-    )
-    .map((item) => item.title),
+  restartPendingTitles(store.genericResources, (kind) => store.applyStatusFor(kind)),
 );
 </script>
 
