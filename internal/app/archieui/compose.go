@@ -113,6 +113,15 @@ func compose(d deps) *webui.Server {
 	if bindings, ok := d.Store.(storecontract.BindingStore); ok {
 		srv.Bindings = bindings
 	}
+	// Harness OAuth token sets are a ratified State Store contract, and the
+	// same client already carries them. Withholding it would leave the
+	// harness page answering 503 on a deployment that has the store
+	// (archie-core-egkf.7). The setup terminal itself is not wired here: its
+	// implementation owns a container, which this process must not link, so
+	// the route stays a documented 503 until a daemon-side contract exists.
+	if secrets, ok := d.Store.(storecontract.HarnessSecretStore); ok {
+		srv.HarnessSecrets = secrets
+	}
 	if eventTypes, ok := d.Store.(storecontract.EventTypeStore); ok {
 		srv.EventTypes = eventTypes
 	}

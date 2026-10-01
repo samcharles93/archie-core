@@ -175,6 +175,21 @@ type Server struct {
 	// /api/sources route answer 503 and marks no binding unsigned.
 	Sources storecontract.SourceStore
 
+	// HarnessSecrets reads each credential binding's captured OAuth token
+	// set, so the harness page can report whether a binding is configured,
+	// when it expires and which scopes it carries
+	// (docs/prds/external-agent-harness.md, Credentials). The token values
+	// themselves never reach the browser. Optional: nil answers
+	// /api/harness/bindings 503 rather than claiming the org has none.
+	HarnessSecrets storecontract.HarnessSecretStore
+
+	// HarnessTerminal opens the setup terminal, a duplex PTY session in an
+	// ephemeral Kit container (docs/prds/external-agent-harness.md, "Setup
+	// terminal"). Optional: nil answers /api/harness/terminal 503. The
+	// implementation belongs to a process that owns containers; the
+	// dashboard consumes it over a contract and never links one.
+	HarnessTerminal HarnessTerminal
+
 	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
 	// initiated update use the same post-restart notification route as a
 	// Telegram-initiated update. The web UI has no durable chat identity, so
@@ -294,6 +309,11 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{path}/secret", s.handleSourceSecret)
 }
 
+func (s *Server) registerHarnessRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/harness/bindings", s.handleHarnessBindings)
+	mux.HandleFunc("GET /api/harness/terminal", s.handleHarnessTerminal)
+}
+
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
 	mux.HandleFunc("GET /api/control-plane/apply-status", s.handleApplyStatus)
@@ -330,6 +350,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerCoreRoutes(mux)
 	s.registerTaskRoutes(mux)
 	s.registerMappingAndBindingRoutes(mux)
+	s.registerHarnessRoutes(mux)
 	s.registerConfigAndLogRoutes(mux)
 	s.registerChatRoutes(mux)
 

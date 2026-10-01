@@ -106,6 +106,19 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 			want: http.StatusOK, emptyJSON: `"enabled":true`,
 		},
 		{
+			// The harness page's two routes: the bindings read needs the
+			// control-plane resource and the setup terminal needs a transport
+			// this process cannot own. In this composition neither is wired,
+			// so both degrade explicitly rather than rendering an empty page
+			// (archie-core-egkf.7).
+			name: "harness bindings", method: http.MethodGet, path: "/api/harness/bindings",
+			want: http.StatusServiceUnavailable,
+		},
+		{
+			name: "harness setup terminal", method: http.MethodGet, path: "/api/harness/terminal?profile=claude-kit",
+			want: http.StatusServiceUnavailable,
+		},
+		{
 			// The browser reads this to decide which sections to show at
 			// all, so it is the one route that must answer here.
 			name: "capabilities", method: http.MethodGet, path: "/api/capabilities",
