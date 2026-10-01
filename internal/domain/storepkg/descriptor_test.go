@@ -89,6 +89,11 @@ func TestDescriptorValidate(t *testing.T) {
 			}, wantErr: "executable",
 		},
 		{name: "invalid forge permission", edit: func(d *Descriptor) { d.Authority.ForgePermissions = []string{"admin"} }, wantErr: "forge permission"},
+		// Authority.Validate is the one validation of a grant list; the
+		// descriptor must not accept a blank grant the acceptance record
+		// would later refuse (docs/prds/store.md, "Authority").
+		{name: "blank egress host", edit: func(d *Descriptor) { d.Authority.EgressHosts = []string{" "} }, wantErr: "egress host 0: name is required"},
+		{name: "blank tool", edit: func(d *Descriptor) { d.Authority.Tools = []string{""} }, wantErr: "tool 0: name is required"},
 	}
 
 	for _, tc := range cases {

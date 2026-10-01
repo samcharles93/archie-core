@@ -109,10 +109,8 @@ func (d Descriptor) Validate() error {
 			return fmt.Errorf("required package %q digest must be a sha256 digest", ref.Name)
 		}
 	}
-	for _, permission := range d.Authority.ForgePermissions {
-		if !validForgePermission(permission) {
-			return fmt.Errorf("invalid forge permission %q", permission)
-		}
+	if err := d.Authority.Validate(); err != nil {
+		return err
 	}
 	for i, file := range d.Files {
 		if err := validateFile(file); err != nil {
