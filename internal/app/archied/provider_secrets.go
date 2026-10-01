@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/traefik/yaegi/stdlib/unrestricted"
@@ -15,6 +16,15 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret/secretextract"
 )
 
+// secretEngineSymbols is the Yaegi symbol set every secret-engine load uses:
+// the generated interface bridge, the host-side CLI helper, and unrestricted
+// symbols for parity with skillscript interpretation. The boot load and a
+// live directory reconciliation share it so an engine always loads the same
+// way.
+var secretEngineSymbols = []map[string]map[string]reflect.Value{
+	secretextract.Symbols, enginehost.Symbols, unrestricted.Symbols,
+}
+
 func configuredSecretRegistry(cfg *config.Config, log *slog.Logger) (*secret.Registry, error) {
 	registry := secret.NewRegistry()
 	if cfg.SecretEngineDir != "" {
@@ -24,7 +34,7 @@ func configuredSecretRegistry(cfg *config.Config, log *slog.Logger) (*secret.Reg
 		// host-side helper) because yaegi's interpreted os/exec cannot
 		// pass an environment to child processes; unrestricted symbols
 		// are included for parity with skillscript interpretation.
-		loaded, err := registry.LoadDir(cfg.SecretEngineDir, secretextract.Symbols, enginehost.Symbols, unrestricted.Symbols)
+		loaded, err := registry.LoadDir(cfg.SecretEngineDir, secretEngineSymbols...)
 		if err != nil {
 			return nil, fmt.Errorf("load secret engines from %q: %w", cfg.SecretEngineDir, err)
 		}

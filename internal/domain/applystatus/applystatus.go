@@ -107,6 +107,20 @@ func (r *Reporter) Report(ctx context.Context, kind string, version int64, apply
 	r.write(ctx, status)
 }
 
+// AppliedVersion returns the version last recorded for kind, or 0 when this
+// process has reported none. A caller that reports an outcome rather than an
+// application -- the plugin directory reconciliation, which reports against
+// the plugin-settings version the process is already running -- reads it so a
+// clean pass does not reset the version to zero.
+func (r *Reporter) AppliedVersion(kind string) int64 {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.applied[kind].AppliedVersion
+}
+
 // Run re-stamps this process's records until ctx ends.
 func (r *Reporter) Run(ctx context.Context) {
 	if r == nil {

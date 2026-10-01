@@ -56,25 +56,32 @@ func LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) ([
 
 	plugins := make([]Plugin, 0)
 	for _, name := range names {
-		path := filepath.Join(dir, name)
-		src, err := os.ReadFile(path)
+		p, err := LoadFile(filepath.Join(dir, name), extraSymbols...)
 		if err != nil {
-			slog.Default().Warn("skipping unreadable daemon plugin", "file", name, "err", err)
-			continue
-		}
-		// Each plugin file is package main  --  must use a fresh interpreter
-		// to avoid symbol collisions between files.
-		i, err := yaegiutil.New(interp.Options{}, extraSymbols...)
-		if err != nil {
-			slog.Default().Warn("skipping plugin  --  interpreter setup failed", "file", name, "err", err)
-			continue
-		}
-		p, err := yaegiutil.Resolve[Plugin](i, string(src), "main.Plugin")
-		if err != nil {
-			slog.Default().Warn("skipping plugin", "file", name, "err", err)
+			slog.Default().Warn("skipping daemon plugin", "file", name, "err", err)
 			continue
 		}
 		plugins = append(plugins, p)
 	}
 	return plugins, nil
+}
+
+// LoadFile evaluates one plugin file. Each file is package main and needs a
+// fresh interpreter to avoid symbol collisions with the other files, so the
+// boot load (LoadDir) and a live directory reconciliation both load through
+// here rather than through two copies of the interpreter setup.
+func LoadFile(path string, extraSymbols ...map[string]map[string]reflect.Value) (Plugin, error) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read plugin %s: %w", path, err)
+	}
+	i, err := yaegiutil.New(interp.Options{}, extraSymbols...)
+	if err != nil {
+		return nil, fmt.Errorf("plugin %s: interpreter setup: %w", path, err)
+	}
+	p, err := yaegiutil.Resolve[Plugin](i, string(src), "main.Plugin")
+	if err != nil {
+		return nil, fmt.Errorf("plugin %s: %w", path, err)
+	}
+	return p, nil
 }

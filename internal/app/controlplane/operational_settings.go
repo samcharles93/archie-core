@@ -46,7 +46,12 @@ func operationalDefinitions() []Definition {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
-		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
+		// ApplyMode is live for additions: a stored directory change re-layers live
+		// and the daemon's reconciliation loads new and changed files without a
+		// restart. A removal cannot unload Yaegi's interpreter, so it stays an
+		// outstanding apply-status problem rather than a restart of the whole kind
+		// (docs/prds/plugin-settings-live.md).
+		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},

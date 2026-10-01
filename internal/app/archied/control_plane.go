@@ -2,12 +2,14 @@ package archied
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
@@ -258,16 +260,21 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // (b.runtimeConfig, which applies the execution budgets the settings watch
 // published) and republishes through config.Holder, so the change takes
 // effect without a restart. Kinds stay out of this list while a
-// startup-built component still holds their value -- tool, plugin, container
-// and channel settings are frozen in components built at boot and remain
+// startup-built component still holds their value -- tool, container and
+// channel settings are frozen in components built at boot and remain
 // restart-required -- and a kind joins it only with a consumer that re-reads
-// it. Each kind is watched in its own goroutine, exactly the shape the
-// workflow-execution-settings watch established.
+// it. PluginSettingsKind is on the list because its only consumer is the
+// directory reconciliation, which reads the running config each tick; a
+// removed plugin or engine still cannot unload, so that kind reports the
+// removal rather than requiring a restart. Each kind is watched in its own
+// goroutine, exactly the shape the workflow-execution-settings watch
+// established.
 var runtimeResourceKinds = []string{
 	controlplane.ProviderSettingsKind,
 	controlplane.ModelRoleAssignmentsKind,
 	controlplane.RepositoryPoliciesKind,
 	controlplane.SchedulingPolicyKind,
+	controlplane.PluginSettingsKind,
 }
 
 // startRuntimeResourceWatches keeps a watch per live kind established for the
@@ -320,6 +327,13 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 		b.log.Error("runtime settings watch failed", "kind", kind, "err", update.Err)
 		return
 	}
+	if kind == controlplane.PluginSettingsKind {
+		if err := b.refuseSkillsDirChange(ctx); err != nil {
+			b.applyStatus.Report(ctx, kind, update.Version, err)
+			b.log.Error("plugin settings refused; the running settings stay", "version", update.Version, "err", err)
+			return
+		}
+	}
 	base := b.cfgHolder.Get()
 	// Boot publishes before the model catalog is merged in, so the snapshot
 	// this read returns can lack the catalog's model limits and discovered
@@ -339,7 +353,75 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	switch kind {
 	case controlplane.ProviderSettingsKind, controlplane.ModelRoleAssignmentsKind:
 		b.rebuildChatModelRuntime(cfg)
+	case controlplane.PluginSettingsKind:
+		// The document's directories are live now; load what they hold and
+		// report the reconciliation's own outcome, which is the one that knows
+		// whether a removal is outstanding.
+		b.reconcileRuntimePlugins(ctx)
 	}
+}
+
+// startPluginReconcile establishes the plugin, module and secret-engine
+// directory reconciliation on the apply-status restamp interval. Boot calls it
+// after loadPlugins, loadWorkflows and configuredSecretRegistry have loaded
+// the directories, so the seed records what is already running and the first
+// tick loads only what appears or changes afterwards.
+func (b *boot) startPluginReconcile(ctx context.Context) {
+	r := newPluginReconciler(b.log, pluginReconcileTargets{
+		host:    b.capabilityHost,
+		secrets: b.secrets,
+		modules: b.modules,
+		dirs:    func() config.Config { return b.cfgHolder.Get() },
+		relayer: func(ctx context.Context) error {
+			cfg, _, err := b.runtimeConfig(ctx, b.cfgHolder.Get())
+			if err != nil {
+				return err
+			}
+			b.publishConfig(ctx, cfg)
+			return nil
+		},
+		report: func(ctx context.Context, err error) {
+			b.applyStatus.Report(ctx, controlplane.PluginSettingsKind, b.applyStatus.AppliedVersion(controlplane.PluginSettingsKind), err)
+		},
+	})
+	b.pluginReconciler = r
+	r.seed()
+	go r.run(ctx, applystatus.RestampInterval)
+}
+
+// reconcileRuntimePlugins runs one directory reconciliation after a stored
+// plugin-settings change, so a new directory loads on the tick the document
+// lands rather than waiting for the poller.
+func (b *boot) reconcileRuntimePlugins(ctx context.Context) {
+	if b.pluginReconciler == nil {
+		return
+	}
+	_ = b.pluginReconciler.reconcile(ctx)
+}
+
+// refuseSkillsDirChange refuses a stored plugin-settings document whose
+// skills_dir differs from the value in force. skills_dir is the one directory
+// with no live consumer, so a change to it stays a restart-scoped edit rather
+// than a value the daemon reports as applied. The check reads the running
+// config, so it cannot live in validatePluginSettings, which is value-agnostic
+// by the archie-core-1143 decision.
+func (b *boot) refuseSkillsDirChange(ctx context.Context) error {
+	var stored struct {
+		SkillsDir string `json:"skills_dir"`
+	}
+	_, found, err := b.controlPlane.Query(ctx, controlplane.PluginSettingsKind, func(value []byte) error {
+		return json.Unmarshal(value, &stored)
+	})
+	if err != nil {
+		return fmt.Errorf("read plugin settings: %w", err)
+	}
+	if !found {
+		return nil
+	}
+	if running := b.cfgHolder.Get().SkillsDir; stored.SkillsDir != running {
+		return fmt.Errorf("skills_dir applies on restart: stored %q, running %q", stored.SkillsDir, running)
+	}
+	return nil
 }
 
 // rebuildChatModelRuntime re-derives the gateway chat runtime's provider set

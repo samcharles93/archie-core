@@ -553,13 +553,13 @@ func TestRuntimeResourceKindsApplyLive(t *testing.T) {
 		modes[definition.Kind] = definition.ApplyMode
 	}
 	for _, kind := range []string{
-		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind,
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind, PluginSettingsKind,
 	} {
 		if modes[kind] != "live" {
 			t.Errorf("%s applies %q, want live: the daemon re-layers this kind on a watch", kind, modes[kind])
 		}
 	}
-	for _, kind := range []string{ToolSettingsKind, PluginSettingsKind, ContainerRuntimePoliciesKind, ChannelSettingsKind} {
+	for _, kind := range []string{ToolSettingsKind, ContainerRuntimePoliciesKind, ChannelSettingsKind} {
 		if modes[kind] != "restart-required" {
 			t.Errorf("%s applies %q, want restart-required: a startup-built component still holds it", kind, modes[kind])
 		}

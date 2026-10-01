@@ -157,32 +157,39 @@ func (r *Registry) LoadDir(dir string, extraSymbols ...map[string]map[string]ref
 
 	loaded := 0
 	for _, name := range names {
-		path := filepath.Join(dir, name)
-		src, err := os.ReadFile(path)
-		if err != nil {
-			slog.Default().Warn("skipping unreadable secret engine", "file", name, "err", err)
-			continue
-		}
-		// Each file is package main  --  must use a fresh interpreter to
-		// avoid symbol collisions between files.
-		// The interpreter is seeded with the host environment: yaegi's
-		// interpreted os package keeps a private env otherwise, so
-		// plugins reading SOPS_FILE/VAULT_*/AGE_* via os.Getenv would
-		// silently see nothing.
-		i, err := yaegiutil.New(interp.Options{Env: os.Environ()}, extraSymbols...)
-		if err != nil {
-			slog.Default().Warn("skipping secret engine  --  interpreter setup failed", "file", name, "err", err)
-			continue
-		}
-		e, err := yaegiutil.Resolve[Engine](i, string(src), "main.Engine")
-		if err != nil {
+		if err := r.LoadFile(filepath.Join(dir, name), extraSymbols...); err != nil {
 			slog.Default().Warn("skipping secret engine", "file", name, "err", err)
 			continue
 		}
-		r.Register(e)
 		loaded++
 	}
 	return loaded, nil
+}
+
+// LoadFile evaluates one secret-engine file and registers the engine it
+// exports. Each file is package main and needs a fresh interpreter to avoid
+// symbol collisions, so the boot load (LoadDir) and a live directory
+// reconciliation both load through here rather than through two copies of the
+// interpreter setup.
+//
+// The interpreter is seeded with the host environment: yaegi's interpreted os
+// package keeps a private env otherwise, so an engine reading
+// SOPS_FILE/VAULT_*/AGE_* via os.Getenv would silently see nothing.
+func (r *Registry) LoadFile(path string, extraSymbols ...map[string]map[string]reflect.Value) error {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("secret: read %s: %w", path, err)
+	}
+	i, err := yaegiutil.New(interp.Options{Env: os.Environ()}, extraSymbols...)
+	if err != nil {
+		return fmt.Errorf("secret: %s: interpreter setup: %w", path, err)
+	}
+	e, err := yaegiutil.Resolve[Engine](i, string(src), "main.Engine")
+	if err != nil {
+		return fmt.Errorf("secret: %s: %w", path, err)
+	}
+	r.Register(e)
+	return nil
 }
 
 // DefaultRegistry returns a singleton pre-loaded with the built-in env engine.
