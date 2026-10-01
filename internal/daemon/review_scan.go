@@ -48,6 +48,7 @@ func scanPRReviewReactions(
 			Owner: task.Owner, Repo: task.Repo, PRNumber: task.PRNumber,
 			Kind:     workintake.ReviewReactionReview,
 			ReviewID: r.ID, Author: r.Author, State: r.State, Body: r.Body,
+			Org: task.Org,
 		}
 		if err := publish(ctx, reaction); err != nil {
 			return reviewCursor, commentCursor, fmt.Errorf("publish review %d: %w", r.ID, err)
@@ -71,6 +72,7 @@ func scanPRReviewReactions(
 			ReviewID:  cm.ReviewID,
 			CommentID: cm.ID,
 			Author:    cm.Author, Body: cm.Body, Path: cm.Path, Line: cm.Line,
+			Org: task.Org,
 		}
 		if err := publish(ctx, reaction); err != nil {
 			return reviewCursor, commentCursor, fmt.Errorf("publish comment %d: %w", cm.ID, err)
@@ -95,7 +97,7 @@ func (d *Daemon) scanPRReviews(ctx context.Context) {
 		return
 	}
 	if d.reactionPublisher == nil {
-		d.reactionPublisher = d.publishReaction
+		d.reactionPublisher = d.PublishReaction
 	}
 	for i := range tasks {
 		t := &tasks[i]
@@ -108,6 +110,19 @@ func (d *Daemon) scanPRReviews(ctx context.Context) {
 }
 
 func (d *Daemon) scanOnePR(ctx context.Context, reader forge.PullRequestReviewReader, t *workflowtask.Task) {
+	// The reactions this scan publishes key on the task's org, resolved from
+	// the owning identity through the same org RPC the poll uses, so a poll
+	// and a webhook delivery of one review collapse under one key. An org-RPC
+	// failure skips the task for this scan, cursors unchanged, rather than
+	// publishing under the default org.
+	if t.Org == "" {
+		resolved, err := d.identityOrg(ctx, d.publisherIdentity(t.Identity))
+		if err != nil {
+			d.Log.Warn("review scan org resolve failed", "task", t.ID, "err", err)
+			return
+		}
+		t.Org = resolved
+	}
 	// A forge read failure skips the task for this scan with its cursors
 	// unchanged: the next scan re-fetches, and PublishUnique's dedup covers
 	// anything the previous scan already published.
@@ -127,15 +142,4 @@ func (d *Daemon) scanOnePR(ctx context.Context, reader forge.PullRequestReviewRe
 		// and PublishUnique plus the consumer's dedup absorb the repeats.
 		d.Log.Warn("review cursor persist failed", "task", t.ID, "err", err)
 	}
-}
-
-// publishReaction encodes one reaction and publishes it on the reaction
-// subject with its source-independent idempotency key, so a webhook delivery
-// and a poll record of the same review collapse into one.
-func (d *Daemon) publishReaction(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error {
-	payload, err := reaction.Encode()
-	if err != nil {
-		return err
-	}
-	return d.Tasks.PublishUnique(ctx, reaction.Subject(), reaction.IdempotencyKey(), payload)
 }

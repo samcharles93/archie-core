@@ -1504,15 +1504,9 @@ func (b *boot) setupForgeWebhook() {
 	// The reaction publisher is the consumer's supply side: the same typed
 	// reaction the poll produces, keyed source-independently, so webhook and
 	// poll deliveries of one review dedup (pr-review-remediation.md
-	// decision 2).
-	publishReaction := func(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error {
-		payload, err := reaction.Encode()
-		if err != nil {
-			return err
-		}
-		return b.d.Tasks.PublishUnique(ctx, reaction.Subject(), reaction.IdempotencyKey(), payload)
-	}
-	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, publishReaction, log)
+	// decision 2). The daemon's PublishReaction is the single reaction write
+	// path: it stamps the root org a webhook delivery would otherwise lack.
+	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, b.d.PublishReaction, log)
 	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: receiver}

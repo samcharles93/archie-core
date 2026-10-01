@@ -26,6 +26,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -1137,11 +1138,13 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, cfg config.Config
 	d.acknowledge(ctx, fg, cfg, repo, is)
 }
 
-// PublishTask validates, encodes and publishes a task envelope. The
-// idempotency key means rediscovering the same issue on a later poll does not
-// enqueue the work twice. It is the single enqueue path shared by the poller
-// and the forge webhook intake, so neither can drift in how a discovered issue
-// becomes a task.
+// PublishTask validates, resolves the producing identity's org, encodes and
+// publishes a task envelope. The idempotency key means rediscovering the same
+// issue on a later poll does not enqueue the work twice. It is the single
+// enqueue path shared by the poller and the forge webhook intake, so neither
+// can drift in how a discovered issue becomes a task -- including the org the
+// key is built from (docs/prds/orgs-and-access.md, "Events and task
+// identity").
 func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) error {
 	if d.Tasks == nil {
 		return fmt.Errorf("publish task %s: no task bus configured", task.Ref())
@@ -1149,11 +1152,74 @@ func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) 
 	if err := task.Kind.Validate(); err != nil {
 		return fmt.Errorf("publish task %s: %w", task.Ref(), err)
 	}
+	resolved, err := d.identityOrg(ctx, d.publisherIdentity(task.Identity))
+	if err != nil {
+		return fmt.Errorf("publish task %s: resolve org: %w", task.Ref(), err)
+	}
+	task.Org = resolved
 	payload, err := task.Encode()
 	if err != nil {
 		return err
 	}
 	return d.Tasks.PublishUnique(ctx, task.Subject(), task.IdempotencyKey(), payload)
+}
+
+// PublishReaction stamps the resolved org on a reaction and publishes it on
+// the reaction subject. A reaction the review scan already stamped with its
+// task's org keeps it; otherwise (the webhook producer, single-identity) the
+// root identity's org is used, so a webhook and a poll delivery of one review
+// key the same. It is the single reaction write path shared by the scan and
+// the webhook receiver.
+func (d *Daemon) PublishReaction(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error {
+	if d.Tasks == nil {
+		return fmt.Errorf("publish reaction %s: no task bus configured", reaction.Ref())
+	}
+	if reaction.Org == "" {
+		resolved, err := d.identityOrg(ctx, d.RootIdentityID)
+		if err != nil {
+			return fmt.Errorf("publish reaction %s: resolve org: %w", reaction.Ref(), err)
+		}
+		reaction.Org = resolved
+	}
+	payload, err := reaction.Encode()
+	if err != nil {
+		return err
+	}
+	return d.Tasks.PublishUnique(ctx, reaction.Subject(), reaction.IdempotencyKey(), payload)
+}
+
+// publisherIdentity is the identity a producer publishes as: the envelope's
+// identity when it names one (an ID, or a name for a hand-built envelope),
+// otherwise the root identity of a single-identity install.
+func (d *Daemon) publisherIdentity(ref string) identity.IdentityID {
+	if ref == "" {
+		return d.RootIdentityID
+	}
+	for _, runner := range d.Identities {
+		if runner == nil {
+			continue
+		}
+		if runner.Name == ref || string(runner.ID) == ref {
+			return runner.ID
+		}
+	}
+	return identity.IdentityID(ref)
+}
+
+// identityOrg resolves the org an identity serves through the State Store
+// before a producer publishes. An unwired PrincipalSource (an install with no
+// State Store) resolves to the default org; a store failure is returned so the
+// producer retries rather than publishing under a guessed org, which would key
+// the same issue differently on a later delivery.
+func (d *Daemon) identityOrg(ctx context.Context, id identity.IdentityID) (org.OrgID, error) {
+	if d.Principals == nil {
+		return org.DefaultOrgID, nil
+	}
+	principal, err := d.Principals.PrincipalFor(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return principal.Org, nil
 }
 
 // acknowledge posts the pickup reaction and queued event
