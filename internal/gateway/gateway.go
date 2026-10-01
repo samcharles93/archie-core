@@ -225,7 +225,16 @@ type Router struct {
 	// the message it is, and the batch's single turn is the only dispatch.
 	// NewRouter wires the package default, so a production router batches;
 	// nil disables coalescing (test setups).
-	Batches        *TextBatchAggregator
+	Batches *TextBatchAggregator
+	// SlashAccess gates slash commands by sender role. Nil leaves every
+	// command available, which is the pre-policy behaviour; a composition
+	// that configures an allowlist sets it so an admin-only command cannot
+	// run for a sender the policy does not name (see slash_access.go).
+	SlashAccess *SlashAccessPolicy
+	// SlashDenials records each refused slash command for audit. Optional:
+	// nil still refuses and still writes the refusal to Log, it only means
+	// the deployment keeps no durable record of it.
+	SlashDenials   SlashDenialRecorder
 	sessionTracker *sessionTracker
 	gatewayName    string
 	// titlingMu guards titling, the set of sessions with a title proposal
@@ -351,6 +360,13 @@ func (r *Router) CollectTurn(ctx context.Context, in Inbound) (Inbound, bool, er
 func (r *Router) route(ctx context.Context, in Inbound) (string, error) {
 	text := strings.TrimSpace(in.Message.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
+
+	// The command gate runs before any dispatch, so a refused command
+	// executes none of its handler -- not even the part that would read the
+	// argument or reach the model.
+	if reply, refused := r.checkSlashAccess(ctx, in, cmd); refused {
+		return reply, nil
+	}
 
 	if reply, handled, err := r.dispatchLocal(ctx, in.Message, r.sessionPlatform(in), text, cmd); handled {
 		return reply, err
