@@ -45,7 +45,10 @@ func (s stubStore) Transition(context.Context, int64, string, string, string) er
 func (s stubStore) CancelExecution(context.Context, int64, string, string) ([]int64, error) {
 	return nil, s.err
 }
-func (s stubStore) Requeue(context.Context, int64, string, string) error   { return s.err }
+func (s stubStore) Requeue(context.Context, int64, string, string) error { return s.err }
+func (s stubStore) RespondReviewGate(context.Context, int64, string, string, bool, int) error {
+	return s.err
+}
 func (s stubStore) RetryTask(context.Context, int64, string, string) error { return s.err }
 
 func (s stubStore) ArchiveTask(context.Context, int64, string, events.Event) (int64, error) {
@@ -108,7 +111,7 @@ func TestActionErrorKeepsItsSentinelAcrossNATS(t *testing.T) {
 				t.Fatalf("flush: %v", err)
 			}
 
-			_, err = Client{Conn: nc}.ApplyChatTaskAction(t.Context(), nil, domain.Actor{}, 7, tc.action)
+			_, err = Client{Conn: nc}.ApplyChatTaskAction(t.Context(), nil, domain.Actor{}, 7, tc.action, domain.ReviewResponse{})
 			if err == nil {
 				t.Fatalf("ApplyChatTaskAction(%s) error = nil, want %v", tc.action, tc.want)
 			}
@@ -116,7 +119,7 @@ func TestActionErrorKeepsItsSentinelAcrossNATS(t *testing.T) {
 				t.Fatalf("error %v (%T) is not %v", err, err, tc.want)
 			}
 			// The wording the operator reads survives too, not just the class.
-			direct := service.Apply(t.Context(), nil, domain.Actor{}, 7, tc.action)
+			direct := service.Apply(t.Context(), nil, domain.Actor{}, 7, tc.action, domain.ReviewResponse{})
 			if direct == nil || err.Error() != direct.Error() {
 				t.Fatalf("remote message = %q, want the daemon's own %v", err.Error(), direct)
 			}
@@ -155,7 +158,7 @@ func TestActionScopeCrossesNATS(t *testing.T) {
 				t.Fatalf("flush: %v", err)
 			}
 
-			result, err := Client{Conn: nc}.ApplyChatTaskAction(t.Context(), tc.identity, domain.Actor{}, 7, taskstate.ActionAbandon)
+			result, err := Client{Conn: nc}.ApplyChatTaskAction(t.Context(), tc.identity, domain.Actor{}, 7, taskstate.ActionAbandon, domain.ReviewResponse{})
 			if err != nil {
 				t.Fatalf("apply: %v", err)
 			}

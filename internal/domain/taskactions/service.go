@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -24,11 +25,33 @@ type Task struct {
 	Owner, Repo, Identity, Status, ParkReason string
 	IssueNumber, RetryCount                   int
 	ForgeBacked                               bool
+	// ReviewGate is the operator-approval gate's document as the task carries
+	// it (workflowtask.EncodeReviewGate): the offer the gate wrote, and the answer
+	// the response path fills in. The response path reads the offer here and
+	// writes the answered document back.
+	ReviewGate string
+	// RereviewRounds is how many re-reviews this task's gate has granted. The
+	// service reads it to refuse a re-review at the cap before the guarded
+	// write, and the write itself re-checks it in the row.
+	RereviewRounds int
 	// Attempt is the run the operator acted on. It is stamped onto the event
 	// this action records so an intervention is attributable to the run it
 	// changed course -- without it a retry or a stop is indistinguishable
 	// between attempts on the timeline.
 	Attempt int
+}
+
+// ReviewResponse is the payload an operator's answer to the review gate
+// carries (docs/prds/pr-review-operator-response.md, Decision 1). It is empty
+// for every other action, and for chat's /approve, which has no instruction or
+// selection syntax: an absent selection means every offered finding.
+type ReviewResponse struct {
+	// Instructions are what a re-review must focus on. The response path
+	// requires them for ActionRereview and ignores them otherwise.
+	Instructions string
+	// Findings are the keys (prreview.ScoredFinding.Key) of the offered
+	// findings an approve posts. Empty means all of them.
+	Findings []string
 }
 
 // Actor is the identity that performed an action, and the principal whose
@@ -117,11 +140,31 @@ func rejectedKind(actor Actor) string {
 	}
 }
 
+// rereviewedKind names a re-review's actor the way the approved and rejected
+// trios do: the kind describes the ACTOR, so an agent asking for a re-review is
+// never recorded as a person's, and an action with no verified actor is
+// recorded as a task-level event that credits nobody.
+func rereviewedKind(actor Actor) string {
+	switch {
+	case actor.Human():
+		return events.KindHumanRereviewed
+	case actor.Attributed():
+		return events.KindAgentRereviewed
+	default:
+		return events.KindTaskRereviewed
+	}
+}
+
 type Store interface {
 	TaskByID(context.Context, int64) (*Task, error)
 	Transition(context.Context, int64, string, string, string) error
 	Requeue(context.Context, int64, string, string) error
 	RetryTask(context.Context, int64, string, string) error
+	// RespondReviewGate is the guarded review gate response write
+	// (internal/domain/storecontract.ReviewGateResponder): it records the
+	// answered document, and for a re-review increments rereview_rounds and
+	// requeues, refusing a re-review past the cap with ErrRereviewCapReached.
+	RespondReviewGate(context.Context, int64, string, string, bool, int) error
 	ArchiveTask(context.Context, int64, string, events.Event) (int64, error)
 	InsertEvent(context.Context, events.Event) (int64, error)
 	// CancelExecution is the one cancel path
@@ -153,7 +196,13 @@ type Service struct {
 //
 // The actor is not derived from scope: scope is which tasks a caller may touch,
 // actor is who touched one, and the two are only equal by coincidence.
-func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64, action taskstate.Action) error {
+//
+// res is the review-gate answer payload: the operator's instruction and
+// finding selection for approve and rereview, empty for every other action
+// and for the chat surfaces that carry no selection syntax. Both the dashboard
+// and chat reach the same apply, so one operator intent cannot be recorded as
+// two different decisions.
+func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64, action taskstate.Action, res ReviewResponse) error {
 	task, err := s.Store.TaskByID(ctx, id)
 	if err != nil {
 		return err
@@ -167,7 +216,7 @@ func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64
 	if err := taskstate.CheckAction(task.Status, action); err != nil {
 		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
-	mutation, err := s.apply(ctx, task, actor, action)
+	mutation, err := s.apply(ctx, task, actor, action, res)
 	if err != nil {
 		return err
 	}
@@ -194,13 +243,13 @@ type outcome struct {
 // record alongside it. Errors from the store are returned unwrapped: the
 // caller maps them to a response, and the rules-level errors (ErrConflict)
 // were already checked above.
-func (s Service) apply(ctx context.Context, task *Task, actor Actor, action taskstate.Action) (outcome, error) {
+func (s Service) apply(ctx context.Context, task *Task, actor Actor, action taskstate.Action, res ReviewResponse) (outcome, error) {
 	o := outcome{event: s.attributed(task, actor)}
 	switch action {
 	case taskstate.ActionApprove:
-		err := s.Store.Requeue(ctx, task.ID, "waiting_human", "implement")
-		o.event.Kind, o.event.Detail = approvedKind(actor), actor.describe("approved")
-		return o, err
+		return s.applyApprove(ctx, task, actor, o, res)
+	case taskstate.ActionRereview:
+		return s.applyRereview(ctx, task, actor, o, res)
 	case taskstate.ActionRetry:
 		return s.applyRetry(ctx, task, actor, o)
 	case taskstate.ActionStop:
@@ -221,6 +270,88 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 	default:
 		return o, fmt.Errorf("unsupported task action %q", action)
 	}
+}
+
+// applyApprove is the one approval path, for both the review gate and the
+// human-decision waits that predate it (feasibility's PRD handoff).
+//
+// A task carrying a gate offer gets the answer recorded on that offer in the
+// guarded response write: the resumed run posts the recorded review filtered
+// by the operator's selection, which is the only way "post the findings the
+// operator selected" can mean the findings they saw. A task with no gate has
+// no review to answer, so the approval is the plain release of waiting work;
+// it requeues under the workflow the wait names -- which feasibility sets to
+// implement before it waits (docs/prds/pr-review-operator-response.md,
+// Decision 1) -- never a name this handler hardcodes.
+func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o outcome, res ReviewResponse) (outcome, error) {
+	o.event.Kind, o.event.Detail = approvedKind(actor), actor.describe("approved")
+	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
+	if !ok || !gate.Offered() {
+		return o, s.Store.Requeue(ctx, task.ID, task.Status, "")
+	}
+	selection, err := selectedFindingKeys(gate, res.Findings)
+	if err != nil {
+		return o, err
+	}
+	gate.Outcome = workflowtask.GateApprove
+	gate.Selection = selection
+	gate.Instructions = ""
+	if err := s.Store.RespondReviewGate(ctx, task.ID, task.Status, workflowtask.EncodeReviewGate(gate), false, workflowtask.MaxRereviewRounds); err != nil {
+		return o, err
+	}
+	o.event.Detail = fmt.Sprintf("%s (%d of %d finding(s) selected)", actor.describe("approved"), len(selection), len(gate.Findings))
+	return o, nil
+}
+
+// applyRereview records the operator's instructions and requeues the review
+// phases. It is refused, as a conflict, for a task with no gate offer and for
+// one at the cap: in both cases the task stays waiting and nothing is written.
+// The offer's findings are cleared, because the resumed run recomputes them;
+// the instructions are what reach the recomputation.
+func (s Service) applyRereview(ctx context.Context, task *Task, actor Actor, o outcome, res ReviewResponse) (outcome, error) {
+	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
+	if !ok || !gate.Offered() {
+		return o, fmt.Errorf("task %d has no review gate to re-review: %w", task.ID, ErrConflict)
+	}
+	if strings.TrimSpace(res.Instructions) == "" {
+		return o, fmt.Errorf("a re-review needs instructions: %w", ErrConflict)
+	}
+	if task.RereviewRounds >= workflowtask.MaxRereviewRounds {
+		return o, fmt.Errorf("task %d has used all %d re-reviews: %w", task.ID, workflowtask.MaxRereviewRounds, ErrConflict)
+	}
+	gate.Outcome = workflowtask.GateRereview
+	gate.Instructions = strings.TrimSpace(res.Instructions)
+	gate.Findings = nil
+	gate.Selection = nil
+	o.event.Kind, o.event.Detail = rereviewedKind(actor), actor.describe("requested a re-review")
+	if err := s.Store.RespondReviewGate(ctx, task.ID, task.Status, workflowtask.EncodeReviewGate(gate), true, workflowtask.MaxRereviewRounds); err != nil {
+		return o, err
+	}
+	return o, nil
+}
+
+// selectedFindingKeys resolves an approve's selection against the offered
+// findings. An absent selection means all of them; a selection naming a
+// finding this offer does not hold is refused, because silently posting
+// nothing is how an operator's answer turns into a review nobody sees.
+func selectedFindingKeys(gate workflowtask.ReviewGate, requested []string) ([]string, error) {
+	offered := make(map[string]struct{}, len(gate.Findings))
+	keys := make([]string, 0, len(gate.Findings))
+	for _, f := range gate.Findings {
+		offered[f.Key] = struct{}{}
+		keys = append(keys, f.Key)
+	}
+	if len(requested) == 0 {
+		return keys, nil
+	}
+	selection := make([]string, 0, len(requested))
+	for _, key := range requested {
+		if _, ok := offered[key]; !ok {
+			return nil, fmt.Errorf("finding %q is not part of this review offer: %w", key, ErrConflict)
+		}
+		selection = append(selection, key)
+	}
+	return selection, nil
 }
 
 // deliver cancels the in-memory context of a run the store has already

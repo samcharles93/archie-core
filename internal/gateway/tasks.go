@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -135,9 +136,15 @@ type chatTaskController interface {
 	// ChatTaskStatus returns the task's status and owning identity, and
 	// false if no task with that ID exists.
 	ChatTaskStatus(ctx context.Context, taskID int64) (ChatTaskStatus, bool, error)
-	// ApproveChatTask requeues a waiting_human task. Callers must have
-	// already validated the current status is waiting_human.
-	ApproveChatTask(ctx context.Context, taskID int64) error
+	// ApproveChatTask releases a waiting_human task through the daemon's one
+	// task-action service, so chat and the dashboard cannot record different
+	// decisions for one operator intent (docs/prds/pr-review-operator-
+	// response.md, Decision 1). The caller has already validated the current
+	// status is waiting_human; the actor is the chat-bound identity, never an
+	// operator acting across identities. There is no review-gate payload: the
+	// chat surface has no instruction or selection syntax, so an approve posts
+	// every offered finding.
+	ApproveChatTask(ctx context.Context, taskID int64, actor taskactions.Actor) error
 	// CancelChatTask transitions an active task to a rejected/terminal
 	// state. Callers must have already validated the current status is
 	// cancellable.
@@ -184,7 +191,7 @@ func (c *StoreTaskController) Approve(ctx context.Context, taskID int64, identit
 	if err := taskstate.CheckApprove(st.Status); err != nil {
 		return err
 	}
-	return c.store.ApproveChatTask(ctx, taskID)
+	return c.store.ApproveChatTask(ctx, taskID, taskactions.ActorFromScope(identity))
 }
 
 func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity string) error {

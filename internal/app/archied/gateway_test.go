@@ -89,11 +89,11 @@ func (stubGatewayContract) SetPersona(context.Context, string, string) (bool, er
 	return false, nil
 }
 
-func (stubGatewayContract) ApplyTaskAction(context.Context, string, int64, taskstate.Action) (messaging.TaskActionResult, error) {
+func (stubGatewayContract) ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	return messaging.TaskActionResult{}, nil
 }
 
-func (stubGatewayContract) ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action) (messaging.TaskActionResult, error) {
+func (stubGatewayContract) ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action, taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	return messaging.TaskActionResult{}, nil
 }
 

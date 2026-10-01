@@ -82,10 +82,10 @@ func (f *fakeChatContract) SetPersona(ctx context.Context, id, name string) (boo
 	return true, nil
 }
 
-func (f *fakeChatContract) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+func (f *fakeChatContract) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action, _ taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	return messaging.TaskActionResult{}, nil
 }
 
-func (f *fakeChatContract) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+func (f *fakeChatContract) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action, _ taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	return messaging.TaskActionResult{}, nil
 }

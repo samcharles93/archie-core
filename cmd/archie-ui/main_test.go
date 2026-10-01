@@ -131,11 +131,11 @@ func (f *fakeGateway) Cancel(context.Context, string) (messaging.ChatCancellatio
 
 func (f *fakeGateway) SetPersona(context.Context, string, string) (bool, error) { return false, nil }
 
-func (f *fakeGateway) ApplyTaskAction(context.Context, string, int64, taskstate.Action) (messaging.TaskActionResult, error) {
+func (f *fakeGateway) ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	return messaging.TaskActionResult{}, nil
 }
 
-func (f *fakeGateway) ApplyOperatorTaskAction(_ context.Context, actor taskactions.Actor, id int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+func (f *fakeGateway) ApplyOperatorTaskAction(_ context.Context, actor taskactions.Actor, id int64, action taskstate.Action, _ taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.actions = append(f.actions, fmt.Sprintf("%d:%s", id, action))

@@ -1539,6 +1539,8 @@ type ApplyTaskActionRequest struct {
 	Identity      string                 `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
 	TaskId        int64                  `protobuf:"varint,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	Instructions  string                 `protobuf:"bytes,4,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	Findings      []string               `protobuf:"bytes,5,rep,name=findings,proto3" json:"findings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1592,6 +1594,20 @@ func (x *ApplyTaskActionRequest) GetAction() string {
 		return x.Action
 	}
 	return ""
+}
+
+func (x *ApplyTaskActionRequest) GetInstructions() string {
+	if x != nil {
+		return x.Instructions
+	}
+	return ""
+}
+
+func (x *ApplyTaskActionRequest) GetFindings() []string {
+	if x != nil {
+		return x.Findings
+	}
+	return nil
 }
 
 type ApplyTaskActionResponse struct {
@@ -1669,9 +1685,15 @@ type ApplyOperatorTaskActionRequest struct {
 	// credited to the actor's own authority. All three are empty when the caller
 	// has no verified identity, which is recorded as an unattributed action and
 	// never as a human's.
-	ActorId       string `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	ActorKind     string `protobuf:"bytes,4,opt,name=actor_kind,json=actorKind,proto3" json:"actor_kind,omitempty"`
-	PrincipalId   string `protobuf:"bytes,5,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	ActorId     string `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorKind   string `protobuf:"bytes,4,opt,name=actor_kind,json=actorKind,proto3" json:"actor_kind,omitempty"`
+	PrincipalId string `protobuf:"bytes,5,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	// instructions and findings are the review gate answer payload
+	// (taskactions.ReviewResponse): the instructions a rereview requires, and
+	// the finding keys an approve posts (empty means every offered finding).
+	// They are empty for every other action.
+	Instructions  string   `protobuf:"bytes,6,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	Findings      []string `protobuf:"bytes,7,rep,name=findings,proto3" json:"findings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1739,6 +1761,20 @@ func (x *ApplyOperatorTaskActionRequest) GetPrincipalId() string {
 		return x.PrincipalId
 	}
 	return ""
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetInstructions() string {
+	if x != nil {
+		return x.Instructions
+	}
+	return ""
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetFindings() []string {
+	if x != nil {
+		return x.Findings
+	}
+	return nil
 }
 
 type ApplyOperatorTaskActionResponse struct {
@@ -2961,22 +2997,26 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"*\n" +
 	"\x12SetPersonaResponse\x12\x14\n" +
-	"\x05found\x18\x01 \x01(\bR\x05found\"e\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\"\xa5\x01\n" +
 	"\x16ApplyTaskActionRequest\x12\x1a\n" +
 	"\bidentity\x18\x01 \x01(\tR\bidentity\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\x03R\x06taskId\x12\x16\n" +
-	"\x06action\x18\x03 \x01(\tR\x06action\"d\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\"\n" +
+	"\finstructions\x18\x04 \x01(\tR\finstructions\x12\x1a\n" +
+	"\bfindings\x18\x05 \x03(\tR\bfindings\"d\n" +
 	"\x17ApplyTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xae\x01\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xee\x01\n" +
 	"\x1eApplyOperatorTaskActionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x19\n" +
 	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x1d\n" +
 	"\n" +
 	"actor_kind\x18\x04 \x01(\tR\tactorKind\x12!\n" +
-	"\fprincipal_id\x18\x05 \x01(\tR\vprincipalId\"l\n" +
+	"\fprincipal_id\x18\x05 \x01(\tR\vprincipalId\x12\"\n" +
+	"\finstructions\x18\x06 \x01(\tR\finstructions\x12\x1a\n" +
+	"\bfindings\x18\a \x03(\tR\bfindings\"l\n" +
 	"\x1fApplyOperatorTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +

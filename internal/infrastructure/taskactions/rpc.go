@@ -36,6 +36,12 @@ type actionRequest struct {
 	TaskID   int64            `json:"task_id"`
 	Action   taskstate.Action `json:"action"`
 	Actor    *actorPayload    `json:"actor,omitempty"`
+	// Instructions and Findings are the review gate answer payload
+	// (taskactions.ReviewResponse). They are empty for every action but
+	// approve and rereview, and for chat surfaces, which carry no selection
+	// syntax.
+	Instructions string   `json:"instructions,omitempty"`
+	Findings     []string `json:"findings,omitempty"`
 }
 
 type actorPayload struct {
@@ -74,6 +80,7 @@ var actionErrorKinds = []struct {
 	{kind: "not_found", err: taskactions.ErrNotFound},
 	{kind: "conflict", err: taskactions.ErrConflict},
 	{kind: "stale_transition", err: storecontract.ErrStaleTransition},
+	{kind: "rereview_cap", err: storecontract.ErrRereviewCapReached},
 	{kind: "unavailable", err: taskactions.ErrUnavailable},
 }
 
@@ -120,7 +127,10 @@ func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (fun
 				natsrpc.Respond(msg, log, "taskactions", actionResponse{Envelope: natsrpc.NewEnvelope(err)})
 				return
 			}
-			err := service.Apply(context.Background(), req.Identity, req.Actor.actor(), req.TaskID, req.Action)
+			err := service.Apply(context.Background(), req.Identity, req.Actor.actor(), req.TaskID, req.Action, taskactions.ReviewResponse{
+				Instructions: req.Instructions,
+				Findings:     req.Findings,
+			})
 			natsrpc.Respond(msg, log, "taskactions", actionResponse{
 				Envelope: natsrpc.NewEnvelope(err),
 				Kind:     actionErrorKind(err),
@@ -142,14 +152,16 @@ func (c Client) rpc() *natsrpc.Client {
 // ApplyChatTaskAction sends an action to the daemon's responder, carrying the
 // scope and the actor the caller resolved. A caller with no verified identity
 // passes the zero actor, which the daemon records as unattributed.
-func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor taskactions.Actor, id int64, action taskstate.Action) (gateway.TaskActionResult, error) {
+func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor taskactions.Actor, id int64, action taskstate.Action, res taskactions.ReviewResponse) (gateway.TaskActionResult, error) {
 	if c.Conn == nil {
 		return gateway.TaskActionResult{}, fmt.Errorf("task action connection is unavailable")
 	}
 	request := actionRequest{
-		Identity: scope,
-		TaskID:   id,
-		Action:   action,
+		Identity:     scope,
+		TaskID:       id,
+		Action:       action,
+		Instructions: res.Instructions,
+		Findings:     res.Findings,
 		Actor: &actorPayload{
 			ID:        string(actor.Identity),
 			Kind:      string(actor.Kind),

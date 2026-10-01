@@ -240,7 +240,7 @@ func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
 		}
 	})
 
-	t.Run("await approval", func(t *testing.T) {
+	t.Run("await approval names the workflow the wait resumes", func(t *testing.T) {
 		forgeClient := &fakeForge{}
 		tc := &TaskContext{
 			Task: &Task{
@@ -257,6 +257,14 @@ func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
 			tc.Outcome.Status != StatusWaitingHuman {
 			t.Fatalf("comments/watch/outcome = %d/%d/%q",
 				len(forgeClient.commented), tc.Task.WatchCommentID, tc.Outcome.Status)
+		}
+		// The approval handler requeues under the workflow the wait recorded,
+		// because a shared handler cannot hardcode implement without sending
+		// a pr-review gate wait back through implement
+		// (docs/prds/pr-review-operator-response.md, Decision 1). Feasibility
+		// owns the handoff by naming implement here.
+		if tc.Task.Workflow != "implement" {
+			t.Fatalf("workflow at the wait = %q, want %q: the approval resumes the workflow the wait names", tc.Task.Workflow, "implement")
 		}
 	})
 }

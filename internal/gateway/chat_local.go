@@ -118,18 +118,18 @@ func (a *LocalChatAdapter) SetPersona(ctx context.Context, id, name string) (boo
 	return a.Personas.SetActive(id, strings.ToLower(name)), nil
 }
 
-func (a *LocalChatAdapter) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+func (a *LocalChatAdapter) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action, res taskactions.ReviewResponse) (TaskActionResult, error) {
 	if a.TaskActor == nil {
 		return TaskActionResult{}, ErrChatCapabilityUnavailable
 	}
-	return a.TaskActor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, action)
+	return a.TaskActor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, action, res)
 }
 
-func (a *LocalChatAdapter) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+func (a *LocalChatAdapter) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ReviewResponse) (TaskActionResult, error) {
 	if a.TaskActor == nil {
 		return TaskActionResult{}, ErrChatCapabilityUnavailable
 	}
-	return a.TaskActor.ApplyChatTaskAction(ctx, nil, actor, taskID, action)
+	return a.TaskActor.ApplyChatTaskAction(ctx, nil, actor, taskID, action, res)
 }
 
 func (a *LocalChatAdapter) Stream(ctx context.Context, in Inbound) (<-chan ChatEvent, error) {

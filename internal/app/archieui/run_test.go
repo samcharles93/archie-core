@@ -72,11 +72,11 @@ func (f *fakeChat) Cancel(context.Context, string) (gateway.ChatCancellation, er
 
 func (f *fakeChat) SetPersona(context.Context, string, string) (bool, error) { return false, nil }
 
-func (f *fakeChat) ApplyTaskAction(context.Context, string, int64, taskstate.Action) (gateway.TaskActionResult, error) {
+func (f *fakeChat) ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ReviewResponse) (gateway.TaskActionResult, error) {
 	return gateway.TaskActionResult{}, nil
 }
 
-func (f *fakeChat) ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action) (gateway.TaskActionResult, error) {
+func (f *fakeChat) ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action, taskactions.ReviewResponse) (gateway.TaskActionResult, error) {
 	return gateway.TaskActionResult{}, nil
 }
 

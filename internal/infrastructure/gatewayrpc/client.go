@@ -82,21 +82,26 @@ func (c *Client) SetPersona(ctx context.Context, id, name string) (bool, error) 
 	return v.Found, nil
 }
 
-func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
-	v, err := c.client.ApplyTaskAction(ctx, &pb.ApplyTaskActionRequest{Identity: identity, TaskId: taskID, Action: string(action)})
+func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action, res taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
+	v, err := c.client.ApplyTaskAction(ctx, &pb.ApplyTaskActionRequest{
+		Identity: identity, TaskId: taskID, Action: string(action),
+		Instructions: res.Instructions, Findings: res.Findings,
+	})
 	if err != nil {
 		return messaging.TaskActionResult{}, taskActionError(err)
 	}
 	return messaging.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }
 
-func (c *Client) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action) (messaging.TaskActionResult, error) {
+func (c *Client) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ReviewResponse) (messaging.TaskActionResult, error) {
 	v, err := c.client.ApplyOperatorTaskAction(ctx, &pb.ApplyOperatorTaskActionRequest{
-		TaskId:      taskID,
-		Action:      string(action),
-		ActorId:     string(actor.Identity),
-		ActorKind:   string(actor.Kind),
-		PrincipalId: string(actor.Principal),
+		TaskId:       taskID,
+		Action:       string(action),
+		ActorId:      string(actor.Identity),
+		ActorKind:    string(actor.Kind),
+		PrincipalId:  string(actor.Principal),
+		Instructions: res.Instructions,
+		Findings:     res.Findings,
 	})
 	if err != nil {
 		return messaging.TaskActionResult{}, taskActionError(err)

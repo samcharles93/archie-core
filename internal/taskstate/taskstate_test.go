@@ -17,7 +17,7 @@ func TestActionRules(t *testing.T) {
 	}{
 		{status: Queued, decline: true, actions: []Action{ActionCancel, ActionReject}},
 		{status: Running, decline: true, actions: []Action{ActionStop, ActionReject}},
-		{status: WaitingHuman, approve: true, decline: true, actions: []Action{ActionApprove, ActionReject}},
+		{status: WaitingHuman, approve: true, decline: true, actions: []Action{ActionApprove, ActionReject, ActionRereview}},
 		{status: PROpen, decline: true, actions: []Action{ActionOpenPR, ActionOpenIssue, ActionReject}},
 		{status: Parked, retry: true, decline: true, actions: []Action{ActionRetry, ActionAbandon, ActionReject}},
 		{status: Merged, terminal: true, actions: []Action{ActionArchive}},
@@ -150,7 +150,7 @@ func TestPresentationCatalog(t *testing.T) {
 func TestActionsReturnsIndependentSlices(t *testing.T) {
 	first := Actions(WaitingHuman)
 	first[0] = ActionArchive
-	if got := Actions(WaitingHuman); !slices.Equal(got, []Action{ActionApprove, ActionReject}) {
+	if got := Actions(WaitingHuman); !slices.Equal(got, []Action{ActionApprove, ActionReject, ActionRereview}) {
 		t.Fatalf("mutating returned actions changed lifecycle table: %v", got)
 	}
 }

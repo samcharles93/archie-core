@@ -24,6 +24,11 @@ func (f *fakeStore) CancelExecution(context.Context, int64, string, string) ([]i
 }
 
 func (f *fakeStore) Requeue(context.Context, int64, string, string) error { return nil }
+
+func (f *fakeStore) RespondReviewGate(context.Context, int64, string, string, bool, int) error {
+	return nil
+}
+
 func (f *fakeStore) RetryTask(context.Context, int64, string, string) error {
 	return nil
 }
@@ -82,7 +87,7 @@ func TestEventKindDescribesTheActor(t *testing.T) {
 			store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: "waiting_human"}}
 			service := Service{Store: store}
 
-			if err := service.Apply(context.Background(), nil, tc.actor, 7, tc.action); err != nil {
+			if err := service.Apply(context.Background(), nil, tc.actor, 7, tc.action, ReviewResponse{}); err != nil {
 				t.Fatalf("Apply() error = %v", err)
 			}
 			got := store.last()
@@ -107,7 +112,7 @@ func TestActorAndPrincipalAreRecordedSeparately(t *testing.T) {
 	service := Service{Store: store}
 
 	actor := agentActor().AuthorisedBy(humanID)
-	if err := service.Apply(context.Background(), nil, actor, 7, taskstate.ActionApprove); err != nil {
+	if err := service.Apply(context.Background(), nil, actor, 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
@@ -132,7 +137,7 @@ func TestUnattributedActionClaimsNoApprover(t *testing.T) {
 	store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: "waiting_human"}}
 	service := Service{Store: store}
 
-	if err := service.Apply(context.Background(), nil, Actor{}, 7, taskstate.ActionApprove); err != nil {
+	if err := service.Apply(context.Background(), nil, Actor{}, 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
@@ -167,7 +172,7 @@ func TestEveryActionCarriesItsAttribution(t *testing.T) {
 				Store:      store,
 				CancelTask: func(int64) bool { return true },
 			}
-			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action); err != nil {
+			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action, ReviewResponse{}); err != nil {
 				t.Fatalf("Apply(%s) error = %v", tc.action, err)
 			}
 			got := store.last()
@@ -186,14 +191,14 @@ func TestScopeStillLimitsATaskButIsNotTheActor(t *testing.T) {
 	store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: "waiting_human", Identity: "archie"}}
 	service := Service{Store: store}
 
-	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove); err == nil {
+	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err == nil {
 		t.Fatal("Apply() allowed an identity to act on another identity's task")
 	}
 	if len(store.events) != 0 {
 		t.Fatalf("a refused action recorded %d events", len(store.events))
 	}
 
-	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove); err == nil {
+	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err == nil {
 		t.Fatal("Apply() allowed a scoped caller to act on a foreign task")
 	}
 }
@@ -233,7 +238,7 @@ func TestOnlyRejectAndCancelCloseTheIssue(t *testing.T) {
 				closed = true
 				return nil
 			}}
-			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action); err != nil {
+			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action, ReviewResponse{}); err != nil {
 				t.Fatalf("Apply(%s) error = %v", tc.action, err)
 			}
 			if closed != tc.closes {

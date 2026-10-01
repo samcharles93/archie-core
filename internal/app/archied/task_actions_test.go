@@ -11,9 +11,12 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -80,9 +83,14 @@ func runChatAction(t *testing.T, ctx context.Context, st storecontract.TaskStore
 	if !ok {
 		t.Fatal("the task store cannot cancel executions")
 	}
+	// Chat's /approve reaches the daemon's one task-action service
+	// (docs/prds/pr-review-operator-response.md, Decision 1).
+	actions := taskactionstore.NewService(taskactionstore.Store{TaskStore: st}, nil, nil, nil, nil, nil, nil, nil)
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:        st.TaskByID,
-		requeue:         st.Requeue,
+		taskByID: st.TaskByID,
+		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ReviewResponse) error {
+			return actions.Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
+		},
 		cancelExecution: canceller.CancelExecution,
 	})
 	var err error

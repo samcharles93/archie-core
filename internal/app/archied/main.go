@@ -560,7 +560,7 @@ func (a chatTaskWriterAdapter) EnqueueChatTask(
 
 type chatTaskControllerAdapter struct {
 	taskByID        func(context.Context, int64) (*workflow.Task, error)
-	requeue         func(context.Context, int64, string, string) error
+	approve         func(context.Context, *string, taskactions.Actor, int64, taskactions.ReviewResponse) error
 	cancelExecution func(context.Context, int64, string, string) ([]int64, error)
 }
 
@@ -578,8 +578,16 @@ func (a chatTaskControllerAdapter) ChatTaskStatus(ctx context.Context, taskID in
 	return gateway.ChatTaskStatus{}, false, fmt.Errorf("task %d is not chat-originated", taskID)
 }
 
-func (a chatTaskControllerAdapter) ApproveChatTask(ctx context.Context, taskID int64) error {
-	return a.requeue(ctx, taskID, workflow.StatusWaitingHuman, "implement")
+func (a chatTaskControllerAdapter) ApproveChatTask(ctx context.Context, taskID int64, actor taskactions.Actor) error {
+	if a.approve == nil {
+		return fmt.Errorf("task approval is unavailable")
+	}
+	// The chat-bound identity is both the scope the task must belong to and
+	// the actor the record names: a chat command has no cross-identity
+	// authority, and /approve carries no selection syntax, so the review gate
+	// answer posts every offered finding.
+	scope := string(actor.Identity)
+	return a.approve(ctx, &scope, actor, taskID, taskactions.ReviewResponse{})
 }
 
 func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID int64, reason string) error {
@@ -684,15 +692,15 @@ type chatTaskActorAdapter struct {
 }
 
 func (a chatTaskActorAdapter) ApplyChatTaskAction(
-	ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action,
+	ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ReviewResponse,
 ) (gateway.TaskActionResult, error) {
 	if a.contract == nil {
 		return gateway.TaskActionResult{}, gateway.ErrChatCapabilityUnavailable
 	}
 	if identity == nil {
-		return a.contract.ApplyOperatorTaskAction(ctx, actor, taskID, action)
+		return a.contract.ApplyOperatorTaskAction(ctx, actor, taskID, action, res)
 	}
-	return a.contract.ApplyTaskAction(ctx, *identity, taskID, action)
+	return a.contract.ApplyTaskAction(ctx, *identity, taskID, action, res)
 }
 
 func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {

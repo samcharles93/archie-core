@@ -53,6 +53,15 @@ const (
 	// recorded as human_* and agent_* respectively.
 	KindTaskApproved = "task_approved"
 	KindTaskRejected = "task_rejected"
+	// KindHumanRereviewed, KindAgentRereviewed and KindTaskRereviewed record
+	// the operator asking the review gate for a re-review. The answer is
+	// neither an approval nor a rejection, and recording it as either would
+	// make the timeline claim a verdict the operator did not give. They follow
+	// the same actor/agent/task attribution split as the approved and rejected
+	// trios above.
+	KindHumanRereviewed = "human_rereviewed"
+	KindAgentRereviewed = "agent_rereviewed"
+	KindTaskRereviewed  = "task_rereviewed"
 	// KindTaskRetried records what the retry was escaping from. RetryTask
 	// clears stage and park_reason in the same statement that increments the
 	// count, so this event is the only place that context survives.

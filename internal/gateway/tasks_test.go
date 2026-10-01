@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -205,7 +206,7 @@ func (f *fakeChatTaskStore) ChatTaskStatus(ctx context.Context, taskID int64) (C
 	return st, ok, nil
 }
 
-func (f *fakeChatTaskStore) ApproveChatTask(ctx context.Context, taskID int64) error {
+func (f *fakeChatTaskStore) ApproveChatTask(ctx context.Context, taskID int64, _ taskactions.Actor) error {
 	f.approved = append(f.approved, taskID)
 	return nil
 }

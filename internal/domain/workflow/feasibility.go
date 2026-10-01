@@ -96,6 +96,15 @@ func Feasibility() Workflow {
 			// the decision surfaces; the forge issue is not a chat log.
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
 				notify(ctx, tc, "feasibility_prd")
+				// The approval handoff is a workflow change, not a payload
+				// the approve handler names: an approval requeues under the
+				// workflow the wait recorded (an empty name keeps the task's),
+				// so the task must name implement before it enters the wait.
+				// Hardcoding "implement" in the handler is how a gate wait on
+				// the standalone pr-review workflow would have re-run the
+				// implement workflow (docs/prds/pr-review-operator-response.md,
+				// Decision 1).
+				tc.Task.Workflow = "implement"
 				tc.Outcome = Outcome{Status: StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
 				return nil
 			}},

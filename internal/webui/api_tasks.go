@@ -189,6 +189,16 @@ func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
 
 type taskActionRequest struct {
 	Action string `json:"action"`
+	// Instructions is the re-review's focus, required by the rereview action
+	// and ignored by every other one (docs/prds/pr-review-operator-
+	// response.md, Decision 1). The dashboard is the authoritative surface
+	// that carries operators' instructions; chat is a shortcut with no
+	// instruction syntax.
+	Instructions string `json:"instructions"`
+	// Findings are the keys of the offered findings an approve posts; an
+	// absent selection means all of them. It is ignored by every other
+	// action.
+	Findings []string `json:"findings"`
 }
 
 func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
@@ -200,15 +210,16 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	action, ok := decodeTaskAction(w, r)
+	action, res, ok := decodeTaskAction(w, r)
 	if !ok {
 		return
 	}
-	if err := s.applyOperatorTaskAction(r.Context(), id, action); err != nil {
+	if err := s.applyOperatorTaskAction(r.Context(), id, action, res); err != nil {
 		switch {
 		case errors.Is(err, taskactions.ErrNotFound):
 			http.Error(w, "task not found", http.StatusNotFound)
-		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, storecontract.ErrStaleTransition):
+		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, storecontract.ErrStaleTransition),
+			errors.Is(err, storecontract.ErrRereviewCapReached):
 			http.Error(w, err.Error(), http.StatusConflict)
 		case errors.Is(err, taskactions.ErrUnavailable):
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -221,7 +232,7 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "action": action, "task_id": id})
 }
 
-func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action, bool) {
+func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action, taskactions.ReviewResponse, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req taskActionRequest
 	decoder := json.NewDecoder(r.Body)
@@ -229,28 +240,36 @@ func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action,
 	if err := decoder.Decode(&req); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "action body too large", http.StatusRequestEntityTooLarge)
-			return "", false
+			return "", taskactions.ReviewResponse{}, false
 		}
 		http.Error(w, "invalid action", http.StatusBadRequest)
-		return "", false
+		return "", taskactions.ReviewResponse{}, false
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		http.Error(w, "invalid action", http.StatusBadRequest)
-		return "", false
+		return "", taskactions.ReviewResponse{}, false
 	}
 	action := taskstate.Action(req.Action)
 	if !taskMutation(action) {
 		http.Error(w, "unknown action", http.StatusBadRequest)
-		return "", false
+		return "", taskactions.ReviewResponse{}, false
 	}
-	return action, true
+	// A re-review without instructions is not a request the gate can honour,
+	// and refusing it here keeps the refusal the operator's to read rather
+	// than a round trip's conflict. The service re-checks it for the surfaces
+	// that do not pass through this handler.
+	if action == taskstate.ActionRereview && strings.TrimSpace(req.Instructions) == "" {
+		http.Error(w, "a re-review needs instructions", http.StatusBadRequest)
+		return "", taskactions.ReviewResponse{}, false
+	}
+	return action, taskactions.ReviewResponse{Instructions: req.Instructions, Findings: req.Findings}, true
 }
 
 func taskMutation(action taskstate.Action) bool {
 	switch action {
 	case taskstate.ActionCancel, taskstate.ActionStop, taskstate.ActionApprove,
-		taskstate.ActionReject, taskstate.ActionRetry, taskstate.ActionAbandon,
-		taskstate.ActionArchive:
+		taskstate.ActionReject, taskstate.ActionRereview, taskstate.ActionRetry,
+		taskstate.ActionAbandon, taskstate.ActionArchive:
 		return true
 	default:
 		return false
@@ -340,7 +359,7 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 // timeline needs its event bus, and stopping running work needs the
 // goroutine or container that is executing it. Composing a local service
 // over the task store alone would silently drop all four.
-func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action taskstate.Action) error {
+func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action taskstate.Action, res taskactions.ReviewResponse) error {
 	if s.Chat == nil || s.Chat.Contract == nil {
 		return fmt.Errorf("%w: no gateway contract is wired", taskactions.ErrUnavailable)
 	}
@@ -352,7 +371,7 @@ func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action t
 	if value, ok := ActingIdentity(ctx); ok {
 		actor = taskactions.ActorFor(value)
 	}
-	_, err := s.Chat.Contract.ApplyOperatorTaskAction(ctx, actor, id, action)
+	_, err := s.Chat.Contract.ApplyOperatorTaskAction(ctx, actor, id, action, res)
 	return err
 }
 

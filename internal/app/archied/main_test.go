@@ -22,14 +22,17 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/taskstate/taskstatetest"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -670,11 +673,19 @@ func TestChatTaskControllerAdapterRejectsForgeTask(t *testing.T) {
 
 func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	task := &workflow.Task{ID: 42, Source: workflow.SourceChat, Status: workflow.StatusWaitingHuman}
-	var requeueFrom, requeueWorkflow, cancelReason, cancelTo string
+	var approveScope string
+	var approveActor taskactions.Actor
+	var approveRes taskactions.ReviewResponse
+	var cancelReason, cancelTo string
 	adapter := chatTaskControllerAdapter{
 		taskByID: func(context.Context, int64) (*workflow.Task, error) { return task, nil },
-		requeue: func(_ context.Context, _ int64, from, workflow string) error {
-			requeueFrom, requeueWorkflow = from, workflow
+		// Chat's approval reaches the daemon's one task-action service, not
+		// its own requeue: this records what the adapter hands it.
+		approve: func(_ context.Context, scope *string, actor taskactions.Actor, _ int64, res taskactions.ReviewResponse) error {
+			if scope != nil {
+				approveScope = *scope
+			}
+			approveActor, approveRes = actor, res
 			return nil
 		},
 		cancelExecution: func(_ context.Context, _ int64, reason, to string) ([]int64, error) {
@@ -683,11 +694,17 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 		},
 	}
 
-	if err := adapter.ApproveChatTask(context.Background(), task.ID); err != nil {
+	if err := adapter.ApproveChatTask(context.Background(), task.ID, taskactions.ActorFromScope("archie")); err != nil {
 		t.Fatalf("ApproveChatTask(): %v", err)
 	}
-	if requeueFrom != workflow.StatusWaitingHuman || requeueWorkflow != "implement" {
-		t.Errorf("requeue = %q/%q, want waiting_human/implement", requeueFrom, requeueWorkflow)
+	// The scope is the chat-bound identity, and /approve carries no
+	// instruction or selection syntax, so the review-gate payload is empty
+	// (an absent selection means every offered finding).
+	if approveScope != "archie" || approveActor.Identity != "archie" {
+		t.Errorf("approve scope/actor = %q/%q, want the chat-bound identity", approveScope, approveActor.Identity)
+	}
+	if approveRes.Instructions != "" || len(approveRes.Findings) != 0 {
+		t.Errorf("approve payload = %+v, want the zero review response for chat", approveRes)
 	}
 	if err := adapter.CancelChatTask(context.Background(), task.ID, "cancelled by test"); err != nil {
 		t.Fatalf("CancelChatTask(): %v", err)
@@ -834,9 +851,15 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		chatTaskWriterAdapter{enqueue: st.EnqueueChatTask},
 		profiles,
 	)
+	// Chat's /approve reaches the same task-action service the daemon wires
+	// (docs/prds/pr-review-operator-response.md, Decision 1), over the real
+	// store this test uses.
+	actions := taskactionstore.NewService(taskactionstore.Store{TaskStore: st}, nil, nil, nil, nil, nil, nil, nil)
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:        st.TaskByID,
-		requeue:         st.Requeue,
+		taskByID: st.TaskByID,
+		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ReviewResponse) error {
+			return actions.Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
+		},
 		cancelExecution: st.CancelExecution,
 	})
 	router := gateway.NewRouter(st, nil, "test")
@@ -862,6 +885,17 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("spawned task = %+v", task)
 	}
 
+	// Feasibility's deliver stage names implement on the task before it waits
+	// (docs/prds/pr-review-operator-response.md, Decision 1), so the wait the
+	// seed models carries that name; the approval resumes it.
+	waiting, err := st.TaskByID(ctx, taskID)
+	if err != nil || waiting == nil {
+		t.Fatalf("task before wait = (%+v, %v)", waiting, err)
+	}
+	waiting.Workflow = "implement"
+	if err := st.Update(ctx, waiting); err != nil {
+		t.Fatalf("name the resuming workflow: %v", err)
+	}
 	taskstatetest.Seed(t.Context(), t, st, taskID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await approval")
 	task, err = st.TaskByID(ctx, taskID)
 	if err != nil || task == nil || task.Status != workflow.StatusWaitingHuman {

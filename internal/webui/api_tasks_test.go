@@ -265,6 +265,18 @@ func TestHandleTaskActionApproveUsesRecordedState(t *testing.T) {
 	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusWaitingHuman, "review"); err != nil {
 		t.Fatal(err)
 	}
+	// The wait names the workflow the approval resumes (feasibility's deliver
+	// stage sets implement before it waits); the handler keeps it rather than
+	// hardcoding one, so the approval runs the workflow the task carries
+	// (docs/prds/pr-review-operator-response.md, Decision 1).
+	waiting, err := srv.Store.TaskByID(ctx, task.ID)
+	if err != nil || waiting == nil {
+		t.Fatalf("TaskByID before approve = (%+v, %v)", waiting, err)
+	}
+	waiting.Workflow = "implement"
+	if err := srv.Store.Update(ctx, waiting); err != nil {
+		t.Fatalf("name the resuming workflow: %v", err)
+	}
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action", bytes.NewBufferString(`{"action":"approve"}`))
 	req.Header.Set("Content-Type", "application/json")

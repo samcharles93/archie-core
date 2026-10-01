@@ -30,16 +30,20 @@ type ChatContract interface { //nolint:interfacebloat // wire contract intention
 // the Gateway. It is separate so read/turn consumers do not need to model it.
 type ChatTaskActionContract interface {
 	// ApplyTaskAction applies an action on behalf of a chat identity, which
-	// may only act on its own tasks.
-	ApplyTaskAction(context.Context, string, int64, taskstate.Action) (TaskActionResult, error)
+	// may only act on its own tasks. res carries the review gate answer
+	// payload; the chat surface has no instruction or selection syntax, so it
+	// is the zero value there.
+	ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ReviewResponse) (TaskActionResult, error)
 	// ApplyOperatorTaskAction applies an action on behalf of an authenticated
 	// dashboard caller, who acts across identities. The actor is who the
 	// credential resolved to, or the zero Actor when the caller presented
 	// nothing archie could verify -- which is recorded unattributed rather than
 	// credited to a human. It is a separate method rather than an empty identity
 	// because "" is a real identity in a single-identity deployment (see
-	// chatTaskProfiles in the daemon).
-	ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action) (TaskActionResult, error)
+	// chatTaskProfiles in the daemon). res carries the review gate answer
+	// payload: the operator's finding selection for approve, and the
+	// instructions a rereview requires.
+	ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action, taskactions.ReviewResponse) (TaskActionResult, error)
 }
 
 // TaskActionResult is what task_action returns.

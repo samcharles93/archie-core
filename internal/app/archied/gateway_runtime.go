@@ -9,7 +9,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -63,8 +65,14 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 		canceller = ec
 	}
 	b.chatController = gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:        b.stateStore.TaskByID,
-		requeue:         b.stateStore.Requeue,
+		taskByID: b.stateStore.TaskByID,
+		// Chat's /approve reaches the daemon's one task-action service rather
+		// than its own requeue, so a chat approval and a dashboard approval
+		// cannot record different decisions for one operator intent
+		// (docs/prds/pr-review-operator-response.md, Decision 1).
+		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ReviewResponse) error {
+			return b.taskActions().Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
+		},
 		cancelExecution: canceller.CancelExecution,
 	})
 	b.updateService = makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})

@@ -145,7 +145,7 @@ type recordingTaskActor struct {
 }
 
 func (a *recordingTaskActor) ApplyChatTaskAction(
-	_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action,
+	_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, _ taskactions.ReviewResponse,
 ) (gateway.TaskActionResult, error) {
 	a.identity, a.taskID, a.action = identity, taskID, action
 	return gateway.TaskActionResult{TaskID: taskID, Action: string(action), Message: "applied"}, nil
@@ -169,7 +169,7 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 				chat = remoteChat(t, local)
 			}
 
-			result, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 42, taskstate.ActionApprove)
+			result, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 42, taskstate.ActionApprove, taskactions.ReviewResponse{})
 			if err != nil {
 				t.Fatalf("operator action: %v", err)
 			}
@@ -183,7 +183,7 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 				t.Fatalf("operator result = %+v, want the daemon's result", result)
 			}
 
-			if _, err := chat.ApplyTaskAction(ctx, "scout", 7, taskstate.ActionRetry); err != nil {
+			if _, err := chat.ApplyTaskAction(ctx, "scout", 7, taskstate.ActionRetry, taskactions.ReviewResponse{}); err != nil {
 				t.Fatalf("chat action: %v", err)
 			}
 			if actor.identity == nil || *actor.identity != "scout" {
@@ -197,7 +197,7 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 type failingTaskActor struct{ err error }
 
 func (a failingTaskActor) ApplyChatTaskAction(
-	context.Context, *string, taskactions.Actor, int64, taskstate.Action,
+	context.Context, *string, taskactions.Actor, int64, taskstate.Action, taskactions.ReviewResponse,
 ) (gateway.TaskActionResult, error) {
 	return gateway.TaskActionResult{}, a.err
 }
@@ -221,7 +221,7 @@ func TestTaskActionErrorsKeepTheirSentinelOverGRPC(t *testing.T) {
 			local := &gateway.LocalChatAdapter{TaskActor: failingTaskActor{err: tc.err}}
 			chat := remoteChat(t, local)
 
-			_, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 7, taskstate.ActionApprove)
+			_, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 7, taskstate.ActionApprove, taskactions.ReviewResponse{})
 			if err == nil {
 				t.Fatalf("ApplyOperatorTaskAction error = nil, want %v", tc.err)
 			}

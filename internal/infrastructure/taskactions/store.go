@@ -17,7 +17,7 @@ func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error
 	if err != nil || t == nil {
 		return nil, err
 	}
-	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, ForgeBacked: t.IsForgeBacked()}, nil
+	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, ForgeBacked: t.IsForgeBacked(), ReviewGate: t.ReviewGate, RereviewRounds: t.RereviewRounds}, nil
 }
 
 // CancelExecution delegates to the store's one cancel path
@@ -31,6 +31,19 @@ func (s Store) CancelExecution(ctx context.Context, taskID int64, reason, to str
 		return nil, fmt.Errorf("task store cannot cancel executions")
 	}
 	return canceller.CancelExecution(ctx, taskID, reason, to)
+}
+
+// RespondReviewGate delegates to the store's guarded response write. Both
+// adapters -- the PostgreSQL store and the remote gRPC client -- implement it
+// (internal/domain/storecontract.ReviewGateResponder); the type assertion
+// failing would be a composition bug, so it is named rather than panicked
+// over, exactly like CancelExecution above.
+func (s Store) RespondReviewGate(ctx context.Context, taskID int64, fromStatus, gate string, rereview bool, maxRounds int) error {
+	responder, ok := s.TaskStore.(storecontract.ReviewGateResponder)
+	if !ok {
+		return fmt.Errorf("task store cannot record a review gate response")
+	}
+	return responder.RespondReviewGate(ctx, taskID, fromStatus, gate, rereview, maxRounds)
 }
 
 func MaxRetries(cfg *config.Holder) func(*taskactions.Task) int {

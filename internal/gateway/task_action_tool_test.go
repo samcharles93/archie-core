@@ -22,7 +22,7 @@ type fakeActor struct {
 	gotAction   taskstate.Action
 }
 
-func (f *fakeActor) ApplyChatTaskAction(_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+func (f *fakeActor) ApplyChatTaskAction(_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, _ taskactions.ReviewResponse) (TaskActionResult, error) {
 	if identity != nil {
 		f.gotIdentity = *identity
 	}

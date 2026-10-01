@@ -18,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
@@ -71,7 +72,7 @@ type daemonActions struct {
 }
 
 func (d *daemonActions) ApplyChatTaskAction(
-	ctx context.Context, identity *string, actor taskactions.Actor, id int64, action taskstate.Action,
+	ctx context.Context, identity *string, actor taskactions.Actor, id int64, action taskstate.Action, res taskactions.ReviewResponse,
 ) (gateway.TaskActionResult, error) {
 	d.scopes = append(d.scopes, identity)
 	service := taskactionstore.NewService(
@@ -84,7 +85,7 @@ func (d *daemonActions) ApplyChatTaskAction(
 		d.publish(),
 		d.srv.logf,
 	)
-	if err := service.Apply(ctx, identity, actor, id, action); err != nil {
+	if err := service.Apply(ctx, identity, actor, id, action, res); err != nil {
 		return gateway.TaskActionResult{}, err
 	}
 	return gateway.TaskActionResult{TaskID: id, Action: string(action)}, nil
@@ -472,6 +473,99 @@ func TestTaskActionErrorMapping(t *testing.T) {
 	}
 }
 
+// postActionBody posts one raw action body through the dashboard handler.
+func postActionBody(t *testing.T, srv *Server, id int64, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/tasks/"+strconv.FormatInt(id, 10)+"/action", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Archie-CSRF", "1")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+// TestTaskActionRecordsTheReviewGateAnswer is the dashboard half of Decision
+// 1: the action body carries instructions (required by rereview) and the
+// finding keys approve posts, and the answer lands on the task's review_gate
+// document through the same path chat uses.
+func TestTaskActionRecordsTheReviewGateAnswer(t *testing.T) {
+	keep := workflowtask.ReviewGateFinding{Key: "main.go:1:keep", Finding: json.RawMessage(`{"file":"main.go","line_start":1,"title":"keep","body":"keep me"}`)}
+	drop := workflowtask.ReviewGateFinding{Key: "main.go:9:drop", Finding: json.RawMessage(`{"file":"main.go","line_start":9,"title":"drop","body":"drop me"}`)}
+	offer := workflowtask.EncodeReviewGate(workflowtask.ReviewGate{
+		Findings: []workflowtask.ReviewGateFinding{keep, drop}, HeadSHA: "abc", Owner: "acme", Repo: "widget",
+		PRNumber: 42, Workflow: "pr-review",
+	})
+
+	t.Run("approve records the selection", func(t *testing.T) {
+		srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
+		if err := srv.Store.Update(t.Context(), &workflow.Task{ID: task.ID, Workflow: "pr-review", ReviewGate: offer}); err != nil {
+			t.Fatalf("seed the offer: %v", err)
+		}
+		w := postActionBody(t, srv, task.ID, fmt.Sprintf(`{"action":"approve","findings":[%q]}`, keep.Key))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, body %s", w.Code, w.Body)
+		}
+		updated, err := srv.Store.TaskByID(t.Context(), task.ID)
+		if err != nil || updated == nil {
+			t.Fatalf("TaskByID = (%+v, %v)", updated, err)
+		}
+		gate, ok := workflowtask.DecodeReviewGate(updated.ReviewGate)
+		if !ok || !gate.Approved() {
+			t.Fatalf("recorded gate = %q, want an approve", updated.ReviewGate)
+		}
+		if len(gate.Selection) != 1 || gate.Selection[0] != keep.Key {
+			t.Fatalf("recorded selection = %v, want only the posted key", gate.Selection)
+		}
+		if updated.Status != workflow.StatusQueued {
+			t.Fatalf("status = %q, want %q", updated.Status, workflow.StatusQueued)
+		}
+	})
+
+	t.Run("rereview records the instructions and clears the offer", func(t *testing.T) {
+		srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
+		if err := srv.Store.Update(t.Context(), &workflow.Task{ID: task.ID, Workflow: "pr-review", ReviewGate: offer}); err != nil {
+			t.Fatalf("seed the offer: %v", err)
+		}
+		w := postActionBody(t, srv, task.ID, `{"action":"rereview","instructions":"the migration ordering"}`)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, body %s", w.Code, w.Body)
+		}
+		updated, err := srv.Store.TaskByID(t.Context(), task.ID)
+		if err != nil || updated == nil {
+			t.Fatalf("TaskByID = (%+v, %v)", updated, err)
+		}
+		gate, _ := workflowtask.DecodeReviewGate(updated.ReviewGate)
+		if gate.Outcome != workflowtask.GateRereview || gate.Instructions != "the migration ordering" {
+			t.Fatalf("recorded gate = %+v, want the re-review outcome and instructions", gate)
+		}
+		if len(gate.Findings) != 0 {
+			t.Fatalf("re-review kept the offer: %+v", gate.Findings)
+		}
+		if updated.RereviewRounds != 1 {
+			t.Fatalf("rereview rounds = %d, want 1 (the guarded write counts it)", updated.RereviewRounds)
+		}
+	})
+
+	t.Run("rereview without instructions is refused before any write", func(t *testing.T) {
+		srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
+		if err := srv.Store.Update(t.Context(), &workflow.Task{ID: task.ID, Workflow: "pr-review", ReviewGate: offer}); err != nil {
+			t.Fatalf("seed the offer: %v", err)
+		}
+		w := postActionBody(t, srv, task.ID, `{"action":"rereview"}`)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body)
+		}
+		updated, err := srv.Store.TaskByID(t.Context(), task.ID)
+		if err != nil || updated == nil {
+			t.Fatalf("TaskByID = (%+v, %v)", updated, err)
+		}
+		if updated.Status != workflow.StatusWaitingHuman || updated.RereviewRounds != 0 {
+			t.Fatalf("refused re-review changed the row: %+v", updated)
+		}
+	})
+}
+
 // TestTaskActionIsUnscopedAndRemote covers what routing through the Gateway
 // contract has to preserve: the dashboard operator is authenticated and acts
 // across identities, so the action must arrive unscoped rather than claiming
@@ -544,7 +638,7 @@ func TestTaskListExposesLifecycleActions(t *testing.T) {
 	want := map[string][]string{
 		workflow.StatusQueued:       {"cancel", "reject"},
 		workflow.StatusRunning:      {"stop", "reject"},
-		workflow.StatusWaitingHuman: {"approve", "reject"},
+		workflow.StatusWaitingHuman: {"approve", "reject", "rereview"},
 		workflow.StatusParked:       {"retry", "abandon", "reject"},
 		workflow.StatusPROpen:       {"open_pr", "open_issue", "reject"},
 		workflow.StatusMerged:       {"archive"},

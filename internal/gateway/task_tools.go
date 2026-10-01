@@ -77,8 +77,9 @@ type ChatTaskActor interface {
 	// tasks. A nil identity is an authenticated dashboard operator, who acts
 	// across identities -- the distinction internal/domain/taskactions draws,
 	// and not the same as an empty name, which is a real identity in a
-	// single-identity deployment.
-	ApplyChatTaskAction(ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action) (TaskActionResult, error)
+	// single-identity deployment. res is the review gate answer payload; this
+	// tool has no instruction or selection syntax, so it is the zero value.
+	ApplyChatTaskAction(ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ReviewResponse) (TaskActionResult, error)
 }
 
 // ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
@@ -330,7 +331,7 @@ func taskActionTool(actor ChatTaskActor, identity string) tools.ToolEntry {
 			// actor is that same bound identity, because a bot acting on
 			// its own channel's task is exactly what happened -- and it is
 			// recorded as an agent's action, not a person's.
-			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, taskstate.Action(actionStr))
+			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, taskstate.Action(actionStr), taskactions.ReviewResponse{})
 			if err != nil {
 				return nil, fmt.Errorf("task_action: %w", err)
 			}
