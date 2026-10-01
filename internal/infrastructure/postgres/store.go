@@ -611,7 +611,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 			Attempt: int(r.Attempt), ParkReason: r.ParkReason, RetryCount: int(r.RetryCount),
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, Plan: r.Plan, Source: r.Source,
 			Identity: r.Identity, BindingID: r.BindingID, BindingVersion: int(r.BindingVersion),
-			Outputs: outputs,
+			Outputs:    outputs,
 			ReviewGate: r.ReviewGate, RereviewRounds: int(r.RereviewRounds),
 		})
 	}
