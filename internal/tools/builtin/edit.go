@@ -75,7 +75,7 @@ func NewEditTool(cwd string, mq *MutationQueue, rt *ReadTracker) Tool {
 		Schema:  editSchema,
 		Source:  "builtin",
 		Emoji:   "✏️",
-		Execute: makeEditExecutor(cwd, mq, rt),
+		Execute: makeEditExecutor(cwd, mq, rt, NewCheckpointStore(cwd)),
 	}
 }
 
@@ -121,7 +121,7 @@ func parseEditParams(params json.RawMessage) (EditParams, error) {
 	return p, nil
 }
 
-func makeEditExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor {
+func makeEditExecutor(cwd string, mq *MutationQueue, rt *ReadTracker, cp *CheckpointStore) Executor {
 	return func(ctx context.Context, params json.RawMessage, _ UIBridge) (Result, error) {
 		p, err := parseEditParams(params)
 		if err != nil {
@@ -150,7 +150,7 @@ func makeEditExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor {
 
 		var result Result
 		err = runWithContext(editCtx, func() error {
-			result = performEdit(path, p, mq)
+			result = performEdit(path, p, mq, cp)
 			return nil
 		})
 		if err != nil {
@@ -167,7 +167,7 @@ func makeEditExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor {
 // performEdit loads, mutates, and writes path according to the edits in p.
 // Every failure is returned as a Result with IsError set, never a non-nil
 // error, so the executor keeps a single error envelope.
-func performEdit(path string, p EditParams, mq *MutationQueue) Result {
+func performEdit(path string, p EditParams, mq *MutationQueue, cp *CheckpointStore) Result {
 	// Check file size before reading to avoid OOM on large files.
 	info, err := os.Stat(path)
 	if err != nil {
@@ -215,6 +215,13 @@ func performEdit(path string, p EditParams, mq *MutationQueue) Result {
 
 	if hadCRLF {
 		newContent = strings.ReplaceAll(newContent, "\n", "\r\n")
+	}
+
+	// Snapshot immediately before the write. applyEdits has already run, so
+	// a rejected edit leaves no checkpoint behind, and the mutation lock is
+	// held, so nothing can change the file between here and the write.
+	if _, err := cp.Snapshot(path); err != nil {
+		return Result{Content: fmt.Sprintf("refusing to edit %s: %v", path, err), IsError: true, ErrorKind: "checkpoint_failed"}
 	}
 
 	if err := writeFileAtomic(path, []byte(bom+newContent), 0o644); err != nil {

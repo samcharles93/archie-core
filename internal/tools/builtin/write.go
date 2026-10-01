@@ -54,11 +54,11 @@ func NewWriteTool(cwd string, mq *MutationQueue, rt *ReadTracker) Tool {
 		Schema:  writeSchema,
 		Source:  "builtin",
 		Emoji:   "📝",
-		Execute: makeWriteExecutor(cwd, mq, rt),
+		Execute: makeWriteExecutor(cwd, mq, rt, NewCheckpointStore(cwd)),
 	}
 }
 
-func makeWriteExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor {
+func makeWriteExecutor(cwd string, mq *MutationQueue, rt *ReadTracker, cp *CheckpointStore) Executor {
 	return func(ctx context.Context, params json.RawMessage, _ UIBridge) (Result, error) {
 		var p WriteParams
 		if err := json.Unmarshal(params, &p); err != nil {
@@ -91,6 +91,14 @@ func makeWriteExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor 
 
 			release := mq.Acquire(path)
 			defer release()
+
+			// Snapshot before the first byte changes. If the checkpoint cannot
+			// be taken the write is refused: proceeding would produce a
+			// mutation with nothing to restore from.
+			if _, err := cp.Snapshot(path); err != nil {
+				result = Result{Content: fmt.Sprintf("refusing to write %s: %v", path, err), IsError: true, ErrorKind: "checkpoint_failed"}
+				return nil
+			}
 
 			dir := filepath.Dir(path)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
