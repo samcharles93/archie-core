@@ -51,6 +51,7 @@ const settings: NavSpec = {
       paths: [
         "/settings/task-execution",
         "/settings/container-runtime",
+        "/settings/harness",
         "/settings/status",
         "/settings/advanced",
       ],

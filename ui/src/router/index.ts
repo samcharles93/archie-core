@@ -271,6 +271,19 @@ const routes = [
     },
   },
   {
+    path: "/settings/harness",
+    name: "settings-harness",
+    // Lazy so xterm.js stays out of the shell every page loads.
+    component: () => import("@/harness/HarnessPage.vue"),
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Harness",
+      description: "OAuth credential bindings and the Kit setup terminal.",
+      section: "settings",
+    },
+  },
+  {
     path: "/settings/advanced",
     name: "system-advanced",
     component: SystemAdvancedPage,

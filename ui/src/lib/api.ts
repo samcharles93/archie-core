@@ -258,6 +258,7 @@ export const api = {
     request<T>(`/api/bindings/${encodeURIComponent(id)}/approve`, {
       method: "POST",
     }),
+  harnessBindings: <T = unknown>() => request<T>("/api/harness/bindings"),
   sources: <T = unknown>() => request<T>("/api/sources"),
   sourceCreate: <T = unknown>(path: string) =>
     request<T>("/api/sources", { method: "POST", body: { path } }),
