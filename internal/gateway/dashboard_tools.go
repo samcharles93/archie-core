@@ -48,6 +48,7 @@ var dashboardPages = []DashboardPage{
 	{Path: "/settings/history", Label: "History", Description: "Every settings change: who made it, when, and what it was before."},
 	{Path: "/settings/plugins", Label: "Plugins", Description: "Directories Archie loads extensions from at startup."},
 	{Path: "/settings/container-runtime", Label: "Container runtime", Description: "The containers agents run in."},
+	{Path: "/settings/harness", Label: "Harness", Description: "OAuth credential bindings and the Kit setup terminal."},
 	{Path: "/settings/advanced", Label: "Advanced", Description: "Actions that stop or roll back archied."},
 }
 
