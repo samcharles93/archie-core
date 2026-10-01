@@ -15,6 +15,12 @@ type SendResult struct {
 // implements.
 type AdapterCapabilities struct {
 	Media bool
+	// Delete reports whether the sender can remove a message it
+	// previously sent (MessageDeleter), which is what lets an
+	// EphemeralReply be retracted once its TTL elapses. A sender that
+	// cannot delete still delivers ephemeral replies, it just leaves them
+	// in place.
+	Delete bool
 }
 
 // MediaSender delivers a MessageEvent carrying MediaAttachments through a

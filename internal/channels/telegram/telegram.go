@@ -142,6 +142,12 @@ type Gateway struct {
 	// where the library's default endpoint is used. It exists so launch's
 	// wiring can be tested without reaching api.telegram.org.
 	serverURL string
+
+	// newEphemeralSender builds the retracting sender sendEphemeral uses.
+	// Defaults to channels.NewEphemeralSender; tests override it to inject a
+	// clock so a status notice's retraction fires without waiting out its
+	// TTL, matching liveReply's newMediaSender seam.
+	newEphemeralSender func() *channels.EphemeralSender
 }
 
 type UpdateService interface {
@@ -161,7 +167,7 @@ type ReleaseAnnouncer interface {
 
 // New returns an unstarted Gateway. Call Start to begin long-polling.
 func New(token string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
-	return &Gateway{
+	g := &Gateway{
 		Token:              token,
 		AllowedUserIDs:     allowedUserIDs,
 		restartCh:          make(chan restartRequest, 1),
@@ -174,6 +180,10 @@ func New(token string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 		pendingApprovals:   make(map[string]*pendingApproval),
 		log:                log.With("component", "gateway-telegram"),
 	}
+	g.newEphemeralSender = func() *channels.EphemeralSender {
+		return channels.NewEphemeralSender(g.log, nil)
+	}
+	return g
 }
 
 func (g *Gateway) Name() string { return "telegram" }
@@ -221,8 +231,12 @@ func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, life
 			return err
 		}
 		// Confirm to whoever asked, now that the new instance can send.
+		// It is a status notice, not a record: it retracts itself after a
+		// short TTL so it does not sit in the chat as a stale "reloaded"
+		// line. The pre-restart "Reloading…" message from the outgoing
+		// instance stays as the durable acknowledgement.
 		if req := g.pendingRestart; req != nil && req.chatID != 0 {
-			g.sendMessage(runCtx, b, req.chatID, req.threadID, "✅ Archie reloaded.")
+			g.sendEphemeral(runCtx, b, req.chatID, req.threadID, "✅ Archie reloaded.")
 		}
 		if g.pendingRestart != nil {
 			g.pendingRestart = nil
@@ -865,12 +879,14 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 }
 
 // sendBlocks delivers one message as a Telegram rich message built from
-// structured blocks.
+// structured blocks and returns the Bot API message ID, or 0 when nothing was
+// delivered. The ID is what an EphemeralReply's retraction addresses; callers
+// that only send ignore it.
 //
 // Rich messages are a recent Bot API addition, so a rejection here is treated
 // as "unsupported" rather than fatal: fall back to sending the blocks as plain
 // text so the user still receives the reply, unformatted, instead of silence.
-func (g *Gateway) sendBlocks(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, blocks []models.InputRichBlock, errMsg string) {
+func (g *Gateway) sendBlocks(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, blocks []models.InputRichBlock, errMsg string) int {
 	rich := &bot.SendRichMessageParams{
 		ChatID:      chatID,
 		RichMessage: models.InputRichMessage{Blocks: blocks},
@@ -878,9 +894,9 @@ func (g *Gateway) sendBlocks(ctx context.Context, b *bot.Bot, chatID int64, mess
 	if messageThreadID != 0 {
 		rich.MessageThreadID = messageThreadID
 	}
-	if _, err := b.SendRichMessage(ctx, rich); err == nil {
+	if msg, err := b.SendRichMessage(ctx, rich); err == nil {
 		g.log.Debug("telegram message sent", "renderer", telegramRenderVersion, "mode", "rich")
-		return
+		return msg.ID
 	} else {
 		g.log.Warn("rich send failed, retrying unformatted", "error", err)
 	}
@@ -889,10 +905,12 @@ func (g *Gateway) sendBlocks(ctx context.Context, b *bot.Bot, chatID int64, mess
 	if messageThreadID != 0 {
 		plain.MessageThreadID = messageThreadID
 	}
-	if _, err := b.SendMessage(ctx, plain); err != nil {
+	if msg, err := b.SendMessage(ctx, plain); err != nil {
 		g.log.Error(errMsg, "error", err)
+		return 0
 	} else {
 		g.log.Warn("telegram message sent via plain fallback", "renderer", telegramRenderVersion, "mode", "plain")
+		return msg.ID
 	}
 }
 
