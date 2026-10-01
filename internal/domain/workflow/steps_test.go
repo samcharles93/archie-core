@@ -35,6 +35,7 @@ func gitRepoWithOriginRef(t *testing.T, base string) string {
 	runGit(t, dir, "init", "-b", base)
 	runGit(t, dir, "config", "user.name", "archie-bot")
 	runGit(t, dir, "config", "user.email", "archie-bot@example.com")
+	runGit(t, dir, "config", "commit.gpgsign", "false")
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("seed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +43,27 @@ func gitRepoWithOriginRef(t *testing.T, base string) string {
 	runGit(t, dir, "commit", "-m", "seed")
 	runGit(t, dir, "branch", "origin/"+base, base)
 	return dir
+}
+
+// hostileSigningConfig writes a global git config that makes every commit
+// fail unless the fixture disables signing in the repository's own config.
+func hostileSigningConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hostile.gitconfig")
+	const cfg = "[user]\n\tname = Hostile\n\temail = hostile@example.com\n\tsigningkey = /nonexistent/signing-key\n[gpg]\n\tformat = ssh\n[commit]\n\tgpgsign = true\n"
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestGitRepoWithOriginRefIgnoresHostSigningConfig pins the fixture's
+// hermeticity: it must not depend on the developer's global git identity or a
+// signing agent.
+func TestGitRepoWithOriginRefIgnoresHostSigningConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", hostileSigningConfig(t))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	gitRepoWithOriginRef(t, "main")
 }
 
 func newYaegiGateTaskContext(t *testing.T, dir string) *TaskContext {

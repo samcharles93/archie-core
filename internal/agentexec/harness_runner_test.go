@@ -77,6 +77,27 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// hostileSigningConfig writes a global git config that makes every commit
+// fail unless the fixture disables signing in the repository's own config.
+func hostileSigningConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hostile.gitconfig")
+	const cfg = "[user]\n\tname = Hostile\n\temail = hostile@example.com\n\tsigningkey = /nonexistent/signing-key\n[gpg]\n\tformat = ssh\n[commit]\n\tgpgsign = true\n"
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestFixtureSeedsARepositoryThatIgnoresHostSigningConfig pins the fixture's
+// hermeticity: it must not depend on the developer's global git identity or a
+// signing agent.
+func TestFixtureSeedsARepositoryThatIgnoresHostSigningConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", hostileSigningConfig(t))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	newFixture(t, "edit")
+}
+
 type fixture struct {
 	workspace string
 	log       string
@@ -87,6 +108,7 @@ func newFixture(t *testing.T, scenario string) *fixture {
 	t.Helper()
 	ws := t.TempDir()
 	runGit(t, ws, "init", "-q")
+	runGit(t, ws, "config", "commit.gpgsign", "false")
 	if err := os.WriteFile(filepath.Join(ws, "widget_test.go"), []byte("package widget\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

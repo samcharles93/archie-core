@@ -338,6 +338,7 @@ func newLocalRemote(t *testing.T, owner, repo string) string {
 	run(seed, "init", "-b", "main")
 	run(seed, "config", "user.name", "seeder")
 	run(seed, "config", "user.email", "seed@example.com")
+	run(seed, "config", "commit.gpgsign", "false")
 	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("seed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -345,6 +346,26 @@ func newLocalRemote(t *testing.T, owner, repo string) string {
 	run(seed, "commit", "-m", "seed")
 	run(seed, "push", "file://"+bare, "main")
 	return host
+}
+
+// hostileSigningConfig writes a global git config that makes every commit
+// fail unless the fixture disables signing in the repository's own config.
+func hostileSigningConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hostile.gitconfig")
+	const cfg = "[user]\n\tname = Hostile\n\temail = hostile@example.com\n\tsigningkey = /nonexistent/signing-key\n[gpg]\n\tformat = ssh\n[commit]\n\tgpgsign = true\n"
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestNewLocalRemoteIgnoresHostSigningConfig pins the fixture's hermeticity:
+// it must not depend on the developer's global git identity or a signing agent.
+func TestNewLocalRemoteIgnoresHostSigningConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", hostileSigningConfig(t))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	newLocalRemote(t, "acme", "todo")
 }
 
 func startEmbeddedTaskRPCServer(t *testing.T) *server.Server {
