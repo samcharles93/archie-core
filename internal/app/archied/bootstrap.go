@@ -822,7 +822,7 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 // not require Docker; repository tasks park instead of falling back to a host
 // model loop.
 func (b *boot) setupContainers(ctx context.Context) func() {
-	containerPool, storeBackend, closeDocker := startContainers(ctx, b.cfg, b.log)
+	containerPool, storeBackend, closeDocker := startContainers(ctx, b.cfg, b.secrets, b.log)
 	b.containerPool = containerPool
 	b.storeBackend = storeBackend
 	return closeDocker

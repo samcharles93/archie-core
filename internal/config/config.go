@@ -897,6 +897,20 @@ type ContainerConfig struct {
 	// seeded from this field but validated and stored (and reloaded live)
 	// separately -- see internal/app/controlplane.
 	Credentials []CredentialBinding `toml:"credentials" yaml:"credentials" json:"-"`
+	// RegistryAuth is the credential a private registry requires when the
+	// configured image (or a profile's) is pulled. It uses the same
+	// secret-reference shape as every other credential in this file; the
+	// resolved value is a Docker registry.AuthConfig JSON document, e.g.
+	// {"username":"bot","password":"..."} ("identitytoken",
+	// "registrytoken" and "serveraddress" are honoured when present but
+	// optional -- the daemon derives the host from the image reference). The
+	// zero value means anonymous pulls, which is what the pool has always
+	// done; it never fails a deployment that has no private registry.
+	// RegistryAuth is file-owned, not part of the control-plane JSON document
+	// (container-runtime-policies): it is a secret reference, resolved at boot
+	// and restart-required, so the pool receives the resolved value rather
+	// than a stored one. See internal/container's encodeRegistryAuth.
+	RegistryAuth SecretRef `toml:"registry_auth" yaml:"registry_auth" json:"-"`
 }
 
 // CredentialBinding maps one Kit credential@1 service name to an org secret.

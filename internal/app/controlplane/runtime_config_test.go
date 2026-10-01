@@ -660,6 +660,33 @@ func TestRuntimeConfigLayersStoredProfiles(t *testing.T) {
 	}
 }
 
+// A stored container-runtime-policies document replaces the file's [containers]
+// section wholesale, so a file-owned field that document does not carry -- the
+// registry credential resolved at boot -- must be preserved across the
+// assignment or it is silently dropped and every private-registry pull is
+// anonymous again.
+func TestRuntimeConfigPreservesFileOwnedRegistryAuth(t *testing.T) {
+	base := config.Config{Containers: config.ContainerConfig{
+		Image:        "agent:1",
+		RegistryAuth: config.SecretRef{Engine: "env", Key: "REGISTRY_AUTH"},
+	}}
+
+	client := NewRPCClient(&runtimeConfigClient{values: map[string]any{
+		SchedulingPolicyKind:         map[string]any{"poll_interval": "2m", "dispatch": map[string]any{"trigger": "assignee"}},
+		ContainerRuntimePoliciesKind: map[string]any{"image": "agent:2", "pull_policy": "always"},
+	}})
+	got, _, err := client.RuntimeConfig(t.Context(), base)
+	if err != nil {
+		t.Fatalf("RuntimeConfig: %v", err)
+	}
+	if got.Containers.Image != "agent:2" {
+		t.Fatalf("image = %q, want the stored document's", got.Containers.Image)
+	}
+	if want := (config.SecretRef{Engine: "env", Key: "REGISTRY_AUTH"}); got.Containers.RegistryAuth != want {
+		t.Fatalf("registry_auth = %+v, want the file's %+v preserved across the container-policies layering", got.Containers.RegistryAuth, want)
+	}
+}
+
 // A stored CredentialBindingsKind value replaces the file's bindings
 // outright; no stored value at all leaves the file's in effect (the same
 // shape TestRuntimeConfigLayersStoredProfiles pins for AgentProfileKind, for

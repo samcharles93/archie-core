@@ -442,6 +442,15 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 # volume_ttl = "72h"               # max age for persistent repo volumes and Git clone caches
 # pull_policy = "missing"          # "missing" or "always"
 #
+# A private registry needs a credential the daemon sends on pull (an
+# anonymous pull always answers 401 there, whatever the policy). The value is
+# a Docker registry.AuthConfig JSON document -- {"username":"bot","password":"..."}
+# ("identitytoken"/"registrytoken" are alternatives; "serveraddress" is
+# optional and defaults to the image's registry). Unset means anonymous pulls,
+# exactly as before this key existed; a reference that cannot be resolved
+# warns and pulls anonymously rather than failing the daemon.
+# registry_auth = { engine = "env", key = "ARCHIE_REGISTRY_AUTH" }
+#
 # Agent profiles a workflow selects with `profile: <name>`. A workflow that
 # names none runs under [containers].image with every tool.
 # Once the State Store holds container policies, edit profiles in the

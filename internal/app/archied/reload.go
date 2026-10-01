@@ -157,9 +157,9 @@ var reloadableFields = map[string]bool{
 // same shape one layer down: kitrun.Launcher reads Config.Get().Containers.
 // Credentials fresh on every Launch (CredentialBindingsKind), never a slice
 // captured once when the launcher was built. Everything else in
-// Containers (Image, MaxConcurrency, MaxUptime, PullPolicy, Network) is
-// frozen in the startup-built container pool -- the dispatchers re-read
-// MaxConcurrency but the pool captures it at construction
+// Containers (Image, MaxConcurrency, MaxUptime, PullPolicy, Network,
+// RegistryAuth) is frozen in the startup-built container pool -- the
+// dispatchers re-read MaxConcurrency but the pool captures it at construction
 // (container/pool.go:94,163), so a change only partially applies and must
 // warn requires-restart. Forge.Host is carried into TaskContext by ForTask
 // (display/link building only); the forge client itself is startup-built, so

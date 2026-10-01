@@ -89,8 +89,10 @@ domain migration.
   reload of `nats.url` logs an error requiring restart to prevent split-brain
   delivery.
 - **Container pull policy:** `containers.pull_policy` must be `"missing"`
-  (default) or `"always"`. Private registries return 401 on `"always"` because
-  no auth is sent. Refresh explicitly via `docker compose pull agent`.
+  (default) or `"always"`. Private registries need `containers.registry_auth`
+  (a `SecretRef` resolving to a `registry.AuthConfig` JSON document); without it
+  the pull is anonymous and a private registry answers 401. Refresh explicitly
+  via `docker compose pull agent`.
 - **Docker Compose:** `docker-compose.yml` carries optional external NATS and
   the `agent` build stanza. The agent uses a `build` profile so `up -d nats`
   never starts it as a persistent service.

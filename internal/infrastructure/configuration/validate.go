@@ -489,6 +489,15 @@ func validateContainers(cfg *config.Config) error {
 	if err := cfg.Containers.ValidateCredentialBindings(); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
+	// A registry credential that names only one half of the reference can only
+	// be a typo, and the pool cannot resolve it into the header a private
+	// registry needs -- the same rule resolveProviderMap applies to provider
+	// keys. The zero reference is deliberately accepted: anonymous pulls are
+	// the behaviour for a deployment with no private registry, and this field
+	// existing must not change that.
+	if ref := cfg.Containers.RegistryAuth; ref != (config.SecretRef{}) && (ref.Engine == "" || ref.Key == "") {
+		return fmt.Errorf("%w: containers.registry_auth must name both an engine and a key, got {engine: %q, key: %q}", ErrInvalidInput, ref.Engine, ref.Key)
+	}
 	return nil
 }
 

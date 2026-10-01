@@ -202,6 +202,65 @@ func TestResolveForgeBuildsClientWhenTokenResolves(t *testing.T) {
 	}
 }
 
+// resolveRegistryAuth hands the container pool the resolved
+// [containers].registry_auth, and degrades to an anonymous pull (with a
+// warning) whenever there is nothing resolvable to hand it. A deployment with
+// no private registry must be unaffected by the field existing, and a private
+// registry whose secret is missing or misnamed must still let every task that
+// does not need it run -- the pool simply pulls without auth, as it always did,
+// and the warning explains the 401 that follows.
+func TestResolveRegistryAuthDegradesRatherThanFailing(t *testing.T) {
+	t.Run("unconfigured is silent", func(t *testing.T) {
+		rec := &recordingHandler{}
+		if got := resolveRegistryAuth(secret.SecretRef{}, secret.NewRegistry(), slog.New(rec)); got != "" {
+			t.Errorf("resolveRegistryAuth(empty) = %q, want empty", got)
+		}
+		if warns := rec.Warnings(); len(warns) != 0 {
+			t.Errorf("unconfigured registry auth logged %v, want nothing", warns)
+		}
+	})
+
+	t.Run("resolved credential reaches the pool", func(t *testing.T) {
+		t.Setenv("ARCHIE_TEST_REGISTRY_AUTH", `{"username":"bot","password":"s3cret"}`)
+		rec := &recordingHandler{}
+		got := resolveRegistryAuth(
+			secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_REGISTRY_AUTH"},
+			secret.NewRegistry(), slog.New(rec))
+		if want := `{"username":"bot","password":"s3cret"}`; got != want {
+			t.Errorf("resolveRegistryAuth = %q, want the resolved secret %q", got, want)
+		}
+		if warns := rec.Warnings(); len(warns) != 0 {
+			t.Errorf("a resolvable credential logged %v, want nothing", warns)
+		}
+	})
+
+	t.Run("unresolvable credential degrades with a warning", func(t *testing.T) {
+		rec := &recordingHandler{}
+		got := resolveRegistryAuth(
+			secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_REGISTRY_AUTH_DEFINITELY_UNSET"},
+			secret.NewRegistry(), slog.New(rec))
+		if got != "" {
+			t.Errorf("resolveRegistryAuth = %q, want empty for an unresolvable credential", got)
+		}
+		warns := rec.Warnings()
+		if len(warns) != 1 || !strings.Contains(warns[0], "registry credential unavailable") {
+			t.Errorf("warnings = %v, want exactly one saying the credential was unavailable", warns)
+		}
+	})
+
+	t.Run("no secret registry degrades instead of panicking", func(t *testing.T) {
+		rec := &recordingHandler{}
+		got := resolveRegistryAuth(
+			secret.SecretRef{Engine: "env", Key: "ANYTHING"}, nil, slog.New(rec))
+		if got != "" {
+			t.Errorf("resolveRegistryAuth = %q, want empty with no secret registry", got)
+		}
+		if warns := rec.Warnings(); len(warns) != 1 {
+			t.Errorf("warnings = %v, want exactly one", warns)
+		}
+	})
+}
+
 func TestResolveProviderSecretSetsPrivateRuntimeEnvironment(t *testing.T) {
 	registry := secret.NewRegistry()
 	registry.Register(providerSecretEngine{value: "provider-secret"})

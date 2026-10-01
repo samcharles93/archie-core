@@ -213,9 +213,16 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		// now), and settings() never sets it, so whatever the AgentProfileKind
 		// layering step below assigns is what's left standing regardless of
 		// which of the two runs first.
+		//
+		// RegistryAuth is the same shape of file-owned field, with no resource of
+		// its own to restore it later the way CredentialBindingsKind restores
+		// Credentials: the document cannot carry a secret reference, so it has to
+		// survive this assignment or the daemon pulls anonymously again.
 		profiles := out.Containers.Profiles
+		registryAuth := out.Containers.RegistryAuth
 		out.Containers = policies.settings()
 		out.Containers.Profiles = profiles
+		out.Containers.RegistryAuth = registryAuth
 		return nil
 	}); err != nil {
 		return config.Config{}, nil, err

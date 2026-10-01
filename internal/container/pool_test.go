@@ -1,9 +1,12 @@
 package container
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 )
 
@@ -723,5 +727,120 @@ func TestPoolActiveReportsInFlightContainers(t *testing.T) {
 	// that way), so it must not be reported as a cap of zero.
 	if got := (&Pool{}).Cap(); got != 0 {
 		t.Errorf("Cap() with no MaxConcurrency = %d, want 0 (unlimited)", got)
+	}
+}
+
+// ── registry credential on image pull ──────────────────────────────────
+
+// pullImage must send [containers].registry_auth to the engine as the
+// base64url registry.AuthConfig the X-Registry-Auth header carries. Without
+// it a private registry answers 401 no matter what pull_policy says, because
+// docker login only writes a file the CLI reads.
+func TestPullImageSendsConfiguredRegistryAuth(t *testing.T) {
+	const ref = "git.catlow.cloud/team/archie-agent:latest"
+
+	headers := make(chan string, 1)
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/images/create") {
+			headers <- r.Header.Get("X-Registry-Auth")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{
+			Image:        ref,
+			PullPolicy:   "always",
+			RegistryAuth: `{"username":"bot","password":"s3cret"}`,
+		},
+		log: discardLogger(),
+	}
+	if err := pool.pullImage(context.Background(), ref); err != nil {
+		t.Fatalf("pullImage: %v", err)
+	}
+
+	header := <-headers
+	if header == "" {
+		t.Fatal("image pull sent no X-Registry-Auth header: the configured registry credential never reached ImagePullOptions")
+	}
+	raw, err := base64.URLEncoding.DecodeString(header)
+	if err != nil {
+		t.Fatalf("X-Registry-Auth %q is not base64url: %v", header, err)
+	}
+	var got registry.AuthConfig
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("X-Registry-Auth payload %q is not an AuthConfig: %v", raw, err)
+	}
+	if got.Username != "bot" || got.Password != "s3cret" {
+		t.Fatalf("X-Registry-Auth = %+v, want username bot and the configured password", got)
+	}
+}
+
+// A deployment with no registry credential -- or with one that cannot be
+// turned into a header -- must keep pulling anonymously exactly as it did
+// before the field existed, rather than failing the pool (and with it every
+// autonomous task) closed. A broken credential is logged so the 401 it will
+// still produce is explicable.
+func TestPullImageWithoutUsableRegistryCredentialPullsAnonymously(t *testing.T) {
+	const ref = "registry.example.test/team/archie-agent:latest"
+
+	tests := []struct {
+		name          string
+		credential    string
+		wantLogSubstr string
+	}{
+		{name: "no credential configured"},
+		{name: "unparseable credential", credential: `{"username":"bot"`, wantLogSubstr: "registry credential unusable"},
+		{name: "credential naming nothing", credential: `{}`, wantLogSubstr: "registry credential unusable"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			headers := make(chan string, 1)
+			dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/images/create") {
+					headers <- r.Header.Get("X-Registry-Auth")
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(dockerAPI.Close)
+
+			dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = dockerClient.Close() })
+
+			var logBuf bytes.Buffer
+			pool := &Pool{
+				cli: dockerClient,
+				cfg: Config{Image: ref, PullPolicy: "always", RegistryAuth: tc.credential},
+				log: slog.New(slog.NewTextHandler(&logBuf, nil)),
+			}
+			if err := pool.pullImage(context.Background(), ref); err != nil {
+				t.Fatalf("pullImage must degrade to an anonymous pull, got error: %v", err)
+			}
+
+			if header := <-headers; header != "" {
+				t.Fatalf("X-Registry-Auth = %q, want none for %s", header, tc.name)
+			}
+			if tc.wantLogSubstr == "" {
+				if strings.Contains(logBuf.String(), "registry credential") {
+					t.Fatalf("log for %s should not warn about a credential it was never given: %s", tc.name, logBuf.String())
+				}
+				return
+			}
+			if !strings.Contains(logBuf.String(), tc.wantLogSubstr) {
+				t.Fatalf("log = %q, want it to mention %q", logBuf.String(), tc.wantLogSubstr)
+			}
+		})
 	}
 }

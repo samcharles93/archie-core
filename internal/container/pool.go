@@ -6,7 +6,9 @@ package container
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -117,6 +120,11 @@ type Config struct {
 	// (gate re-runs, human replies) during this window. PRD §1.
 	GracePeriod time.Duration
 	PullPolicy  string
+	// RegistryAuth is the resolved value of [containers].registry_auth: either
+	// empty (anonymous pulls -- the behaviour for a deployment with no private
+	// registry) or a Docker registry.AuthConfig JSON document. pullImage
+	// encodes it into the X-Registry-Auth header the Engine API expects.
+	RegistryAuth string
 	// Network is the Docker network spawned agent containers join. Empty
 	// falls back to selfNetwork's best-effort auto-detection.
 	Network string
@@ -573,7 +581,7 @@ func (p *Pool) pullImage(ctx context.Context, ref string) error {
 	}
 
 	p.log.Info("pulling image", "image", ref)
-	rc, err := p.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
+	rc, err := p.cli.ImagePull(ctx, ref, client.ImagePullOptions{RegistryAuth: p.registryAuthHeader(ref)})
 	if err != nil {
 		return fmt.Errorf("pull %s: %w", ref, err)
 	}
@@ -587,6 +595,46 @@ func (p *Pool) pullImage(ctx context.Context, ref string) error {
 	}
 	p.log.Info("image pulled", "image", ref)
 	return nil
+}
+
+// registryAuthHeader renders p.cfg.RegistryAuth into the value the Engine API
+// expects in ImagePullOptions.RegistryAuth (the base64url AuthConfig of the
+// X-Registry-Auth header), or "" when no credential is configured.
+//
+// A credential that cannot be rendered degrades to an anonymous pull with a
+// warning rather than failing the pull: one bad secret must not take every
+// autonomous task down with it, and the warning is what makes the 401 a private
+// registry will still answer explicable. A missing credential is silent -- it is
+// the deployment shape that has no private registry.
+func (p *Pool) registryAuthHeader(ref string) string {
+	if p.cfg.RegistryAuth == "" {
+		return ""
+	}
+	encoded, err := encodeRegistryAuth(p.cfg.RegistryAuth)
+	if err != nil {
+		p.log.Warn("registry credential unusable; pulling without auth", "image", ref, "err", err)
+		return ""
+	}
+	return encoded
+}
+
+// encodeRegistryAuth encodes credential, a registry.AuthConfig JSON document,
+// as the base64url JSON the Engine API documents for
+// [registry.AuthHeader]. It is the shape docker login's config.json stores,
+// minus the surrounding "auths" map.
+func encodeRegistryAuth(credential string) (string, error) {
+	var auth registry.AuthConfig
+	if err := json.Unmarshal([]byte(credential), &auth); err != nil {
+		return "", fmt.Errorf("decode registry credential: %w", err)
+	}
+	if auth.Username == "" && auth.Password == "" && auth.IdentityToken == "" && auth.RegistryToken == "" {
+		return "", errors.New("registry credential names no username, password, identity token or registry token")
+	}
+	payload, err := json.Marshal(auth)
+	if err != nil {
+		return "", fmt.Errorf("encode registry credential: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(payload), nil
 }
 
 // selfNetwork detects the user-defined Docker network the current

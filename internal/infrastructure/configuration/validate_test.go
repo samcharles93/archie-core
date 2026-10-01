@@ -278,6 +278,39 @@ func TestValidateContainersSupportsBothBrokerDeployments(t *testing.T) {
 	})
 }
 
+// TestValidateContainersRegistryAuth pins that a registry credential naming
+// only half a secret reference is refused while the zero reference (anonymous
+// pulls) is accepted: a half-named ref can only be a typo, and the pool cannot
+// resolve it into the header a private registry needs.
+func TestValidateContainersRegistryAuth(t *testing.T) {
+	tests := []struct {
+		name    string
+		ref     secret.SecretRef
+		wantErr bool
+	}{
+		{name: "unset pulls anonymously"},
+		{name: "both halves named", ref: secret.SecretRef{Engine: "env", Key: "REGISTRY_AUTH"}},
+		{name: "engine only", ref: secret.SecretRef{Engine: "env"}, wantErr: true},
+		{name: "key only", ref: secret.SecretRef{Key: "REGISTRY_AUTH"}, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalValidConfig()
+			cfg.Containers.RegistryAuth = tc.ref
+			err := Validate(&cfg)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidInput) {
+					t.Fatalf("Validate() = %v, want ErrInvalidInput", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() = %v, want nil", err)
+			}
+		})
+	}
+}
+
 // TestValidateForgeIntake pins the forge.intake contract: an unset intake
 // resolves to poll without mutating cfg, and webhook/both require a webhook
 // secret and listen address.

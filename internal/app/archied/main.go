@@ -971,6 +971,7 @@ func safePluginInfo(p plugin.Plugin) (name, version string) {
 func startContainers(
 	ctx context.Context,
 	cfg config.Config,
+	secrets *secret.Registry,
 	log *slog.Logger,
 ) (*container.Pool, storage.Backend, func()) {
 	noop := func() {}
@@ -991,6 +992,7 @@ func startContainers(
 		MaxConcurrency: cfg.Containers.MaxConcurrency,
 		MaxUptime:      cfg.Containers.MaxUptime.Std(),
 		PullPolicy:     cfg.Containers.PullPolicy,
+		RegistryAuth:   resolveRegistryAuth(cfg.Containers.RegistryAuth, secrets, log),
 		Network:        cfg.Containers.Network,
 		DockerClient:   dockerCli,
 		// Only the embedded broker binds a discovered host gateway. The
@@ -998,9 +1000,7 @@ func startContainers(
 		RequireHostGateway: cfg.NATS.Mode == config.NATSModeEmbedded,
 	}, log)
 	if err != nil {
-		// A missing image is recoverable by hand. The daemon sends no registry
-		// credentials on pull (internal/container/pool.go), so a private
-		// registry always needs the operator's CLI to fetch it first.
+		// A missing image is recoverable by hand.
 		log.Error("autonomous workflows unavailable: container pool unavailable", "err", err,
 			"hint", "run `docker compose pull agent` (or `build agent`) so the image is present locally")
 		return nil, storage.NewDockerBackend(dockerCli), closeDocker
@@ -1015,4 +1015,32 @@ func startContainers(
 		}
 		closeDocker()
 	}
+}
+
+// resolveRegistryAuth resolves [containers].registry_auth into the credential
+// the container pool sends on pull. It returns "" -- an anonymous pull, the
+// pool's behaviour before the field existed -- whenever the credential is not
+// configured or cannot be resolved, because a missing registry credential must
+// not stop autonomous work: the pool only needs it for a private registry. The
+// warning is what makes the 401 that a private registry will still answer
+// explicable after a typo or an unset secret. A ref that names only one half is
+// a config error caught by configuration.Validate, not a missing credential.
+func resolveRegistryAuth(ref secret.SecretRef, secrets *secret.Registry, log *slog.Logger) string {
+	if ref == (secret.SecretRef{}) {
+		return ""
+	}
+	if secrets == nil {
+		log.Warn("registry credential unavailable; pulling without auth", "reason", "no secret registry", "engine", ref.Engine, "key", ref.Key)
+		return ""
+	}
+	value, err := secrets.Resolve(ref)
+	if err != nil {
+		log.Warn("registry credential unavailable; pulling without auth", "err", err, "engine", ref.Engine, "key", ref.Key)
+		return ""
+	}
+	if strings.TrimSpace(value) == "" {
+		log.Warn("registry credential resolved empty; pulling without auth", "engine", ref.Engine, "key", ref.Key)
+		return ""
+	}
+	return value
 }
