@@ -34,10 +34,14 @@ SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status
 -- back would send rows without them. outputs rides it because the task row's
 -- own structured result is part of the summary a caller or the dashboard
 -- reads (docs/prds/workflow-call-outputs.md, "Storage and wire").
+-- review_gate and rereview_rounds join it deliberately: the offer the gate
+-- wrote is what the operator reads before answering it
+-- (docs/prds/pr-review-operator-response.md, "The review the operator
+-- answers"), and the round count is the cap's visible half.
 SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
        created_at, updated_at, plan, source, identity, binding_id, binding_version,
-       outputs
+       outputs, review_gate, rereview_rounds
 FROM tasks ORDER BY updated_at DESC LIMIT $1;
 
 -- name: CountTasksByStatus :many
@@ -80,9 +84,15 @@ UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
     watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
     review_payload = $13, workflow_definition_version = $14,
     workflow_definition_digest = $15, workflow_definition_yaml = $16,
-    outputs = $17,
+    outputs = $17, review_gate = $18, rereview_rounds = $19,
     updated_at = now()
 WHERE id = $1;
+
+-- name: RereviewRounds :one
+-- Read under the lock LockTaskStatus takes in the same transaction, so the
+-- cap decision and the increment it guards cannot interleave with a second
+-- response write.
+SELECT rereview_rounds FROM tasks WHERE id = $1;
 
 -- name: LockTaskStatus :one
 -- Locks the task's row and returns its current status, so the staleness and
@@ -164,6 +174,20 @@ UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
     workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
     park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = @id AND status = @from_status;
+
+-- name: RespondReviewGateTask :execrows
+-- The review gate response write (docs/prds/pr-review-operator-response.md,
+-- Decision 2): one guarded requeue beside RetryTask/BeginRemediation. The
+-- from-status guard and the transition table live in the store's transaction
+-- around this statement; the rereview cap is enforced HERE, in the row, so
+-- two simultaneous re-reviews cannot spend a round the cap forbids. An
+-- approve passes rereview=false and bumps nothing.
+UPDATE tasks SET status = 'queued',
+    review_gate = @gate::text,
+    rereview_rounds = rereview_rounds + CASE WHEN @rereview::bool THEN 1 ELSE 0 END,
+    park_reason = '', park_class = 'needs_human', updated_at = now()
+WHERE id = @id AND status = @from_status
+  AND (@rereview::bool = false OR rereview_rounds < @cap::bigint);
 
 -- name: ArchiveTaskDelete :execrows
 DELETE FROM tasks WHERE id = $1 AND status = $2;

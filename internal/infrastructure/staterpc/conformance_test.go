@@ -149,6 +149,57 @@ func TestStateStoreConformance(t *testing.T) {
 			if got := triggered.EffectivePRNumber(); got != 7 {
 				t.Fatalf("queued task EffectivePRNumber = %d, want 7 -- inputs did not round trip", got)
 			}
+			// Review gate response: one guarded requeue records the answer,
+			// counts a re-review, and refuses past the cap with the sentinel
+			// intact across the hop (docs/prds/pr-review-operator-response.md,
+			// Decision 2). The trigger task carries the gate so the main
+			// battery's task row keeps its own path.
+			if err := c.Transition(ctx, triggered.ID, "queued", "running", "started"); err != nil {
+				t.Fatalf("claim trigger task: %v", err)
+			}
+			if err := c.Transition(ctx, triggered.ID, "running", "waiting_human", "awaiting review"); err != nil {
+				t.Fatalf("wait trigger task: %v", err)
+			}
+			if err := c.RespondReviewGate(ctx, triggered.ID, "waiting_human", `{"outcome":"approve"}`, false, 2); err != nil {
+				t.Fatalf("RespondReviewGate(approve): %v", err)
+			}
+			gated, err := c.TaskByID(ctx, triggered.ID)
+			if err != nil || gated == nil {
+				t.Fatalf("TaskByID after approve: %+v %v", gated, err)
+			}
+			if gated.Status != "queued" || gated.ReviewGate != `{"outcome":"approve"}` || gated.RereviewRounds != 0 {
+				t.Fatalf("approve row = status:%q gate:%q rounds:%d, want queued, the document, 0", gated.Status, gated.ReviewGate, gated.RereviewRounds)
+			}
+			// Two re-reviews spend the cap; the third is refused and leaves
+			// the task waiting with its round count and gate intact.
+			for round := 1; round <= 2; round++ {
+				if err := c.Transition(ctx, triggered.ID, "queued", "running", "started"); err != nil {
+					t.Fatalf("re-claim %d: %v", round, err)
+				}
+				if err := c.Transition(ctx, triggered.ID, "running", "waiting_human", "awaiting review"); err != nil {
+					t.Fatalf("re-wait %d: %v", round, err)
+				}
+				if err := c.RespondReviewGate(ctx, triggered.ID, "waiting_human", `{"outcome":"rereview"}`, true, 2); err != nil {
+					t.Fatalf("RespondReviewGate(rereview %d): %v", round, err)
+				}
+				got, err := c.TaskByID(ctx, triggered.ID)
+				if err != nil || got == nil || got.RereviewRounds != round {
+					t.Fatalf("rereview %d rounds = %+v %v, want %d across the wire", round, got, err, round)
+				}
+			}
+			if err := c.Transition(ctx, triggered.ID, "queued", "running", "started"); err != nil {
+				t.Fatalf("final re-claim: %v", err)
+			}
+			if err := c.Transition(ctx, triggered.ID, "running", "waiting_human", "awaiting review"); err != nil {
+				t.Fatalf("final re-wait: %v", err)
+			}
+			if err := c.RespondReviewGate(ctx, triggered.ID, "waiting_human", `{"outcome":"rereview"}`, true, 2); !errors.Is(err, storecontract.ErrRereviewCapReached) {
+				t.Fatalf("RespondReviewGate at cap = %v, want ErrRereviewCapReached across the wire", err)
+			}
+			capped, err := c.TaskByID(ctx, triggered.ID)
+			if err != nil || capped == nil || capped.Status != "waiting_human" || capped.RereviewRounds != 2 {
+				t.Fatalf("refused re-review row = %+v %v, want waiting_human at 2 rounds", capped, err)
+			}
 			if err := c.Transition(ctx, task.ID, task.Status, "running", "started"); err != nil {
 				t.Fatalf("Transition: %v", err)
 			}

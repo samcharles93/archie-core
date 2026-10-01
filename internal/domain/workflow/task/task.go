@@ -128,6 +128,24 @@ type Task struct {
 	// budget: one shared counter made N operator retries eat the
 	// review-remediation budget and vice versa.
 	RemediationRounds int `json:"remediation_rounds"`
+	// ReviewGate is the operator-approval gate's whole conversation with
+	// the operator, persisted as one JSON document (prreview.EncodeReviewGate):
+	// the offer the gate writes before it waits for an operator -- the scored
+	// findings, the head SHA, the pull request's identity and the workflow the
+	// wait resumes -- and the answer the response path fills in -- the outcome,
+	// the selected findings' keys for an approve and the instructions for a
+	// re-review. Without it, "post the selected findings" cannot mean the
+	// findings the operator saw: the resumed run recomputes them with agent
+	// calls (docs/prds/pr-review-operator-response.md, "The review the operator
+	// answers"). Empty for a task that never reached the gate.
+	ReviewGate string `json:"review_gate"`
+	// RereviewRounds counts how many operator re-reviews the pr-review gate
+	// granted, incremented in the same guarded write that requeues the
+	// re-review and capped at prreview.MaxRereviewRounds
+	// (docs/prds/pr-review-operator-response.md, Decision 2). Deliberately
+	// separate from both RetryCount and RemediationRounds -- one shared
+	// counter made unrelated retries draw another phase's budget down.
+	RereviewRounds int `json:"rereview_rounds"`
 	// CallParentTaskID is the task whose workflow.call step started this
 	// one; 0 on a root run. A caller reads only the tasks it started,
 	// through WorkflowCallStatus.

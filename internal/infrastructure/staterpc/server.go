@@ -342,6 +342,13 @@ func (s *server) RetryTask(ctx context.Context, r *pb.RetryTaskRequest) (*pb.Ret
 	return &pb.RetryTaskResponse{}, nil
 }
 
+func (s *server) RespondReviewGate(ctx context.Context, r *pb.RespondReviewGateRequest) (*pb.RespondReviewGateResponse, error) {
+	if err := s.deps.Tasks.RespondReviewGate(ctx, r.TaskId, r.FromStatus, r.Gate, r.Rereview, int(r.Cap)); err != nil {
+		return nil, s.logErr("RespondReviewGate", err)
+	}
+	return &pb.RespondReviewGateResponse{}, nil
+}
+
 func (s *server) BeginRemediation(ctx context.Context, r *pb.BeginRemediationRequest) (*pb.BeginRemediationResponse, error) {
 	if err := s.deps.Tasks.BeginRemediation(ctx, r.TaskId, r.Payload); err != nil {
 		return nil, s.logErr("BeginRemediation", err)

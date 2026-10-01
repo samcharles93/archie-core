@@ -121,6 +121,8 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		Inputs:                    inputs,
 		Outputs:                   outputs,
 		ReviewPayload:             t.ReviewPayload,
+		ReviewGate:                t.ReviewGate,
+		RereviewRounds:            int(t.RereviewRounds),
 		ParkClass:                 t.ParkClass,
 		RemediationRounds:         int(t.RemediationRounds),
 		CallParentTaskID:          t.CallParentTaskID,
@@ -318,6 +320,8 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 		RetryCount:                int64(t.RetryCount),
 		RemediationRounds:         int64(t.RemediationRounds),
 		ReviewPayload:             t.ReviewPayload,
+		ReviewGate:                t.ReviewGate,
+		RereviewRounds:            int64(t.RereviewRounds),
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,
@@ -404,6 +408,53 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf stri
 			ID: taskID, Workflow: wf, FromStatus: fromStatus,
 		})
 	})
+}
+
+// RespondReviewGate is the review gate response write
+// (docs/prds/pr-review-operator-response.md, Decision 2): one guarded
+// requeue that records the operator's answer, increments rereview_rounds for
+// a re-review only, and writes one audit row -- all in one transaction. The
+// cap is checked under the row lock the transition guard takes, so two
+// simultaneous re-reviews cannot both spend the last round.
+func (s *Store) RespondReviewGate(ctx context.Context, taskID int64, fromStatus, gate string, rereview bool, maxRounds int) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+
+	if err := guardTransition(ctx, q, taskID, fromStatus, workflow.StatusQueued); err != nil {
+		return err
+	}
+	// The row is locked by the guard read, so the cap decision and the
+	// increment below cannot interleave with a second response write.
+	rounds, err := q.RereviewRounds(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if rereview && rounds >= int64(maxRounds) {
+		return storecontract.ErrRereviewCapReached
+	}
+	n, err := q.RespondReviewGateTask(ctx, postgresdb.RespondReviewGateTaskParams{
+		ID: taskID, FromStatus: fromStatus, Gate: gate, Rereview: rereview, Cap: int64(maxRounds),
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return storecontract.ErrStaleTransition
+	}
+	detail := "operator approved the review gate"
+	if rereview {
+		detail = "operator requested a re-review"
+	}
+	if err := q.InsertTransition(ctx, postgresdb.InsertTransitionParams{
+		TaskID: taskID, FromStatus: fromStatus, ToStatus: workflow.StatusQueued, Detail: detail,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // requeue carries the guarded requeue write Requeue and RetryTask share: the
@@ -561,6 +612,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, Plan: r.Plan, Source: r.Source,
 			Identity: r.Identity, BindingID: r.BindingID, BindingVersion: int(r.BindingVersion),
 			Outputs: outputs,
+			ReviewGate: r.ReviewGate, RereviewRounds: int(r.RereviewRounds),
 		})
 	}
 	return tasks, nil

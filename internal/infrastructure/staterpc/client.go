@@ -212,6 +212,13 @@ func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf str
 	return unmapError(err)
 }
 
+func (c *Client) RespondReviewGate(ctx context.Context, taskID int64, fromStatus, gate string, rereview bool, maxRounds int) error {
+	_, err := c.client.RespondReviewGate(ctx, &pb.RespondReviewGateRequest{
+		TaskId: taskID, FromStatus: fromStatus, Gate: gate, Rereview: rereview, Cap: int64(maxRounds),
+	})
+	return unmapError(err)
+}
+
 func (c *Client) BeginRemediation(ctx context.Context, taskID int64, payload string) error {
 	_, err := c.client.BeginRemediation(ctx, &pb.BeginRemediationRequest{TaskId: taskID, Payload: payload})
 	return unmapError(err)

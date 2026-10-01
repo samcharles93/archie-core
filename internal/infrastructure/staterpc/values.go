@@ -77,6 +77,8 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		OutputsJson: outputsJSON(t.Outputs),
 		CreatedAt:   timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
+		ReviewGate:                t.ReviewGate,
+		RereviewRounds:            int64(t.RereviewRounds),
 		ReviewCursor:              t.ReviewCursor,
 		ParkClass:                 t.ParkClass,
 		RemediationRounds:         int32(t.RemediationRounds),
@@ -105,6 +107,8 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		Outputs:   outputsValue(t.OutputsJson),
 		CreatedAt: timeValue(t.CreatedAt), UpdatedAt: timeValue(t.UpdatedAt),
 		ReviewPayload:             t.ReviewPayload,
+		ReviewGate:                t.ReviewGate,
+		RereviewRounds:            int(t.RereviewRounds),
 		ReviewCursor:              t.ReviewCursor,
 		ParkClass:                 t.ParkClass,
 		RemediationRounds:         int(t.RemediationRounds),
@@ -406,7 +410,11 @@ const (
 	msgSourcePathTaken       = "source path taken"
 	msgSourceSigning         = "source signing stale"
 	msgHarnessSecretNotFound = "harness secret not found"
-	msgInternal              = "state store: internal error"
+	// msgRereviewCapReached is the canonical message of
+	// storecontract.ErrRereviewCapReached on the wire. Changing it breaks
+	// errors.Is on the client without changing behaviour visibly.
+	msgRereviewCapReached = "store: re-review cap reached"
+	msgInternal           = "state store: internal error"
 	// msgTaskLogsUnavailable is the public phrase for "this service has no
 	// task-log reader". It is a wire contract like the sentinels above: the
 	// client rehydrates logging.ErrTaskLogsUnavailable from (Unavailable, this
@@ -524,6 +532,7 @@ var wireErrors = []struct {
 	{storecontract.ErrCallDepthExceeded, codes.FailedPrecondition, storecontract.ErrCallDepthExceeded.Error()},
 	{storecontract.ErrSourcePathTaken, codes.AlreadyExists, msgSourcePathTaken},
 	{storecontract.ErrHarnessSecretNotFound, codes.NotFound, msgHarnessSecretNotFound},
+	{storecontract.ErrRereviewCapReached, codes.FailedPrecondition, msgRereviewCapReached},
 	{storepkg.ErrNotFound, codes.NotFound, storepkg.ErrNotFound.Error()},
 	{storepkg.ErrInstalled, codes.AlreadyExists, storepkg.ErrInstalled.Error()},
 	{storepkg.ErrRequired, codes.FailedPrecondition, storepkg.ErrRequired.Error()},

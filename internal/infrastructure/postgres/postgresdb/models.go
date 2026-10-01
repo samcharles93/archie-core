@@ -393,6 +393,8 @@ type Task struct {
 	CallParentTaskID          int64
 	CallDepth                 int32
 	Outputs                   string
+	ReviewGate                string
+	RereviewRounds            int64
 }
 
 type ToolCall struct {

@@ -48,7 +48,7 @@ func (q *Queries) BeginRemediationTask(ctx context.Context, arg BeginRemediation
 const claimByIssue = `-- name: ClaimByIssue :one
 UPDATE tasks SET status = 'running', attempt = attempt + 1, outputs = '', updated_at = now()
 WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds
 `
 
 type ClaimByIssueParams struct {
@@ -101,6 +101,8 @@ func (q *Queries) ClaimByIssue(ctx context.Context, arg ClaimByIssueParams) (Tas
 		&i.CallParentTaskID,
 		&i.CallDepth,
 		&i.Outputs,
+		&i.ReviewGate,
+		&i.RereviewRounds,
 	)
 	return i, err
 }
@@ -115,7 +117,7 @@ WHERE id = (
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds
 `
 
 // FOR UPDATE SKIP LOCKED replaces the SQLite single-writer assumption: two
@@ -166,6 +168,8 @@ func (q *Queries) ClaimNextTask(ctx context.Context) (Task, error) {
 		&i.CallParentTaskID,
 		&i.CallDepth,
 		&i.Outputs,
+		&i.ReviewGate,
+		&i.RereviewRounds,
 	)
 	return i, err
 }
@@ -276,7 +280,7 @@ VALUES (
     ),
     $8
 )
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds
 `
 
 type InsertChatTaskParams struct {
@@ -348,6 +352,8 @@ func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) 
 		&i.CallParentTaskID,
 		&i.CallDepth,
 		&i.Outputs,
+		&i.ReviewGate,
+		&i.RereviewRounds,
 	)
 	return i, err
 }
@@ -431,7 +437,7 @@ const listTaskSummaries = `-- name: ListTaskSummaries :many
 SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
        created_at, updated_at, plan, source, identity, binding_id, binding_version,
-       outputs
+       outputs, review_gate, rereview_rounds
 FROM tasks ORDER BY updated_at DESC LIMIT $1
 `
 
@@ -457,6 +463,8 @@ type ListTaskSummariesRow struct {
 	BindingID      string
 	BindingVersion int64
 	Outputs        string
+	ReviewGate     string
+	RereviewRounds int64
 }
 
 // The dashboard's list. This projection is deliberately narrow: Plan gates
@@ -464,6 +472,10 @@ type ListTaskSummariesRow struct {
 // back would send rows without them. outputs rides it because the task row's
 // own structured result is part of the summary a caller or the dashboard
 // reads (docs/prds/workflow-call-outputs.md, "Storage and wire").
+// review_gate and rereview_rounds join it deliberately: the offer the gate
+// wrote is what the operator reads before answering it
+// (docs/prds/pr-review-operator-response.md, "The review the operator
+// answers"), and the round count is the cap's visible half.
 func (q *Queries) ListTaskSummaries(ctx context.Context, limit int32) ([]ListTaskSummariesRow, error) {
 	rows, err := q.db.Query(ctx, listTaskSummaries, limit)
 	if err != nil {
@@ -495,6 +507,8 @@ func (q *Queries) ListTaskSummaries(ctx context.Context, limit int32) ([]ListTas
 			&i.BindingID,
 			&i.BindingVersion,
 			&i.Outputs,
+			&i.ReviewGate,
+			&i.RereviewRounds,
 		); err != nil {
 			return nil, err
 		}
@@ -579,6 +593,57 @@ func (q *Queries) RequeueTask(ctx context.Context, arg RequeueTaskParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const rereviewRounds = `-- name: RereviewRounds :one
+SELECT rereview_rounds FROM tasks WHERE id = $1
+`
+
+// Read under the lock LockTaskStatus takes in the same transaction, so the
+// cap decision and the increment it guards cannot interleave with a second
+// response write.
+func (q *Queries) RereviewRounds(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, rereviewRounds, id)
+	var rereview_rounds int64
+	err := row.Scan(&rereview_rounds)
+	return rereview_rounds, err
+}
+
+const respondReviewGateTask = `-- name: RespondReviewGateTask :execrows
+UPDATE tasks SET status = 'queued',
+    review_gate = $1::text,
+    rereview_rounds = rereview_rounds + CASE WHEN $2::bool THEN 1 ELSE 0 END,
+    park_reason = '', park_class = 'needs_human', updated_at = now()
+WHERE id = $3 AND status = $4
+  AND ($2::bool = false OR rereview_rounds < $5::bigint)
+`
+
+type RespondReviewGateTaskParams struct {
+	Gate       string
+	Rereview   bool
+	ID         int64
+	FromStatus string
+	Cap        int64
+}
+
+// The review gate response write (docs/prds/pr-review-operator-response.md,
+// Decision 2): one guarded requeue beside RetryTask/BeginRemediation. The
+// from-status guard and the transition table live in the store's transaction
+// around this statement; the rereview cap is enforced HERE, in the row, so
+// two simultaneous re-reviews cannot spend a round the cap forbids. An
+// approve passes rereview=false and bumps nothing.
+func (q *Queries) RespondReviewGateTask(ctx context.Context, arg RespondReviewGateTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, respondReviewGateTask,
+		arg.Gate,
+		arg.Rereview,
+		arg.ID,
+		arg.FromStatus,
+		arg.Cap,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const retryTask = `-- name: RetryTask :execrows
 UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
     workflow = CASE WHEN $1::text = '' THEN workflow ELSE $1::text END,
@@ -635,7 +700,7 @@ func (q *Queries) StampTaskBinding(ctx context.Context, arg StampTaskBindingPara
 }
 
 const taskByID = `-- name: TaskByID :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs FROM tasks WHERE id = $1
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds FROM tasks WHERE id = $1
 `
 
 func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
@@ -680,12 +745,14 @@ func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
 		&i.CallParentTaskID,
 		&i.CallDepth,
 		&i.Outputs,
+		&i.ReviewGate,
+		&i.RereviewRounds,
 	)
 	return i, err
 }
 
 const taskByIssue = `-- name: TaskByIssue :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
 `
 
 type TaskByIssueParams struct {
@@ -736,12 +803,14 @@ func (q *Queries) TaskByIssue(ctx context.Context, arg TaskByIssueParams) (Task,
 		&i.CallParentTaskID,
 		&i.CallDepth,
 		&i.Outputs,
+		&i.ReviewGate,
+		&i.RereviewRounds,
 	)
 	return i, err
 }
 
 const taskByPR = `-- name: TaskByPR :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4
 `
 
 type TaskByPRParams struct {
@@ -801,6 +870,8 @@ func (q *Queries) TaskByPR(ctx context.Context, arg TaskByPRParams) (Task, error
 		&i.CallParentTaskID,
 		&i.CallDepth,
 		&i.Outputs,
+		&i.ReviewGate,
+		&i.RereviewRounds,
 	)
 	return i, err
 }
@@ -862,7 +933,7 @@ UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
     watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
     review_payload = $13, workflow_definition_version = $14,
     workflow_definition_digest = $15, workflow_definition_yaml = $16,
-    outputs = $17,
+    outputs = $17, review_gate = $18, rereview_rounds = $19,
     updated_at = now()
 WHERE id = $1
 `
@@ -885,6 +956,8 @@ type UpdateTaskParams struct {
 	WorkflowDefinitionDigest  string
 	WorkflowDefinitionYaml    string
 	Outputs                   string
+	ReviewGate                string
+	RereviewRounds            int64
 }
 
 func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) error {
@@ -906,6 +979,8 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) error {
 		arg.WorkflowDefinitionDigest,
 		arg.WorkflowDefinitionYaml,
 		arg.Outputs,
+		arg.ReviewGate,
+		arg.RereviewRounds,
 	)
 	return err
 }

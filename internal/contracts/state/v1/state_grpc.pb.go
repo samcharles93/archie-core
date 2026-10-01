@@ -52,6 +52,7 @@ const (
 	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
 	StateStoreService_ArchiveTask_FullMethodName                = "/state.v1.StateStoreService/ArchiveTask"
 	StateStoreService_RetryTask_FullMethodName                  = "/state.v1.StateStoreService/RetryTask"
+	StateStoreService_RespondReviewGate_FullMethodName          = "/state.v1.StateStoreService/RespondReviewGate"
 	StateStoreService_BeginRemediation_FullMethodName           = "/state.v1.StateStoreService/BeginRemediation"
 	StateStoreService_UpdateReviewPayload_FullMethodName        = "/state.v1.StateStoreService/UpdateReviewPayload"
 	StateStoreService_SetReviewCursors_FullMethodName           = "/state.v1.StateStoreService/SetReviewCursors"
@@ -183,6 +184,13 @@ type StateStoreServiceClient interface {
 	// Archive / Retry
 	ArchiveTask(ctx context.Context, in *ArchiveTaskRequest, opts ...grpc.CallOption) (*ArchiveTaskResponse, error)
 	RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error)
+	// RespondReviewGate is the operator's answer to the review gate
+	// (docs/prds/pr-review-operator-response.md, Decision 2): one guarded
+	// requeue that records the answer, increments rereview_rounds for a
+	// re-review, and refuses a re-review past cap with the ErrRereviewCapReached
+	// wire sentinel. Admin-only, like every other operator surface: a
+	// task-scoped grant never reaches it.
+	RespondReviewGate(ctx context.Context, in *RespondReviewGateRequest, opts ...grpc.CallOption) (*RespondReviewGateResponse, error)
 	BeginRemediation(ctx context.Context, in *BeginRemediationRequest, opts ...grpc.CallOption) (*BeginRemediationResponse, error)
 	UpdateReviewPayload(ctx context.Context, in *UpdateReviewPayloadRequest, opts ...grpc.CallOption) (*UpdateReviewPayloadResponse, error)
 	SetReviewCursors(ctx context.Context, in *SetReviewCursorsRequest, opts ...grpc.CallOption) (*SetReviewCursorsResponse, error)
@@ -634,6 +642,16 @@ func (c *stateStoreServiceClient) RetryTask(ctx context.Context, in *RetryTaskRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RetryTaskResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RetryTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RespondReviewGate(ctx context.Context, in *RespondReviewGateRequest, opts ...grpc.CallOption) (*RespondReviewGateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RespondReviewGateResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RespondReviewGate_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1354,6 +1372,13 @@ type StateStoreServiceServer interface {
 	// Archive / Retry
 	ArchiveTask(context.Context, *ArchiveTaskRequest) (*ArchiveTaskResponse, error)
 	RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error)
+	// RespondReviewGate is the operator's answer to the review gate
+	// (docs/prds/pr-review-operator-response.md, Decision 2): one guarded
+	// requeue that records the answer, increments rereview_rounds for a
+	// re-review, and refuses a re-review past cap with the ErrRereviewCapReached
+	// wire sentinel. Admin-only, like every other operator surface: a
+	// task-scoped grant never reaches it.
+	RespondReviewGate(context.Context, *RespondReviewGateRequest) (*RespondReviewGateResponse, error)
 	BeginRemediation(context.Context, *BeginRemediationRequest) (*BeginRemediationResponse, error)
 	UpdateReviewPayload(context.Context, *UpdateReviewPayloadRequest) (*UpdateReviewPayloadResponse, error)
 	SetReviewCursors(context.Context, *SetReviewCursorsRequest) (*SetReviewCursorsResponse, error)
@@ -1579,6 +1604,9 @@ func (UnimplementedStateStoreServiceServer) ArchiveTask(context.Context, *Archiv
 }
 func (UnimplementedStateStoreServiceServer) RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RetryTask not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RespondReviewGate(context.Context, *RespondReviewGateRequest) (*RespondReviewGateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RespondReviewGate not implemented")
 }
 func (UnimplementedStateStoreServiceServer) BeginRemediation(context.Context, *BeginRemediationRequest) (*BeginRemediationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BeginRemediation not implemented")
@@ -2377,6 +2405,24 @@ func _StateStoreService_RetryTask_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RetryTask(ctx, req.(*RetryTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RespondReviewGate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondReviewGateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RespondReviewGate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RespondReviewGate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RespondReviewGate(ctx, req.(*RespondReviewGateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3614,6 +3660,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RetryTask",
 			Handler:    _StateStoreService_RetryTask_Handler,
+		},
+		{
+			MethodName: "RespondReviewGate",
+			Handler:    _StateStoreService_RespondReviewGate_Handler,
 		},
 		{
 			MethodName: "BeginRemediation",

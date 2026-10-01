@@ -38,6 +38,7 @@ type TaskStore interface {
 	TaskQueries
 	TaskArchiver
 	TaskRetryer
+	ReviewGateResponder
 	RemediationStarter
 }
 
@@ -124,6 +125,21 @@ type TaskArchiver interface {
 // attempt so a partial write cannot evade the retry cap.
 type TaskRetryer interface {
 	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error
+}
+
+// ReviewGateResponder is the operator's answer to the review gate
+// (docs/prds/pr-review-operator-response.md, Decision 2): one guarded write
+// beside RetryTask/BeginRemediation that fills in the review gate document
+// the caller computed (the outcome, the selection or the instructions), and
+// -- for a re-review only -- increments rereview_rounds and requeues, under
+// one transition-table guard and one from-status check. A re-review that has
+// spent its rounds is refused with ErrRereviewCapReached and writes nothing,
+// so the cap cannot be raced past; an approve requeues with no counter.
+//
+// The caller computes the gate document from the task row it read; the write
+// is the only place rereview_rounds ever increments.
+type ReviewGateResponder interface {
+	RespondReviewGate(ctx context.Context, taskID int64, fromStatus, gate string, rereview bool, maxRounds int) error
 }
 
 // RemediationStarter queues a review-triggered remediation for an
@@ -511,6 +527,11 @@ var (
 	// stored for an org/service pair -- the setup terminal has not
 	// captured one yet.
 	ErrHarnessSecretNotFound = errors.New("store: harness secret not found")
+	// ErrRereviewCapReached is returned when a review gate re-review would
+	// round past prreview.MaxRereviewRounds (docs/prds/pr-review-operator-
+	// response.md, Decision 2). The task stays waiting and its gate row is
+	// unchanged. The dashboard answers it 409, like every other conflict.
+	ErrRereviewCapReached = errors.New("store: re-review cap reached")
 
 	// ErrResourceNotFound is returned when a control-plane resource kind has
 	// no stored document. It is in-process only (not on the gRPC wire): the

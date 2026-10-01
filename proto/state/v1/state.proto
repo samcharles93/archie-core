@@ -68,6 +68,13 @@ service StateStoreService {
   // Archive / Retry
   rpc ArchiveTask(ArchiveTaskRequest) returns (ArchiveTaskResponse);
   rpc RetryTask(RetryTaskRequest) returns (RetryTaskResponse);
+  // RespondReviewGate is the operator's answer to the review gate
+  // (docs/prds/pr-review-operator-response.md, Decision 2): one guarded
+  // requeue that records the answer, increments rereview_rounds for a
+  // re-review, and refuses a re-review past cap with the ErrRereviewCapReached
+  // wire sentinel. Admin-only, like every other operator surface: a
+  // task-scoped grant never reaches it.
+  rpc RespondReviewGate(RespondReviewGateRequest) returns (RespondReviewGateResponse);
   rpc BeginRemediation(BeginRemediationRequest) returns (BeginRemediationResponse);
   rpc UpdateReviewPayload(UpdateReviewPayloadRequest) returns (UpdateReviewPayloadResponse);
   rpc SetReviewCursors(SetReviewCursorsRequest) returns (SetReviewCursorsResponse);
@@ -341,6 +348,18 @@ message Task {
   // column that write drops (docs/prds/workflow-call-outputs.md, "Storage and
   // wire").
   string outputs_json = 38;
+  // review_gate is the operator-approval gate's whole conversation with the
+  // operator (docs/prds/pr-review-operator-response.md): the offer the gate
+  // wrote before waiting, and the answer the response path filled in. It is
+  // opaque here -- internal/domain/workflow/prreview owns the encoding -- but
+  // it must cross so the dashboard can render the offer and the resumed run
+  // can read the answer.
+  string review_gate = 39;
+  // rereview_rounds counts granted operator re-reviews, capped by
+  // prreview.MaxRereviewRounds in the guarded response write. It is separate
+  // from retry_count and remediation_rounds for the same reason those are
+  // separate from each other.
+  int64 rereview_rounds = 40;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -691,6 +710,22 @@ message RetryTaskRequest {
   string workflow = 3;
 }
 message RetryTaskResponse {}
+
+message RespondReviewGateRequest {
+  int64 task_id = 1;
+  string from_status = 2;
+  // gate is the whole review_gate document the caller computed: the offer
+  // with the answer filled in. The store persists it unread.
+  string gate = 3;
+  // rereview increments rereview_rounds in the same write; an approve must
+  // pass false and bumps nothing.
+  bool rereview = 4;
+  // cap is the domain's re-review bound (prreview.MaxRereviewRounds). It
+  // crosses so the guard is enforced where the row is locked rather than by
+  // the caller's stale read.
+  int64 cap = 5;
+}
+message RespondReviewGateResponse {}
 
 message BeginRemediationRequest {
   int64 task_id = 1;
