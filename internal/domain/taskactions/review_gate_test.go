@@ -77,7 +77,7 @@ func TestApproveOfAGateRecordsTheSelectionOnTheOffer(t *testing.T) {
 		{Title: "keep", File: "main.go", LineStart: 1, Body: "keep me"},
 		{Title: "drop", File: "main.go", LineStart: 9, Body: "drop me"},
 	}
-	store := &gateStore{fakeStore: fakeStore{task: offeredGate(findings...)}}
+	store := &gateStore{task: offeredGate(findings...)}
 	service := Service{Store: store}
 
 	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove,
@@ -111,7 +111,7 @@ func TestApproveOfAGateRecordsTheSelectionOnTheOffer(t *testing.T) {
 
 func TestApproveWithNoSelectionRecordsEveryOfferedFinding(t *testing.T) {
 	findings := []prreview.ScoredFinding{{Title: "only", File: "main.go", LineStart: 1, Body: "b"}}
-	store := &gateStore{fakeStore: fakeStore{task: offeredGate(findings...)}}
+	store := &gateStore{task: offeredGate(findings...)}
 	service := Service{Store: store}
 
 	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
@@ -124,7 +124,7 @@ func TestApproveWithNoSelectionRecordsEveryOfferedFinding(t *testing.T) {
 }
 
 func TestApproveRefusesANonOfferedFindingKey(t *testing.T) {
-	store := &gateStore{fakeStore: fakeStore{task: offeredGate(prreview.ScoredFinding{Title: "offered", File: "main.go", LineStart: 1})}}
+	store := &gateStore{task: offeredGate(prreview.ScoredFinding{Title: "offered", File: "main.go", LineStart: 1})}
 	service := Service{Store: store}
 
 	err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove,
@@ -143,7 +143,7 @@ func TestApproveRefusesANonOfferedFindingKey(t *testing.T) {
 // implement -- the PRD's Decision 1 -- which is why feasibility names
 // implement itself before it waits.
 func TestApproveWithoutAGateKeepsTheTasksWorkflow(t *testing.T) {
-	store := &gateStore{fakeStore: fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: taskstate.WaitingHuman}}}
+	store := &gateStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: taskstate.WaitingHuman}}
 	service := Service{Store: store}
 
 	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
@@ -159,7 +159,7 @@ func TestApproveWithoutAGateKeepsTheTasksWorkflow(t *testing.T) {
 
 func TestRereviewRecordsInstructionsAndClearsTheOffer(t *testing.T) {
 	findings := []prreview.ScoredFinding{{Title: "old", File: "main.go", LineStart: 1}}
-	store := &gateStore{fakeStore: fakeStore{task: offeredGate(findings...)}}
+	store := &gateStore{task: offeredGate(findings...)}
 	service := Service{Store: store}
 
 	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionRereview,
@@ -213,7 +213,7 @@ func TestRereviewRefusedWithoutInstructionsAndAtTheCap(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			store := &gateStore{fakeStore: fakeStore{task: tc.task}}
+			store := &gateStore{task: tc.task}
 			service := Service{Store: store}
 			err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionRereview, tc.res)
 			if !errors.Is(err, ErrConflict) {
