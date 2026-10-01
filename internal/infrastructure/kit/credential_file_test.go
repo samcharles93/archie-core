@@ -8,6 +8,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/docker/sandbox-kit-spec/v3/spec"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 
 // oauthCredentialFileKit is a Kit declaring a proxy-managed OAuth credential
@@ -55,7 +57,7 @@ func findFile(files []spec.File, path string) (spec.File, bool) {
 func TestAssembleRendersTheOAuthCredentialFile(t *testing.T) {
 	l, err := Assemble(credentialFilePlan(t), image, LaunchParams{
 		Execution: "exec-42", ProxyToken: "tok", CAPath: "/etc/archie/ca.pem",
-		Bound: []string{"claude-code"},
+		Bound: map[string]egress.CredentialKind{"claude-code": egress.CredentialOAuth},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +100,7 @@ func TestAssembleRendersTheStoredExpiry(t *testing.T) {
 	expires := time.UnixMilli(1700000000123)
 	l, err := Assemble(credentialFilePlan(t), image, LaunchParams{
 		Execution: "exec-42", ProxyToken: "tok", CAPath: "/etc/archie/ca.pem",
-		Bound: []string{"claude-code"}, OAuth: map[string]OAuthFacts{"claude-code": {ExpiresAt: expires}},
+		Bound: map[string]egress.CredentialKind{"claude-code": egress.CredentialOAuth}, OAuth: map[string]OAuthFacts{"claude-code": {ExpiresAt: expires}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +145,7 @@ func TestAssembleRendersATOMLCredentialFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
-	l, err := Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: []string{"example"}})
+	l, err := Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: map[string]egress.CredentialKind{"example": egress.CredentialOAuth}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +188,7 @@ func TestAssembleRefusesAPlaceholderItCannotRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
-	_, err = Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: []string{"example"}})
+	_, err = Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: map[string]egress.CredentialKind{"example": egress.CredentialOAuth}})
 	if err == nil || !strings.Contains(err.Error(), "{{.NotAPlaceholder}}") {
 		t.Fatalf("Assemble = %v, want a refusal naming {{.NotAPlaceholder}}", err)
 	}
@@ -210,7 +212,7 @@ func TestAssembleRefusesAMissingSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
-	_, err = Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: []string{"example"}})
+	_, err = Assemble(p, image, LaunchParams{Execution: "exec-42", Bound: map[string]egress.CredentialKind{"example": egress.CredentialOAuth}})
 	if err == nil || !strings.Contains(err.Error(), "access-token sentinel") {
 		t.Fatalf("Assemble = %v, want a refusal naming the missing access-token sentinel", err)
 	}

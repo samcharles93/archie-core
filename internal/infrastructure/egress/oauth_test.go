@@ -95,6 +95,7 @@ func (h *harness) oauthSession(t *testing.T, required, grant bool) *Session {
 		Run: "run-7", Org: "org-1",
 		Network:     &spec.PhasedNetwork{Runtime: &spec.NetworkRules{Allow: []string{"oauth.example.com:443", "api.example.com:443"}}},
 		Credentials: []spec.CredentialCapability{oauthCred(required)},
+		Bound:       map[string]CredentialKind{"claude-code": CredentialOAuth},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -255,13 +256,68 @@ func TestOAuthResourceRequestCarriesTheStoredAccessToken(t *testing.T) {
 	}
 }
 
+// dualCred declares apiKey and oauth on one service, the spec's shape for
+// "whichever the host has bound" (docker/claude-code-kit does, for
+// anthropic).
+func dualCred(required bool) spec.CredentialCapability {
+	c := oauthCred(required)
+	c.APIKey = &spec.APIKey{Name: "EXAMPLE_KEY", ProxyManaged: true, Inject: []spec.Inject{
+		{Domain: "api.example.com", Header: "Authorization", Format: "Bearer %s"},
+	}}
+	return c
+}
+
+// TestAnAPIKeyBoundServiceDoesNotInterceptTheTokenEndpoint is the mirror of
+// TestAnOAuthBoundServiceInjectsNoAPIKey: when the org's binding names a
+// secret for a service whose Kit also declares OAuth, this run has no token
+// set to exchange, so its token endpoint is an ordinary allowed host.
+// Intercepting it could only fail on the missing token set, or capture a
+// login the org never bound.
+func TestAnAPIKeyBoundServiceDoesNotInterceptTheTokenEndpoint(t *testing.T) {
+	h := newHarness(t)
+	h.bind("run-7/claude-code", "sk-real-key")
+	s, err := h.proxy.Register(SessionOptions{
+		Run: "run-7", Org: "org-1",
+		Network:     &spec.PhasedNetwork{Runtime: &spec.NetworkRules{Allow: []string{"oauth.example.com:443"}}},
+		Credentials: []spec.CredentialCapability{dualCred(false)},
+		Bound:       map[string]CredentialKind{"claude-code": CredentialAPIKey},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.EnterRuntime()
+	status, _ := postToken(t, h, s, "grant_type=refresh_token&refresh_token="+sentinelRefresh)
+	if status != http.StatusOK {
+		t.Fatalf("token endpoint status %d, want 200: an API-key-bound run has no token set to intercept", status)
+	}
+}
+
+// TestRegisterAllowsARequiredAPIKeyBoundCredentialWithNoStore: a Kit may
+// declare apiKey and oauth on one service as required (the spec's
+// "whichever the host has bound"). An org that bound the API key has no use
+// for a token store, so the launch must not be refused for the missing one.
+func TestRegisterAllowsARequiredAPIKeyBoundCredentialWithNoStore(t *testing.T) {
+	ca, err := LoadOrCreateCA(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewProxy(ca, ProxyOptions{})
+	if _, err := p.Register(SessionOptions{
+		Run: "run-7", Org: "org-1",
+		Credentials: []spec.CredentialCapability{dualCred(true)},
+		Bound:       map[string]CredentialKind{"claude-code": CredentialAPIKey},
+	}); err != nil {
+		t.Fatalf("Register() = %v, want an API-key-bound run to need no token store", err)
+	}
+}
+
 func TestRegisterRefusesARequiredOAuthCredentialWithNoStore(t *testing.T) {
 	ca, err := LoadOrCreateCA(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := NewProxy(ca, ProxyOptions{})
-	if _, err := p.Register(SessionOptions{Run: "run-7", Org: "org-1", Credentials: []spec.CredentialCapability{oauthCred(true)}}); err == nil {
+	if _, err := p.Register(SessionOptions{Run: "run-7", Org: "org-1", Credentials: []spec.CredentialCapability{oauthCred(true)}, Bound: map[string]CredentialKind{"claude-code": CredentialOAuth}}); err == nil {
 		t.Fatal("Register() succeeded with a required OAuth credential and no store")
 	}
 }

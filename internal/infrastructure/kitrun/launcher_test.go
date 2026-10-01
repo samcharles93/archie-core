@@ -7,6 +7,7 @@ import (
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 
 var errSecretNotConfigured = errors.New("secret not configured")
@@ -45,18 +46,18 @@ func TestResolveCredentialsReadsTheLiveConfig(t *testing.T) {
 	req := Request{Org: "acme", GrantedServices: []string{"openai"}}
 	creds := []spec.CredentialCapability{declaredCred("openai")}
 
-	granted, bound := l.resolveCredentials(req, creds)
-	if len(granted) != 0 || len(bound) != 0 {
-		t.Fatalf("resolveCredentials with no configured binding = (%v, %v), want both empty", granted, bound)
+	granted, kinds := l.resolveCredentials(req, creds)
+	if len(granted) != 0 || len(kinds) != 0 {
+		t.Fatalf("resolveCredentials with no configured binding = (%v, %v), want both empty", granted, kinds)
 	}
 
 	l.Config.Set(config.Config{Containers: config.ContainerConfig{
 		Credentials: []config.CredentialBinding{{Service: "openai", Org: "acme", Secret: ref}},
 	}})
 
-	granted, bound = l.resolveCredentials(req, creds)
-	if granted["openai"] != "sk-live" || len(bound) != 1 || bound[0] != "openai" {
-		t.Fatalf("resolveCredentials after the binding was added = (%v, %v), want openai granted", granted, bound)
+	granted, kinds = l.resolveCredentials(req, creds)
+	if granted["openai"] != "sk-live" || kinds["openai"] != egress.CredentialAPIKey {
+		t.Fatalf("resolveCredentials after the binding was added = (%v, %v), want openai granted as an API key", granted, kinds)
 	}
 }
 
@@ -131,6 +132,96 @@ func TestResolveCredentialsIsAnIntersection(t *testing.T) {
 				if got, ok := granted[service]; !ok || got != value {
 					t.Fatalf("resolveCredentials()[%q] = %q, want %q", service, granted[service], value)
 				}
+			}
+		})
+	}
+}
+
+// TestResolveCredentialsTakesTheBoundKindFromTheBinding: the sandbox kit
+// spec lets one credential@1 declare apiKey and oauth together, meaning
+// "whichever the host has bound" (the reference docker/claude-code-kit and
+// codex workloads both do, for anthropic and openai respectively). The org's
+// binding -- not the Kit's declaration -- therefore decides which one a run
+// carries, so a binding that names a secret must resolve that secret even
+// when the Kit also declares OAuth, and a binding that names none must never
+// resolve to an empty value the proxy would then inject.
+func TestResolveCredentialsTakesTheBoundKindFromTheBinding(t *testing.T) {
+	keyRef := config.SecretRef{Engine: "env", Key: "ANTHROPIC_API_KEY"}
+	// The registry's documented zero-ref behaviour: resolves to "" with no
+	// error, which is why "no value" cannot be told apart from "no secret"
+	// by the resolved string alone.
+	secrets := fakeSecretResolver{keyRef: "sk-ant-real", config.SecretRef{}: ""}
+	// dual declares apiKey and oauth on one service, the spec's "whichever
+	// the host has bound" shape.
+	dual := func() spec.CredentialCapability {
+		c := declaredOAuth("anthropic")
+		c.APIKey = &spec.APIKey{Name: "ANTHROPIC_API_KEY", ProxyManaged: true}
+		return c
+	}
+
+	tests := []struct {
+		name      string
+		bindings  []config.CredentialBinding
+		creds     []spec.CredentialCapability
+		service   string
+		wantValue string
+		wantKind  egress.CredentialKind
+	}{
+		{
+			name:      "an API-key binding resolves its value for a Kit that also declares OAuth",
+			bindings:  []config.CredentialBinding{{Service: "anthropic", Org: "acme", Secret: keyRef}},
+			creds:     []spec.CredentialCapability{dual()},
+			service:   "anthropic",
+			wantValue: "sk-ant-real",
+			wantKind:  egress.CredentialAPIKey,
+		},
+		{
+			name:      "a binding with no secret of its own is the OAuth token set",
+			bindings:  []config.CredentialBinding{{Service: "anthropic", Org: "acme"}},
+			creds:     []spec.CredentialCapability{dual()},
+			service:   "anthropic",
+			wantValue: "",
+			wantKind:  egress.CredentialOAuth,
+		},
+		{
+			name:      "an OAuth-only Kit service with no binding secret is the OAuth token set",
+			bindings:  []config.CredentialBinding{{Service: "oauth-only", Org: "acme"}},
+			creds:     []spec.CredentialCapability{declaredOAuth("oauth-only")},
+			service:   "oauth-only",
+			wantValue: "",
+			wantKind:  egress.CredentialOAuth,
+		},
+		{
+			name:     "an API-key Kit service with no binding secret stays unbound, never empty",
+			bindings: []config.CredentialBinding{{Service: "api-key-only", Org: "acme"}},
+			creds:    []spec.CredentialCapability{declaredCred("api-key-only")},
+			service:  "api-key-only",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := &Launcher{
+				Config: config.NewHolder(config.Config{Containers: config.ContainerConfig{
+					Credentials: tt.bindings,
+				}}),
+				Secrets: secrets,
+			}
+			granted, kinds := l.resolveCredentials(Request{Org: "acme", GrantedServices: []string{tt.service}}, tt.creds)
+			got, ok := granted[tt.service]
+			if tt.wantKind == "" {
+				if ok {
+					t.Fatalf("resolveCredentials()[%q] = %q, want no credential at all", tt.service, got)
+				}
+				if kind := kinds[tt.service]; kind != "" {
+					t.Fatalf("resolveCredentials() kind[%q] = %q, want unbound", tt.service, kind)
+				}
+				return
+			}
+			if !ok || got != tt.wantValue {
+				t.Fatalf("resolveCredentials()[%q] = %q (present %v), want %q", tt.service, got, ok, tt.wantValue)
+			}
+			if kind := kinds[tt.service]; kind != tt.wantKind {
+				t.Fatalf("resolveCredentials() kind[%q] = %q, want %q", tt.service, kind, tt.wantKind)
 			}
 		})
 	}

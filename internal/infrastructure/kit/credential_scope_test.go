@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/docker/sandbox-kit-spec/v3/spec"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 
 // claudeCodeCredentialFileKit mirrors the published Claude Code Kit's
@@ -40,7 +42,7 @@ func renderClaudeCredentialFile(t *testing.T, facts OAuthFacts) map[string]any {
 		t.Fatalf("admit: %v", err)
 	}
 	l, err := Assemble(p, image, LaunchParams{
-		Execution: "exec-42", Bound: []string{"claude-code"},
+		Execution: "exec-42", Bound: map[string]egress.CredentialKind{"claude-code": egress.CredentialOAuth},
 		OAuth: map[string]OAuthFacts{"claude-code": facts},
 	})
 	if err != nil {
@@ -102,7 +104,7 @@ func TestAssembleRefusesWhenNoScopesWereCaptured(t *testing.T) {
 		t.Fatalf("admit: %v", err)
 	}
 	_, err = Assemble(p, image, LaunchParams{
-		Execution: "exec-42", Bound: []string{"claude-code"},
+		Execution: "exec-42", Bound: map[string]egress.CredentialKind{"claude-code": egress.CredentialOAuth},
 		OAuth: map[string]OAuthFacts{"claude-code": {}},
 	})
 	if err == nil {

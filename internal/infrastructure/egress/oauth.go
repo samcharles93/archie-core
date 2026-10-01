@@ -50,10 +50,14 @@ func IsOAuthManaged(c spec.CredentialCapability) bool {
 	return c.OAuth != nil && !c.OAuth.Passthrough && c.OAuth.TokenEndpoint != nil
 }
 
-func compileOAuthRules(creds []spec.CredentialCapability) []oauthRule {
+// compileOAuthRules compiles the credential@1 OAuth rules this run can
+// exercise. A service the run carries as an API key contributes none: its
+// token endpoint is not a path this run has a token set to exchange, so
+// intercepting it could only try to capture one the org never bound.
+func compileOAuthRules(creds []spec.CredentialCapability, bound map[string]CredentialKind) []oauthRule {
 	var out []oauthRule
 	for _, c := range creds {
-		if !IsOAuthManaged(c) {
+		if !IsOAuthManaged(c) || bound[c.Service] == CredentialAPIKey {
 			continue
 		}
 		rule := oauthRule{

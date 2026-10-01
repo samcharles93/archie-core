@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/docker/sandbox-kit-spec/v3/spec"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 
 const launchKit = `
@@ -52,7 +54,7 @@ var image = ImageConfig{
 	User:       "agent",
 }
 
-var params = LaunchParams{Execution: "exec-42", ProxyToken: "tok", CAPath: "/etc/archie/ca.pem", Bound: []string{"example"}}
+var params = LaunchParams{Execution: "exec-42", ProxyToken: "tok", CAPath: "/etc/archie/ca.pem", Bound: map[string]egress.CredentialKind{"example": egress.CredentialAPIKey}}
 
 func TestAssembleHarness(t *testing.T) {
 	l, err := Assemble(plan(t), image, params)

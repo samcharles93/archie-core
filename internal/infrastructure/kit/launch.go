@@ -59,8 +59,13 @@ type LaunchParams struct {
 	Execution  string
 	ProxyToken string
 	CAPath     string
-	// Bound lists the credential services the run credential carries.
-	Bound []string
+	// Bound keys each credential service this run carries to the kind the
+	// org's binding gave it (egress.CredentialKind). A service absent from
+	// this map is unbound: its mode variable says none, it renders no
+	// credential file, and the proxy refuses (required) or skips (optional)
+	// any request needing it. The map carries kinds, never values -- the real
+	// secret stays on the host.
+	Bound map[string]egress.CredentialKind
 	// OAuth is the non-secret facts of each bound OAuth credential's stored
 	// token set, keyed by service, that a Kit's credentialFile renders: the
 	// granted scopes and the expiry. The tokens themselves never cross into
@@ -115,7 +120,7 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 	proxyEnv := egress.ProxyEnv(params.ProxyToken, params.CAPath)
 	runtimeVars := map[string]string{"WORKSPACE_DIR": WorkspaceDir}
 	for _, c := range creds {
-		runtimeVars[credentialModeVar(c.Service)] = credentialMode(c, slices.Contains(params.Bound, c.Service))
+		runtimeVars[credentialModeVar(c.Service)] = credentialMode(params.Bound[c.Service])
 	}
 
 	l := Launch{Harness: agentexec.HarnessSpec{
@@ -157,14 +162,15 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 	return l, nil
 }
 
-// credentialFiles renders the credential file of every bound OAuth credential
-// whose Kit declares one: the path and structure the Kit names, with the
-// stored token set's scopes and expiry. A service the run credential does not
-// carry produces no file.
-func credentialFiles(creds []spec.CredentialCapability, bound []string, oauth map[string]OAuthFacts) ([]spec.File, error) {
+// credentialFiles renders the credential file of every OAuth-bound
+// credential whose Kit declares one: the path and structure the Kit names,
+// with the stored token set's scopes and expiry. A service bound as an API
+// key renders none -- its Kit may carry the OAuth declaration too, but this
+// run has no token set to put in the file.
+func credentialFiles(creds []spec.CredentialCapability, bound map[string]egress.CredentialKind, oauth map[string]OAuthFacts) ([]spec.File, error) {
 	var files []spec.File
 	for _, c := range creds {
-		if c.OAuth == nil || c.OAuth.CredentialFile == nil || !slices.Contains(bound, c.Service) {
+		if c.OAuth == nil || c.OAuth.CredentialFile == nil || bound[c.Service] != egress.CredentialOAuth {
 			continue
 		}
 		content, err := renderCredentialFile(c, oauth[c.Service])
@@ -216,15 +222,17 @@ func credentialModeVar(service string) string {
 	return "SBX_CRED_" + strings.ToUpper(strings.ReplaceAll(service, "-", "_")) + "_MODE"
 }
 
-func credentialMode(c spec.CredentialCapability, bound bool) string {
-	switch {
-	case !bound:
-		return "none"
-	case c.APIKey != nil:
-		return "apikey"
-	default:
-		return "oauth"
+// credentialModeNone is the mode variable's value for a service this run does
+// not carry at all.
+const credentialModeNone = "none"
+
+// credentialMode is one service's SBX_CRED_*_MODE value: how this run carries
+// the credential, or none when it carries none at all.
+func credentialMode(kind egress.CredentialKind) string {
+	if kind == "" {
+		return credentialModeNone
 	}
+	return string(kind)
 }
 
 // declared resolves a hook's declared variable names against the runtime

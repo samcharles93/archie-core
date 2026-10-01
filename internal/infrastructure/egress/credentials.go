@@ -14,6 +14,24 @@ import (
 // it can tell a credential is wired without ever holding it.
 const Sentinel = "archie-proxy-managed"
 
+// CredentialKind is how one run carries a credential service. The org's
+// binding decides it, never the Kit's declaration: the sandbox kit spec lets
+// one credential@1 declare apiKey and oauth together, meaning "whichever the
+// host has bound" (docker/claude-code-kit declares both for anthropic, codex
+// for openai). A service absent from a session's bound kinds is not carried
+// at all, which is what refuses a required credential and skips an optional
+// one.
+type CredentialKind string
+
+const (
+	// CredentialAPIKey is an API key the proxy injects from the org secret
+	// the binding names.
+	CredentialAPIKey CredentialKind = "apikey"
+	// CredentialOAuth is the org's captured OAuth token set, which the proxy
+	// holds: the binding names no secret of its own.
+	CredentialOAuth CredentialKind = "oauth"
+)
+
 // ErrUnbound reports that the run has no binding for a service. It is the
 // only resolver error an optional credential may pass over; any other error
 // stops the request.
@@ -45,10 +63,14 @@ type injection struct {
 	username string
 }
 
-func compileInjections(creds []spec.CredentialCapability) []injection {
+// compileInjections compiles the credential@1 apiKey inject rules this run
+// can fire. A service the run carries as OAuth contributes none: its value is
+// the org's token set, which the proxy holds and injects on its own paths, so
+// an API-key rule for it would only put an empty credential on the wire.
+func compileInjections(creds []spec.CredentialCapability, bound map[string]CredentialKind) []injection {
 	var out []injection
 	for _, c := range creds {
-		if c.APIKey == nil {
+		if c.APIKey == nil || bound[c.Service] == CredentialOAuth {
 			continue
 		}
 		for _, rule := range c.APIKey.Inject {

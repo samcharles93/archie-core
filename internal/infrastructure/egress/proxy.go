@@ -77,10 +77,17 @@ type ProxyOptions struct {
 // under, the org whose OAuth token sets it uses, and its Kit's network
 // policy and credential requests.
 type SessionOptions struct {
-	Run         string
-	Org         string
-	Network     *spec.PhasedNetwork
+	Run     string
+	Org     string
+	Network *spec.PhasedNetwork
+	// Credentials is what the Kit's descriptor declares; Bound is how the run
+	// actually carries them, each service the run credential names mapped to
+	// the kind the org's binding gave it. Declared and bound are two separate
+	// facts, and neither widens the other: a rule may only fire for a service
+	// the run carries as that same kind, and a service the run carries not at
+	// all resolves as unbound whichever rule asks.
 	Credentials []spec.CredentialCapability
+	Bound       map[string]CredentialKind
 }
 
 // Proxy is the egress proxy sandbox containers reach through their relay.
@@ -120,7 +127,7 @@ func (p *Proxy) Register(opts SessionOptions) (*Session, error) {
 	}
 	s := &Session{
 		token: hex.EncodeToString(raw), run: opts.Run, org: opts.Org,
-		injections: compileInjections(opts.Credentials), oauth: compileOAuthRules(opts.Credentials),
+		injections: compileInjections(opts.Credentials, opts.Bound), oauth: compileOAuthRules(opts.Credentials, opts.Bound),
 	}
 	for _, rule := range s.oauth {
 		if rule.required && p.oauth == nil {

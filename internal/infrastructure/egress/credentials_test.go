@@ -18,7 +18,19 @@ func apiKey(service, phase string, required bool, name string, inject ...spec.In
 	}
 }
 
+// registerWith registers run-7 with every declared service carried as an API
+// key, mirroring what the launcher passes for a run whose bindings all name
+// secrets. registerBoundWith is for the tests that need a different kind.
 func (h *harness) registerWith(t *testing.T, creds ...spec.CredentialCapability) *Session {
+	t.Helper()
+	kinds := map[string]CredentialKind{}
+	for _, c := range creds {
+		kinds[c.Service] = CredentialAPIKey
+	}
+	return h.registerBoundWith(t, kinds, creds...)
+}
+
+func (h *harness) registerBoundWith(t *testing.T, bound map[string]CredentialKind, creds ...spec.CredentialCapability) *Session {
 	t.Helper()
 	s, err := h.proxy.Register(SessionOptions{
 		Run: "run-7",
@@ -27,6 +39,7 @@ func (h *harness) registerWith(t *testing.T, creds ...spec.CredentialCapability)
 			Runtime: &spec.NetworkRules{Allow: []string{"api.example.com:443", "plain.example.com:80"}},
 		},
 		Credentials: creds,
+		Bound:       bound,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +156,30 @@ func TestTheResolverSeesTheRunAndService(t *testing.T) {
 	defer h.mu.Unlock()
 	if !slices.Contains(h.resolved, "run-7/example") {
 		t.Fatalf("resolver calls %v, want run-7/example", h.resolved)
+	}
+}
+
+// TestAnOAuthBoundServiceInjectsNoAPIKey is the "whichever the host has
+// bound" side of the credential kind: docker/claude-code-kit declares apiKey
+// and oauth on one service, and an org that bound the OAuth token set must
+// not have the API-key rule fire with the empty value the resolver answers
+// for an OAuth-bound service -- every request to a domain the Kit named
+// would then carry an empty credential.
+func TestAnOAuthBoundServiceInjectsNoAPIKey(t *testing.T) {
+	h := newHarness(t)
+	// The run carries the service as the org's OAuth token set: the resolver
+	// answers it (with no API-key value, as kitrun grants an OAuth-bound
+	// service).
+	h.bind("run-7/example", "")
+	s := h.registerBoundWith(t, map[string]CredentialKind{"example": CredentialOAuth},
+		apiKey("example", "runtime", true, "EXAMPLE_KEY",
+			spec.Inject{Domain: "api.example.com", Header: "Authorization", Format: "Bearer %s"}))
+	s.EnterRuntime()
+	if _, _, err := get(t, h.client(s.Token()), "https://api.example.com/"); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.lastAuth.Load(); got != "" {
+		t.Fatalf("upstream Authorization %v, want no header: an OAuth-bound service carries no API key", got)
 	}
 }
 

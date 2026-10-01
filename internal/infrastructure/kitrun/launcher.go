@@ -139,15 +139,15 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	granted, bound := l.resolveCredentials(req, k.creds)
-	facts, err := l.oauthFacts(ctx, req.Org, k.creds, bound)
+	granted, kinds := l.resolveCredentials(req, k.creds)
+	facts, err := l.oauthFacts(ctx, req.Org, k.creds, kinds)
 	if err != nil {
 		return nil, err
 	}
 	if l.Grants != nil {
 		l.Grants.Grant(req.Execution, granted)
 	}
-	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Org: req.Org, Network: k.network, Credentials: k.creds})
+	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Org: req.Org, Network: k.network, Credentials: k.creds, Bound: kinds})
 	if err != nil {
 		if l.Grants != nil {
 			l.Grants.RevokeGrant(req.Execution)
@@ -155,7 +155,7 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 		return nil, err
 	}
 	run := &Run{network: "archie-kit-" + req.Execution, token: session.Token(), execution: req.Execution}
-	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: bound, OAuth: facts})
+	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Execution, ProxyToken: session.Token(), CAPath: caPath, Bound: kinds, OAuth: facts})
 	if err != nil {
 		l.release(run)
 		return nil, err
@@ -191,21 +191,28 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 // of what the Kit composition declares, what config.CredentialBinding
 // entries exist, and what the dispatching identity is granted and belongs
 // to -- and resolves each to a real value. granted is the run/service ->
-// value map for Grants.Grant; bound is the service-name list kit.Assemble
-// renders sentinel-mode env vars from. A service failing any part of the
-// intersection, or whose binding's secret does not resolve, is simply
-// absent from both: it stays unbound, exactly as if credential@1 named a
-// service nobody configured. An OAuth-managed service is granted with no
-// value: its tokens are the org's State Store secret, which the proxy reads
-// only for a granted run.
-func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapability) (granted map[string]string, bound []string) {
+// value map for Grants.Grant; kinds is the service -> bound-kind map
+// kit.Assemble renders the container's credential state from. A service
+// failing any part of the intersection, or whose binding's secret does not
+// resolve, is simply absent from both: it stays unbound, exactly as if
+// credential@1 named a service nobody configured.
+//
+// The binding decides the kind, not the Kit's declaration: the sandbox kit
+// spec lets one credential declare apiKey and oauth together, meaning
+// "whichever the host has bound" (docker/claude-code-kit declares both for
+// anthropic). A binding naming a secret is therefore this run's API key even
+// when the Kit also declares OAuth, and a binding naming none is the org's
+// stored OAuth token set, carried with no value because the proxy reads the
+// tokens itself.
+func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapability) (granted map[string]string, kinds map[string]egress.CredentialKind) {
 	granted = map[string]string{}
+	kinds = map[string]egress.CredentialKind{}
 	if l.Config == nil {
-		return granted, bound
+		return granted, kinds
 	}
 	current := l.Config.Get().Containers.Credentials
 	if len(current) == 0 {
-		return granted, bound
+		return granted, kinds
 	}
 	declared := make([]string, len(creds))
 	oauth := map[string]bool{}
@@ -215,9 +222,17 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 	}
 	bindings := config.ContainerConfig{Credentials: current}.BoundCredentials(req.Org, req.GrantedServices, declared)
 	for service, binding := range bindings {
-		if oauth[service] {
+		if binding.Secret == (config.SecretRef{}) {
+			// The binding names no secret of its own. Only a Kit declaring
+			// OAuth gives the service a meaning then -- the org's captured
+			// token set. Anything else has nothing to carry and stays
+			// unbound, rather than resolving to an empty value the proxy
+			// would present as a credential.
+			if !oauth[service] {
+				continue
+			}
 			granted[service] = ""
-			bound = append(bound, service)
+			kinds[service] = egress.CredentialOAuth
 			continue
 		}
 		if l.Secrets == nil {
@@ -228,19 +243,20 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 			continue
 		}
 		granted[service] = value
-		bound = append(bound, service)
+		kinds[service] = egress.CredentialAPIKey
 	}
-	return granted, bound
+	return granted, kinds
 }
 
-// oauthFacts reads the stored token set's scopes and expiry for each bound
-// OAuth credential whose Kit renders a credential file. The store is read only
-// for a service the run credential carries, and only those facts leave here:
-// the tokens stay behind, so the renderer has no way to write one.
-func (l *Launcher) oauthFacts(ctx context.Context, org string, creds []spec.CredentialCapability, bound []string) (map[string]kit.OAuthFacts, error) {
+// oauthFacts reads the stored token set's scopes and expiry for each
+// OAuth-bound credential whose Kit renders a credential file. The store is
+// read only for a service this run bound as OAuth, and only those facts
+// leave here: the tokens stay behind, so the renderer has no way to write
+// one.
+func (l *Launcher) oauthFacts(ctx context.Context, org string, creds []spec.CredentialCapability, kinds map[string]egress.CredentialKind) (map[string]kit.OAuthFacts, error) {
 	facts := map[string]kit.OAuthFacts{}
 	for _, c := range creds {
-		if c.OAuth == nil || c.OAuth.CredentialFile == nil || !egress.IsOAuthManaged(c) || !slices.Contains(bound, c.Service) {
+		if c.OAuth == nil || c.OAuth.CredentialFile == nil || kinds[c.Service] != egress.CredentialOAuth {
 			continue
 		}
 		if l.OAuth == nil {

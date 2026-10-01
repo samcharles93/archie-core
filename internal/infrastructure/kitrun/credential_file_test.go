@@ -11,6 +11,7 @@ import (
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
 	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kit"
 )
 
@@ -85,7 +86,7 @@ func TestCredentialFileNeverCarriesARealToken(t *testing.T) {
 		ExpiresAt: expires, Scopes: ancestors,
 	}}}
 	p := credentialFilePlan(t)
-	bound := []string{"claude-code"}
+	bound := map[string]egress.CredentialKind{"claude-code": egress.CredentialOAuth}
 
 	facts, err := l.oauthFacts(context.Background(), "acme", planCredentials(t, p), bound)
 	if err != nil {
@@ -126,7 +127,7 @@ func TestCredentialFileNeverCarriesARealToken(t *testing.T) {
 func TestOAuthExpiriesFailsClosed(t *testing.T) {
 	p := credentialFilePlan(t)
 	creds := planCredentials(t, p)
-	bound := []string{"claude-code"}
+	bound := map[string]egress.CredentialKind{"claude-code": egress.CredentialOAuth}
 	ctx := context.Background()
 
 	if _, err := (&Launcher{}).oauthFacts(ctx, "acme", creds, bound); err == nil {
