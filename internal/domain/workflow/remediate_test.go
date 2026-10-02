@@ -42,31 +42,6 @@ func TestStageCheckReviewPayloadFailsOnEmptyPayload(t *testing.T) {
 	}
 }
 
-func TestStageResumeWorktreeRequiresABranch(t *testing.T) {
-	tc := &TaskContext{Task: &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 5}, Trees: &fakeTrees{}}
-	if err := StageResumeWorktree().Run(t.Context(), tc); err == nil {
-		t.Fatal("StageResumeWorktree with no branch = nil error, want an error")
-	}
-}
-
-func TestStageResumeWorktreeResumesOntoTheTaskBranch(t *testing.T) {
-	trees := &fakeTrees{dir: "/worktrees/o-r-5"}
-	tc := &TaskContext{
-		Task:  &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 5, Branch: "archie/issue-5"},
-		Trees: trees,
-	}
-	if err := StageResumeWorktree().Run(t.Context(), tc); err != nil {
-		t.Fatalf("StageResumeWorktree: %v", err)
-	}
-	if !trees.resumed || trees.resumeDir != "/worktrees/o-r-5" || trees.resumeBranch != "archie/issue-5" {
-		t.Fatalf("Resume call = resumed=%v dir=%q branch=%q, want true /worktrees/o-r-5 archie/issue-5",
-			trees.resumed, trees.resumeDir, trees.resumeBranch)
-	}
-	if tc.Dir != "/worktrees/o-r-5" || tc.Branch != "archie/issue-5" {
-		t.Fatalf("tc.Dir/Branch = %q/%q, want /worktrees/o-r-5/archie/issue-5", tc.Dir, tc.Branch)
-	}
-}
-
 func TestStageRemediationRoundCapCountsARoundUnderTheCap(t *testing.T) {
 	forge := &fakeForge{}
 	tc := &TaskContext{
@@ -231,9 +206,6 @@ func TestRemediateEndToEndAddressesCommentsAndReplies(t *testing.T) {
 		}
 	}
 
-	if !trees.resumed {
-		t.Fatal("worktree was never resumed")
-	}
 	if !trees.pushed {
 		t.Fatal("remediation commit was never pushed")
 	}

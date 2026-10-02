@@ -188,6 +188,20 @@ func noSettingsFactory(stage Stage) StepFactory {
 	}
 }
 
+// retiredSteps are step types no shipped workflow names any more but that must
+// keep resolving. A stored workflow definition is validated as a whole
+// collection, so a word dropped from the vocabulary does not merely fail its
+// own step -- it fails every workflow's definition to decode, taking the whole
+// workflow-definitions resource down with it. Each entry is inert by
+// construction: the behaviour its stage used to perform has another owner now,
+// and it exists only so a definition pinned or stored before that move still
+// parses and compiles.
+var retiredSteps = map[string]Stage{
+	// The remediate workflow's in-container resume stage moved to daemon
+	// preparation (archie-core-866m); see retiredResumeStep.
+	"remediate.resume": retiredResumeStep(),
+}
+
 // BuiltinStepRegistry exposes every shipped stage as a typed, non-interpreted step.
 func BuiltinStepRegistry() StepRegistry {
 	registry := StepRegistry{}
@@ -195,6 +209,9 @@ func BuiltinStepRegistry() StepRegistry {
 		for _, stage := range wf.Stages {
 			registry[id+"."+stage.Name] = noSettingsFactory(stage)
 		}
+	}
+	for name, stage := range retiredSteps {
+		registry[name] = noSettingsFactory(stage)
 	}
 	return registry
 }

@@ -134,3 +134,28 @@ func TestShippedDefinitionsPreserveStageOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestRetiredStepTypeStillCompiles pins the compatibility contract for a step
+// word retired from a shipped workflow (archie-core-866m). A stored definition
+// is validated as a whole collection, so one unknown step type fails EVERY
+// workflow's definition to decode, taking the workflow-definitions resource
+// down with it. A definition pinned or stored before the retire must therefore
+// keep parsing, compiling, and running -- and the retired stage itself must be
+// inert, because the behaviour it used to perform now happens before the
+// container starts.
+func TestRetiredStepTypeStillCompiles(t *testing.T) {
+	src := "id: remediate\nsteps:\n  - type: remediate.check-review-payload\n  - type: remediate.resume\n"
+	wf, err := ParseAndCompile(src, BuiltinStepRegistry())
+	if err != nil {
+		t.Fatalf("ParseAndCompile(a stored definition naming a retired step): %v", err)
+	}
+	if len(wf.Stages) != 2 {
+		t.Fatalf("stages = %d, want 2", len(wf.Stages))
+	}
+	if wf.Stages[1].Name != "resume" {
+		t.Fatalf("stage 2 = %q, want the retired resume stage", wf.Stages[1].Name)
+	}
+	if err := wf.Stages[1].Run(t.Context(), &TaskContext{Task: &Task{}}); err != nil {
+		t.Fatalf("the retired resume stage is not inert: %v", err)
+	}
+}

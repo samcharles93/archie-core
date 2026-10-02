@@ -120,7 +120,7 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 7, "feat: add widget", "", "feature")
+	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 7, "feat: add widget", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -194,7 +194,7 @@ func TestPrepareIsIdempotent(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir1, branch1, err := m.Prepare(ctx, "acme", "todo", testBase, 3, "fix: thing", "", "bug")
+	dir1, branch1, err := m.Prepare(ctx, "acme", "todo", testBase, 3, "fix: thing", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("first Prepare() error = %v", err)
 	}
@@ -205,7 +205,7 @@ func TestPrepareIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 3, "fix: thing", "", "bug")
+	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 3, "fix: thing", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("second Prepare() error = %v", err)
 	}
@@ -260,7 +260,7 @@ func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 	}
 	m := newManager(t, host)
 
-	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug")
+	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("first Prepare() error = %v", err)
 	}
@@ -280,7 +280,7 @@ func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug")
+	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("retry Prepare() on a dirty worktree error = %v, want recovery", err)
 	}
@@ -384,13 +384,13 @@ func TestPrepareRecoversFromAPathTypeConflictOnRetry(t *testing.T) {
 			seedTrackedPath(t, host, "pkg/a.txt", "a\n")
 			m := newManager(t, host)
 
-			dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "fix: path type conflict", "", "bug")
+			dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "fix: path type conflict", "", "bug", Fresh)
 			if err != nil {
 				t.Fatalf("first Prepare() error = %v", err)
 			}
 			c.wreck(t, dir)
 
-			dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "fix: path type conflict", "", "bug")
+			dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "fix: path type conflict", "", "bug", Fresh)
 			if err != nil {
 				t.Fatalf("retry Prepare() over a path type conflict error = %v, want recovery", err)
 			}
@@ -439,7 +439,7 @@ func TestPrepareCreatesTheBranchWhenItIsGenuinelyMissing(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "fix: first title", "", "bug")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "fix: first title", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("first Prepare() error = %v", err)
 	}
@@ -452,7 +452,7 @@ func TestPrepareCreatesTheBranchWhenItIsGenuinelyMissing(t *testing.T) {
 		t.Fatalf("remove branch %s: %v", first, err)
 	}
 
-	_, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "fix: renamed title", "", "bug")
+	_, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "fix: renamed title", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() after the branch was removed error = %v, want it created", err)
 	}
@@ -506,7 +506,7 @@ func TestCleanUntrackedHandlesGitdirFile(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 12, "fix: gitdir file", "", "bug")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 12, "fix: gitdir file", "", "bug", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -591,7 +591,7 @@ func TestPrepareDiscardsDirectoryWithoutSentinel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 11, "chore: retry", "", "chore"); err != nil {
+	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 11, "chore: retry", "", "chore", Fresh); err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
 	if _, err := os.Stat(junk); !os.IsNotExist(err) {
@@ -619,7 +619,7 @@ func TestPrepareErrors(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newManager(t, tc.host)
-			_, _, err := m.Prepare(context.Background(), tc.owner, tc.repo, tc.base, 1, "t", "", "")
+			_, _, err := m.Prepare(context.Background(), tc.owner, tc.repo, tc.base, 1, "t", "", "", Fresh)
 			if err == nil {
 				t.Fatal("Prepare() error = nil, want a failure")
 			}
@@ -631,10 +631,10 @@ func TestPrepareRefreshRejectsUnknownBase(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
-	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 12, "fix: base", "", "bug"); err != nil {
+	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 12, "fix: base", "", "bug", Fresh); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := m.Prepare(ctx, "acme", "todo", "missing-base", 12, "fix: base", "", "bug"); err == nil {
+	if _, _, err := m.Prepare(ctx, "acme", "todo", "missing-base", 12, "fix: base", "", "bug", Fresh); err == nil {
 		t.Fatal("prepared worktree accepted an unknown base")
 	}
 }
@@ -682,7 +682,7 @@ func TestSnapshotExportsTrackedFilesWithoutGit(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "feat: snapshot me", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "feat: snapshot me", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -718,7 +718,7 @@ func TestDiffUsesMergeBaseNotRemoteTip(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 5, "feat: mine", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 5, "feat: mine", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -771,7 +771,7 @@ func TestDiffOperationsRejectUnrelatedBaseHistory(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 6, "feat: task", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 6, "feat: task", "", "feature", Fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -886,7 +886,7 @@ func TestPushWithoutTokenOverHTTPFailsWithClearMessage(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
 	seeder := newManager(t, host)
-	dir, branch, err := seeder.Prepare(ctx, "acme", "todo", testBase, 1, "t", "", "")
+	dir, branch, err := seeder.Prepare(ctx, "acme", "todo", testBase, 1, "t", "", "", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -973,7 +973,7 @@ func TestPrepareMigratesMatchingLegacyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 44, "feat: migrate", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 44, "feat: migrate", "", "feature", Fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1008,7 +1008,7 @@ func TestPreparePreservesMismatchedLegacyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 45, "feat: safe migration", "", "feature"); err != nil {
+	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 45, "feat: safe migration", "", "feature", Fresh); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marker); err != nil {
@@ -1059,7 +1059,7 @@ func TestSentinelIsNeverCommitted(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "feat: thing", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "feat: thing", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -1097,7 +1097,7 @@ func TestTaskBriefIsNeverCommitted(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "feat: brief", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "feat: brief", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -1397,7 +1397,7 @@ func TestChangedFileStatsRecordsTheDiffedBaseNotTheAdvancedTip(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 8, "feat: mine", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 8, "feat: mine", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -1473,7 +1473,7 @@ func TestHasUncommittedChangesReportsWorkNoCommitHasCaptured(t *testing.T) {
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)
 
-	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 7, "feat: mine", "", "feature")
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 7, "feat: mine", "", "feature", Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}

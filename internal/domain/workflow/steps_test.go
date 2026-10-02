@@ -71,7 +71,7 @@ func newYaegiGateTaskContext(t *testing.T, dir string) *TaskContext {
 	return &TaskContext{
 		Task:  &Task{ID: 1, Owner: "acme", Repo: "todo", IssueNumber: 42},
 		Repo:  config.Repo{Owner: "acme", Name: "todo", Base: "main"},
-		Trees: &worktree.Manager{WorkDir: t.TempDir()},
+		Trees: &realTrees{Manager: &worktree.Manager{WorkDir: t.TempDir()}},
 		Dir:   dir,
 		Log:   slog.New(slog.DiscardHandler),
 	}

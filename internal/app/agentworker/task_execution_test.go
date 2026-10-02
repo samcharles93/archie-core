@@ -302,7 +302,7 @@ type remoteManager struct {
 }
 
 func (r *remoteManager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (string, string, error) {
-	dir, branch, err := r.manager.Prepare(ctx, owner, repo, base, issue, title, body, labels)
+	dir, branch, err := r.manager.Prepare(ctx, owner, repo, base, issue, title, body, labels, worktree.Fresh)
 	if err == nil {
 		r.dir = dir
 		r.branch = branch
@@ -634,7 +634,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  "file://" + host,
 	}
-	hostDir, branch, err := daemonTrees.Prepare(ctx, "acme", "rpc-widget", "main", 2, task.Title, "", "bootstrap")
+	hostDir, branch, err := daemonTrees.Prepare(ctx, "acme", "rpc-widget", "main", 2, task.Title, "", "bootstrap", worktree.Fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,7 +726,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  "file://" + host,
 	}
-	hostDir, branch, err := daemonTrees.Prepare(ctx, "acme", "events-widget", "main", 3, task.Title, "", "bootstrap")
+	hostDir, branch, err := daemonTrees.Prepare(ctx, "acme", "events-widget", "main", 3, task.Title, "", "bootstrap", worktree.Fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -919,7 +919,7 @@ func TestHybridTreesForwardsChangedFileStatsToItsLocalManager(t *testing.T) {
 		WorkDir: t.TempDir(), Token: "unused",
 		BotUser: "archie-bot", BotEmail: "archie-bot@example.com", BaseURL: "file://" + host,
 	}
-	dir, branch, err := manager.Prepare(ctx, "acme", "diffstat", "main", 4, "feat: widget", "", "")
+	dir, branch, err := manager.Prepare(ctx, "acme", "diffstat", "main", 4, "feat: widget", "", "", worktree.Fresh)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}

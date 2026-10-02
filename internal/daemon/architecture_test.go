@@ -136,7 +136,9 @@ func TestDaemonPreparesWorktreesFromTheMappedBaseBranch(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
-			if !ok || len(call.Args) != 8 {
+			// Prepare carries owner, repo, base, issue, title, body, labels and
+			// the daemon's prepare target: nine arguments.
+			if !ok || len(call.Args) != 9 {
 				return true
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)

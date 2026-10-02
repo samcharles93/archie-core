@@ -514,7 +514,7 @@ func TestDiffRulesStepReadsARealDiff(t *testing.T) {
 	}
 	var log bytes.Buffer
 	tc := diffRulesTestTaskContext(t, dir, &log)
-	tc.Trees = &worktree.Manager{WorkDir: t.TempDir()}
+	tc.Trees = &realTrees{Manager: &worktree.Manager{WorkDir: t.TempDir()}}
 
 	if err := stage.Run(context.Background(), tc); err != nil {
 		t.Fatalf("stage.Run(): %v", err)

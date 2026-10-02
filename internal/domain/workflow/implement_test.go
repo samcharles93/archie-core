@@ -36,7 +36,7 @@ func TestStageBaselineGateAccountsForRepairAgentUsage(t *testing.T) {
 	tc := &TaskContext{
 		Task: task, Repo: config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
 		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
-		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
+		Agent: runner, Trees: &realTrees{Manager: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"}},
 		Dir: dir, Log: slog.New(slog.DiscardHandler),
 	}
 	if err := StageBaselineGate().Run(t.Context(), tc); err != nil {
@@ -154,7 +154,7 @@ func TestStageBaselineGateMissionOmitsPassingPackageOutput(t *testing.T) {
 		Task:  &Task{ID: 1, Owner: "o", Repo: "r"},
 		Repo:  config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
 		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
-		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
+		Agent: runner, Trees: &realTrees{Manager: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"}},
 		Dir: dir, Log: slog.New(slog.DiscardHandler),
 	}
 	if err := StageBaselineGate().Run(t.Context(), tc); err != nil {
@@ -193,7 +193,7 @@ func TestStageBaselineGateSetsBaselineFixedWhenItCommits(t *testing.T) {
 	tc := &TaskContext{
 		Task: task, Repo: config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
 		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
-		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
+		Agent: runner, Trees: &realTrees{Manager: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"}},
 		Dir: dir, Log: slog.New(slog.DiscardHandler),
 	}
 	if err := StageBaselineGate().Run(t.Context(), tc); err != nil {
@@ -475,11 +475,6 @@ type fakeTrees struct {
 	// change" from "not committed yet". The zero value is a clean worktree.
 	uncommitted    bool
 	uncommittedErr error
-
-	resumed      bool
-	resumeDir    string
-	resumeBranch string
-	resumeErr    error
 }
 
 func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
@@ -512,13 +507,6 @@ func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) {
 }
 
 func (f *fakeTrees) Snapshot(context.Context, string, string) error { return nil }
-
-func (f *fakeTrees) Resume(_ context.Context, dir, branch string) error {
-	f.resumed, f.resumeDir, f.resumeBranch = true, dir, branch
-	return f.resumeErr
-}
-
-func (f *fakeTrees) Dir(string, string, int) string { return f.dir }
 
 // TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit is the
 // regression case for archie-core-95dj: StageBaselineGate already

@@ -1485,25 +1485,42 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		}
 		return dir, true
 	}
-	// A task that continues an already-open PR branch -- the remediate
-	// workflow -- resumes that branch's remote tip instead of resetting onto
-	// base. Preparing one the ordinary way discarded the commits the implement
-	// run had already pushed, so the agent remediated a PR from a tree that no
-	// longer contained it. This runs before Acquire, because the daemon holds
-	// the forge credential that fetches the branch and the container must find
-	// the PR's work already in place.
+	// The retry path selects the worktree mode from the task row. A task that
+	// continues an already-open PR branch -- the remediate workflow -- resumes
+	// that branch's remote tip instead of resetting onto base: preparing one
+	// the ordinary way discarded the commits the implement run had already
+	// pushed, so the agent remediated a PR from a tree that no longer contained
+	// it. Every other task starts fresh on base. This runs before Acquire,
+	// because the daemon holds the forge credential that fetches the branch and
+	// the container must find the PR's work already in place. It also runs on a
+	// retry whose local worktree is gone: Prepare clones a missing worktree for
+	// either target, which is how a resume reaches a task whose clone the
+	// terminal cleanup removed.
+	target := worktree.Fresh
 	if continuesOpenPRBranch(task) {
-		return d.resumePRBranchWorkspace(ctx, task, trees)
+		if task.Branch == "" {
+			// A remediation task is queued against the branch its implement
+			// run pushed, so an empty branch is a dispatch bug upstream and no
+			// retry can fix it.
+			d.Log.Error("remediate task has no persisted branch", "task", task.ID)
+			d.parkRunningTask(ctx, task.ID, "worktree resume failed: remediate task has no branch to resume", taskstate.ParkNeedsHuman)
+			return "", false
+		}
+		target = worktree.Target(task.Branch)
 	}
 	// Every task gets an independent full clone. The former
 	// PreparePersistent path shared objects with a per-repo bare cache;
 	// go-git has no --dissociate, so a shared cache would stay a live
 	// dependency of each worktree and expiring one would corrupt running
 	// tasks. repo.PersistentStorage still governs the container volume.
-	dir, branch, err := trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels)
+	dir, branch, err := trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels, target)
 	if err != nil {
-		d.Log.Error("worktree prepare failed", "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error(), taskstate.ParkTransient)
+		reason := "worktree prepare failed: " + err.Error()
+		if target != worktree.Fresh {
+			reason = "worktree resume failed: " + err.Error()
+		}
+		d.Log.Error("worktree prepare failed", "task", task.ID, "err", err)
+		d.parkRunningTask(ctx, task.ID, reason, taskstate.ParkTransient)
 		return "", false
 	}
 	task.Branch = branch
@@ -1522,30 +1539,6 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 // task that no later routing may overturn.
 func continuesOpenPRBranch(task *workflow.Task) bool {
 	return task.Workflow == "remediate"
-}
-
-// resumePRBranchWorkspace prepares a task's worktree on the branch its row
-// names, never on a branch recomputed from the title or labels: the PR was
-// opened from the persisted branch, and a retitled issue or relabelled task
-// would otherwise name a branch that does not exist. It fails closed -- there
-// is deliberately no fallback to preparing base, because that fallback is the
-// defect this route removes.
-func (d *Daemon) resumePRBranchWorkspace(ctx context.Context, task *workflow.Task, trees *worktree.Manager) (string, bool) {
-	if task.Branch == "" {
-		// A remediation task is queued against the branch its implement run
-		// pushed, so an empty branch is a dispatch bug upstream and no retry
-		// can fix it.
-		d.Log.Error("remediate task has no persisted branch", "task", task.ID)
-		d.parkRunningTask(ctx, task.ID, "worktree resume failed: remediate task has no branch to resume", taskstate.ParkNeedsHuman)
-		return "", false
-	}
-	dir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
-	if err := trees.Resume(ctx, dir, task.Branch); err != nil {
-		d.Log.Error("worktree resume failed", "task", task.ID, "branch", task.Branch, "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree resume failed: "+err.Error(), taskstate.ParkTransient)
-		return "", false
-	}
-	return dir, true
 }
 
 // cleanupTerminalTaskWorktree removes a task's worktree once its forge side is

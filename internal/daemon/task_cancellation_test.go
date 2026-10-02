@@ -276,7 +276,7 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 			// A prepared clone: the cancelled context is the thing under test,
 			// so the worktree itself is readied with a live one.
 			if _, _, err := trees.Prepare(context.Background(), task.Owner, task.Repo, "main",
-				task.IssueNumber, task.Title, task.Body, task.Labels); err != nil {
+				task.IssueNumber, task.Title, task.Body, task.Labels, worktree.Fresh); err != nil {
 				t.Fatalf("prepare worktree: %v", err)
 			}
 

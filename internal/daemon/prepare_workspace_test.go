@@ -23,7 +23,7 @@ import (
 func pushedImplementRun(t *testing.T, trees *worktree.Manager, title string) (dir, branch string, tip plumbing.Hash) {
 	t.Helper()
 	ctx := context.Background()
-	dir, branch, err := trees.Prepare(ctx, "acme", "widget", "main", 7, title, "", "bug")
+	dir, branch, err := trees.Prepare(ctx, "acme", "widget", "main", 7, title, "", "bug", worktree.Fresh)
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -110,6 +110,42 @@ func TestPrepareWorkspaceResumesThePersistedBranchForARemediation(t *testing.T) 
 	}
 	if _, err := os.Stat(filepath.Join(gotDir, "widget.go")); err != nil {
 		t.Fatalf("widget.go missing after prepare: %v (the worktree was reset to base, discarding the PR branch's commits)", err)
+	}
+	if got := headOf(t, gotDir); got != tip {
+		t.Errorf("worktree HEAD = %s, want the PR branch tip %s", got, tip)
+	}
+}
+
+// TestPrepareWorkspaceResumesAPRBranchAfterTheWorktreeWasRemoved pins the
+// retry failure archie-core-866m reports. Manager.Resume opens an
+// already-prepared worktree, so a remediation whose local clone is gone -- a
+// first run on this host, an expired volume, a worktree the terminal cleanup
+// removed before a retry -- can never be resumed, and the retry path offers
+// only fresh-from-base or that unrunnable resume. Preparing a resume must
+// clone when the worktree is missing, exactly as a fresh prepare does, and
+// land on the PR branch tip rather than base.
+func TestPrepareWorkspaceResumesAPRBranchAfterTheWorktreeWasRemoved(t *testing.T) {
+	ctx := context.Background()
+	trees := newTestTrees(t, newLocalRemote(t, "acme", "widget"))
+	dir, branch, tip := pushedImplementRun(t, trees, "fix: original issue")
+
+	// The clone is gone before the retry reaches prepareWorkspace.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove worktree: %v", err)
+	}
+
+	d, st, _ := testDaemon(t, 3, 0)
+	task := claimedTask(t, st, "fix: original issue", "remediate", branch)
+
+	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	if !ok {
+		t.Fatal("prepareWorkspace() = false, want the remediation prepared on its PR branch after the worktree was removed")
+	}
+	if gotDir != dir {
+		t.Errorf("prepareWorkspace() dir = %q, want the task's worktree %q", gotDir, dir)
+	}
+	if _, err := os.Stat(filepath.Join(gotDir, "widget.go")); err != nil {
+		t.Fatalf("widget.go missing after prepare: %v (the PR branch's work was not restored)", err)
 	}
 	if got := headOf(t, gotDir); got != tip {
 		t.Errorf("worktree HEAD = %s, want the PR branch tip %s", got, tip)

@@ -115,42 +115,18 @@ func orUnknown(s string) string {
 // other clipped park reasons in this package.
 const remediationRoundCapBytes = 2000
 
-// resumableTrees is the optional capability a Trees implementation offers
-// for continuing work on an already-open PR branch instead of starting a
-// fresh worktree. It stays separate because Trees is already at the interface
-// size cap and most workflow stages do not need branch resumption.
-//
-// *worktree.Manager (real git access) and the container-mode hybrid
-// implementation both already satisfy this structurally; a Trees
-// implementation that doesn't (a narrower test fake, say) simply cannot run
-// the remediate workflow, which StageResumeWorktree reports plainly.
-type resumableTrees interface {
-	Dir(owner, repo string, issue int) string
-	Resume(ctx context.Context, dir, branch string) error
-}
-
-// StageResumeWorktree re-syncs the task's already-prepared worktree onto
-// its PR branch's remote tip, so the remediate workflow continues on the
-// branch the implement run pushed instead of resetting to base the way
-// StagePrepareWorktree's refresh would (docs/prds/pr-review-remediation.md
-// decision 4). A remediate task always has a branch: it only ever runs
-// against a PR archie itself opened.
-func StageResumeWorktree() Stage {
-	return Stage{Name: "resume", Run: func(ctx context.Context, tc *TaskContext) error {
-		if tc.Task.Branch == "" {
-			return fmt.Errorf("remediate: task has no branch to resume")
-		}
-		rt, ok := tc.Trees.(resumableTrees)
-		if !ok {
-			return fmt.Errorf("remediate: this worktree implementation cannot resume a PR branch")
-		}
-		dir := rt.Dir(tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber)
-		if err := rt.Resume(ctx, dir, tc.Task.Branch); err != nil {
-			return fmt.Errorf("resume worktree onto %s: %w", tc.Task.Branch, err)
-		}
-		tc.Dir, tc.Branch = dir, tc.Task.Branch
-		return nil
-	}}
+// retiredResumeStep is the remediate workflow's old in-container resume stage,
+// kept as an inert word in the step vocabulary. The resume it used to perform
+// now happens in daemon.prepareWorkspace before the container starts
+// (archie-core-866m): the daemon holds the forge credential that fetches the
+// branch and positions the worktree onto origin/<branch>, so by the time a
+// container-side stage could run there is nothing left to do. It is
+// deliberately not a stage of Remediate() any more -- a new definition never
+// names it -- but a definition pinned or stored before that move still does,
+// and a step word removed from the vocabulary fails every workflow's
+// definition to decode, not just its own.
+func retiredResumeStep() Stage {
+	return Stage{Name: "resume", Run: func(context.Context, *TaskContext) error { return nil }}
 }
 
 // StageRemediationRoundCap enforces the hard stop on an unbounded
@@ -294,14 +270,15 @@ func StageRemediationReply() Stage {
 // Remediate runs one remediation round against an archie-owned, still-open
 // pull request in response to a forge review reaction
 // (docs/prds/pr-review-remediation.md decision 4). It reuses the task's
-// existing worktree and branch rather than opening a new PR.
+// existing worktree and branch rather than opening a new PR: the worktree is
+// positioned onto the PR branch by daemon.prepareWorkspace before the container
+// starts, so there is no in-container resume stage.
 func Remediate() Workflow {
 	return Workflow{
 		Name: "remediate",
 		Stages: []Stage{
 			StageCheckReviewPayload(),
 			StageRemediationRoundCap(),
-			StageResumeWorktree(),
 			remediateBuildStage(),
 			StageRemediationCommitPush(),
 			StageRemediationReply(),

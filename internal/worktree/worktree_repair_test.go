@@ -88,7 +88,7 @@ func TestPushSucceedsWhenPostPublicationMetadataFails(t *testing.T) {
 				m.Log = slog.New(logs)
 			}
 
-			dir, branch, err := m.Prepare(ctx, "acme", "push-test", testBase, tc.issue, tc.title, "", tc.labels)
+			dir, branch, err := m.Prepare(ctx, "acme", "push-test", testBase, tc.issue, tc.title, "", tc.labels, Fresh)
 			if err != nil {
 				t.Fatalf("Prepare() error = %v", err)
 			}
@@ -178,7 +178,7 @@ func TestRecordUpstreamErrorPaths(t *testing.T) {
 			host := newLocalRemote(t, "acme", "record-upstream")
 			m := newManager(t, host)
 
-			dir, branch, err := m.Prepare(ctx, "acme", "record-upstream", testBase, 105, "feat: record upstream", "", "feature")
+			dir, branch, err := m.Prepare(ctx, "acme", "record-upstream", testBase, 105, "feat: record upstream", "", "feature", Fresh)
 			if err != nil {
 				t.Fatalf("Prepare() error = %v", err)
 			}
@@ -229,7 +229,7 @@ func TestCommitAllHonoursCancellation(t *testing.T) {
 			host := newLocalRemote(t, "acme", "cancel-test")
 			m := newManager(t, host)
 
-			dir, _, err := m.Prepare(ctx, "acme", "cancel-test", testBase, 201, "feat: cancel test", "", "feature")
+			dir, _, err := m.Prepare(ctx, "acme", "cancel-test", testBase, 201, "feat: cancel test", "", "feature", Fresh)
 			if err != nil {
 				t.Fatalf("Prepare() error = %v", err)
 			}

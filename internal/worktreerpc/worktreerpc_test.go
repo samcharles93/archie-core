@@ -124,7 +124,7 @@ func TestManagerPrepareCannotDeleteOutsideWorkDir(t *testing.T) {
 	}
 
 	m := &worktree.Manager{WorkDir: workDir, BaseURL: t.TempDir()}
-	_, _, _ = m.Prepare(ctx, "../escape", "widget", "main", 7, "feat: test", "", "")
+	_, _, _ = m.Prepare(ctx, "../escape", "widget", "main", 7, "feat: test", "", "", worktree.Fresh)
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("Prepare removed a path outside WorkDir: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestClientPushRejectsTaskMismatchedCoordinates(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  host,
 	}
-	dir, branch, err := m.Prepare(ctx, "other", "widget", "main", 9, "feat: other", "", "")
+	dir, branch, err := m.Prepare(ctx, "other", "widget", "main", 9, "feat: other", "", "", worktree.Fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 		BaseURL:  host,
 	}
 
-	dir, branch, err := m.Prepare(ctx, "acme", "widget", "main", 1, "feat: test", "", "")
+	dir, branch, err := m.Prepare(ctx, "acme", "widget", "main", 1, "feat: test", "", "", worktree.Fresh)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}

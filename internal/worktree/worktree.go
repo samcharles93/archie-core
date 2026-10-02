@@ -120,70 +120,103 @@ func (m *Manager) signature() *object.Signature {
 	return &object.Signature{Name: m.BotUser, Email: m.BotEmail, When: time.Now()}
 }
 
-// Prepare creates a fresh clone for the task and checks out its branch.
-// Any leftover worktree from a prior attempt is removed first. If the
-// worktree is already prepared, it is refreshed and reused.
+// Target selects the commit a prepared worktree is positioned at.
+//
+// The zero value is Fresh: a run that starts new work is reset onto
+// origin/<base>. A non-empty Target is a resume: the worktree is reset onto
+// origin/<that branch>, continuing the work an earlier attempt already pushed.
+//
+// The branch travels with the choice rather than being recomputed from the
+// title, because a resume must land on the branch the open pull request lives
+// on: a retitled issue would otherwise name a branch that does not exist.
+//
+// It is a string rather than a bool or an enum precisely so the branch to
+// resume onto is carried by the choice; a bool would force a second parameter
+// and let a caller select a resume without naming what it resumes onto.
+type Target string
+
+// Fresh is the fresh-run target: reset onto origin/<base>.
+const Fresh Target = ""
+
+// Prepare creates (or reuses) the task's clone and positions it on target,
+// returning the worktree directory and the branch it is on.
+//
+// A missing clone is created for either target. That is what lets a resume
+// recover a worktree the terminal cleanup, an expired volume or a different
+// host removed before a retry. Fresh lands it on origin/<base>; a resume lands
+// it on origin/<branch> and fails closed when that branch is not on the remote
+// rather than falling back to base.
 func (m *Manager) Prepare(
 	ctx context.Context,
 	owner, repo, base string,
 	issue int,
 	title, body, labels string,
+	target Target,
 ) (dir, branch string, err error) {
 	if !ValidCoordinates(owner, repo, issue) {
 		return "", "", fmt.Errorf("invalid worktree coordinates")
 	}
 	dir = m.Dir(owner, repo, issue)
 	branch = archieBranch(issue, title, labels)
+	if target != Fresh {
+		branch = string(target)
+	}
 
+	prepared := false
 	if _, statErr := os.Stat(filepath.Join(dir, preparedSentinel)); statErr == nil {
-		if err := m.refresh(ctx, dir, base, branch); err != nil {
-			return "", "", err
+		prepared = true
+	} else {
+		migrated, migrateErr := m.migrateLegacy(owner, repo, issue, dir)
+		if migrateErr != nil {
+			return "", "", migrateErr
 		}
-		return dir, branch, nil
-	}
-	if migrated, migrateErr := m.migrateLegacy(owner, repo, issue, dir); migrateErr != nil {
-		return "", "", migrateErr
-	} else if migrated {
-		if err := m.refresh(ctx, dir, base, branch); err != nil {
-			return "", "", err
-		}
-		return dir, branch, nil
+		prepared = migrated
 	}
 
+	if !prepared {
+		if err := m.createClone(ctx, owner, repo, base, dir); err != nil {
+			return "", "", err
+		}
+	}
+
+	if err := m.sync(ctx, dir, base, branch, target); err != nil {
+		return "", "", err
+	}
+	return dir, branch, nil
+}
+
+// createClone removes whatever sits at dir, clones the task's repository there,
+// records the bot identity and marks the worktree prepared. Prepare calls it
+// only for a worktree it could not reuse.
+func (m *Manager) createClone(ctx context.Context, owner, repo, base, dir string) error {
 	if err := os.RemoveAll(dir); err != nil {
-		return "", "", fmt.Errorf("clear stale worktree: %w", err)
+		return fmt.Errorf("clear stale worktree: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-		return "", "", fmt.Errorf("create worktree parent: %w", err)
+		return fmt.Errorf("create worktree parent: %w", err)
 	}
-
 	r, err := git.PlainCloneContext(ctx, dir, &git.CloneOptions{
 		URL:           m.cloneURL(owner, repo),
 		ClientOptions: m.auth(),
 		ReferenceName: plumbing.NewBranchReferenceName(base),
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("clone %s/%s: %w", owner, repo, err)
+		return fmt.Errorf("clone %s/%s: %w", owner, repo, err)
 	}
 	if err := m.setIdentity(r); err != nil {
-		return "", "", err
+		return err
 	}
+	return writeSentinel(dir)
+}
 
-	wt, err := r.Worktree()
-	if err != nil {
-		return "", "", fmt.Errorf("open worktree: %w", err)
+// sync positions an already-prepared worktree: Fresh resets it onto
+// origin/<base>; a resume resets it onto origin/<branch>. Both fetch first and
+// clear the worktree against the target tree before committing to it.
+func (m *Manager) sync(ctx context.Context, dir, base, branch string, target Target) error {
+	if target == Fresh {
+		return m.refresh(ctx, dir, base, branch)
 	}
-	if err := wt.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.NewBranchReferenceName(branch),
-		Create: true,
-	}); err != nil {
-		return "", "", fmt.Errorf("create branch %s: %w", branch, err)
-	}
-
-	if err := writeSentinel(dir); err != nil {
-		return "", "", err
-	}
-	return dir, branch, nil
+	return m.resume(ctx, dir, branch)
 }
 
 func (m *Manager) legacyDir(owner, repo string, issue int) string {
@@ -256,12 +289,13 @@ func (m *Manager) refresh(ctx context.Context, dir, base, branch string) error {
 	return resetOnto(r, dir, branch, baseHash, remoteBase(base))
 }
 
-// Resume re-syncs an already-prepared worktree onto its branch's remote tip
-// without resetting to base, so the remediate workflow can continue work on
-// the PR branch the implement run already pushed. It is refresh's complement:
-// refresh resets to origin/<base> for a fresh run; Resume resets to
-// origin/<branch> so the committed PR work survives.
-func (m *Manager) Resume(ctx context.Context, dir, branch string) error {
+// resume re-syncs an already-prepared worktree onto its branch's remote tip
+// without resetting to base, so a remediation can continue work on the PR
+// branch an earlier attempt already pushed. It is refresh's complement: refresh
+// resets to origin/<base> for a fresh run; resume resets to origin/<branch> so
+// the committed PR work survives. It is reached through Prepare's Target, and
+// the worktree it opens is one Prepare has already cloned when it was missing.
+func (m *Manager) resume(ctx context.Context, dir, branch string) error {
 	r, err := git.PlainOpen(dir)
 	if err != nil {
 		return fmt.Errorf("open prepared worktree: %w", err)

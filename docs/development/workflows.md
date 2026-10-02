@@ -28,6 +28,17 @@ vocabulary it registers, so both must see the same step types.
 6. Add a parse test (settings accepted and refused) and a run test with fake
    `Trees` and agent runner.
 
+## Retiring a step type
+
+A step word cannot simply be deleted. A stored or pinned definition is
+validated as a whole collection, so one unknown word fails EVERY workflow's
+definition to decode and the workflow-definitions resource becomes unreadable.
+Retire a stage by removing it from its workflow's `Stages` and adding it to
+`retiredSteps` in `definition.go`, which keeps the word resolving as an inert
+stage. The retired stage must do nothing: the behaviour it used to perform now
+belongs to whatever layer took it over (the remediate workflow's in-container
+resume moved to daemon worktree preparation, `archie-core-866m`).
+
 ## Changing the definition format
 
 - The fields a caller needs without the engine (inputs, repository, profile)

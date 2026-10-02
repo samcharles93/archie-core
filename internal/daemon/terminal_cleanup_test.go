@@ -248,7 +248,7 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 			workDir := targetTrees.Dir(claimed.Owner, claimed.Repo, claimed.IssueNumber)
 			// A prepared clone, the only shape the daemon ever cleans up.
 			if _, _, err := targetTrees.Prepare(ctx, claimed.Owner, claimed.Repo, "main",
-				claimed.IssueNumber, claimed.Title, claimed.Body, claimed.Labels); err != nil {
+				claimed.IssueNumber, claimed.Title, claimed.Body, claimed.Labels, worktree.Fresh); err != nil {
 				t.Fatalf("prepare worktree: %v", err)
 			}
 			if tt.uncommitted {
