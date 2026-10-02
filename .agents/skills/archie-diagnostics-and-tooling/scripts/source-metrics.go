@@ -1,5 +1,9 @@
+//go:build ignore
+
 // Command source-metrics emits deterministic, syntax-derived Go source metrics.
 // It never writes to the inspected tree and uses only the Go standard library.
+// Run it by name: go run source-metrics.go. The directory holds several
+// standalone programs, so each carries this constraint.
 package main
 
 import (

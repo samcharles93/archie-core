@@ -1,6 +1,10 @@
+//go:build ignore
+
 // Command config-use-candidates reports syntax-level selector evidence for
 // tagged fields declared by internal/config. Results are candidates, not proof
-// that a field is wired, live, or dead.
+// that a field is wired, live, or dead. Run it by name: go run
+// config-use-candidates.go. The directory holds several standalone programs, so
+// each carries this constraint.
 package main
 
 import (
