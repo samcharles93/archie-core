@@ -381,6 +381,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 0
 	}
 	b.loadCatalog(ctx, args.cfgPath)
+	b.seedSoul(args.cfgPath)
 	b.setupObservability(ctx)
 
 	if err := b.setupBackends(ctx); err != nil {

@@ -32,6 +32,7 @@ import (
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
@@ -591,6 +592,26 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.cfgHolder.Set(b.cfg.Clone())
 	b.setCatalogState(catalog, models)
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(models))
+}
+
+// seedSoul writes the starter SOUL beside the config on first run, and upgrades
+// a file that is still exactly a shipped template, so the identity a user can
+// edit exists before the SOUL loader (#439) reads it. It runs on the full
+// process's boot tail rather than in loadConfig: an offline command such as
+// `-requeue` reads the config but must not write the operator's files. A
+// failure is logged, not fatal -- the loader falls back to the embedded
+// default, so a read-only config directory must not stop the process
+// (docs/prds/soul.md, "Prompt and failure contract").
+func (b *boot) seedSoul(cfgPath string) {
+	result, err := configuration.SeedSoul(cfgPath, agent.ShippedSoul())
+	if err != nil {
+		b.log.Warn("soul: starter file unavailable", "err", err)
+		return
+	}
+	switch result.Action {
+	case configuration.SoulCreated, configuration.SoulUpgraded:
+		b.log.Info("soul: starter file written", "path", result.Path, "action", result.Action)
+	}
 }
 
 // refreshModelCatalog re-reads the catalog and republishes everything derived

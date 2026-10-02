@@ -72,6 +72,7 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 		return err
 	}
 	b.loadCatalog(ctx, options.Config)
+	b.seedSoul(options.Config)
 	url, token := b.cfg.NATS.URL, ""
 	var nc *natsio.Conn
 	var err error
