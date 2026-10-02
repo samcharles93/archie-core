@@ -16,11 +16,18 @@ import (
 
 // TurnPrepareContext carries the per-turn inputs the model seam needs to build
 // a generation plan: the active model, the per-turn extra (identity-bound)
-// tools, and the model's context window used for progressive tool disclosure.
+// tools, the model's context window used for progressive tool disclosure, and
+// whether the catalog marks the model reasoning-class, which the provider seam
+// needs to choose the output-token parameter.
 type TurnPrepareContext struct {
 	Model         string
 	Extra         []tools.ToolEntry
 	ContextWindow int
+	// Reasoning reports the catalog's class for the active model. It rides
+	// the prepare context because the seam that translates a provider-neutral
+	// request into provider options is the only place that knows the wire
+	// parameter differs by class.
+	Reasoning bool
 }
 
 // TurnModel prepares provider-specific tools and executes one completed chat
@@ -333,6 +340,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 		Model:         modelName,
 		Extra:         extraTools,
 		ContextWindow: modelDetails.ContextWindow,
+		Reasoning:     modelDetails.Reasoning,
 	})
 	if err != nil {
 		return preparedTurn{}, fmt.Errorf("build chat model: %w", err)

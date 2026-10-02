@@ -17,9 +17,13 @@ type turnTestModel struct {
 	prepared   *turnTestPreparedModel
 	prepareErr error
 	gotExtra   []tools.ToolEntry
+	// gotPrepare keeps the whole prepare context so a test can assert what
+	// model metadata the gateway delivered to the seam.
+	gotPrepare TurnPrepareContext
 }
 
 func (m *turnTestModel) Prepare(_ context.Context, req TurnPrepareContext) (PreparedTurnModel, error) {
+	m.gotPrepare = req
 	m.gotExtra = append([]tools.ToolEntry(nil), req.Extra...)
 	if m.prepareErr != nil {
 		return nil, m.prepareErr
@@ -354,5 +358,41 @@ func TestTurnRunnerReplaysCompletedDuplicateWithoutGenerating(t *testing.T) {
 	}
 	if len(history) != 2 {
 		t.Fatalf("history length after duplicate = %d, want 2", len(history))
+	}
+}
+
+// TestTurnRunnerDeliversModelReasoningClassToTheSeam proves the model class
+// the provider seam reads comes from the catalog the gateway already resolved,
+// not from a value the seam invented: a reasoning model's details must reach
+// Prepare so only the translation layer has to know the wire parameter
+// differs.
+func TestTurnRunnerDeliversModelReasoningClassToTheSeam(t *testing.T) {
+	store := NewSessionStoreMemory()
+	router := NewRouter(nil, nil, "telegram")
+	router.Identity = "archie"
+	router.InitSessions(store)
+
+	model := &turnTestModel{prepared: &turnTestPreparedModel{reply: "ok"}}
+	runner := NewTurnRunner(TurnRunnerConfig{
+		Router:   router,
+		Sessions: store,
+		Models: &compressTriggerModelManager{
+			models: []string{"openai/gpt-5.4"}, activeModel: "openai/gpt-5.4",
+			details: map[string]ModelDetails{
+				"openai/gpt-5.4": {Ref: "openai/gpt-5.4", ContextWindow: 128000, MaxOutputTokens: 8192, Reasoning: true},
+			},
+		},
+		Personas: NewPersonaRegistry(DefaultPersonas()),
+		Model:    model,
+		BotUser:  "archie",
+		Channel:  "telegram",
+	})
+
+	_, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, nil)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !model.gotPrepare.Reasoning {
+		t.Fatalf("Prepare reasoning = false, want the catalog's reasoning class to reach the seam")
 	}
 }

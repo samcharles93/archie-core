@@ -60,6 +60,7 @@ func (m *chatTurnModel) Prepare(
 		llm:        m.llm(),
 		model:      req.Model,
 		options:    options,
+		reasoning:  req.Reasoning,
 		toolInfo:   toolSummaries(options.Tools),
 		toolTokens: gateway.EstimateTokens(string(toolSchema)),
 		outcomes:   m.outcomes,
@@ -68,9 +69,13 @@ func (m *chatTurnModel) Prepare(
 }
 
 type preparedChatTurnModel struct {
-	llm        *runtime.Runtime
-	model      string
-	options    core.GenerateOptions
+	llm     *runtime.Runtime
+	model   string
+	options core.GenerateOptions
+	// reasoning is the catalog's class for this model, carried from the
+	// prepare context so Generate can choose the output-token parameter the
+	// provider accepts.
+	reasoning  bool
 	toolInfo   []gateway.ToolSummary
 	toolTokens int
 	outcomes   *providerOutcomeRecorder
@@ -178,6 +183,20 @@ func (m *preparedChatTurnModel) ToolSchemaTokens() int {
 	return m.toolTokens
 }
 
+// maxTokensForRequest returns the output-token bound to place on an ai-sdk
+// generate request for a model. A reasoning-class model gets no bound at all:
+// the OpenAI chat-completions provider serialises a non-zero bound as
+// `max_tokens`, which reasoning models reject with HTTP 400 ("Use
+// 'max_completion_tokens' instead"), and the pinned ai-sdk release has no
+// max_completion_tokens path, so no bound is the only usable form. A classic
+// model keeps the caller's bound unchanged.
+func maxTokensForRequest(reasoning bool, bound int) int {
+	if reasoning {
+		return 0
+	}
+	return bound
+}
+
 func (m *preparedChatTurnModel) Generate(
 	ctx context.Context,
 	request gateway.TurnModelRequest,
@@ -187,7 +206,7 @@ func (m *preparedChatTurnModel) Generate(
 	options.Messages = buildTurnMessages(request)
 	// This is one provider response's output allowance, not a turn-
 	// continuation budget. Tool loops remain free to continue.
-	options.MaxTokens = request.MaxOutputTokens
+	options.MaxTokens = maxTokensForRequest(m.reasoning, request.MaxOutputTokens)
 	// A runtime swapped to nil -- a live update that left no usable provider
 	// configured -- is a refused turn, not a panic.
 	if m.llm == nil {

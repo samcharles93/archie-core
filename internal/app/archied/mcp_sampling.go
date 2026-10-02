@@ -95,14 +95,17 @@ func samplingMessages(req mcp.SamplingRequest) ([]chat.Message, error) {
 
 // samplingMaxTokens bounds the completion to the request's own maxTokens,
 // falling back to a conservative default, and never past the model's own
-// output ceiling.
+// output ceiling. A reasoning-class model gets no bound at all: its provider
+// rejects the `max_tokens` parameter the chat-completions provider emits for a
+// non-zero bound.
 func samplingMaxTokens(req mcp.SamplingRequest, models *chatModelManager, model string) int {
+	details, ok := models.ModelDetails(model)
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = samplingDefaultMaxTokens
 	}
-	if details, ok := models.ModelDetails(model); ok && details.MaxOutputTokens > 0 && maxTokens > details.MaxOutputTokens {
-		return details.MaxOutputTokens
+	if ok && details.MaxOutputTokens > 0 && maxTokens > details.MaxOutputTokens {
+		maxTokens = details.MaxOutputTokens
 	}
-	return maxTokens
+	return maxTokensForRequest(ok && details.Reasoning, maxTokens)
 }
