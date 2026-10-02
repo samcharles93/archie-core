@@ -1,10 +1,10 @@
 /**
  * The Events chain's counts.
  *
- * The three-step strip and the tab chips both show one number per step, and
- * both read this. The three lists arrive from three separate loaded stores, so
- * counting them inside the page would put a second, quietly divergent answer
- * next to the first. A count that could not be read at all is `undefined` --
+ * The three-step strip shows one number per step, and reads this. The three
+ * lists arrive from three separate loaded stores, so counting them inside the
+ * page would put a second, quietly divergent answer next to the first. A count
+ * that could not be read at all is `undefined` --
  * blank, never zero -- because "nothing arrived" and "the read failed" are
  * different facts about a deployment, and only the first one is about the
  * operator's events.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { EVENTS_TABS, activeTab, availableTabs } =
+const { EVENTS_TABS, activeTab, availableTabs, stepsFor } =
   await import("../src/events/tab-selection.ts");
 
 test("every tab stays when the composition reports nothing", () => {
@@ -82,5 +82,37 @@ test("the tabs are the three Events surfaces, in reading order", () => {
       ["mappings", "mappings"],
       ["bindings", "bindings"],
     ],
+  );
+});
+
+test("a step carries the strip's own word, not the tab's", () => {
+  const steps = stepsFor(availableTabs(null));
+  assert.deepEqual(
+    steps.map(({ id, label }) => [id, label]),
+    [
+      ["inspector", "Capture"],
+      ["mappings", "Map"],
+      ["bindings", "Bind"],
+    ],
+    "the strip named a panel the way the URL does",
+  );
+  assert.equal(steps[0]?.hint, "webhooks received");
+});
+
+test("the strip offers exactly the steps this composition can back", () => {
+  const steps = stepsFor(
+    availableTabs({ captures: true, bindings: true, mappings: false }),
+  );
+  assert.deepEqual(
+    steps.map((s) => s.id),
+    ["inspector", "bindings"],
+    "the strip showed a step whose panel is not backed, so it went nowhere",
+  );
+});
+
+test("no backed capability is an empty strip, not three dead steps", () => {
+  assert.deepEqual(
+    stepsFor(availableTabs({ captures: false, mappings: false, bindings: false })),
+    [],
   );
 });
