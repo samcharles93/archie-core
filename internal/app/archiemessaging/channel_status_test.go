@@ -144,7 +144,7 @@ func TestChannelDescriptorsDeclareCapabilities(t *testing.T) {
 	// "telegram" correctly declares nothing.
 	withReload := telegram.New("token-123", []int64{1}, slog.New(slog.DiscardHandler))
 	withReload.Reload = func(*telegram.Gateway) error { return nil }
-	descriptors := channelDescriptors([]channelInstance{
+	descriptors := channelDescriptors([]*channelInstance{
 		{name: "telegram", channel: withReload},
 		{name: "email", channel: fakeChannel{}},
 		{name: "webhook", channel: fakeChannel{}},

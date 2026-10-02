@@ -15,7 +15,7 @@ import (
 // channel. Only what an operator may see: no configuration value ever enters a
 // descriptor, so the manager cannot become a second source for a token or a
 // credential.
-func channelDescriptors(instances []channelInstance) []status.Descriptor {
+func channelDescriptors(instances []*channelInstance) []status.Descriptor {
 	descriptors := make([]status.Descriptor, 0, len(instances))
 	for _, instance := range instances {
 		descriptors = append(descriptors, status.Descriptor{
@@ -34,8 +34,8 @@ func channelDescriptors(instances []channelInstance) []status.Descriptor {
 // the single source for both the capability a descriptor declares and the action
 // a reload performs; deriving them separately is how a dashboard ends up offering
 // a button that reports success and changes nothing (archie-core-np7l).
-func reloadable(instance channelInstance) bool {
-	gateway, ok := instance.channel.(*telegram.Gateway)
+func reloadable(instance *channelInstance) bool {
+	gateway, ok := instance.current().(*telegram.Gateway)
 	return ok && gateway.Reload != nil
 }
 
@@ -53,7 +53,7 @@ func (s *Service) ReloadChannel(_ context.Context, id string) error {
 		if instance.name != id {
 			continue
 		}
-		gateway, ok := instance.channel.(*telegram.Gateway)
+		gateway, ok := instance.current().(*telegram.Gateway)
 		if !ok || gateway.Reload == nil {
 			return fmt.Errorf("messaging: channel %q does not support reload", id)
 		}

@@ -195,6 +195,13 @@ looking at before reporting one:
 Telegram `/restart` re-runs same TOML overlay load, then replaces only gateway
 token and allowed-user list. Every other file setting is startup-only.
 
+A stored `channel-settings` change is reconciled live by `archie-messaging`:
+on a new version it re-resolves the file, layers the store over it, and restarts
+only the channel whose transport settings changed (Telegram token/allowlist,
+email relay, webhook route/secret). `chat.email.listen_addr` and
+`chat.webhook_addr` are bound listen addresses, so those changes, and enabling
+or disabling a channel, are reported outstanding and take effect on restart.
+
 ## Treat multi-identity as partially wired
 
 `finalize` requires each identity's `name`, `bot_user`, non-empty repos, forge

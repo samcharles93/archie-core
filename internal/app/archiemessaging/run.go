@@ -36,6 +36,13 @@ func Run(ctx context.Context, o Options) error {
 	// channelStatusStore is the same client, held where compose can reach it: the
 	// channel report is published to the store this process already dials.
 	var channelStatusStore storecontract.ChannelStatusStore
+	// settingsSource and applyReporter are the live channel-settings path: the
+	// control-plane client to re-read the resource, and the record of what this
+	// process applied. Both stay nil without a State Store, which leaves the
+	// service with no live path.
+	var settingsSource chatSettingsSource
+	var applyReporter *applystatus.Reporter
+	var appliedVersion int64
 	if cfg.Options.StateStore.Target != "" {
 		stateStore, closeClient, dialErr := staterpc.Dial(cfg.Options.StateStore.Target, cfg.Options.StateStore.Token)
 		if dialErr != nil {
@@ -43,7 +50,8 @@ func Run(ctx context.Context, o Options) error {
 		}
 		closeStateStore = closeClient
 		defer closeStateStore()
-		chatSettings, channelVersion, settingsErr := controlplanerpc.NewRPCClient(stateStore.ControlPlane()).RuntimeChatConfig(ctx, config.ChatConfig{
+		controlPlaneClient := controlplanerpc.NewRPCClient(stateStore.ControlPlane())
+		chatSettings, channelVersion, settingsErr := controlPlaneClient.RuntimeChatConfig(ctx, config.ChatConfig{
 			Telegram: cfg.Telegram, Email: cfg.Email, Webhook: cfg.Webhook, WebhookAddr: cfg.WebhookAddr, ShowToolCalls: cfg.ShowToolCalls,
 		})
 		if settingsErr != nil {
@@ -64,15 +72,19 @@ func Run(ctx context.Context, o Options) error {
 		}
 		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
 		channelStatusStore = stateStore
+		settingsSource, applyReporter, appliedVersion = controlPlaneClient, reporter, channelVersion
 	}
 
 	srv, err := compose(ctx, deps{
-		ChannelStatus: channelStatusStore,
-		Config:        cfg,
-		Log:           log,
-		Chat:          chat,
-		Health:        health,
-		Settings:      settings,
+		ChannelStatus:  channelStatusStore,
+		Config:         cfg,
+		Log:            log,
+		Chat:           chat,
+		Health:         health,
+		Settings:       settings,
+		SettingsSource: settingsSource,
+		ApplyReporter:  applyReporter,
+		AppliedVersion: appliedVersion,
 	})
 	if err != nil {
 		return err

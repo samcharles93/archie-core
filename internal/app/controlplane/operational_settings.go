@@ -41,7 +41,7 @@ type pluginSettings struct {
 func operationalDefinitions() []Definition {
 	return []Definition{
 		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "live", Document: []config.Repo{}, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
-		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Document: channelSettings{}, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
+		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "live", Document: channelSettings{}, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
 		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "live", Document: schedulingPolicy{}, Seed: func(cfg config.Config) any {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},

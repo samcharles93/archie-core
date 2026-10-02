@@ -1155,7 +1155,8 @@ type ChatConfig struct {
 	// limiting off entirely -- it is an opt-in control, not a default
 	// throttle that could surprise an existing deployment. This key seeds
 	// the Channel settings resource, which the Web UI owns at runtime
-	// (restart-required): editing the file does not change a stored value.
+	// (live for the channel transports): editing the file does not change a
+	// stored value.
 	RateLimit RateLimitConfig `toml:"rate_limit" yaml:"rate_limit"`
 }
 
@@ -1165,7 +1166,8 @@ type ChatConfig struct {
 // internal/app/controlplane); the file key is only that resource's seed, and
 // the Web UI owns the value a running deployment limits with. Applied by
 // boot.startRateLimiter from the config boot.loadRuntimeConfig layers, so a
-// stored value takes effect on restart and the resource is restart-required.
+// stored change to the limit takes effect on the next Gateway restart; the
+// channel transports are the half the Messaging Service reconciles live.
 //
 // A sender is identified per channel: Telegram by numeric user ID, email by the
 // SMTP from address, webhook by the configured route path -- which is a source,

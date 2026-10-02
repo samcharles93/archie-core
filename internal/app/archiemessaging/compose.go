@@ -7,6 +7,8 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
@@ -14,6 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -30,11 +33,44 @@ type deps struct {
 	Chat          messaging.ChatContract
 	Health        *health.Registry
 	Settings      *messaging.SettingsCommand
+	// SettingsSource, when non-nil, enables the live channel-settings
+	// reconcile: the service re-reads the stored channel-settings resource on
+	// the apply-status restamp interval and restarts only the channels whose
+	// settings changed. Nil leaves the service with no live path, which is the
+	// honest state for a test or a process with no State Store.
+	SettingsSource chatSettingsSource
+	// ApplyReporter records what this process applied. Nil reports nothing.
+	ApplyReporter *applystatus.Reporter
+	// AppliedVersion is the channel-settings version already running when the
+	// service starts, so the first reconcile tick does not re-apply it.
+	AppliedVersion int64
+	// ReconcileInterval overrides applystatus.RestampInterval, so a test can
+	// drive the loop without waiting 30 seconds.
+	ReconcileInterval time.Duration
 }
 
+// channelInstance is one composed channel and the runtime state that lets the
+// service restart it alone. channel and cancel are guarded by mu; rebuild is
+// immutable. The channel swaps when the stored settings change, which is what a
+// restart is: build the replacement, stop the old run context, start the new
+// instance. A channel with no in-place reload seam is therefore still
+// reloadable.
 type channelInstance struct {
 	name    string
-	channel channels.Channel
+	rebuild func(ResolvedConfig) (channels.Channel, error)
+
+	mu             sync.Mutex
+	channel        channels.Channel
+	cancel         context.CancelFunc
+	supervised     bool
+	restartPending bool
+}
+
+// current returns the channel instance currently serving, under the lock.
+func (c *channelInstance) current() channels.Channel {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.channel
 }
 
 // Service manages the lifecycle of the extracted Messaging Service and its
@@ -55,11 +91,26 @@ type Service struct {
 	log      *slog.Logger
 	chat     messaging.ChatContract
 	health   *health.Registry
-	channels []channelInstance
+	channels []*channelInstance
+	// settingsSource re-reads the stored channel settings. Nil disables the
+	// reconcile loop.
+	settingsSource chatSettingsSource
+	// reporter records the applied channel-settings version. Nil reports
+	// nothing.
+	reporter *applystatus.Reporter
+	// appliedVersion is the channel-settings version the running channels were
+	// built from, so a reconcile tick does not re-apply its own work.
+	appliedVersion atomic.Int64
+	// reconcileInterval is how often the stored settings are re-read.
+	reconcileInterval time.Duration
 
 	mu      sync.Mutex
 	running bool
 	stop    func()
+	// wg tracks the per-channel supervisors, so a shutdown waits for every
+	// channel to stop before Start returns. A restart can start a replacement
+	// supervisor, which is why it lives here rather than in Start's frame.
+	wg sync.WaitGroup
 }
 
 // compose builds the Service from resolved configuration. ctx is the service
@@ -69,57 +120,122 @@ type Service struct {
 // dropped: a front-end the operator configured must never silently not run.
 func compose(ctx context.Context, d deps) (*Service, error) {
 	srv := &Service{
-		cfg:    d.Config,
-		log:    d.Log,
-		chat:   d.Chat,
-		health: d.Health,
+		cfg:               d.Config,
+		log:               d.Log,
+		chat:              d.Chat,
+		health:            d.Health,
+		settingsSource:    d.SettingsSource,
+		reporter:          d.ApplyReporter,
+		reconcileInterval: d.ReconcileInterval,
+	}
+	srv.appliedVersion.Store(d.AppliedVersion)
+	if srv.reconcileInterval <= 0 {
+		srv.reconcileInterval = applystatus.RestampInterval
 	}
 
-	if d.Config.TelegramToken != "" {
-		if len(d.Config.Telegram.AllowedUserIDs) == 0 {
-			d.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
-				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
-		}
-		tg := telegram.New(d.Config.TelegramToken, d.Config.Telegram.AllowedUserIDs, d.Log)
-		tg.Settings = d.Settings
-		configureTelegram(ctx, tg, d.Config, d.Chat, d.Log)
-		if err := srv.add("telegram", tg, telegramValidateConfigMap(d.Config.Telegram)); err != nil {
-			return nil, err
-		}
+	instances, err := composeChannels(ctx, d)
+	if err != nil {
+		return nil, err
 	}
-
-	if d.Config.Email.ListenAddr != "" {
-		em := email.New(d.Config.Email.ListenAddr, d.Config.Email.RelayAddr, d.Log)
-		if err := srv.add("email", em, map[string]any{
-			"listen_addr": d.Config.Email.ListenAddr,
-			"relay_addr":  d.Config.Email.RelayAddr,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	if d.Config.WebhookAddr != "" {
-		host, port := parseListenAddr(d.Config.WebhookAddr, "0.0.0.0", 8644)
-		wh := webhook.New(host, port, webhookRoutes(d.Config.Webhook, d.Config.WebhookSecret), d.Log)
-		if err := srv.add("webhook", wh, map[string]any{"host": host, "port": port}); err != nil {
-			return nil, err
-		}
-	}
-
+	srv.channels = instances
 	srv.status = status.NewManager(channelDescriptors(srv.channels))
 	srv.statusWriter = d.ChannelStatus
 	srv.publish = make(chan struct{}, 1)
 	return srv, nil
 }
 
-// add validates a channel against its own ConfigSchema contract and
-// registers it.
-func (s *Service) add(name string, ch channels.Channel, cfg map[string]any) error {
-	if err := ch.ValidateConfig(cfg); err != nil {
-		return fmt.Errorf("chat.%s config invalid: %w", name, err)
+// composeChannels builds the configured channel set. Each instance carries the
+// factory a restart uses to build a replacement from a new resolved
+// configuration, which is what makes a channel with no in-place reload seam
+// still restarted alone rather than through a process restart.
+func composeChannels(ctx context.Context, d deps) ([]*channelInstance, error) {
+	instances := make([]*channelInstance, 0, 3)
+	if d.Config.TelegramToken != "" {
+		instance, err := composeTelegram(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, instance)
 	}
-	s.channels = append(s.channels, channelInstance{name: name, channel: ch})
-	return nil
+	if d.Config.Email.ListenAddr != "" {
+		instance, err := composeEmail(d)
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, instance)
+	}
+	if d.Config.WebhookAddr != "" {
+		instance, err := composeWebhook(d)
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, instance)
+	}
+	return instances, nil
+}
+
+func composeTelegram(ctx context.Context, d deps) (*channelInstance, error) {
+	if len(d.Config.Telegram.AllowedUserIDs) == 0 {
+		d.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
+			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
+	}
+	build := func(cfg ResolvedConfig) (channels.Channel, error) {
+		if cfg.TelegramToken == "" {
+			return nil, nil
+		}
+		tg := telegram.New(cfg.TelegramToken, cfg.Telegram.AllowedUserIDs, d.Log)
+		tg.Settings = d.Settings
+		configureTelegram(ctx, tg, cfg, d.Chat, d.Log)
+		if err := tg.ValidateConfig(telegramValidateConfigMap(cfg.Telegram)); err != nil {
+			return nil, fmt.Errorf("chat.telegram config invalid: %w", err)
+		}
+		return tg, nil
+	}
+	ch, err := build(d.Config)
+	if err != nil {
+		return nil, err
+	}
+	return &channelInstance{name: "telegram", channel: ch, rebuild: build}, nil
+}
+
+func composeEmail(d deps) (*channelInstance, error) {
+	build := func(cfg ResolvedConfig) (channels.Channel, error) {
+		if cfg.Email.ListenAddr == "" {
+			return nil, nil
+		}
+		em := email.New(cfg.Email.ListenAddr, cfg.Email.RelayAddr, d.Log)
+		if err := em.ValidateConfig(map[string]any{
+			"listen_addr": cfg.Email.ListenAddr,
+			"relay_addr":  cfg.Email.RelayAddr,
+		}); err != nil {
+			return nil, fmt.Errorf("chat.email config invalid: %w", err)
+		}
+		return em, nil
+	}
+	ch, err := build(d.Config)
+	if err != nil {
+		return nil, err
+	}
+	return &channelInstance{name: "email", channel: ch, rebuild: build}, nil
+}
+
+func composeWebhook(d deps) (*channelInstance, error) {
+	build := func(cfg ResolvedConfig) (channels.Channel, error) {
+		if cfg.WebhookAddr == "" {
+			return nil, nil
+		}
+		host, port := parseListenAddr(cfg.WebhookAddr, "0.0.0.0", 8644)
+		wh := webhook.New(host, port, webhookRoutes(cfg.Webhook, cfg.WebhookSecret), d.Log)
+		if err := wh.ValidateConfig(map[string]any{"host": host, "port": port}); err != nil {
+			return nil, fmt.Errorf("chat.webhook config invalid: %w", err)
+		}
+		return wh, nil
+	}
+	ch, err := build(d.Config)
+	if err != nil {
+		return nil, err
+	}
+	return &channelInstance{name: "webhook", channel: ch, rebuild: build}, nil
 }
 
 // telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
@@ -180,24 +296,17 @@ func (s *Service) Start(ctx context.Context) error {
 		// opened during startup shows configured channels rather than none.
 		s.signalPublish()
 	}
+	if s.settingsSource != nil {
+		go s.reconcileLoop(ctx)
+	}
 
-	var wg sync.WaitGroup
 	for _, ch := range s.channels {
 		c := ch
-		wg.Go(func() {
-			s.log.Info("starting channel", "name", c.name)
-			if err := c.channel.Start(ctx, s.chat, s.lifecycleFor(c.name)); err != nil && ctx.Err() == nil {
-				// The channel could not run: say so on the operator's surface, not
-				// only in the log, which is the difference between a dashboard that
-				// shows a dead channel and one that shows nothing at all.
-				s.status.MarkFailed(c.name, err.Error())
-				s.log.Error("channel stopped with error", "name", c.name, "err", err)
-				return
-			}
-			// A channel that returns without an error has stopped, either because
-			// the service was asked to or because its own loop ended.
-			s.status.MarkStopped(c.name, "")
-		})
+		c.mu.Lock()
+		c.supervised = true
+		c.mu.Unlock()
+		s.wg.Add(1)
+		go s.runChannel(ctx, c)
 	}
 
 	// Every configured channel has been handed its lifetime and the service
@@ -214,18 +323,10 @@ func (s *Service) Start(ctx context.Context) error {
 
 	<-ctx.Done()
 
-	for _, ch := range s.channels {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.Options.ShutdownTimeout)
-		if err := ch.channel.Stop(shutdownCtx); err != nil {
-			s.log.Warn("channel stop failed", "name", ch.name, "err", err)
-		}
-		shutdownCancel()
-	}
-
-	wg.Wait()
+	s.wg.Wait()
 
 	if s.statusWriter != nil {
-		// The final report carries the stopped states the loop above recorded.
+		// The final report carries the stopped states each supervisor recorded.
 		// Its own context, because ctx is already cancelled.
 		finalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.Options.ShutdownTimeout)
 		defer cancel()

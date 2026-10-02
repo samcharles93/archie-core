@@ -260,15 +260,17 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // (b.runtimeConfig, which applies the execution budgets the settings watch
 // published) and republishes through config.Holder, so the change takes
 // effect without a restart. Kinds stay out of this list while a
-// startup-built component still holds their value -- tool, container and
-// channel settings are frozen in components built at boot and remain
+// startup-built component still holds their value -- tool and container
+// settings are frozen in components built at boot and remain
 // restart-required -- and a kind joins it only with a consumer that re-reads
 // it. PluginSettingsKind is on the list because its only consumer is the
 // directory reconciliation, which reads the running config each tick; a
 // removed plugin or engine still cannot unload, so that kind reports the
-// removal rather than requiring a restart. Each kind is watched in its own
-// goroutine, exactly the shape the workflow-execution-settings watch
-// established.
+// removal rather than requiring a restart. ChannelSettingsKind is on the list
+// for this process's own re-layer; the Messaging Service, which owns the
+// channel transports, reconciles them separately and restarts only the
+// channel whose settings changed. Each kind is watched in its own goroutine,
+// exactly the shape the workflow-execution-settings watch established.
 var runtimeResourceKinds = []string{
 	controlplane.ProviderSettingsKind,
 	controlplane.ModelRoleAssignmentsKind,
@@ -276,6 +278,7 @@ var runtimeResourceKinds = []string{
 	controlplane.SchedulingPolicyKind,
 	controlplane.PluginSettingsKind,
 	controlplane.ReviewSettingsKind,
+	controlplane.ChannelSettingsKind,
 }
 
 // startRuntimeResourceWatches keeps a watch per live kind established for the

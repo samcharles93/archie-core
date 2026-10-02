@@ -335,17 +335,21 @@ Two properties matter to anyone changing this area:
   query, so boot records the last published settings and the reload re-applies
   them from there.
 - **Live kinds arrive on a watch.** Provider settings, model role assignments,
-  repository policies and scheduling policy are `ApplyMode: live`
-  (archie-core-zfb0.1): the daemon keeps a watch per kind and, on a new
-  version, re-runs `boot.runtimeConfig` over the published snapshot and
+  repository policies, scheduling policy, plugin settings, review settings and
+  channel settings are `ApplyMode: live`: the daemon keeps a watch per kind and,
+  on a new version, re-runs `boot.runtimeConfig` over the published snapshot and
   republishes through `config.Holder`. A candidate the layered document cannot
   run is refused before it is published — last-known-good keeps running and
-  the refusal is reported through apply status. The kinds stay
-  restart-required while a startup-built component still holds their value
-  (tool, plugin, container and channel settings today); a kind joins the live
-  list only with a consumer that re-reads it, and the model/provider half of
-  it also rebuilds the gateway chat runtime's provider set and the chat model
-  list the chat surfaces offer.
+  the refusal is reported through apply status. A kind whose consumer lives in
+  another process reconciles there too: `archie-messaging` re-reads the stored
+  channel settings on the apply-status restamp interval and restarts only the
+  channel whose transport settings changed, while the listen addresses it has
+  bound and the set of channels it composed stay process bindings that take
+  effect on restart. A kind joins the live list only with a consumer that
+  re-reads it; one whose startup-built consumer never does stays
+  restart-required, and the model/provider half of the live set also rebuilds
+  the gateway chat runtime's provider set and the chat model list the chat
+  surfaces offer.
 
 ## Completion criteria
 
