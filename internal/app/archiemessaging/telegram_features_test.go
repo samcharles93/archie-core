@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
 type versionChatContract struct {
@@ -84,17 +86,32 @@ func TestTelegramVersionReportsAnUnreachableGateway(t *testing.T) {
 	}
 }
 
-// TestTelegramRunningVersionsStaysUnwired pins the decision recorded in
-// docs/architecture/migration-decisions.md: RunningVersions turns an
-// installer's claim into a checked one, and only a component's own compiled-in
-// build can vouch for itself. This process knows neither archied's build nor
-// the observed archie-agent version, so reporting anything here would
-// manufacture the false success the check exists to catch.
-func TestTelegramRunningVersionsStaysUnwired(t *testing.T) {
+// TestTelegramRunningVersionsReportsTheMessagingBuild pins that the Messaging
+// Service vouches for the daemon component from its own compiled-in release
+// stamp. Every host binary in the archied release set -- archie-messaging
+// included -- is built from the same archied/v* tag and stamped with
+// buildinfo.Version by every build site (install.sh, the updater, the release
+// workflow and Taskfile), so this process's own build is evidence that the
+// release actually reached the host, and an old binary still running reports
+// the old version as drift. Reading it from the Gateway instead would be a
+// different process's stamp, which is the false success the check exists to
+// catch.
+//
+// It reports nothing for the agent: every archie-agent process is task-scoped
+// and observed only through daemon.AgentStatus, which this process does not
+// hold. Leaving it out makes it Unverified rather than guessed.
+func TestTelegramRunningVersionsReportsTheMessagingBuild(t *testing.T) {
 	gateway := telegramConfig(t, ResolvedConfig{}, &versionChatContract{})
 
-	if gateway.RunningVersions != nil {
-		t.Fatal("telegram RunningVersions is wired; update reports must stay unverified claims")
+	if gateway.RunningVersions == nil {
+		t.Fatal("telegram RunningVersions = nil, want the Messaging Service's own release stamp")
+	}
+	running := gateway.RunningVersions()
+	if got := running[releaseupdate.ComponentDaemon]; got != buildinfo.Version {
+		t.Fatalf("running[%q] = %q, want buildinfo.Version = %q", releaseupdate.ComponentDaemon, got, buildinfo.Version)
+	}
+	if _, ok := running[releaseupdate.ComponentAgent]; ok {
+		t.Fatalf("running vouches for %q, which this process cannot observe: %#v", releaseupdate.ComponentAgent, running)
 	}
 	if gateway.Dangerous != nil {
 		t.Fatal("telegram Dangerous is wired; no composition has ever supplied a command authority")

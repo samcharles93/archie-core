@@ -140,6 +140,77 @@ func TestReportPendingUpdateSendsAndClearsReport(t *testing.T) {
 	}
 }
 
+// TestReportPendingUpdateVerifiesAgainstRunningVersions drives the acceptance
+// both ways through the real relay: a wired RunningVersions must reach the
+// message the operator reads, confirming a claim this process can vouch for and
+// contradicting one it cannot. Without the wiring the same report relays as
+// "I still can't confirm which version" on every success, which is the bug this
+// covers.
+func TestReportPendingUpdateVerifiesAgainstRunningVersions(t *testing.T) {
+	const (
+		daemon    = releaseupdate.ComponentDaemon
+		previous  = "1.0.0"
+		installed = "1.2.3"
+	)
+	tests := []struct {
+		name      string
+		installed string
+		wantText  []string
+		denyText  []string
+	}{
+		{
+			name:      "confirmed when the running version matches the claim",
+			installed: installed,
+			wantText:  []string{"update complete"},
+			denyText:  []string{"can't confirm", "did not take effect"},
+		},
+		{
+			name:      "contradicted when the running version differs from the claim",
+			installed: "9.9.9",
+			wantText:  []string{"did not take effect", installed},
+			denyText:  []string{"update complete", "can't confirm"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "update-report.json")
+			report := releaseupdate.Report{
+				Channel: "telegram", ChatID: 7, ThreadID: 3,
+				Previous:    map[string]string{daemon: previous},
+				Installed:   map[string]string{daemon: test.installed},
+				HealthCheck: "passed",
+			}
+			if err := releaseupdate.WritePendingReport(path, report); err != nil {
+				t.Fatal(err)
+			}
+			g := New("1:test", []int64{42}, slog.Default())
+			g.UpdateReportPath = path
+			g.RunningVersions = func() map[string]string { return map[string]string{daemon: installed} }
+			b, requests := newTelegramTestBot(t)
+
+			g.reportPendingUpdate(context.Background(), b)
+
+			if len(*requests) != 1 {
+				t.Fatalf("requests = %#v, want exactly one", *requests)
+			}
+			// sendMessage delivers a rich message first, so the operator text is
+			// the rich_message body (or the plain text field on a fallback).
+			text := strings.ToLower((*requests)[0].form["rich_message"] + " " + (*requests)[0].form["text"])
+			for _, want := range test.wantText {
+				if !strings.Contains(text, want) {
+					t.Errorf("message = %q, want it to contain %q", text, want)
+				}
+			}
+			for _, deny := range test.denyText {
+				if strings.Contains(text, deny) {
+					t.Errorf("message = %q, want it NOT to contain %q", text, deny)
+				}
+			}
+		})
+	}
+}
+
 // TestReportPendingUpdateClearsUnreadableReport: a corrupt report file
 // (partial write, disk issue, a future format the running binary doesn't
 // understand) must not jam forever -- without clearing it, every future

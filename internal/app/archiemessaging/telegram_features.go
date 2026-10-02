@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/installtype"
@@ -17,13 +18,15 @@ import (
 // configureTelegram wires the operator seams telegram.Gateway leaves to its
 // composition root. Which process may satisfy each one is settled in
 // docs/architecture/migration-decisions.md ("Telegram operator surface after
-// extraction"); notably RunningVersions, ReleaseAnnouncements and Dangerous
-// stay nil deliberately, because nothing this process can observe would make
-// them true.
+// extraction"); notably ReleaseAnnouncements and Dangerous stay nil, because
+// nothing this process can observe would make them true. RunningVersions is
+// supplied here from this process's own build stamp; see
+// messagingRunningVersions.
 func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedConfig, chat messaging.ChatContract, log *slog.Logger) {
 	g.Version = gatewayVersionReporter(ctx, chat, cfg.Options.DependencyTimeout)
 	g.SetShowToolCalls(cfg.ShowToolCalls)
 	g.Reload = telegramReloader(cfg.Options, log)
+	g.RunningVersions = messagingRunningVersions
 
 	if updates := updateService(cfg); updates != nil {
 		g.Updates = updates
@@ -31,6 +34,28 @@ func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedCon
 	if cfg.WorkDir != "" {
 		g.UpdateReportPath = identityStatePath(cfg.WorkDir, "update-report", cfg.BotUser)
 	}
+}
+
+// messagingRunningVersions reports the component versions this process can
+// vouch for, for checking a relayed update report against
+// (releaseupdate.Report.Verify).
+//
+// archie-messaging is one of the processes in the archied release set (the
+// installer's GATEWAY_SERVICES), built from the same archied/v* tag and stamped
+// with buildinfo.Version by every build site (install.sh, the updater, the
+// release workflow and Taskfile). Its own compiled-in build is therefore
+// evidence that the release the installer claims actually reached this host: a
+// binary the update did not replace still reports the version it was built
+// from, which Verify reads as drift rather than false success. Reading the
+// version from the Gateway instead would report a different process's stamp,
+// which is the failure mode the check exists to catch (see
+// docs/architecture/migration-decisions.md).
+//
+// The agent is deliberately absent: every archie-agent process is task-scoped
+// and observed only through daemon.AgentStatus, which this process does not
+// hold, so it must report Unverified rather than be guessed.
+func messagingRunningVersions() map[string]string {
+	return map[string]string{releaseupdate.ComponentDaemon: buildinfo.Version}
 }
 
 // gatewayVersionReporter renders /version from the Gateway's own build block.
