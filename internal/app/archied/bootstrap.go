@@ -1596,7 +1596,6 @@ func (b *boot) buildDaemon() {
 		StateStoreGrants:    b.stateStoreGrants,
 		ContainerPool:       b.containerPool,
 		KitLauncher:         b.kitLauncher,
-		Guardrails:          b.guardrails,
 		Identities:          b.identityRunners,
 		RootIdentityID:      identity.StableID(configuredIdentityNames(b.cfg)[0]),
 		TaskLogs:            b.taskLogs,
