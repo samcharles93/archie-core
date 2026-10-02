@@ -45,7 +45,14 @@ func operationalDefinitions() []Definition {
 		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "live", Document: schedulingPolicy{}, Seed: func(cfg config.Config) any {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
-		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "restart-required", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
+		// ApplyMode is live: the daemon diffs the stored MCP server set against
+		// the running providers -- connecting added servers, disconnecting
+		// removed ones and reconnecting changed ones while leaving unchanged
+		// servers untouched -- and rebuilds the web_fetch and minimax entries
+		// (archie-core-zfb0.3). A changed server whose new engine fails to start
+		// is rolled back to the old one, so the refusal is reported rather than
+		// leaving the server down.
+		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "live", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
 		// ApplyMode is live for additions: a stored directory change re-layers live
 		// and the daemon's reconciliation loads new and changed files without a
 		// restart. A removal cannot unload Yaegi's interpreter, so it stays an

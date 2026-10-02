@@ -553,17 +553,17 @@ func TestRuntimeResourceKindsApplyLive(t *testing.T) {
 		modes[definition.Kind] = definition.ApplyMode
 	}
 	for _, kind := range []string{
-		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind, PluginSettingsKind, ReviewSettingsKind, ChannelSettingsKind, ContainerRuntimePoliciesKind,
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind, ToolSettingsKind, PluginSettingsKind, ReviewSettingsKind, ChannelSettingsKind, ContainerRuntimePoliciesKind,
 	} {
 		if modes[kind] != "live" {
 			t.Errorf("%s applies %q, want live: the daemon re-layers this kind on a watch", kind, modes[kind])
 		}
 	}
-	for _, kind := range []string{ToolSettingsKind} {
-		if modes[kind] != "restart-required" {
-			t.Errorf("%s applies %q, want restart-required: a startup-built component still holds it", kind, modes[kind])
-		}
-	}
+	// No control-plane kind is restart-required any more: every kind's consumer
+	// either re-reads the published config or reconciles on its own process's
+	// watch. The process bindings that would be restart-required (listen
+	// addresses, the NATS and database URLs, the state and work directories)
+	// are not control-plane resource kinds at all.
 }
 
 func TestSchedulingPolicySeedCarriesTheLabel(t *testing.T) {

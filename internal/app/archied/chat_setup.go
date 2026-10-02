@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
@@ -30,6 +31,10 @@ type chatSetup struct {
 	// running yet at this point, so the reload-safe Holder is mostly a
 	// formality, but matching the daemon's API keeps callers honest.
 	Cfg *config.Holder
+	// ToolLimits resolves the tool-output policy at each turn, so a live
+	// tool-settings update reaches the next chat turn's tool options rather
+	// than the value captured when the runner was built.
+	ToolLimits func() agentexec.ToolLimits
 	// LLM resolves the provider runtime at each use: a live provider-settings
 	// or model-role-assignments update swaps the runtime wholesale (ai-sdk's
 	// Runtime caches the provider instances it built), so the pointer cannot
@@ -182,7 +187,7 @@ func newChatTurnRunner(
 		Sessions:     sessionStore,
 		Models:       s.ChatModels,
 		Personas:     s.Personas,
-		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, toolLimits(cfg), s.ProviderOutcomes),
+		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, s.ToolLimits, s.ProviderOutcomes),
 		TaskLister:   s.ChatTaskLister,
 		Tasks:        s.ChatTasks,
 		TaskLogs:     s.ChatTaskLogs,

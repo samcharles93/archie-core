@@ -264,26 +264,30 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // (b.runtimeConfig, which applies the execution budgets the settings watch
 // published) and republishes through config.Holder, so the change takes
 // effect without a restart. Kinds stay out of this list while a
-// startup-built component still holds their value -- tool
-// settings are frozen in components built at boot and remain
-// restart-required -- and a kind joins it only with a consumer that re-reads
-// it. ContainerRuntimePoliciesKind is on the list because both consumers
+// startup-built component still holds their value; none does today, so the
+// list is every control-plane kind. A kind joins it only with a consumer that
+// re-reads it. ToolSettingsKind is on it because applyRuntimeResourceUpdate
+// reconciles the MCP provider set and rebuilds the two config-derived tool
+// entries (boot.reconcileToolSettings, its consumer); a removed MCP server
+// really disconnects, because it is a child process with a Stop, not a Yaegi
+// interpreter. ContainerRuntimePoliciesKind is on it because both consumers
 // re-read the published config: the container pool takes its image, pull
-// policy, network, max-uptime and concurrency cap per acquire, and the
-// daemon's dispatcher is resized after the publish (applyRuntimeResourceUpdate
-// below). PluginSettingsKind is on the list because its only consumer is the
-// directory reconciliation, which reads the running config each tick; a
-// removed plugin or engine still cannot unload, so that kind reports the
-// removal rather than requiring a restart. ChannelSettingsKind is on the list
-// for this process's own re-layer; the Messaging Service, which owns the
-// channel transports, reconciles them separately and restarts only the
-// channel whose settings changed. Each kind is watched in its own goroutine,
-// exactly the shape the workflow-execution-settings watch established.
+// policy, network, max-uptime and concurrency cap per acquire, and the daemon's
+// dispatcher is resized after the publish (applyRuntimeResourceUpdate below).
+// PluginSettingsKind is on the list because its only consumer is the directory
+// reconciliation, which reads the running config each tick; a removed plugin
+// or engine still cannot unload, so that kind reports the removal rather than
+// requiring a restart. ChannelSettingsKind is on the list for this process's
+// own re-layer; the Messaging Service, which owns the channel transports,
+// reconciles them separately and restarts only the channel whose settings
+// changed. Each kind is watched in its own goroutine, exactly the shape the
+// workflow-execution-settings watch established.
 var runtimeResourceKinds = []string{
 	controlplane.ProviderSettingsKind,
 	controlplane.ModelRoleAssignmentsKind,
 	controlplane.RepositoryPoliciesKind,
 	controlplane.SchedulingPolicyKind,
+	controlplane.ToolSettingsKind,
 	controlplane.PluginSettingsKind,
 	controlplane.ReviewSettingsKind,
 	controlplane.ChannelSettingsKind,
@@ -366,6 +370,14 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	switch kind {
 	case controlplane.ProviderSettingsKind, controlplane.ModelRoleAssignmentsKind:
 		b.rebuildChatModelRuntime(cfg)
+	case controlplane.ToolSettingsKind:
+		// The document's server set and tool entries are live now; reconcile
+		// them and report the reconciliation's own outcome, which is the one
+		// that knows whether a server failed to connect.
+		if err := b.reconcileToolSettings(ctx, cfg); err != nil {
+			b.applyStatus.Report(ctx, kind, update.Version, err)
+			b.log.Error("tool settings reconciled with errors; the running servers stay", "version", update.Version, "err", err)
+		}
 	case controlplane.PluginSettingsKind:
 		// The document's directories are live now; load what they hold and
 		// report the reconciliation's own outcome, which is the one that knows

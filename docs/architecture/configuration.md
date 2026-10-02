@@ -335,14 +335,19 @@ Two properties matter to anyone changing this area:
   query, so boot records the last published settings and the reload re-applies
   them from there.
 - **Live kinds arrive on a watch.** Provider settings, model role assignments,
-  repository policies, scheduling policy, plugin settings, review settings,
-  channel settings and container runtime policies are `ApplyMode: live`: the
-  daemon keeps a watch per kind (`boot.startRuntimeResourceWatches`,
-  `runtimeResourceKinds`) and, on a new version, re-runs `boot.runtimeConfig`
-  over the published snapshot and
+  repository policies, scheduling policy, tool settings, plugin settings,
+  review settings, channel settings and container runtime policies are
+  `ApplyMode: live`: the daemon keeps a watch per kind
+  (`boot.startRuntimeResourceWatches`, `runtimeResourceKinds`) and, on a new
+  version, re-runs `boot.runtimeConfig` over the published snapshot and
   republishes through `config.Holder`. A candidate the layered document cannot
   run is refused before it is published — last-known-good keeps running and
-  the refusal is reported through apply status. Container runtime policies
+  the refusal is reported through apply status. Tool settings reconcile in this
+  process: the daemon diffs the stored MCP server set against the running
+  providers — connecting added servers, disconnecting removed ones and
+  reconnecting changed ones while an unchanged server keeps running — and
+  rebuilds the `web_fetch` and `minimax` entries, whose config was captured at
+  construction (`boot.reconcileToolSettings`). Container runtime policies
   join the live set because their consumers re-read the published config: the
   container pool reads image, pull policy, network, max uptime and concurrency
   cap on every acquire and the daemon resizes its running task dispatcher from

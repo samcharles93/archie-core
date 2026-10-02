@@ -23,7 +23,10 @@ type chatTurnModel struct {
 	llm      func() *runtime.Runtime
 	registry *tools.Registry
 	maxSteps int
-	limits   agentexec.ToolLimits
+	// limits resolves the tool-output policy at each turn, so a live
+	// tool-settings update is the policy the next turn builds its tool options
+	// with; a snapshot taken at construction would keep the boot limits.
+	limits func() agentexec.ToolLimits
 	// outcomes records each call's result for /status (see sendChatTurn).
 	outcomes *providerOutcomeRecorder
 }
@@ -32,7 +35,7 @@ func newChatTurnModel(
 	llm func() *runtime.Runtime,
 	registry *tools.Registry,
 	maxSteps int,
-	limits agentexec.ToolLimits,
+	limits func() agentexec.ToolLimits,
 	outcomes *providerOutcomeRecorder,
 ) gateway.TurnModel {
 	return &chatTurnModel{
@@ -48,7 +51,11 @@ func (m *chatTurnModel) Prepare(
 	ctx context.Context,
 	req gateway.TurnPrepareContext,
 ) (gateway.PreparedTurnModel, error) {
-	options, err := chatGenerateOptions(ctx, nil, m.registry, m.maxSteps, m.limits, req.Extra, req.ContextWindow)
+	limits := agentexec.ToolLimits{}
+	if m.limits != nil {
+		limits = m.limits()
+	}
+	options, err := chatGenerateOptions(ctx, nil, m.registry, m.maxSteps, limits, req.Extra, req.ContextWindow)
 	if err != nil {
 		return nil, err
 	}

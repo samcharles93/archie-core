@@ -97,6 +97,25 @@ func (r *Registry) Register(engine Engine) error {
 	return r.register(engine, false)
 }
 
+// prepareRegistration validates an engine and builds its registration, the
+// validation Register, Add and Replace all share.
+func prepareRegistration(engine Engine, optional bool) (registration, error) {
+	if isNilEngine(engine) {
+		return registration{}, errors.New("tool provider is nil")
+	}
+	manifest, err := safeManifest(engine)
+	if err != nil {
+		return registration{}, err
+	}
+	if err := manifest.Validate(); err != nil {
+		return registration{}, fmt.Errorf("tool provider manifest: %w", err)
+	}
+	if !slices.Contains(manifest.Capabilities, toolCapability) {
+		return registration{}, fmt.Errorf("tool provider %q does not declare %q capability", manifest.ID, toolCapability)
+	}
+	return registration{engine: engine, manifest: cloneManifest(manifest), optional: optional}, nil
+}
+
 // RegisterOptional adds an engine the daemon can run without.
 //
 // An optional provider that fails to start or discover is logged, excluded
@@ -109,30 +128,20 @@ func (r *Registry) RegisterOptional(engine Engine) error {
 }
 
 func (r *Registry) register(engine Engine, optional bool) error {
-	if isNilEngine(engine) {
-		return errors.New("tool provider is nil")
-	}
-	manifest, err := safeManifest(engine)
+	reg, err := prepareRegistration(engine, optional)
 	if err != nil {
 		return err
 	}
-	if err := manifest.Validate(); err != nil {
-		return fmt.Errorf("tool provider manifest: %w", err)
-	}
-	if !slices.Contains(manifest.Capabilities, toolCapability) {
-		return fmt.Errorf("tool provider %q does not declare %q capability", manifest.ID, toolCapability)
-	}
-	manifest = cloneManifest(manifest)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.state != stateIdle {
 		return ErrRegistryStarted
 	}
-	if _, exists := r.providers[manifest.ID]; exists {
-		return fmt.Errorf("%w: %q", ErrDuplicateProvider, manifest.ID)
+	if _, exists := r.providers[reg.manifest.ID]; exists {
+		return fmt.Errorf("%w: %q", ErrDuplicateProvider, reg.manifest.ID)
 	}
-	r.providers[manifest.ID] = registration{engine: engine, manifest: manifest, optional: optional}
+	r.providers[reg.manifest.ID] = reg
 	return nil
 }
 

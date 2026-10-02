@@ -137,8 +137,13 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 	router.InitSessions(b.chatSessionStore)
 	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	router.Health = b.statusHealth
+	// ToolLimits reads the live holder, not cfg: the daemon's runtime-resource
+	// watch republishes a tool-settings change through it, so a policy edit
+	// applies to the next turn in the process that serves this runner.
 	setup := chatSetup{
-		Cfg: config.NewHolder(cfg), LLM: b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
+		Cfg:        config.NewHolder(cfg),
+		ToolLimits: func() agentexec.ToolLimits { return toolLimits(b.cfgHolder.Get()) },
+		LLM:        b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks,
 		ChatTaskLister:      chatTaskListerAdapter{tasks: b.stateStore.Tasks},
 		ChatTaskLogs:        chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},

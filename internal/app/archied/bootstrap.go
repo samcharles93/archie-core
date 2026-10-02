@@ -289,7 +289,19 @@ type boot struct {
 	curatorRuntime   *curator.Runtime
 	guardrails       *tools.GuardrailEngine
 	providerRegistry *toolprovider.Registry
-	d                *daemon.Daemon
+	// mcpMu guards mcpApplied, which records the MCP servers the provider
+	// registry was last built from, keyed by configured name. A live
+	// tool-settings change diffs the stored server set against it so an
+	// unchanged server is left running and untouched (mcp_reconcile.go); the
+	// mutex is held because registerTools runs at boot while the
+	// control-plane watch may already be applying an update.
+	mcpMu      sync.Mutex
+	mcpApplied map[string]appliedMCPServer
+	// mcpProvider builds the engine for one configured MCP server. Nil uses
+	// configuredMCPProvider; a test injects a fake so the live reconciliation
+	// can run without spawning a server process.
+	mcpProvider func(config.MCPServer) (toolprovider.Engine, error)
+	d           *daemon.Daemon
 	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
 	// Nil when no chat task creator is configured, in which case startServices
 	// leaves it unstarted rather than running with no reachable job kind.
@@ -1408,8 +1420,14 @@ func (b *boot) setupGuardrails() {
 // built per turn onto the resolved Subject's scopes
 // (internal/gateway/turn_memory_tool.go), not once at boot.
 func (b *boot) registerTools(ctx context.Context) error {
-	cfg, log := b.cfg, b.log
+	// The running config, not b.cfg: boot is where the first stored version of
+	// every kind was already layered in, and a watch that applied a later one
+	// before this point published through the holder.
+	cfg, log := b.cfgHolder.Get(), b.log
 	b.providerRegistry = toolprovider.NewRegistry(b.toolReg)
+	b.mcpMu.Lock()
+	b.mcpApplied = make(map[string]appliedMCPServer, len(cfg.Tools.MCPServers))
+	b.mcpMu.Unlock()
 	// Workspace file and shell tools. Registered only when a workspace is
 	// configured: these read, write and execute, so the directory is a
 	// deliberate choice rather than a default.
@@ -1428,7 +1446,7 @@ func (b *boot) registerTools(ctx context.Context) error {
 		log.Info("workspace tools disabled (chat.workspace is unset)")
 	}
 	for _, srv := range cfg.Tools.MCPServers {
-		provider, err := configuredMCPProvider(srv, cfg.WorkDir, b.mcpSamplingHandler())
+		provider, err := b.buildMCPProvider(srv)
 		if err != nil {
 			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
 			continue
@@ -1443,6 +1461,9 @@ func (b *boot) registerTools(ctx context.Context) error {
 			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
 			continue
 		}
+		b.mcpMu.Lock()
+		b.mcpApplied[strings.TrimSpace(srv.Name)] = appliedMCPServer{server: srv, id: provider.Manifest().ID}
+		b.mcpMu.Unlock()
 	}
 	if err := b.capabilityHost.Register(b.providerRegistry); err != nil {
 		log.Error("tool-provider capability registration failed", "err", err)
@@ -1492,21 +1513,7 @@ func (b *boot) registerStandaloneTools() {
 	// web_fetch. Registered directly rather than as a tool provider: it has
 	// no process to start or stop, so the provider lifecycle would buy
 	// nothing. Disabled by configuration returns nil and advertises nothing.
-	if entry := webfetch.Tool(webfetch.Config{
-		Enabled:              cfg.Tools.WebFetch.IsEnabled(),
-		Timeout:              cfg.Tools.WebFetch.Timeout.Std(),
-		MaxBytes:             cfg.Tools.WebFetch.MaxBytes,
-		AllowPrivateNetworks: cfg.Tools.WebFetch.AllowPrivateNetworks,
-	}); entry != nil {
-		if err := b.toolReg.Register(*entry); err != nil {
-			log.Warn("web_fetch registration failed", "err", err)
-		} else {
-			log.Info("web fetch enabled",
-				"allow_private_networks", cfg.Tools.WebFetch.AllowPrivateNetworks)
-		}
-	} else {
-		log.Info("web fetch disabled")
-	}
+	b.registerWebFetchTool(cfg)
 
 	// send_file. Rooted at the same workspace as the file tools and gated
 	// by the same confinement, because it hands a host file to an outbound
@@ -1523,6 +1530,30 @@ func (b *boot) registerStandaloneTools() {
 	}
 
 	b.registerMinimaxTool(cfg, log)
+}
+
+// registerWebFetchTool registers web_fetch from cfg. Split out of
+// registerStandaloneTools because a live tool-settings change rebuilds the
+// entry: the one a boot built captured its config at construction, so it
+// cannot read a changed value per call.
+func (b *boot) registerWebFetchTool(cfg config.Config) {
+	log := b.log
+	entry := webfetch.Tool(webfetch.Config{
+		Enabled:              cfg.Tools.WebFetch.IsEnabled(),
+		Timeout:              cfg.Tools.WebFetch.Timeout.Std(),
+		MaxBytes:             cfg.Tools.WebFetch.MaxBytes,
+		AllowPrivateNetworks: cfg.Tools.WebFetch.AllowPrivateNetworks,
+	})
+	if entry == nil {
+		log.Info("web fetch disabled")
+		return
+	}
+	if err := b.toolReg.Register(*entry); err != nil {
+		log.Warn("web_fetch registration failed", "err", err)
+		return
+	}
+	log.Info("web fetch enabled",
+		"allow_private_networks", cfg.Tools.WebFetch.AllowPrivateNetworks)
 }
 
 // registerMinimaxTool registers generate_video. Off by default -- see

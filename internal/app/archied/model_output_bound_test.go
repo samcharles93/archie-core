@@ -89,7 +89,7 @@ func TestChatTurnParameterNameFollowsModelClass(t *testing.T) {
 			llm := agentexec.NewRuntime(map[string]agentexec.Provider{
 				"openai": {Class: "openai", BaseURL: api.URL},
 			})
-			model := newChatTurnModel(func() *runtime.Runtime { return llm }, tools.NewRegistry(), 1, agentexec.ToolLimits{}, nil)
+			model := newChatTurnModel(func() *runtime.Runtime { return llm }, tools.NewRegistry(), 1, func() agentexec.ToolLimits { return agentexec.ToolLimits{} }, nil)
 
 			prepared, err := model.Prepare(t.Context(), gateway.TurnPrepareContext{
 				Model: tc.modelRef, Reasoning: tc.reasoning,

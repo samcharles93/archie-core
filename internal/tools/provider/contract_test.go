@@ -42,7 +42,7 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 
 	// Also check the chat composition files, which hold the chat-turn wiring
 	// extracted from main.go during the structural refactor.
-	for _, name := range []string{"telegram_setup.go", "chat_turn_model.go", "bootstrap.go"} {
+	for _, name := range []string{"telegram_setup.go", "chat_turn_model.go", "bootstrap.go", "mcp_reconcile.go"} {
 		path := filepath.Join("..", "..", "..", "internal", "app", "archied", name)
 		source, readErr := os.ReadFile(path)
 		if readErr == nil {
@@ -56,7 +56,12 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		// root was decomposed; the receiver makes the arg expressions
 		// carry the b. prefix there.
 		"toolprovider.NewRegistry(b.toolReg)",
-		"configuredMCPProvider(srv, cfg.WorkDir, b.mcpSamplingHandler())",
+		// buildMCPProvider is the single construction seam: boot registration
+		// and the live reconciliation both reach configuredMCPProvider through
+		// it, so an MCP server is always built with the daemon's sampling
+		// handler.
+		"configuredMCPProvider(srv, b.cfgHolder.Get().WorkDir, b.mcpSamplingHandler())",
+		"b.buildMCPProvider(srv)",
 		"capabilityHost.Register(b.providerRegistry)",
 		// The chat turn builds its toolset from the registry before the
 		// system prompt is rendered, so the prompt can advertise exactly

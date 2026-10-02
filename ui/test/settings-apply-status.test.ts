@@ -23,18 +23,18 @@ const current: ApplyStatusRow[] = [
 
 test("the restart banner names a process-binding change but never a live one", () => {
   const rowsFor = (kind: string) =>
-    kind === "plugin-settings" ? behind : kind === "tool-settings" ? behind : current;
+    kind === "plugin-settings" ? behind : kind === "channel-settings" ? behind : current;
 
   // Both resources are behind; only the restart-required one is a restart.
   assert.deepEqual(
     restartPendingTitles(
       [
         resource("plugin-settings", "Plugin settings", "live"),
-        resource("tool-settings", "Tool and MCP settings", "restart-required"),
+        resource("channel-settings", "Channel settings", "restart-required"),
       ],
       rowsFor,
     ),
-    ["Tool and MCP settings"],
+    ["Channel settings"],
   );
 
   // A live-apply kind behind on a process never earns the banner at all.
