@@ -51,3 +51,33 @@ func TranscribedText(transcript, caption string) string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+// TranscribedMessageText renders the text a transcribed speech attachment
+// contributes to a message, preserving any caption the sender attached.
+//
+// messageText is the inbound text a channel frontend rendered for an
+// attachment: the media note alone, or the note followed by the sender's
+// caption on the next line. The note is a bracketed, self-describing
+// placeholder (see internal/channels/telegram's turnMessageText); it is
+// replaced by the provenance marker and transcript, and anything after it
+// survives as the caption. Text that carries no recognisable note is treated
+// as a caption in full, so nothing the sender wrote is dropped.
+//
+// The transcription happens on the model-owning side of the Messaging
+// boundary, which receives the audio bytes but not the caption as a separate
+// field; this is the function that turns the frontend's rendered text into
+// the transcript the turn is recorded with.
+func TranscribedMessageText(messageText, transcript string) string {
+	note, caption, _ := strings.Cut(messageText, "\n")
+	if !isMediaNote(note) {
+		return TranscribedText(transcript, messageText)
+	}
+	return TranscribedText(transcript, caption)
+}
+
+// isMediaNote reports whether s is a channel frontend's bracketed media
+// placeholder such as "[voice message]".
+func isMediaNote(s string) bool {
+	s = strings.TrimSpace(s)
+	return len(s) >= 2 && s[0] == '[' && s[len(s)-1] == ']'
+}

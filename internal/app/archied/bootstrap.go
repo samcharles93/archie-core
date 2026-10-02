@@ -41,6 +41,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -61,6 +62,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/infrastructure/toolbuilder"
+	"github.com/samcharles93/archie-core/internal/infrastructure/transcription"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -253,6 +255,15 @@ type boot struct {
 	// as domainembedding.ErrUnavailable: skip, never fail startup or an
 	// unrelated call.
 	embeddings domainembedding.Client
+
+	// transcriber is the optional voice-transcription capability. It is built
+	// beside the chat runtime from this process's own [models]/[providers],
+	// which is the model-owning side of the Messaging boundary: a channel
+	// frontend carries a voice note's bytes across the inbound wire, and this
+	// process turns them into text before the turn is recorded. Nil when no
+	// role is configured or the provider credential did not resolve; a turn
+	// then keeps the frontend's media note rather than failing.
+	transcriber messaging.Transcriber
 
 	toolReg             *tools.Registry
 	chatModels          *chatModelManager
@@ -869,6 +880,26 @@ func (b *boot) setupEmbeddings(cfg config.Config, log *slog.Logger) {
 		log.Info("embedding capability enabled", "role", infraembedding.Role)
 	} else if cfg.Models[infraembedding.Role] != "" {
 		log.Warn("embedding capability configured but unavailable; capability disabled", "role", infraembedding.Role)
+	}
+}
+
+// setupTranscriber builds the optional voice-transcription capability. It is
+// the model-owning side of the Messaging Service boundary: the channel
+// frontend carries a voice note's audio bytes across the inbound wire but
+// holds no provider credential, so this process turns them into text before
+// the turn's message is recorded. Like setupEmbeddings, a client is wired only
+// when models["transcription"] names a provider/model and that provider's
+// credential resolves; a configured-but-unusable role is logged so the
+// degradation is visible, while a role never configured is silent.
+func (b *boot) setupTranscriber(cfg config.Config, log *slog.Logger) {
+	client, ok := transcription.New(cfg.Models, cfg.Providers, transcription.Options{
+		ResolveSecret: b.secrets.Resolve,
+	})
+	if ok {
+		b.transcriber = client
+		log.Info("voice transcription enabled", "role", transcription.Role)
+	} else if cfg.Models[transcription.Role] != "" {
+		log.Warn("voice transcription configured but unavailable; capability disabled", "role", transcription.Role)
 	}
 }
 

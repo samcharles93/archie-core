@@ -50,12 +50,6 @@ type Gateway struct {
 	Updates UpdateService
 	// Settings executes control-plane commands in this authenticated adapter.
 	Settings *messaging.SettingsCommand
-	// Transcriber turns voice notes into text before their turn is dispatched.
-	// Nil means the capability is not configured (or its provider did not
-	// resolve): a voice note then keeps its "[voice message]" note, exactly
-	// the behaviour before transcription existed. The composition root owns
-	// construction, so this adapter never holds a provider credential itself.
-	Transcriber messaging.Transcriber
 	// ResolveActor maps a channel-native sender to an authenticated Archie
 	// identity. Nil deliberately permits reads but makes writes fail closed.
 	ResolveActor func(int64) (string, bool)
@@ -655,7 +649,6 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 	if !isTurn {
 		return
 	}
-	transcribeVoice := hasMedia && media.transcribe
 
 	// The lane key must be the session, so that /stop -- which resolves
 	// the same key -- reaches the turn the sender is actually watching.
@@ -665,7 +658,6 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		if !g.fetchTurnMedia(turnCtx, b, &gm, chatID, threadID) {
 			return
 		}
-		g.transcribeVoiceNote(turnCtx, &gm, msg.Caption, transcribeVoice)
 
 		// If the turn invokes a tool that requires human approval,
 		// the dispatch layer blocks on this approver. Nil is fine
@@ -774,27 +766,6 @@ func (g *Gateway) fetchTurnMedia(ctx context.Context, b *bot.Bot, gm *messaging.
 	}
 	gm.Media[0].Data = data
 	return true
-}
-
-// transcribeVoiceNote replaces a voice note's stored placeholder with the
-// transcript, so the agent reads what was said rather than "[voice message]".
-// It degrades: a nil Transcriber, an error, or an empty transcript leaves the
-// placeholder in place -- a turn must never fail because transcription was
-// unavailable.
-func (g *Gateway) transcribeVoiceNote(ctx context.Context, gm *messaging.Inbound, caption string, wanted bool) {
-	if !wanted || g.Transcriber == nil || len(gm.Media) == 0 {
-		return
-	}
-	transcript, err := g.Transcriber.Transcribe(ctx, gm.Media[0].Data)
-	if err != nil {
-		g.log.Warn("voice transcription failed; keeping the media note", "error", err)
-		return
-	}
-	if strings.TrimSpace(transcript) == "" {
-		g.log.Info("voice transcription produced no text; keeping the media note")
-		return
-	}
-	gm.Message.Text = messaging.TranscribedText(transcript, caption)
 }
 
 // ── helpers ──────────────────────────────────────────────────────

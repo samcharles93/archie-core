@@ -21,9 +21,6 @@ type inboundMedia struct {
 	// note is a bracketed, self-describing placeholder such as "[photo]"
 	// or "[document: report.pdf]".
 	note string
-	// transcribe marks audio a configured Transcriber should turn into text
-	// (a Telegram voice note). False leaves the note as-is.
-	transcribe bool
 }
 
 // extractInboundMedia maps a Telegram message onto the attachment it
@@ -73,12 +70,12 @@ func extractInboundMedia(msg *models.Message) (inboundMedia, bool) {
 
 	case msg.Voice != nil:
 		return inboundMedia{attachment: messaging.MediaAttachment{
-			Type:     "audio",
+			Type:     messaging.MediaTypeVoice,
 			FileID:   msg.Voice.FileID,
 			MIMEType: msg.Voice.MimeType,
 			FileSize: nilIfZero(msg.Voice.FileSize),
 			Duration: &msg.Voice.Duration,
-		}, note: "[voice message]", transcribe: true}, true
+		}, note: "[voice message]"}, true
 	}
 	return inboundMedia{}, false
 }

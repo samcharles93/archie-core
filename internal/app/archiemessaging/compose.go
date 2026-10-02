@@ -82,7 +82,6 @@ func compose(ctx context.Context, d deps) (*Service, error) {
 		}
 		tg := telegram.New(d.Config.TelegramToken, d.Config.Telegram.AllowedUserIDs, d.Log)
 		tg.Settings = d.Settings
-		tg.Transcriber = d.Config.Transcriber
 		configureTelegram(ctx, tg, d.Config, d.Chat, d.Log)
 		if err := srv.add("telegram", tg, telegramValidateConfigMap(d.Config.Telegram)); err != nil {
 			return nil, err

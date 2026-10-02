@@ -25,6 +25,11 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	// non-command message processing.
 	providers := executionProviders(cfg)
 	b.setLLM(agentexec.NewRuntime(providers))
+	// Transcription is a model-role capability, like the chat models it sits
+	// beside: it is built here, on the model-owning side, from this process's
+	// own [models]/[providers]. The Messaging Service carries a voice note's
+	// bytes to the Gateway and never holds the credential.
+	b.setupTranscriber(cfg, b.log)
 	b.toolReg = tools.NewRegistry()
 	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models)
 	catalog, catalogModels := b.catalogState()
@@ -142,6 +147,9 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 		Bus:                 b.bus, Log: b.log,
 		MemoryEngine: b.memoryStore(),
 		MemoryWriter: b.memoryWriter(),
+		// The transcription capability is built beside the chat runtime, from
+		// the model-role configuration only this process reads.
+		Transcriber: b.transcriber,
 		// The Gateway executes the web chat's turns, so it is the process
 		// that must record their outcomes for /status.
 		ProviderOutcomes: b.providerOutcomes,

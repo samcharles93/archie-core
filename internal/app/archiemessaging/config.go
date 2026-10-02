@@ -8,9 +8,7 @@ import (
 	"os"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/infrastructure/transcription"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -32,11 +30,6 @@ type ResolvedConfig struct {
 	BotUser       string
 	HealthURL     string
 	ShowToolCalls bool
-	// Transcriber is the optional voice-transcription capability. Nil means it
-	// is not configured (or its provider did not resolve), and a voice note
-	// keeps its media note. Constructed from [models].transcription and the
-	// matching [providers.*] entry.
-	Transcriber messaging.Transcriber
 }
 
 type projection struct {
@@ -50,8 +43,6 @@ type projection struct {
 	botUser       string
 	healthURL     string
 	showToolCalls bool
-	models        map[string]string
-	providers     map[string]config.Provider
 }
 
 // Resolve loads the configuration, extracts the messaging projection, resolves
@@ -101,7 +92,6 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 		BotUser:       proj.botUser,
 		HealthURL:     proj.healthURL,
 		ShowToolCalls: proj.showToolCalls,
-		Transcriber:   setupTranscriber(proj, secrets, log),
 	}, nil
 }
 
@@ -131,8 +121,6 @@ func project(cfg config.Config) projection {
 		botUser:       cfg.BotUser,
 		healthURL:     cfg.Health.URL(),
 		showToolCalls: cfg.Chat.ShowToolCalls,
-		models:        cfg.Models,
-		providers:     cfg.Providers,
 	}
 }
 
@@ -176,21 +164,4 @@ func resolveWebhookSecret(route config.WebhookRoute, secrets *secret.Registry) (
 		return secrets.Resolve(route.Secret)
 	}
 	return "", nil
-}
-
-// setupTranscriber builds the optional voice-transcription capability. A
-// client is wired only when [models].transcription names a provider/model and
-// that provider's credential resolves; a configured-but-unusable role is
-// logged so the degradation is visible, while a role that was never
-// configured is silent (mirrors archied's setupEmbeddings).
-func setupTranscriber(proj projection, secrets *secret.Registry, log *slog.Logger) messaging.Transcriber {
-	client, ok := transcription.New(proj.models, proj.providers, transcription.Options{ResolveSecret: secrets.Resolve})
-	if ok {
-		log.Info("voice transcription enabled", "role", transcription.Role)
-		return client
-	}
-	if proj.models[transcription.Role] != "" {
-		log.Warn("voice transcription configured but unavailable; capability disabled", "role", transcription.Role)
-	}
-	return nil
 }

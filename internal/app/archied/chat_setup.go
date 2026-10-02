@@ -14,6 +14,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/installtype"
@@ -63,6 +64,12 @@ type chatSetup struct {
 	// process makes, which the /status health source reads back. Nil disables
 	// recording (the recorder's methods tolerate that rather than panicking).
 	ProviderOutcomes *providerOutcomeRecorder
+	// Transcriber is the voice-transcription capability built by
+	// setupChatRuntime from this process's own [models]/[providers]. Every turn
+	// runner carries it so a speech attachment is transcribed before its
+	// message is recorded. Nil disables the capability (no role configured, or
+	// the provider credential did not resolve), leaving the frontend's note.
+	Transcriber messaging.Transcriber
 }
 
 // daemonRunningVersions reports the component versions this process can
@@ -190,6 +197,7 @@ func newChatTurnRunner(
 		MemoryEngine: s.MemoryEngine,
 		MemoryWriter: s.MemoryWriter,
 		UserIdentity: userIdentityResolver(),
+		Transcriber:  s.Transcriber,
 		Log:          s.Log,
 	})
 	if err := runner.Recover(ctx); err != nil && s.Log != nil {

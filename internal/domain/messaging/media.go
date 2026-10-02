@@ -9,6 +9,21 @@ package messaging
 // attachment is accepted rather than rejected as an oversized message.
 const MaxInboundAttachmentBytes = 20 << 20
 
+// Type values. MediaTypeVoice is speech the sender recorded -- a Telegram
+// voice note -- as distinct from MediaTypeAudio, a music or generic audio
+// file. The distinction is what tells the model-owning turn runner to
+// transcribe a speech attachment before the turn: a voice note's bytes reach
+// the Gateway, which owns the provider credential, but the Gateway must not
+// spend a transcription call on a forwarded song. The remaining values are
+// what they say.
+const (
+	MediaTypeImage    = "image"
+	MediaTypeVideo    = "video"
+	MediaTypeAudio    = "audio"
+	MediaTypeDocument = "document"
+	MediaTypeVoice    = "voice"
+)
+
 // MediaAttachment describes a file attached to a message. Platform-agnostic;
 // platform-specific fields live in Raw.
 //
@@ -16,7 +31,7 @@ const MaxInboundAttachmentBytes = 20 << 20
 // "unknown" across a JSON round-trip: a 0-byte file is valid and
 // different from a file whose size was never set.
 type MediaAttachment struct {
-	// Type is "image", "video", "audio", or "document".
+	// Type is "image", "video", "audio", "voice", or "document".
 	Type string `json:"type"`
 
 	// FileID is the platform-assigned identifier for download APIs.

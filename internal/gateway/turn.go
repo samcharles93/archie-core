@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,11 +88,20 @@ const defaultTurnPersistenceTimeout = 5 * time.Second
 // runner. The runner is channel-neutral apart from the channel name used in
 // prompts, session tools, and completion events.
 type TurnRunnerConfig struct {
-	Router             *Router
-	Sessions           SessionStore
-	Models             ModelManager
-	Personas           PersonaPromptSource
-	Model              TurnModel
+	Router   *Router
+	Sessions SessionStore
+	Models   ModelManager
+	Personas PersonaPromptSource
+	Model    TurnModel
+	// Transcriber turns an inbound speech attachment (messaging.MediaTypeVoice)
+	// into text before the turn's inbound message is recorded, so stored
+	// history reads what was said rather than the frontend's note. The
+	// composition root builds it from the process's own [models]/[providers],
+	// which only the model-owning side of the Messaging boundary reads; a
+	// channel frontend carries the attachment bytes across the inbound wire
+	// but never holds the provider credential. Nil keeps the note (the
+	// capability is optional and degrades).
+	Transcriber        messaging.Transcriber
 	Ledger             TurnLedger
 	OwnerID            string
 	PersistenceTimeout time.Duration
@@ -485,6 +495,13 @@ func (r *TurnRunner) Run(ctx context.Context, in Inbound, stream TurnStream) (st
 		return replayed, err
 	}
 
+	// A message already recorded by an earlier attempt (turn.InputMessageID
+	// set) keeps the transcript that attempt persisted; transcribing again
+	// would duplicate the call and could disagree with stored history.
+	if turn.InputMessageID == "" {
+		in.Message = r.transcribeSpeech(ctx, in)
+	}
+
 	in.Message, history, err = r.recordInboundMessage(ctx, &turn, sessionID, in.Message, history)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
@@ -495,6 +512,39 @@ func (r *TurnRunner) Run(ctx context.Context, in Inbound, stream TurnStream) (st
 		return "", r.failTurn(ctx, turn, err)
 	}
 	return r.generateAndComplete(ctx, turn, sessionID, prep, stream)
+}
+
+// transcribeSpeech replaces an inbound speech attachment's placeholder note
+// with the transcript before the turn's message is recorded, so the store --
+// and every later turn reading its history -- keeps the words rather than a
+// note whose audio is gone. It degrades: a nil Transcriber, a failed call, or
+// an empty transcript leaves the frontend's note in place. A turn must never
+// fail because transcription was unavailable.
+func (r *TurnRunner) transcribeSpeech(ctx context.Context, in Inbound) messaging.Message {
+	msg := in.Message
+	if r.Transcriber == nil {
+		return msg
+	}
+	for _, att := range in.Media {
+		if att.Type != messaging.MediaTypeVoice || len(att.Data) == 0 {
+			continue
+		}
+		transcript, err := r.Transcriber.Transcribe(ctx, att.Data)
+		if err != nil {
+			if r.Log != nil {
+				r.Log.Warn("voice transcription failed; keeping the media note", "error", err)
+			}
+			continue
+		}
+		if strings.TrimSpace(transcript) == "" {
+			if r.Log != nil {
+				r.Log.Info("voice transcription produced no text; keeping the media note")
+			}
+			continue
+		}
+		msg.Text = messaging.TranscribedMessageText(msg.Text, transcript)
+	}
+	return msg
 }
 
 // generateAndComplete runs the model, persists the assistant message and
