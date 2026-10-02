@@ -54,16 +54,15 @@ substituting its own registry.
 `archie-core-ze7y` is the same question seen from the deleted
 repository-authored stages: those `.archie/stages/*.go` files held arbitrary
 stages, and their gate half landed as `gate.diff-rules` settings rather
-than interpreted Go. Their stage half has no replacement and does not get one
-that approximates it: no interpreted-Go stage type is built, and no command
-step type is created by this decision to stand in for them. The refusal of
-`.archie/stages/*.go` stays until the maintainer's trust decision
-(`archie-core-ndm8`) says otherwise.
-
-If that decision ever allows a command step type, it arrives as a provider in
-the compiled-in set under the rules above — a new contributor of exactly one
-step type at a named provider. It is not a plugin contribution mechanism, and
-it does not change any answer in this document.
+than interpreted Go. No interpreted-Go stage type is built, and nothing
+approximates one: the maintainer's trust decision (`archie-core-ndm8`) allows a
+command step type instead, and it arrives as a provider in the compiled-in set
+under the rules above — a new contributor of exactly one step type at a named
+provider (`command.run`, contributed by `command`). It is not a plugin
+contribution mechanism and it changes no other answer in this document. The
+refusal of `.archie/stages/*.go` therefore names `command.run` as its migration
+target, and each command it runs is the operator's own repository policy
+expressed as argv.
 
 ## Rejected alternatives
 

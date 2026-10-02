@@ -67,6 +67,27 @@ func (eventSteps) StepTypes() []workflow.StepType {
 	return []workflow.StepType{workflow.AgentRunStepType(), workflow.WorkflowCallStepType()}
 }
 
+// commandSteps is the provider for the command.run step type: the single step
+// type the maintainer's command-step trust decision allows
+// (archie-core-ndm8), and the migration target that the refusal of
+// .archie/stages/*.go now names.
+//
+// It is a contributor of exactly one step type, which is the shape
+// docs/prds/workflow-step-vocabulary.md prescribes for this case -- "a new
+// contributor of exactly one step type at a named provider" -- and it is a
+// provider of its own rather than part of repoHooks because a command step is
+// not a repository hook: repoHooks carries the replacement for .archie/gate.go,
+// whose rules the *repository* authored, while this carries the replacement for
+// .archie/stages/*.go, whose commands the *operator* authors in the stored
+// definition.
+type commandSteps struct{}
+
+func (commandSteps) Name() string { return "command" }
+
+func (commandSteps) StepTypes() []workflow.StepType {
+	return []workflow.StepType{workflow.CommandRunStepType()}
+}
+
 // Providers returns the provider set the roots that resolve a workflow step
 // type register at their composition root, before the first resolution: it is
 // what NewManager registers, and what the roots' guards read to hold a
@@ -82,7 +103,7 @@ func (eventSteps) StepTypes() []workflow.StepType {
 // provider_secrets.go). Until one exists for step types, adding a step type
 // means adding a provider here.
 func Providers() []workflow.StepTypeProvider {
-	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}}
+	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}, commandSteps{}}
 }
 
 // NewManager builds this process's workflow step-type manager by registering

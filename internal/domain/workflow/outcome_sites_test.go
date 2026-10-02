@@ -38,6 +38,7 @@ type outcomeSite struct {
 // rather than discovered on a live run.
 var outcomeSites = []outcomeSite{
 	{"agent_run.go", "StatusCompleted", "a chat task's agent run produced its answer: nothing to open a PR for"},
+	{"command_run.go", "StatusParked", "an operator-authored command failed and the step is not advisory (level: warn)"},
 	{"diff_rules.go", "StatusParked", "the diff breaks one of the repo's blocking rules"},
 	{"feasibility.go", "StatusClosedWontDo", "feasibility decided this work should not be done"},
 	{"feasibility.go", "StatusWaitingHuman", "the PRD is delivered and the run waits for a go/no-go"},

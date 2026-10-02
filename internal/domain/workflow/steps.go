@@ -245,7 +245,7 @@ func StageRepoStages() Stage {
 			return fmt.Errorf("inspect legacy repository stages: %w", err)
 		}
 		if len(stages) > 0 {
-			return fmt.Errorf("legacy .archie/stages/*.go is unsupported; migrate repository behavior to database-backed YAML workflow steps")
+			return fmt.Errorf("legacy .archie/stages/*.go is unsupported; migrate repository behavior to database-backed YAML workflow steps (the %s step type runs operator argv in the task worktree)", CommandRunStepName)
 		}
 		return nil
 	}}
