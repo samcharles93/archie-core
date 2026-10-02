@@ -325,8 +325,10 @@ implemented in different packages:
   synthetic issue numbers.
 - Repository labels currently select workflows and mirror task state, coupling
   domain transitions to forge presentation.
-- Failure generally becomes `parked`, but failure classification and
-  retryability are not represented explicitly.
+- Failure generally becomes `parked`, and the failure's classification is no
+  longer implicit: the persisted execution record carries the class the code
+  that parks recorded (the vocabulary lives in `internal/taskstate`), and
+  retryability is read from it rather than inferred from reason text.
 - Generic observability events are emitted alongside state changes rather than
   being the authoritative domain events.
 
