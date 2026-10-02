@@ -341,6 +341,9 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	// UI only: a non-web channel has no dashboard to point at.
 	extraTools = append(extraTools, PageIndexTools(r.Channel)...)
 	extraTools = append(extraTools, MemoryTools(r.MemoryWriter, subject)...)
+	// The question tool is per-turn: it exists only when this turn's channel
+	// adapter can carry a clarify/picker interaction (see WithInteractive).
+	extraTools = append(extraTools, InteractiveTools(ctx)...)
 	modelName := r.Models.ActiveModel()
 	modelDetails := ModelDetails{}
 	if detailed, ok := r.Models.(DetailedModelManager); ok {
