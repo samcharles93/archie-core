@@ -96,6 +96,45 @@ func PickerOf(sender any) (PickerRequester, bool) {
 	return picker, ok
 }
 
+// Interactive bundles the human-interaction requesters a channel adapter can
+// carry for one turn, resolved once from its capability report. The zero value
+// carries nothing, which is what a turn whose channel cannot ask a question
+// sees; the gateway turn reads it to decide whether to offer a question tool
+// at all rather than one that always fails.
+type Interactive struct {
+	Clarifier ClarifyRequester
+	Picker    PickerRequester
+}
+
+// Carries reports whether the adapter can carry at least one interaction.
+func (i Interactive) Carries() bool { return i.Clarifier != nil || i.Picker != nil }
+
+// InteractiveOf resolves sender into the requesters it can carry, trusting the
+// capability report over the method set through ClarifierOf and PickerOf. A
+// sender that implements a method but denies the capability contributes
+// nothing, so a mis-reporting adapter degrades instead of being called.
+func InteractiveOf(sender any) Interactive {
+	clarifier, _ := ClarifierOf(sender)
+	picker, _ := PickerOf(sender)
+	return Interactive{Clarifier: clarifier, Picker: picker}
+}
+
+type interactiveCtxKey struct{}
+
+// WithInteractive stores a channel's interactive requesters on ctx for one
+// turn, the way WithApprovalRequester stores consent. The gateway turn reads
+// it to know whether it can ask the human a question.
+func WithInteractive(ctx context.Context, i Interactive) context.Context {
+	return context.WithValue(ctx, interactiveCtxKey{}, i)
+}
+
+// InteractiveFromContext returns the requesters stored on ctx, or the zero
+// value when the turn's channel cannot carry an interaction.
+func InteractiveFromContext(ctx context.Context) Interactive {
+	i, _ := ctx.Value(interactiveCtxKey{}).(Interactive)
+	return i
+}
+
 // FormatClarifyText renders a ClarifyRequest as a plain-text prompt for a
 // channel with no native question UI.
 func FormatClarifyText(req ClarifyRequest) string {

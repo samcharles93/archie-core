@@ -444,3 +444,33 @@ func TestTextFallbackUnconfigured(t *testing.T) {
 		t.Fatalf("RequestChoice error = %v, want ErrTextFallbackNotConfigured", err)
 	}
 }
+
+func TestInteractiveOfTrustsCapabilityReport(t *testing.T) {
+	got := InteractiveOf(&nativeInteractive{})
+	if !got.Carries() {
+		t.Fatal("a channel reporting Clarify and Picker produced no requesters")
+	}
+	if got.Clarifier == nil || got.Picker == nil {
+		t.Fatalf("Interactive = %+v, want both requesters", got)
+	}
+
+	// The capability is the contract: a sender that claims an interaction it
+	// does not implement must contribute nothing rather than be called.
+	if over := InteractiveOf(interactiveOverclaim{}); over.Carries() {
+		t.Errorf("over-claiming adapter produced requesters: %+v", over)
+	}
+	if (Interactive{}).Carries() {
+		t.Error("the zero Interactive reports that it carries an interaction")
+	}
+}
+
+func TestInteractiveCarrierRoundTrip(t *testing.T) {
+	ctx := WithInteractive(context.Background(), InteractiveOf(&nativeInteractive{}))
+	got := InteractiveFromContext(ctx)
+	if !got.Carries() {
+		t.Fatalf("InteractiveFromContext = %+v, want the stored requesters", got)
+	}
+	if InteractiveFromContext(context.Background()).Carries() {
+		t.Error("a context without a carrier reported one")
+	}
+}
