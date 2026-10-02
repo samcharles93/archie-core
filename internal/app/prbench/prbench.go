@@ -227,7 +227,7 @@ func writeJSON(path string, v any) error {
 	}
 	defer os.Remove(f.Name())
 	if _, err := f.Write(append(data, '\n')); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
