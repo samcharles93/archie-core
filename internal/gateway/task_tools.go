@@ -79,7 +79,7 @@ type ChatTaskActor interface {
 	// and not the same as an empty name, which is a real identity in a
 	// single-identity deployment. res is the review gate answer payload; this
 	// tool has no instruction or selection syntax, so it is the zero value.
-	ApplyChatTaskAction(ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ReviewResponse) (TaskActionResult, error)
+	ApplyChatTaskAction(ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ActionPayload) (TaskActionResult, error)
 }
 
 // ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
@@ -331,7 +331,7 @@ func taskActionTool(actor ChatTaskActor, identity string) tools.ToolEntry {
 			// actor is that same bound identity, because a bot acting on
 			// its own channel's task is exactly what happened -- and it is
 			// recorded as an agent's action, not a person's.
-			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, taskstate.Action(actionStr), taskactions.ReviewResponse{})
+			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, taskstate.Action(actionStr), taskactions.ActionPayload{})
 			if err != nil {
 				return nil, fmt.Errorf("task_action: %w", err)
 			}

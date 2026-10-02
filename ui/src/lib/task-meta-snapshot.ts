@@ -24,6 +24,15 @@ export interface ChangeStatusMeta {
   label: string;
 }
 
+/** A retry worktree mode as the server describes it. */
+export interface RetryModeMeta {
+  id: string;
+  label: string;
+  description: string;
+  default?: boolean;
+  requires_branch?: boolean;
+}
+
 export const DEFAULT_STATUSES: StatusMeta[] = [
   { id: "queued", label: "Queued", kind: "idle" },
   { id: "running", label: "Working", kind: "info" },
@@ -86,6 +95,23 @@ export const DEFAULT_CHANGE_STATUSES: ChangeStatusMeta[] = [
   { id: "deleted", label: "Deleted" },
   { id: "renamed", label: "Renamed" },
   { id: "typechange", label: "Type changed" },
+];
+
+export const DEFAULT_RETRY_MODES: RetryModeMeta[] = [
+  {
+    id: "refresh_onto_base",
+    label: "Refresh onto base",
+    description:
+      "Start the retry from the current base branch, discarding work already pushed on this task's branch.",
+    default: true,
+  },
+  {
+    id: "continue_pushed_work",
+    label: "Continue pushed work",
+    description:
+      "Resume the branch this task already pushed, keeping its commits.",
+    requires_branch: true,
+  },
 ];
 
 export const DEFAULT_CONFIG_SCHEMA = "archie/task-config@1";

@@ -2,6 +2,7 @@ package taskactions
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/identity"
@@ -10,8 +11,10 @@ import (
 )
 
 type fakeStore struct {
-	task   *Task
-	events []events.Event
+	task      *Task
+	events    []events.Event
+	retryMode string
+	retried   bool
 }
 
 func (f *fakeStore) TaskByID(context.Context, int64) (*Task, error) { return f.task, nil }
@@ -29,7 +32,9 @@ func (f *fakeStore) RespondReviewGate(context.Context, int64, string, string, bo
 	return nil
 }
 
-func (f *fakeStore) RetryTask(context.Context, int64, string, string) error {
+func (f *fakeStore) RetryTask(_ context.Context, _ int64, _, _, retryMode string) error {
+	f.retryMode = retryMode
+	f.retried = true
 	return nil
 }
 
@@ -87,7 +92,7 @@ func TestEventKindDescribesTheActor(t *testing.T) {
 			store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: "waiting_human"}}
 			service := Service{Store: store}
 
-			if err := service.Apply(context.Background(), nil, tc.actor, 7, tc.action, ReviewResponse{}); err != nil {
+			if err := service.Apply(context.Background(), nil, tc.actor, 7, tc.action, ActionPayload{}); err != nil {
 				t.Fatalf("Apply() error = %v", err)
 			}
 			got := store.last()
@@ -112,7 +117,7 @@ func TestActorAndPrincipalAreRecordedSeparately(t *testing.T) {
 	service := Service{Store: store}
 
 	actor := agentActor().AuthorisedBy(humanID)
-	if err := service.Apply(context.Background(), nil, actor, 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
+	if err := service.Apply(context.Background(), nil, actor, 7, taskstate.ActionApprove, ActionPayload{}); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
@@ -137,7 +142,7 @@ func TestUnattributedActionClaimsNoApprover(t *testing.T) {
 	store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: "waiting_human"}}
 	service := Service{Store: store}
 
-	if err := service.Apply(context.Background(), nil, Actor{}, 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
+	if err := service.Apply(context.Background(), nil, Actor{}, 7, taskstate.ActionApprove, ActionPayload{}); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
@@ -172,7 +177,7 @@ func TestEveryActionCarriesItsAttribution(t *testing.T) {
 				Store:      store,
 				CancelTask: func(int64) bool { return true },
 			}
-			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action, ReviewResponse{}); err != nil {
+			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action, ActionPayload{}); err != nil {
 				t.Fatalf("Apply(%s) error = %v", tc.action, err)
 			}
 			got := store.last()
@@ -191,14 +196,14 @@ func TestScopeStillLimitsATaskButIsNotTheActor(t *testing.T) {
 	store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: "waiting_human", Identity: "archie"}}
 	service := Service{Store: store}
 
-	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err == nil {
+	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove, ActionPayload{}); err == nil {
 		t.Fatal("Apply() allowed an identity to act on another identity's task")
 	}
 	if len(store.events) != 0 {
 		t.Fatalf("a refused action recorded %d events", len(store.events))
 	}
 
-	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err == nil {
+	if err := service.Apply(context.Background(), &other, agentActor(), 7, taskstate.ActionApprove, ActionPayload{}); err == nil {
 		t.Fatal("Apply() allowed a scoped caller to act on a foreign task")
 	}
 }
@@ -238,11 +243,80 @@ func TestOnlyRejectAndCancelCloseTheIssue(t *testing.T) {
 				closed = true
 				return nil
 			}}
-			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action, ReviewResponse{}); err != nil {
+			if err := service.Apply(context.Background(), nil, agentActor(), 7, tc.action, ActionPayload{}); err != nil {
 				t.Fatalf("Apply(%s) error = %v", tc.action, err)
 			}
 			if closed != tc.closes {
 				t.Fatalf("Apply(%s) closed the issue = %v, want %v", tc.action, closed, tc.closes)
+			}
+		})
+	}
+}
+
+// TestRetryPersistsTheOperatorsWorktreeMode pins the retry half of the
+// operator surface: the mode the dashboard sent reaches the store write, so
+// the daemon reads the operator's choice instead of inferring one. The event
+// records the mode too, so the timeline says how the retry was dispatched.
+func TestRetryPersistsTheOperatorsWorktreeMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		mode      taskstate.RetryMode
+		persisted string
+		branch    string
+		wantMode  string
+	}{
+		{"continue pushed work", taskstate.RetryContinuePushedWork, "", "fix/7-thing", "continue_pushed_work"},
+		{"refresh onto base", taskstate.RetryRefreshOntoBase, "", "", "refresh_onto_base"},
+		{"an empty mode is the explicit refresh default", "", "", "", "refresh_onto_base"},
+		{"an empty mode keeps the persisted choice", "", string(taskstate.RetryContinuePushedWork), "fix/7-thing", "continue_pushed_work"},
+		{"an explicit mode overrides the persisted choice", taskstate.RetryRefreshOntoBase, string(taskstate.RetryContinuePushedWork), "fix/7-thing", "refresh_onto_base"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: taskstate.Parked, Branch: tc.branch, RetryMode: tc.persisted}}
+			service := Service{Store: store}
+
+			if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionRetry, ActionPayload{RetryMode: tc.mode}); err != nil {
+				t.Fatalf("Apply(retry) error = %v", err)
+			}
+			if !store.retried || store.retryMode != tc.wantMode {
+				t.Fatalf("RetryTask mode = %q (called %v), want %q", store.retryMode, store.retried, tc.wantMode)
+			}
+			if got := store.last().Data["retry_mode"]; got != tc.wantMode {
+				t.Errorf("retry event retry_mode = %v, want %q", got, tc.wantMode)
+			}
+		})
+	}
+}
+
+// TestRetryRefusesModesThatCannotLand keeps a refuse-from-the-operator rule at
+// the service, where every surface reaches it: continuing work with no pushed
+// branch would queue a resume that cannot land, and an unknown mode is a
+// caller bug rather than a task to reset. Both are conflicts and neither
+// writes.
+func TestRetryRefusesModesThatCannotLand(t *testing.T) {
+	tests := []struct {
+		name   string
+		mode   taskstate.RetryMode
+		branch string
+	}{
+		{"continue with no pushed branch", taskstate.RetryContinuePushedWork, ""},
+		{"an unknown mode", taskstate.RetryMode("reset_to_branch_head"), "fix/7-thing"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: taskstate.Parked, Branch: tc.branch}}
+			service := Service{Store: store}
+
+			err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionRetry, ActionPayload{RetryMode: tc.mode})
+			if err == nil {
+				t.Fatal("Apply(retry) = nil error, want a conflict")
+			}
+			if !errors.Is(err, ErrConflict) {
+				t.Fatalf("Apply(retry) error = %v, want ErrConflict", err)
+			}
+			if store.retried {
+				t.Error("RetryTask was called, want the refusal to write nothing")
 			}
 		})
 	}

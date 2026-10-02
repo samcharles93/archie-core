@@ -71,7 +71,7 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 		// than its own requeue, so a chat approval and a dashboard approval
 		// cannot record different decisions for one operator intent
 		// (docs/prds/pr-review-operator-response.md, Decision 1).
-		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ReviewResponse) error {
+		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ActionPayload) error {
 			return b.taskActions().Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
 		},
 		cancelExecution: canceller.CancelExecution,

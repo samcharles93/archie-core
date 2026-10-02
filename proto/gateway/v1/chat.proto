@@ -168,11 +168,16 @@ message ApplyOperatorTaskActionRequest {
   string actor_kind = 4;
   string principal_id = 5;
   // instructions and findings are the review gate answer payload
-  // (taskactions.ReviewResponse): the instructions a rereview requires, and
+  // (taskactions.ActionPayload): the instructions a rereview requires, and
   // the finding keys an approve posts (empty means every offered finding).
   // They are empty for every other action.
   string instructions = 6;
   repeated string findings = 7;
+  // retry_mode is the operator's worktree choice for a retry
+  // (taskstate.RetryMode): refresh onto the base branch or continue the work
+  // already pushed on the task's branch. It is empty for every other action,
+  // and chat carries no mode syntax -- an empty value means refresh_onto_base.
+  string retry_mode = 8;
 }
 message ApplyOperatorTaskActionResponse { int64 task_id = 1; string action = 2; string message = 3; }
 message SaveSessionResponse {}

@@ -28,14 +28,17 @@ import {
   DEFAULT_ACTIONS,
   DEFAULT_CHANGE_STATUSES,
   DEFAULT_CONFIG_SCHEMA,
+  DEFAULT_RETRY_MODES,
   DEFAULT_STATUSES,
+  type RetryModeMeta,
   type StatusMeta,
 } from "./task-meta-snapshot";
 
-export type { ActionMeta, ChangeStatusMeta, StatusMeta };
+export type { ActionMeta, ChangeStatusMeta, RetryModeMeta, StatusMeta };
 
 const statuses = shallowRef<StatusMeta[]>([...DEFAULT_STATUSES]);
 const actions = shallowRef<ActionMeta[]>([...DEFAULT_ACTIONS]);
+const retryModesRef = shallowRef<RetryModeMeta[]>([...DEFAULT_RETRY_MODES]);
 const changeStatuses = shallowRef<ChangeStatusMeta[]>([
   ...DEFAULT_CHANGE_STATUSES,
 ]);
@@ -48,6 +51,9 @@ const actionById = computed(() => new Map(actions.value.map((a) => [a.id, a])));
 const changeStatusById = computed(
   () => new Map(changeStatuses.value.map((c) => [c.id, c])),
 );
+const retryModeById = computed(
+  () => new Map(retryModesRef.value.map((m) => [m.id, m])),
+);
 
 // loadTaskMeta upgrades the dashboard from the server catalog. It never throws:
 // a failed fetch keeps the defaults so the UI still renders.
@@ -56,11 +62,13 @@ export async function loadTaskMeta(): Promise<void> {
     const data = await api.taskMeta<{
       statuses?: StatusMeta[];
       actions?: ActionMeta[];
+      retry_modes?: RetryModeMeta[];
       change_statuses?: ChangeStatusMeta[];
       config_schema?: string;
     } | null>();
     if (Array.isArray(data?.statuses)) statuses.value = data.statuses;
     if (Array.isArray(data?.actions)) actions.value = data.actions;
+    if (Array.isArray(data?.retry_modes)) retryModesRef.value = data.retry_modes;
     if (Array.isArray(data?.change_statuses))
       changeStatuses.value = data.change_statuses;
     if (data?.config_schema) configSchemaRef.value = data.config_schema;
@@ -103,6 +111,26 @@ export function attentionStatusIds(): Set<string> {
  */
 export function actionFor(id: string): ActionMeta | null {
   return actionById.value.get(id) || null;
+}
+
+/**
+ * retryModes returns the server's retry worktree modes in display order. The
+ * retry dialog renders these and falls back to the frozen snapshot before the
+ * catalog arrives.
+ */
+export function retryModes(): RetryModeMeta[] {
+  return retryModesRef.value;
+}
+
+/**
+ * retryModeFor returns one retry mode's metadata, or null if the server has
+ * never described it.
+ */
+export function retryModeFor(
+  id: string | null | undefined,
+): RetryModeMeta | null {
+  if (!id) return null;
+  return retryModeById.value.get(id) || null;
 }
 
 /**

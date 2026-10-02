@@ -207,8 +207,8 @@ func (c *Client) ArchiveTask(ctx context.Context, taskID int64, fromStatus strin
 	return r.EventId, nil
 }
 
-func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf string) error {
-	_, err := c.client.RetryTask(ctx, &pb.RetryTaskRequest{TaskId: taskID, FromStatus: fromStatus, Workflow: wf})
+func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, retryMode string) error {
+	_, err := c.client.RetryTask(ctx, &pb.RetryTaskRequest{TaskId: taskID, FromStatus: fromStatus, Workflow: wf, RetryMode: retryMode})
 	return unmapError(err)
 }
 

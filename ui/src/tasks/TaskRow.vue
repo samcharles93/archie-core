@@ -20,6 +20,13 @@ export interface Task {
   tokens_used?: number;
   workflow?: string;
   attempt?: number;
+  /** The branch this task pushed, if any. A retry that continues pushed work
+   * resumes it; the retry dialog disables that mode when it is empty. */
+  branch?: string;
+  /** The operator's persisted worktree choice for the next retry dispatch
+   * ("refresh_onto_base" or "continue_pushed_work"). The retry dialog opens
+   * on this value so the choice survives a reload. */
+  retry_mode?: string;
   created_at?: string;
   updated_at?: string;
   actions?: string[];

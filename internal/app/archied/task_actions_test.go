@@ -88,7 +88,7 @@ func runChatAction(t *testing.T, ctx context.Context, st storecontract.TaskStore
 	actions := taskactionstore.NewService(taskactionstore.Store{TaskStore: st}, nil, nil, nil, nil, nil, nil, nil)
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
 		taskByID: st.TaskByID,
-		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ReviewResponse) error {
+		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ActionPayload) error {
 			return actions.Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
 		},
 		cancelExecution: canceller.CancelExecution,

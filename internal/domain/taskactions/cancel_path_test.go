@@ -50,7 +50,7 @@ func TestOperatorActionsRouteThroughCancelExecution(t *testing.T) {
 				Store:      store,
 				CancelTask: func(id int64) bool { deliveries = append(deliveries, id); return true },
 			}
-			if err := service.Apply(context.Background(), nil, humanActor(), 7, tt.action, ReviewResponse{}); err != nil {
+			if err := service.Apply(context.Background(), nil, humanActor(), 7, tt.action, ActionPayload{}); err != nil {
 				t.Fatalf("Apply(%s): %v", tt.action, err)
 			}
 			if len(store.cancels) != 1 {
@@ -81,7 +81,7 @@ func TestStopRecordsEvenWhenNothingWasExecuting(t *testing.T) {
 		Store:      store,
 		CancelTask: func(int64) bool { return false },
 	}
-	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionStop, ReviewResponse{}); err != nil {
+	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionStop, ActionPayload{}); err != nil {
 		t.Fatalf("Apply(stop): %v", err)
 	}
 	if len(store.cancels) != 1 || store.cancels[0].to != taskstate.Parked {

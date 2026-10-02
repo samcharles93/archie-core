@@ -51,10 +51,10 @@ func TestIllegalTransitionsAreRejected(t *testing.T) {
 			return s.Requeue(t.Context(), taskID, taskstate.Merged, "implement")
 		}},
 		{name: "retry from terminal merged", seed: taskstate.Merged, write: func(s *Store, taskID int64) error {
-			return s.RetryTask(t.Context(), taskID, taskstate.Merged, "implement")
+			return s.RetryTask(t.Context(), taskID, taskstate.Merged, "implement", "")
 		}},
 		{name: "retry from queued self-pair", seed: taskstate.Queued, write: func(s *Store, taskID int64) error {
-			return s.RetryTask(t.Context(), taskID, taskstate.Queued, "implement")
+			return s.RetryTask(t.Context(), taskID, taskstate.Queued, "implement", "")
 		}},
 	}
 	for _, tt := range tests {

@@ -122,9 +122,11 @@ type TaskArchiver interface {
 }
 
 // TaskRetryer atomically requeues recoverable work and accounts for the new
-// attempt so a partial write cannot evade the retry cap.
+// attempt so a partial write cannot evade the retry cap. retryMode is the
+// operator's worktree choice for the next dispatch (taskstate.RetryMode),
+// persisted on the row so the daemon reads it instead of inferring it.
 type TaskRetryer interface {
-	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error
+	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow, retryMode string) error
 }
 
 // ReviewGateResponder is the operator's answer to the review gate

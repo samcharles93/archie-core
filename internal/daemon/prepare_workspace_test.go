@@ -13,6 +13,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -41,10 +42,10 @@ func pushedImplementRun(t *testing.T, trees *worktree.Manager, title string) (di
 }
 
 // claimedTask returns the running row a dispatch leaves behind, carrying the
-// workflow and branch prepareWorkspace must route on. The row is read back from
-// the store, so the test drives prepareWorkspace from persisted state rather
-// than from a struct the test assembled.
-func claimedTask(t *testing.T, st *pgstore.TaskDB, title, workflowName, branch string) *workflow.Task {
+// workflow, branch and retry mode prepareWorkspace must route on. The row is
+// read back from the store, so the test drives prepareWorkspace from persisted
+// state rather than from a struct the test assembled.
+func claimedTask(t *testing.T, st *pgstore.TaskDB, title, workflowName, branch string, retryMode taskstate.RetryMode) *workflow.Task {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 7, title, "body", "bug", ""); err != nil {
@@ -55,6 +56,7 @@ func claimedTask(t *testing.T, st *pgstore.TaskDB, title, workflowName, branch s
 		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
 	}
 	task.Workflow, task.Branch = workflowName, branch
+	task.RetryMode = string(retryMode)
 	if err := st.Update(ctx, task); err != nil {
 		t.Fatalf("persist task fields: %v", err)
 	}
@@ -63,9 +65,9 @@ func claimedTask(t *testing.T, st *pgstore.TaskDB, title, workflowName, branch s
 	if err != nil {
 		t.Fatalf("TaskByID: %v", err)
 	}
-	if persisted.Workflow != workflowName || persisted.Branch != branch {
-		t.Fatalf("persisted row = (workflow %q, branch %q), want (%q, %q)",
-			persisted.Workflow, persisted.Branch, workflowName, branch)
+	if persisted.Workflow != workflowName || persisted.Branch != branch || persisted.RetryMode != string(retryMode) {
+		t.Fatalf("persisted row = (workflow %q, branch %q, retry mode %q), want (%q, %q, %q)",
+			persisted.Workflow, persisted.Branch, persisted.RetryMode, workflowName, branch, retryMode)
 	}
 	return persisted
 }
@@ -99,7 +101,7 @@ func TestPrepareWorkspaceResumesThePersistedBranchForARemediation(t *testing.T) 
 
 	d, st, _ := testDaemon(t, 3, 0)
 	// The issue was retitled since; the PR's branch is still the pushed one.
-	task := claimedTask(t, st, "fix: retitled issue", "remediate", branch)
+	task := claimedTask(t, st, "fix: retitled issue", "remediate", branch, taskstate.RetryContinuePushedWork)
 
 	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 	if !ok {
@@ -135,7 +137,7 @@ func TestPrepareWorkspaceResumesAPRBranchAfterTheWorktreeWasRemoved(t *testing.T
 	}
 
 	d, st, _ := testDaemon(t, 3, 0)
-	task := claimedTask(t, st, "fix: original issue", "remediate", branch)
+	task := claimedTask(t, st, "fix: original issue", "remediate", branch, taskstate.RetryContinuePushedWork)
 
 	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 	if !ok {
@@ -167,7 +169,7 @@ func TestPrepareWorkspaceFailsClosedWhenTheRemediationBranchIsGone(t *testing.T)
 	dir, _, tip := pushedImplementRun(t, trees, "fix: original issue")
 
 	d, st, _ := testDaemon(t, 3, 0)
-	task := claimedTask(t, st, "fix: original issue", "remediate", "fix/7-never-pushed")
+	task := claimedTask(t, st, "fix: original issue", "remediate", "fix/7-never-pushed", taskstate.RetryContinuePushedWork)
 
 	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 	if ok {
@@ -203,7 +205,7 @@ func TestPrepareWorkspaceStartsBaseForANonRemediationTask(t *testing.T) {
 	_, pushedBranch, tip := pushedImplementRun(t, trees, "fix: original issue")
 
 	d, st, _ := testDaemon(t, 3, 0)
-	task := claimedTask(t, st, "fix: retitled issue", "implement", pushedBranch)
+	task := claimedTask(t, st, "fix: retitled issue", "implement", pushedBranch, taskstate.RetryRefreshOntoBase)
 
 	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 	if !ok {
@@ -217,5 +219,58 @@ func TestPrepareWorkspaceStartsBaseForANonRemediationTask(t *testing.T) {
 	}
 	if task.Branch == pushedBranch {
 		t.Errorf("task branch = %q, want the branch recomputed for fresh work rather than the persisted PR branch", task.Branch)
+	}
+}
+
+// TestPrepareWorkspaceContinuesPushedWorkWhenTheOperatorChoseIt is the
+// operator-mode half of the retry routing: a task whose persisted retry_mode
+// is continue_pushed_work resumes the branch it already pushed, even though
+// its workflow -- implement -- is not one that resumes by default. The
+// worktree must land on the pushed tip, not reset over it.
+func TestPrepareWorkspaceContinuesPushedWorkWhenTheOperatorChoseIt(t *testing.T) {
+	ctx := context.Background()
+	trees := newTestTrees(t, newLocalRemote(t, "acme", "widget"))
+	dir, branch, tip := pushedImplementRun(t, trees, "fix: original issue")
+
+	d, st, _ := testDaemon(t, 3, 0)
+	task := claimedTask(t, st, "fix: retitled issue", "implement", branch, taskstate.RetryContinuePushedWork)
+
+	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	if !ok {
+		t.Fatal("prepareWorkspace() = false, want the retry prepared on the branch the operator chose to continue")
+	}
+	if gotDir != dir {
+		t.Errorf("prepareWorkspace() dir = %q, want the task's worktree %q", gotDir, dir)
+	}
+	if _, err := os.Stat(filepath.Join(gotDir, "widget.go")); err != nil {
+		t.Fatalf("widget.go missing after prepare: %v (the pushed work was discarded despite continue_pushed_work)", err)
+	}
+	if got := headOf(t, gotDir); got != tip {
+		t.Errorf("worktree HEAD = %s, want the pushed branch tip %s", got, tip)
+	}
+}
+
+// TestPrepareWorkspaceRefreshesOntoBaseWhenTheOperatorChoseIt pins that the
+// persisted mode decides, not the workflow: a task whose workflow would resume
+// (remediate) but whose retry_mode is refresh_onto_base must land on base. The
+// daemon must not re-derive the choice from the workflow, which is the silent
+// default this bead exists to remove.
+func TestPrepareWorkspaceRefreshesOntoBaseWhenTheOperatorChoseIt(t *testing.T) {
+	ctx := context.Background()
+	trees := newTestTrees(t, newLocalRemote(t, "acme", "widget"))
+	_, branch, tip := pushedImplementRun(t, trees, "fix: original issue")
+
+	d, st, _ := testDaemon(t, 3, 0)
+	task := claimedTask(t, st, "fix: original issue", "remediate", branch, taskstate.RetryRefreshOntoBase)
+
+	gotDir, ok := d.prepareWorkspace(ctx, task, trees, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+	if !ok {
+		t.Fatal("prepareWorkspace() = false, want a fresh base preparation for refresh_onto_base")
+	}
+	if got := headOf(t, gotDir); got == tip {
+		t.Errorf("worktree HEAD = %s, want base rather than the pushed branch tip: refresh_onto_base must win over the workflow", got)
+	}
+	if _, err := os.Stat(filepath.Join(gotDir, "widget.go")); !os.IsNotExist(err) {
+		t.Errorf("widget.go present after refresh_onto_base (stat err = %v), want a fresh base checkout", err)
 	}
 }

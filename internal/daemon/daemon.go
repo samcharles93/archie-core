@@ -1485,25 +1485,24 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		}
 		return dir, true
 	}
-	// The retry path selects the worktree mode from the task row. A task that
-	// continues an already-open PR branch -- the remediate workflow -- resumes
-	// that branch's remote tip instead of resetting onto base: preparing one
-	// the ordinary way discarded the commits the implement run had already
-	// pushed, so the agent remediated a PR from a tree that no longer contained
-	// it. Every other task starts fresh on base. This runs before Acquire,
+	// The retry action writes the worktree mode onto the task row
+	// (taskstate.RetryMode): continue_pushed_work resumes the branch the task
+	// already pushed, refresh_onto_base resets onto base. The mode is never
+	// inferred here from the workflow -- the reaction consumer writes
+	// continue_pushed_work when it queues a remediation, so every path that
+	// needs a resume records that choice explicitly. This runs before Acquire,
 	// because the daemon holds the forge credential that fetches the branch and
-	// the container must find the PR's work already in place. It also runs on a
+	// the container must find the work already in place. It also runs on a
 	// retry whose local worktree is gone: Prepare clones a missing worktree for
 	// either target, which is how a resume reaches a task whose clone the
 	// terminal cleanup removed.
 	target := worktree.Fresh
-	if continuesOpenPRBranch(task) {
+	if taskstate.NormalizeRetryMode(task.RetryMode) == taskstate.RetryContinuePushedWork {
 		if task.Branch == "" {
-			// A remediation task is queued against the branch its implement
-			// run pushed, so an empty branch is a dispatch bug upstream and no
-			// retry can fix it.
-			d.Log.Error("remediate task has no persisted branch", "task", task.ID)
-			d.parkRunningTask(ctx, task.ID, "worktree resume failed: remediate task has no branch to resume", taskstate.ParkNeedsHuman)
+			// The action refuses this combination, so an empty branch here is a
+			// dispatch bug upstream and no retry can fix it.
+			d.Log.Error("task has no persisted branch to continue", "task", task.ID)
+			d.parkRunningTask(ctx, task.ID, "worktree resume failed: task has no branch to continue", taskstate.ParkNeedsHuman)
 			return "", false
 		}
 		target = worktree.Target(task.Branch)
@@ -1528,17 +1527,6 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
 	}
 	return dir, true
-}
-
-// continuesOpenPRBranch reports whether the task must continue a branch archie
-// already pushed rather than start from base. Only the remediate workflow does:
-// it addresses review feedback on an open archie-owned PR and reuses that PR's
-// branch (docs/prds/pr-review-remediation.md decision 4), while every other
-// workflow starts fresh work. The workflow is read from the task row, where the
-// reaction consumer wrote it before queueing the run -- a decision about this
-// task that no later routing may overturn.
-func continuesOpenPRBranch(task *workflow.Task) bool {
-	return task.Workflow == "remediate"
 }
 
 // cleanupTerminalTaskWorktree removes a task's worktree once its forge side is

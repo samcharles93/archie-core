@@ -25,6 +25,15 @@ type Task struct {
 	Owner, Repo, Identity, Status, ParkReason string
 	IssueNumber, RetryCount                   int
 	ForgeBacked                               bool
+	// Branch is the branch this task already pushed, if any. A retry that
+	// continues pushed work resumes it, so the service refuses that mode for a
+	// task with no branch rather than queueing a resume that cannot land.
+	Branch string
+	// RetryMode is the worktree mode already persisted for this task. A retry
+	// that carries no explicit mode (chat has no mode syntax) keeps this value
+	// rather than resetting it, so a chat retry of a remediation still
+	// continues the branch its queued run recorded.
+	RetryMode string
 	// ReviewGate is the operator-approval gate's document as the task carries
 	// it (workflowtask.EncodeReviewGate): the offer the gate wrote, and the answer
 	// the response path fills in. The response path reads the offer here and
@@ -41,17 +50,23 @@ type Task struct {
 	Attempt int
 }
 
-// ReviewResponse is the payload an operator's answer to the review gate
-// carries (docs/prds/pr-review-operator-response.md, Decision 1). It is empty
-// for every other action, and for chat's /approve, which has no instruction or
-// selection syntax: an absent selection means every offered finding.
-type ReviewResponse struct {
+// ActionPayload is the per-action data an operator action carries: the
+// review-gate answer for approve and rereview (docs/prds/pr-review-operator-
+// response.md, Decision 1), and the worktree mode for retry. Every field is
+// empty for the actions that do not use it, and for chat's /approve and
+// /retry, which carry no instruction, selection or mode syntax.
+type ActionPayload struct {
 	// Instructions are what a re-review must focus on. The response path
 	// requires them for ActionRereview and ignores them otherwise.
 	Instructions string
 	// Findings are the keys (prreview.ScoredFinding.Key) of the offered
 	// findings an approve posts. Empty means all of them.
 	Findings []string
+	// RetryMode is the worktree choice a retry carries (taskstate.RetryMode):
+	// refresh onto the base branch, or continue the work already pushed on the
+	// task's branch. It is empty -- the explicit default, refresh -- for every
+	// other action.
+	RetryMode taskstate.RetryMode
 }
 
 // Actor is the identity that performed an action, and the principal whose
@@ -159,7 +174,9 @@ type Store interface {
 	TaskByID(context.Context, int64) (*Task, error)
 	Transition(context.Context, int64, string, string, string) error
 	Requeue(context.Context, int64, string, string) error
-	RetryTask(context.Context, int64, string, string) error
+	// RetryTask requeues a parked task, records the operator's worktree mode
+	// for the next dispatch and increments retry_count in one guarded write.
+	RetryTask(context.Context, int64, string, string, string) error
 	// RespondReviewGate is the guarded review gate response write
 	// (internal/domain/storecontract.ReviewGateResponder): it records the
 	// answered document, and for a re-review increments rereview_rounds and
@@ -197,12 +214,12 @@ type Service struct {
 // The actor is not derived from scope: scope is which tasks a caller may touch,
 // actor is who touched one, and the two are only equal by coincidence.
 //
-// res is the review-gate answer payload: the operator's instruction and
-// finding selection for approve and rereview, empty for every other action
-// and for the chat surfaces that carry no selection syntax. Both the dashboard
-// and chat reach the same apply, so one operator intent cannot be recorded as
-// two different decisions.
-func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64, action taskstate.Action, res ReviewResponse) error {
+// res is the per-action payload (ActionPayload): the operator's instruction
+// and finding selection for approve and rereview, the worktree mode for
+// retry, and empty for every other action and for the chat surfaces that
+// carry no such syntax. Both the dashboard and chat reach the same apply, so
+// one operator intent cannot be recorded as two different decisions.
+func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64, action taskstate.Action, res ActionPayload) error {
 	task, err := s.Store.TaskByID(ctx, id)
 	if err != nil {
 		return err
@@ -243,7 +260,7 @@ type outcome struct {
 // record alongside it. Errors from the store are returned unwrapped: the
 // caller maps them to a response, and the rules-level errors (ErrConflict)
 // were already checked above.
-func (s Service) apply(ctx context.Context, task *Task, actor Actor, action taskstate.Action, res ReviewResponse) (outcome, error) {
+func (s Service) apply(ctx context.Context, task *Task, actor Actor, action taskstate.Action, res ActionPayload) (outcome, error) {
 	o := outcome{event: s.attributed(task, actor)}
 	switch action {
 	case taskstate.ActionApprove:
@@ -251,7 +268,7 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 	case taskstate.ActionRereview:
 		return s.applyRereview(ctx, task, actor, o, res)
 	case taskstate.ActionRetry:
-		return s.applyRetry(ctx, task, actor, o)
+		return s.applyRetry(ctx, task, actor, o, res)
 	case taskstate.ActionStop:
 		return s.applyStop(ctx, task, actor, o)
 	case taskstate.ActionReject:
@@ -283,7 +300,7 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 // it requeues under the workflow the wait names -- which feasibility sets to
 // implement before it waits (docs/prds/pr-review-operator-response.md,
 // Decision 1) -- never a name this handler hardcodes.
-func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o outcome, res ReviewResponse) (outcome, error) {
+func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o outcome, res ActionPayload) (outcome, error) {
 	o.event.Kind, o.event.Detail = approvedKind(actor), actor.describe("approved")
 	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
 	if !ok || !gate.Offered() {
@@ -308,7 +325,7 @@ func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o ou
 // one at the cap: in both cases the task stays waiting and nothing is written.
 // The offer's findings are cleared, because the resumed run recomputes them;
 // the instructions are what reach the recomputation.
-func (s Service) applyRereview(ctx context.Context, task *Task, actor Actor, o outcome, res ReviewResponse) (outcome, error) {
+func (s Service) applyRereview(ctx context.Context, task *Task, actor Actor, o outcome, res ActionPayload) (outcome, error) {
 	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
 	if !ok || !gate.Offered() {
 		return o, fmt.Errorf("task %d has no review gate to re-review: %w", task.ID, ErrConflict)
@@ -380,7 +397,22 @@ func (s Service) attributed(task *Task, actor Actor) events.Event {
 	}
 }
 
-func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {
+func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outcome, payload ActionPayload) (outcome, error) {
+	// An explicit mode always wins. When the action carries none -- chat has no
+	// mode syntax -- the task's persisted mode is kept rather than reset, so a
+	// chat retry of a remediation still continues its branch. An empty stored
+	// value reads as the explicit refresh default.
+	requested := payload.RetryMode
+	if requested == "" {
+		requested = taskstate.RetryMode(task.RetryMode)
+	}
+	mode, ok := taskstate.ResolveRetryMode(string(requested))
+	if !ok {
+		return o, fmt.Errorf("unknown retry mode %q: %w", requested, ErrConflict)
+	}
+	if mode == taskstate.RetryContinuePushedWork && strings.TrimSpace(task.Branch) == "" {
+		return o, fmt.Errorf("task %d has no pushed branch to continue: %w", task.ID, ErrConflict)
+	}
 	limit := 0
 	if s.MaxRetries != nil {
 		limit = s.MaxRetries(task)
@@ -395,9 +427,9 @@ func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outc
 		}
 		return o, fmt.Errorf("%w: %s", ErrConflict, reason)
 	}
-	err := s.Store.RetryTask(ctx, task.ID, "parked", "")
+	err := s.Store.RetryTask(ctx, task.ID, "parked", "", string(mode))
 	o.event.Kind, o.event.Detail = events.KindTaskRetried, actor.describe("retried")
-	o.event.Data = map[string]any{"retry_count": task.RetryCount + 1, "previous_reason": task.ParkReason}
+	o.event.Data = map[string]any{"retry_count": task.RetryCount + 1, "previous_reason": task.ParkReason, "retry_mode": string(mode)}
 	return o, err
 }
 

@@ -734,13 +734,13 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	task := &workflow.Task{ID: 42, Source: workflow.SourceChat, Status: workflow.StatusWaitingHuman}
 	var approveScope string
 	var approveActor taskactions.Actor
-	var approveRes taskactions.ReviewResponse
+	var approveRes taskactions.ActionPayload
 	var cancelReason, cancelTo string
 	adapter := chatTaskControllerAdapter{
 		taskByID: func(context.Context, int64) (*workflow.Task, error) { return task, nil },
 		// Chat's approval reaches the daemon's one task-action service, not
 		// its own requeue: this records what the adapter hands it.
-		approve: func(_ context.Context, scope *string, actor taskactions.Actor, _ int64, res taskactions.ReviewResponse) error {
+		approve: func(_ context.Context, scope *string, actor taskactions.Actor, _ int64, res taskactions.ActionPayload) error {
 			if scope != nil {
 				approveScope = *scope
 			}
@@ -916,7 +916,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	actions := taskactionstore.NewService(taskactionstore.Store{TaskStore: st}, nil, nil, nil, nil, nil, nil, nil)
 	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
 		taskByID: st.TaskByID,
-		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ReviewResponse) error {
+		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ActionPayload) error {
 			return actions.Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
 		},
 		cancelExecution: st.CancelExecution,

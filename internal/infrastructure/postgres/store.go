@@ -111,6 +111,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		Attempt:                   int(t.Attempt),
 		ParkReason:                t.ParkReason,
 		RetryCount:                int(t.RetryCount),
+		RetryMode:                 t.RetryMode,
 		WatchCommentID:            t.WatchCommentID,
 		ReviewCursor:              t.ReviewCursor,
 		Source:                    t.Source,
@@ -322,6 +323,7 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 		ReviewPayload:             t.ReviewPayload,
 		ReviewGate:                t.ReviewGate,
 		RereviewRounds:            int64(t.RereviewRounds),
+		RetryMode:                 t.RetryMode,
 		WorkflowDefinitionVersion: t.WorkflowDefinitionVersion,
 		WorkflowDefinitionDigest:  t.WorkflowDefinitionDigest,
 		WorkflowDefinitionYaml:    t.WorkflowDefinitionYAML,
@@ -401,11 +403,13 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, wf string
 }
 
 // RetryTask requeues a task and increments retry_count in the same guarded
-// transaction, under the same table check Requeue applies.
-func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf string) error {
+// transaction, under the same table check Requeue applies. retryMode is the
+// operator's worktree choice for the next dispatch; the store persists it
+// unread so the daemon's prepareWorkspace reads the mode the operator set.
+func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, retryMode string) error {
 	return s.requeue(ctx, taskID, fromStatus, wf, "retried "+wf, func(q *postgresdb.Queries) (int64, error) {
 		return q.RetryTask(ctx, postgresdb.RetryTaskParams{
-			ID: taskID, Workflow: wf, FromStatus: fromStatus,
+			ID: taskID, Workflow: wf, FromStatus: fromStatus, RetryMode: retryMode,
 		})
 	})
 }

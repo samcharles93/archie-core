@@ -408,10 +408,10 @@ func TestStateStoreConformance(t *testing.T) {
 			// edges, and each guard is the wire contract. The battery used to
 			// walk queued -> queued through RetryTask, a self-write the shared
 			// transition table refuses, so the retry runs from running instead.
-			if err := c.RetryTask(ctx, claimed.ID, "running", ""); err != nil {
+			if err := c.RetryTask(ctx, claimed.ID, "running", "", ""); err != nil {
 				t.Fatalf("RetryTask: %v", err)
 			}
-			if err := c.RetryTask(ctx, claimed.ID, "queued", ""); !errors.Is(err, storecontract.ErrIllegalTransition) {
+			if err := c.RetryTask(ctx, claimed.ID, "queued", "", ""); !errors.Is(err, storecontract.ErrIllegalTransition) {
 				t.Fatalf("RetryTask queued->queued = %v, want ErrIllegalTransition", err)
 			}
 			if err := c.Transition(ctx, claimed.ID, "queued", "running", "re-claimed"); err != nil {

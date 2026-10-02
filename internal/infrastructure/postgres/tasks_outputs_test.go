@@ -105,7 +105,7 @@ func TestTaskOutputs(t *testing.T) {
 		if err := st.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, "needs a look"); err != nil {
 			t.Fatal(err)
 		}
-		if err := st.RetryTask(ctx, task.ID, workflow.StatusParked, ""); err != nil {
+		if err := st.RetryTask(ctx, task.ID, workflow.StatusParked, "", ""); err != nil {
 			t.Fatal(err)
 		}
 		second, err := st.ClaimNext(ctx)

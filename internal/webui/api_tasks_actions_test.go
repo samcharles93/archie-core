@@ -72,7 +72,7 @@ type daemonActions struct {
 }
 
 func (d *daemonActions) ApplyChatTaskAction(
-	ctx context.Context, identity *string, actor taskactions.Actor, id int64, action taskstate.Action, res taskactions.ReviewResponse,
+	ctx context.Context, identity *string, actor taskactions.Actor, id int64, action taskstate.Action, res taskactions.ActionPayload,
 ) (gateway.TaskActionResult, error) {
 	d.scopes = append(d.scopes, identity)
 	service := taskactionstore.NewService(
@@ -236,7 +236,7 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 			// (RetryTask) rather than a raw counter bump, re-parking
 			// between retries so each call sees the fromStatus it needs.
 			for range tc.priorCount {
-				if err := srv.Store.RetryTask(ctx, task.ID, workflow.StatusParked, ""); err != nil {
+				if err := srv.Store.RetryTask(ctx, task.ID, workflow.StatusParked, "", ""); err != nil {
 					t.Fatal(err)
 				}
 				taskstatetest.Seed(ctx, t, srv.Store, task.ID, workflow.StatusQueued, workflow.StatusParked, "re-parked for test fixture")
@@ -897,4 +897,48 @@ func TestTaskActionRequiresCSRFHeader(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 without CSRF header (body %s)", w.Code, w.Body)
 	}
+}
+
+// TestRetryCarriesTheWorktreeModeToTheStore is the dashboard half of the
+// operator retry choice: the mode in the action body reaches the store write,
+// so the daemon reads the operator's choice rather than inferring one. The
+// refusal case pins that continuing with nothing pushed is a conflict, not a
+// queued resume.
+func TestRetryCarriesTheWorktreeModeToTheStore(t *testing.T) {
+	t.Run("continue pushed work persists the choice", func(t *testing.T) {
+		srv, task, _, _, _ := actionServer(t, workflow.StatusParked, "it broke")
+		if err := srv.Store.Update(t.Context(), &workflow.Task{ID: task.ID, Branch: "fix/11-thing"}); err != nil {
+			t.Fatal(err)
+		}
+
+		w := postActionBody(t, srv, task.ID, `{"action":"retry","retry_mode":"continue_pushed_work"}`)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body)
+		}
+
+		got, err := srv.Store.TaskByID(t.Context(), task.ID)
+		if err != nil || got == nil {
+			t.Fatalf("TaskByID = (%+v, %v)", got, err)
+		}
+		if got.RetryMode != string(taskstate.RetryContinuePushedWork) {
+			t.Errorf("retry_mode = %q, want %q", got.RetryMode, taskstate.RetryContinuePushedWork)
+		}
+	})
+
+	t.Run("continue with no branch is refused", func(t *testing.T) {
+		srv, task, _, _, _ := actionServer(t, workflow.StatusParked, "it broke")
+
+		w := postActionBody(t, srv, task.ID, `{"action":"retry","retry_mode":"continue_pushed_work"}`)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body)
+		}
+
+		got, err := srv.Store.TaskByID(t.Context(), task.ID)
+		if err != nil || got == nil {
+			t.Fatalf("TaskByID = (%+v, %v)", got, err)
+		}
+		if got.Status != workflow.StatusParked {
+			t.Errorf("status = %q, want the task left parked", got.Status)
+		}
+	})
 }

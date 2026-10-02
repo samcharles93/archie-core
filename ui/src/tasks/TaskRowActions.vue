@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Ellipsis } from "@lucide/vue";
 import { computed, ref } from "vue";
+import { RadioGroupItem, RadioGroupRoot } from "reka-ui";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -31,9 +32,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
-import { actionFor, type ActionMeta } from "@/lib/task-meta";
+import { actionFor, retryModes, type ActionMeta } from "@/lib/task-meta";
 import type { Task } from "./TaskRow.vue";
 import { shownActionIds } from "./task-actions";
+import {
+  initialRetryChoice,
+  retryChoices,
+  retryPayload,
+} from "./retry-mode";
 
 /**
  * The lifecycle controls for one task. A task offers whatever the server says
@@ -76,6 +82,17 @@ const confirmingId = ref<string | null>(null);
 const rereviewOpen = ref(false);
 const rereviewId = ref<string | null>(null);
 const instructions = ref("");
+
+// A retry carries the operator's worktree mode (taskstate.RetryMode). The
+// dialog opens on the task's persisted choice -- so a remediation retry keeps
+// continuing its branch -- and the operator may pick the other mode. The
+// chosen value travels in the action body and is persisted on the task.
+const retryOpen = ref(false);
+const retryId = ref<string | null>(null);
+const retryMode = ref("");
+const retryOptions = computed(() =>
+  retryChoices(retryModes(), props.task.branch),
+);
 
 const controls = computed<Control[]>(() =>
   shownActionIds(props.task.actions, props.only)
@@ -157,12 +174,22 @@ function variantFor(kind: string): ControlVariant {
 
 // A control that names a consequence is confirmed first; the two that only open
 // a forge page are not, because they change nothing. A re-review needs
-// instructions, which its own dialog collects.
+// instructions, which its own dialog collects; a retry needs a worktree mode,
+// which its own dialog collects.
 function request(id: string) {
   error.value = null;
   if (id === "rereview") {
     rereviewId.value = id;
     rereviewOpen.value = true;
+    return;
+  }
+  if (id === "retry") {
+    retryId.value = id;
+    retryMode.value = initialRetryChoice(
+      retryOptions.value,
+      props.task.retry_mode,
+    );
+    retryOpen.value = true;
     return;
   }
   if (actionFor(id)?.confirm) {
@@ -173,7 +200,10 @@ function request(id: string) {
   void run(id);
 }
 
-async function run(id: string, payload?: { instructions?: string }) {
+async function run(
+  id: string,
+  payload?: { instructions?: string; retry_mode?: string },
+) {
   confirming.value = null;
   inFlight.value = true;
   error.value = null;
@@ -200,6 +230,17 @@ function submitRereview() {
   if (!id || !text) return;
   rereviewOpen.value = false;
   void run(id, { instructions: text });
+}
+
+function onRetryOpen(open: boolean) {
+  retryOpen.value = open;
+}
+
+function submitRetry() {
+  const id = retryId.value;
+  if (!id || !retryMode.value) return;
+  retryOpen.value = false;
+  void run(id, retryPayload(retryMode.value));
 }
 
 function onConfirmationOpen(open: boolean) {
@@ -324,6 +365,60 @@ function requestFromMenu(id: string) {
             @click="submitRereview"
           >
             Re-review
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!--
+      A retry opens this dialog rather than firing immediately: the operator
+      picks where the retry starts (taskstate.RetryMode), the choice rides the
+      action body and is persisted on the task, and the daemon's worktree
+      preparation reads it. Preselecting the task's persisted mode keeps a
+      remediation retry continuing its branch.
+    -->
+    <Dialog :open="retryOpen" @update:open="onRetryOpen">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Retry this task?</DialogTitle>
+          <DialogDescription>
+            Choose where the retry starts. The mode is saved on the task and
+            the daemon prepares the worktree from it.
+          </DialogDescription>
+        </DialogHeader>
+        <RadioGroupRoot
+          v-model="retryMode"
+          class="grid grid-cols-1 gap-2"
+          aria-label="Retry worktree mode"
+          loop
+        >
+          <label
+            v-for="option in retryOptions"
+            :key="option.id"
+            class="flex items-start gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-left transition-colors"
+            :class="
+              option.disabled
+                ? 'cursor-not-allowed opacity-60'
+                : 'cursor-pointer hover:bg-secondary'
+            "
+          >
+            <RadioGroupItem
+              :value="option.id"
+              :disabled="option.disabled || inFlight"
+              class="mt-0.5 shrink-0"
+            />
+            <span class="grid gap-0.5">
+              <span class="text-[13px] font-medium">{{ option.label }}</span>
+              <span class="text-xs text-fg-subtle">{{ option.description }}</span>
+            </span>
+          </label>
+        </RadioGroupRoot>
+        <DialogFooter>
+          <Button variant="ghost" :disabled="inFlight" @click="onRetryOpen(false)">
+            Keep it parked
+          </Button>
+          <Button :disabled="inFlight || !retryMode" @click="submitRetry">
+            Retry
           </Button>
         </DialogFooter>
       </DialogContent>

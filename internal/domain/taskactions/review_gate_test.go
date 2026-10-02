@@ -81,7 +81,7 @@ func TestApproveOfAGateRecordsTheSelectionOnTheOffer(t *testing.T) {
 	service := Service{Store: store}
 
 	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove,
-		ReviewResponse{Findings: []string{findings[0].Key()}}); err != nil {
+		ActionPayload{Findings: []string{findings[0].Key()}}); err != nil {
 		t.Fatalf("Apply(approve): %v", err)
 	}
 	if len(store.requeues) != 0 {
@@ -114,7 +114,7 @@ func TestApproveWithNoSelectionRecordsEveryOfferedFinding(t *testing.T) {
 	store := &gateStore{task: offeredGate(findings...)}
 	service := Service{Store: store}
 
-	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
+	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove, ActionPayload{}); err != nil {
 		t.Fatalf("Apply(approve): %v", err)
 	}
 	gate, _ := workflowtask.DecodeReviewGate(store.gateWrites[0].gate)
@@ -128,7 +128,7 @@ func TestApproveRefusesANonOfferedFindingKey(t *testing.T) {
 	service := Service{Store: store}
 
 	err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove,
-		ReviewResponse{Findings: []string{"main.go:99:stale"}})
+		ActionPayload{Findings: []string{"main.go:99:stale"}})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("Apply(approve with a stale key) = %v, want ErrConflict", err)
 	}
@@ -146,7 +146,7 @@ func TestApproveWithoutAGateKeepsTheTasksWorkflow(t *testing.T) {
 	store := &gateStore{task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: taskstate.WaitingHuman}}
 	service := Service{Store: store}
 
-	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove, ReviewResponse{}); err != nil {
+	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionApprove, ActionPayload{}); err != nil {
 		t.Fatalf("Apply(approve): %v", err)
 	}
 	if len(store.gateWrites) != 0 {
@@ -163,7 +163,7 @@ func TestRereviewRecordsInstructionsAndClearsTheOffer(t *testing.T) {
 	service := Service{Store: store}
 
 	if err := service.Apply(context.Background(), nil, humanActor(), 7, taskstate.ActionRereview,
-		ReviewResponse{Instructions: "look at the migration ordering"}); err != nil {
+		ActionPayload{Instructions: "look at the migration ordering"}); err != nil {
 		t.Fatalf("Apply(rereview): %v", err)
 	}
 	write := store.gateWrites[0]
@@ -186,7 +186,7 @@ func TestRereviewRefusedWithoutInstructionsAndAtTheCap(t *testing.T) {
 	tests := []struct {
 		name string
 		task *Task
-		res  ReviewResponse
+		res  ActionPayload
 		want string
 	}{
 		{
@@ -197,7 +197,7 @@ func TestRereviewRefusedWithoutInstructionsAndAtTheCap(t *testing.T) {
 		{
 			name: "no gate offer",
 			task: &Task{ID: 7, Owner: "acme", Repo: "widgets", Status: taskstate.WaitingHuman},
-			res:  ReviewResponse{Instructions: "look again"},
+			res:  ActionPayload{Instructions: "look again"},
 			want: "no review gate",
 		},
 		{
@@ -207,7 +207,7 @@ func TestRereviewRefusedWithoutInstructionsAndAtTheCap(t *testing.T) {
 				task.RereviewRounds = workflowtask.MaxRereviewRounds
 				return task
 			}(),
-			res:  ReviewResponse{Instructions: "look again"},
+			res:  ActionPayload{Instructions: "look again"},
 			want: "re-reviews",
 		},
 	}

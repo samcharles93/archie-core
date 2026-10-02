@@ -24,7 +24,7 @@ import (
 type testTaskActor struct{ b *boot }
 
 func (a testTaskActor) ApplyChatTaskAction(
-	ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ReviewResponse,
+	ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ActionPayload,
 ) (gateway.TaskActionResult, error) {
 	if err := a.b.taskActions().Apply(ctx, identity, actor, taskID, action, res); err != nil {
 		return gateway.TaskActionResult{}, err
@@ -84,7 +84,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := adapter.ApplyChatTaskAction(ctx, &tc.actorIdentity, taskactions.Actor{}, task.ID, tc.action, taskactions.ReviewResponse{})
+			_, err := adapter.ApplyChatTaskAction(ctx, &tc.actorIdentity, taskactions.Actor{}, task.ID, tc.action, taskactions.ActionPayload{})
 			if err == nil {
 				t.Fatalf("ApplyChatTaskAction() allowed cross-identity action %s by %q on task owned by %q",
 					tc.action, tc.actorIdentity, task.Identity)
@@ -152,7 +152,7 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 			}
 			taskstatetest.Seed(ctx, t, st, task.ID, workflow.StatusQueued, tc.initialStatus, "setup")
 
-			_, err = adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, task.ID, tc.attemptAction, taskactions.ReviewResponse{})
+			_, err = adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, task.ID, tc.attemptAction, taskactions.ActionPayload{})
 			if err == nil {
 				t.Fatalf("expected error attempting %s on %s task, got nil", tc.attemptAction, tc.initialStatus)
 			}
@@ -182,7 +182,7 @@ func TestChatTaskActorAdapterTaskNotFound(t *testing.T) {
 
 	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
-	_, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, 999999, taskstate.ActionAbandon, taskactions.ReviewResponse{})
+	_, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, 999999, taskstate.ActionAbandon, taskactions.ActionPayload{})
 	if err == nil {
 		t.Fatal("expected error for non-existent task, got nil")
 	}
@@ -257,7 +257,7 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 			}
 			taskstatetest.Seed(ctx, t, st, task.ID, workflow.StatusQueued, tc.initialStatus, "setup")
 
-			result, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, task.ID, tc.action, taskactions.ReviewResponse{})
+			result, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, task.ID, tc.action, taskactions.ActionPayload{})
 			if err != nil {
 				t.Fatalf("ApplyChatTaskAction(%s) error = %v", tc.action, err)
 			}
@@ -292,7 +292,7 @@ func TestChatTaskActorAdapterNilContract(t *testing.T) {
 	ctx := context.Background()
 	adapter := chatTaskActorAdapter{contract: nil}
 
-	_, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, 1, taskstate.ActionAbandon, taskactions.ReviewResponse{})
+	_, err := adapter.ApplyChatTaskAction(ctx, new("archie"), taskactions.Actor{}, 1, taskstate.ActionAbandon, taskactions.ActionPayload{})
 	if err == nil {
 		t.Fatal("expected error for nil contract, got nil")
 	}

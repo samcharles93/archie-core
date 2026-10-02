@@ -1703,11 +1703,16 @@ type ApplyOperatorTaskActionRequest struct {
 	ActorKind   string `protobuf:"bytes,4,opt,name=actor_kind,json=actorKind,proto3" json:"actor_kind,omitempty"`
 	PrincipalId string `protobuf:"bytes,5,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
 	// instructions and findings are the review gate answer payload
-	// (taskactions.ReviewResponse): the instructions a rereview requires, and
+	// (taskactions.ActionPayload): the instructions a rereview requires, and
 	// the finding keys an approve posts (empty means every offered finding).
 	// They are empty for every other action.
-	Instructions  string   `protobuf:"bytes,6,opt,name=instructions,proto3" json:"instructions,omitempty"`
-	Findings      []string `protobuf:"bytes,7,rep,name=findings,proto3" json:"findings,omitempty"`
+	Instructions string   `protobuf:"bytes,6,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	Findings     []string `protobuf:"bytes,7,rep,name=findings,proto3" json:"findings,omitempty"`
+	// retry_mode is the operator's worktree choice for a retry
+	// (taskstate.RetryMode): refresh onto the base branch or continue the work
+	// already pushed on the task's branch. It is empty for every other action,
+	// and chat carries no mode syntax -- an empty value means refresh_onto_base.
+	RetryMode     string `protobuf:"bytes,8,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1789,6 +1794,13 @@ func (x *ApplyOperatorTaskActionRequest) GetFindings() []string {
 		return x.Findings
 	}
 	return nil
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetRetryMode() string {
+	if x != nil {
+		return x.RetryMode
+	}
+	return ""
 }
 
 type ApplyOperatorTaskActionResponse struct {
@@ -3022,7 +3034,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x17ApplyTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xee\x01\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\x8d\x02\n" +
 	"\x1eApplyOperatorTaskActionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x19\n" +
@@ -3031,7 +3043,9 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"actor_kind\x18\x04 \x01(\tR\tactorKind\x12!\n" +
 	"\fprincipal_id\x18\x05 \x01(\tR\vprincipalId\x12\"\n" +
 	"\finstructions\x18\x06 \x01(\tR\finstructions\x12\x1a\n" +
-	"\bfindings\x18\a \x03(\tR\bfindings\"l\n" +
+	"\bfindings\x18\a \x03(\tR\bfindings\x12\x1d\n" +
+	"\n" +
+	"retry_mode\x18\b \x01(\tR\tretryMode\"l\n" +
 	"\x1fApplyOperatorTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +

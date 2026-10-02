@@ -66,6 +66,14 @@ type Task struct {
 	// (parking-to-queued transitions). When it reaches the configured
 	// max_retries the daemon moves the task to StatusDead.
 	RetryCount int `json:"retry_count"`
+	// RetryMode is the operator's worktree choice for the next dispatch of this
+	// task (taskstate.RetryMode): refresh onto the base branch, or continue the
+	// work already pushed on Branch. The retry action writes it -- and the
+	// reaction consumer writes continue when it queues a remediation -- and the
+	// daemon's prepareWorkspace reads it to position the worktree. Empty reads
+	// as the explicit default, RefreshOntoBase; it is never inferred from the
+	// workflow at dispatch.
+	RetryMode string `json:"retry_mode"`
 	// WatchCommentID is the poll backstop's high-water mark over forge
 	// review-comment IDs for this task (pr-review-remediation.md decision
 	// 2's persisted per-task cursor; the comment-watch design it was

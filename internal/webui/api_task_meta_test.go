@@ -35,6 +35,13 @@ func TestTaskMetaCatalog(t *testing.T) {
 			Kind    string `json:"kind"`
 			Confirm string `json:"confirm"`
 		} `json:"actions"`
+		RetryModes []struct {
+			ID             string `json:"id"`
+			Label          string `json:"label"`
+			Description    string `json:"description"`
+			Default        bool   `json:"default"`
+			RequiresBranch bool   `json:"requires_branch"`
+		} `json:"retry_modes"`
 		ChangeStatuses []struct {
 			ID    string `json:"id"`
 			Label string `json:"label"`
@@ -50,6 +57,21 @@ func TestTaskMetaCatalog(t *testing.T) {
 	}
 	if len(got.Actions) == 0 {
 		t.Error("actions empty")
+	}
+	if len(got.RetryModes) == 0 {
+		t.Error("retry_modes empty; the retry dialog would offer no mode")
+	}
+	defaults := 0
+	for _, m := range got.RetryModes {
+		if m.ID == "" || m.Label == "" || m.Description == "" {
+			t.Errorf("retry mode missing id/label/description: %+v", m)
+		}
+		if m.Default {
+			defaults++
+		}
+	}
+	if defaults != 1 {
+		t.Errorf("retry_modes has %d defaults, want exactly 1", defaults)
 	}
 	if len(got.ChangeStatuses) == 0 {
 		t.Error("change_statuses empty; the dashboard renders raw status codes without it")

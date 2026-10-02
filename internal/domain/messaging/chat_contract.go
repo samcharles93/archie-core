@@ -33,7 +33,7 @@ type ChatTaskActionContract interface {
 	// may only act on its own tasks. res carries the review gate answer
 	// payload; the chat surface has no instruction or selection syntax, so it
 	// is the zero value there.
-	ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ReviewResponse) (TaskActionResult, error)
+	ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ActionPayload) (TaskActionResult, error)
 	// ApplyOperatorTaskAction applies an action on behalf of an authenticated
 	// dashboard caller, who acts across identities. The actor is who the
 	// credential resolved to, or the zero Actor when the caller presented
@@ -43,7 +43,7 @@ type ChatTaskActionContract interface {
 	// chatTaskProfiles in the daemon). res carries the review gate answer
 	// payload: the operator's finding selection for approve, and the
 	// instructions a rereview requires.
-	ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action, taskactions.ReviewResponse) (TaskActionResult, error)
+	ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action, taskactions.ActionPayload) (TaskActionResult, error)
 }
 
 // TaskActionResult is what task_action returns.

@@ -347,7 +347,7 @@ func (s *server) ArchiveTask(ctx context.Context, r *pb.ArchiveTaskRequest) (*pb
 }
 
 func (s *server) RetryTask(ctx context.Context, r *pb.RetryTaskRequest) (*pb.RetryTaskResponse, error) {
-	if err := s.deps.Tasks.RetryTask(ctx, r.TaskId, r.FromStatus, r.Workflow); err != nil {
+	if err := s.deps.Tasks.RetryTask(ctx, r.TaskId, r.FromStatus, r.Workflow, r.RetryMode); err != nil {
 		return nil, s.logErr("RetryTask", err)
 	}
 	return &pb.RetryTaskResponse{}, nil

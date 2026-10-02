@@ -1354,8 +1354,14 @@ type Task struct {
 	// from retry_count and remediation_rounds for the same reason those are
 	// separate from each other.
 	RereviewRounds int64 `protobuf:"varint,40,opt,name=rereview_rounds,json=rereviewRounds,proto3" json:"rereview_rounds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// retry_mode is the operator's worktree choice for the next dispatch
+	// (taskstate.RetryMode: refresh_onto_base, continue_pushed_work). The retry
+	// action writes it and the daemon's prepareWorkspace reads it, so it must
+	// cross the wire for a retry to land on the source the operator chose. The
+	// empty string reads as refresh_onto_base.
+	RetryMode     string `protobuf:"bytes,41,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1667,6 +1673,13 @@ func (x *Task) GetRereviewRounds() int64 {
 		return x.RereviewRounds
 	}
 	return 0
+}
+
+func (x *Task) GetRetryMode() string {
+	if x != nil {
+		return x.RetryMode
+	}
+	return ""
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -4811,10 +4824,13 @@ func (x *ArchiveTaskResponse) GetEventId() int64 {
 }
 
 type RetryTaskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	FromStatus    string                 `protobuf:"bytes,2,opt,name=from_status,json=fromStatus,proto3" json:"from_status,omitempty"`
-	Workflow      string                 `protobuf:"bytes,3,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	TaskId     int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	FromStatus string                 `protobuf:"bytes,2,opt,name=from_status,json=fromStatus,proto3" json:"from_status,omitempty"`
+	Workflow   string                 `protobuf:"bytes,3,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	// retry_mode is the operator's worktree choice (taskstate.RetryMode) the
+	// requeue persists. Empty reads as refresh_onto_base.
+	RetryMode     string `protobuf:"bytes,4,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4866,6 +4882,13 @@ func (x *RetryTaskRequest) GetFromStatus() string {
 func (x *RetryTaskRequest) GetWorkflow() string {
 	if x != nil {
 		return x.Workflow
+	}
+	return ""
+}
+
+func (x *RetryTaskRequest) GetRetryMode() string {
+	if x != nil {
+		return x.RetryMode
 	}
 	return ""
 }
@@ -12108,7 +12131,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\asubject\x18\x03 \x01(\tR\asubject\x12-\n" +
 	"\x05audit\x18\x04 \x01(\v2\x17.state.v1.IdentityAuditR\x05audit\"M\n" +
 	"\x1bBindIdentitySubjectResponse\x12.\n" +
-	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xcb\n" +
+	"\bidentity\x18\x01 \x01(\v2\x12.state.v1.IdentityR\bidentity\"\xea\n" +
 	"\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
@@ -12163,7 +12186,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\foutputs_json\x18& \x01(\tR\voutputsJson\x12\x1f\n" +
 	"\vreview_gate\x18' \x01(\tR\n" +
 	"reviewGate\x12'\n" +
-	"\x0frereview_rounds\x18( \x01(\x03R\x0erereviewRounds\"\xf8\x02\n" +
+	"\x0frereview_rounds\x18( \x01(\x03R\x0erereviewRounds\x12\x1d\n" +
+	"\n" +
+	"retry_mode\x18) \x01(\tR\tretryMode\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -12418,12 +12443,14 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"fromStatus\x12%\n" +
 	"\x05audit\x18\x03 \x01(\v2\x0f.state.v1.EventR\x05audit\"0\n" +
 	"\x13ArchiveTaskResponse\x12\x19\n" +
-	"\bevent_id\x18\x01 \x01(\x03R\aeventId\"h\n" +
+	"\bevent_id\x18\x01 \x01(\x03R\aeventId\"\x87\x01\n" +
 	"\x10RetryTaskRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x1f\n" +
 	"\vfrom_status\x18\x02 \x01(\tR\n" +
 	"fromStatus\x12\x1a\n" +
-	"\bworkflow\x18\x03 \x01(\tR\bworkflow\"\x13\n" +
+	"\bworkflow\x18\x03 \x01(\tR\bworkflow\x12\x1d\n" +
+	"\n" +
+	"retry_mode\x18\x04 \x01(\tR\tretryMode\"\x13\n" +
 	"\x11RetryTaskResponse\"\x96\x01\n" +
 	"\x18RespondReviewGateRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x1f\n" +

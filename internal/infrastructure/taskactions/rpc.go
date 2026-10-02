@@ -37,11 +37,13 @@ type actionRequest struct {
 	Action   taskstate.Action `json:"action"`
 	Actor    *actorPayload    `json:"actor,omitempty"`
 	// Instructions and Findings are the review gate answer payload
-	// (taskactions.ReviewResponse). They are empty for every action but
+	// (taskactions.ActionPayload). They are empty for every action but
 	// approve and rereview, and for chat surfaces, which carry no selection
-	// syntax.
-	Instructions string   `json:"instructions,omitempty"`
-	Findings     []string `json:"findings,omitempty"`
+	// syntax. RetryMode is the worktree choice a retry carries; empty means
+	// the explicit default, refresh_onto_base.
+	Instructions string              `json:"instructions,omitempty"`
+	Findings     []string            `json:"findings,omitempty"`
+	RetryMode    taskstate.RetryMode `json:"retry_mode,omitempty"`
 }
 
 type actorPayload struct {
@@ -127,9 +129,10 @@ func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (fun
 				natsrpc.Respond(msg, log, "taskactions", actionResponse{Envelope: natsrpc.NewEnvelope(err)})
 				return
 			}
-			err := service.Apply(context.Background(), req.Identity, req.Actor.actor(), req.TaskID, req.Action, taskactions.ReviewResponse{
+			err := service.Apply(context.Background(), req.Identity, req.Actor.actor(), req.TaskID, req.Action, taskactions.ActionPayload{
 				Instructions: req.Instructions,
 				Findings:     req.Findings,
+				RetryMode:    req.RetryMode,
 			})
 			natsrpc.Respond(msg, log, "taskactions", actionResponse{
 				Envelope: natsrpc.NewEnvelope(err),
@@ -152,7 +155,7 @@ func (c Client) rpc() *natsrpc.Client {
 // ApplyChatTaskAction sends an action to the daemon's responder, carrying the
 // scope and the actor the caller resolved. A caller with no verified identity
 // passes the zero actor, which the daemon records as unattributed.
-func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor taskactions.Actor, id int64, action taskstate.Action, res taskactions.ReviewResponse) (gateway.TaskActionResult, error) {
+func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor taskactions.Actor, id int64, action taskstate.Action, res taskactions.ActionPayload) (gateway.TaskActionResult, error) {
 	if c.Conn == nil {
 		return gateway.TaskActionResult{}, fmt.Errorf("task action connection is unavailable")
 	}
@@ -162,6 +165,7 @@ func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor ta
 		Action:       action,
 		Instructions: res.Instructions,
 		Findings:     res.Findings,
+		RetryMode:    res.RetryMode,
 		Actor: &actorPayload{
 			ID:        string(actor.Identity),
 			Kind:      string(actor.Kind),

@@ -85,7 +85,7 @@ UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
     review_payload = $13, workflow_definition_version = $14,
     workflow_definition_digest = $15, workflow_definition_yaml = $16,
     outputs = $17, review_gate = $18, rereview_rounds = $19,
-    updated_at = now()
+    retry_mode = $20, updated_at = now()
 WHERE id = $1;
 
 -- name: RereviewRounds :one
@@ -152,7 +152,10 @@ WHERE owner = $1 AND repo = $2 AND issue_number = $3 AND status = 'queued'
 RETURNING *;
 
 -- name: BeginRemediationTask :execrows
-UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, updated_at = now()
+-- A remediation must continue the branch its pull request lives on, so it
+-- records that dispatch mode explicitly (taskstate.RetryContinuePushedWork)
+-- rather than leaving prepareWorkspace to infer it from the workflow.
+UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, retry_mode = 'continue_pushed_work', updated_at = now()
 WHERE id = $1 AND status = 'pr_open';
 
 -- name: UpdateReviewPayloadTask :execrows
@@ -172,6 +175,7 @@ WHERE id = @id AND status = @from_status;
 -- name: RetryTask :execrows
 UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
     workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
+    retry_mode = @retry_mode::text,
     park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = @id AND status = @from_status;
 

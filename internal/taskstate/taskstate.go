@@ -148,6 +148,74 @@ func CheckRetry(status string) error {
 	return nil
 }
 
+// RetryMode is the operator's worktree choice for the next dispatch of a
+// retried task. It is a dispatch directive: the daemon resolves it to the
+// commit the worktree is prepared at, never infers it from the workflow.
+//
+// The values are persisted on the task row (tasks.retry_mode) and cross the
+// wire, so they are part of the on-disk format: renaming one is a migration.
+type RetryMode string
+
+const (
+	// RetryRefreshOntoBase starts the retry from the current base branch,
+	// discarding anything an earlier attempt committed on the task branch.
+	// It is the default for work that is not an open pull request.
+	RetryRefreshOntoBase RetryMode = "refresh_onto_base"
+	// RetryContinuePushedWork resumes the branch the task already pushed, so
+	// the retry continues the work an earlier attempt committed instead of
+	// resetting over it. It requires a branch to resume.
+	RetryContinuePushedWork RetryMode = "continue_pushed_work"
+)
+
+// NormalizeRetryMode maps a stored retry mode to the mode it means. Empty and
+// unknown values fall back to RefreshOntoBase: a retry that carries no explicit
+// choice resets onto base, which is the safe default for work that is not an
+// open pull request.
+func NormalizeRetryMode(mode string) RetryMode {
+	if RetryMode(mode) == RetryContinuePushedWork {
+		return RetryContinuePushedWork
+	}
+	return RetryRefreshOntoBase
+}
+
+// ResolveRetryMode validates a retry mode arriving from a caller. Unlike
+// stored data, a wire value that names no mode is rejected rather than
+// defaulted: silently reading a typo as "refresh onto base" would reset a task
+// the operator asked to continue. The empty string is accepted and means the
+// explicit default, RetryRefreshOntoBase.
+func ResolveRetryMode(mode string) (RetryMode, bool) {
+	switch RetryMode(mode) {
+	case "", RetryRefreshOntoBase:
+		return RetryRefreshOntoBase, true
+	case RetryContinuePushedWork:
+		return RetryContinuePushedWork, true
+	default:
+		return "", false
+	}
+}
+
+// RetryModeMeta describes how to present a retry mode. The dashboard renders
+// the operator's choice from this catalog rather than keeping its own copy.
+type RetryModeMeta struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Default     bool   `json:"default"`
+	// RequiresBranch reports that the mode can only land when the task has a
+	// branch to resume. The dashboard disables it otherwise; the action refuses
+	// the same combination, so the UI check is a convenience, not the rule.
+	RequiresBranch bool `json:"requires_branch"`
+}
+
+// RetryModes returns the presentation catalog for the retry modes, in display
+// order. Callers receive a fresh slice.
+func RetryModes() []RetryModeMeta {
+	return []RetryModeMeta{
+		{ID: string(RetryRefreshOntoBase), Label: "Refresh onto base", Description: "Start the retry from the current base branch, discarding work already pushed on this task's branch.", Default: true},
+		{ID: string(RetryContinuePushedWork), Label: "Continue pushed work", Description: "Resume the branch this task already pushed, keeping its commits.", RequiresBranch: true},
+	}
+}
+
 // CheckDecline reports whether a task in this status can be declined.
 //
 // The legacy chat command expresses cancel, stop, reject and abandon as one

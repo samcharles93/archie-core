@@ -21,23 +21,26 @@ type changeStatusMeta struct {
 // struct rather than an inline map so the wire shape is declared in one place
 // and pinned against the dashboard's freeze-dried snapshot by a fixture test.
 type taskMetaView struct {
-	Statuses       []taskstate.StatusMeta `json:"statuses"`
-	Actions        []taskstate.ActionMeta `json:"actions"`
-	ChangeStatuses []changeStatusMeta     `json:"change_statuses"`
-	ConfigSchema   string                 `json:"config_schema"`
+	Statuses       []taskstate.StatusMeta    `json:"statuses"`
+	Actions        []taskstate.ActionMeta    `json:"actions"`
+	RetryModes     []taskstate.RetryModeMeta `json:"retry_modes"`
+	ChangeStatuses []changeStatusMeta        `json:"change_statuses"`
+	ConfigSchema   string                    `json:"config_schema"`
 }
 
 // buildTaskMeta derives the lifecycle presentation catalog: the status
 // vocabulary (with label, pill severity, "needs you" grouping), the operator
-// action controls (with label, button variant, confirm prompt), the
+// action controls (with label, button variant, confirm prompt), the retry
+// worktree modes (with label, description and which is the default), the
 // changes_captured status labels and the schema stamp a config_captured
 // payload carries. Everything the dashboard can present that also exists on
 // the server is derived here, so the frontend never has to keep a hand-synced
 // copy of the vocabulary or the control set.
 func buildTaskMeta() taskMetaView {
 	return taskMetaView{
-		Statuses: taskstate.Statuses(),
-		Actions:  taskstate.ActionCatalog(),
+		Statuses:   taskstate.Statuses(),
+		Actions:    taskstate.ActionCatalog(),
+		RetryModes: taskstate.RetryModes(),
 		ChangeStatuses: []changeStatusMeta{
 			{ID: task.ChangeAdded, Label: "Added"},
 			{ID: task.ChangeModified, Label: "Modified"},

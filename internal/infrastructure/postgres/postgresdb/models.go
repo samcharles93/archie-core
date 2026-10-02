@@ -395,6 +395,7 @@ type Task struct {
 	Outputs                   string
 	ReviewGate                string
 	RereviewRounds            int64
+	RetryMode                 string
 }
 
 type ToolCall struct {

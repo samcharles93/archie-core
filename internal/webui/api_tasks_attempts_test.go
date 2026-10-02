@@ -93,7 +93,7 @@ func twoAttemptTask(t *testing.T, srv *Server) *workflow.Task {
 	if err := srv.Store.Transition(ctx, first.ID, workflow.StatusRunning, workflow.StatusParked, "stage implement: builder exited 1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.Store.RetryTask(ctx, first.ID, workflow.StatusParked, ""); err != nil {
+	if err := srv.Store.RetryTask(ctx, first.ID, workflow.StatusParked, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	second, err := srv.Store.ClaimNext(ctx)
@@ -328,7 +328,7 @@ func TestHandleTaskAttemptsRendersBothAttemptsOfARetry(t *testing.T) {
 	if err := srv.Store.Transition(ctx, claimed1.ID, workflow.StatusRunning, workflow.StatusParked, "stage implement: builder exited 1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.Store.RetryTask(ctx, claimed1.ID, workflow.StatusParked, ""); err != nil {
+	if err := srv.Store.RetryTask(ctx, claimed1.ID, workflow.StatusParked, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	current, err := srv.Store.ClaimNext(ctx)

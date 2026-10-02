@@ -199,6 +199,12 @@ type taskActionRequest struct {
 	// absent selection means all of them. It is ignored by every other
 	// action.
 	Findings []string `json:"findings"`
+	// RetryMode is the operator's worktree choice for a retry
+	// (taskstate.RetryMode): refresh onto the base branch, or continue the
+	// work already pushed on the task's branch. The retry control sends one;
+	// an empty value means the explicit default, refresh_onto_base. It is
+	// ignored by every other action.
+	RetryMode string `json:"retry_mode"`
 }
 
 func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +238,7 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "action": action, "task_id": id})
 }
 
-func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action, taskactions.ReviewResponse, bool) {
+func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action, taskactions.ActionPayload, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req taskActionRequest
 	decoder := json.NewDecoder(r.Body)
@@ -240,19 +246,19 @@ func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action,
 	if err := decoder.Decode(&req); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "action body too large", http.StatusRequestEntityTooLarge)
-			return "", taskactions.ReviewResponse{}, false
+			return "", taskactions.ActionPayload{}, false
 		}
 		http.Error(w, "invalid action", http.StatusBadRequest)
-		return "", taskactions.ReviewResponse{}, false
+		return "", taskactions.ActionPayload{}, false
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		http.Error(w, "invalid action", http.StatusBadRequest)
-		return "", taskactions.ReviewResponse{}, false
+		return "", taskactions.ActionPayload{}, false
 	}
 	action := taskstate.Action(req.Action)
 	if !taskMutation(action) {
 		http.Error(w, "unknown action", http.StatusBadRequest)
-		return "", taskactions.ReviewResponse{}, false
+		return "", taskactions.ActionPayload{}, false
 	}
 	// A re-review without instructions is not a request the gate can honour,
 	// and refusing it here keeps the refusal the operator's to read rather
@@ -260,9 +266,9 @@ func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action,
 	// that do not pass through this handler.
 	if action == taskstate.ActionRereview && strings.TrimSpace(req.Instructions) == "" {
 		http.Error(w, "a re-review needs instructions", http.StatusBadRequest)
-		return "", taskactions.ReviewResponse{}, false
+		return "", taskactions.ActionPayload{}, false
 	}
-	return action, taskactions.ReviewResponse{Instructions: req.Instructions, Findings: req.Findings}, true
+	return action, taskactions.ActionPayload{Instructions: req.Instructions, Findings: req.Findings, RetryMode: taskstate.RetryMode(req.RetryMode)}, true
 }
 
 func taskMutation(action taskstate.Action) bool {
@@ -359,7 +365,7 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 // timeline needs its event bus, and stopping running work needs the
 // goroutine or container that is executing it. Composing a local service
 // over the task store alone would silently drop all four.
-func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action taskstate.Action, res taskactions.ReviewResponse) error {
+func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action taskstate.Action, res taskactions.ActionPayload) error {
 	if s.Chat == nil || s.Chat.Contract == nil {
 		return fmt.Errorf("%w: no gateway contract is wired", taskactions.ErrUnavailable)
 	}

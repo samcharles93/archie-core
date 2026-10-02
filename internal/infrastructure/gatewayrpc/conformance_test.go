@@ -142,12 +142,13 @@ type recordingTaskActor struct {
 	identity *string
 	taskID   int64
 	action   taskstate.Action
+	payload  taskactions.ActionPayload
 }
 
 func (a *recordingTaskActor) ApplyChatTaskAction(
-	_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, _ taskactions.ReviewResponse,
+	_ context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, payload taskactions.ActionPayload,
 ) (gateway.TaskActionResult, error) {
-	a.identity, a.taskID, a.action = identity, taskID, action
+	a.identity, a.taskID, a.action, a.payload = identity, taskID, action, payload
 	return gateway.TaskActionResult{TaskID: taskID, Action: string(action), Message: "applied"}, nil
 }
 
@@ -169,7 +170,7 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 				chat = remoteChat(t, local)
 			}
 
-			result, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 42, taskstate.ActionApprove, taskactions.ReviewResponse{})
+			result, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 42, taskstate.ActionApprove, taskactions.ActionPayload{RetryMode: taskstate.RetryContinuePushedWork})
 			if err != nil {
 				t.Fatalf("operator action: %v", err)
 			}
@@ -179,11 +180,14 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 			if actor.taskID != 42 || actor.action != taskstate.ActionApprove {
 				t.Fatalf("operator action = (%d, %q), want (42, %q)", actor.taskID, actor.action, taskstate.ActionApprove)
 			}
+			if actor.payload.RetryMode != taskstate.RetryContinuePushedWork {
+				t.Fatalf("operator action retry mode = %q, want %q: the choice must survive the hop", actor.payload.RetryMode, taskstate.RetryContinuePushedWork)
+			}
 			if result.TaskID != 42 || result.Action != string(taskstate.ActionApprove) || result.Message != "applied" {
 				t.Fatalf("operator result = %+v, want the daemon's result", result)
 			}
 
-			if _, err := chat.ApplyTaskAction(ctx, "scout", 7, taskstate.ActionRetry, taskactions.ReviewResponse{}); err != nil {
+			if _, err := chat.ApplyTaskAction(ctx, "scout", 7, taskstate.ActionRetry, taskactions.ActionPayload{}); err != nil {
 				t.Fatalf("chat action: %v", err)
 			}
 			if actor.identity == nil || *actor.identity != "scout" {
@@ -197,7 +201,7 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 type failingTaskActor struct{ err error }
 
 func (a failingTaskActor) ApplyChatTaskAction(
-	context.Context, *string, taskactions.Actor, int64, taskstate.Action, taskactions.ReviewResponse,
+	context.Context, *string, taskactions.Actor, int64, taskstate.Action, taskactions.ActionPayload,
 ) (gateway.TaskActionResult, error) {
 	return gateway.TaskActionResult{}, a.err
 }
@@ -221,7 +225,7 @@ func TestTaskActionErrorsKeepTheirSentinelOverGRPC(t *testing.T) {
 			local := &gateway.LocalChatAdapter{TaskActor: failingTaskActor{err: tc.err}}
 			chat := remoteChat(t, local)
 
-			_, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 7, taskstate.ActionApprove, taskactions.ReviewResponse{})
+			_, err := chat.ApplyOperatorTaskAction(ctx, taskactions.Actor{}, 7, taskstate.ActionApprove, taskactions.ActionPayload{})
 			if err == nil {
 				t.Fatalf("ApplyOperatorTaskAction error = nil, want %v", tc.err)
 			}
