@@ -20,16 +20,20 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 )
@@ -69,6 +73,19 @@ type analysis struct {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+// run holds the whole program so its deferred signal cleanup actually runs:
+// os.Exit in main cannot be deferred past, and this tool's exit codes carry the
+// gate's verdict, so the code is propagated rather than exited on.
+func run() int {
+	// The one subprocess this tool runs (git ls-files) is registered against
+	// this context, so a cancelled gate does not leave a git process behind and
+	// a wedged one cannot outlive the run.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	args := os.Args[1:]
 	mode := "check"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -83,45 +100,59 @@ func main() {
 	baselinePath := flags.String("baseline", defaultBaseline, "baseline file, relative to the repository root")
 	if err := flags.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "docdrift: %v\n", err)
-		os.Exit(2)
+		return 2
 	}
 	if extra := flags.Args(); len(extra) > 0 {
 		fmt.Fprintf(os.Stderr, "docdrift: unexpected argument %q\n", extra[0])
-		os.Exit(2)
+		return 2
 	}
 
 	root, err := filepath.Abs(*repoRoot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docdrift: %v\n", err)
-		os.Exit(2)
+		return 2
+	}
+
+	tree, err := newTrackedTree(ctx, root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "docdrift: %v\n", err)
+		return 2
 	}
 
 	switch mode {
 	case "check":
-		if err := runCheck(root, *dir, filepath.Join(root, *baselinePath)); err != nil {
+		failed, err := runCheck(root, *dir, tree, filepath.Join(root, *baselinePath))
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "docdrift: %v\n", err)
-			os.Exit(2)
+			return 2
 		}
+		if failed {
+			return 1
+		}
+		return 0
 	case "list":
-		if err := runList(root, *dir); err != nil {
+		if err := runList(root, *dir, tree); err != nil {
 			fmt.Fprintf(os.Stderr, "docdrift: %v\n", err)
-			os.Exit(2)
+			return 2
 		}
+		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "docdrift: unknown mode %q (want check or list)\n", mode)
-		os.Exit(2)
+		return 2
 	}
 }
 
-// runCheck reports new drift and stale baseline entries, exiting 1 on either.
-func runCheck(root, dir, baselinePath string) error {
+// runCheck reports new drift and stale baseline entries. It answers whether the
+// tree fails the gate, and returns an error only when the check itself could not
+// run -- a distinction the exit code carries.
+func runCheck(root, dir string, tree *trackedTree, baselinePath string) (bool, error) {
 	baseline, err := readBaseline(baselinePath)
 	if err != nil {
-		return err
+		return false, err
 	}
-	result, err := analyse(root, dir, baseline)
+	result, err := analyse(root, dir, tree, baseline)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	for _, c := range result.newDrift {
@@ -137,7 +168,7 @@ func runCheck(root, dir, baselinePath string) error {
 	if len(result.newDrift) == 0 && len(result.stale) == 0 {
 		fmt.Printf("docdrift: %d cited file(s), %d resolving citation(s), %d known-debt citation(s)\n",
 			result.citedFile, result.scanned, result.known)
-		return nil
+		return false, nil
 	}
 	fmt.Fprintf(os.Stderr,
 		"\ndocdrift: %d new dangling citation(s), %d stale baseline entry(ies).\n"+
@@ -145,12 +176,11 @@ func runCheck(root, dir, baselinePath string) error {
 			"supported, or -- only for a path that is knowingly gone -- add it to %s\n"+
 			"with the reason in the commit message.\n",
 		len(result.newDrift), len(result.stale), defaultBaseline)
-	os.Exit(1)
-	return nil
+	return true, nil
 }
 
 // runList prints the current debt in baseline format, for regeneration.
-func runList(root, dir string) error {
+func runList(root, dir string, tree *trackedTree) error {
 	cites, err := scan(root, dir)
 	if err != nil {
 		return err
@@ -162,7 +192,7 @@ func runList(root, dir string) error {
 	fmt.Println("#   go -C tools run -mod=readonly ./docdrift list --repo-root .. > tools/docdrift/baseline.txt")
 	seen := map[string]bool{}
 	for _, c := range cites {
-		if seen[c.Path] || resolves(root, c.Path) {
+		if seen[c.Path] || tree.resolves(c.Path) {
 			continue
 		}
 		seen[c.Path] = true
@@ -172,7 +202,7 @@ func runList(root, dir string) error {
 }
 
 // analyse compares every citation in dir against the tree and the baseline.
-func analyse(root, dir string, baseline map[string]bool) (analysis, error) {
+func analyse(root, dir string, tree *trackedTree, baseline map[string]bool) (analysis, error) {
 	cites, err := scan(root, dir)
 	if err != nil {
 		return analysis{}, err
@@ -182,7 +212,7 @@ func analyse(root, dir string, baseline map[string]bool) (analysis, error) {
 	files := map[string]bool{}
 	for _, c := range cites {
 		files[c.File] = true
-		if resolves(root, c.Path) {
+		if tree.resolves(c.Path) {
 			out.scanned++
 			continue
 		}
@@ -196,7 +226,7 @@ func analyse(root, dir string, baseline map[string]bool) (analysis, error) {
 	out.citedFile = len(files)
 	for p := range baseline {
 		switch {
-		case resolves(root, p):
+		case tree.resolves(p):
 			out.stale = append(out.stale, p)
 		case !unresolved[p]:
 			out.unused = append(out.unused, p)
@@ -269,20 +299,57 @@ func normalize(raw string) string {
 	return strings.TrimRight(s, ".,;:/")
 }
 
-// resolves reports whether a citation names something that exists in the tree:
-// a file, a directory, or a package directory cited with a symbol attached.
-func resolves(root, path string) bool {
+// trackedTree is the set of paths git tracks: what "exists" means to this gate.
+//
+// It is deliberately not the filesystem. A directory left behind by a checkout
+// that removed its files, or by a branch switch, exists on one machine and not
+// another, so a filesystem check makes this gate answer differently in CI and in
+// a developer's tree. That is how it first shipped a baseline that passed
+// locally and failed in CI: five citations -- internal/gate, internal/gate/gateeval
+// and internal/domain/workflow/skillbuild among them -- resolved against empty
+// leftover directories that were never in the repository at all.
+type trackedTree struct {
+	files map[string]bool
+	dirs  map[string]bool
+}
+
+// newTrackedTree reads the tracked tree from git. Failing to read it is fatal
+// rather than a fallback to the filesystem, because a silent fallback is the
+// non-reproducibility this type exists to remove.
+func newTrackedTree(ctx context.Context, root string) (*trackedTree, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", root, "ls-files", "-z")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w (docdrift resolves against the tracked tree, so it must run in a git checkout)", err)
+	}
+	tree := &trackedTree{files: map[string]bool{}, dirs: map[string]bool{}}
+	for _, path := range strings.Split(string(out), "\x00") {
+		if path == "" {
+			continue
+		}
+		tree.files[path] = true
+		// Every ancestor of a tracked file is a directory the repository has,
+		// which is what makes `internal/domain/workflow` resolve without a
+		// file being named.
+		for dir := filepath.Dir(path); dir != "." && dir != "/" && dir != ""; dir = filepath.Dir(dir) {
+			tree.dirs[dir] = true
+		}
+	}
+	return tree, nil
+}
+
+// resolves reports whether a citation names something the repository holds: a
+// tracked file, a directory containing tracked files, or a package directory
+// cited with a symbol attached.
+func (t *trackedTree) resolves(path string) bool {
 	for _, c := range candidates(path) {
 		if c == "" {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, c)); err == nil {
+		if t.files[c] || t.files[c+".go"] || t.dirs[c] {
 			return true
 		}
-		if _, err := os.Stat(filepath.Join(root, c+".go")); err == nil {
-			return true
-		}
-		if prefixMatch(root, c) {
+		if t.prefixMatch(c) {
 			return true
 		}
 	}
@@ -292,18 +359,15 @@ func resolves(root, path string) bool {
 // prefixMatch reports whether a citation names a file shape rather than a file.
 // `internal/webui/api_<concern>.go` documents a naming convention: the angle
 // bracket ends the path token, leaving a truncated final segment. It is
-// satisfied when a sibling starts with that segment.
-func prefixMatch(root, path string) bool {
+// satisfied when a tracked sibling starts with that segment.
+func (t *trackedTree) prefixMatch(path string) bool {
 	dir, base := filepath.Split(path)
 	if !strings.HasSuffix(base, "_") {
 		return false
 	}
-	entries, err := os.ReadDir(filepath.Join(root, dir))
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), base) {
+	dir = strings.TrimSuffix(dir, "/")
+	for file := range t.files {
+		if filepath.Dir(file) == dir && strings.HasPrefix(filepath.Base(file), base) {
 			return true
 		}
 	}

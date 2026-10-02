@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -58,31 +59,27 @@ func TestCandidates(t *testing.T) {
 	}
 }
 
-// tree builds a throwaway repository root with the given files and directories.
-func tree(t *testing.T, files, dirs []string) string {
-	t.Helper()
-	root := t.TempDir()
-	for _, d := range dirs {
-		if err := os.MkdirAll(filepath.Join(root, d), 0o750); err != nil {
-			t.Fatal(err)
+// treeFor builds the tracked-path set a citation resolves against, without
+// touching the filesystem: resolution is defined by what git tracks, so a test
+// asserts the definition rather than one machine's leftover directories.
+func treeFor(files ...string) *trackedTree {
+	tree := &trackedTree{files: map[string]bool{}, dirs: map[string]bool{}}
+	for _, file := range files {
+		tree.files[file] = true
+		for dir := filepath.Dir(file); dir != "." && dir != "/" && dir != ""; dir = filepath.Dir(dir) {
+			tree.dirs[dir] = true
 		}
 	}
-	for _, f := range files {
-		p := filepath.Join(root, f)
-		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte("package x\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return root
+	return tree
 }
 
 func TestResolves(t *testing.T) {
-	root := tree(t,
-		[]string{"internal/config/config.go", "internal/daemon/daemon.go", "internal/webui/api_logs.go"},
-		[]string{"internal/webui", "internal/domain/workflow", "internal/app/archieui"},
+	tree := treeFor(
+		"internal/config/config.go",
+		"internal/daemon/daemon.go",
+		"internal/webui/api_logs.go",
+		"internal/app/archieui/run.go",
+		"internal/domain/workflow/workflow.go",
 	)
 	tests := []struct {
 		name string
@@ -104,10 +101,87 @@ func TestResolves(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := resolves(root, tc.in); got != tc.want {
+			if got := tree.resolves(tc.in); got != tc.want {
 				t.Fatalf("resolves(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestResolvesIgnoresTheFilesystem is the regression for the bug this gate
+// shipped with. Resolution was a filesystem stat, so a directory left behind by
+// a checkout that removed its files -- internal/gate, internal/gate/gateeval --
+// resolved on the machine that had the leftovers and resolved nothing in CI.
+// The gate passed locally and failed in CI on the same commit, and a baseline
+// generated that way is worthless in either direction.
+func TestResolvesIgnoresTheFilesystem(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "gate", "gateeval"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "internal", "config"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "config", "config.go"), []byte("package config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tree := treeFor("internal/config/config.go")
+	if tree.resolves("internal/gate") {
+		t.Error("an empty directory on disk resolved; resolution must come from the tracked tree")
+	}
+	if tree.resolves("internal/gate/gateeval") {
+		t.Error("an empty nested directory on disk resolved; resolution must come from the tracked tree")
+	}
+	if !tree.resolves("internal/config") {
+		t.Error("a tracked package did not resolve")
+	}
+}
+
+// TestNewTrackedTreeReadsGit covers the git half: the tree is what the
+// repository holds, so a file present on disk but never added is invisible, and
+// an empty directory is invisible in both worlds.
+func TestNewTrackedTreeReadsGit(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("config", "user.email", "test@example.test")
+	git("config", "user.name", "test")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "tracked"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "tracked", "x.go"), []byte("package tracked\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "internal/tracked/x.go")
+	// Neither of these is in the repository: one is ignored-by-absence, the
+	// other is what a checkout that removed a package leaves behind.
+	if err := os.WriteFile(filepath.Join(root, "internal", "untracked.go"), []byte("package internal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "internal", "gate", "gateeval"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	tree, err := newTrackedTree(t.Context(), root)
+	if err != nil {
+		t.Fatalf("newTrackedTree: %v", err)
+	}
+	if !tree.resolves("internal/tracked") {
+		t.Error("a tracked package did not resolve")
+	}
+	if tree.resolves("internal/untracked.go") {
+		t.Error("an untracked file resolved; the tree is what the repository holds, not what is on disk")
+	}
+	if tree.resolves("internal/gate") {
+		t.Error("an empty directory resolved; it is not in the repository")
 	}
 }
 
@@ -115,20 +189,17 @@ func TestResolves(t *testing.T) {
 // citation already broken before this change must not fail the build, while one
 // that dangles now must.
 func TestAnalyseSeparatesNewDriftFromKnownDebt(t *testing.T) {
-	root := tree(t,
-		[]string{"internal/config/config.go"},
-		[]string{"internal/webui"},
-	)
-	doc := filepath.Join(root, "docs", "architecture")
-	if err := os.MkdirAll(doc, 0o750); err != nil {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs", "architecture"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	body := "See `internal/webui` and `internal/memory`.\nAlso `internal/nats` and `internal/config`.\n"
-	if err := os.WriteFile(filepath.Join(doc, "page.md"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "docs", "architecture", "page.md"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := analyse(root, "docs", map[string]bool{"internal/memory": true})
+	tree := treeFor("internal/config/config.go", "internal/webui/server.go")
+	got, err := analyse(root, "docs", tree, map[string]bool{"internal/memory": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +223,7 @@ func TestAnalyseSeparatesNewDriftFromKnownDebt(t *testing.T) {
 // TestAnalyseFlagsAnAllowlistEntryThatResolvesAgain keeps the burn-down list
 // honest: once the code comes back, the exemption must go.
 func TestAnalyseFlagsAnAllowlistEntryThatResolvesAgain(t *testing.T) {
-	root := tree(t, []string{"internal/config/config.go"}, []string{"internal/webui", "internal/policy"})
+	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +231,7 @@ func TestAnalyseFlagsAnAllowlistEntryThatResolvesAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := analyse(root, "docs", map[string]bool{"internal/policy": true})
+	got, err := analyse(root, "docs", treeFor("internal/policy/policy.go"), map[string]bool{"internal/policy": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +247,14 @@ func TestAnalyseFlagsAnAllowlistEntryThatResolvesAgain(t *testing.T) {
 // dev-docs artifact embeds every page body, so scanning it would inflate both
 // the findings and the baseline.
 func TestScanSkipsGeneratedAndNonMarkdown(t *testing.T) {
-	root := tree(t, nil, []string{"docs/architecture", "docs/data/generated"})
+	root := t.TempDir()
+	for _, dir := range []string{"docs/architecture", "docs/data/generated"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
 	write := func(rel, body string) {
+		t.Helper()
 		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}

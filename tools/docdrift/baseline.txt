@@ -3,6 +3,7 @@
 # citation or delete the claim, then remove the line. Regenerate with:
 #
 #   go -C tools run -mod=readonly ./docdrift list --repo-root .. > tools/docdrift/baseline.txt
+internal/gate
 internal/nats
 internal/infrastructure/spec
 internal/policy
@@ -28,6 +29,7 @@ internal/tools/research
 internal/infrastructure/research
 internal/domain/workflow/wfeval/yaegi.go
 internal/gate/gateeval/yaegi.go
+internal/domain/workflow/skillbuild.BuildRegistry
 internal/store/events.go
 internal/store/captures.go
 internal/domain/extensions
@@ -43,6 +45,7 @@ internal/memory/manager.go
 internal/memory/scanner.go
 internal/tools/provider/memory
 internal/infrastructure/legacyread
+internal/gate/gateeval
 internal/domain/eda/module/notify/types.go
 internal/domain/eda/module/notify
 internal/memory.MemoryProvider
