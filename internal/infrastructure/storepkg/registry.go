@@ -174,7 +174,9 @@ func validateLayerEntry(header *tar.Header, declared map[string]uint32, found ma
 	if !ok || found[header.Name] {
 		return fmt.Errorf("package layer contains undeclared or duplicate file %q", header.Name)
 	}
-	if uint32(header.Mode)&0o777 != mode&0o777 {
+	// The mask makes the conversion exact: the low nine bits are the
+	// permission bits whatever the tar header's width.
+	if uint32(header.Mode&0o777) != mode&0o777 {
 		return fmt.Errorf("package file %q mode differs from descriptor", header.Name)
 	}
 	return nil
