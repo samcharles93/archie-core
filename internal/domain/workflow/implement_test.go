@@ -464,6 +464,12 @@ type fakeTrees struct {
 	pushErr          error
 
 	dir string
+	// prepareBranch is the branch a prepare returns, so a test can model the
+	// daemon's resume landing the worktree on the task's PR branch.
+	prepareBranch string
+	// prepareTarget records the target a prepare was asked for, so a test can
+	// prove a resume workflow selected the PR branch rather than base.
+	prepareTarget PrepareTarget
 	// changedLines is what ChangedLines reports, for StageDiffCap.
 	changedLines int
 	// diff is what Diff reports, for the stages that read the committed
@@ -477,8 +483,14 @@ type fakeTrees struct {
 	uncommittedErr error
 }
 
-func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
-	return f.dir, "", nil
+func (f *fakeTrees) Prepare(_ context.Context, _, _, _ string, _ int, _, _, _ string, target PrepareTarget) (string, string, error) {
+	f.prepareTarget = target
+	// A resume target is the branch to land on, mirroring hybridTrees; a fresh
+	// prepare returns the branch this fake was configured with.
+	if target != PrepareFresh {
+		return f.dir, string(target), nil
+	}
+	return f.dir, f.prepareBranch, nil
 }
 
 func (f *fakeTrees) CommitAll(context.Context, string, string) (bool, error) {

@@ -59,7 +59,7 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 	}.Stage()
 	return Stage{Name: AgentRunStepName, Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.Dir == "" {
-			dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Labels)
+			dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Labels, PrepareFresh)
 			if err != nil {
 				return fmt.Errorf("%s: workspace: %w", AgentRunStepName, err)
 			}

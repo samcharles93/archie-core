@@ -34,7 +34,7 @@ type fakeScratchTrees struct {
 	dir string
 }
 
-func (f *fakeScratchTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
+func (f *fakeScratchTrees) Prepare(context.Context, string, string, string, int, string, string, string, workflow.PrepareTarget) (string, string, error) {
 	return f.dir, "", nil
 }
 

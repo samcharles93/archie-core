@@ -170,6 +170,31 @@ func TestHybridTreesPushSkipsReconciliationWhenNotConfigured(t *testing.T) {
 	}
 }
 
+// TestHybridTreesPrepareResolvesTheTargetBranch pins the container half of the
+// workflow prepare seam: the daemon has already positioned the bind-mounted
+// worktree, so the adapter resolves its directory and returns the requested
+// resume target verbatim -- the branch a remediation continues -- while a fresh
+// prepare returns the branch the daemon persisted on the task row.
+func TestHybridTreesPrepareResolvesTheTargetBranch(t *testing.T) {
+	trees := &hybridTrees{localDir: "/work/issue-1", branch: "archie/fresh"}
+
+	dir, branch, err := trees.Prepare(t.Context(), "o", "r", "main", 1, "title", "", "", workflow.PrepareTarget("archie/pr-branch"))
+	if err != nil {
+		t.Fatalf("Prepare(resume): %v", err)
+	}
+	if dir != "/work/issue-1" || branch != "archie/pr-branch" {
+		t.Fatalf("Prepare(resume) = %q/%q, want /work/issue-1/archie/pr-branch", dir, branch)
+	}
+
+	dir, branch, err = trees.Prepare(t.Context(), "o", "r", "main", 1, "title", "", "", workflow.PrepareFresh)
+	if err != nil {
+		t.Fatalf("Prepare(fresh): %v", err)
+	}
+	if dir != "/work/issue-1" || branch != "archie/fresh" {
+		t.Fatalf("Prepare(fresh) = %q/%q, want /work/issue-1/archie/fresh", dir, branch)
+	}
+}
+
 func TestHybridTreesCommitReconcilesOwnershipEvenWhenCommitFails(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 	trees := &hybridTrees{
@@ -301,8 +326,8 @@ type remoteManager struct {
 	branch  string
 }
 
-func (r *remoteManager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (string, string, error) {
-	dir, branch, err := r.manager.Prepare(ctx, owner, repo, base, issue, title, body, labels, worktree.Fresh)
+func (r *remoteManager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string, target workflow.PrepareTarget) (string, string, error) {
+	dir, branch, err := r.manager.Prepare(ctx, owner, repo, base, issue, title, body, labels, worktree.Target(target))
 	if err == nil {
 		r.dir = dir
 		r.branch = branch
@@ -428,7 +453,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	fg := &prCapturingForge{}
 	manager := &worktree.Manager{WorkDir: t.TempDir(), Token: "unused", BotUser: "archie-bot", BotEmail: "archie-bot@example.com", BaseURL: "file://" + host}
 	remote := &remoteManager{manager: manager}
-	hostDir, _, err := remote.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap")
+	hostDir, _, err := remote.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap", workflow.PrepareFresh)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}

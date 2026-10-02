@@ -50,7 +50,15 @@ type hybridTrees struct {
 	worktreeUID, worktreeGID int
 }
 
-func (h *hybridTrees) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
+// Prepare binds the task's already-prepared, bind-mounted worktree. The
+// daemon positioned it before the container started, so this resolves the
+// directory and branch rather than doing network work. A resume target (the
+// PR branch a remediation continues) is returned verbatim; a fresh target uses
+// the branch the daemon computed and persisted on the task row.
+func (h *hybridTrees) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string, target workflow.PrepareTarget) (dir, branch string, err error) {
+	if target != workflow.PrepareFresh {
+		return h.localDir, string(target), nil
+	}
 	return h.localDir, h.branch, nil
 }
 

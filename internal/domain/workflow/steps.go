@@ -104,12 +104,45 @@ func changeCaptureData(tc *TaskContext, after string, stats task.ChangeStats) ma
 	}
 }
 
-// StagePrepareWorktree clones the repo fresh and checks out the task
-// branch. Skips if the daemon already prepared the worktree (Docker
-// containers require the tree before acquire).
+// StagePrepareWorktree binds the task's worktree for a fresh run: it positions
+// it onto the repository's base branch. Skips if the daemon already prepared
+// the worktree (Docker containers require the tree before acquire); in a
+// container the adapter resolves the directory the daemon prepared.
 func StagePrepareWorktree() Stage {
-	return Stage{Name: "prepare", Run: func(ctx context.Context, tc *TaskContext) error {
-		dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Labels)
+	return prepareWorktreeStage("prepare", func(*TaskContext) (PrepareTarget, error) {
+		return PrepareFresh, nil
+	})
+}
+
+// StagePrepareWorktreeOnBranch binds the task's worktree on the branch its
+// already-open pull request lives on -- the resume target -- for a workflow
+// that continues pushed work rather than starting fresh
+// (docs/prds/pr-review-remediation.md decision 4). The branch is the task's
+// persisted branch, never recomputed from the title: the PR was opened from
+// that branch, and a retitled issue would otherwise name one that does not
+// exist. It resolves the same directory the daemon's mode-aware prepare
+// resolved and positions it on the same branch, because the daemon has already
+// done the fetch before the container starts; this stage only binds
+// tc.Dir/tc.Branch. An empty branch fails closed rather than silently
+// preparing base.
+func StagePrepareWorktreeOnBranch() Stage {
+	return prepareWorktreeStage("prepare", func(tc *TaskContext) (PrepareTarget, error) {
+		if tc.Task.Branch == "" {
+			return "", fmt.Errorf("prepare: remediate task has no branch to resume")
+		}
+		return PrepareTarget(tc.Task.Branch), nil
+	})
+}
+
+// prepareWorktreeStage builds a stage that prepares the task's worktree at the
+// target its workflow selects and binds the result onto the task context.
+func prepareWorktreeStage(name string, target func(*TaskContext) (PrepareTarget, error)) Stage {
+	return Stage{Name: name, Run: func(ctx context.Context, tc *TaskContext) error {
+		t, err := target(tc)
+		if err != nil {
+			return err
+		}
+		dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Labels, t)
 		if err != nil {
 			return err
 		}

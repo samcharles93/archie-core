@@ -170,6 +170,114 @@ func TestStageRemediationReplyFallsBackToAPlainCommentForABareReview(t *testing.
 	}
 }
 
+func TestStagePrepareWorktreeOnBranchRequiresABranch(t *testing.T) {
+	tc := &TaskContext{Task: &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 5}, Trees: &fakeTrees{}}
+	if err := StagePrepareWorktreeOnBranch().Run(t.Context(), tc); err == nil {
+		t.Fatal("StagePrepareWorktreeOnBranch with no branch = nil error, want a fail-closed error")
+	}
+}
+
+func TestStagePrepareWorktreeOnBranchBindsThePRBranch(t *testing.T) {
+	trees := &fakeTrees{dir: "/worktrees/o-r-5", prepareBranch: "unused/fresh"}
+	tc := &TaskContext{
+		Task:  &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 5, Branch: "archie/issue-5"},
+		Trees: trees,
+	}
+	if err := StagePrepareWorktreeOnBranch().Run(t.Context(), tc); err != nil {
+		t.Fatalf("StagePrepareWorktreeOnBranch: %v", err)
+	}
+	if trees.prepareTarget != "archie/issue-5" {
+		t.Fatalf("prepare target = %q, want the task branch archie/issue-5", trees.prepareTarget)
+	}
+	if tc.Dir != "/worktrees/o-r-5" || tc.Branch != "archie/issue-5" {
+		t.Fatalf("tc.Dir/Branch = %q/%q, want /worktrees/o-r-5/archie/issue-5", tc.Dir, tc.Branch)
+	}
+	if tc.Task.Branch != "archie/issue-5" {
+		t.Fatalf("tc.Task.Branch = %q, want archie/issue-5", tc.Task.Branch)
+	}
+}
+
+func TestStagePrepareWorktreePreparesFresh(t *testing.T) {
+	trees := &fakeTrees{dir: "/worktrees/o-r-5", prepareBranch: "archie/issue-5"}
+	tc := &TaskContext{Task: &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 5}, Trees: trees}
+	if err := StagePrepareWorktree().Run(t.Context(), tc); err != nil {
+		t.Fatalf("StagePrepareWorktree: %v", err)
+	}
+	if trees.prepareTarget != PrepareFresh {
+		t.Fatalf("prepare target = %q, want the fresh target", trees.prepareTarget)
+	}
+	if tc.Dir != "/worktrees/o-r-5" || tc.Branch != "archie/issue-5" {
+		t.Fatalf("tc.Dir/Branch = %q/%q, want /worktrees/o-r-5/archie/issue-5", tc.Dir, tc.Branch)
+	}
+}
+
+// TestRemediateBindsItsWorktreeBeforeTheBuilderRuns is the release-blocker
+// regression for a remediate run that never bound its worktree. The
+// in-container resume stage was retired in favour of daemon-side preparation,
+// but nothing in the workflow resolved the directory the daemon prepared and
+// the branch its pull request lives on. The builder therefore ran with an empty
+// Dir and the final stage pushed an empty branch.
+func TestRemediateBindsItsWorktreeBeforeTheBuilderRuns(t *testing.T) {
+	const (
+		prBranch = "archie/issue-1"
+		worktree = "/worktrees/o-r-1"
+	)
+	trees := &fakeTrees{dir: worktree, prepareBranch: prBranch, commitAllChanged: true}
+	forge := &fakeForge{}
+	payload, err := EncodeReviewUnit(ReviewUnit{
+		ReviewID: 1, State: "requested_changes",
+		Comments: []ReviewUnitComment{{CommentID: 10, Path: "a.go", Line: 4, Body: "nil check missing"}},
+	})
+	if err != nil {
+		t.Fatalf("EncodeReviewUnit: %v", err)
+	}
+	task := &Task{
+		ID: 1, Owner: "o", Repo: "r", IssueNumber: 1, PRNumber: 9,
+		Branch: prBranch, ReviewPayload: payload,
+	}
+	var builderDir string
+	runner := agentRunnerFunc(func(_ context.Context, dir string, req agentexec.Request, _ agentexec.ToolCallReporter) (agentexec.Result, error) {
+		builderDir = dir
+		return agentexec.Result{
+			Version: agentexec.ProtocolVersion, TaskID: req.TaskID, Attempt: req.Attempt, Stage: req.Stage,
+			Status: agentexec.StatusPassed, Summary: "added the nil check", Changes: []string{"a.go"},
+		}, nil
+	})
+	tc := &TaskContext{
+		Task: task, Repo: config.Repo{Owner: "o", Name: "r", MaxRetries: 3},
+		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
+		Agent: runner, Trees: trees, Forge: forge, Log: slog.New(slog.DiscardHandler),
+	}
+
+	for _, stage := range Remediate().Stages {
+		if err := stage.Run(t.Context(), tc); err != nil {
+			t.Fatalf("stage %s: %v", stage.Name, err)
+		}
+		if tc.Outcome.Status != "" {
+			break
+		}
+	}
+
+	if tc.Dir == "" {
+		t.Fatal("remediate left tc.Dir empty: no stage bound the task's worktree")
+	}
+	if tc.Dir != worktree {
+		t.Fatalf("tc.Dir = %q, want the prepared worktree %q", tc.Dir, worktree)
+	}
+	if tc.Branch != prBranch {
+		t.Fatalf("tc.Branch = %q, want the task's PR branch %q", tc.Branch, prBranch)
+	}
+	if builderDir != worktree {
+		t.Fatalf("builder ran with dir %q, want the bound worktree %q", builderDir, worktree)
+	}
+	if trees.pushBranch != prBranch {
+		t.Fatalf("pushed branch = %q, want the task's PR branch %q", trees.pushBranch, prBranch)
+	}
+	if trees.prepareTarget != PrepareTarget(prBranch) {
+		t.Fatalf("prepare target = %q, want the task's PR branch %q (a fresh prepare would have reset onto base)", trees.prepareTarget, prBranch)
+	}
+}
+
 func TestRemediateEndToEndAddressesCommentsAndReplies(t *testing.T) {
 	trees := &fakeTrees{dir: "/worktrees/o-r-1", commitAllChanged: true}
 	forge := &fakeForge{}

@@ -270,15 +270,19 @@ func StageRemediationReply() Stage {
 // Remediate runs one remediation round against an archie-owned, still-open
 // pull request in response to a forge review reaction
 // (docs/prds/pr-review-remediation.md decision 4). It reuses the task's
-// existing worktree and branch rather than opening a new PR: the worktree is
-// positioned onto the PR branch by daemon.prepareWorkspace before the container
-// starts, so there is no in-container resume stage.
+// existing worktree and branch rather than opening a new PR. The daemon
+// positions the worktree onto the PR branch before the container starts
+// (prepareWorkspace), and StagePrepareWorktreeOnBranch then binds that
+// directory and branch onto the task context before any agent work -- without
+// it remediate-build ran with an empty tc.Dir and remediate-commit-push pushed
+// an empty branch.
 func Remediate() Workflow {
 	return Workflow{
 		Name: "remediate",
 		Stages: []Stage{
 			StageCheckReviewPayload(),
 			StageRemediationRoundCap(),
+			StagePrepareWorktreeOnBranch(),
 			remediateBuildStage(),
 			StageRemediationCommitPush(),
 			StageRemediationReply(),

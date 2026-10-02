@@ -65,12 +65,25 @@ type ReviewComment struct {
 	Body string
 }
 
-// Trees is the subset of *worktree.Manager that workflow stages call
-// mid-run. *worktree.Manager (the daemon's real manager, holding the push
-// token) and a hybrid RPC-backed implementation (archie-agent proxies
-// Prepare/Push, runs the rest locally) both satisfy it.
+// PrepareTarget selects where a prepare stage positions the task's worktree,
+// mirroring the daemon's worktree.Target: the zero value prepares fresh onto
+// the base branch, and a non-empty target is the branch a resume lands on --
+// the branch an open pull request lives on. It travels through the seam rather
+// than being recomputed from the title, because a retitled issue would
+// otherwise name a branch that does not exist.
+type PrepareTarget string
+
+// PrepareFresh is the fresh-run target: position the worktree onto the base
+// branch.
+const PrepareFresh PrepareTarget = ""
+
+// Trees is the subset of the daemon's worktree.Manager that workflow stages
+// call mid-run. The production implementation is archie-agent's hybrid adapter
+// (hybridTrees): the daemon prepares the worktree before the container starts,
+// so the adapter's Prepare resolves the directory the daemon prepared and its
+// branch.
 type Trees interface {
-	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error)
+	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string, target PrepareTarget) (dir, branch string, err error)
 	CommitAll(ctx context.Context, dir, message string) (bool, error)
 	Push(ctx context.Context, dir, branch string) error
 	Diff(ctx context.Context, dir, base string) (string, error)

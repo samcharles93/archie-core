@@ -37,7 +37,9 @@ Retire a stage by removing it from its workflow's `Stages` and adding it to
 `retiredSteps` in `definition.go`, which keeps the word resolving as an inert
 stage. The retired stage must do nothing: the behaviour it used to perform now
 belongs to whatever layer took it over (the remediate workflow's in-container
-resume moved to daemon worktree preparation, `archie-core-866m`).
+resume moved to daemon worktree preparation, `archie-core-866m`; the workflow
+still binds the daemon-prepared directory and the PR branch in a `prepare`
+stage before any agent work).
 
 ## Changing the definition format
 
