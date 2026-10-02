@@ -107,6 +107,13 @@ type Gateway struct {
 	approvalMu       sync.Mutex
 	pendingApprovals map[string]*pendingApproval
 
+	// interactive state (gateway clarify/picker). A blocked clarify or
+	// picker waits on one entry here, keyed by the chat it was posed to, so
+	// the next text from that human is consumed as the answer rather than
+	// dispatched as a new turn.
+	interactiveMu  sync.Mutex
+	pendingReplies map[pendingReplyKey]*pendingReply
+
 	// turns serialises chat turns per session off the update worker and
 	// makes the running one cancellable by /stop. Rebuilt on every launch
 	// so a restart abandons in-flight turns with the old bot instance.
@@ -178,6 +185,7 @@ func New(token string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 		dangerousActions:   make(map[string]dangerousAction),
 		permanentApprovals: nil,
 		pendingApprovals:   make(map[string]*pendingApproval),
+		pendingReplies:     make(map[pendingReplyKey]*pendingReply),
 		log:                log.With("component", "gateway-telegram"),
 	}
 	g.newEphemeralSender = func() *channels.EphemeralSender {
@@ -546,6 +554,11 @@ func (g *Gateway) defaultHandler(client messaging.ChatContract) bot.HandlerFunc 
 		if !ok {
 			return
 		}
+		// A text reply to a pending clarify/picker prompt is consumed here so
+		// it answers the blocked interaction instead of starting a new turn.
+		if g.deliverInteractiveReply(msg) {
+			return
+		}
 		// Media messages arrive before the text gates: a photo has no text,
 		// so checking it first is what keeps attachments from being dropped.
 		if _, isMedia := extractInboundMedia(msg); isMedia {
@@ -664,6 +677,10 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// — most turns need no gating.
 		approver := g.NewApprover(b, chatID, threadID, msg.From.ID)
 		turnCtx = messaging.WithApprovalRequester(turnCtx, approver)
+
+		// A clarify or picker prompt blocks the turn on this adapter; when the
+		// channel cannot carry one the question tool is simply not offered.
+		turnCtx = messaging.WithInteractive(turnCtx, g.NewInteractor(b, chatID, threadID, msg.From.ID))
 
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
