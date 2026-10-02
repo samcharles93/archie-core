@@ -185,11 +185,24 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 			return err
 		}
 		headers := make(map[string]map[string]string, len(out.Tools.MCPServers))
+		fileParallelToolCalls := make(map[string]bool, len(out.Tools.MCPServers))
 		for _, server := range out.Tools.MCPServers {
 			headers[server.Name] = server.Headers
+			fileParallelToolCalls[server.Name] = server.ParallelToolCalls
 		}
 		servers := make([]config.MCPServer, 0, len(settings.MCPServers))
 		for _, server := range settings.MCPServers {
+			// This assignment replaces cfg.Tools wholesale, so every field the
+			// stored resource does not carry has to be taken back from the file
+			// or the operator's file value is dropped. Headers have always been
+			// file-owned; ParallelToolCalls joins them when the store predates
+			// the field, because a nil pointer means "no stored decision", not
+			// "false". A server with no file entry has nothing to inherit and
+			// gets the zero value.
+			parallelToolCalls := fileParallelToolCalls[server.Name]
+			if server.ParallelToolCalls != nil {
+				parallelToolCalls = *server.ParallelToolCalls
+			}
 			servers = append(servers, config.MCPServer{
 				Name:              server.Name,
 				Transport:         server.Transport,
@@ -200,7 +213,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 				Headers:           headers[server.Name],
 				SSEEndpoint:       server.SSEEndpoint,
 				MessageEndpoint:   server.MessageEndpoint,
-				ParallelToolCalls: server.ParallelToolCalls,
+				ParallelToolCalls: parallelToolCalls,
 			})
 		}
 		out.Tools = config.ToolsConfig{MCPServers: servers, Policy: settings.Policy, WebFetch: settings.WebFetch, Minimax: config.MinimaxConfig{Enabled: settings.Minimax.Enabled, APIKey: settings.Minimax.APIKey, BaseURL: settings.Minimax.BaseURL}}

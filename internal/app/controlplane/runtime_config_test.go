@@ -196,6 +196,57 @@ func TestRuntimeConfigCarriesParallelToolCallsThroughTheProjection(t *testing.T)
 	}
 }
 
+// TestRuntimeConfigInheritsAnAbsentParallelToolCallsFromTheFile is the other
+// half of the round trip above, and the reason the projection field is a
+// pointer. A tool-settings resource seeded before parallel_tool_calls existed
+// carries no key for it, and the layering replaces cfg.Tools wholesale -- so
+// without an inherited default the operator's file-level
+// parallel_tool_calls = true is inert for exactly the stores that already
+// exist, which are the ones a new field cannot reach. Absence has to mean "the
+// file's value": the shape mcp headers already use in this same function, and
+// the one schedulingPolicy.Label documents.
+func TestRuntimeConfigInheritsAnAbsentParallelToolCallsFromTheFile(t *testing.T) {
+	base := config.Config{Tools: config.ToolsConfig{MCPServers: []config.MCPServer{{
+		Name: "docs", Transport: "stdio", Command: "docs-server", ParallelToolCalls: true,
+	}}}}
+
+	// A store seeded before the field existed: the key is absent, not false.
+	stored := []byte(`{"mcp_servers":[{"name":"docs","transport":"stdio","command":"docs-server"}]}`)
+
+	got := layerToolSettings(t, stored, base)
+	if !got.Tools.MCPServers[0].ParallelToolCalls {
+		t.Fatalf("ParallelToolCalls = false, want the file's true inherited: an absent key must not mean the zero value (%+v)", got.Tools.MCPServers[0])
+	}
+}
+
+// TestRuntimeConfigPrefersAStoredParallelToolCalls is the other direction: the
+// inherit rule must not become "the file always wins". An explicit stored value
+// is the operator's decision through the control plane.
+func TestRuntimeConfigPrefersAStoredParallelToolCalls(t *testing.T) {
+	base := config.Config{Tools: config.ToolsConfig{MCPServers: []config.MCPServer{{
+		Name: "docs", Transport: "stdio", Command: "docs-server", ParallelToolCalls: false,
+	}}}}
+
+	stored := []byte(`{"mcp_servers":[{"name":"docs","transport":"stdio","command":"docs-server","parallel_tool_calls":true}]}`)
+
+	got := layerToolSettings(t, stored, base)
+	if !got.Tools.MCPServers[0].ParallelToolCalls {
+		t.Fatalf("ParallelToolCalls = false, want the stored true: a stored value outranks the file")
+	}
+}
+
+// TestRuntimeConfigAbsentKeyWithNoFileEntryIsFalse covers the case with nothing
+// to inherit: a server that exists only in the resource has no file value, so
+// absence is the zero value there rather than an error.
+func TestRuntimeConfigAbsentKeyWithNoFileEntryIsFalse(t *testing.T) {
+	stored := []byte(`{"mcp_servers":[{"name":"resource-only","transport":"stdio","command":"x"}]}`)
+
+	got := layerToolSettings(t, stored, config.Config{})
+	if got.Tools.MCPServers[0].ParallelToolCalls {
+		t.Fatalf("ParallelToolCalls = true, want the zero value when the file has no entry to inherit from")
+	}
+}
+
 // settingsProjectionSpec describes a source config struct and the explicit
 // control-plane document struct that projects it. Overrides cover renamed or
 // transformed keys; the two allowlists require a reason for one-way fields.

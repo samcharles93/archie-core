@@ -15,16 +15,23 @@ type toolSettings struct {
 }
 
 type mcpServerSettings struct {
-	Name              string   `json:"name"`
-	Transport         string   `json:"transport"`
-	Command           string   `json:"command,omitempty"`
-	Args              []string `json:"args,omitempty"`
-	WorkDir           string   `json:"work_dir,omitempty"`
-	URL               string   `json:"url,omitempty"`
-	SSEEndpoint       string   `json:"sse_endpoint,omitempty"`
-	MessageEndpoint   string   `json:"message_endpoint,omitempty"`
-	ParallelToolCalls bool     `json:"parallel_tool_calls"`
-	HeadersConfigured bool     `json:"headers_configured"`
+	Name            string   `json:"name"`
+	Transport       string   `json:"transport"`
+	Command         string   `json:"command,omitempty"`
+	Args            []string `json:"args,omitempty"`
+	WorkDir         string   `json:"work_dir,omitempty"`
+	URL             string   `json:"url,omitempty"`
+	SSEEndpoint     string   `json:"sse_endpoint,omitempty"`
+	MessageEndpoint string   `json:"message_endpoint,omitempty"`
+	// ParallelToolCalls is a pointer, not a bool, for the same reason
+	// schedulingPolicy.Label is: a resource seeded before this field existed
+	// carries no key for it, and the layering replaces cfg.Tools wholesale, so
+	// absence has to mean "leave the file document's value in force" rather
+	// than "false". A plain bool cannot tell the two apart, which made the
+	// file's parallel_tool_calls inert on every store that predates the field
+	// -- the stores that cannot be re-seeded.
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
+	HeadersConfigured bool  `json:"headers_configured"`
 }
 
 type minimaxSettings struct {
@@ -37,6 +44,9 @@ type minimaxSettings struct {
 func seedTools(cfg config.Config) any {
 	servers := make([]mcpServerSettings, 0, len(cfg.Tools.MCPServers))
 	for _, server := range cfg.Tools.MCPServers {
+		// The seed states the file's value explicitly: it is written on a fresh
+		// store, where there is nothing older to inherit from.
+		parallelToolCalls := server.ParallelToolCalls
 		servers = append(servers, mcpServerSettings{
 			Name:              server.Name,
 			Transport:         server.Transport,
@@ -46,7 +56,7 @@ func seedTools(cfg config.Config) any {
 			URL:               server.URL,
 			SSEEndpoint:       server.SSEEndpoint,
 			MessageEndpoint:   server.MessageEndpoint,
-			ParallelToolCalls: server.ParallelToolCalls,
+			ParallelToolCalls: &parallelToolCalls,
 			HeadersConfigured: len(server.Headers) > 0,
 		})
 	}
