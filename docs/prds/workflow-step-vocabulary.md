@@ -25,7 +25,7 @@ generic `plugin.Plugin` contract stays metadata-only.
 
 The vocabulary is a compiled-in, closed set. `internal/infrastructure/workflowsteps`
 is the one place a step type is bundled into any binary that resolves one: the
-shipped workflow stages, the repository-hook replacements (`workflow.diff-rules`)
+shipped workflow stages, the repository-hook replacements (`gate.diff-rules`)
 and the repository-free event steps each arrive as one provider, and adding a
 step type means adding a provider to that set. Interpreted plugin sources
 cannot contribute step types: the Yaegi plugin host satisfies only the
@@ -53,7 +53,7 @@ substituting its own registry.
 
 `archie-core-ze7y` is the same question seen from the deleted
 repository-authored stages: those `.archie/stages/*.go` files held arbitrary
-stages, and their gate half landed as `workflow.diff-rules` settings rather
+stages, and their gate half landed as `gate.diff-rules` settings rather
 than interpreted Go. Their stage half has no replacement and does not get one
 that approximates it: no interpreted-Go stage type is built, and no command
 step type is created by this decision to stand in for them. The refusal of

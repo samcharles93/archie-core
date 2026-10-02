@@ -3,12 +3,14 @@ package workflowsteps
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/samcharles93/archie-core/internal/domain/stableid"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
@@ -212,5 +214,57 @@ func TestExampleWorkflowsParse(t *testing.T) {
 		if _, err := workflow.ParseDefinition(string(src), registry); err != nil {
 			t.Errorf("%s: %v", path, err)
 		}
+	}
+}
+
+// documentedSpan matches one inline-code span in the vocabulary PRD, captured
+// without its backticks.
+var documentedSpan = regexp.MustCompile("`([^`]+)`")
+
+// isDocumentedStepType reports whether a documented token names a workflow step
+// type. A step type is a stable identifier that carries a dot: the vocabulary
+// names <family>.<word> (bootstrap.apply, gate.diff-rules, agent.run). The
+// document's other backticked spans are Go identifiers (StepFactory,
+// plugin.Plugin  --  uppercase, so not stable identifiers), repository paths
+// (slashes, so not stable identifiers) or bead ids (no dot), and none of them
+// is mistaken for a step type by this rule.
+func isDocumentedStepType(token string) bool {
+	return strings.Contains(token, ".") && stableid.Valid(token)
+}
+
+// TestDocumentedStepVocabularyResolvesInTheProviderSet ties the vocabulary the
+// workflow-step-vocabulary PRD names to the vocabulary a deployment resolves.
+// That PRD is where an operator or plugin author reads which step types exist,
+// so a word it names that no provider contributes describes a step type every
+// deployment refuses  --  the drift that survived the document's own decision
+// (gate.diff-rules is the registered word; the PRD called it
+// workflow.diff-rules). The scan must find the vocabulary, not merely pass on
+// an empty list.
+func TestDocumentedStepVocabularyResolvesInTheProviderSet(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "prds", "workflow-step-vocabulary.md"))
+	if err != nil {
+		t.Fatalf("read the workflow step vocabulary PRD: %v", err)
+	}
+	manager, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	registered := manager.StepTypes()
+
+	documented := 0
+	for _, match := range documentedSpan.FindAllStringSubmatch(string(source), -1) {
+		token := match[1]
+		if !isDocumentedStepType(token) {
+			continue
+		}
+		documented++
+		if !slices.Contains(registered, token) {
+			t.Errorf("the vocabulary PRD names step type %q, which no provider contributes: a deployment refuses a definition that uses it", token)
+		}
+	}
+	if documented == 0 {
+		t.Fatal("the vocabulary PRD named no step type; the scan is not reading the document's vocabulary")
 	}
 }

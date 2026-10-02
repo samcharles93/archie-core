@@ -103,7 +103,10 @@ Users create and edit workflows in the Web UI. Workflows are stored as versioned
 YAML. Built-in workflows can be overridden and restored.
 
 A workflow is a list of steps. Each step has a known type and its own settings.
-Plugins can add step types. Each run keeps the workflow version it started with.
+A step type is part of the build's step vocabulary, contributed as a provider at
+the composition root; interpreted plugins contribute none
+(`docs/prds/workflow-step-vocabulary.md`). Each run keeps the workflow version it
+started with.
 
 Yaegi, `.archie/stages/*.go`, and `.archie/gate.go` will be removed. Their useful
 behaviour must first be available as normal workflow steps.
