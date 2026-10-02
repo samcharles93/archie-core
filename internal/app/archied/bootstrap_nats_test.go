@@ -109,7 +109,7 @@ func TestConnectEmbeddedNATSUsesManagedWorkerBridge(t *testing.T) {
 		DockerClient:       dockerClient,
 		Network:            "workers",
 		RequireHostGateway: true,
-	}, slog.New(slog.DiscardHandler))
+	}, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("container.NewPool = %v", err)
 	}

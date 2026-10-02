@@ -197,11 +197,11 @@ func TestRegistryRoutesAndValidatesDefinitions(t *testing.T) {
 	found := false
 	for _, descriptor := range catalog.Resources {
 		if descriptor.Kind == ContainerRuntimePoliciesKind {
-			found = descriptor.ApplyMode == "restart-required"
+			found = descriptor.ApplyMode == "live"
 		}
 	}
 	if !found {
-		t.Fatal("container runtime policies missing restart-required descriptor")
+		t.Fatal("container runtime policies missing live descriptor")
 	}
 
 	_, err = server.Command(t.Context(), &pb.CommandRequest{Kind: ContainerRuntimePoliciesKind, Command: "replace", ValueJson: []byte(`{"pull_policy":"sometimes"}`), Actor: "test", Source: "test", RequestId: "bad", ExpectedVersion: 1})

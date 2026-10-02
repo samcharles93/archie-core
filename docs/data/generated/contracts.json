@@ -350,7 +350,7 @@
           "type": "object"
         },
         "type": {
-          "description": "Type is \"image\", \"video\", \"audio\", or \"document\".",
+          "description": "Type is \"image\", \"video\", \"audio\", \"voice\", or \"document\".",
           "type": "string"
         },
         "url": {

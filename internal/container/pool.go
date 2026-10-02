@@ -98,6 +98,12 @@ type Pool struct {
 	// the listener to an address visible only to workers on this bridge.
 	hostGateway string
 
+	// live, when set, returns the pool's current settings. A production pool
+	// is given one that reads the running config, so a container-runtime-
+	// policies change reaches the next acquire without a restart; a test pool
+	// leaves it nil and cfg is the whole truth.
+	live func() Config
+
 	mu     sync.Mutex
 	active int
 	// pulled records the images already made available, so a profile's image
@@ -106,6 +112,25 @@ type Pool struct {
 	// teardowns holds the one-shot teardown state for each live container,
 	// keyed by ID. See containerTeardown.
 	teardowns map[string]*containerTeardown
+}
+
+// current returns the settings a new acquire should use: the live source when
+// the pool has one, otherwise the construction-time Config. Only the fields a
+// container-runtime-policies document can carry are taken from the live
+// source; DockerClient, RequireHostGateway, RegistryAuth and GracePeriod stay
+// construction-time, because none of them is part of that document.
+func (p *Pool) current() Config {
+	if p.live == nil {
+		return p.cfg
+	}
+	cfg := p.cfg
+	live := p.live()
+	cfg.Image = live.Image
+	cfg.MaxConcurrency = live.MaxConcurrency
+	cfg.MaxUptime = live.MaxUptime
+	cfg.PullPolicy = live.PullPolicy
+	cfg.Network = live.Network
+	return cfg
 }
 
 // Config is the subset of daemon container configuration the pool needs.
@@ -142,7 +167,14 @@ type Config struct {
 //
 // If cfg.DockerClient is set, it is reused (caller owns Close).
 // Otherwise a new client is created via client.FromEnv (pool owns Close).
-func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
+//
+// live, when non-nil, is the pool's live source of the per-acquire settings a
+// container-runtime-policies document can change (Image, MaxConcurrency,
+// MaxUptime, PullPolicy, Network). It is read on every acquire, so a stored
+// change reaches the next container without a restart; nil means cfg is fixed
+// for the pool's life. DockerClient, RequireHostGateway, RegistryAuth and
+// GracePeriod stay construction-time because the document never carries them.
+func NewPool(ctx context.Context, cfg Config, live func() Config, log *slog.Logger) (*Pool, error) {
 	cli := cfg.DockerClient
 	if cli == nil {
 		var err error
@@ -173,13 +205,16 @@ func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 	p := &Pool{
 		cli:         cli,
 		cfg:         cfg,
+		live:        live,
 		log:         log,
 		ownCli:      cfg.DockerClient == nil,
 		network:     network,
 		hostGateway: hostGateway,
 	}
 
-	// Pull image if needed.
+	// Pull image if needed. The configured image is recorded as pulled, so an
+	// acquire that names it skips a second pull even though the live settings
+	// may have changed the configured image since.
 	if cfg.PullPolicy == "always" || cfg.PullPolicy == "missing" {
 		if err := p.pullImage(ctx, cfg.Image); err != nil {
 			if err := cli.Close(); err != nil {
@@ -187,6 +222,7 @@ func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 			}
 			return nil, err
 		}
+		p.markPulled(cfg.Image)
 	}
 
 	// Recover orphaned containers from a previous daemon crash.
@@ -201,13 +237,17 @@ func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 // is set, the pool schedules a hard stop and remove of the container once
 // that lifetime cap elapses, regardless of task state.
 func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount, env []string) (*Container, error) {
+	// One snapshot for the whole acquire: the image, pull policy, network,
+	// concurrency cap and max-uptime cap are all read once, so a settings
+	// change landing mid-acquire cannot mix two versions.
+	cfg := p.current()
 	if image == "" {
-		image = p.cfg.Image
+		image = cfg.Image
 	}
-	if err := p.EnsureImage(ctx, image); err != nil {
+	if err := p.ensureImage(ctx, cfg, image); err != nil {
 		return nil, err
 	}
-	if err := p.reserve(); err != nil {
+	if err := p.reserve(cfg.MaxConcurrency); err != nil {
 		return nil, err
 	}
 
@@ -217,12 +257,18 @@ func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount
 		Mounts:     storage.ConvertMounts(mounts),
 		AutoRemove: true,
 	}
-	if p.network != "" {
+	// The live network wins when it names one; otherwise the network resolved
+	// at construction (the configured one, or self-detection) stays in force.
+	network := cfg.Network
+	if network == "" {
+		network = p.network
+	}
+	if network != "" {
 		// Join the same user-defined network the daemon itself is on, so
 		// the agent container can resolve sibling compose services (nats,
 		// etc.) by name  --  otherwise Docker attaches it to the default
 		// bridge network, where those hostnames don't resolve.
-		hostConfig.NetworkMode = container.NetworkMode(p.network)
+		hostConfig.NetworkMode = container.NetworkMode(network)
 	}
 
 	resp, err := p.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -249,16 +295,17 @@ func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount
 		p.unreserve()
 		return nil, fmt.Errorf("container start: %w", err)
 	}
-	return p.started(ctx, resp.ID, name), nil
+	return p.started(ctx, cfg.MaxUptime, resp.ID, name), nil
 }
 
 // AcquireKit starts a Kit task container under the same concurrency cap,
 // lifetime cap and exit watch as Acquire. Release tears it down.
 func (p *Pool) AcquireKit(ctx context.Context, s KitSpec) (*Container, error) {
-	if err := p.EnsureImage(ctx, s.Image); err != nil {
+	cfg := p.current()
+	if err := p.ensureImage(ctx, cfg, s.Image); err != nil {
 		return nil, err
 	}
-	if err := p.reserve(); err != nil {
+	if err := p.reserve(cfg.MaxConcurrency); err != nil {
 		return nil, err
 	}
 	s.Labels = maps.Clone(s.Labels)
@@ -271,14 +318,14 @@ func (p *Pool) AcquireKit(ctx context.Context, s KitSpec) (*Container, error) {
 		p.unreserve()
 		return nil, err
 	}
-	return p.started(ctx, id, s.Name), nil
+	return p.started(ctx, cfg.MaxUptime, id, s.Name), nil
 }
 
-func (p *Pool) reserve() error {
+func (p *Pool) reserve(maxConcurrency int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
-		return fmt.Errorf("max concurrency %d reached", p.cfg.MaxConcurrency)
+	if maxConcurrency > 0 && p.active >= maxConcurrency {
+		return fmt.Errorf("max concurrency %d reached", maxConcurrency)
 	}
 	p.active++
 	return nil
@@ -290,9 +337,9 @@ func (p *Pool) unreserve() {
 	p.mu.Unlock()
 }
 
-func (p *Pool) started(ctx context.Context, id, name string) *Container {
-	if p.cfg.MaxUptime > 0 {
-		p.armMaxUptime(ctx, id)
+func (p *Pool) started(ctx context.Context, maxUptime time.Duration, id, name string) *Container {
+	if maxUptime > 0 {
+		p.armMaxUptime(ctx, maxUptime, id)
 	}
 	p.log.Info("container started", "id", id[:12], "name", name)
 	return &Container{ID: id, exited: p.watchExit(ctx, id)}
@@ -348,12 +395,12 @@ type containerTeardown struct {
 // The lock covers only bookkeeping: the callback runs on its own goroutine and
 // nothing here waits on it, and every Docker call it makes happens after it
 // has released p.mu.
-func (p *Pool) armMaxUptime(ctx context.Context, id string) {
+func (p *Pool) armMaxUptime(ctx context.Context, maxUptime time.Duration, id string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	t := p.teardownLocked(id)
-	t.timer = time.AfterFunc(p.cfg.MaxUptime, func() {
+	t.timer = time.AfterFunc(maxUptime, func() {
 		p.reapMaxUptime(ctx, id)
 	})
 }
@@ -544,11 +591,18 @@ func (p *Pool) Close() error {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-// EnsureImage pulls an image other than the configured one the first time a
-// task asks for it, under the configured pull policy. The configured image
-// was already pulled by NewPool.
+// EnsureImage pulls ref under the live pull policy unless the pool has
+// already made it available. The configured image was pulled by NewPool and
+// recorded, so a caller naming it skips a second pull.
 func (p *Pool) EnsureImage(ctx context.Context, ref string) error {
-	if ref == p.cfg.Image || (p.cfg.PullPolicy != "always" && p.cfg.PullPolicy != "missing") {
+	return p.ensureImage(ctx, p.current(), ref)
+}
+
+// ensureImage pulls ref under cfg's pull policy unless it is already present
+// in the pool. It is the live read an acquire uses; EnsureImage is the
+// exported form for callers that only name a ref.
+func (p *Pool) ensureImage(ctx context.Context, cfg Config, ref string) error {
+	if cfg.PullPolicy != "always" && cfg.PullPolicy != "missing" {
 		return nil
 	}
 	p.mu.Lock()
@@ -560,19 +614,26 @@ func (p *Pool) EnsureImage(ctx context.Context, ref string) error {
 	if err := p.pullImage(ctx, ref); err != nil {
 		return err
 	}
+	p.markPulled(ref)
+	return nil
+}
+
+// markPulled records that ref is available locally, so a later acquire skips
+// a second pull.
+func (p *Pool) markPulled(ref string) {
 	p.mu.Lock()
 	if p.pulled == nil {
 		p.pulled = map[string]bool{}
 	}
 	p.pulled[ref] = true
 	p.mu.Unlock()
-	return nil
 }
 
-// pullImage pulls ref. On "missing" policy, skips if the image already
-// exists locally.
+// pullImage pulls ref under the live pull policy. On "missing" policy, skips
+// if the image already exists locally.
 func (p *Pool) pullImage(ctx context.Context, ref string) error {
-	if p.cfg.PullPolicy == "missing" {
+	cfg := p.current()
+	if cfg.PullPolicy == "missing" {
 		_, err := p.cli.ImageInspect(ctx, ref)
 		if err == nil {
 			p.log.Info("image already present", "image", ref)
@@ -581,7 +642,7 @@ func (p *Pool) pullImage(ctx context.Context, ref string) error {
 	}
 
 	p.log.Info("pulling image", "image", ref)
-	rc, err := p.cli.ImagePull(ctx, ref, client.ImagePullOptions{RegistryAuth: p.registryAuthHeader(ref)})
+	rc, err := p.cli.ImagePull(ctx, ref, client.ImagePullOptions{RegistryAuth: p.registryAuthHeader(cfg, ref)})
 	if err != nil {
 		return fmt.Errorf("pull %s: %w", ref, err)
 	}
@@ -606,11 +667,11 @@ func (p *Pool) pullImage(ctx context.Context, ref string) error {
 // autonomous task down with it, and the warning is what makes the 401 a private
 // registry will still answer explicable. A missing credential is silent -- it is
 // the deployment shape that has no private registry.
-func (p *Pool) registryAuthHeader(ref string) string {
-	if p.cfg.RegistryAuth == "" {
+func (p *Pool) registryAuthHeader(cfg Config, ref string) string {
+	if cfg.RegistryAuth == "" {
 		return ""
 	}
-	encoded, err := encodeRegistryAuth(p.cfg.RegistryAuth)
+	encoded, err := encodeRegistryAuth(cfg.RegistryAuth)
 	if err != nil {
 		p.log.Warn("registry credential unusable; pulling without auth", "image", ref, "err", err)
 		return ""
@@ -700,8 +761,8 @@ func (p *Pool) Active() int {
 	return p.active
 }
 
-// Cap is the concurrency cap this pool enforces, from the configured
+// Cap is the concurrency cap this pool enforces, from the live
 // containers.max_concurrency. Zero means unlimited (Acquire only enforces a
 // cap when MaxConcurrency > 0), so a caller rendering "active/cap" must not
 // treat zero as a cap of zero.
-func (p *Pool) Cap() int { return p.cfg.MaxConcurrency }
+func (p *Pool) Cap() int { return p.current().MaxConcurrency }

@@ -335,21 +335,28 @@ Two properties matter to anyone changing this area:
   query, so boot records the last published settings and the reload re-applies
   them from there.
 - **Live kinds arrive on a watch.** Provider settings, model role assignments,
-  repository policies, scheduling policy, plugin settings, review settings and
-  channel settings are `ApplyMode: live`: the daemon keeps a watch per kind and,
-  on a new version, re-runs `boot.runtimeConfig` over the published snapshot and
+  repository policies, scheduling policy, plugin settings, review settings,
+  channel settings and container runtime policies are `ApplyMode: live`: the
+  daemon keeps a watch per kind (`boot.startRuntimeResourceWatches`,
+  `runtimeResourceKinds`) and, on a new version, re-runs `boot.runtimeConfig`
+  over the published snapshot and
   republishes through `config.Holder`. A candidate the layered document cannot
   run is refused before it is published — last-known-good keeps running and
-  the refusal is reported through apply status. A kind whose consumer lives in
-  another process reconciles there too: `archie-messaging` re-reads the stored
-  channel settings on the apply-status restamp interval and restarts only the
-  channel whose transport settings changed, while the listen addresses it has
-  bound and the set of channels it composed stay process bindings that take
-  effect on restart. A kind joins the live list only with a consumer that
-  re-reads it; one whose startup-built consumer never does stays
-  restart-required, and the model/provider half of the live set also rebuilds
-  the gateway chat runtime's provider set and the chat model list the chat
-  surfaces offer.
+  the refusal is reported through apply status. Container runtime policies
+  join the live set because their consumers re-read the published config: the
+  container pool reads image, pull policy, network, max uptime and concurrency
+  cap on every acquire and the daemon resizes its running task dispatcher from
+  the same publish; the fields the document cannot carry, `registry_auth`
+  above all, stay boot-resolved and remain requires-restart. A kind whose
+  consumer lives in another process reconciles there too: `archie-messaging`
+  re-reads the stored channel settings on the apply-status restamp interval
+  and restarts only the channel whose transport settings changed, while the
+  listen addresses it has bound and the set of channels it composed stay
+  process bindings that take effect on restart. A kind joins the live list
+  only with a consumer that re-reads it; one whose startup-built consumer
+  never does stays restart-required, and the model/provider half of the live
+  set also rebuilds the gateway chat runtime's provider set and the chat model
+  list the chat surfaces offer.
 
 ## Completion criteria
 

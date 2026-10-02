@@ -54,7 +54,13 @@ func operationalDefinitions() []Definition {
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
-		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "restart-required", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
+		// ApplyMode is live: the container pool reads the published config on
+		// every acquire (image, pull policy, network, max uptime, concurrency
+		// cap) and the daemon resizes its running dispatcher after the publish,
+		// so neither a deferred container nor a queued task needs a restart
+		// (archie-core-zfb0.2). RegistryAuth is file-owned and never part of
+		// this document, so it stays a boot-resolved value.
+		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "live", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
 }
 

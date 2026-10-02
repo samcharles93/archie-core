@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -842,5 +843,160 @@ func TestPullImageWithoutUsableRegistryCredentialPullsAnonymously(t *testing.T) 
 				t.Fatalf("log = %q, want it to mention %q", logBuf.String(), tc.wantLogSubstr)
 			}
 		})
+	}
+}
+
+// ── live settings (archie-core-zfb0.2) ────────────────────────────────
+
+// TestPoolReadsSettingsPerAcquire pins that a container-runtime-policies
+// change reaches the next acquire without a restart. The pool's image, pull
+// policy, network, concurrency cap and max-uptime cap must come from the live
+// settings source rather than the value captured when the pool was built; a
+// construction-time network stays the fallback when the live value is empty.
+func TestPoolReadsSettingsPerAcquire(t *testing.T) {
+	type createBody struct {
+		Image      string `json:"Image"`
+		HostConfig struct {
+			NetworkMode string `json:"NetworkMode"`
+		} `json:"HostConfig"`
+	}
+
+	var (
+		mu      sync.Mutex
+		creates []createBody
+		pulls   []string
+	)
+	var stopped, removed atomic.Int32
+
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			var body createBody
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			creates = append(creates, body)
+			id := fmt.Sprintf("%064d", len(creates))
+			mu.Unlock()
+			writeDockerJSON(t, w, map[string]any{"Id": id, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/stop"):
+			stopped.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/images/create"):
+			mu.Lock()
+			pulls = append(pulls, r.URL.Query().Get("fromImage"))
+			mu.Unlock()
+			writeDockerJSON(t, w, map[string]any{})
+		case strings.HasSuffix(r.URL.Path, "/json"):
+			http.Error(w, "no such image", http.StatusNotFound)
+		case r.Method == http.MethodDelete:
+			removed.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	var settingsMu sync.Mutex
+	current := Config{
+		Image: "old/image", PullPolicy: "missing", Network: "",
+		MaxConcurrency: 1, MaxUptime: 10 * time.Second,
+	}
+	setCurrent := func(c Config) {
+		settingsMu.Lock()
+		current = c
+		settingsMu.Unlock()
+	}
+
+	pool := &Pool{
+		cli:     dockerClient,
+		cfg:     current,
+		network: "detected",
+		live: func() Config {
+			settingsMu.Lock()
+			defer settingsMu.Unlock()
+			return current
+		},
+		// NewPool pulls the configured image before the first acquire.
+		pulled: map[string]bool{"old/image": true},
+		log:    discardLogger(),
+	}
+
+	acquire := func(t *testing.T) {
+		t.Helper()
+		if _, err := pool.Acquire(context.Background(), "", nil, nil); err != nil {
+			t.Fatalf("Acquire: %v", err)
+		}
+	}
+	created := func(t *testing.T, i int) createBody {
+		t.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		if i >= len(creates) {
+			t.Fatalf("only %d create calls, want at least %d", len(creates), i+1)
+		}
+		return creates[i]
+	}
+
+	acquire(t)
+	if got := created(t, 0); got.Image != "old/image" || got.HostConfig.NetworkMode != "detected" {
+		t.Fatalf("first acquire used image %q network %q, want the construction settings", got.Image, got.HostConfig.NetworkMode)
+	}
+
+	setCurrent(Config{
+		Image: "new/image", PullPolicy: "missing", Network: "newnet",
+		MaxConcurrency: 2, MaxUptime: 60 * time.Millisecond,
+	})
+	acquire(t)
+	second := created(t, 1)
+	if second.Image != "new/image" {
+		t.Errorf("second acquire used image %q, want the live image", second.Image)
+	}
+	if second.HostConfig.NetworkMode != "newnet" {
+		t.Errorf("second acquire joined network %q, want the live network", second.HostConfig.NetworkMode)
+	}
+	if got := pool.Cap(); got != 2 {
+		t.Errorf("Cap() = %d, want the live MaxConcurrency 2", got)
+	}
+	mu.Lock()
+	pulledNew := false
+	for _, ref := range pulls {
+		if strings.HasSuffix(ref, "new/image") {
+			pulledNew = true
+		}
+	}
+	mu.Unlock()
+	if !pulledNew {
+		t.Errorf("pulls = %v, want the live image pulled", pulls)
+	}
+
+	// The live max-uptime cap, not the construction-time 10s, reaps it.
+	deadline := time.Now().Add(2 * time.Second)
+	for (stopped.Load() == 0 || removed.Load() == 0) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if stopped.Load() == 0 || removed.Load() == 0 {
+		t.Errorf("live max uptime did not reap the second container: stopped=%d removed=%d", stopped.Load(), removed.Load())
+	}
+
+	// An empty live network keeps the construction-time fallback in force.
+	setCurrent(Config{
+		Image: "new/image", PullPolicy: "missing", Network: "",
+		MaxConcurrency: 3, MaxUptime: 10 * time.Second,
+	})
+	acquire(t)
+	if got := created(t, 2); got.HostConfig.NetworkMode != "detected" {
+		t.Errorf("third acquire joined network %q, want the construction-time fallback %q", got.HostConfig.NetworkMode, "detected")
 	}
 }

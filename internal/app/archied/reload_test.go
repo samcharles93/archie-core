@@ -198,27 +198,30 @@ func TestChangedNonReloadableFields(t *testing.T) {
 		t.Fatalf("reloadable-only: got %v, want []", got)
 	}
 
-	// Containers sub-field granularity: Image change warns, MaxConcurrency
-	// and VolumeTTL changes do not.
+	// Containers sub-field granularity: the fields the pool re-reads per
+	// acquire, and the concurrency cap the dispatcher resizes on, are
+	// reloadable; RegistryAuth stays frozen in the startup-built pool.
 	c1 := base
 	c1.Containers = config.ContainerConfig{Image: "img1", MaxConcurrency: 2, VolumeTTL: config.Duration(24 * time.Hour)}
 	c2 := c1
 	c2.Containers.Image = "img2"
-	if got := changedNonReloadableFields(c1, c2); len(got) != 1 || got[0] != "Containers.Image" {
-		t.Fatalf("Image change: got %v, want [Containers.Image]", got)
+	if got := changedNonReloadableFields(c1, c2); len(got) != 0 {
+		t.Fatalf("Image change: got %v, want [] (the pool reads it per acquire)", got)
 	}
 	c3 := c1
 	c3.Containers.MaxConcurrency = 4
-	// MaxConcurrency is NOT reloadable: the dispatchers re-read it but the
-	// startup-built container pool captures it (container/pool.go:94), so
-	// a change only partially applies and must warn requires-restart.
-	if got := changedNonReloadableFields(c1, c3); len(got) != 1 || got[0] != "Containers.MaxConcurrency" {
-		t.Fatalf("MaxConcurrency change: got %v, want [Containers.MaxConcurrency]", got)
+	if got := changedNonReloadableFields(c1, c3); len(got) != 0 {
+		t.Fatalf("MaxConcurrency change: got %v, want [] (the pool reads it and the dispatcher resizes)", got)
 	}
 	c4 := c1
 	c4.Containers.VolumeTTL = config.Duration(48 * time.Hour)
 	if got := changedNonReloadableFields(c1, c4); len(got) != 0 {
 		t.Fatalf("VolumeTTL change: got %v, want []", got)
+	}
+	c5 := c1
+	c5.Containers.RegistryAuth = config.SecretRef{Engine: "env", Key: "REGISTRY_AUTH"}
+	if got := changedNonReloadableFields(c1, c5); len(got) != 1 || got[0] != "Containers.RegistryAuth" {
+		t.Fatalf("RegistryAuth change: got %v, want [Containers.RegistryAuth] (the pool resolves it at boot)", got)
 	}
 
 	// NATS is not reloadable: a URL change warns (the daemon's client is

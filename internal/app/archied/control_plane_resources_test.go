@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -238,5 +239,35 @@ func TestLiveModelRoleUpdateRebuildsTheChatModelRuntime(t *testing.T) {
 				t.Errorf("running chat role = %q, want the applied assignment", got)
 			}
 		})
+	}
+}
+
+// TestLiveContainerRuntimePoliciesReLayerAndResizeTheDispatcher pins the
+// container kind's live seam (archie-core-zfb0.2) at the apply path: a stored
+// container-runtime-policies document re-layers into the running config the
+// pool reads per acquire, and the daemon resizes its running dispatcher from
+// the same publish rather than requiring a restart.
+func TestLiveContainerRuntimePoliciesReLayerAndResizeTheDispatcher(t *testing.T) {
+	values := databaseOwnedResources()
+	values[controlplane.ContainerRuntimePoliciesKind] = map[string]any{
+		"image": "archie:live", "max_concurrency": 5, "pull_policy": "missing",
+	}
+	stub := &resourceWatchStub{values: values, version: 3, storedVersion: map[string]int64{}, opens: map[string]int{}}
+	b, _ := newResourceWatchBoot(t, stub)
+	if err := b.loadRuntimeConfig(t.Context()); err != nil {
+		t.Fatalf("loadRuntimeConfig: %v", err)
+	}
+	// A running daemon, so the resize arm executes against a real dispatcher
+	// rather than taking the boot-window nil guard.
+	b.d = &daemon.Daemon{Cfg: b.cfgHolder, Log: b.log}
+
+	b.applyRuntimeResourceUpdate(t.Context(), controlplane.ContainerRuntimePoliciesKind, controlplane.AppliedResource{Version: 4})
+
+	got := b.cfgHolder.Get().Containers
+	if got.MaxConcurrency != 5 {
+		t.Errorf("running max_concurrency = %d, want the stored 5", got.MaxConcurrency)
+	}
+	if got.Image != "archie:live" {
+		t.Errorf("running image = %q, want the stored archie:live", got.Image)
 	}
 }

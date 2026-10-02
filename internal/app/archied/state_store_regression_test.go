@@ -47,7 +47,7 @@ func TestExternalServicesDoNotRequireBridgeNetwork(t *testing.T) {
 	cfg.NATS.Mode = config.NATSModeExternal
 	cfg.Containers.Network = "host"
 	cfg.Services = config.Services{config.ServiceNameState: {Target: "state.example.test:9090"}}
-	pool, _, cleanup := startContainers(t.Context(), cfg, secret.NewRegistry(), slog.New(slog.DiscardHandler))
+	pool, _, cleanup := startContainers(t.Context(), config.NewHolder(cfg), secret.NewRegistry(), slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if pool == nil {
 		t.Fatal("external services on host networking must construct a worker pool")

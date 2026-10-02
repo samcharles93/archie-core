@@ -68,7 +68,7 @@ func TestConnectedNATSEndpointReachesManagedContainerCreate(t *testing.T) {
 		Network:            networkName,
 		DockerClient:       dockerClient,
 		RequireHostGateway: true,
-	}, slog.New(slog.DiscardHandler))
+	}, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("container.NewPool = %v", err)
 	}

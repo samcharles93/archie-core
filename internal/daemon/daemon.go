@@ -199,6 +199,12 @@ type Daemon struct {
 	// execution is unavailable and process parks tasks; every runnable task gets
 	// a fresh container.
 	ContainerPool *container.Pool
+	// dispatcher bounds task execution globally across poll passes. Built once,
+	// on first use, so ResizeTaskDispatcher can apply a live
+	// containers.max_concurrency change without a restart; drainNATS submits
+	// each pass through it and waits for that pass.
+	dispatcherOnce sync.Once
+	dispatcher     *taskDispatcher
 	// Storage is the pluggable storage backend for container mounts.
 	// A runnable task requires it; acquireTaskContainer parks on nil.
 	Storage storage.Backend
@@ -975,7 +981,7 @@ func (d *Daemon) botUserForTask(task *workflowtask.Task) string {
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Get().Containers.MaxConcurrency, d.allowConcurrentForTask)
+	dispatcher := d.taskDispatcher()
 	for ctx.Err() == nil {
 		msg, err := d.Tasks.Fetch(ctx)
 		if err != nil && !errors.Is(err, eventbus.ErrNoMessage) {
@@ -1004,6 +1010,25 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 	dispatcher.Wait()
 }
 
+// taskDispatcher returns the daemon's long-lived global dispatcher, building
+// it from the running config on first use. It outlives a single drain pass so
+// ResizeTaskDispatcher can resize the running dispatcher; drainNATS still
+// waits for each pass's work before returning.
+func (d *Daemon) taskDispatcher() *taskDispatcher {
+	d.dispatcherOnce.Do(func() {
+		d.dispatcher = newTaskDispatcher(d.Cfg.Get().Containers.MaxConcurrency, d.allowConcurrentForTask)
+	})
+	return d.dispatcher
+}
+
+// ResizeTaskDispatcher applies a new containers.max_concurrency to the
+// running global task dispatcher without a restart. Running tasks keep their
+// slots; a lowered limit is honoured as they finish, and a raised limit
+// admits queued work immediately.
+func (d *Daemon) ResizeTaskDispatcher(maxConcurrency int) {
+	d.taskDispatcher().SetMaxConcurrency(maxConcurrency)
+}
+
 // submitNATSTask decodes a fetched message and queues it for processing. A
 // message that cannot be decoded is acked rather than redelivered: it will
 // never decode on a retry, so leaving it unacked would block the queue.
@@ -1026,26 +1051,54 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 // allowConcurrent reports true opt out of the same-repo serialization
 // entirely  --  the global slot limit is the only bound on their concurrency.
 type taskDispatcher struct {
-	slots           chan struct{}
 	allowConcurrent func(task *workflow.Task) bool
 
-	mu       sync.Mutex
-	repoTail map[string]chan struct{}
-	wg       sync.WaitGroup
+	mu        sync.Mutex
+	limit     int
+	active    int
+	slotsFree *sync.Cond
+	repoTail  map[string]chan struct{}
+	wg        sync.WaitGroup
+}
+
+// SetMaxConcurrency accepts a new global limit without a restart. Running
+// tasks keep their slots; a lowered limit is enforced as they finish, and a
+// raised limit admits queued work immediately.
+func (d *taskDispatcher) SetMaxConcurrency(maxConcurrency int) {
+	d.mu.Lock()
+	d.limit = maxConcurrency
+	d.mu.Unlock()
+	d.slotsFree.Broadcast()
 }
 
 func newTaskDispatcher(maxConcurrency int, allowConcurrent func(task *workflow.Task) bool) *taskDispatcher {
-	var slots chan struct{}
-	if maxConcurrency > 0 {
-		slots = make(chan struct{}, maxConcurrency)
-	}
 	if allowConcurrent == nil {
 		allowConcurrent = func(*workflow.Task) bool { return false }
 	}
-	return &taskDispatcher{
-		slots:           slots,
+	d := &taskDispatcher{
+		limit:           maxConcurrency,
 		allowConcurrent: allowConcurrent,
 		repoTail:        make(map[string]chan struct{}),
+	}
+	d.slotsFree = sync.NewCond(&d.mu)
+	return d
+}
+
+// acquireSlot blocks until the global limit has room and returns the release
+// function. limit <= 0 means unlimited. The limit is re-read on every wake, so
+// SetMaxConcurrency reaches waiting tasks without recreating the dispatcher.
+func (d *taskDispatcher) acquireSlot() func() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for d.limit > 0 && d.active >= d.limit {
+		d.slotsFree.Wait()
+	}
+	d.active++
+	return func() {
+		d.mu.Lock()
+		d.active--
+		d.mu.Unlock()
+		d.slotsFree.Broadcast()
 	}
 }
 
@@ -1069,10 +1122,8 @@ func (d *taskDispatcher) Submit(
 		if previous != nil {
 			<-previous
 		}
-		if d.slots != nil {
-			d.slots <- struct{}{}
-			defer func() { <-d.slots }()
-		}
+		releaseSlot := d.acquireSlot()
+		defer releaseSlot()
 		if done != nil {
 			defer func() {
 				close(done)

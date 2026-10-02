@@ -156,17 +156,21 @@ var reloadableFields = map[string]bool{
 // "Selection": a Kit profile applies without a restart. Credentials is the
 // same shape one layer down: kitrun.Launcher reads Config.Get().Containers.
 // Credentials fresh on every Launch (CredentialBindingsKind), never a slice
-// captured once when the launcher was built. Everything else in
-// Containers (Image, MaxConcurrency, MaxUptime, PullPolicy, Network,
-// RegistryAuth) is frozen in the startup-built container pool -- the
-// dispatchers re-read MaxConcurrency but the pool captures it at construction
-// (container/pool.go:94,163), so a change only partially applies and must
-// warn requires-restart. Forge.Host is carried into TaskContext by ForTask
+// captured once when the launcher was built. Image, MaxConcurrency, MaxUptime,
+// PullPolicy and Network are re-read per acquire by the container pool and
+// MaxConcurrency also resizes the running dispatcher on publish
+// (archie-core-zfb0.2), so a reload applies them without a restart.
+// RegistryAuth stays frozen in the startup-built pool: it is file-owned and
+// never part of the container-runtime-policies document, so a changed value
+// must warn requires-restart. Forge.Host is carried into TaskContext by ForTask
 // (display/link building only); the forge client itself is startup-built, so
 // Type/Token/TokenEnv stay requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
-	"Containers": {"VolumeTTL": true, "Profiles": true, "Credentials": true},
-	"Forge":      {"Host": true},
+	"Containers": {
+		"VolumeTTL": true, "Profiles": true, "Credentials": true,
+		"Image": true, "MaxConcurrency": true, "MaxUptime": true, "PullPolicy": true, "Network": true,
+	},
+	"Forge": {"Host": true},
 	// Policy is carried into TaskConfig by ForTask (config.go); MCPServers,
 	// WebFetch and Minimax are not and stay requires-restart.
 	"Tools": {"Policy": true},

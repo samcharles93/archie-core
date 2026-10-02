@@ -92,6 +92,10 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	old := b.cfgHolder.Get()
 	b.currentProvenance.Store(&doc.Provenance)
 	b.publishConfig(ctx, cfg)
+	// The container pool reads the published config on every acquire, but the
+	// dispatcher holds its limit; a reloaded containers.max_concurrency must
+	// reach it the same way a control-plane update does.
+	b.resizeTaskDispatcher(cfg.Containers.MaxConcurrency)
 	if fields := changedNonReloadableFields(old, cfg); len(fields) > 0 {
 		b.log.Warn("config reloaded; some changes require a restart",
 			"fields", fields, "paths", doc.Provenance.Paths())
@@ -260,10 +264,14 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // (b.runtimeConfig, which applies the execution budgets the settings watch
 // published) and republishes through config.Holder, so the change takes
 // effect without a restart. Kinds stay out of this list while a
-// startup-built component still holds their value -- tool and container
+// startup-built component still holds their value -- tool
 // settings are frozen in components built at boot and remain
 // restart-required -- and a kind joins it only with a consumer that re-reads
-// it. PluginSettingsKind is on the list because its only consumer is the
+// it. ContainerRuntimePoliciesKind is on the list because both consumers
+// re-read the published config: the container pool takes its image, pull
+// policy, network, max-uptime and concurrency cap per acquire, and the
+// daemon's dispatcher is resized after the publish (applyRuntimeResourceUpdate
+// below). PluginSettingsKind is on the list because its only consumer is the
 // directory reconciliation, which reads the running config each tick; a
 // removed plugin or engine still cannot unload, so that kind reports the
 // removal rather than requiring a restart. ChannelSettingsKind is on the list
@@ -279,6 +287,7 @@ var runtimeResourceKinds = []string{
 	controlplane.PluginSettingsKind,
 	controlplane.ReviewSettingsKind,
 	controlplane.ChannelSettingsKind,
+	controlplane.ContainerRuntimePoliciesKind,
 }
 
 // startRuntimeResourceWatches keeps a watch per live kind established for the
@@ -362,6 +371,22 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 		// report the reconciliation's own outcome, which is the one that knows
 		// whether a removal is outstanding.
 		b.reconcileRuntimePlugins(ctx)
+	case controlplane.ContainerRuntimePoliciesKind:
+		// The pool reads the republished config itself; the dispatcher holds
+		// its limit, so a raise must be woken to admit queued work now and a
+		// lower must be honoured as running tasks finish.
+		b.resizeTaskDispatcher(cfg.Containers.MaxConcurrency)
+	}
+}
+
+// resizeTaskDispatcher applies a new containers.max_concurrency to the
+// daemon's running dispatcher. The pool needs no poke because it reads the
+// published config on every acquire. b.d is nil in the boot window in which
+// the watches are already live but the daemon is not built yet; there the
+// dispatcher is created later from the config the next drain reads.
+func (b *boot) resizeTaskDispatcher(maxConcurrency int) {
+	if b.d != nil {
+		b.d.ResizeTaskDispatcher(maxConcurrency)
 	}
 }
 

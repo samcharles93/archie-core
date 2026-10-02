@@ -974,11 +974,12 @@ func safePluginInfo(p plugin.Plugin) (name, version string) {
 // there is deliberately no host execution fallback.
 func startContainers(
 	ctx context.Context,
-	cfg config.Config,
+	cfgHolder *config.Holder,
 	secrets *secret.Registry,
 	log *slog.Logger,
 ) (*container.Pool, storage.Backend, func()) {
 	noop := func() {}
+	cfg := cfgHolder.Get()
 	// Single Docker client shared between pool and storage backend.
 	dockerCli, err := client.New(client.FromEnv)
 	if err != nil {
@@ -1002,7 +1003,7 @@ func startContainers(
 		// Only the embedded broker binds a discovered host gateway. The
 		// standalone State Store uses its configured, container-reachable target.
 		RequireHostGateway: cfg.NATS.Mode == config.NATSModeEmbedded,
-	}, log)
+	}, containerLiveSettings(cfgHolder), log)
 	if err != nil {
 		// A missing image is recoverable by hand.
 		log.Error("autonomous workflows unavailable: container pool unavailable", "err", err,
@@ -1018,6 +1019,26 @@ func startContainers(
 			log.Warn("container pool close failed", "err", err)
 		}
 		closeDocker()
+	}
+}
+
+// containerLiveSettings reads the per-acquire container settings from the
+// running config. The pool calls it on every acquire, so a stored
+// container-runtime-policies change reaches the next container without a
+// restart. Only fields the resource document carries are taken live:
+// RegistryAuth is file-owned and stays the boot-resolved value, DockerClient
+// and RequireHostGateway are construction-time, and GracePeriod is not part
+// of the document.
+func containerLiveSettings(cfgHolder *config.Holder) func() container.Config {
+	return func() container.Config {
+		cfg := cfgHolder.Get()
+		return container.Config{
+			Image:          cfg.Containers.Image,
+			MaxConcurrency: cfg.Containers.MaxConcurrency,
+			MaxUptime:      cfg.Containers.MaxUptime.Std(),
+			PullPolicy:     cfg.Containers.PullPolicy,
+			Network:        cfg.Containers.Network,
+		}
 	}
 }
 

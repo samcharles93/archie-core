@@ -56,7 +56,7 @@ func TestNewPoolResolvesDefaultBridgeGatewayForNativeDaemon(t *testing.T) {
 	pool, err := NewPool(t.Context(), Config{
 		DockerClient:       dockerClient,
 		RequireHostGateway: true,
-	}, discardLogger())
+	}, nil, discardLogger())
 	if err != nil {
 		t.Fatalf("NewPool = %v", err)
 	}
@@ -138,7 +138,7 @@ func TestNewPoolRejectsUnreachableEmbeddedNetwork(t *testing.T) {
 				DockerClient:       dockerClient,
 				Network:            "workers",
 				RequireHostGateway: true,
-			}, discardLogger())
+			}, nil, discardLogger())
 			if err == nil {
 				_ = pool.Close()
 				t.Fatal("NewPool = nil error, want embedded reachability validation failure")

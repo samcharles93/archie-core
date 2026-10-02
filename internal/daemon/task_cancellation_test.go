@@ -334,7 +334,7 @@ func TestProcessStopRunningTransitionsToParked(t *testing.T) {
 	pool, err := archiecontainer.NewPool(ctx, archiecontainer.Config{
 		Image:        "archie-agent:test",
 		DockerClient: dockerClient,
-	}, d.Log)
+	}, nil, d.Log)
 	if err != nil {
 		t.Fatal(err)
 	}
