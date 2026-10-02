@@ -61,6 +61,11 @@ tasks:
     cmds:
       - go -C tools run -mod=readonly ./prdlint --repo-root ..
 
+  docs:drift:
+    desc: Reject docs that cite a repository path which no longer exists
+    cmds:
+      - go -C tools run -mod=readonly ./docdrift check --repo-root ..
+
   news:
     desc: Regenerate the release data artifacts from the changelog
     cmds:
@@ -300,6 +305,7 @@ tasks:
       - task: proto:lint
       - task: docs:check
       - task: docs:prds
+      - task: docs:drift
       - task: news:check
       - task: docs:artifact:check
       - task: vet

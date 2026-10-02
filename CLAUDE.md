@@ -170,10 +170,11 @@ structures found in legacy packages.
 - **Dependency Flow:** `cmd → app → {domain, infrastructure}`, with
   `infrastructure → domain` implementing contracts. Downward/inward dependencies
   only.
-- **Cross-Cutting Packages:** `logging`, `events`, `eventbus`, `policy`,
+- **Cross-Cutting Packages:** `logging`, `events`, `eventbus`,
   `taskstate` sit directly under `internal/`. They may be imported by any layer,
   but **must import zero internal packages**. No `shared/`, `utils/`, or
-  `common/` catch-alls.
+  `common/` catch-alls. `policy` is designed but not built
+  (`docs/architecture/policy.md`).
 - **File Layout:** One file per API concern (`api_tasks.go`, `api_logs.go`). A
   package owns its on-disk format end-to-end (e.g. `internal/logging` defines
   and reads its format; transport layers do not parse).

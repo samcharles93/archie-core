@@ -1,0 +1,53 @@
+# docdrift baseline: citations in docs/ that no longer resolve to a
+# repository path. This is a burn-down list, not a licence -- repoint the
+# citation or delete the claim, then remove the line. Regenerate with:
+#
+#   go -C tools run -mod=readonly ./docdrift list --repo-root .. > tools/docdrift/baseline.txt
+internal/nats
+internal/infrastructure/spec
+internal/policy
+internal/store
+internal/domain/controlplane
+internal/memory
+internal/memory/builtin.Store
+internal/app/archied/config_update.go
+internal/domain/plugin
+internal/curator
+internal/infrastructure/forge
+internal/workflow
+internal/domain/eda/forgeaction
+internal/app/agentworker/review.go
+internal/tools/dispatch.go
+internal/infrastructure/cronstore
+internal/output/report.go
+internal/actors/mine.go
+internal/domain/research
+internal/infrastructure/research/search
+internal/tools/search
+internal/tools/research
+internal/infrastructure/research
+internal/domain/workflow/wfeval/yaegi.go
+internal/gate/gateeval/yaegi.go
+internal/store/events.go
+internal/store/captures.go
+internal/domain/extensions
+internal/domain/extensions/inventory.go
+internal/webui/api_extensions.go
+internal/app/archied/server.go
+internal/infrastructure/image
+internal/infrastructure/image/comfyui
+internal/app/archied/telegram_setup.go
+internal/tools/image/tool.go
+internal/infrastructure/image/openai
+internal/memory/manager.go
+internal/memory/scanner.go
+internal/tools/provider/memory
+internal/infrastructure/legacyread
+internal/domain/eda/module/notify/types.go
+internal/domain/eda/module/notify
+internal/memory.MemoryProvider
+internal/memory.Manager
+internal/infrastructure/store
+internal/store/interface.go
+internal/storerpc
+internal/store/store.go
