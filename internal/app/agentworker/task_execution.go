@@ -21,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -186,6 +187,11 @@ type taskDependencies struct {
 	// executing half of the contract whose validating half is the control
 	// plane's (archie-core-fwmp).
 	steps *workflow.Manager
+	// guardrails is the guardrail engine agent stages record tool outcomes
+	// against. It is built by this process's composition root (the workflow
+	// runs in archie-agent, so the daemon's engine cannot reach it) and set on
+	// every TaskContext; nil means guardrails are disabled.
+	guardrails *tools.GuardrailEngine
 }
 
 type runnerFactory func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner
@@ -312,16 +318,17 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}
 
 	tc := &workflow.TaskContext{
-		Task:  req.Task,
-		Repo:  req.Repo,
-		Cfg:   req.Cfg.ToConfig(),
-		Forge: dependencies.forge,
-		Store: dependencies.store,
-		Calls: dependencies.calls,
-		Trees: trees,
-		Agent: agent,
-		Bus:   bus,
-		Log:   log,
+		Task:       req.Task,
+		Repo:       req.Repo,
+		Cfg:        req.Cfg.ToConfig(),
+		Forge:      dependencies.forge,
+		Store:      dependencies.store,
+		Calls:      dependencies.calls,
+		Trees:      trees,
+		Agent:      agent,
+		Bus:        bus,
+		Log:        log,
+		Guardrails: dependencies.guardrails,
 	}
 	// pr-review reads an external pull request's data from workDir, which the
 	// daemon already populated before this task started (daemon's

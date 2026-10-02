@@ -225,12 +225,6 @@ type Daemon struct {
 	IdentityRepository identity.Repository
 	RootIdentityID     identity.IdentityID
 
-	// Guardrails is the tool-call guardrail engine, wired by the composition
-	// root. When non-nil, tool successes and failures are recorded and
-	// warnings/hard-stops are issued per the configured thresholds. Nil
-	// means guardrails are disabled (backward compatible).
-	Guardrails *tools.GuardrailEngine
-
 	// KindWorkflows and LabelWorkflows are the resolved kind/label ->
 	// workflow-name routing bindings loaded at startup (WorkflowRoutingFile,
 	// WorkflowLabelsFile, PlaybookDirs). They travel in taskrun.Request so

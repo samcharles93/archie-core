@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 const rpcTimeout = 60 * time.Second
@@ -64,6 +65,11 @@ type workerDependencies struct {
 	// definitions against, registered by the composition root before the first
 	// task is served (infrastructure/workflowsteps is the provider set).
 	steps *workflow.Manager
+	// guardrails is the guardrail engine every served task records agent-stage
+	// outcomes against, built once at this process's composition root.
+	// archie-agent is the process that runs the stages, so the engine that
+	// observes them lives here; a live engine cannot cross the task handoff.
+	guardrails *tools.GuardrailEngine
 }
 
 // productionWorkerDependencies builds the worker's process dependencies. The
@@ -87,7 +93,8 @@ func productionWorkerDependencies() (workerDependencies, error) {
 			<-ctx.Done()
 			log.Info("archie-agent shutting down")
 		},
-		steps: steps,
+		steps:      steps,
+		guardrails: tools.NewGuardrailEngine(tools.DefaultGuardrailConfig()),
 	}, nil
 }
 
@@ -134,7 +141,7 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 	log.Info("system log publisher attached", "task", taskID)
 
 	subscription, err := transport.SubscribeTasks(ctx, taskID, func(ctx context.Context, request taskrun.Request) (*taskrun.Response, error) {
-		return executeTaskRequest(ctx, request, transport, workDir, log, dependencies.steps)
+		return executeTaskRequest(ctx, request, transport, workDir, log, dependencies.steps, dependencies.guardrails)
 	}, log)
 	if err != nil {
 		log.Error("taskrun subscribe failed", "err", err)
@@ -159,15 +166,16 @@ type taskServiceTransport interface {
 	EventPublisher() agentexec.EventPublisher
 }
 
-func executeTaskRequest(ctx context.Context, request taskrun.Request, transport taskServiceTransport, workDir string, log *slog.Logger, steps *workflow.Manager) (*taskrun.Response, error) {
+func executeTaskRequest(ctx context.Context, request taskrun.Request, transport taskServiceTransport, workDir string, log *slog.Logger, steps *workflow.Manager, guardrails *tools.GuardrailEngine) (*taskrun.Response, error) {
 	log.Info("running task", "task", request.Task.ID, "repo", request.Repo.FullName(), "issue", request.Task.IssueNumber)
 	dependencies := taskDependencies{
-		forge:  transport.Forger(request.Task.Identity, rpcTimeout),
-		store:  transport.Store(rpcTimeout),
-		calls:  transport.Calls(rpcTimeout),
-		trees:  transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
-		events: transport.EventPublisher(),
-		steps:  steps,
+		forge:      transport.Forger(request.Task.Identity, rpcTimeout),
+		store:      transport.Store(rpcTimeout),
+		calls:      transport.Calls(rpcTimeout),
+		trees:      transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
+		events:     transport.EventPublisher(),
+		steps:      steps,
+		guardrails: guardrails,
 	}
 	response, err := runTask(ctx, request, dependencies, newTaskRunner, workDir, log)
 	if err != nil {

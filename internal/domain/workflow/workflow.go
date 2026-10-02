@@ -190,7 +190,9 @@ type TaskContext struct {
 
 	// Guardrails is the per-task guardrail engine reference. When non-nil,
 	// agent stages record tool successes and failures for guardrail
-	// enforcement. Wired by the composition root from the daemon.
+	// enforcement. Wired by the composition root of the process that runs the
+	// workflow (archie-agent), because the engine has to live where the agent
+	// stages execute.
 	Guardrails *tools.GuardrailEngine
 
 	// RunUsage accumulates every agent run's token breakdown (prompt,

@@ -287,7 +287,6 @@ type boot struct {
 	memEngines       *domainmemory.Registry
 	curatorRegistry  *curator.Registry
 	curatorRuntime   *curator.Runtime
-	guardrails       *tools.GuardrailEngine
 	providerRegistry *toolprovider.Registry
 	// mcpMu guards mcpApplied, which records the MCP servers the provider
 	// registry was last built from, keyed by configured name. A live
@@ -1400,18 +1399,6 @@ func (b *boot) setupCurators(ctx context.Context) {
 	b.addCleanup(shutdownCuratorRegistry(reg, log))
 }
 
-func (b *boot) setupGuardrails() {
-	log := b.log
-	gc := tools.DefaultGuardrailConfig()
-	b.guardrails = tools.NewGuardrailEngine(gc)
-	log.Info(
-		"guardrail engine enabled",
-		"exact_failure_warn", gc.ExactFailureWarnAfter,
-		"same_tool_failure_warn", gc.SameToolFailureWarnAfter,
-		"no_progress_warn", gc.NoProgressWarnAfter,
-	)
-}
-
 // registerTools registers the tool providers with a lifecycle: workspace
 // file/shell tools and optional MCP servers. Memory tools
 // (memory_create/update/delete/list) are not registered here -- they are
@@ -1610,7 +1597,6 @@ func (b *boot) buildDaemon() {
 		StateStoreGrants:    b.stateStoreGrants,
 		ContainerPool:       b.containerPool,
 		KitLauncher:         b.kitLauncher,
-		Guardrails:          b.guardrails,
 		ToolRegistry:        b.toolReg,
 		Identities:          b.identityRunners,
 		RootIdentityID:      identity.StableID(configuredIdentityNames(b.cfg)[0]),

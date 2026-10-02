@@ -425,7 +425,6 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 
-	b.setupGuardrails()
 	if err := b.registerTools(ctx); err != nil {
 		return 1
 	}

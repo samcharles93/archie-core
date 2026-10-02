@@ -696,7 +696,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 		Cfg:           config.Config{}.ForTask(),
 		WorktreeGrant: grant,
 	}
-	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler), testSteps(t))
+	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler), testSteps(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -814,7 +814,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		Cfg:           config.Config{}.ForTask(),
 		WorktreeGrant: grant,
 	}
-	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler), testSteps(t))
+	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler), testSteps(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
