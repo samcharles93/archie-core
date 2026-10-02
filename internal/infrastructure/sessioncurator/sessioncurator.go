@@ -166,7 +166,7 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 			At:     c.host.Clock.Now(),
 			Type:   ActionSkipped,
 			Detail: sess.ID,
-			Reason: "no agent id: agent-user memory needs an agent and a user",
+			Reason: "no agent id: bot_user is unset (agent-user memory needs an agent and a user)",
 		}, nil
 	}
 

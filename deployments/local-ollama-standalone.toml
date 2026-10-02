@@ -5,6 +5,11 @@
 # polling disabled (standalone execution mode).
 # ==============================================================================
 
+# Standalone still needs a bot identity: it names the agent that chat turns and
+# the session curator attribute memory to, and it becomes the seeded identity's
+# display name when there is no [[identities]] block.
+bot_user = "archie"
+
 work_dir = "~/.local/share/archie/work"
 state_dir = "~/.local/share/archie"   # NATS store, task logs
 # The State Store's PostgreSQL connection (required; Postgres-only epic).

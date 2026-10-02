@@ -582,7 +582,7 @@ func TestPassSkipsASessionWithNoAgentID(t *testing.T) {
 	if got.Detail != "s1" {
 		t.Errorf("Actions[0].Detail = %q, want the session id %q", got.Detail, "s1")
 	}
-	if want := "no agent id: agent-user memory needs an agent and a user"; got.Reason != want {
+	if want := "no agent id: bot_user is unset (agent-user memory needs an agent and a user)"; got.Reason != want {
 		t.Errorf("Actions[0].Reason = %q, want %q", got.Reason, want)
 	}
 	if dirs := engineScopeDirs(t, root); len(dirs) != 0 {

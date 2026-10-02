@@ -79,6 +79,60 @@ func TestApplyIdentityDefaultsDerivesEmailPerIdentity(t *testing.T) {
 	}
 }
 
+// TestApplyIdentityDefaultsAdoptsASoleIdentityForTheRoot pins the single-identity
+// case. When one [[identities]] entry defines the deployment, the root
+// single-identity fields must not be left empty: consumers that are inherently
+// single-agent read the root BotUser (the session curator is built with
+// cfg.BotUser), so an empty root there is not "unused", it is "no agent" and
+// every session is skipped.
+func TestApplyIdentityDefaultsAdoptsASoleIdentityForTheRoot(t *testing.T) {
+	cfg := &config.Config{Identities: []config.IdentityConfig{
+		{BotUser: "solo-bot", Forge: config.Forge{Type: forgeTypeGitHub}},
+	}}
+
+	applyIdentityDefaults(cfg)
+
+	if want := "solo-bot"; cfg.BotUser != want {
+		t.Errorf("root BotUser = %q, want %q adopted from the sole identity", cfg.BotUser, want)
+	}
+	if want := "solo-bot@users.noreply.github.com"; cfg.BotEmail != want {
+		t.Errorf("root BotEmail = %q, want %q", cfg.BotEmail, want)
+	}
+}
+
+// TestApplyIdentityDefaultsLeavesAnExplicitRootAlone is the other direction: a
+// default must never overwrite what the operator wrote.
+func TestApplyIdentityDefaultsLeavesAnExplicitRootAlone(t *testing.T) {
+	cfg := &config.Config{
+		BotUser: "explicit-root",
+		Identities: []config.IdentityConfig{
+			{BotUser: "solo-bot", Forge: config.Forge{Type: forgeTypeGitHub}},
+		},
+	}
+
+	applyIdentityDefaults(cfg)
+
+	if want := "explicit-root"; cfg.BotUser != want {
+		t.Errorf("root BotUser = %q, want the explicit value %q preserved", cfg.BotUser, want)
+	}
+}
+
+// TestApplyIdentityDefaultsDoesNotGuessBetweenIdentities records the boundary:
+// with more than one identity there is no single answer for the root, so it is
+// left empty for the operator to set deliberately rather than guessed at.
+func TestApplyIdentityDefaultsDoesNotGuessBetweenIdentities(t *testing.T) {
+	cfg := &config.Config{Identities: []config.IdentityConfig{
+		{BotUser: "one", Forge: config.Forge{Type: forgeTypeGitHub}},
+		{BotUser: "two", Forge: config.Forge{Type: forgeTypeGitHub}},
+	}}
+
+	applyIdentityDefaults(cfg)
+
+	if cfg.BotUser != "" {
+		t.Errorf("root BotUser = %q, want empty: two identities leave no single answer", cfg.BotUser)
+	}
+}
+
 func TestApplyCaptureDefaultsFillsZeroValues(t *testing.T) {
 	cfg := &config.Config{}
 	applyCaptureDefaults(cfg)

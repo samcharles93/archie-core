@@ -328,11 +328,25 @@ func applyDispatchDefaults(cfg *config.Config) {
 }
 
 // applyIdentityDefaults derives forge-appropriate commit emails wherever the
-// operator omitted one, for both deployment shapes.
+// operator omitted one, for both deployment shapes, and adopts a sole
+// [[identities]] entry as the root single-identity values.
+//
+// The root fields are not merely the legacy single-identity shape: consumers
+// that are inherently single-agent read them (the session curator is built with
+// cfg.BotUser), so leaving the root empty beside exactly one identity is an
+// empty address rather than an unused field, and every curated session is
+// skipped for want of an agent. With two or more identities there is no single
+// answer, so the root is left alone for the operator to name deliberately.
 func applyIdentityDefaults(cfg *config.Config) {
 	if len(cfg.Identities) > 0 {
 		for i := range cfg.Identities {
 			cfg.Identities[i].BotEmail = defaultBotEmail(cfg.Identities[i].Forge.Type, cfg.Identities[i].BotUser, cfg.Identities[i].BotEmail)
+		}
+		if len(cfg.Identities) == 1 && cfg.BotUser == "" {
+			cfg.BotUser = cfg.Identities[0].BotUser
+			if cfg.BotEmail == "" {
+				cfg.BotEmail = cfg.Identities[0].BotEmail
+			}
 		}
 	}
 	cfg.BotEmail = defaultBotEmail(cfg.Forge.Type, cfg.BotUser, cfg.BotEmail)

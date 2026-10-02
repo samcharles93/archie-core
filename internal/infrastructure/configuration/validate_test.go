@@ -551,15 +551,47 @@ name = "my-repo"
 	requireValidateError(t, err, []string{`identities[0] ("personal").forge.intake "webhook"`, "not implemented"})
 }
 
-// TestShippedProfilesValidate guards the shipped deployments against a
-// validation rule that would reject a profile the repository supports:
-// multi-forge-github-gitea.toml is the only profile using [[identities]], and
-// single-forge-github.toml the only documented webhook-capable shape, so an
-// intake rule that fails either has broken a supported assembly.
+// deploymentOverlays are the files in deployments/ that are not standalone
+// profiles. dev.toml layers over an installed config (`task dev` passes it as
+// -config-overlay) so it legitimately carries no bot_user; every other file
+// here is a template an operator copies to config.toml and expects to start.
+var deploymentOverlays = map[string]bool{"dev.toml": true}
+
+// TestShippedProfilesValidate guards every standalone profile the repository
+// ships against a validation rule that would reject it. AGENTS.md lists
+// deployments/ as the supported profiles, so a profile that cannot load is a
+// documented deployment path that cannot start at all. The directory is
+// enumerated rather than a list of filenames repeated here, so a profile added
+// later is covered the moment it is committed instead of the moment someone
+// remembers this test.
 func TestShippedProfilesValidate(t *testing.T) {
-	for _, name := range []string{"single-forge-github.toml", "multi-forge-github-gitea.toml"} {
-		t.Run(name, func(t *testing.T) {
-			path := filepath.Join("..", "..", "..", "deployments", name)
+	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "deployments", "*.toml"))
+	if err != nil {
+		t.Fatalf("glob deployment profiles: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no deployment profiles matched; the glob is wrong, not the profiles")
+	}
+
+	seen := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		seen[filepath.Base(path)] = true
+	}
+	// An exclusion that no longer names a real file would silently widen the
+	// rule, so it is checked as well.
+	for name := range deploymentOverlays {
+		if !seen[name] {
+			t.Errorf("deploymentOverlays names %q, which deployments/ does not contain", name)
+		}
+	}
+
+	var checked int
+	for _, path := range paths {
+		if deploymentOverlays[filepath.Base(path)] {
+			continue
+		}
+		checked++
+		t.Run(filepath.Base(path), func(t *testing.T) {
 			doc, err := New(nil).File(path)
 			if err != nil {
 				t.Fatalf("load %s: %v", path, err)
@@ -568,6 +600,9 @@ func TestShippedProfilesValidate(t *testing.T) {
 				t.Fatalf("validate %s: %v", path, err)
 			}
 		})
+	}
+	if checked == 0 {
+		t.Fatal("every discovered profile was excluded, so this test asserts nothing")
 	}
 }
 
