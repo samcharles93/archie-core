@@ -20,61 +20,26 @@ asked. Do not claim tools, files, memories, actions, or results you have not
 verified. Do not impersonate another assistant, provider, or vendor.
 `
 
-// SoulMatch classifies a SOUL body against the documents a build ships.
-type SoulMatch int
-
-const (
-	// SoulEdit is content no build shipped: a user edit, which must never be
-	// replaced.
-	SoulEdit SoulMatch = iota
-	// SoulCurrent is content identical to the build's Default once transport
-	// noise is normalised away; there is nothing to upgrade.
-	SoulCurrent
-	// SoulSuperseded is a body this build recognises as a shipped template
-	// that is not the current Default. It carries zero user intent, so it may
-	// be upgraded in place.
-	SoulSuperseded
-)
-
-// SoulDocument is the set of SOUL bodies one build recognises as its own.
-type SoulDocument struct {
-	// Default is written when no SOUL file exists, and replaces a superseded
-	// template during an upgrade.
-	Default string
-	// Legacy lists earlier shipped SOUL bodies this build still recognises. A
-	// file that matches one is an untouched scaffolding document rather than a
-	// user edit. The Default is always recognised and need not be repeated.
-	Legacy []string
-}
-
 // ShippedSoul returns the SOUL document this build ships.
-func ShippedSoul() SoulDocument {
-	return SoulDocument{Default: DefaultSoul}
+//
+// Exactly one body is shipped, so the seeder recognises only this text as
+// untouched scaffolding. A build that supersedes it adds the old body next to
+// this one together with the in-place upgrade that consumes it; a branch that
+// rewrites a file for matching a template no build ever shipped has no
+// producer and must not be kept ahead of one.
+func ShippedSoul() string {
+	return DefaultSoul
 }
 
-// Match classifies a body against the build's shipped documents.
+// SoulMatchesShipped reports whether content is the same body as shipped, once
+// transport noise is normalised away.
 //
 // Comparison is on normalised content, so a CRLF checkout or an editor that
 // left trailing whitespace still matches the template it came from. Only a
 // body that is identical to a shipped document after that normalisation is
 // eligible for replacement; any other difference is treated as user intent.
-func (d SoulDocument) Match(content string) SoulMatch {
-	if d.Default == "" {
-		return SoulEdit
-	}
-	normalized := normalizeSoul(content)
-	if normalized == normalizeSoul(d.Default) {
-		return SoulCurrent
-	}
-	for _, legacy := range d.Legacy {
-		if legacy == "" {
-			continue
-		}
-		if normalized == normalizeSoul(legacy) {
-			return SoulSuperseded
-		}
-	}
-	return SoulEdit
+func SoulMatchesShipped(content, shipped string) bool {
+	return normalizeSoul(content) == normalizeSoul(shipped)
 }
 
 // normalizeSoul reduces a SOUL body to the content a user authored: a UTF-8

@@ -617,12 +617,11 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(models))
 }
 
-// seedSoul writes the starter SOUL beside the config on first run, and upgrades
-// a file that is still exactly a shipped template, so the identity a user can
-// edit exists before the SOUL loader (#439) reads it. It runs on the full
-// process's boot tail rather than in loadConfig: an offline command such as
-// `-requeue` reads the config but must not write the operator's files. A
-// failure is logged, not fatal -- the loader falls back to the embedded
+// seedSoul writes the starter SOUL beside the config on first run, so the
+// identity a user can edit exists before the SOUL loader (#439) reads it. It
+// runs on the full process's boot tail rather than in loadConfig: an offline
+// command such as `-requeue` reads the config but must not write the operator's
+// files. A failure is logged, not fatal -- the loader falls back to the embedded
 // default, so a read-only config directory must not stop the process
 // (docs/prds/soul.md, "Prompt and failure contract").
 func (b *boot) seedSoul(cfgPath string) {
@@ -631,8 +630,7 @@ func (b *boot) seedSoul(cfgPath string) {
 		b.log.Warn("soul: starter file unavailable", "err", err)
 		return
 	}
-	switch result.Action {
-	case configuration.SoulCreated, configuration.SoulUpgraded:
+	if result.Action == configuration.SoulCreated {
 		b.log.Info("soul: starter file written", "path", result.Path, "action", result.Action)
 	}
 }

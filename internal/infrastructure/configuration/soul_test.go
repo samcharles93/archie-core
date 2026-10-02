@@ -68,7 +68,7 @@ func TestSeedSoulCreatesStarterWhenAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != agent.ShippedSoul().Default {
+	if string(got) != agent.ShippedSoul() {
 		t.Fatalf("seeded SOUL = %q, want the shipped default", got)
 	}
 	info, err := os.Stat(result.Path)
@@ -124,7 +124,7 @@ func TestSeedSoulLeavesACurrentDocumentUntouched(t *testing.T) {
 	// A CRLF checkout of the current document is still current: normalising
 	// line endings must not make it look like a user edit, and it must not
 	// provoke a rewrite on every boot.
-	existing := strings.ReplaceAll(agent.ShippedSoul().Default, "\n", "\r\n")
+	existing := strings.ReplaceAll(agent.ShippedSoul(), "\n", "\r\n")
 	writeSoulTestFile(t, dir, existing)
 
 	result, err := SeedSoul(dir, agent.ShippedSoul())
@@ -139,36 +139,25 @@ func TestSeedSoulLeavesACurrentDocumentUntouched(t *testing.T) {
 	}
 }
 
-func TestSeedSoulUpgradesASupersededTemplate(t *testing.T) {
+// A body that merely looks like a starter template is the user's until a build
+// ships it: the seeder must not rewrite content no upgrade produced. This fails
+// if an unshipped body is ever added to the recognised templates.
+func TestSeedSoulPreservesATemplateShapedUserEdit(t *testing.T) {
 	t.Parallel()
 
-	const legacy = "# Archie\n\nOld starter identity.\n"
-	const current = "# Archie\n\nNew starter identity.\n"
-	doc := agent.SoulDocument{Default: current, Legacy: []string{legacy}}
-
 	dir := t.TempDir()
-	writeSoulTestFile(t, dir, strings.ReplaceAll(legacy, "\n", "\r\n"))
+	existing := "# Archie\n\nOld starter identity.\n"
+	writeSoulTestFile(t, dir, existing)
 
-	result, err := SeedSoul(dir, doc)
+	result, err := SeedSoul(dir, agent.ShippedSoul())
 	if err != nil {
 		t.Fatalf("SeedSoul() error = %v", err)
 	}
-	if result.Action != SoulUpgraded {
-		t.Fatalf("SeedSoul() action = %q, want %q", result.Action, SoulUpgraded)
+	if result.Action != SoulPreserved {
+		t.Fatalf("SeedSoul() action = %q, want %q", result.Action, SoulPreserved)
 	}
-	if got := readSoulTestFile(t, dir); got != current {
-		t.Fatalf("upgraded SOUL = %q, want %q", got, current)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 {
-		names := make([]string, 0, len(entries))
-		for _, entry := range entries {
-			names = append(names, entry.Name())
-		}
-		t.Fatalf("upgrade left files behind: %v", names)
+	if got := readSoulTestFile(t, dir); got != existing {
+		t.Fatalf("template-shaped edit was changed:\n got %q\nwant %q", got, existing)
 	}
 }
 
@@ -213,7 +202,7 @@ func TestSeedSoulTreatsAnOversizedFileAsAUserEdit(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	oversized := agent.ShippedSoul().Default + strings.Repeat("padding line\n", maxSoulReadBytes/8)
+	oversized := agent.ShippedSoul() + strings.Repeat("padding line\n", maxSoulReadBytes/8)
 	writeSoulTestFile(t, dir, oversized)
 
 	result, err := SeedSoul(dir, agent.ShippedSoul())

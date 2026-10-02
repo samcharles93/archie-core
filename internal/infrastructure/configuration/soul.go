@@ -15,7 +15,7 @@ import (
 // later concern and are not invented here.
 const SoulFilename = "SOUL.md"
 
-// maxSoulReadBytes bounds how much of an existing SOUL file the upgrade check
+// maxSoulReadBytes bounds how much of an existing SOUL file the seed check
 // reads. A SOUL is at most 8 KiB once validated, so a larger file cannot be a
 // shipped template and is treated as a user edit without reading it in full.
 const maxSoulReadBytes = 64 << 10
@@ -26,8 +26,6 @@ type SoulSeedAction string
 const (
 	// SoulCreated wrote the starter because no file existed.
 	SoulCreated SoulSeedAction = "created"
-	// SoulUpgraded replaced a file that was still exactly a shipped template.
-	SoulUpgraded SoulSeedAction = "upgraded"
 	// SoulCurrent found the build's current document already in place.
 	SoulCurrent SoulSeedAction = "current"
 	// SoulPreserved left a user edit (or an unreadable/oversized file) alone.
@@ -59,32 +57,31 @@ func SoulPath(configPath string) string {
 }
 
 // SeedSoul writes the starter SOUL into the configuration directory when no
-// file exists, upgrades a file whose content is still exactly a shipped
-// template, and leaves anything else untouched. It never overwrites a user
+// file exists and leaves an existing file untouched. It never overwrites a user
 // edit, including an empty file.
 //
 // The check is content, not provenance, because the only durable copy of a
 // file-owned SOUL is the file itself: an operator who edited it by hand leaves
-// no writer identity to consult, so a body that differs from every shipped
-// template in any way is treated as theirs.
+// no writer identity to consult, so a body that differs from the build's
+// shipped document is treated as theirs.
 //
 // The caller owns the decision to seed at all. A failure is returned rather
 // than suppressed, because whether a missing starter is fatal belongs to the
 // caller that needs the file, not to the seeder.
-func SeedSoul(configPath string, doc agent.SoulDocument) (SoulSeedResult, error) {
+func SeedSoul(configPath, shipped string) (SoulSeedResult, error) {
 	dir := ConfigDir(configPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return SoulSeedResult{}, fmt.Errorf("soul: create config dir %s: %w", dir, err)
 	}
-	return seedSoulFile(filepath.Join(dir, SoulFilename), doc)
+	return seedSoulFile(filepath.Join(dir, SoulFilename), shipped)
 }
 
-// seedSoulFile applies the seed/upgrade/preserve decision to one path.
-func seedSoulFile(path string, doc agent.SoulDocument) (SoulSeedResult, error) {
+// seedSoulFile applies the seed/preserve decision to one path.
+func seedSoulFile(path, shipped string) (SoulSeedResult, error) {
 	info, err := os.Lstat(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		if err := createSoulExclusive(path, doc.Default); err != nil {
+		if err := createSoulExclusive(path, shipped); err != nil {
 			if !errors.Is(err, fs.ErrExist) {
 				return SoulSeedResult{Path: path}, err
 			}
@@ -102,16 +99,15 @@ func seedSoulFile(path string, doc agent.SoulDocument) (SoulSeedResult, error) {
 	case err != nil:
 		return SoulSeedResult{Path: path}, fmt.Errorf("soul: stat %s: %w", path, err)
 	}
-	return classifyExistingSoul(path, info, doc)
+	return classifyExistingSoul(path, info, shipped)
 }
 
 // classifyExistingSoul decides what to do with a SOUL file that is already on
-// disk: leave the build's current document, upgrade an untouched shipped
-// template, and preserve everything else.
-func classifyExistingSoul(path string, info fs.FileInfo, doc agent.SoulDocument) (SoulSeedResult, error) {
+// disk: leave the build's current document in place and preserve everything
+// else.
+func classifyExistingSoul(path string, info fs.FileInfo, shipped string) (SoulSeedResult, error) {
 	// A symlink or any other non-regular file was not created by this seeder.
-	// Replacing it (an upgrade writes by rename) would destroy a user-managed
-	// indirection, so it is preserved.
+	// A rewrite would destroy a user-managed indirection, so it is preserved.
 	if !info.Mode().IsRegular() {
 		return SoulSeedResult{Path: path, Action: SoulPreserved}, nil
 	}
@@ -124,17 +120,10 @@ func classifyExistingSoul(path string, info fs.FileInfo, doc agent.SoulDocument)
 		return SoulSeedResult{Path: path}, fmt.Errorf("soul: read %s: %w", path, err)
 	}
 
-	switch doc.Match(string(content)) {
-	case agent.SoulCurrent:
+	if agent.SoulMatchesShipped(string(content), shipped) {
 		return SoulSeedResult{Path: path, Action: SoulCurrent}, nil
-	case agent.SoulSuperseded:
-		if err := replaceSoul(path, doc.Default); err != nil {
-			return SoulSeedResult{Path: path}, err
-		}
-		return SoulSeedResult{Path: path, Action: SoulUpgraded}, nil
-	default:
-		return SoulSeedResult{Path: path, Action: SoulPreserved}, nil
 	}
+	return SoulSeedResult{Path: path, Action: SoulPreserved}, nil
 }
 
 // createSoulExclusive writes the starter without ever replacing a file that
@@ -150,36 +139,6 @@ func createSoulExclusive(path, content string) error {
 	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("soul: close %s: %w", path, err)
-	}
-	return nil
-}
-
-// replaceSoul swaps in the current document atomically, so a reader never
-// observes a half-written SOUL and an interrupted upgrade leaves the previous
-// content intact.
-func replaceSoul(path, content string) error {
-	dir := filepath.Dir(path)
-	temp, err := os.CreateTemp(dir, ".SOUL.md.*")
-	if err != nil {
-		return fmt.Errorf("soul: create temp beside %s: %w", path, err)
-	}
-	tempName := temp.Name()
-	// Best-effort: a successful rename has already moved the file away.
-	defer func() { _ = os.Remove(tempName) }()
-
-	if err := temp.Chmod(0o600); err != nil {
-		_ = temp.Close()
-		return fmt.Errorf("soul: chmod %s: %w", tempName, err)
-	}
-	if _, err := temp.WriteString(content); err != nil {
-		_ = temp.Close()
-		return fmt.Errorf("soul: write %s: %w", tempName, err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("soul: close %s: %w", tempName, err)
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return fmt.Errorf("soul: replace %s: %w", path, err)
 	}
 	return nil
 }

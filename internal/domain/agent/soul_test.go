@@ -6,11 +6,11 @@ func TestShippedSoulShipsAStarter(t *testing.T) {
 	t.Parallel()
 
 	shipped := ShippedSoul()
-	if shipped.Default == "" {
-		t.Fatal("ShippedSoul().Default is empty; first run would seed nothing")
+	if shipped == "" {
+		t.Fatal("ShippedSoul() is empty; first run would seed nothing")
 	}
-	if got := shipped.Match(shipped.Default); got != SoulCurrent {
-		t.Fatalf("Match(shipped default) = %v, want SoulCurrent", got)
+	if !SoulMatchesShipped(shipped, shipped) {
+		t.Fatal("ShippedSoul() does not match itself")
 	}
 }
 
@@ -27,47 +27,45 @@ func TestShippedSoulIsIndependentOfPersonas(t *testing.T) {
 	}
 }
 
-func TestSoulMatch(t *testing.T) {
+func TestSoulMatchesShippedNormalisesTransportNoise(t *testing.T) {
 	t.Parallel()
 
-	const legacy = "# Archie\n\nOld starter identity.\n"
-	doc := SoulDocument{Default: "current\nidentity\n", Legacy: []string{legacy}}
-
+	const shipped = "current\nidentity\n"
 	tests := []struct {
 		name    string
 		content string
-		want    SoulMatch
+		want    bool
 	}{
-		{name: "exact default", content: doc.Default, want: SoulCurrent},
-		{name: "default with crlf", content: "current\r\nidentity\r\n", want: SoulCurrent},
-		{name: "default with lone cr", content: "current\ridentity\r", want: SoulCurrent},
-		{name: "default with trailing spaces", content: "current  \nidentity\t\n", want: SoulCurrent},
-		{name: "default with trailing blank lines", content: "current\nidentity\n\n\n", want: SoulCurrent},
-		{name: "default with utf8 bom", content: "\ufeffcurrent\nidentity\n", want: SoulCurrent},
-		{name: "legacy template", content: legacy, want: SoulSuperseded},
-		{name: "legacy template with crlf", content: "# Archie\r\n\r\nOld starter identity.\r\n", want: SoulSuperseded},
-		{name: "legacy template with trailing whitespace", content: "# Archie\n\nOld starter identity.   \n", want: SoulSuperseded},
-		{name: "an edited word", content: "current\nIDENTITY\n", want: SoulEdit},
-		{name: "leading indent is content", content: "current\n identity\n", want: SoulEdit},
-		{name: "one word removed", content: "current\n", want: SoulEdit},
-		{name: "empty", content: "", want: SoulEdit},
-		{name: "whitespace only", content: "\n\t \n", want: SoulEdit},
+		{name: "exact", content: shipped, want: true},
+		{name: "crlf", content: "current\r\nidentity\r\n", want: true},
+		{name: "lone cr", content: "current\ridentity\r", want: true},
+		{name: "trailing spaces", content: "current  \nidentity\t\n", want: true},
+		{name: "trailing blank lines", content: "current\nidentity\n\n\n", want: true},
+		{name: "utf8 bom", content: "\ufeffcurrent\nidentity\n", want: true},
+		{name: "an edited word", content: "current\nIDENTITY\n", want: false},
+		{name: "leading indent is content", content: "current\n identity\n", want: false},
+		{name: "one word removed", content: "current\n", want: false},
+		{name: "empty", content: "", want: false},
+		{name: "whitespace only", content: "\n\t \n", want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := doc.Match(test.content); got != test.want {
-				t.Fatalf("Match(%q) = %v, want %v", test.content, got, test.want)
+			if got := SoulMatchesShipped(test.content, shipped); got != test.want {
+				t.Fatalf("SoulMatchesShipped(%q, %q) = %v, want %v", test.content, shipped, got, test.want)
 			}
 		})
 	}
 }
 
-func TestSoulMatchTreatsMissingDefaultAsEdited(t *testing.T) {
+// A body is a user edit until a build actually ships it. Recognising a
+// template-shaped body no build ever shipped is the dead producer that left an
+// upgrade branch reachable only from tests; this fails if it comes back.
+func TestSoulDoesNotRecogniseAnUnshippedTemplate(t *testing.T) {
 	t.Parallel()
 
-	var doc SoulDocument
-	if got := doc.Match("anything"); got != SoulEdit {
-		t.Fatalf("empty document Match = %v, want SoulEdit", got)
+	const unshipped = "# Archie\n\nOld starter identity.\n"
+	if SoulMatchesShipped(unshipped, ShippedSoul()) {
+		t.Fatal("an unshipped template body was treated as untouched scaffolding")
 	}
 }
