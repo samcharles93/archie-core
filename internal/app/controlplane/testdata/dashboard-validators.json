@@ -1,0 +1,169 @@
+{
+  "description": "Shared accept/reject fixtures for the control-plane validators the dashboard hand-mirrors in ui/src/settings/validation.ts. The control plane is the authority: every case's `valid` is what internal/app/controlplane accepts or refuses. The Go test in this package runs the real server validators over these cases; the node test ui/test/control-plane-validator-parity.test.ts runs the real dashboard validators over the same cases. A one-sided change to either rule makes one of the two tests fail, which is the tie that stops the two implementations drifting apart (archie-core-ui-dashboard-3). Add a case here, never only to one side.",
+  "cases": {
+    "model-role-assignments": [
+      {
+        "why": "a plain provider/model value",
+        "value": { "builder": "openai/gpt-4o" },
+        "valid": true
+      },
+      {
+        "why": "a trailing space: the server only asks for a slash, so the dashboard must not refuse it",
+        "value": { "builder": "openai/gpt-4o " },
+        "valid": true
+      },
+      {
+        "why": "a leading space: the server only asks for a slash, so the dashboard must not refuse it",
+        "value": { "builder": " openai/gpt-4o" },
+        "valid": true
+      },
+      {
+        "why": "a model id with a colon (a real ollama tag), which a stricter shape would wrongly refuse",
+        "value": { "planner": "ollama/qwen2.5-coder:7b" },
+        "valid": true
+      },
+      {
+        "why": "no slash at all",
+        "value": { "builder": "gpt-4o" },
+        "valid": false
+      },
+      {
+        "why": "an empty model: the server refuses it, so the dashboard must too (SystemModelsPage deletes the key rather than storing one)",
+        "value": { "builder": "" },
+        "valid": false
+      },
+      {
+        "why": "a blank role key",
+        "value": { "": "openai/gpt-4o" },
+        "valid": false
+      }
+    ],
+    "scheduling-policy": [
+      {
+        "why": "a positive interval, a valid trigger and the label the trigger needs",
+        "value": {
+          "poll_interval": "1m0s",
+          "max_retries": 0,
+          "label": "archie",
+          "dispatch": { "trigger": "assignee" }
+        },
+        "valid": true
+      },
+      {
+        "why": "assignee does not require a label",
+        "value": {
+          "poll_interval": "30s",
+          "max_retries": 3,
+          "dispatch": { "trigger": "assignee" }
+        },
+        "valid": true
+      },
+      {
+        "why": "either requires a label, and one is present",
+        "value": {
+          "poll_interval": "1h30m",
+          "label": "archie",
+          "dispatch": { "trigger": "either" }
+        },
+        "valid": true
+      },
+      {
+        "why": "a fractional duration the server's parser accepts",
+        "value": {
+          "poll_interval": "1.5h",
+          "dispatch": { "trigger": "assignee" }
+        },
+        "valid": true
+      },
+      {
+        "why": "a zero interval",
+        "value": {
+          "poll_interval": "0s",
+          "label": "archie",
+          "dispatch": { "trigger": "assignee" }
+        },
+        "valid": false
+      },
+      {
+        "why": "an interval the server's parser cannot read",
+        "value": {
+          "poll_interval": "nonsense",
+          "label": "archie",
+          "dispatch": { "trigger": "assignee" }
+        },
+        "valid": false
+      },
+      {
+        "why": "the label trigger with no label",
+        "value": {
+          "poll_interval": "30s",
+          "max_retries": 3,
+          "dispatch": { "trigger": "label" }
+        },
+        "valid": false
+      },
+      {
+        "why": "the either trigger with an empty label",
+        "value": {
+          "poll_interval": "30s",
+          "max_retries": 0,
+          "label": "",
+          "dispatch": { "trigger": "either" }
+        },
+        "valid": false
+      }
+    ],
+    "schedules": [
+      {
+        "why": "a single valid workflow job",
+        "value": [
+          {
+            "id": "daily",
+            "kind": "workflow",
+            "schedule": { "kind": "interval", "interval": "24h0m0s" }
+          }
+        ],
+        "valid": true
+      },
+      {
+        "why": "a cron job with a pool the server recognises",
+        "value": [
+          {
+            "id": "nightly",
+            "kind": "workflow",
+            "pool": "parallel",
+            "schedule": { "kind": "cron", "cron": "0 3 * * *" }
+          }
+        ],
+        "valid": true
+      },
+      {
+        "why": "a job with no id",
+        "value": [
+          {
+            "id": "",
+            "kind": "workflow",
+            "schedule": { "kind": "interval", "interval": "24h0m0s" }
+          }
+        ],
+        "valid": false
+      },
+      {
+        "why": "two jobs sharing an id",
+        "value": [
+          {
+            "id": "daily",
+            "kind": "workflow",
+            "schedule": { "kind": "interval", "interval": "24h0m0s" }
+          },
+          {
+            "id": "daily",
+            "kind": "workflow",
+            "schedule": { "kind": "interval", "interval": "1h0m0s" }
+          }
+        ],
+        "valid": false
+      }
+    ]
+  }
+}

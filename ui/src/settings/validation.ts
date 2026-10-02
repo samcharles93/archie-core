@@ -8,6 +8,13 @@ import { parseGoDuration } from "../components/ui/duration-input/duration.ts";
  * operator sees the reason beside the field. The rules mirror the server's
  * (internal/app/controlplane), and the same map is read by the store, the
  * save bar and the pages' inline messages, so a rule is written once.
+ *
+ * A hand-written mirror drifts, which is why every rule here is pinned to the
+ * server's by internal/app/controlplane/testdata/dashboard-validators.json:
+ * a Go test runs the server validators over that fixture and this file's
+ * tests run these validators over the same cases, so changing one side alone
+ * fails a test (archie-core-ui-dashboard-3). Add a case to the fixture, not to
+ * one side only.
  */
 
 /** One field that must be fixed before its section can be saved. `path` is the
@@ -95,17 +102,20 @@ export function validateSchedules(value: unknown): FieldIssue[] {
   return issues;
 }
 
-/** The runtime resolves a role as provider/model, so a value with no "/" is
- * one the server will refuse. */
-const ROLE_MODEL = /^[^/\s]+\/\S+$/;
-
-/** validateModelRoles mirrors validateModelRoles: every role names a model as
- * provider/model. */
+/** validateModelRoles mirrors validateModelRoles exactly: the server's whole
+ * predicate is `strings.TrimSpace(role) == "" || !strings.Contains(model,
+ * "/")`. It deliberately does not impose a stricter shape, such as requiring
+ * a non-space provider before the slash -- the dashboard refusing a value the
+ * server would accept blocks a legitimate save. */
 export function validateModelRoles(value: unknown): FieldIssue[] {
   const roles = (value ?? {}) as Record<string, string>;
   return Object.entries(roles)
-    .filter(([, model]) => model && !ROLE_MODEL.test(model))
-    .map(([role]) => ({ path: role, label: role, message: "Use provider/model." }));
+    .filter(([role, model]) => !role.trim() || !String(model).includes("/"))
+    .map(([role]) => ({
+      path: role,
+      label: role.trim() || "Role",
+      message: role.trim() ? "Use provider/model." : "Role name is required.",
+    }));
 }
 
 /** The rules the store applies to a dirty draft, keyed by resource kind. */

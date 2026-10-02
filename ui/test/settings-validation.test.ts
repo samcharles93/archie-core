@@ -65,7 +65,12 @@ test("model roles require provider/model", () => {
   assert.deepEqual(validateModelRoles({ builder: "gpt-4o" }), [
     { path: "builder", label: "builder", message: "Use provider/model." },
   ]);
-  assert.deepEqual(validateModelRoles({ builder: "openai/gpt-4o", planner: "" }), []);
+  assert.deepEqual(validateModelRoles({ builder: "openai/gpt-4o" }), []);
+  // An empty value is refused, not treated as unset: the server refuses it too
+  // (SystemModelsPage deletes the key rather than storing one).
+  assert.deepEqual(validateModelRoles({ planner: "" }), [
+    { path: "planner", label: "planner", message: "Use provider/model." },
+  ]);
 });
 
 test("collectIssues runs only dirty sections' validators and stamps the kind", () => {

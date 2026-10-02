@@ -43,6 +43,15 @@ and a decision record for when it is deliberately not enough:
   draft state, copy conditions, filters and payload building live in plain
   `.ts` files beside the components and are tested in `ui/test/`. Components
   stay thin, so there is normally nothing in an SFC that is archie logic.
+- **A dashboard rule that mirrors a server rule is pinned by a shared
+  fixture, not two independent tests.** `ui/src/settings/validation.ts`
+  hand-mirrors three control-plane validators, and the model-role rule had
+  already drifted because nothing tied the two sides together. Each case now
+  lives once in `internal/app/controlplane/testdata/dashboard-validators.json`:
+  a Go test in that package runs the real server validators over it, and
+  `ui/test/control-plane-validator-parity.test.ts` runs the real dashboard
+  validators over the same cases. Changing one rule alone fails the other
+  side's test. Add a case to the fixture, never to one side only.
 - **Installed primitives are upstream-tested, not re-tested here.**
   `reka-ui` (2.10.5 here) maintains colocated tests per component in its own
   repo (Vitest/jsdom + axe: Switch, TagsInput, NumberField, Select, the
