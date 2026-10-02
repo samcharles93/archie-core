@@ -79,7 +79,7 @@ func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, life
 	}
 
 	addr := fmt.Sprintf("%s:%d", g.Host, g.Port)
-	g.server = &http.Server{Addr: addr, Handler: mux}
+	g.server = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	server := g.server
 	g.mu.Unlock()
 

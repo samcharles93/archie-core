@@ -1704,7 +1704,7 @@ func (b *boot) setupForgeWebhook() {
 	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, b.d.PublishReaction, log)
 	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
 	addr := fmt.Sprintf("%s:%d", host, port)
-	srv := &http.Server{Addr: addr, Handler: receiver}
+	srv := &http.Server{Addr: addr, Handler: receiver, ReadHeaderTimeout: 5 * time.Second}
 
 	b.startGateways = append(b.startGateways, func() {
 		go func() {
