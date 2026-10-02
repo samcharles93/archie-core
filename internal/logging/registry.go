@@ -5,7 +5,16 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 )
+
+// receivedAtField is the record field carrying the receipt time of a
+// remotely-shipped entry, alongside the entry's own event time in Time.
+// Shipping and arriving are different moments -- a container's records cross
+// NATS and can land in a burst, so a log that files them under arrival time
+// cannot say when anything actually happened. Keeping both lets a reader
+// measure delivery latency without losing the event's own timeline.
+const receivedAtField = "received_at"
 
 // TaskRegistry manages one open log destination per currently-running task
 // attempt, shared between whatever starts and ends a task's run (Open,
@@ -83,7 +92,11 @@ func (r *TaskRegistry) Close(taskID int64) error {
 
 // Write appends one remotely-shipped entry to taskID's open sink, mirroring
 // it into the live dashboard feed the same way a locally-written log would
-// be. Reports false for a task with no open sink -- not an error: a system
+// be. The entry keeps the event time it was shipped with; the moment this
+// process received it is recorded separately as the received_at field.
+// Arrival time is never substituted for event time -- stamping on arrival is
+// exactly what makes a run's timing unrecoverable.
+// Reports false for a task with no open sink -- not an error: a system
 // log message is fire-and-forget best effort, and a late or duplicate
 // delivery after the task finished (or one this daemon instance never
 // dispatched) is expected, not exceptional.
@@ -106,11 +119,36 @@ func (r *TaskRegistry) Write(ctx context.Context, taskID int64, entry Entry) boo
 	var level slog.Level
 	_ = level.UnmarshalText([]byte(entry.Level)) // unparseable falls back to Info, slog.Level's zero value
 
-	attrs := make([]slog.Attr, 0, len(entry.Fields))
+	// File the record under the time the event happened, not the time this
+	// process received it. A run's records arrive in whatever bursts the
+	// transport produces, so stamping them on arrival collapses a
+	// multi-minute run onto a few milliseconds and makes its timing
+	// unrecoverable. An entry carrying no time of its own (the field is
+	// optional) is stamped now, so a line is never filed under the zero time.
+	received := time.Now()
+	happened := entry.Time
+	if happened.IsZero() {
+		happened = received
+	}
+
+	attrs := make([]slog.Attr, 0, len(entry.Fields)+1)
 	for k, v := range entry.Fields {
 		attrs = append(attrs, slog.Any(k, v))
 	}
-	got.logger.LogAttrs(ctx, level, entry.Message, attrs...)
+	attrs = append(attrs, slog.Time(receivedAtField, received))
+
+	// slog.Logger.LogAttrs always stamps time.Now() and cannot be handed a
+	// record, so build the record here and dispatch it through the same
+	// handler the logger holds. The Enabled check is the logger's -- calling
+	// the handler directly skips it, which would write an entry below the
+	// sink's level to the file while the feed, gated separately, dropped it.
+	record := slog.NewRecord(happened, level, entry.Message, 0)
+	record.AddAttrs(attrs...)
+	handler := got.logger.Handler()
+	if !handler.Enabled(ctx, level) {
+		return true
+	}
+	_ = handler.Handle(ctx, record)
 	return true
 }
 

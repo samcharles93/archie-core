@@ -1,9 +1,11 @@
 package logging
 
 import (
+	"fmt"
 	"os"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestTaskRegistryOpenWriteCloseRoundTripsThroughTail(t *testing.T) {
@@ -31,6 +33,102 @@ func TestTaskRegistryOpenWriteCloseRoundTripsThroughTail(t *testing.T) {
 	entry := result.Entries[0]
 	if entry.Message != "gate failed" || entry.Level != "WARN" || entry.Fields["component"] != "gate" {
 		t.Errorf("entry = %+v, want message=gate failed level=WARN component=gate", entry)
+	}
+}
+
+// TestTaskRegistryWriteKeepsEachEntriesOwnEventTime guards the point of a
+// task log: a record shipped from the container must be filed under the time
+// the event happened, not the time the daemon happened to receive it. A run's
+// iterations spread over minutes must be interleaved on disk the way they
+// happened; collapsing them onto one receipt burst makes a task's timing
+// unrecoverable (which stage ran when, how long an iteration took, whether a
+// stage stalled). The daemon's receipt time is kept too, but separately -- in
+// the record's own received_at field -- so "the event's time" and "when this
+// process saw it" cannot be confused for one another.
+func TestTaskRegistryWriteKeepsEachEntriesOwnEventTime(t *testing.T) {
+	baseDir := t.TempDir()
+	feed := NewFeed(10)
+	reg := NewTaskRegistry(baseDir, feed, TaskSinkOptions{})
+
+	if err := reg.Open(11, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Three iterations, minutes apart -- the shape a real run has.
+	happened := []time.Time{
+		time.Date(2026, 10, 1, 9, 30, 0, 123456789, time.UTC),
+		time.Date(2026, 10, 1, 9, 33, 41, 987654321, time.UTC),
+		time.Date(2026, 10, 1, 9, 37, 12, 500000000, time.UTC),
+	}
+	for i, at := range happened {
+		if ok := reg.Write(t.Context(), 11, Entry{Time: at, Level: "INFO", Message: fmt.Sprintf("iteration %d", i+1)}); !ok {
+			t.Fatalf("Write() = false for an open task, iteration %d", i)
+		}
+	}
+	if err := reg.Close(11); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Tail(TaskLogPath(baseDir, 11, 1), Query{})
+	if err != nil {
+		t.Fatalf("Tail: %v", err)
+	}
+	if len(result.Entries) != len(happened) {
+		t.Fatalf("got %d entries, want %d", len(result.Entries), len(happened))
+	}
+	for i, want := range happened {
+		entry := result.Entries[i]
+		if !entry.Time.Equal(want) {
+			t.Errorf("entry %d time = %s, want the iteration's own time %s", i, entry.Time, want)
+		}
+		if _, ok := entry.Fields[receivedAtField]; !ok {
+			t.Errorf("entry %d fields = %+v, want receipt time preserved separately as received_at", i, entry.Fields)
+		}
+	}
+
+	// The live dashboard feed must carry the event's time too, not the
+	// mirror's own write time.
+	snapshot := feed.Snapshot()
+	if len(snapshot) != len(happened) {
+		t.Fatalf("feed has %d entries, want %d", len(snapshot), len(happened))
+	}
+	for i, want := range happened {
+		if !snapshot[i].Time.Equal(want) {
+			t.Errorf("feed entry %d time = %s, want %s", i, snapshot[i].Time, want)
+		}
+	}
+}
+
+// TestTaskRegistryWriteStampsAnEntryWithNoEventTime pins the fallback: a
+// locally-produced entry that carries no time of its own (recordPark does set
+// one, but the field is optional) is stamped now, so a log line is never
+// filed under the zero time and never sinks to the bottom of a time-ordered
+// view.
+func TestTaskRegistryWriteStampsAnEntryWithNoEventTime(t *testing.T) {
+	baseDir := t.TempDir()
+	reg := NewTaskRegistry(baseDir, NewFeed(10), TaskSinkOptions{})
+
+	if err := reg.Open(12, 1); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now()
+	if ok := reg.Write(t.Context(), 12, Entry{Level: "INFO", Message: "no time of its own"}); !ok {
+		t.Fatal("Write() = false for an open task")
+	}
+	after := time.Now()
+	if err := reg.Close(12); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Tail(TaskLogPath(baseDir, 12, 1), Query{})
+	if err != nil {
+		t.Fatalf("Tail: %v", err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(result.Entries))
+	}
+	got := result.Entries[0].Time
+	if got.Before(before) || got.After(after) {
+		t.Errorf("entry time = %s, want a receipt-time stamp between %s and %s", got, before, after)
 	}
 }
 

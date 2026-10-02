@@ -93,6 +93,18 @@ func TestSystemLogHandlerPublishesToTheTasksSystemSubject(t *testing.T) {
 	if entry.Fields["component"] != "gate" {
 		t.Errorf("Fields[component] = %v, want gate", entry.Fields["component"])
 	}
+	// The wire entry must carry the record's own event time. The daemon files
+	// a task's records under the time the event happened (see
+	// logging.TaskRegistry.Write), so a producer that dropped or re-stamped it
+	// here would collapse a run's timing before it ever left the container.
+	next.mu.Lock()
+	wantTime := next.records[0].Time
+	next.mu.Unlock()
+	if entry.Time.IsZero() {
+		t.Error("Entry.Time is the zero time, want the record's own event time")
+	} else if !entry.Time.Equal(wantTime) {
+		t.Errorf("Entry.Time = %s, want the record's event time %s", entry.Time, wantTime)
+	}
 }
 
 func TestSystemLogHandlerAlwaysTeesToNextRegardlessOfPublishOutcome(t *testing.T) {
