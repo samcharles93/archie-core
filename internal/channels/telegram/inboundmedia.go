@@ -117,8 +117,9 @@ func nilIfZero(v int64) *int64 {
 // maxInboundDownloadBytes is the Bot API download ceiling: bots cannot
 // fetch files larger than 20 MB through getFile, so a larger attachment
 // must be refused with a clear notice rather than met with a Bot API 400
-// nobody reads.
-var maxInboundDownloadBytes int64 = 20 * 1024 * 1024
+// nobody reads. It is the messaging contract's inbound attachment ceiling,
+// so the value the Gateway must be able to receive stays in one place.
+var maxInboundDownloadBytes int64 = messaging.MaxInboundAttachmentBytes
 
 var errInboundMediaTooLarge = errors.New("file exceeds the bot download limit")
 

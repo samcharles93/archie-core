@@ -1,6 +1,7 @@
 package gatewayrpc
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
@@ -43,20 +44,24 @@ func TestStoredMediaRoundTrip(t *testing.T) {
 }
 
 // TestInboundMediaRoundTrip mirrors the stored direction for the inbound
-// transport context: a frontend that names attachments on Route gets them
-// back on the daemon side, minus the bytes which it must carry itself.
+// transport context, except that the bytes ride along. The channel frontend
+// (archie-messaging) downloads an inbound attachment, but the process that
+// runs the turn is archie-gateway/archied, which never holds the Telegram
+// token -- so the bytes have to cross this request or the model never sees
+// the photo or document it was sent.
 func TestInboundMediaRoundTrip(t *testing.T) {
+	raw := []byte("jpeg bytes")
 	in := messaging.Inbound{
 		Message: messaging.Message{Text: "hi", Sender: "sam"},
 		Media: []messaging.MediaAttachment{
-			{Type: "image", FileID: "f1", MIMEType: "image/jpeg", Data: []byte("jpeg")},
+			{Type: "image", FileID: "f1", MIMEType: "image/jpeg", Data: raw},
 		},
 	}
 	out := inboundValue(inboundProto(in))
 	if len(out.Media) != 1 || out.Media[0].FileID != "f1" || out.Media[0].Type != "image" {
 		t.Fatalf("round-tripped inbound media = %#v, want the sender attachment", out.Media)
 	}
-	if len(out.Media[0].Data) != 0 {
-		t.Errorf("inbound attachment bytes crossed the wire, want them stripped")
+	if !bytes.Equal(out.Media[0].Data, raw) {
+		t.Errorf("inbound attachment bytes = %q, want %q carried to the turn", out.Media[0].Data, raw)
 	}
 }

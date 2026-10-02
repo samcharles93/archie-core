@@ -50,10 +50,13 @@ type Inbound struct {
 	// Media carries files the sender attached to this message (photos,
 	// documents, voice, video) with their in-process bytes already
 	// downloaded. Like Page and BudgetKey it is transport-only: it never
-	// crosses a gRPC or persistence boundary, and the stored Message
-	// records the attachment as a short textual note in its Text instead,
-	// because download URLs expire and raw media bytes must not silently
-	// inflate the transcript store. nil for a text-only message.
+	// crosses a persistence boundary, and the stored Message records the
+	// attachment as a short textual note in its Text instead, because
+	// download URLs expire and raw media bytes must not silently inflate
+	// the transcript store. It does cross the inbound request to the
+	// Gateway process that runs the turn -- that process has no platform
+	// credential, so the bytes have no other way to reach the model. nil
+	// for a text-only message.
 	Media []MediaAttachment
 }
 

@@ -64,7 +64,7 @@ func inboundProto(v messaging.Inbound) *pb.Message {
 	m.Page = v.Page
 	m.BudgetKey = v.BudgetKey
 	m.Platform = v.Platform
-	m.Media = attachmentProtoList(v.Media)
+	m.Media = inboundAttachmentProtoList(v.Media)
 	return m
 }
 
@@ -78,7 +78,9 @@ func inboundValue(v *pb.Message) messaging.Inbound {
 	}
 	msg := storedValue(v)
 	msg.Role = messaging.RoleUser
-	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey, Platform: v.Platform, Media: attachmentValueList(v.GetMedia())}
+	// The record keeps the metadata the store persists; the transport media
+	// carries the bytes the turn model reads, which the record must not hold.
+	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey, Platform: v.Platform, Media: inboundAttachmentValueList(v.GetMedia())}
 }
 
 func toolProto(v messaging.ToolCallEvent) *pb.ToolCall {
@@ -175,12 +177,12 @@ func intPointer(v *int64) *int {
 	return &n
 }
 
-// attachmentProtoList renders a message's attachments in wire shape. Data
-// is deliberately unmapped: it is a turn-scoped in-process value and must
-// never cross the wire, matching the persisted record which strips it too.
-// An attachment with no fields beyond Data would produce an empty wire
-// message, which is still the honest encoding of "metadata was stripped",
-// and never happens for a real attachment.
+// attachmentProtoList renders a message's attachments in wire shape for the
+// stored-history and outbound-event directions. Data is deliberately
+// unmapped: those directions must not carry a turn's bytes, and a persisted
+// record strips them too. An attachment with no fields beyond Data would
+// produce an empty wire message, which is still the honest encoding of
+// "metadata was stripped", and never happens for a real attachment.
 func attachmentProtoList(media []messaging.MediaAttachment) []*pb.Media {
 	if len(media) == 0 {
 		return nil
@@ -195,6 +197,25 @@ func attachmentValueList(list []*pb.Media) []messaging.MediaAttachment {
 	return mapValues(list, attachmentValue)
 }
 
+// inboundAttachmentProtoList renders a turn's attachments for the inbound
+// request. Unlike the stored direction, Data rides along: the channel
+// frontend downloads the file, but the Gateway process that runs the turn
+// never holds the platform credential, so the bytes have no other way to
+// reach the model.
+func inboundAttachmentProtoList(media []messaging.MediaAttachment) []*pb.Media {
+	if len(media) == 0 {
+		return nil
+	}
+	return mapValues(media, inboundAttachmentProto)
+}
+
+func inboundAttachmentValueList(list []*pb.Media) []messaging.MediaAttachment {
+	if len(list) == 0 {
+		return nil
+	}
+	return mapValues(list, inboundAttachmentValue)
+}
+
 func attachmentProto(a messaging.MediaAttachment) *pb.Media {
 	return &pb.Media{Type: a.Type, FileId: a.FileID, Url: a.URL, Path: a.Path, MimeType: a.MIMEType, FileName: a.FileName, FileSize: a.FileSize, Width: int64Pointer(a.Width), Height: int64Pointer(a.Height), Duration: int64Pointer(a.Duration)}
 }
@@ -204,6 +225,18 @@ func attachmentValue(v *pb.Media) messaging.MediaAttachment {
 		return messaging.MediaAttachment{}
 	}
 	return messaging.MediaAttachment{Type: v.Type, FileID: v.FileId, URL: v.Url, Path: v.Path, MIMEType: v.MimeType, FileName: v.FileName, FileSize: v.FileSize, Width: intPointer(v.Width), Height: intPointer(v.Height), Duration: intPointer(v.Duration)}
+}
+
+func inboundAttachmentProto(a messaging.MediaAttachment) *pb.Media {
+	pm := attachmentProto(a)
+	pm.Data = a.Data
+	return pm
+}
+
+func inboundAttachmentValue(v *pb.Media) messaging.MediaAttachment {
+	a := attachmentValue(v)
+	a.Data = v.GetData()
+	return a
 }
 
 func mediaProto(v messaging.MediaEvent) *pb.Media {

@@ -1,5 +1,14 @@
 package messaging
 
+// MaxInboundAttachmentBytes is the transport ceiling for an attachment a
+// channel frontend carries across the inbound wire to the process that runs
+// the turn. It is a ceiling, not a policy: a frontend may refuse earlier
+// (Telegram's Bot API caps getFile at 20 MB), and anything larger must
+// degrade to a notice instead of failing the request that carries it.
+// The Gateway's gRPC receive limit is sized from this value, so a maximal
+// attachment is accepted rather than rejected as an oversized message.
+const MaxInboundAttachmentBytes = 20 << 20
+
 // MediaAttachment describes a file attached to a message. Platform-agnostic;
 // platform-specific fields live in Raw.
 //
@@ -53,7 +62,10 @@ type MediaAttachment struct {
 
 	// Data carries the attachment bytes in-process. An inbound path sets
 	// it after downloading the file; outbound senders never set it and
-	// read Path or URL instead. It never crosses a wire or persistence
-	// boundary -- it is a turn-scoped value, not a stored one.
+	// read Path or URL instead. It crosses the wire in one direction only:
+	// the inbound request from a channel frontend to the Gateway process
+	// that runs the turn, because that process never holds the platform
+	// credential. It is never persisted, and the stored-history and
+	// outbound-event directions strip it.
 	Data []byte `json:"data,omitempty"`
 }

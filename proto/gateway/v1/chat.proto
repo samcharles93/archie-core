@@ -64,9 +64,9 @@ message Message {
   // constant. Transport-only, never persisted: the session record keeps it.
   string platform = 10;
   // media carries attachment metadata for a message that arrived with a
-  // file. The attachment's bytes never cross this wire: a stored Media
-  // with tool_name empty is a sender attachment, and the tool_name on
-  // tool-produced events stays a stream-only field.
+  // file. The bytes ride only on the inbound request (see Media.data); a
+  // stored Media with tool_name empty is a sender attachment, and the
+  // tool_name on tool-produced events stays a stream-only field.
   repeated Media media = 11;
 }
 message ToolCall {
@@ -88,6 +88,13 @@ message Media {
   optional int64 width = 9;
   optional int64 height = 10;
   optional int64 duration = 11;
+  // data carries a sender attachment's bytes on an inbound request. The
+  // channel frontend downloads the file, but the Gateway process that runs
+  // the turn never holds the platform credential, so this is the only way
+  // the model can read a photo or document. It is empty on every other
+  // direction: stored history and outbound media events carry metadata
+  // only, and a persisted record strips the bytes.
+  bytes data = 12;
 }
 message Turn {
   string turn_id = 1;

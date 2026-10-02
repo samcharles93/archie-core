@@ -163,9 +163,9 @@ type Message struct {
 	// constant. Transport-only, never persisted: the session record keeps it.
 	Platform string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
 	// media carries attachment metadata for a message that arrived with a
-	// file. The attachment's bytes never cross this wire: a stored Media
-	// with tool_name empty is a sender attachment, and the tool_name on
-	// tool-produced events stays a stream-only field.
+	// file. The bytes ride only on the inbound request (see Media.data); a
+	// stored Media with tool_name empty is a sender attachment, and the
+	// tool_name on tool-produced events stays a stream-only field.
 	Media         []*Media `protobuf:"bytes,11,rep,name=media,proto3" json:"media,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -355,18 +355,25 @@ func (x *ToolCall) GetError() string {
 }
 
 type Media struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ToolName      string                 `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	FileId        string                 `protobuf:"bytes,3,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
-	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
-	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
-	MimeType      string                 `protobuf:"bytes,6,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
-	FileName      string                 `protobuf:"bytes,7,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
-	FileSize      *int64                 `protobuf:"varint,8,opt,name=file_size,json=fileSize,proto3,oneof" json:"file_size,omitempty"`
-	Width         *int64                 `protobuf:"varint,9,opt,name=width,proto3,oneof" json:"width,omitempty"`
-	Height        *int64                 `protobuf:"varint,10,opt,name=height,proto3,oneof" json:"height,omitempty"`
-	Duration      *int64                 `protobuf:"varint,11,opt,name=duration,proto3,oneof" json:"duration,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	ToolName string                 `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	Type     string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	FileId   string                 `protobuf:"bytes,3,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	Url      string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	Path     string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
+	MimeType string                 `protobuf:"bytes,6,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	FileName string                 `protobuf:"bytes,7,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
+	FileSize *int64                 `protobuf:"varint,8,opt,name=file_size,json=fileSize,proto3,oneof" json:"file_size,omitempty"`
+	Width    *int64                 `protobuf:"varint,9,opt,name=width,proto3,oneof" json:"width,omitempty"`
+	Height   *int64                 `protobuf:"varint,10,opt,name=height,proto3,oneof" json:"height,omitempty"`
+	Duration *int64                 `protobuf:"varint,11,opt,name=duration,proto3,oneof" json:"duration,omitempty"`
+	// data carries a sender attachment's bytes on an inbound request. The
+	// channel frontend downloads the file, but the Gateway process that runs
+	// the turn never holds the platform credential, so this is the only way
+	// the model can read a photo or document. It is empty on every other
+	// direction: stored history and outbound media events carry metadata
+	// only, and a persisted record strips the bytes.
+	Data          []byte `protobuf:"bytes,12,opt,name=data,proto3" json:"data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -476,6 +483,13 @@ func (x *Media) GetDuration() int64 {
 		return *x.Duration
 	}
 	return 0
+}
+
+func (x *Media) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
 }
 
 type Turn struct {
@@ -2890,7 +2904,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"parameters\x18\x03 \x01(\tR\n" +
 	"parameters\x12\x16\n" +
 	"\x06output\x18\x04 \x01(\tR\x06output\x12\x14\n" +
-	"\x05error\x18\x05 \x01(\tR\x05error\"\xdc\x02\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\"\xf0\x02\n" +
 	"\x05Media\x12\x1b\n" +
 	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x17\n" +
@@ -2903,7 +2917,8 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x05width\x18\t \x01(\x03H\x01R\x05width\x88\x01\x01\x12\x1b\n" +
 	"\x06height\x18\n" +
 	" \x01(\x03H\x02R\x06height\x88\x01\x01\x12\x1f\n" +
-	"\bduration\x18\v \x01(\x03H\x03R\bduration\x88\x01\x01B\f\n" +
+	"\bduration\x18\v \x01(\x03H\x03R\bduration\x88\x01\x01\x12\x12\n" +
+	"\x04data\x18\f \x01(\fR\x04dataB\f\n" +
 	"\n" +
 	"_file_sizeB\b\n" +
 	"\x06_widthB\t\n" +

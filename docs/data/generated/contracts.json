@@ -314,7 +314,7 @@
       "properties": {
         "data": {
           "contentEncoding": "base64",
-          "description": "Data carries the attachment bytes in-process. An inbound path sets\nit after downloading the file; outbound senders never set it and\nread Path or URL instead. It never crosses a wire or persistence\nboundary -- it is a turn-scoped value, not a stored one.",
+          "description": "Data carries the attachment bytes in-process. An inbound path sets\nit after downloading the file; outbound senders never set it and\nread Path or URL instead. It crosses the wire in one direction only:\nthe inbound request from a channel frontend to the Gateway process\nthat runs the turn, because that process never holds the platform\ncredential. It is never persisted, and the stored-history and\noutbound-event directions strip it.",
           "type": "string"
         },
         "duration": {

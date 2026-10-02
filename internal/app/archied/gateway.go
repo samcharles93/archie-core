@@ -12,6 +12,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -189,18 +190,30 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	return contract, nil
 }
 
+// inboundMessageHeadroomBytes leaves room for the protobuf framing and the
+// rest of the request around an attachment at the messaging contract's
+// ceiling, so the largest attachment a channel frontend may send is accepted
+// rather than rejected as an oversized gRPC message.
+const inboundMessageHeadroomBytes = 1 << 20
+
 // gatewayServerOpts applies the transport security boundary: a loopback
 // listener is served insecure with no token; any non-loopback address
 // requires a Bearer [REDACTED], else the process fails closed. It mirrors
 // stateStoreServerOpts, minus the State Store's task-scoped grants: the
 // Gateway has one administrative token for all callers.
+//
+// The receive limit is raised above gRPC's 4 MB default because an inbound
+// request carries a channel attachment's bytes: the channel frontend
+// downloads the file, and this process -- which runs the turn -- holds no
+// platform credential to fetch it again.
 func gatewayServerOpts(listen, token string) (opts []grpc.ServerOption, loopback bool, err error) {
+	recv := grpc.MaxRecvMsgSize(messaging.MaxInboundAttachmentBytes + inboundMessageHeadroomBytes)
 	loopback, err = gatewayrpc.TargetIsLoopback(listen)
 	if err != nil {
 		return nil, false, err
 	}
 	if loopback {
-		return nil, true, nil
+		return []grpc.ServerOption{recv}, true, nil
 	}
 	if token == "" {
 		return nil, false, fmt.Errorf(
@@ -209,6 +222,7 @@ func gatewayServerOpts(listen, token string) (opts []grpc.ServerOption, loopback
 		)
 	}
 	return []grpc.ServerOption{
+		recv,
 		grpc.ChainUnaryInterceptor(gatewayrpc.UnaryServerInterceptor(token)),
 		grpc.ChainStreamInterceptor(gatewayrpc.StreamServerInterceptor(token)),
 	}, false, nil
