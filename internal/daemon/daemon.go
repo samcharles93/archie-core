@@ -1913,12 +1913,14 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 }
 
 // pinTaskProfile pins the task's workflow definition and resolves the agent
-// profile it names, parking the task when either fails. An unconfigured
-// profile needs an operator: the fix is configuration, then a retry.
+// profile it names, parking the task when either fails. The park class is the
+// failing cause's own: an unusable profile, a corrupt stored pin and a
+// definition set that no longer offers the task's workflow all need an
+// operator, while a State Store read or persist failure is environmental.
 func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (config.AgentProfile, bool) {
 	if err := d.pinWorkflowDefinition(ctx, task); err != nil {
 		d.Log.Error("pin workflow definition failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error(), taskstate.ParkTransient)
+		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error(), pinParkClass(err))
 		return config.AgentProfile{}, false
 	}
 	iface, err := workflowtask.ParseWorkflowInterface(task.WorkflowDefinitionYAML)
@@ -2004,7 +2006,7 @@ func (d *Daemon) publicationGrant(ctx context.Context, task *workflow.Task) (str
 func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
 	pinned, ok, err := pinnedDefinitionID(task)
 	if err != nil {
-		return err
+		return pinFailure{taskstate.ParkNeedsHuman, err}
 	}
 	if ok && pinned == task.Workflow {
 		return nil
@@ -2015,9 +2017,35 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 	}
 	collection, version, err := d.WorkflowDefinitions.WorkflowDefinitions(ctx)
 	if err != nil {
-		return err
+		return pinFailure{taskstate.ParkTransient, err}
 	}
 	return d.pinWorkflowFromCollection(ctx, task, collection, version)
+}
+
+// pinFailure carries the park class a workflow-definition pin failure needs.
+// The class is decided where the cause is known -- inside
+// pinWorkflowDefinition and pinWorkflowFromCollection -- never inferred from
+// the reason text at the park site. A defect in the task's own stored pin, or a
+// definition set that no longer offers the workflow the task names, is durable:
+// the same dispatch fails again on every requeue until an operator repairs the
+// row or the configuration, so it parks operator-actionable. Only a State
+// Store read or persist failure is environmental, where a requeue can succeed.
+type pinFailure struct {
+	class taskstate.ParkClass
+	err   error
+}
+
+func (e pinFailure) Error() string { return e.err.Error() }
+func (e pinFailure) Unwrap() error { return e.err }
+
+// pinParkClass reports the class a pin failure carries, defaulting to
+// taskstate.ParkNeedsHuman for a cause that did not classify itself: the safe
+// misread is "an operator should look at this", never "a requeue will fix it".
+func pinParkClass(err error) taskstate.ParkClass {
+	if failure, ok := errors.AsType[pinFailure](err); ok {
+		return failure.class
+	}
+	return taskstate.ParkNeedsHuman
 }
 
 // pinnedDefinitionID reports the workflow a task's stored definition pin names,
@@ -2112,18 +2140,18 @@ func (d *Daemon) pinWorkflowFromCollection(ctx context.Context, task *workflow.T
 	}
 	id, err := d.resolveWorkflowID(task, available)
 	if err != nil {
-		return err
+		return pinFailure{taskstate.ParkNeedsHuman, err}
 	}
 	definition, ok := collection.DefinitionByID(id)
 	if !ok {
-		return fmt.Errorf("workflow definition %q disappeared", id)
+		return pinFailure{taskstate.ParkNeedsHuman, fmt.Errorf("workflow definition %q disappeared", id)}
 	}
 	task.Workflow = id
 	task.WorkflowDefinitionVersion = version
 	task.WorkflowDefinitionYAML = definition.YAML
 	task.WorkflowDefinitionDigest = workflow.DigestDefinition(definition.YAML)
 	if err := d.Store.Update(ctx, task); err != nil {
-		return fmt.Errorf("persist workflow definition pin: %w", err)
+		return pinFailure{taskstate.ParkTransient, fmt.Errorf("persist workflow definition pin: %w", err)}
 	}
 	return nil
 }
