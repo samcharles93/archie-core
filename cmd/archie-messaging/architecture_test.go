@@ -57,6 +57,14 @@ var deletionGate = []bannedCategory{
 	{"gateway runtime", []string{
 		modulePath + "internal/gateway",
 	}},
+	// The PRD names "Direct LLM providers, model runtimes" among what the
+	// Messaging Service must not own or link. These are the in-module
+	// infrastructure packages that construct one; building either here means
+	// a model-provider credential is in the messaging process.
+	{"model providers", []string{
+		modulePath + "internal/infrastructure/transcription",
+		modulePath + "internal/infrastructure/embedding",
+	}},
 	{"dashboard", []string{
 		modulePath + "internal/webui",
 	}},
@@ -92,13 +100,8 @@ func TestMessagingProcessLinksNoRuntimeItOnlyDials(t *testing.T) {
 		if excepted(importPath, linked) {
 			continue
 		}
-		for _, category := range deletionGate {
-			for _, prefix := range category.prefixes {
-				if !under(importPath, prefix) {
-					continue
-				}
-				t.Errorf("archie-messaging links %s (%s); the Messaging Service reaches that capability over a contract, never in-process (docs/prds/messaging-service-boundary.md, deletion gate)", importPath, category.name)
-			}
+		if category, banned := bannedLink(importPath); banned {
+			t.Errorf("archie-messaging links %s (%s); the Messaging Service reaches that capability over a contract, never in-process (docs/prds/messaging-service-boundary.md, deletion gate)", importPath, category)
 		}
 	}
 	for _, exception := range gateExceptions {
@@ -110,6 +113,40 @@ func TestMessagingProcessLinksNoRuntimeItOnlyDials(t *testing.T) {
 	// read as a pass. This pins the one thing the loop above assumes.
 	if !strings.Contains(string(listed), modulePath+"cmd/archie-messaging") {
 		t.Fatal("go list -deps returned a list that does not even name this package: the gate asserted nothing")
+	}
+}
+
+// bannedLink reports the deletion-gate category importPath falls under, or
+// ("", false). Classifying a single package is the rule the unit test below
+// pins, so the gate can be exercised without a live `go list`.
+func bannedLink(importPath string) (category string, banned bool) {
+	for _, c := range deletionGate {
+		for _, prefix := range c.prefixes {
+			if under(importPath, prefix) {
+				return c.name, true
+			}
+		}
+	}
+	return "", false
+}
+
+// TestDeletionGateBansModelProviderCapabilities pins the PRD category that the
+// voice-transcription violation slipped past: the link gate would not flag
+// anything merely because the process built an LLM client, so the capability
+// packages are named explicitly. gatewayrpc is checked as the negative, since
+// it is the permitted contract and must not be swept up by the internal/
+// infrastructure/ prefix.
+func TestDeletionGateBansModelProviderCapabilities(t *testing.T) {
+	for _, pkg := range []string{
+		modulePath + "internal/infrastructure/transcription",
+		modulePath + "internal/infrastructure/embedding",
+	} {
+		if _, banned := bannedLink(pkg); !banned {
+			t.Errorf("bannedLink(%q) = not banned; the Messaging Service must not construct a model-provider capability in-process", pkg)
+		}
+	}
+	if category, banned := bannedLink(modulePath + "internal/infrastructure/gatewayrpc"); banned {
+		t.Errorf("bannedLink(gatewayrpc) = %q; the Gateway contract is permitted", category)
 	}
 }
 
