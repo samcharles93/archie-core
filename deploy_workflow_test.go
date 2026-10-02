@@ -85,12 +85,27 @@ func TestDeployWorkflowUsesConfiguredFormatters(t *testing.T) {
 	source := readDeploymentFile(t, ".github/workflows/deploy.yml")
 	for _, required := range []string{
 		"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2",
-		"golangci-lint fmt",
+		"task fmt",
 		"git diff --exit-code",
 		"golangci-lint run ./...",
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("deploy workflow is missing formatter gate %q", required)
+		}
+	}
+	// task fmt is the one owner of the formatter sequence, and it drives go fix to
+	// a fixpoint. An inline single pass here leaves the redundant loop-variable
+	// copy that copyloopvar rejects -- the hazard of archie-core-wwho, which
+	// surfaces in this workflow as a spurious git-diff failure rather than a lint
+	// error (archie-core-6kda). A comment may name the command while explaining
+	// why it is absent; only a line that is itself a command inlines it.
+	for line := range strings.SplitSeq(source, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "go fix") || trimmed == "golangci-lint fmt" {
+			t.Errorf("deploy workflow runs %q inline; task fmt owns the formatter sequence", trimmed)
 		}
 	}
 	if strings.Contains(source, "gofumpt -w .") {
