@@ -96,3 +96,31 @@ func TestWriteTool_RespectsParentContextDeadline(t *testing.T) {
 		t.Fatal("expected no file to be written when the context had already expired")
 	}
 }
+
+// TestMutationToolsLeaveNoUnrestorableCheckpoints guards the decision that the
+// workspace mutation tools carry no rollback state. A pre-mutation checkpoint
+// writer whose only reader (CheckpointStore.RestoreLatest) has no production
+// caller, and whose store is never pruned, is dead weight and grows the
+// workspace without bound. If the inert writer is reintroduced without a
+// reachable restore caller, this fails.
+func TestMutationToolsLeaveNoUnrestorableCheckpoints(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "f.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	write := NewWriteTool(tmp, NewMutationQueue(), nil)
+	if res, err := write.Execute(context.Background(), json.RawMessage(`{"path":"g.txt","content":"new\n"}`), nil); err != nil || res.IsError {
+		t.Fatalf("write: err=%v res=%+v", err, res)
+	}
+
+	edit := NewEditTool(tmp, NewMutationQueue(), nil)
+	if res, err := edit.Execute(context.Background(), json.RawMessage(`{"path":"f.txt","edits":[{"old_text":"hello","new_text":"hi"}]}`), nil); err != nil || res.IsError {
+		t.Fatalf("edit: err=%v res=%+v", err, res)
+	}
+
+	store := filepath.Join(tmp, ".git", "archie-checkpoints")
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Fatalf("mutating tools left unrestorable checkpoint data at %s: stat err = %v", store, err)
+	}
+}
