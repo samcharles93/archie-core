@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
 
 // Recognised enum values, named so validation and its error message cannot
@@ -342,7 +343,10 @@ func validateIdentityStructure(cfg *config.Config) error {
 
 func validateIdentities(identities []config.IdentityConfig) error {
 	for i, id := range identities {
-		if id.Name == "" {
+		// The name rule belongs to the identity feature, which the store path
+		// also applies (identity.New). Calling it here keeps a name the file
+		// accepts from being a name the store refuses.
+		if !identity.ValidDisplayName(id.Name) {
 			return fmt.Errorf("%w: identities[%d].name is required", ErrInvalidInput, i)
 		}
 		if id.BotUser == "" {
@@ -372,7 +376,10 @@ func ForgeDisabled(t string) bool {
 }
 
 func validateSingleIdentity(cfg *config.Config) error {
-	if cfg.BotUser == "" {
+	// bot_user becomes the seeded identity's display name
+	// (configuredIdentityNames -> identity.New), so it is judged by the same
+	// rule rather than a second empty-string test.
+	if !identity.ValidDisplayName(cfg.BotUser) {
 		return fmt.Errorf("%w: bot_user is required (or define [[identities]])", ErrInvalidInput)
 	}
 	if !oneOf(cfg.Forge.Type, forgeTypes) {

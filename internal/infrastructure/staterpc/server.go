@@ -167,6 +167,17 @@ func (s *server) logErr(rpc string, err error) error {
 	return mapError(err)
 }
 
+// validationFailure answers a write the owning feature's own Validate refused.
+// The domain-managed kinds (identities, captures, mappings, bindings) are
+// advertised in the control-plane catalog but are not stored as generic
+// documents, so it is these RPC handlers -- not the catalog -- that must apply
+// the feature's rule. The rule itself stays in the domain package; this only
+// translates its error for the wire, and it is deliberately not codes.Internal
+// (an unjudged value is the caller's fault, not this process's).
+func validationFailure(err error) error {
+	return status.Error(codes.InvalidArgument, err.Error())
+}
+
 // Lifecycle
 
 func (s *server) EnqueueIssue(ctx context.Context, r *pb.EnqueueIssueRequest) (*pb.EnqueueIssueResponse, error) {
@@ -642,7 +653,11 @@ func (s *server) InsertMapping(ctx context.Context, r *pb.InsertMappingRequest) 
 	if err != nil {
 		return nil, err
 	}
-	id, err := ms.InsertMapping(ctx, mappingValue(r.Mapping))
+	value := mappingValue(r.Mapping)
+	if err := value.Validate(); err != nil {
+		return nil, validationFailure(err)
+	}
+	id, err := ms.InsertMapping(ctx, value)
 	if err != nil {
 		return nil, s.logErr("InsertMapping", err)
 	}
@@ -678,7 +693,11 @@ func (s *server) UpdateMapping(ctx context.Context, r *pb.UpdateMappingRequest) 
 	if err != nil {
 		return nil, err
 	}
-	if err := ms.UpdateMapping(ctx, mappingValue(r.Mapping)); err != nil {
+	value := mappingValue(r.Mapping)
+	if err := value.Validate(); err != nil {
+		return nil, validationFailure(err)
+	}
+	if err := ms.UpdateMapping(ctx, value); err != nil {
 		return nil, s.logErr("UpdateMapping", err)
 	}
 	return &pb.UpdateMappingResponse{}, nil
@@ -719,7 +738,11 @@ func (s *server) InsertBinding(ctx context.Context, r *pb.InsertBindingRequest) 
 	if err != nil {
 		return nil, err
 	}
-	id, err := bs.InsertBinding(ctx, bindingValue(r.Binding))
+	value := bindingValue(r.Binding)
+	if err := value.Validate(); err != nil {
+		return nil, validationFailure(err)
+	}
+	id, err := bs.InsertBinding(ctx, value)
 	if err != nil {
 		return nil, s.logErr("InsertBinding", err)
 	}
@@ -755,7 +778,11 @@ func (s *server) UpdateBinding(ctx context.Context, r *pb.UpdateBindingRequest) 
 	if err != nil {
 		return nil, err
 	}
-	if err := bs.UpdateBinding(ctx, bindingValue(r.Binding)); err != nil {
+	value := bindingValue(r.Binding)
+	if err := value.Validate(); err != nil {
+		return nil, validationFailure(err)
+	}
+	if err := bs.UpdateBinding(ctx, value); err != nil {
 		return nil, s.logErr("UpdateBinding", err)
 	}
 	return &pb.UpdateBindingResponse{}, nil

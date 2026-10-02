@@ -232,47 +232,35 @@ func (s *Store) BindSubject(ctx context.Context, id identity.IdentityID, subject
 
 // BootstrapIdentities seeds the system identity and the configured legacy
 // names idempotently, migrating any forge tasks that still carry a legacy
-// name to the stable id.
+// name to the stable id. Each legacy name is derived through
+// identity.FromLegacyName, so a name this store cannot turn into an identity is
+// reported rather than silently skipped -- the file loader refuses the same
+// names (configuration.validateIdentities).
 func (s *Store) BootstrapIdentities(ctx context.Context, legacyNames []string) error {
-	values := append([]struct {
-		id   identity.IdentityID
-		kind identity.Kind
-		name string
-	}{{identity.SystemID, identity.KindSystem, "System"}}, make([]struct {
-		id   identity.IdentityID
-		kind identity.Kind
-		name string
-	}, len(legacyNames))...)
-	for i, name := range legacyNames {
-		name = strings.TrimSpace(name)
-		values[i+1] = struct {
-			id   identity.IdentityID
-			kind identity.Kind
-			name string
-		}{identity.StableID(name), identity.KindBot, name}
-	}
-	for _, seed := range values {
-		if seed.name == "" {
-			continue
-		}
-		value, err := identity.New(seed.id, seed.kind, seed.name)
+	values := make([]identity.Identity, 0, len(legacyNames)+1)
+	values = append(values, identity.System())
+	for _, name := range legacyNames {
+		value, err := identity.FromLegacyName(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("bootstrap identity %q: %w", name, err)
 		}
-		_, err = s.Create(ctx, value, identity.Audit{
-			ActorID: identity.SystemID, Source: "legacy-config", RequestID: "identity-import:" + string(seed.id),
+		values = append(values, value)
+	}
+	for _, value := range values {
+		_, err := s.Create(ctx, value, identity.Audit{
+			ActorID: identity.SystemID, Source: "legacy-config", RequestID: "identity-import:" + string(value.ID),
 		})
 		if err != nil && !isUniqueViolation(err) {
-			return fmt.Errorf("bootstrap identity %q: %w", seed.name, err)
+			return fmt.Errorf("bootstrap identity %q: %w", value.DisplayName, err)
 		}
 		if err := s.queries().InsertIdentityAliasIgnoreConflict(ctx, postgresdb.InsertIdentityAliasIgnoreConflictParams{
-			Alias: seed.name, IdentityID: string(seed.id),
+			Alias: value.DisplayName, IdentityID: string(value.ID),
 		}); err != nil {
 			return err
 		}
-		if seed.kind != identity.KindSystem {
+		if value.Kind != identity.KindSystem {
 			if err := s.queries().UpdateTaskIdentity(ctx, postgresdb.UpdateTaskIdentityParams{
-				Identity: string(seed.id), Identity_2: seed.name,
+				Identity: string(value.ID), Identity_2: value.DisplayName,
 			}); err != nil {
 				return err
 			}
