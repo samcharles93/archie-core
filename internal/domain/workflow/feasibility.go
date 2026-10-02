@@ -13,11 +13,12 @@ import (
 
 // Feasibility is the feature-request workflow: assess the request
 // against the project's direction, close it with reasons when it
-// doesn't fit, otherwise produce a PRD, deliver it to Sam (issue
-// comment + notify webhook), and hand the task to waiting_human. The
-// daemon watches for Sam's reply and  --  LLM-judged, not keyword-matched  --
-// requeues approved features under the implement workflow or closes
-// rejected ones. Routed via the "feature" label.
+// doesn't fit, otherwise produce a PRD, post a one-way delivery notice
+// on the issue (plus the notify webhook when configured), and hand the
+// task to waiting_human. The operator answers in chat or on the
+// dashboard  --  the decision surfaces  --  and the approval requeues the
+// feature under the implement workflow or closes it. Routed via the
+// "feature" label.
 func Feasibility() Workflow {
 	return Workflow{
 		Name: "feasibility",
@@ -93,7 +94,9 @@ func Feasibility() Workflow {
 			}.Stage(),
 
 			// Persist the PRD and block on Sam. Messaging and the Web UI are
-			// the decision surfaces; the forge issue is not a chat log.
+			// the decision surfaces, so the issue gets a one-way delivery
+			// notice (notify) rather than a reply channel: the wait is
+			// channel-neutral, and the forge issue is not a chat log.
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
 				notify(ctx, tc, "feasibility_prd")
 				// The approval handoff is a workflow change, not a payload
@@ -136,10 +139,24 @@ func decideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 	}}
 }
 
-// notify POSTs a JSON payload to the configured webhook (n8n turns it
-// into an email). Best-effort: failures log, the issue comment is the
-// authoritative channel.
+// notify delivers a human-facing event to the channels a default deployment
+// has. A forge-backed task gets a one-way notice on its issue  --  the channel
+// that always exists when [notify].webhook is unset  --  and the webhook is an
+// additional push (n8n turns it into an email). Both are best-effort and log
+// on failure: the PRD is persisted on the task and rendered by the Web UI, so
+// a transport error must not mask the delivery decision or re-run the agent
+// stages that produced it.
+//
+// The issue notice is one-way. Messaging and the Web UI are the decision
+// surfaces; the issue is not a chat log, and notify records no reply cursor
+// on it.
 func notify(ctx context.Context, tc *TaskContext, kind string) {
+	if tc.Task.IsForgeBacked() {
+		if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, deliveryNotice(tc, kind)); err != nil {
+			tc.Log.Warn("delivery notice not posted",
+				"kind", kind, "issue", tc.Task.IssueNumber, "err", err)
+		}
+	}
 	url := tc.Cfg.Notify.Webhook
 	if url == "" {
 		return
@@ -171,4 +188,16 @@ func notify(ctx context.Context, tc *TaskContext, kind string) {
 	if err := resp.Body.Close(); err != nil {
 		tc.Log.Warn("close notify webhook response", "err", err)
 	}
+}
+
+// deliveryNotice is the body of the one-way notice notify posts on a
+// forge-backed task's issue. It carries the PRD because the issue is the
+// durable record of the request, and points at the decision surfaces so the
+// notice is not read as an invitation to reply there.
+func deliveryNotice(tc *TaskContext, kind string) string {
+	subject := "archie finished a run that needs you"
+	if kind == "feasibility_prd" {
+		subject = "archie's PRD is ready  --  awaiting your go/no-go"
+	}
+	return fmt.Sprintf("**%s.**\n\n%s\n\n_Decide in chat or on the dashboard._", subject, tc.Task.Plan)
 }
