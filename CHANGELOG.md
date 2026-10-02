@@ -5,6 +5,92 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.46.0] - 2026-10-02
+
+### archied
+
+- feat(workflow): declared workflow outputs for wait:true callers
+- feat(prreview): the operator-approval gate is PRReview's own stage-list entry
+- feat(staterpc): carry the review gate and re-review rounds, with one guarded response write
+- feat(prreview): the gate records the review it holds and posts the operator's answer
+- feat(taskactions): one approval path answers the review gate from every surface
+- feat(webui): the dashboard answers the review gate, including a re-review's instructions
+- feat(daemon): resolve the producing identity's org before publishing work
+- feat(webui): block invalid settings and show a field's former value
+- fix(workflow): derive a declared output's captures need for profile selection
+- fix(storepkg): validate every declared authority grant at the package descriptor
+- feat(archied): refresh the model catalog at runtime
+- feat(mcp): answer server-initiated sampling from the chat model
+- feat(container): send registry auth on image pull
+- feat(messaging): retract ephemeral replies after their TTL
+- feat(messaging): transcribe Telegram voice notes
+- fix(egress): take a run's credential kind from its binding, not the Kit
+- feat(webui): a live-apply setting reads as applied, never as a restart
+- feat(webui): the dashboard reads harness bindings and opens the setup terminal
+- feat(gateway): list the harness page in the dashboard page registry
+- feat(webui): the harness settings page and its setup terminal
+- fix(workflow): park environment gate failures without dispatching a builder
+- feat(messaging): adapter-facing clarify, picker and approval contract
+- feat(gateway): gate admin slash commands by sender policy
+- feat(plugins): load plugin and secret-engine files without a restart
+- fix(workflow): deliver the feasibility PRD to the forge issue
+- fix(messaging): report the daemon version this process was built from
+- fix(messaging): carry an inbound attachment's bytes to the gateway turn
+- fix(daemon): resume a retry whose worktree is gone
+- fix(archied): omit the max-token bound on reasoning-class models
+- fix(logging): file a task log record under its own event time
+- fix(control-plane): unify validation for the domain-managed kinds
+- feat(webui): let the operator choose the retry worktree mode
+- feat(agent): seed a starter SOUL and upgrade only untouched templates
+- feat(controlplane): add the writable review-settings resource
+- fix(messaging): transcribe voice notes on the model-owning side of the boundary
+- fix(messaging): gate the boundary on config reads, not only package links
+- feat(messaging): restart only the channel whose settings changed
+- feat(container): apply container-runtime-policies live
+- feat(tools): reconcile MCP servers and tool settings live
+- feat(messaging): add a per-turn interactive carrier for clarify and picker
+- feat(gateway): offer ask_user when the turn's channel can carry a question
+- feat(telegram): carry clarify and picker through the text fallback
+- fix(webui): pin the dashboard validators to the control plane's
+- refactor(agent): drop the SOUL upgrade branch with no shipped template
+- feat(agentworker): answer MCP sampling from the task's model
+- fix(workflow): bind the remediate worktree before the builder runs
+- fix(config): carry max_retries into the worker TaskConfig snapshot
+- fix(agentworker): supply the guardrail engine to every task run
+
+### archie-agent
+
+- feat(workflow): declared workflow outputs for wait:true callers
+- feat(prreview): the operator-approval gate is PRReview's own stage-list entry
+- feat(staterpc): carry the review gate and re-review rounds, with one guarded response write
+- feat(prreview): the gate records the review it holds and posts the operator's answer
+- feat(taskactions): one approval path answers the review gate from every surface
+- fix(workflow): derive a declared output's captures need for profile selection
+- fix(storepkg): validate every declared authority grant at the package descriptor
+- feat(mcp): answer server-initiated sampling from the chat model
+- feat(container): send registry auth on image pull
+- feat(messaging): retract ephemeral replies after their TTL
+- feat(messaging): transcribe Telegram voice notes
+- fix(egress): take a run's credential kind from its binding, not the Kit
+- fix(workflow): park environment gate failures without dispatching a builder
+- feat(messaging): adapter-facing clarify, picker and approval contract
+- feat(plugins): load plugin and secret-engine files without a restart
+- fix(workflow): deliver the feasibility PRD to the forge issue
+- fix(messaging): carry an inbound attachment's bytes to the gateway turn
+- fix(daemon): resume a retry whose worktree is gone
+- fix(logging): file a task log record under its own event time
+- fix(control-plane): unify validation for the domain-managed kinds
+- feat(webui): let the operator choose the retry worktree mode
+- fix(messaging): transcribe voice notes on the model-owning side of the boundary
+- feat(messaging): restart only the channel whose settings changed
+- feat(container): apply container-runtime-policies live
+- feat(tools): reconcile MCP servers and tool settings live
+- feat(messaging): add a per-turn interactive carrier for clarify and picker
+- feat(agentworker): answer MCP sampling from the task's model
+- fix(workflow): bind the remediate worktree before the builder runs
+- fix(config): carry max_retries into the worker TaskConfig snapshot
+- fix(agentworker): supply the guardrail engine to every task run
+
 ## [1.45.0] - 2026-09-30
 
 ### archied
