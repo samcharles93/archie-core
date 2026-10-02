@@ -56,11 +56,18 @@ messages by method name (the same switch that already routes
 `internal/app/archied/main.go` that routes the sampling request through the
 same chat-model call path `chatGenerateOptions` already uses, so a
 server-initiated sample gets the daemon's configured model, not a second
-provider client.
+provider client. The agent worker hosts the same configured MCP servers on the
+task path and runs its own model runtime, so `internal/app/agentworker` wires
+the same seam from the task's builder model: a server that samples succeeds
+inside a chat turn and inside a task, never one and not the other. The message
+mapping and the token bound are shared (`internal/agentexec`, next to the
+runtime both paths call models through) so both paths bound a sample
+identically.
 
 **Reuse check.** The chat model invocation path already exists
-(`chatGenerateOptions`, `main.go`); this reuses it rather than adding a
-parallel model-calling path for MCP sampling.
+(`chatGenerateOptions`, `main.go`) and the task model path already exists
+(`agentexec.NewRuntime`, the runtime an agent stage runs on); this reuses both
+rather than adding a parallel model-calling path for MCP sampling.
 
 **Failure mapping.**
 
@@ -170,7 +177,8 @@ preview callbacks fire in order before the next call starts. `task check`.
 | MCP client call serialisation                       | `internal/tools/mcp/client.go`                                                     | change (`#177`)                              |
 | MCP server config                                   | `internal/config/config.go`                                                        | new fields: `ParallelToolCalls`, `Sandboxed` |
 | Sampling dispatch                                   | `internal/tools/mcp/client.go`                                                     | new (`#151`)                                 |
-| Sampling handler wiring                             | `internal/app/archied/main.go`                                                     | new (`#151`), reuses `chatGenerateOptions`   |
+| Sampling handler wiring (chat path)                 | `internal/app/archied/main.go`                                                     | new (`#151`), reuses `chatGenerateOptions`   |
+| Sampling handler wiring (task path)                 | `internal/app/agentworker/mcp_sampling.go`, `mcp_providers.go`                     | new (`#151`), answers from the task's builder model |
 | Sandboxed MCP launch                                | MCP client constructor + `internal/container/pool.go`                              | new (`#178`/`#179`)                          |
 | Concurrent tool dispatch                            | dispatch entry point (closed `#183`)                                               | none — already handles this                  |
 | Sequential tool dispatch + previews                 | same dispatch entry point                                                          | new (`#182`)                                 |
@@ -181,7 +189,7 @@ preview callbacks fire in order before the next call starts. `task check`.
 
 | sub-feature                          | issue          | implementer scope                                                                  | suggested council lenses            | why                                                                                             |
 | ------------------------------------ | -------------- | ---------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Server-initiated sampling            | `#151`         | `client.go` dispatch branch, `main.go` handler wiring                              | `lens-contract`                     | new JSON-RPC method surface crossing the MCP wire contract                                      |
+| Server-initiated sampling            | `#151`         | `client.go` dispatch branch, chat-path and task-path handler wiring                  | `lens-contract`                     | new JSON-RPC method surface crossing the MCP wire contract                                      |
 | Parallel-tool-calls flag             | `#177`         | config field, conditional mutex, constructor wiring                                | `lens-boundary`                     | per-server behaviour change must not leak into other servers' serialisation                     |
 | Sandboxed MCP + Firecracker deferral | `#178`, `#179` | config field, constructor routing through `ContainerPool`, pool entrypoint variant | `lens-operator`, `lens-deletionist` | operator: sandbox-down failure path; deletionist: keeps `#179` from becoming unused scaffolding |
 | Sequential dispatch with previews    | `#182`         | `DispatchMode` enum, sequential branch, preview reuse of streaming seam            | `lens-maintainer`                   | two coexisting dispatch modes need a reader to tell which applies without re-deriving both      |

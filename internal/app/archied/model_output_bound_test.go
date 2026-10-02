@@ -132,7 +132,7 @@ func TestMCPSamplingParameterNameFollowsModelClass(t *testing.T) {
 			modelRef:  "openai/gpt-4o",
 			model:     modelcatalog.Model{ID: "gpt-4o", MaxOutputTokens: 128000},
 			wantBound: true,
-			wantValue: samplingDefaultMaxTokens,
+			wantValue: agentexec.DefaultSamplingMaxTokens,
 		},
 	}
 

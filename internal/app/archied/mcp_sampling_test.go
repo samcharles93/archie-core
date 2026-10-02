@@ -96,15 +96,3 @@ func TestMCPSamplingHandlerRefusesCleanlyWithNoModel(t *testing.T) {
 		})
 	}
 }
-
-func TestSamplingMessagesRejectsUnsupportedContent(t *testing.T) {
-	_, err := samplingMessages(mcp.SamplingRequest{
-		Messages: []mcp.SamplingMessage{{
-			Role:    "user",
-			Content: mcp.SamplingContent{Type: "image"},
-		}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "unsupported content type") {
-		t.Fatalf("samplingMessages error = %v, want an unsupported-content refusal", err)
-	}
-}

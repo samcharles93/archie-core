@@ -5,17 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 )
-
-// samplingDefaultMaxTokens bounds a server-requested completion when the
-// request does not set maxTokens. A sampling request is a delegated
-// sub-completion, not a full turn; this keeps one MCP server from spending a
-// turn-sized output allowance on a single request.
-const samplingDefaultMaxTokens = 4096
 
 // mcpSamplingHandler answers an MCP server's sampling/createMessage request
 // from the daemon's own chat model, so a server can ask for a completion
@@ -36,7 +30,7 @@ func (b *boot) mcpSamplingHandler() mcp.SamplingHandler {
 		if model == "" {
 			return mcp.SamplingResult{}, errors.New("mcp sampling: no chat model is configured")
 		}
-		messages, err := samplingMessages(req)
+		messages, err := agentexec.SamplingMessages(req)
 		if err != nil {
 			return mcp.SamplingResult{}, err
 		}
@@ -66,46 +60,12 @@ func (b *boot) mcpSamplingHandler() mcp.SamplingHandler {
 	}
 }
 
-// samplingMessages maps the server's messages onto chat messages. A
-// non-text content block or an unknown role is rejected rather than silently
-// dropped: answering from a partial prompt would be a wrong answer, not a
-// degraded one.
-func samplingMessages(req mcp.SamplingRequest) ([]chat.Message, error) {
-	if len(req.Messages) == 0 {
-		return nil, errors.New("mcp sampling: the request has no messages")
-	}
-	messages := make([]chat.Message, 0, len(req.Messages))
-	for i, message := range req.Messages {
-		if message.Content.Type != "" && message.Content.Type != "text" {
-			return nil, fmt.Errorf("mcp sampling: message %d has unsupported content type %q", i, message.Content.Type)
-		}
-		var role chat.Role
-		switch message.Role {
-		case "user":
-			role = chat.RoleUser
-		case "assistant":
-			role = chat.RoleAssistant
-		default:
-			return nil, fmt.Errorf("mcp sampling: message %d has unsupported role %q", i, message.Role)
-		}
-		messages = append(messages, chat.Message{Role: role, Content: message.Content.Text})
-	}
-	return messages, nil
-}
-
 // samplingMaxTokens bounds the completion to the request's own maxTokens,
 // falling back to a conservative default, and never past the model's own
-// output ceiling. A reasoning-class model gets no bound at all: its provider
-// rejects the `max_tokens` parameter the chat-completions provider emits for a
-// non-zero bound.
+// output ceiling. The bound itself is shared with the agent worker's sampling
+// path (agentexec.SamplingMaxTokens) so the same server sees the same bound on
+// either path.
 func samplingMaxTokens(req mcp.SamplingRequest, models *chatModelManager, model string) int {
 	details, ok := models.ModelDetails(model)
-	maxTokens := req.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = samplingDefaultMaxTokens
-	}
-	if ok && details.MaxOutputTokens > 0 && maxTokens > details.MaxOutputTokens {
-		maxTokens = details.MaxOutputTokens
-	}
-	return maxTokensForRequest(ok && details.Reasoning, maxTokens)
+	return agentexec.SamplingMaxTokens(req.MaxTokens, details.MaxOutputTokens, ok && details.Reasoning)
 }

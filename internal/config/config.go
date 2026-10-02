@@ -598,6 +598,11 @@ type IdentityConfig struct {
 type ModelLimits struct {
 	ContextWindow   int `json:"context_window"`
 	MaxOutputTokens int `json:"max_output_tokens"`
+	// Reasoning marks a reasoning-class model. It is derived from the model
+	// catalog (never operator-authored) and carried to the agent worker so a
+	// task-scoped MCP sampling request omits the max-token bound those models
+	// reject, exactly as the daemon's chat path does.
+	Reasoning bool `json:"reasoning,omitempty"`
 }
 
 // TaskConfig is the non-secret subset of Config needed to run workflow

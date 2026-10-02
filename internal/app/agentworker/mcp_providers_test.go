@@ -167,7 +167,7 @@ func TestBuildMCPProviderSelectsTransport(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			provider, transportType, err := buildMCPProvider(tc.server)
+			provider, transportType, err := buildMCPProvider(tc.server, nil)
 			if transportType != tc.wantTransport {
 				t.Fatalf("transport = %q, want %q", transportType, tc.wantTransport)
 			}
@@ -344,7 +344,7 @@ func TestStartMCPProvidersPreservesOptionalProviderBehavior(t *testing.T) {
 		"valid-two":        {id: "valid-two", entries: []tools.ToolEntry{testTool("shared")}},
 	}
 	buildCalls := make(map[string]int)
-	build := func(server config.MCPServer) (toolprovider.Engine, string, error) {
+	build := func(server config.MCPServer, _ protocolmcp.SamplingHandler) (toolprovider.Engine, string, error) {
 		buildCalls[server.Name]++
 		switch server.Name {
 		case "unknown":
@@ -365,7 +365,7 @@ func TestStartMCPProvidersPreservesOptionalProviderBehavior(t *testing.T) {
 		{Name: "valid-one"},
 		{Name: "valid-two"},
 	}
-	set, err := startMCPProvidersWith(t.Context(), servers, slog.New(slog.DiscardHandler), build)
+	set, err := startMCPProvidersWith(t.Context(), servers, nil, slog.New(slog.DiscardHandler), build)
 	if err != nil {
 		t.Fatalf("error = %v, want nil when valid providers remain available", err)
 	}
@@ -409,14 +409,14 @@ func TestStartMCPProvidersReturnsNilWithoutAvailableProviders(t *testing.T) {
 		{
 			name:    "unknown transport is skipped without error",
 			servers: []config.MCPServer{{Name: "unknown"}},
-			build: func(config.MCPServer) (toolprovider.Engine, string, error) {
+			build: func(config.MCPServer, protocolmcp.SamplingHandler) (toolprovider.Engine, string, error) {
 				return nil, "unknown", errUnknownMCPTransport
 			},
 		},
 		{
 			name:    "first provider error is returned",
 			servers: []config.MCPServer{{Name: "first"}, {Name: "second"}},
-			build: func(server config.MCPServer) (toolprovider.Engine, string, error) {
+			build: func(server config.MCPServer, _ protocolmcp.SamplingHandler) (toolprovider.Engine, string, error) {
 				if server.Name == "first" {
 					return nil, "stdio", firstErr
 				}
@@ -430,12 +430,12 @@ func TestStartMCPProvidersReturnsNilWithoutAvailableProviders(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			build := tc.build
 			if build == nil {
-				build = func(config.MCPServer) (toolprovider.Engine, string, error) {
+				build = func(config.MCPServer, protocolmcp.SamplingHandler) (toolprovider.Engine, string, error) {
 					t.Fatal("builder called without configured servers")
 					return nil, "", nil
 				}
 			}
-			set, err := startMCPProvidersWith(t.Context(), tc.servers, slog.New(slog.DiscardHandler), build)
+			set, err := startMCPProvidersWith(t.Context(), tc.servers, nil, slog.New(slog.DiscardHandler), build)
 			if set != nil {
 				t.Fatalf("provider set = %#v, want nil", set)
 			}

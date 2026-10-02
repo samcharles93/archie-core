@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/samcharles93/ai-sdk/runtime"
+
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -202,15 +204,17 @@ func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []s
 	runner.AllowTools = allow
 }
 
-// stageRunners builds the runner every agent stage uses.
-func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, log *slog.Logger) (agentexec.Runner, error) {
+// stageRunners builds the runner every agent stage uses. llm is the task's
+// shared model runtime (the one its MCP providers answer sampling from); the
+// registry path reuses it rather than building a second one.
+func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, llm *runtime.Runtime, log *slog.Logger) (agentexec.Runner, error) {
 	if req.Harness != nil {
 		// The built-in loop has no route to a model from a Kit container.
 		return agentexec.HarnessStages{Runner: agentexec.NewHarnessRunner(nil), Spec: *req.Harness}, nil
 	}
 	var agent agentexec.Runner
 	if mcpSet != nil && mcpSet.registry != nil {
-		agent = agentexec.NewLoopRunner(agentexec.NewRuntime(req.Providers), log, mcpSet.registry)
+		agent = agentexec.NewLoopRunner(llm, log, mcpSet.registry)
 	} else {
 		agent = newRunner(req.Providers, log)
 	}
@@ -261,8 +265,14 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// start from.
 	defer restoreWorktreeOwnership(trees, workDir, log)()
 
-	// Start MCP providers and build a local tool registry.
-	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, log)
+	// The MCP providers a task hosts share the same model runtime its agent
+	// stages run on, so a server-initiated sampling request is answered from
+	// the task's own model rather than a second provider client.
+	var llm *runtime.Runtime
+	if len(req.MCPServers) > 0 {
+		llm = agentexec.NewRuntime(req.Providers)
+	}
+	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, taskSamplingHandler(llm, req.Cfg), log)
 	if mcpSet != nil {
 		defer mcpSet.cleanup(ctx, log)
 	}
@@ -270,7 +280,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		log.Warn("mcp providers had errors, continuing with available tools", "err", mcpErr)
 	}
 
-	agent, err := stageRunners(req, mcpSet, newRunner, log)
+	agent, err := stageRunners(req, mcpSet, newRunner, llm, log)
 	if err != nil {
 		return nil, err
 	}

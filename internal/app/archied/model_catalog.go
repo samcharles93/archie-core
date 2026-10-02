@@ -22,7 +22,7 @@ func applyModelCatalog(cfg *config.Config, snapshot modelcatalog.Snapshot) []str
 		for _, model := range provider.Models {
 			ref := provider.ID + "/" + model.ID
 			models = append(models, ref)
-			limits[ref] = config.ModelLimits{ContextWindow: model.ContextWindow, MaxOutputTokens: model.MaxOutputTokens}
+			limits[ref] = config.ModelLimits{ContextWindow: model.ContextWindow, MaxOutputTokens: model.MaxOutputTokens, Reasoning: model.Reasoning}
 		}
 	}
 	cfg.ModelLimits = limits

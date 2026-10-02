@@ -23,18 +23,26 @@ type mcpProviderSet struct {
 	registry  *tools.Registry
 }
 
-type mcpProviderBuilder func(config.MCPServer) (toolprovider.Engine, string, error)
+type mcpProviderBuilder func(config.MCPServer, mcp.SamplingHandler) (toolprovider.Engine, string, error)
 
 // startMCPProviders creates MCP transports from config, starts them,
-// discovers tools, and registers them into a local registry. Returns
-// nil when there are no servers configured.
-func startMCPProviders(ctx context.Context, servers []config.MCPServer, log *slog.Logger) (*mcpProviderSet, error) {
-	return startMCPProvidersWith(ctx, servers, log, buildMCPProvider)
+// discovers tools, and registers them into a local registry. A non-nil
+// sampling handler answers server-initiated sampling/createMessage requests
+// (nil leaves the method refused, the client's own default). Returns nil when
+// there are no servers configured.
+func startMCPProviders(
+	ctx context.Context,
+	servers []config.MCPServer,
+	sampling mcp.SamplingHandler,
+	log *slog.Logger,
+) (*mcpProviderSet, error) {
+	return startMCPProvidersWith(ctx, servers, sampling, log, buildMCPProvider)
 }
 
 func startMCPProvidersWith(
 	ctx context.Context,
 	servers []config.MCPServer,
+	sampling mcp.SamplingHandler,
 	log *slog.Logger,
 	build mcpProviderBuilder,
 ) (*mcpProviderSet, error) {
@@ -51,7 +59,7 @@ func startMCPProvidersWith(
 			continue
 		}
 
-		provider, transportType, err := build(server)
+		provider, transportType, err := build(server, sampling)
 		if errors.Is(err, errUnknownMCPTransport) {
 			log.Warn("mcp server skipped: unknown transport", "name", name, "transport", transportType)
 			continue
@@ -78,7 +86,7 @@ func startMCPProvidersWith(
 	return set, nil
 }
 
-func buildMCPProvider(server config.MCPServer) (toolprovider.Engine, string, error) {
+func buildMCPProvider(server config.MCPServer, sampling mcp.SamplingHandler) (toolprovider.Engine, string, error) {
 	name := strings.TrimSpace(server.Name)
 	transportType := strings.ToLower(strings.TrimSpace(server.Transport))
 	if transportType == "" {
@@ -89,7 +97,7 @@ func buildMCPProvider(server config.MCPServer) (toolprovider.Engine, string, err
 	if err != nil {
 		return nil, transportType, err
 	}
-	return mcptoolprovider.New(name, transport, server.ParallelToolCalls), transportType, nil
+	return mcptoolprovider.New(name, transport, server.ParallelToolCalls, mcptoolprovider.WithSamplingHandler(sampling)), transportType, nil
 }
 
 func mcpTransportForServer(
