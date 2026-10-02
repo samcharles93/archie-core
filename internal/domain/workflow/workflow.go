@@ -91,8 +91,8 @@ type Trees interface {
 	ChangedLines(ctx context.Context, dir, base string) (int, error)
 	// Snapshot exports HEAD's tracked files into destDir with no .git
 	// directory -- no commit history, branch name, or reflog. Used to
-	// build the adversarial reviewer's isolated workspace (see
-	// docs/prds/adversarial-self-review.md).
+	// build the reviewer's isolated workspace (see the isolation contract
+	// in docs/prds/pr-review-agent.md).
 	Snapshot(ctx context.Context, dir, destDir string) error
 }
 

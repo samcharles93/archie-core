@@ -225,8 +225,7 @@ func Implement() Workflow {
 // not full price.
 //
 // This used to also append the adversarial self-review's findings section
-// (docs/prds/adversarial-self-review.md, now superseded by
-// docs/prds/pr-review-agent.md per that PRD's own header). archie-core-afbk.7
+// (now superseded by docs/prds/pr-review-agent.md). archie-core-afbk.7
 // removed the old review stage; hooking the new pr-review pipeline in as
 // this workflow's "archie's own PRs" trigger is tracked separately (see the
 // bead's continuation comment) rather than guessed at here, since it needs

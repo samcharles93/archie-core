@@ -346,8 +346,8 @@ StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
    agent _contributor_. Separately, archied runs its own PR review pipeline
    (`docs/prds/pr-review-agent.md`) before it opens a PR of its own — see that
    PRD's Triggers section ("archie's own PRs"). It supersedes the older
-   single-reviewer stage `docs/architecture/adversarial-review.md` described
-   (`repo.review_enabled` no longer exists). The two paths are distinct: you
+   single-reviewer stage and the `repo.review_enabled` setting, both since
+   removed. The two paths are distinct: you
    run a manual pass when asked; archied runs its own before it opens a PR.
 6. **Linter Guard:**
 

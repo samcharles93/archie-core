@@ -2,7 +2,7 @@
 
 **Status:** Finalised
 **Beads issue:** `archie-core-q9au`
-**Builds on:** `archie-core-h019` (adversarial self-review), `docs/architecture/adversarial-review.md`
+**Builds on:** `archie-core-h019` (adversarial self-review)
 
 ## Problem
 

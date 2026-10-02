@@ -866,8 +866,8 @@ func fileChange(fp fdiff.FilePatch) task.FileChange {
 
 // Snapshot exports HEAD's tracked files into a fresh, empty destDir with no
 // .git directory: file contents only, no commit history, branch name, or
-// reflog. Used to build the adversarial reviewer's isolated workspace
-// (docs/prds/adversarial-self-review.md section 1) -- stripping .git is
+// reflog. Used to build the reviewer's isolated workspace (the isolation
+// contract in docs/prds/pr-review-agent.md) -- stripping .git is
 // what makes the implementer's reasoning (commit messages, branch name,
 // history) structurally unreachable rather than merely undisclosed.
 func (m *Manager) Snapshot(ctx context.Context, dir, destDir string) error {

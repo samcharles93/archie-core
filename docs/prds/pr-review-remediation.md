@@ -5,8 +5,8 @@
 **Beads issue:** (filed as `archie-core-…`, parent: `archie-core-7d5u` event sources and typed reactions)
 
 Answers: how archie reacts to review comments on a PR it opened, from a human
-or from another review bot, and remediates them. Built on two settled decisions — the adversarial review
-epic's isolation contract (`docs/prds/adversarial-self-review.md`) and the
+or from another review bot, and remediates them. Built on two settled decisions — the review pipeline's
+isolation contract (`docs/prds/pr-review-agent.md`, "Isolation") and the
 event-sources decision (`docs/prds/event-sources-and-reactions.md`) — plus the
 webhook intake security contract (`docs/prds/webhook-intake-security.md`).
 Nothing here re-decides those; it names the one concrete reaction each one's

@@ -1,10 +1,8 @@
 # PR review agent
 
 **Status:** Approved
-**Authority:** `docs/architecture/agent-system.md`; supersedes the reviewer
-executor and blocking rule in `docs/architecture/adversarial-review.md`, and
-the designs in `docs/prds/operator-pr-review.md` and
-`docs/prds/review-calibration.md`.
+**Authority:** `docs/architecture/agent-system.md`; supersedes the earlier
+reviewer executor and blocking rule.
 **Compounds with:** `docs/prds/execution-tree-state-machine.md` (every agent
 call is a StepExecution), `docs/prds/external-agent-harness.md` (any agent
 step may run on a harness), `docs/prds/inline-review.md` (posting),
