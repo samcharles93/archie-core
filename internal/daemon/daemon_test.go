@@ -2098,7 +2098,7 @@ func TestDispatchCapturesTheAttemptsEffectiveConfig(t *testing.T) {
 	// repositories, identities or lock state.
 	wantKeys := []string{
 		"bot_email", "bot_user", "budgets", "diff_cap_lines", "dispatch",
-		"forge", "model_limits", "models", "notify", "review", "tool_policy",
+		"forge", "max_retries", "model_limits", "models", "notify", "review", "tool_policy",
 	}
 	gotKeys := make([]string, 0, len(doc))
 	for key := range doc {

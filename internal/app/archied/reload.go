@@ -135,11 +135,13 @@ var reloadableFields = map[string]bool{
 	// TestReloadableFieldsCoverForTaskSnapshot.
 	"Label":   true,
 	"BotUser": true,
-	// Worked example of the every-consumer criterion above: the sole
-	// consumer is the webui maxRetriesFor handler (api_tasks.go:380,383),
-	// which re-reads per request; the daemon never reads MaxRetries. The
-	// per-task half of this list is pinned mechanically; this webui-only
-	// entry is pinned by TestChangedNonReloadableFields.
+	// MaxRetries has two consumers, both re-reading it: the webui
+	// maxRetriesFor handler (api_tasks.go:380,383) reads it per request, and
+	// ForTask carries it into every dispatched TaskConfig, where the
+	// container's remediation round cap reads it (StageRemediationRoundCap).
+	// The per-task half of this list is pinned mechanically by
+	// TestReloadableFieldsCoverForTaskSnapshot; the webui-only entry is pinned
+	// by TestChangedNonReloadableFields.
 	"MaxRetries": true,
 	// Tools.Policy (MaxResultChars/SpillDir) is carried into TaskConfig by
 	// ForTask (config.go) and applied fresh per dispatch via

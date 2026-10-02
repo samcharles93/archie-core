@@ -225,8 +225,9 @@ Classify multi-identity changes field by field. Never label aggregate
 
 ## Preserve worker and secret boundaries
 
-`Config.ForTask` creates a detached root snapshot: models, budgets, dispatch,
-diff cap, notification, and forge host. `TaskConfig.ToConfig` reconstructs
+`Config.ForTask` creates a detached root snapshot: models, budgets, the
+retry/remediation cap (`MaxRetries`), dispatch, diff cap, notification, and
+forge host. `TaskConfig.ToConfig` reconstructs
 only those fields. Forge tokens, provider values, NATS credential references,
 repos, and infrastructure settings do not enter `TaskConfig`.
 

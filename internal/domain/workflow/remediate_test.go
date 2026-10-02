@@ -98,6 +98,35 @@ func TestStageRemediationRoundCapZeroMeansUnlimited(t *testing.T) {
 	}
 }
 
+// TestStageRemediationRoundCapReadsTheWorkerCarriedGlobalCap pins the cap's
+// value across the daemon/worker boundary. The round cap runs inside
+// archie-agent, so a default configuration (no per-repo override) only enforces
+// the global max_retries when config.ForTask carries it into TaskConfig and
+// ToConfig restores it. Before that carry existed tc.Cfg.MaxRetries was always
+// 0, so the loop meant to stop an endless remediation never stopped.
+func TestStageRemediationRoundCapReadsTheWorkerCarriedGlobalCap(t *testing.T) {
+	forge := &fakeForge{}
+	carried := config.Config{MaxRetries: 2}.ForTask().ToConfig()
+	tc := &TaskContext{
+		Task: &Task{ID: 1, RemediationRounds: 2, PRNumber: 9},
+		// No per-repo override: the global cap has to reach the worker.
+		Repo:  config.Repo{},
+		Cfg:   carried,
+		Forge: forge,
+		Log:   slog.New(slog.DiscardHandler),
+	}
+	if err := StageRemediationRoundCap().Run(t.Context(), tc); err != nil {
+		t.Fatalf("StageRemediationRoundCap: %v", err)
+	}
+	if tc.Outcome.Status != StatusParked {
+		t.Fatalf("Outcome.Status = %q, want parked at the configured global cap (TaskConfig.MaxRetries = %d reaches the run as %d)",
+			tc.Outcome.Status, 2, carried.MaxRetries)
+	}
+	if len(forge.commented) != 1 {
+		t.Fatalf("commented = %v, want exactly one cap comment", forge.commented)
+	}
+}
+
 func TestStageRemediationCommitPushSkipsAnEmptyTreeWithoutError(t *testing.T) {
 	trees := &fakeTrees{commitAllChanged: false}
 	tc := &TaskContext{

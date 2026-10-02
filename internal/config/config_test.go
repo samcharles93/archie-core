@@ -143,6 +143,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 			WallClock:       Duration(45 * time.Minute),
 			GateMaxFailures: 3,
 		},
+		MaxRetries: 7,
 		Dispatch: Dispatch{
 			Trigger:     "label",
 			AckReaction: "eyes",
@@ -167,6 +168,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 		BotEmail:     cfg.BotEmail,
 		Models:       cfg.Models,
 		Budgets:      cfg.Budgets,
+		MaxRetries:   cfg.MaxRetries,
 		Dispatch:     cfg.Dispatch,
 		DiffCapLines: cfg.DiffCap(),
 		Notify:       cfg.Notify,
@@ -199,7 +201,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, data, "bot_user", "bot_email", "models", "budgets", "dispatch", "diff_cap_lines", "notify", "forge", "tool_policy", "review")
+	assertJSONKeys(t, data, "bot_user", "bot_email", "models", "budgets", "max_retries", "dispatch", "diff_cap_lines", "notify", "forge", "tool_policy", "review")
 
 	var forgePayload map[string]json.RawMessage
 	var payload map[string]json.RawMessage

@@ -610,17 +610,22 @@ type ModelLimits struct {
 type TaskConfig struct {
 	// BotUser and BotEmail are non-secret commit attribution carried to the
 	// sandbox because the worker owns local deterministic commits.
-	BotUser      string                 `json:"bot_user"`
-	BotEmail     string                 `json:"bot_email"`
-	Models       map[string]string      `json:"models"`
-	ModelLimits  map[string]ModelLimits `json:"model_limits,omitempty"`
-	Budgets      Budgets                `json:"budgets"`
-	Dispatch     Dispatch               `json:"dispatch"`
-	DiffCapLines int                    `json:"diff_cap_lines"`
-	Notify       Notify                 `json:"notify"`
-	Forge        TaskForge              `json:"forge"`
-	ToolPolicy   ToolPolicy             `json:"tool_policy"`
-	Review       Review                 `json:"review"`
+	BotUser     string                 `json:"bot_user"`
+	BotEmail    string                 `json:"bot_email"`
+	Models      map[string]string      `json:"models"`
+	ModelLimits map[string]ModelLimits `json:"model_limits,omitempty"`
+	Budgets     Budgets                `json:"budgets"`
+	// MaxRetries is the global retry/remediation cap workflow stages read
+	// (remediate's round cap via Repo.EffectiveMaxRetries). It is carried to the
+	// worker for the same reason as Budgets: the stage that enforces it runs
+	// inside archie-agent, not the daemon.
+	MaxRetries   int        `json:"max_retries"`
+	Dispatch     Dispatch   `json:"dispatch"`
+	DiffCapLines int        `json:"diff_cap_lines"`
+	Notify       Notify     `json:"notify"`
+	Forge        TaskForge  `json:"forge"`
+	ToolPolicy   ToolPolicy `json:"tool_policy"`
+	Review       Review     `json:"review"`
 }
 
 // DiffCapOf returns a DiffCapLines value for n. It exists because the field is
@@ -656,6 +661,7 @@ func (c Config) ForTask() TaskConfig {
 		Models:       cloneStringMap(c.Models),
 		ModelLimits:  maps.Clone(c.ModelLimits),
 		Budgets:      c.Budgets,
+		MaxRetries:   c.MaxRetries,
 		Dispatch:     Dispatch{Trigger: c.Dispatch.Trigger, AckReaction: c.Dispatch.AckReaction, Labels: cloneStringMap(c.Dispatch.Labels)},
 		DiffCapLines: c.DiffCap(),
 		Notify:       c.Notify,
@@ -676,6 +682,7 @@ func (tc TaskConfig) ToConfig() Config {
 		Models:       cloneStringMap(tc.Models),
 		ModelLimits:  maps.Clone(tc.ModelLimits),
 		Budgets:      tc.Budgets,
+		MaxRetries:   tc.MaxRetries,
 		Dispatch:     Dispatch{Trigger: tc.Dispatch.Trigger, AckReaction: tc.Dispatch.AckReaction, Labels: cloneStringMap(tc.Dispatch.Labels)},
 		DiffCapLines: &tc.DiffCapLines,
 		Notify:       tc.Notify,
