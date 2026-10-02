@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -238,6 +239,12 @@ func (c *GiteaClient) ListReviewComments(ctx context.Context, owner, repo string
 		for _, cm := range comments {
 			if cm.ID <= sinceID {
 				continue
+			}
+			// LineNum is the forge's uint64. A value past the int range is not a
+			// line this client can name, and wrapping it would put a negative
+			// line number in front of a reviewer.
+			if cm.LineNum > math.MaxInt {
+				return nil, fmt.Errorf("review comment %d on %s/%s#%d has line number %d, which does not fit an int", cm.ID, owner, repo, number, cm.LineNum)
 			}
 			out = append(out, ReviewComment{
 				ID:        cm.ID,

@@ -136,6 +136,26 @@ func TestGiteaListReviewComments(t *testing.T) {
 	}
 }
 
+// TestGiteaListReviewCommentsRejectsLineNumberPastInt pins the bound on the
+// forge's line number. Gitea reports position as a uint64; past the int range
+// the conversion wraps negative and reaches a reviewer as a line that cannot
+// exist.
+func TestGiteaListReviewCommentsRejectsLineNumberPastInt(t *testing.T) {
+	c, mux := newTestGiteaClient(t)
+	mux.HandleFunc("GET /api/v1/repos/o/r/pulls/7/reviews", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, []map[string]any{{"id": 3, "state": "COMMENT", "user": map[string]any{"login": "alice"}}})
+	})
+	mux.HandleFunc("GET /api/v1/repos/o/r/pulls/7/reviews/3/comments", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"id": 20, "body": "x", "path": "b.go", "position": uint64(1) << 63, "user": map[string]any{"login": "bob"}},
+		})
+	})
+
+	if _, err := c.ListReviewComments(t.Context(), "o", "r", 7, 0); err == nil {
+		t.Fatal("want an error for a line number that does not fit an int")
+	}
+}
+
 func TestGiteaReplyToReview(t *testing.T) {
 	c, mux := newTestGiteaClient(t)
 	var got map[string]any
