@@ -22,7 +22,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
-	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
@@ -36,7 +35,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -208,14 +206,6 @@ type Daemon struct {
 	// Storage is the pluggable storage backend for container mounts.
 	// A runnable task requires it; acquireTaskContainer parks on nil.
 	Storage storage.Backend
-	// CapabilityHost owns validated plugin manifests and cross-family
-	// lifecycle. Typed capability registries remain in their domain packages;
-	// the host never exposes daemon internals or an untyped service locator.
-	CapabilityHost *plugin.Host
-	// Curators is the curator engine family registry (epic archie-core-yp9).
-	// The runtime loop (archie-core-89x) and reference curators (i7i, gs8)
-	// are driven through it; nil when the family is not composed.
-	Curators *curator.Registry
 	// Identities holds per-identity runner state for multi-identity mode.
 	// When non-empty, Run() starts one goroutine per identity instead of
 	// using the single-identity Forge/Trees/Cfg.Repos path.
@@ -257,12 +247,6 @@ type Daemon struct {
 	WorkflowEnablement interface {
 		WorkflowEnablement(context.Context) (workflowtask.WorkflowEnablement, error)
 	}
-
-	// ToolRegistry is the central tool registry, wired by the composition
-	// root. MCP-discovered tools and built-in tools are registered here
-	// and passed as CaptureTools in agent requests. Nil means no dynamic
-	// tool discovery (backward compatible).
-	ToolRegistry *tools.Registry
 
 	// TaskLogs persists each task's own log output (including a sandboxed
 	// container's, which otherwise disappears at AutoRemove) and mirrors it

@@ -83,7 +83,14 @@ func TestDaemonCarriesNoLocalWorkflowExecutionState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forbidden := map[string]bool{"Agent": true, "Workflows": true, "CustomStages": true}
+	forbiddenExecution := map[string]bool{"Agent": true, "Workflows": true, "CustomStages": true}
+	// Composition handles the daemon must not carry. Each was an exported field
+	// the composition root assigned and nothing read: the curator
+	// registry/runtime is boot-owned (the curator isolation invariant keeps it
+	// off the agent loop), the capability host is lifecycle-owned by the
+	// composition root and consumed by the control plane, and the tool registry
+	// is consumed by chat/curator/MCP wiring. A re-add is decorative wiring.
+	forbiddenHandles := map[string]bool{"Curators": true, "CapabilityHost": true, "ToolRegistry": true}
 	for _, declaration := range file.Decls {
 		gen, ok := declaration.(*ast.GenDecl)
 		if !ok {
@@ -100,8 +107,11 @@ func TestDaemonCarriesNoLocalWorkflowExecutionState(t *testing.T) {
 			}
 			for _, field := range structure.Fields.List {
 				for _, name := range field.Names {
-					if forbidden[name.Name] {
+					if forbiddenExecution[name.Name] {
 						t.Errorf("%s carries local workflow execution field %s", typeSpec.Name.Name, name.Name)
+					}
+					if forbiddenHandles[name.Name] {
+						t.Errorf("%s carries unread composition handle %s; the composition root owns it", typeSpec.Name.Name, name.Name)
 					}
 				}
 			}

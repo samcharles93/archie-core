@@ -113,7 +113,6 @@ func TestArchiedWiresCapabilityHostLifecycle(t *testing.T) {
 		"capabilityHost.Register(",
 		"capabilityHost.Start(",
 		"capabilityHost.Stop(",
-		"CapabilityHost:",
 	} {
 		if !strings.Contains(wiring, required) {
 			t.Errorf("cmd/archied does not contain capability-host wiring %q", required)
@@ -126,8 +125,14 @@ func TestArchiedWiresCapabilityHostLifecycle(t *testing.T) {
 	if !strings.Contains(before, "capabilityHost.Stop(") {
 		t.Error("capability host cleanup must be registered before Start so failed rollback cleanup is retried")
 	}
-	if strings.Contains(wiring, "PluginRegistry:") {
-		t.Error("daemon composition exposes divergent legacy plugin inventory")
+	// The host lifecycle belongs to the composition root, which the control
+	// plane and gateway consume. A CapabilityHost field on the daemon would be
+	// assigned there and read nowhere -- the same defect PluginRegistry: had --
+	// so both spellings are refused.
+	for _, forbidden := range []string{"PluginRegistry:", "CapabilityHost:"} {
+		if strings.Contains(wiring, forbidden) {
+			t.Errorf("daemon composition carries an unread capability handle %q; the composition root owns the host lifecycle", forbidden)
+		}
 	}
 }
 
