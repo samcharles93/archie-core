@@ -537,7 +537,7 @@ func populateEveryField(t *testing.T, value reflect.Value, label string) {
 // TestSchedulingPolicySeedCarriesTheLabel: the seed a fresh store writes must
 // carry the file document's label, so the pairing a stored trigger requires
 // is judgeable at write time from the moment the resource exists.
-// TestRuntimeResourceKindsApplyLive pins the four kinds the daemon re-layers
+// TestRuntimeResourceKindsApplyLive pins the kinds the daemon re-layers
 // live (archie-core-zfb0.1) and the ones a startup-built consumer still
 // freezes, so a flip in either direction is a deliberate edit to the
 // definition, not a default that drifts.
@@ -553,7 +553,7 @@ func TestRuntimeResourceKindsApplyLive(t *testing.T) {
 		modes[definition.Kind] = definition.ApplyMode
 	}
 	for _, kind := range []string{
-		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind, PluginSettingsKind,
+		ProviderSettingsKind, ModelRoleAssignmentsKind, RepositoryPoliciesKind, SchedulingPolicyKind, AgentProfileKind, CredentialBindingsKind, PluginSettingsKind, ReviewSettingsKind,
 	} {
 		if modes[kind] != "live" {
 			t.Errorf("%s applies %q, want live: the daemon re-layers this kind on a watch", kind, modes[kind])
@@ -724,4 +724,86 @@ func TestRuntimeConfigLayersStoredCredentialBindings(t *testing.T) {
 	if got := base.Containers.Credentials; len(got) != 1 {
 		t.Fatalf("layering mutated the file document's credentials: %v", got)
 	}
+}
+
+// reviewSettingsKindWire is the kind the review-settings resource is addressed
+// by. It is deliberately the literal wire string rather than the package
+// constant so this test can state the contract before the constant exists, and
+// so a rename of the constant that the layering does not follow fails here
+// rather than silently testing a different kind.
+const reviewSettingsKindWire = "review-settings"
+
+// The file document's [review] section seeds the review-settings kind, so a
+// deployment that never edited the dials runs the values in config.toml
+// (docs/prds/review-settings-resource.md, "Seeding").
+func TestReviewSettingsSeedCarriesBothDials(t *testing.T) {
+	definition, ok := testServer(t, nil).definitions[reviewSettingsKindWire]
+	if !ok {
+		t.Fatalf("kind %q is not a control-plane resource", reviewSettingsKindWire)
+	}
+	seed, err := definition.seededValue(config.Config{Review: config.Review{PrecisionGate: true, ApproveBeforePost: false}})
+	if err != nil {
+		t.Fatalf("seededValue: %v", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(seed, &document); err != nil {
+		t.Fatalf("decode seed: %v", err)
+	}
+	if document["precision_gate"] != true || document["approve_before_post"] != false {
+		t.Fatalf("seed = %s, want the file document's precision_gate/approve_before_post", seed)
+	}
+}
+
+// A stored review-settings document outranks the file's [review] from then on,
+// and the layered value reaches a run through cfg.Review -- what
+// TaskContext.Cfg carries into stagePRPrecisionGate and
+// stagePROperatorApproval. The assertion is on cfg.Review after layering, not
+// on a struct the test set directly.
+func TestRuntimeConfigLayersStoredReviewSettings(t *testing.T) {
+	base := config.Config{Review: config.Review{PrecisionGate: true, ApproveBeforePost: false}}
+
+	t.Run("a stored document outranks the file", func(t *testing.T) {
+		got, versions, err := runtimeConfigFrom(t.Context(), reviewStoreReader{value: []byte(`{"precision_gate":false,"approve_before_post":true}`)}, base)
+		if err != nil {
+			t.Fatalf("runtimeConfigFrom: %v", err)
+		}
+		if want := (config.Review{PrecisionGate: false, ApproveBeforePost: true}); got.Review != want {
+			t.Fatalf("cfg.Review = %+v, want the stored document %+v", got.Review, want)
+		}
+		if versions[reviewSettingsKindWire] != 7 {
+			t.Fatalf("versions[%s] = %d, want the version the store answered with", reviewSettingsKindWire, versions[reviewSettingsKindWire])
+		}
+	})
+
+	t.Run("no stored value keeps the file's", func(t *testing.T) {
+		got, _, err := runtimeConfigFrom(t.Context(), absentReader{}, base)
+		if err != nil {
+			t.Fatalf("runtimeConfigFrom: %v", err)
+		}
+		if want := (config.Review{PrecisionGate: true, ApproveBeforePost: false}); got.Review != want {
+			t.Fatalf("cfg.Review = %+v, want the file's %+v", got.Review, want)
+		}
+	})
+
+	if base.Review != (config.Review{PrecisionGate: true, ApproveBeforePost: false}) {
+		t.Fatalf("layering mutated the file document's review settings: %+v", base.Review)
+	}
+}
+
+// reviewStoreReader answers only the review-settings kind, so this test does
+// not have to supply every other kind's document to reach the layering it
+// exercises.
+type reviewStoreReader struct{ value []byte }
+
+func (r reviewStoreReader) Query(_ context.Context, kind string, decode func([]byte) error) (int64, bool, error) {
+	if kind != reviewSettingsKindWire {
+		return 0, false, nil
+	}
+	if r.value == nil {
+		return 0, false, nil
+	}
+	if err := decode(r.value); err != nil {
+		return 0, false, err
+	}
+	return 7, true, nil
 }

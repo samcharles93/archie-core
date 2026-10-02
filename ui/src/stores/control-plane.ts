@@ -175,6 +175,7 @@ export type ControlPlanePage =
   | "schedules"
   | "plugins"
   | "containers"
+  | "review"
   | "workflows";
 
 const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
@@ -188,6 +189,7 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   schedules: ["schedules"],
   plugins: ["plugin-settings"],
   containers: ["container-runtime-policies"],
+  review: ["review-settings"],
   workflows: ["workflow-definitions"],
 };
 

@@ -275,6 +275,7 @@ var runtimeResourceKinds = []string{
 	controlplane.RepositoryPoliciesKind,
 	controlplane.SchedulingPolicyKind,
 	controlplane.PluginSettingsKind,
+	controlplane.ReviewSettingsKind,
 }
 
 // startRuntimeResourceWatches keeps a watch per live kind established for the

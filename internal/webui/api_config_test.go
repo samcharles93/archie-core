@@ -162,6 +162,24 @@ func TestConfigViewWithoutIdentitiesCarriesNone(t *testing.T) {
 	}
 }
 
+// TestBuildConfigViewPublishesReviewDial: the effective pr-review policy is
+// published, so the dashboard (and any other reader of the snapshot) can show
+// which dials are in force after the review-settings resource is layered over
+// the file's [review] section (docs/prds/review-settings-resource.md,
+// "Projection and page").
+func TestBuildConfigViewPublishesReviewDial(t *testing.T) {
+	view := BuildConfigView(ConfigViewInput{Config: config.Config{
+		Review: config.Review{PrecisionGate: true, ApproveBeforePost: false},
+	}})
+
+	if !view.Review.PrecisionGate {
+		t.Error("Review.PrecisionGate = false, want the config's true")
+	}
+	if view.Review.ApproveBeforePost {
+		t.Error("Review.ApproveBeforePost = true, want the config's false")
+	}
+}
+
 func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 	cases := []struct {
 		name string

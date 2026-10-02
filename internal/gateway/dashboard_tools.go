@@ -44,6 +44,7 @@ var dashboardPages = []DashboardPage{
 	{Path: "/settings/personas", Label: "Personas", Description: "The system prompts chat runs under, and the default."},
 	{Path: "/settings/schedules", Label: "Schedules", Description: "Work Archie starts on its own, on a timetable."},
 	{Path: "/settings/scheduling-policy", Label: "Scheduling policy", Description: "How Archie finds work and labels its state on the forge."},
+	{Path: "/settings/review", Label: "Review", Description: "How Archie reviews pull requests: precision filtering and operator approval before posting."},
 	{Path: "/settings/tools", Label: "Tools & MCP", Description: "The tools agents can call, and the MCP servers that add more."},
 	{Path: "/settings/history", Label: "History", Description: "Every settings change: who made it, when, and what it was before."},
 	{Path: "/settings/plugins", Label: "Plugins", Description: "Directories Archie loads extensions from at startup."},

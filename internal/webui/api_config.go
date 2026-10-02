@@ -119,9 +119,14 @@ type ConfigView struct {
 	Models       map[string]string       `json:"models"`
 	Providers    map[string]ProviderView `json:"providers"`
 	Budgets      BudgetsView             `json:"budgets"`
-	Storage      StorageView             `json:"storage"`
-	Containers   ContainersView          `json:"containers"`
-	Web          WebView                 `json:"web"`
+	// Review is the layered pr-review policy: what a review may post, and
+	// whether a human decides. It is a plain projection of the effective
+	// cfg.Review, so the published snapshot tells a reader which dials are in
+	// force (docs/prds/review-settings-resource.md).
+	Review     ReviewView     `json:"review"`
+	Storage    StorageView    `json:"storage"`
+	Containers ContainersView `json:"containers"`
+	Web        WebView        `json:"web"`
 	// Chat carries the dashboard's own chat-page settings. They are
 	// daemon configuration the page cannot otherwise see: a process that
 	// renders a published snapshot has no [chat] section to read.
@@ -223,6 +228,14 @@ type BudgetsView struct {
 	MaxSteps        int    `json:"max_steps"`
 	WallClock       string `json:"wall_clock"`
 	GateMaxFailures int    `json:"gate_max_failures"`
+}
+
+// ReviewView mirrors config.Review, neither field of which is secret. It
+// carries the value in force after the review-settings resource is layered over
+// the file's [review] section.
+type ReviewView struct {
+	PrecisionGate     bool `json:"precision_gate"`
+	ApproveBeforePost bool `json:"approve_before_post"`
 }
 
 // StorageView is where archied keeps its state on disk. All paths, no
@@ -369,6 +382,10 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			MaxSteps:        cfg.Budgets.MaxSteps,
 			WallClock:       cfg.Budgets.WallClock.Std().String(),
 			GateMaxFailures: cfg.Budgets.GateMaxFailures,
+		},
+		Review: ReviewView{
+			PrecisionGate:     cfg.Review.PrecisionGate,
+			ApproveBeforePost: cfg.Review.ApproveBeforePost,
 		},
 		Storage: StorageView{
 			WorkDir:         cfg.WorkDir,

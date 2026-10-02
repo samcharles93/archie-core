@@ -6,6 +6,7 @@ import DashboardPage from "@/dashboard/DashboardPage.vue";
 import EventsPage from "@/events/EventsPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
 import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
+import ReviewSettingsPage from "@/settings/ReviewSettingsPage.vue";
 import ToolsPage from "@/settings/ToolsPage.vue";
 import HistoryPage from "@/settings/HistoryPage.vue";
 import PersonasPage from "@/settings/PersonasPage.vue";
@@ -231,6 +232,18 @@ const routes = [
       settings: true,
       label: "Scheduling policy",
       description: "How Archie finds work and labels its state on the forge.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/review",
+    name: "settings-review",
+    component: ReviewSettingsPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Review",
+      description: "How Archie reviews pull requests: precision filtering and operator approval before posting.",
       section: "settings",
     },
   },

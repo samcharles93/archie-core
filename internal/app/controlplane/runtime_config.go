@@ -160,6 +160,21 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
+	// review-settings owns the pr-review dials once the store carries a value.
+	// The two fields are assigned individually, not `out.Review = ...`: a field
+	// added to config.Review later keeps the file's value until the stored
+	// document carries it (docs/prds/review-settings-resource.md).
+	if err := layerResource(ctx, reader, versions, ReviewSettingsKind, func(value []byte) error {
+		var settings reviewSettings
+		if err := json.Unmarshal(value, &settings); err != nil {
+			return err
+		}
+		out.Review.PrecisionGate = settings.PrecisionGate
+		out.Review.ApproveBeforePost = settings.ApproveBeforePost
+		return nil
+	}); err != nil {
+		return config.Config{}, nil, err
+	}
 	return runtimeToolConfigFrom(ctx, reader, versions, out)
 }
 

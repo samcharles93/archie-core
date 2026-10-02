@@ -46,6 +46,13 @@ export interface ReloadStatus {
   last_error?: string;
 }
 
+/** The effective pr-review policy after the review-settings resource is
+ * layered over the file's [review] section. */
+export interface ReviewView {
+  precision_gate: boolean;
+  approve_before_post: boolean;
+}
+
 export interface RepoView {
   owner: string;
   name: string;
@@ -83,6 +90,7 @@ export interface ConfigView {
   repositories?: RepoView[];
   models?: Record<string, string>;
   providers?: Record<string, ProviderView>;
+  review?: ReviewView;
   provenance?: ConfigOrigin[];
   reload?: ReloadStatus;
   schema?: ConfigSection[];

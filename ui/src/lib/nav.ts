@@ -34,6 +34,7 @@ const settings: NavSpec = {
         "/settings/curators",
         "/settings/schedules",
         "/settings/scheduling-policy",
+        "/settings/review",
       ],
     },
     {
