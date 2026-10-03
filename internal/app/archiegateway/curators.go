@@ -9,6 +9,7 @@ import (
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
+
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/events"

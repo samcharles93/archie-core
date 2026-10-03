@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
-
 	"github.com/samcharles93/archie-core/internal/domain/health"
 )
 

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )

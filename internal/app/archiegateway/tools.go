@@ -247,9 +247,9 @@ func npmCacheServerEnv(command, workDir string) []string {
 	return mcp.NpmCacheEnv(command, filepath.Join(workDir, "mcp-npm-cache"))
 }
 
-func shutdownCapabilityHost(capabilityHost *plugin.Host, log *slog.Logger) func() {
+func shutdownCapabilityHost(ctx context.Context, capabilityHost *plugin.Host, log *slog.Logger) func() {
 	return func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := capabilityHost.Stop(stopCtx); err != nil {
 			log.Error("capability host shutdown", "err", err)

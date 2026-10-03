@@ -51,11 +51,11 @@ type Model struct {
 }
 
 type catalogProvider struct {
-	ID     string                          `json:"id"`
-	Name   string                          `json:"name"`
-	NPM    string                          `json:"npm"`
-	API    string                          `json:"api"`
-	Env    []string                        `json:"env"`
+	ID     string                   `json:"id"`
+	Name   string                   `json:"name"`
+	NPM    string                   `json:"npm"`
+	API    string                   `json:"api"`
+	Env    []string                 `json:"env"`
 	Models map[string]catalog.Model `json:"models"`
 }
 

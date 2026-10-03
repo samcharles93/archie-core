@@ -17,12 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/identity"

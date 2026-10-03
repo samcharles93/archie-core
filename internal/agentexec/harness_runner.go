@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // Harness outcomes beyond StatusPassed. The strings match the built-in

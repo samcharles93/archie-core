@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 

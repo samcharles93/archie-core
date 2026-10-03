@@ -6,9 +6,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"gopkg.in/yaml.v3"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // CommandRunStepName is the step type that runs operator-authored argv in the

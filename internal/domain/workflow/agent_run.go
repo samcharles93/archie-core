@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"gopkg.in/yaml.v3"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // AgentRunStepName is the step type that runs one agent mission and finishes

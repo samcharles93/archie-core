@@ -10,14 +10,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 	"github.com/samcharles93/ai-sdk/toolkit"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/skillscript"
 	"github.com/samcharles93/archie-core/internal/tools"

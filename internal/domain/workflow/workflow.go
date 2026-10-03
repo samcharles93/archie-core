@@ -10,9 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"

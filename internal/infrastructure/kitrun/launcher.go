@@ -11,14 +11,13 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/docker/sandbox-kit-spec/v3/fetch"
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kit"

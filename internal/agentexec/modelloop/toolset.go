@@ -8,11 +8,10 @@ import (
 	"os"
 	"slices"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	aicore "github.com/samcharles93/ai-sdk/core"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 

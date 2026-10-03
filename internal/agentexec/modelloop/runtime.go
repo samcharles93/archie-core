@@ -2,6 +2,7 @@ package modelloop
 
 import (
 	"github.com/samcharles93/ai-sdk/runtime"
+
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 

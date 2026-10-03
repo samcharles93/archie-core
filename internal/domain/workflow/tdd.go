@@ -7,9 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // TDD is the bugfix workflow: the repro stage's gate expects the test command

@@ -10,10 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 

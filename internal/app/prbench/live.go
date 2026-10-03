@@ -9,12 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview/bench"

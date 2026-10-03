@@ -24,9 +24,8 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/app/chattask"
-	"github.com/samcharles93/archie-core/internal/app/servicekit"
-
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"

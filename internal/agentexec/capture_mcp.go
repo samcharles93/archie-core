@@ -11,9 +11,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 const mcpConfigPlaceholder = "{{.MCPConfig}}"
