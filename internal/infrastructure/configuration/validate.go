@@ -393,6 +393,20 @@ func validateContainers(cfg *config.Config) error {
 	if ref := cfg.Containers.RegistryAuth; ref != (config.SecretRef{}) && (ref.Engine == "" || ref.Key == "") {
 		return fmt.Errorf("%w: containers.registry_auth must name both an engine and a key, got {engine: %q, key: %q}", ErrInvalidInput, ref.Engine, ref.Key)
 	}
+	return validateBindingKeyEngines(cfg.Bindings)
+}
+
+// validateBindingKeyEngines requires the bindings encryption keys to name the
+// env engine. The State Store resolves them at boot, before it serves the
+// installed packages an extension engine comes from, so an extension engine
+// could never answer.
+func validateBindingKeyEngines(b config.BindingsConfig) error {
+	refs := append([]config.SecretRef{b.EncryptionKey}, b.PreviousEncryptionKeys...)
+	for _, ref := range refs {
+		if ref != (config.SecretRef{}) && ref.Engine != "env" {
+			return fmt.Errorf("%w: bindings encryption keys must use the env engine, got engine %q", ErrInvalidInput, ref.Engine)
+		}
+	}
 	return nil
 }
 

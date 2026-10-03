@@ -737,7 +737,9 @@ type CaptureConfig struct {
 // EncryptionKey is unset, binding secrets are persisted as plaintext
 // (legacy behaviour); when set, they are AES-256-GCM encrypted at rest
 type BindingsConfig struct {
-	// EncryptionKey is the active key that seals new binding secrets.
+	// EncryptionKey is the active key that seals new binding secrets. It must
+	// name the env engine: the State Store resolves it before extension engines
+	// exist.
 	// Resolved through the secret registry (engine + key) at startup; the
 	// resolved material must be 32 bytes of high-entropy randomness.
 	// A nil/empty ref disables encryption and keeps current behaviour.
