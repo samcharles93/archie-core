@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview/bench"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -75,7 +76,7 @@ func Run(ctx context.Context, opts Options, w io.Writer) (bench.Summary, error) 
 	if err := servicekit.ResolveProviders(&doc.Config, slog.Default()); err != nil {
 		return bench.Summary{}, err
 	}
-	rt := agentexec.NewRuntime(agentexec.ProvidersFromConfig(doc.Config.Providers))
+	rt := modelloop.NewRuntime(agentexec.ProvidersFromConfig(doc.Config.Providers))
 	if rt == nil {
 		return bench.Summary{}, fmt.Errorf("%s configures no providers for the judge", opts.Config)
 	}

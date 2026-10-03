@@ -277,7 +277,7 @@ func harnessPrompt(workspace string, req agentrun.Request) string {
 	var b strings.Builder
 	b.WriteString(req.Mission)
 	b.WriteString("\n\n## Rules\n\n")
-	b.WriteString(projectScopedRules(workspace, req.ExtraRules))
+	b.WriteString(ProjectScopedRules(workspace, req.ExtraRules))
 	b.WriteString("\nDo not run git commands that change history, refs or configuration. Archie commits your changes.")
 	if req.ReadOnly {
 		b.WriteString("\nThis stage is read-only. Do not create, modify or delete any file.")
@@ -444,7 +444,7 @@ func policyViolation(before, after repoState, changes []string, req agentrun.Req
 	if req.ReadOnly && len(changes) > 0 {
 		return "the harness wrote in a read-only stage: " + strings.Join(changes, ", ")
 	}
-	if protected := protectionMatcher(req.Protection, false); protected != nil {
+	if protected := ProtectionMatcher(req.Protection, false); protected != nil {
 		var hit []string
 		for _, path := range changes {
 			if protected(path) {

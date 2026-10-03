@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
@@ -43,7 +43,7 @@ func newBenchmarkReviewer(opts Options, cfg config.Config, rt *runtime.Runtime) 
 	cfg.Review.ApproveBeforePost = false
 	cfg.Review.PrecisionGate = false
 	return &liveReviewer{
-		cfg: cfg, agent: agentexec.NewLoopRunner(rt, slog.Default()),
+		cfg: cfg, agent: modelloop.NewLoopRunner(rt, slog.Default()),
 		source: prsource.New(forgeSource{PullRequestReader: prReader, PullRequestDiffReader: diffReader, RepoArchiveReader: archiveReader}),
 	}, nil
 }

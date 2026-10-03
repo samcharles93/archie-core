@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/skill"
@@ -146,8 +146,8 @@ func (b *server) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 }
 
 // toolLimits reads the configured per-turn result limits.
-func toolLimits(cfg config.Config) agentexec.ToolLimits {
-	return agentexec.ToolLimits{
+func toolLimits(cfg config.Config) modelloop.ToolLimits {
+	return modelloop.ToolLimits{
 		MaxResultChars: cfg.Tools.Policy.MaxResultChars,
 		SpillDir:       cfg.Tools.Policy.SpillDir,
 	}

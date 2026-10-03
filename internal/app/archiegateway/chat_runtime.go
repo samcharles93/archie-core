@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 
 	"github.com/samcharles93/ai-sdk/chat"
@@ -91,7 +92,7 @@ func (b *server) rebuildChatModelRuntime(cfg config.Config) {
 	if b.chatModels == nil {
 		return // this process serves no chat turns
 	}
-	b.setLLM(agentexec.NewRuntime(executionProviders(cfg)))
+	b.setLLM(modelloop.NewRuntime(executionProviders(cfg)))
 	b.chatModels.SetConfigured(cfg.Models)
 	catalog, models := b.catalogState()
 	b.chatModels.SetModelCatalog(catalog, models)
@@ -111,7 +112,7 @@ func chatGenerateOptions(
 	messages []chat.Message,
 	registry *tools.Registry,
 	maxSteps int,
-	limits agentexec.ToolLimits,
+	limits modelloop.ToolLimits,
 	extra []tools.ToolEntry,
 	contextWindow int,
 ) (core.GenerateOptions, error) {
@@ -132,7 +133,7 @@ func chatGenerateOptions(
 	}
 	gate := tools.NewContextPressureGate(contextWindow)
 	gate.Evaluate(composed.All())
-	toolSet, err := agentexec.BuildToolSetFrom(gate.FilterTools(composed), toolOpts)
+	toolSet, err := modelloop.BuildToolSetFrom(gate.FilterTools(composed), toolOpts)
 	if err != nil {
 		return core.GenerateOptions{}, err
 	}

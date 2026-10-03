@@ -9,7 +9,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 )
@@ -30,7 +30,7 @@ func taskSamplingHandler(llm *runtime.Runtime, cfg config.TaskConfig) mcp.Sampli
 		if model == "" {
 			return mcp.SamplingResult{}, errors.New("mcp sampling: no builder model is configured")
 		}
-		messages, err := agentexec.SamplingMessages(req)
+		messages, err := modelloop.SamplingMessages(req)
 		if err != nil {
 			return mcp.SamplingResult{}, err
 		}
@@ -39,7 +39,7 @@ func taskSamplingHandler(llm *runtime.Runtime, cfg config.TaskConfig) mcp.Sampli
 			Messages:  messages,
 			System:    req.SystemPrompt,
 			MaxSteps:  1,
-			MaxTokens: agentexec.SamplingMaxTokens(req.MaxTokens, limits.MaxOutputTokens, limits.Reasoning),
+			MaxTokens: modelloop.SamplingMaxTokens(req.MaxTokens, limits.MaxOutputTokens, limits.Reasoning),
 		}
 		if req.Temperature != nil {
 			options.Temperature = float32(*req.Temperature)

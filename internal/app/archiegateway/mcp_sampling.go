@@ -7,7 +7,7 @@ import (
 
 	"github.com/samcharles93/ai-sdk/core"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 )
 
@@ -30,7 +30,7 @@ func (b *server) mcpSamplingHandler() mcp.SamplingHandler {
 		if model == "" {
 			return mcp.SamplingResult{}, errors.New("mcp sampling: no chat model is configured")
 		}
-		messages, err := agentexec.SamplingMessages(req)
+		messages, err := modelloop.SamplingMessages(req)
 		if err != nil {
 			return mcp.SamplingResult{}, err
 		}
@@ -63,9 +63,9 @@ func (b *server) mcpSamplingHandler() mcp.SamplingHandler {
 // samplingMaxTokens bounds the completion to the request's own maxTokens,
 // falling back to a conservative default, and never past the model's own
 // output ceiling. The bound itself is shared with the agent worker's sampling
-// path (agentexec.SamplingMaxTokens) so the same server sees the same bound on
+// path (modelloop.SamplingMaxTokens) so the same server sees the same bound on
 // either path.
 func samplingMaxTokens(req mcp.SamplingRequest, models *chatModelManager, model string) int {
 	details, ok := models.ModelDetails(model)
-	return agentexec.SamplingMaxTokens(req.MaxTokens, details.MaxOutputTokens, ok && details.Reasoning)
+	return modelloop.SamplingMaxTokens(req.MaxTokens, details.MaxOutputTokens, ok && details.Reasoning)
 }

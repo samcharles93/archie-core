@@ -53,7 +53,7 @@ func (o *copilotHarnessOutput) Line(line []byte, report agentrun.ToolCallReporte
 		}
 		delete(o.pending, event.Data.ToolCallID)
 		if report != nil {
-			report(agentrun.ToolCallReport{Tool: tool, Detail: clipToolCallDetail(event.Data.Result.Content), Failed: !event.Data.Success})
+			report(agentrun.ToolCallReport{Tool: tool, Detail: ClipToolCallDetail(event.Data.Result.Content), Failed: !event.Data.Success})
 		}
 	}
 }

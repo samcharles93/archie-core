@@ -58,7 +58,7 @@ func (o *piHarnessOutput) Line(line []byte, report agentrun.ToolCallReporter) {
 				texts = append(texts, block.Text)
 			}
 		}
-		report(agentrun.ToolCallReport{Tool: event.ToolName, Detail: clipToolCallDetail(strings.Join(texts, "\n")), Failed: event.IsError})
+		report(agentrun.ToolCallReport{Tool: event.ToolName, Detail: ClipToolCallDetail(strings.Join(texts, "\n")), Failed: event.IsError})
 	}
 }
 

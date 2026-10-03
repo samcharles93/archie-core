@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/app/chattask"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
@@ -26,7 +26,7 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 	// Created before the router so the LLMResponder can be wired in for
 	// non-command message processing.
 	providers := executionProviders(cfg)
-	b.setLLM(agentexec.NewRuntime(providers))
+	b.setLLM(modelloop.NewRuntime(providers))
 	// Transcription is a model-role capability, like the chat models it sits
 	// beside: it is built here, on the model-owning side, from this process's
 	// own [models]/[providers]. The Messaging Service carries a voice note's
@@ -141,7 +141,7 @@ func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskAct
 	// applies to the next turn in the process that serves this runner.
 	setup := chatSetup{
 		Cfg:        config.NewHolder(cfg),
-		ToolLimits: func() agentexec.ToolLimits { return toolLimits(b.cfgHolder.Get()) },
+		ToolLimits: func() modelloop.ToolLimits { return toolLimits(b.cfgHolder.Get()) },
 		LLM:        b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks,
 		ChatTaskLister:      chatTaskListerAdapter{tasks: b.stateStore.Tasks},

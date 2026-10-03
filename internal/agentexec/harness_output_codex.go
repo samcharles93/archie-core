@@ -99,7 +99,7 @@ func (item codexItem) report() (agentrun.ToolCallReport, bool) {
 	default:
 		return agentrun.ToolCallReport{}, false
 	}
-	call.Detail = clipToolCallDetail(call.Detail)
+	call.Detail = ClipToolCallDetail(call.Detail)
 	return call, true
 }
 

@@ -9,7 +9,7 @@ import (
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/events"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
@@ -131,7 +131,7 @@ type curatorLLMRunner struct {
 }
 
 func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (curator.ChatResult, error) {
-	// agentexec.NewRuntime returns nil when no provider is configured, and a
+	// modelloop.NewRuntime returns nil when no provider is configured, and a
 	// nil *runtime.Runtime panics on the first method call. A curator asking
 	// for a completion on a daemon with no providers is a misconfiguration,
 	// not a reason to take the process down.
@@ -146,7 +146,7 @@ func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (cu
 	for _, m := range req.Messages {
 		msgs = append(msgs, chat.Message{Role: chat.Role(m.Role), Content: m.Content})
 	}
-	toolSet, err := agentexec.BuildToolSetFrom(req.Tools, agentexec.ToolSetOptions{})
+	toolSet, err := modelloop.BuildToolSetFrom(req.Tools, modelloop.ToolSetOptions{})
 	if err != nil {
 		r.outcomes.record(req.Model, err)
 		return curator.ChatResult{}, err

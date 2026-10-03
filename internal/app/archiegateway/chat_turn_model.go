@@ -9,7 +9,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -26,7 +26,7 @@ type chatTurnModel struct {
 	// limits resolves the tool-output policy at each turn, so a live
 	// tool-settings update is the policy the next turn builds its tool options
 	// with; a snapshot taken at construction would keep the boot limits.
-	limits func() agentexec.ToolLimits
+	limits func() modelloop.ToolLimits
 	// outcomes records each call's result for /status (see sendChatTurn).
 	outcomes *providerOutcomeRecorder
 }
@@ -35,7 +35,7 @@ func newChatTurnModel(
 	llm func() *runtime.Runtime,
 	registry *tools.Registry,
 	maxSteps int,
-	limits func() agentexec.ToolLimits,
+	limits func() modelloop.ToolLimits,
 	outcomes *providerOutcomeRecorder,
 ) gateway.TurnModel {
 	return &chatTurnModel{
@@ -51,7 +51,7 @@ func (m *chatTurnModel) Prepare(
 	ctx context.Context,
 	req gateway.TurnPrepareContext,
 ) (gateway.PreparedTurnModel, error) {
-	limits := agentexec.ToolLimits{}
+	limits := modelloop.ToolLimits{}
 	if m.limits != nil {
 		limits = m.limits()
 	}

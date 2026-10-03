@@ -102,7 +102,7 @@ func (o *claudeCodeHarnessOutput) user(raw json.RawMessage, report agentrun.Tool
 		delete(o.pending, block.ToolUseID)
 		if report != nil {
 			report(agentrun.ToolCallReport{
-				Tool: tool, Detail: clipToolCallDetail(claudeResultContent(block.Content)),
+				Tool: tool, Detail: ClipToolCallDetail(claudeResultContent(block.Content)),
 				Failed: block.IsError,
 			})
 		}

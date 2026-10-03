@@ -1,4 +1,4 @@
-package agentexec
+package modelloop
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 
 	aicore "github.com/samcharles93/ai-sdk/core"
@@ -76,19 +77,6 @@ type ToolSetOptions struct {
 	OnToolCall agentrun.ToolCallReporter
 }
 
-// toolCallDetailBytes caps the summary ToolCallReport.Detail carries. This
-// rides on every task's observability event stream, so one large file read
-// must not dominate it the way baselineMissionBytes-sized content is allowed
-// to dominate a builder's own context.
-const toolCallDetailBytes = 300
-
-func clipToolCallDetail(s string) string {
-	if len(s) <= toolCallDetailBytes {
-		return s
-	}
-	return s[:toolCallDetailBytes] + "…"
-}
-
 // reportToolCallCompletion notifies opts.OnToolCall, if set, of one
 // completed call. Factored out of toolExecute's closure so the branching
 // here doesn't add to that function's own cognitive-complexity budget.
@@ -100,7 +88,7 @@ func reportToolCallCompletion(opts ToolSetOptions, entry tools.ToolEntry, result
 	if err != nil {
 		outcome = "error: " + err.Error()
 	}
-	opts.OnToolCall(agentrun.ToolCallReport{Tool: entry.Name, Detail: clipToolCallDetail(outcome), Failed: err != nil})
+	opts.OnToolCall(agentrun.ToolCallReport{Tool: entry.Name, Detail: agentexec.ClipToolCallDetail(outcome), Failed: err != nil})
 }
 
 // resultLimit returns the cap that applies to one entry.

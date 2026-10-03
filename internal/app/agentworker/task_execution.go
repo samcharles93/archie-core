@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 
 	"github.com/samcharles93/ai-sdk/runtime"
@@ -157,17 +158,17 @@ type taskDependencies struct {
 type runnerFactory func(map[string]agentrun.Provider, *slog.Logger) agentrun.Runner
 
 func newTaskRunner(providers map[string]agentrun.Provider, log *slog.Logger) agentrun.Runner {
-	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
+	return modelloop.NewLoopRunner(modelloop.NewRuntime(providers), log)
 }
 
 // applyToolLimits sets the task's tool policy and allowlist on a
 // *LoopRunner. Other runners are untouched.
 func applyToolLimits(agent agentrun.Runner, policy config.ToolPolicy, allow []string) {
-	runner, ok := agent.(*agentexec.LoopRunner)
+	runner, ok := agent.(*modelloop.LoopRunner)
 	if !ok {
 		return
 	}
-	runner.Limits = agentexec.ToolLimits{
+	runner.Limits = modelloop.ToolLimits{
 		MaxResultChars: policy.MaxResultChars,
 		SpillDir:       policy.SpillDir,
 	}
@@ -184,7 +185,7 @@ func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerF
 	}
 	var agent agentrun.Runner
 	if mcpSet != nil && mcpSet.registry != nil {
-		agent = agentexec.NewLoopRunner(llm, log, mcpSet.registry)
+		agent = modelloop.NewLoopRunner(llm, log, mcpSet.registry)
 	} else {
 		agent = newRunner(req.Providers, log)
 	}
@@ -231,7 +232,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// the task's own model rather than a second provider client.
 	var llm *runtime.Runtime
 	if len(req.MCPServers) > 0 {
-		llm = agentexec.NewRuntime(req.Providers)
+		llm = modelloop.NewRuntime(req.Providers)
 	}
 	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, taskSamplingHandler(llm, req.Cfg), log)
 	if mcpSet != nil {

@@ -25,17 +25,17 @@ type captureRecord struct {
 	Args json.RawMessage `json:"args"`
 }
 
-// acceptCapture decides whether one capture call is kept. Both the built-in
+// AcceptCapture decides whether one capture call is kept. Both the built-in
 // loop and the harness path use it, and the harness path applies it twice:
 // in the MCP server, and again when the worker reads the captures back.
-func acceptCapture(spec agentrun.CaptureTool, accepted int, value json.RawMessage) (string, bool) {
+func AcceptCapture(spec agentrun.CaptureTool, accepted int, value json.RawMessage) (string, bool) {
 	if spec.MaxCalls > 0 && accepted >= spec.MaxCalls {
 		return fmt.Sprintf("%s rejected: maximum call count is %d", spec.Name, spec.MaxCalls), false
 	}
 	if !json.Valid(value) {
 		return spec.Name + " rejected: arguments are not valid JSON", false
 	}
-	if rejection, ok := validateCaptureArgs(spec, value); !ok {
+	if rejection, ok := ValidateCaptureArgs(spec, value); !ok {
 		return rejection, false
 	}
 	return spec.Name + " recorded", true
@@ -58,7 +58,7 @@ func ServeCaptureMCP(ctx context.Context, specs []agentrun.CaptureTool, sink io.
 				mu.Lock()
 				defer mu.Unlock()
 				args := append(json.RawMessage(nil), req.Params.Arguments...)
-				reply, ok := acceptCapture(spec, accepted[spec.Name], args)
+				reply, ok := AcceptCapture(spec, accepted[spec.Name], args)
 				if ok {
 					line, err := json.Marshal(captureRecord{Tool: spec.Name, Args: args})
 					if err != nil {
@@ -103,7 +103,7 @@ func readCaptures(path string, specs []agentrun.CaptureTool) (map[string][]json.
 		if !declared {
 			continue
 		}
-		if _, ok := acceptCapture(spec, len(captures[rec.Tool]), rec.Args); ok {
+		if _, ok := AcceptCapture(spec, len(captures[rec.Tool]), rec.Args); ok {
 			captures[rec.Tool] = append(captures[rec.Tool], rec.Args)
 		}
 	}

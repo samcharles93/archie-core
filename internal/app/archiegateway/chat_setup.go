@@ -12,7 +12,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -33,7 +33,7 @@ type chatSetup struct {
 	// ToolLimits resolves the tool-output policy at each turn, so a live
 	// tool-settings update reaches the next chat turn's tool options rather
 	// than the value captured when the runner was built.
-	ToolLimits func() agentexec.ToolLimits
+	ToolLimits func() modelloop.ToolLimits
 	// LLM resolves the provider runtime at each use: a live provider-settings
 	// or model-role-assignments update swaps the runtime wholesale (ai-sdk's
 	// Runtime caches the provider instances it built), so the pointer cannot
