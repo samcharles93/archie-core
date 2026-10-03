@@ -11,11 +11,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-// TDD is the bugfix workflow: prove the bug with failing tests before
-// fixing it. The repro stage's gate INVERTS the test command
-// (ExpectFailure)  --  the run cannot proceed until the new tests fail for
-// the right reason  --  and the fix stage restores the repo's full gate.
-// Routed via the "bug" label.
+// TDD is the bugfix workflow: the repro stage's gate expects the test command
+// to fail, and the fix stage restores the full gate. Routed via the "bug"
+// label.
 func TDD() Workflow {
 	return Workflow{
 		Name: "tdd",

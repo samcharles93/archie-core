@@ -12,19 +12,7 @@ import (
 )
 
 // CommandRunStepName is the step type that runs operator-authored argv in the
-// task worktree at its position in a stored workflow definition.
-//
-// It is the stage half of the deleted.archie/stages/*.go, and it exists only
-// because the maintainer accepted the command-step trust decision: stored
-// control-plane settings already drive argv execution -- repository-policies'
-// gate and preflight commands, and tool-settings' stdio MCP servers -- so a
-// command step adds no trust tier that is not already live.
-//
-// It runs where the workflow engine runs, which is the task container:
-// internal/app/agentworker is the only caller of Run
-// (internal/app/agentworker/task_execution.go), and it is what cmd/archie-agent
-// serves. The daemon never executes a stage, so this step is on the container
-// path by construction rather than by a check it performs.
+// task worktree, inside the agent container.
 const CommandRunStepName = "command.run"
 
 // commandRunLevelWarn makes a failing command advisory: it is reported and the
@@ -42,18 +30,8 @@ type commandRunSettings struct {
 	Run []commandRunCommand `yaml:"run"`
 }
 
-// commandRunCommand is one command in a command.run step's settings.
-//
-// It is a settings shape of its own rather than agentexec.Command itself
-// because these settings are decoded from YAML and agentexec.Command carries
-// wire (JSON) tags only. Reusing the wire struct here would silently drop
-// expect_failure -- the one field whose loss is hardest to notice, because a
-// command declared to fail would simply be reported as passing, and the
-// definition would say one thing while the run did another.
-//
-// Every field is still handed to agentexec.Command before execution, so the two
-// cannot mean different things; TestCommandRunCarriesEveryGateCommandField
-// holds this shape to that struct's fields in both directions.
+// commandRunCommand is one command in a command.run step's settings. It is
+// the YAML shape of agentexec.Command.
 type commandRunCommand struct {
 	Name          string   `yaml:"name"`
 	Argv          []string `yaml:"argv"`
@@ -129,16 +107,9 @@ func newCommandRunStage(settings yaml.Node) (Stage, error) {
 	}}, nil
 }
 
-// runCommands executes argv commands in dir, in order, and returns the first
-// failure's clipped output.
-//
-// It mirrors the repository gate's execution exactly
-// (internal/agentexec/harness_runner.go's runHarnessGate): argv is executed
-// directly rather than through a shell -- so the definition's argv list is the
-// argument boundary, and no quoting is interpreted -- expect_failure inverts a
-// command's result, and the output is clipped so one noisy command cannot fill
-// a park reason. The two are separate implementations of one contract; a change
-// to either is a change to both.
+// runCommands executes argv commands in dir, in order, without a shell, and
+// returns the first failure's clipped output. ExpectFailure inverts a
+// command's result.
 func runCommands(ctx context.Context, commands []agentexec.Command, dir string) (string, error) {
 	for _, c := range commands {
 		cmd := exec.CommandContext(ctx, c.Argv[0], c.Argv[1:]...)

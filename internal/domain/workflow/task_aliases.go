@@ -1,9 +1,3 @@
-// Task-vocabulary aliases. The Task record, its statuses, the mid-run
-// Store contract, and Definition moved to internal/domain/workflow/task
-// so the UI process can hold the vocabulary without
-// linking this package's pipeline engine (which imports agentexec, skill
-// and tools). package workflow keeps these aliases, so daemon-side callers
-// are unaffected.
 package workflow
 
 import "github.com/samcharles93/archie-core/internal/domain/workflow/task"

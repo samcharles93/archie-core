@@ -17,16 +17,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// PRSource fetches a pull request under review: its descriptive content, its
-// diff, and a read-only,.git-free snapshot of its head. It is Trees'
-// counterpart for the pr-review workflow -- Trees reaches the task's own
-// worktree, which the pipeline must never read; PRSource reaches the arbitrary
-// pull request named by Task.Owner/Repo/PRNumber instead, and carries no push
-// credential.
-//
-// The real forge-backed implementation belongs to whichever bead wires
-// pr-review's triggers; this bead builds and tests the
-// Stage wiring against a fake.
+// PRSource fetches the pull request under review: metadata, diff, and a
+// read-only snapshot of its head without .git.
 type PRSource interface {
 	Metadata(ctx context.Context, owner, repo string, number int) (PRMetadata, error)
 	// Diff returns the pull request's unified diff against its base branch.
@@ -90,11 +82,8 @@ type prReviewState struct {
 	skippedPhases []string
 }
 
-// prReviewTotalBudget bounds the whole pr-review run's cost (tokens, the only
-// spend the agent runtime accounts for) and wall-clock, split evenly across
-// prReviewBudgetPhases in pipeline order. Sized generously: exhausting it is
-// meant to catch a run that is genuinely stuck or unexpectedly expensive, not a
-// typical one.
+// prReviewTotalBudget bounds a pr-review run's tokens and wall clock, split
+// evenly across prReviewBudgetPhases.
 var prReviewTotalBudget = prreview.Budget{MaxTokens: 2_000_000, WallClock: 30 * time.Minute}
 
 // prReviewBudgetPhases are the budget-tracked phases, in pipeline order.
@@ -103,11 +92,8 @@ var prReviewTotalBudget = prreview.Budget{MaxTokens: 2_000_000, WallClock: 30 * 
 // this list itself depend on its output existing.
 var prReviewBudgetPhases = []string{"anatomy", "lenses", "review", "precision-gate", "verification", "coverage-consistency", "merge-gate", "output"}
 
-// budgetExhausted reports whether phase has already spent its cumulative
-// share of the run's total budget, checked once before that phase's
-// expensive (agent-call) work starts. A phase absent from
-// prReviewBudgetPhases is a bug in that list, not a runtime condition, and
-// is never treated as exhausted.
+// budgetExhausted reports whether phase has spent its cumulative share of the
+// run budget. A phase missing from prReviewBudgetPhases is never exhausted.
 func budgetExhausted(tc *TaskContext, phase string) bool {
 	idx := slices.Index(prReviewBudgetPhases, phase)
 	if idx < 0 {
@@ -140,12 +126,7 @@ const prReviewConcurrency = 8
 func PRReview() Workflow {
 	return Workflow{
 		Name: "pr-review",
-		// pr_number is required so a binding (watched-repos) or a chat task
-		// (the operator trigger) can only target pr-review by actually
-		// naming a pull request; stagePRIntake reads it from Task.Inputs
-		// when Task.PRNumber is unset (archie's-own-PRs sets PRNumber
-		// directly and never goes through binding validation, so this
-		// declaration does not affect that path).
+		// pr_number is required so a binding or chat task must name a pull request.
 		Interface: task.WorkflowInterface{
 			Inputs: map[string]task.InputSpec{
 				"pr_number": {Type: "number", Required: true},
@@ -156,12 +137,8 @@ func PRReview() Workflow {
 	}
 }
 
-// Split out from PRReview so the implement workflow can splice it in before
-// StageOpenPR
-// -- and so the operator
-// gate can never ride along on that splice: there the gate's question (which
-// findings to post) has no pull request to post to yet, and a park would end
-// the implement run before it opened one.
+// prReviewDecisionStages are the review stages without the operator gate, so
+// the implement workflow can run them before opening its PR.
 func prReviewDecisionStages() []Stage {
 	return append(prReviewPipelineStages(), stagePRMergeGate())
 }
@@ -193,17 +170,9 @@ func stagePRIntake() Stage {
 		if tc.PRSource == nil {
 			return fmt.Errorf("pr-review: no PRSource configured")
 		}
-		// A watched-repositories binding or the operator chat trigger
-		// assigns the pull request through the declared pr_number input,
-		// not PRNumber directly; the daemon's container-acquisition path
-		// already resolves this before dispatch, but an in-process or
-		// subprocess run that bypasses it still needs it resolved here.
-		// Archie's own PRs (Task.Workflow == "implement", embedding this
-		// stage through StagePRReviewAndOpenPR) legitimately has no PR
-		// number at all -- localPRSource ignores it, since the PR does not
-		// exist yet -- so the missing-number error only applies to the
-		// standalone pr-review workflow, which always needs a real,
-		// externally-fetchable pull request to review.
+		// Resolve the PR number from the pr_number input. Only the standalone
+		// pr-review workflow requires one; the implement workflow reviews a PR that
+		// does not exist yet.
 		if tc.Task.PRNumber == 0 {
 			tc.Task.PRNumber = tc.Task.EffectivePRNumber()
 		}
@@ -499,13 +468,8 @@ func stagePRReview() Stage {
 	}}
 }
 
-// runReviewer runs one phase-4 reviewer call. It never returns a Go error to
-// its caller: a reviewer that failed, or did not reach its terminal tool
-// call, contributes no findings -- the same zero-findings shape a reviewer
-// that ran cleanly and found nothing produces. The two are not confused in
-// the record, only in this return value: runReviewerAgent gives the first
-// case a distinct StepFailed child step, so a reader of the execution tree
-// (not this slice) can tell "unreviewed" from "reviewed-clean" apart.
+// runReviewer runs one reviewer call and returns its findings, or none if
+// it failed.
 func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) []prreview.Finding {
 	mission := fmt.Sprintf(
 		"%s\n\nTarget files: %s\n\n%sRead the target files (and, if useful, the context "+
@@ -562,12 +526,9 @@ var reportFindingsTool = agentexec.CaptureTool{
 	Parameters: reportFindingsSchema, RequiredFields: []string{"findings"}, MaxCalls: 1,
 }
 
-// decodeReportedFindings decodes one report_findings capture into findings
-// tagged with dimension, shared by every call site reportFindingsSchema
-// backs. A call that never reported (no captures) or reported malformed JSON
-// decodes to no findings and an error the caller treats as "nothing to add",
-// not as a stage failure -- an agent that could not report is not evidence
-// the code that follows should stop.
+// decodeReportedFindings decodes a report_findings capture into findings
+// tagged with dimension. No capture or bad JSON returns an error the caller
+// treats as no findings.
 func decodeReportedFindings(calls []json.RawMessage, dimension string) ([]prreview.Finding, error) {
 	if len(calls) != 1 {
 		return nil, fmt.Errorf("report_findings called %d times (want exactly once)", len(calls))
@@ -609,14 +570,8 @@ func decodeReportedFindings(calls []json.RawMessage, dimension string) ([]prrevi
 // "turn cap or deadline" case the phase-4 status distinction exists for.
 const prReviewMaxSteps = 25
 
-// runReviewerAgent runs one phase-4 reviewer call and records its child step
-// with the phase-4 status distinction: StepFailed for a reviewer that exhausted
-// its turn cap or deadline before its terminal tool call, StepSucceeded for one
-// that reached it -- whether or not it reported any findings. tc.RunAgentChild
-// does not serve this: it maps only the Go error, so a "parked"
-// (turn-cap/deadline) result with no Go error would record StepSucceeded
-// exactly like a clean, zero-findings run, and the two would be
-// indistinguishable to anything reading the execution tree afterwards.
+// runReviewerAgent runs one reviewer call and records its step as failed when
+// it stopped before its terminal tool call, succeeded otherwise.
 func runReviewerAgent(
 	ctx context.Context, tc *TaskContext, name, mission string, captureTools []agentexec.CaptureTool,
 ) (agentexec.Result, error) {
@@ -663,14 +618,8 @@ func stagePRSynthesis() Stage {
 	}}
 }
 
-// The polish pass is what a budget-exhausted run skips; posting itself always
-// runs, since it is the pipeline's only externally visible act and must report
-// what happened even when every other phase was skipped.
-//
-// Used by the standalone pr-review workflow only. Archie's own PRs trigger
-// (StagePRReviewAndOpenPR, prreview_own_pr.go) needs the same polish-then-post
-// work but must not overwrite the StatusPROpen outcome OpenPR already set, so
-// it calls runPROutputPhase directly instead of this Stage.
+// stagePROutput polishes and posts the findings. A budget-exhausted run skips
+// polishing but always posts.
 func stagePROutput() Stage {
 	return Stage{Name: "output", Run: func(ctx context.Context, tc *TaskContext) error {
 		detail, err := runPROutputPhase(ctx, tc)
@@ -788,13 +737,8 @@ func postPRReview(ctx context.Context, tc *TaskContext) error {
 	)
 }
 
-// runPRReviewAgent runs one read-only agent call rooted at workspace -- never
-// tc.Dir, per Isolation -- and discards the run/park distinction: any
-// non-passed result is a stage error. Every pr-review phase but the reviewer
-// fan-out (which must tell "did not finish" from "finished, found nothing"
-// apart) uses this. Every phase from anatomy onward passes
-// tc.prReview.snapshotDir; intake's AI-score call runs before that snapshot
-// exists, so it passes its own scratch workspace instead.
+// runPRReviewAgent runs one read-only agent call in workspace and returns an
+// error for any result that did not pass.
 func runPRReviewAgent(
 	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentexec.CaptureTool,
 ) (agentexec.Result, error) {
@@ -812,12 +756,8 @@ func runPRReviewAgent(
 	return res, nil
 }
 
-// runPRReviewAgentRecorded is the shared request-building and StepExecution
-// recording underneath every pr-review agent call. It returns whatever the
-// runtime returned, status and all: callers that must distinguish "did not
-// finish" from "finished, found nothing" (the reviewer fan-out) read
-// res.Status themselves instead of getting an error for anything but a Go
-// error.
+// runPRReviewAgentRecorded builds the request for a pr-review agent call,
+// records its step, and returns the runtime's result unchanged.
 func runPRReviewAgentRecorded(
 	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentexec.CaptureTool,
 ) (agentexec.Result, error) {

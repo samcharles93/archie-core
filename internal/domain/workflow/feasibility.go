@@ -94,13 +94,7 @@ func Feasibility() Workflow {
 			// a chat log.
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
 				notify(ctx, tc, "feasibility_prd")
-				// The approval handoff is a workflow change, not a payload the
-				// approve handler names: an approval requeues under the
-				// workflow the wait recorded (an empty name keeps the task's),
-				// so the task must name implement before it enters the wait.
-				// Hardcoding "implement" in the handler is how a gate wait on
-				// the standalone pr-review workflow would have re-run the
-				// implement workflow.
+				// An approval requeues under the workflow recorded here.
 				tc.Task.Workflow = "implement"
 				tc.Outcome = Outcome{Status: StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
 				return nil
@@ -133,14 +127,8 @@ func decideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 	}}
 }
 
-// notify delivers a human-facing event to the channels a default deployment
-// has. A forge-backed task gets a one-way notice on its issue -- the channel
-// that always exists when [notify].webhook is unset -- and the webhook is an
-// additional push (n8n turns it into an email).
-//
-// The issue notice is one-way. Messaging and the Web UI are the decision
-// surfaces; the issue is not a chat log, and notify records no reply cursor
-// on it.
+// notify posts a one-way notice on a forge-backed task's issue and, when
+// configured, to the notify webhook.
 func notify(ctx context.Context, tc *TaskContext, kind string) {
 	if tc.Task.IsForgeBacked() {
 		if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, deliveryNotice(tc, kind)); err != nil {

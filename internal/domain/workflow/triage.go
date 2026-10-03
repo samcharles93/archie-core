@@ -16,22 +16,8 @@ var triageWorkflowNames = map[string]bool{
 	"feasibility": true,
 }
 
-// Triage is the cheap-classification workflow: one read-only agent turn decides
-// whether a task needs a code change at all and, if so, which workflow suits it
-// best.
-//
-// It exists because Route (workflow.go) previously had no content-aware
-// fallback: every task with no explicit workflow and no label match ran
-// the full "implement" pipeline regardless of what it actually asked for.
-// A chat-spawned administrative request ("this is just a test, close it")
-// cost 669,421 tokens finding that out the expensive way (baseline, plan,
-// and build all ran before concluding nothing needed to change).
-//
-// StagePrepareWorktree still runs first: AgentStage mounts tc.Dir into the
-// agent container (agent.go's handleResult passes it straight through),
-// and no cheaper directory-less classification primitive exists in this
-// codebase. The savings are in what triage skips, not in avoiding a
-// worktree checkout.
+// Triage is a single read-only agent turn that decides whether a task needs a
+// code change and, if so, which workflow to run.
 func Triage() Workflow {
 	return Workflow{
 		Name: "triage",
@@ -73,11 +59,7 @@ func Triage() Workflow {
 						tc.Outcome = Outcome{Status: StatusCompleted, Detail: "triaged: no code change needed  --  " + captured.Reasons}
 						return nil
 					}
-					// No fallback. The decide tool already refuses a call that
-					// needs a code change and names no workflow, so reaching
-					// here with an unrecognised one means the model ignored
-					// its own enum; defaulting that to implement is how an
-					// unsettled capability used to reach the builder.
+					// No fallback: an unrecognised workflow is an error.
 					target := captured.Workflow
 					if !triageWorkflowNames[target] {
 						return fmt.Errorf("triage chose workflow %q, which is not one of implement, tdd or feasibility", target)

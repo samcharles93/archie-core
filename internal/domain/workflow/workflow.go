@@ -1,8 +1,4 @@
-// Package workflow is archied's extensible pipeline engine. A Workflow
-// is an ordered list of stages over a shared TaskContext; stages are
-// either deterministic steps (git, gate, PR, comments) or agent stages
-// (agentloop runs). New workflows compose from the shared step library  --
-// adding one must never require reimplementing the engine or the steps.
+// Package workflow runs workflows: ordered stages over a shared TaskContext.
 package workflow
 
 import (
@@ -32,16 +28,8 @@ type Forger interface {
 	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
 	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
 	// CreateReviewComments posts line-anchored review comments on an open pull
-	// request. The whole set travels in one call because Gitea's only inline
-	// shape is a single submitted review holding many comments, and because
-	// one call cannot half-succeed against a rate limit.
-	//
-	// reviewedHeadSHA is the revision those line numbers were measured on. The
-	// implementation reads the pull request's head itself -- the worker holds no
-	// forge credentials -- and posts only while that head is still this
-	// revision, because a line number means nothing against a revision it was
-	// not measured on. Empty means "not measured": the comments post without
-	// the check rather than being dropped.
+	// request in one call. It posts only while the PR head is still
+	// reviewedHeadSHA; empty skips that check.
 	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error
 	// Comment posts a plain, non-anchored PR comment and returns its ID.
 	// The remediate workflow's round-cap stage uses this to tell an
@@ -54,34 +42,22 @@ type Forger interface {
 	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
-// ReviewComment is one line-anchored comment to post on an open pull
-// request: the repo-relative path, the line in the reviewed revision, and
-// the rendered body -- which may carry a fenced suggestion block. It names
-// nothing forge-specific, so both the pr-review pipeline (prreview_stages.go)
-// and the remediate workflow's callers can hand it to Forger unchanged.
+// ReviewComment is one line-anchored review comment: path, line and body.
 type ReviewComment struct {
 	Path string
 	Line int
 	Body string
 }
 
-// PrepareTarget selects where a prepare stage positions the task's worktree,
-// mirroring the daemon's worktree.Target: the zero value prepares fresh onto
-// the base branch, and a non-empty target is the branch a resume lands on --
-// the branch an open pull request lives on. It travels through the seam rather
-// than being recomputed from the title, because a retitled issue would
-// otherwise name a branch that does not exist.
+// PrepareTarget is the branch a prepare stage positions the worktree on;
+// empty prepares fresh from the base branch.
 type PrepareTarget string
 
 // PrepareFresh is the fresh-run target: position the worktree onto the base
 // branch.
 const PrepareFresh PrepareTarget = ""
 
-// Trees is the subset of the daemon's worktree.Manager that workflow stages
-// call mid-run. The production implementation is archie-agent's hybrid adapter
-// (hybridTrees): the daemon prepares the worktree before the container starts,
-// so the adapter's Prepare resolves the directory the daemon prepared and its
-// branch.
+// Trees is the worktree API workflow stages call mid-run.
 type Trees interface {
 	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string, target PrepareTarget) (dir, branch string, err error)
 	CommitAll(ctx context.Context, dir, message string) (bool, error)
@@ -111,11 +87,8 @@ type TaskContext struct {
 	// workflow.call step: such a step in a runner with no capability
 	// fails the run with a named error.
 	Calls task.Caller
-	// PRSource fetches a pull request under review and its head snapshot for
-	// the pr-review workflow (see prreview_stages.go). Nil is only safe for a
-	// workflow that never runs pr-review's stages: they fail the run with a
-	// named error rather than silently skipping, the same rule Reviewer and
-	// Calls follow.
+	// PRSource fetches pull requests for the pr-review workflow. Nil fails those
+	// stages.
 	PRSource PRSource
 	// prReview is the pr-review workflow's cross-stage scratch state (see
 	// prreview_stages.go). It is unexported, following the pattern set by
@@ -152,12 +125,8 @@ type TaskContext struct {
 	// made no file changes  --  the fix already exists or the issue is a
 	// no-op. StageCommitPush closes the issue instead of erroring.
 	BuildNoChanges bool
-	// BaselineFixed is set when StageBaselineGate committed a real fix for
-	// a pre-existing gate failure. It gates whether the build stage is
-	// allowed to set BuildNoChanges: a baseline-fix commit is a real,
-	// gate-verified change sitting in the worktree, so even if the actual
-	// task needed no further work, StageCommitPush must still push and
-	// open a PR rather than discarding it as "no changes required".
+	// BaselineFixed is set when StageBaselineGate committed a fix, so
+	// StageCommitPush pushes it even when the build changed nothing.
 	BaselineFixed bool
 	// ReproProof is the captured failing-test output from a TDD repro
 	// stage, posted on the PR as evidence the bug was reproduced.
@@ -171,11 +140,8 @@ type TaskContext struct {
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 
-	// runInterface is the declaration the run's compiled workflow carries
-	// (Workflow.Interface, set by Run), so the declared-outputs pieces
-	// (outputs.go) read one source: the engine's own compile of the pinned
-	// YAML. A stage body invoked outside Run falls back to parsing the
-	// pinned YAML once, memoized here.
+	// runInterface is the compiled workflow's declared interface, parsed from the
+	// pinned YAML when a stage runs outside Run.
 	runInterface    task.WorkflowInterface
 	runInterfaceSet bool
 	ifaceParsed     *task.WorkflowInterface
@@ -185,30 +151,17 @@ type TaskContext struct {
 	// the composition root (cmd/archied) from the MemoryManager.
 	SystemPrompt func() string
 
-	// Guardrails is the per-task guardrail engine reference. When non-nil,
-	// agent stages record tool successes and failures for guardrail
-	// enforcement. Wired by the composition root of the process that runs the
-	// workflow (archie-agent), because the engine has to live where the agent
-	// stages execute.
+	// Guardrails records agent tool outcomes for guardrail enforcement. Nil
+	// disables it.
 	Guardrails *tools.GuardrailEngine
 
-	// RunUsage accumulates every agent run's token breakdown (prompt,
-	// completion, cached) for this workflow execution. It is presentation
-	// scratch, not persisted -- Task.TokensUsed remains the durable,
-	// authoritative total. It exists so PR bodies can show how much of the
-	// reported prompt-token sum was cache hits (billed at a steep discount)
-	// rather than fresh, full-price tokens; see formatTokenUsage.
+	// RunUsage accumulates this run's token breakdown for PR bodies. Not
+	// persisted; Task.TokensUsed is the total.
 	RunUsage agentexec.Usage
 }
 
-// Emit publishes an observability event stamped with the task's
-// identity and the attempt that produced it. Safe on a nil bus.
-//
-// The attempt comes from the task record this context runs against, so a
-// reader can attribute the event to one run without segmenting the task's
-// stream by stage order. It is never guessed: a producer with no attempt
-// (the deliberately task-agnostic daemon events) leaves it zero, which reads
-// as unattributed rather than as a first run.
+// Emit publishes an observability event stamped with the task and its
+// attempt. Safe on a nil bus.
 func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 	if tc.Bus == nil {
 		return
@@ -280,13 +233,7 @@ type Stage struct {
 type Workflow struct {
 	Name   string
 	Stages []Stage
-	// Interface declares this workflow's inputs, repository mode and agent
-	// profile to whatever starts it -- a binding's CheckWorkflow reads it the
-	// same way it reads a YAML-defined workflow's WorkflowInterface. Zero
-	// value (no declared inputs) is the default every builtin had before
-	// pr-review's triggers needed one; ShippedDefinitions only emits an
-	// inputs: block when this is non-empty, so every other builtin's
-	// generated YAML is byte-identical to before.
+	// Interface declares this workflow's inputs, repository mode and profile.
 	Interface task.WorkflowInterface
 }
 
@@ -350,12 +297,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 			park(ctx, tc, fmt.Sprintf("persist task before stage %s: %v", stage.Name, err))
 			return
 		}
-		// Every stage is a StepExecution:
-		// the store records pending -> running and writes the stage_start event
-		// in the same transaction, and refuses a start the state machine
-		// forbids. A failed recording write parks the execution -- the step
-		// does not run unrecorded, because a stage whose record never landed
-		// would park on a reason no dashboard can trace to a step row.
+		// Record the stage as a step; a failed write parks the execution.
 		stepID, startEvent, err := tc.Store.StartStep(ctx, StepStart{
 			ExecutionID: t.ID, Attempt: t.Attempt, Kind: task.StepKindStage, Name: stage.Name,
 		})
@@ -369,13 +311,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		// outlives the stage cannot parent to a step that has finished.
 		tc.StepID = stepID
 		defer func() { tc.StepID = 0 }()
-		// The stage is bound onto the task logger for exactly the stage's own
-		// execution and removed afterwards, so every line a stage's code writes
-		// is selectable by stage (internal/logging.Query.Stage). It is restored
-		// rather than left in place because a line written outside any stage is
-		// not attributable to one. Agent and tool output is logged by the runtime
-		// that produced it, which never sees this logger, so it carries no stage:
-		// the stage filter narrows the log, it does not cover it.
+		// Bind the stage name onto the logger for this stage only.
 		previousLog := tc.Log
 		stageLog := previousLog.With("stage", stage.Name)
 		tc.Log = stageLog
@@ -384,12 +320,8 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		err = stage.Run(ctx, tc)
 		tc.Log = previousLog
 
-		// Daemon shutdown is not a workflow failure. The step records the
-		// table's interrupted outcome -- the process knows the step it is
-		// giving up -- and returns without parking: Startup's existing crash
-		// recovery requeues the execution, and the next attempt starts fresh
-		// steps. A recording failure on this path is logged and left to the
-		// same recovery: the process is on its way out either way.
+		// Shutdown is not a failure: record the step as interrupted and return
+		// without parking.
 		if ctx.Err() != nil && err != nil {
 			finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			finishEvent, recordErr := tc.Store.FinishStep(finishCtx, StepFinish{
@@ -504,16 +436,7 @@ func clip(s string, n int) string {
 	return s[:n] + "\n…(truncated)"
 }
 
-// clipTail keeps the last n bytes of s, breaking on a rune boundary so a
-// multi-byte character straddling the cut point isn't split into invalid
-// UTF-8 -- this return value can be persisted (e.g. into a task's park
-// reason), not just logged, so mangled bytes would survive past this call.
-//
-// Head-clipping (clip, above) is right when the useful part comes first,
-// such as a compiler error. It is wrong for command output where the
-// explanation is at the end, such as a test runner's "--- FAIL" block after
-// pages of "ok" lines -- clip would keep exactly the part that doesn't say
-// why it failed.
+// clipTail keeps the last n bytes of s, cut on a rune boundary.
 func clipTail(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -525,15 +448,8 @@ func clipTail(s string, n int) string {
 	return "…(truncated)\n" + s[cut:]
 }
 
-// formatTokenUsage renders a token total for a human, breaking out how much
-// was a cache hit (billed at a steep discount) versus fresh, full-price
-// tokens. Without this, a heavily-cached run's raw prompt-token sum reads as
-// roughly 10x its actual bill.
-//
-// It falls back to the plain total when no usage breakdown is available
-// (usage is the zero value -- e.g. a workflow that never ran an agent stage,
-// or an older code path that hasn't been wired to populate RunUsage), so
-// callers never need to special-case an empty Usage themselves.
+// formatTokenUsage renders a token total split into cached and fresh tokens,
+// or the plain total when no breakdown exists.
 func formatTokenUsage(total int, usage agentexec.Usage) string {
 	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CachedTokens == 0 {
 		return fmt.Sprintf("%d tokens", total)
@@ -542,20 +458,9 @@ func formatTokenUsage(total int, usage agentexec.Usage) string {
 	return fmt.Sprintf("%d tokens (%d fresh + %d cached)", total, fresh, usage.CachedTokens)
 }
 
-// extractFailingGateOutput trims a gate command's combined output down to
-// the lines relevant to diagnosing a failure, dropping "ok" lines for
-// packages that already pass. `go test ./...` output interleaves one
-// "ok  \t<pkg>\t<time>" line per passing package with the failing packages'
-// "--- FAIL:"/"FAIL\t<pkg>" blocks; in a large repo the passing-package
-// lines dominate the byte count and get squeezed out by clip's size bound,
-// pushing the actual failure detail out of the mission prompt on later
-// retries.
-//
-// It only trims when the output actually looks like recognized `go test`
-// failure output (at least one "--- FAIL:" or "FAIL\t" marker survives the
-// filter); otherwise it returns s unchanged, so a non-Go gate command or an
-// unexpected output shape degrades to the previous full-output behaviour
-// instead of silently dropping real failure information.
+// extractFailingGateOutput drops passing-package "ok" lines from go test
+// output when it contains failure markers; other output is returned
+// unchanged.
 func extractFailingGateOutput(s string) string {
 	lines := strings.Split(s, "\n")
 	kept := make([]string, 0, len(lines))
@@ -579,15 +484,8 @@ func extractFailingGateOutput(s string) string {
 // "ok  \tgithub.com/example/pkg\t0.004s".
 var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)
 
-// RunAgentChild records one agent call as a child StepExecution of the stage
-// this run is executing:
-// kind agent, parented to the stage's own step, which the store derives depth
-// from, and finished with the call's own outcome and the tokens it
-// accounted. A child's recording write failure is the same park a stage's
-// is: an agent call that ran unrecorded is the invisibility the step table
-// exists to end. A stage invoked outside the engine's recorded run -- which
-// is how the stage unit tests run -- records no child and runs its work
-// unchanged.
+// RunAgentChild records one agent call as a child step of the current stage.
+// A failed write parks the execution. Outside a recorded run it just runs.
 func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func() (agentexec.Result, error)) (agentexec.Result, error) {
 	stepID, _, err := tc.startChildStep(ctx, task.StepKindAgent, name)
 	if err != nil {

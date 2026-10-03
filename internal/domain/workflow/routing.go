@@ -18,25 +18,15 @@ import (
 // of LoadKindWorkflowsYAML to SetKindWorkflows, or nil to restore defaults.
 type KindWorkflows map[workintake.Kind]string
 
-// defaultKindWorkflows names the registry entry each intake kind prefers
-// when no override has been loaded. Bootstrap exercises the full pipeline
-// deterministically (no LLM spend) -- invites, clone, push, PR, labels.
-//
-// The label vocabulary itself belongs to workintake, which is what reads
-// forge issues. This package owns only the choice of workflow for a kind:
-// keeping both here meant the transport and the registry each had their own
-// copy of the label table.
+// defaultKindWorkflows maps each intake kind to its default workflow.
 var defaultKindWorkflows = KindWorkflows{
 	workintake.KindBug:       "tdd",
 	workintake.KindFeature:   "feasibility",
 	workintake.KindBootstrap: "bootstrap",
 }
 
-// activeKindWorkflows is what workflowForLabels actually reads. Set once at
-// daemon startup by SetKindWorkflows; nil means "use defaultKindWorkflows".
-// This is package state deliberately, matching the once-at-startup,
-// never-concurrent-with-Route lifecycle SkillsDir/PluginDir already have --
-// Route() is never called before the daemon finishes loading configuration.
+// activeKindWorkflows overrides defaultKindWorkflows. Set once at startup by
+// SetKindWorkflows; nil uses the defaults.
 var activeKindWorkflows KindWorkflows
 
 // SetKindWorkflows overrides the kind-to-workflow-name bindings Route()
@@ -45,15 +35,8 @@ func SetKindWorkflows(kw KindWorkflows) {
 	activeKindWorkflows = kw
 }
 
-// LoadKindWorkflowsYAML reads a kind-to-workflow-name binding file. An empty
-// path returns (nil, nil) -- "no file configured" means "use defaults",
-// matching SkillsDir's own empty-means-built-ins-only convention rather than
-// requiring callers to stat first.
-//
-// A kind the workintake package does not recognise is a definition failure,
-// per the design doc's rule: the schema (here, the closed Kind vocabulary)
-// defines what's accepted, and anything else is the caller's fault --
-// reported as an error, not silently dropped or guessed at.
+// LoadKindWorkflowsYAML reads a kind-to-workflow binding file. An empty path
+// returns (nil, nil). An unknown kind is an error.
 func LoadKindWorkflowsYAML(path string) (KindWorkflows, error) {
 	if path == "" {
 		return nil, nil
@@ -184,12 +167,8 @@ func bindPlaybookKey(pos, key, value string, kw KindWorkflows, lw LabelWorkflows
 	return nil
 }
 
-// MergeKindWorkflows merges extra into base, failing on a key bound by both.
-// The single-file field and the playbook directory are independent sources; a
-// key each claims is a collision, not a precedence question. Nil arguments are
-// treated as empty. A nil nil result is returned only when both inputs are
-// nil/empty, so Set* can keep its nil-means-defaults convention. This is a
-// domain-package naming helper the composition layer calls.
+// MergeKindWorkflows merges extra into base and fails on a key bound by both.
+// Returns nil only when both are empty.
 func MergeKindWorkflows(base, extra KindWorkflows) (KindWorkflows, error) {
 	merged := make(KindWorkflows, len(base)+len(extra))
 	maps.Copy(merged, base)
@@ -296,12 +275,8 @@ func ResolveWorkflowID(t *Task, available map[string]struct{}, kinds KindWorkflo
 // does not own.
 type LabelWorkflows map[string]string
 
-// activeLabelWorkflows is what workflowForLabels consults for arbitrary
-// labels. Set once at daemon startup by SetLabelWorkflows; nil means "no
-// arbitrary-label bindings" (there is no built-in default -- the closed
-// kind set already owns bug/feature/bootstrap, and loading bindings for
-// those is rejected as a collision), mirroring activeKindWorkflows'
-// lifecycle.
+// activeLabelWorkflows maps arbitrary labels to workflows. Set once at startup
+// by SetLabelWorkflows; nil means none.
 var activeLabelWorkflows LabelWorkflows
 
 // SetLabelWorkflows overrides the label-to-workflow-name bindings Route()
@@ -311,15 +286,9 @@ func SetLabelWorkflows(lw LabelWorkflows) {
 	activeLabelWorkflows = lw
 }
 
-// LoadLabelWorkflowsYAML reads a label-to-workflow-name binding file. An
-// empty path returns (nil, nil) -- "no file configured" means "no
-// arbitrary-label bindings", matching the kind layer's convention.
-//
-// A label already owned by the closed kind set (bug/feature/bootstrap) is a
-// definition collision and returns an error: two authorities claiming one
-// label is the caller's fault, reported not arbitrated. Empty labels or
-// empty workflow names are likewise rejected -- the schema defines what is
-// accepted, anything else is dropped-and-reported per the design doc.
+// LoadLabelWorkflowsYAML reads a label-to-workflow binding file. An empty path
+// returns (nil, nil). Labels owned by the kind set, empty labels and empty
+// workflow names are errors.
 func LoadLabelWorkflowsYAML(path string) (LabelWorkflows, error) {
 	if path == "" {
 		return nil, nil

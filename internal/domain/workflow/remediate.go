@@ -25,11 +25,8 @@ type ReviewUnitComment struct {
 	Body      string `json:"body"`
 }
 
-// ReviewUnit is the remediate workflow's input contract: one review (or one
-// standalone comment with no parent review) and every actionable comment
-// grouped under it. The daemon's reaction consumer builds and JSON-encodes this
-// into Task.ReviewPayload before dispatch; this package only decodes and acts
-// on it.
+// ReviewUnit is the remediate workflow's input: one review and its actionable
+// comments, decoded from Task.ReviewPayload.
 type ReviewUnit struct {
 	ReviewID int64  `json:"review_id,omitempty"`
 	Author   string `json:"author,omitempty"`
@@ -113,28 +110,15 @@ func orUnknown(s string) string {
 // other clipped park reasons in this package.
 const remediationRoundCapBytes = 2000
 
-// retiredResumeStep is the remediate workflow's old in-container resume stage,
-// kept as an inert word in the step vocabulary. The resume it used to perform
-// now happens in daemon.prepareWorkspace before the container starts:
-// the daemon holds the forge credential that fetches the
-// branch and positions the worktree onto origin/<branch>, so by the time a
-// container-side stage could run there is nothing left to do. It is
-// deliberately not a stage of Remediate() any more -- a new definition never
-// names it -- but a definition pinned or stored before that move still does,
-// and a step word removed from the vocabulary fails every workflow's
-// definition to decode, not just its own.
+// retiredResumeStep is an inert stage kept so stored definitions that name it
+// still parse. The daemon now positions the worktree before the container
+// starts.
 func retiredResumeStep() Stage {
 	return Stage{Name: "resume", Run: func(context.Context, *TaskContext) error { return nil }}
 }
 
-// StageRemediationRoundCap enforces the hard stop on an unbounded
-// remediate/re-review exchange (decision 5, "bounding the exchange").
-// Task.RemediationRounds is the remediation's own budget, separate from
-// RetryCount (the operator's): one shared counter made N operator retries
-// eat the review-remediation budget and vice versa, and let a repo-level
-// round cap re-park a task an operator had just legally retried. On the
-// cap it parks the task and posts one comment explaining why, without
-// running the builder; under the cap it counts this round and proceeds.
+// StageRemediationRoundCap parks the task with a comment once
+// Task.RemediationRounds reaches the cap; otherwise it counts the round.
 func StageRemediationRoundCap() Stage {
 	return Stage{Name: "round-cap", Run: func(ctx context.Context, tc *TaskContext) error {
 		maxRounds := tc.Repo.EffectiveMaxRetries(tc.Cfg.MaxRetries)
@@ -210,11 +194,8 @@ func StageCheckReviewPayload() Stage {
 	}}
 }
 
-// StageRemediationCommitPush commits and pushes the remediation to the
-// existing PR branch. Unlike StageCommitPush, no changes is a normal
-// outcome, not an empty-tree error: a review can be satisfied by
-// explanation alone, and there is no issue to close either way -- the PR
-// this task owns stays open regardless.
+// StageRemediationCommitPush commits and pushes the remediation to the PR
+// branch. No changes is a normal outcome.
 func StageRemediationCommitPush() Stage {
 	return Stage{Name: "remediate-commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.BuildNoChanges {
@@ -265,15 +246,8 @@ func StageRemediationReply() Stage {
 	}}
 }
 
-// Remediate runs one remediation round against an archie-owned, still-open
-// pull request in response to a forge review reaction.
-// It reuses the task's
-// existing worktree and branch rather than opening a new PR. The daemon
-// positions the worktree onto the PR branch before the container starts
-// (prepareWorkspace), and StagePrepareWorktreeOnBranch then binds that
-// directory and branch onto the task context before any agent work -- without
-// it remediate-build ran with an empty tc.Dir and remediate-commit-push pushed
-// an empty branch.
+// Remediate runs one remediation round on an open archie-owned pull request in
+// response to a review, reusing the task's worktree and branch.
 func Remediate() Workflow {
 	return Workflow{
 		Name: "remediate",

@@ -105,15 +105,8 @@ func DigestDefinition(src string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// DefinitionID returns the workflow id a definition declares without compiling
-// it. It is the identity half of DigestDefinition, for the readers that hold
-// only stored YAML: a pin's id and the task's workflow column have to agree
-// before a dispatch runs, and DigestDefinition cannot answer that.
-//
-// It reads the single declared id and ignores the rest, so it neither needs a
-// step registry nor rejects a definition written against a vocabulary the
-// caller does not have. ParseDefinition stays the validator; this is only the
-// name.
+// DefinitionID returns the workflow id a definition declares without
+// compiling or validating it.
 func DefinitionID(src string) (string, error) {
 	var declared struct {
 		ID string `yaml:"id"`
@@ -188,14 +181,8 @@ func noSettingsFactory(stage Stage) StepFactory {
 	}
 }
 
-// retiredSteps are step types no shipped workflow names any more but that must
-// keep resolving. A stored workflow definition is validated as a whole
-// collection, so a word dropped from the vocabulary does not merely fail its
-// own step -- it fails every workflow's definition to decode, taking the whole
-// workflow-definitions resource down with it. Each entry is inert by
-// construction: the behaviour its stage used to perform has another owner now,
-// and it exists only so a definition pinned or stored before that move still
-// parses and compiles.
+// retiredSteps are step types no shipped workflow uses that still resolve, as
+// inert stages, so stored definitions naming them keep parsing.
 var retiredSteps = map[string]Stage{
 	// The remediate workflow's in-container resume stage moved to daemon
 	// preparation; see retiredResumeStep.

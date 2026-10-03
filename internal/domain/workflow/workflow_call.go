@@ -119,11 +119,7 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 		fmt.Sprintf("started %q as task %d", s.Workflow, callee.ID), started); err != nil {
 		tc.Log.Warn("workflow call start not persisted", "err", err)
 	}
-	// The call is a call StepExecution in the caller's tree, recording the
-	// callee's execution ID -- the store verifies the callee is this run's
-	// own callee, which is what makes "cancel the callees the caller waits
-	// on" decidable: an open call step is a waited-on callee, a closed one
-	// is a wait:false callee that runs on.
+	// Record the call as a step holding the callee's execution ID.
 	callStep, _, err := tc.startCallStep(ctx, callee.ID)
 	if err != nil {
 		return fmt.Errorf("%s: could not be recorded: %w", WorkflowCallStepName, err)
@@ -137,12 +133,8 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 		}
 		return nil
 	}
-	// The wait ends when the callee ends, however it ended: a successful
-	// callee closes the call step as succeeded; a callee that ended otherwise
-	// closes it as failed with the callee's detail. The one open case is the
-	// caller itself being cancelled -- its CancelExecution already swept this
-	// step with the other non-terminal ones, so a late write here must not
-	// pretend the wait is still the caller's business.
+	// Close the call step with the callee's outcome, unless the caller itself was
+	// cancelled.
 	calleeOutputs, waitErr := awaitCallee(ctx, s, tc, callee.ID)
 	if waitErr != nil {
 		if ctx.Err() == nil {
@@ -336,12 +328,8 @@ func checkCallInputs(callerID string, index int, caller task.WorkflowInterface, 
 	return nil
 }
 
-// checkCallOutputs validates one call's saved outputs assignment: the key
-// must be declared by the callee, the reference must name an output the
-// caller declares, and the callee's declared type must satisfy the caller's.
-// The shape of the value
-// (a well-formed outputs.<name> reference) is the factory's refusal; only
-// the declarations are the collection's to judge, exactly as for inputs.
+// checkCallOutputs validates a call's outputs assignment against the callee's
+// and caller's declarations.
 func checkCallOutputs(callerID string, index int, caller task.WorkflowInterface, callee YAMLDefinition, outputs map[string]string) error {
 	for calleeName, ref := range outputs {
 		calleeSpec, ok := callee.Outputs[calleeName]

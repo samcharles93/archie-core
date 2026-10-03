@@ -30,32 +30,13 @@ type StepTypeProvider interface {
 	StepTypes() []StepType
 }
 
-// Manager is the workflow step-type family owner: it controls registration,
-// validation, and resolution of the vocabulary that workflow definitions are
-// parsed and compiled against.
-//
-// It is a constructed, injected value. There is deliberately no package-level
-// registry and no init()-time registration: each process builds a Manager at
-// its composition root from the same provider set
-// (internal/infrastructure/workflowsteps) and injects it, so within one build
-// a definition that validates on the validating side is compilable on the
-// executing side. That agreement is per build: the State Store and archie-agent
-// are separately deployed binaries, so one built from newer source than the
-// other can still disagree, and only a matching deploy fixes that.
-//
-// Registration is expected to finish before the first resolution, and that
-// order is a documented constraint rather than an enforced one: Registry hands
-// back a copy, so a Register that arrives after a consumer resolved is not
-// observed by that consumer. Register every provider before injecting the
-// manager.
+// Manager owns registration and resolution of workflow step types. Each
+// process builds one from the shared provider set and injects it. Register
+// every provider before the first resolution.
 type Manager struct {
 	mu       sync.Mutex
 	registry StepRegistry
-	// owners names the provider that claimed each step type, so a collision is
-	// reported against the provider that is already there rather than as an
-	// anonymous duplicate. The stages of the shipped workflows are claimed by
-	// the provider that contributes them, which is how a contribution that
-	// shadows a shipped stage is refused.
+	// owners maps each step type to the provider that registered it.
 	owners    map[string]string
 	providers []string
 }
@@ -68,14 +49,9 @@ func NewManager() *Manager {
 	return &Manager{registry: StepRegistry{}, owners: map[string]string{}}
 }
 
-// Register validates one provider's contribution and applies it. Every way a
-// contribution can be invalid is refused here, at the producer: a nil or
-// unnamed provider, a malformed provider or step-type identifier, a step type
-// with no factory, a step type another provider already claimed (including one
-// that shadows a shipped stage), and a provider declaring one type twice.
-//
-// Validation is atomic: the whole contribution is checked before any of it is
-// applied, so a refused provider contributes nothing.
+// Register validates a provider's whole contribution and applies all of it or
+// none. It refuses nil or unnamed providers, bad identifiers, missing
+// factories, duplicates and types another provider already owns.
 func (m *Manager) Register(provider StepTypeProvider) error {
 	if isNilProvider(provider) {
 		return errors.New("workflow step type provider is nil")

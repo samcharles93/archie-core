@@ -28,30 +28,15 @@ const (
 	capturedAfterOpenPR = "open-pr"
 )
 
-// changeStatsReader is the optional capability through which a Trees
-// implementation reports what an attempt changed. It stays separate from the
-// core Trees contract because capture is reporting, not workflow execution. A
-// Trees implementation without it degrades to no capture rather than failing
-// the stage.
+// changeStatsReader reports what an attempt changed. Trees without it skip
+// capture.
 type changeStatsReader interface {
 	ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error)
 }
 
-// captureChanges records what this attempt has changed, read off the worktree
-// at the moment it was committed or pushed -- the only point where the
-// worktree still holds the change and a commit or push is known to have
-// happened. A retry resets the branch onto its base and a terminal state
-// deletes the worktree, so nothing can re-derive this afterwards.
-//
-// Capturing is reporting, not work: every failure path here logs and returns,
-// because a provenance record that could not be written must never park or
-// fail a run that otherwise succeeded.
-//
-// It returns the measured stats so a caller that runs at a point the worktree's
-// own revision matters (OpenPR) can reuse the read instead of paying for a
-// second one -- and gets the zero value on any failure path, which is why a
-// caller must treat an empty HeadSHA as "not measured" rather than as a
-// revision.
+// captureChanges records what this attempt changed, at commit or push time.
+// Failures are logged and never fail the run; they return the zero value, so
+// an empty HeadSHA means not measured.
 func (tc *TaskContext) captureChanges(ctx context.Context, after string) task.ChangeStats {
 	if tc.Dir == "" {
 		tc.Log.Warn("change capture skipped: no worktree to read", "captured_after", after)
@@ -114,17 +99,8 @@ func StagePrepareWorktree() Stage {
 	})
 }
 
-// StagePrepareWorktreeOnBranch binds the task's worktree on the branch its
-// already-open pull request lives on -- the resume target -- for a workflow
-// that continues pushed work rather than starting fresh.
-// The branch is the task's
-// persisted branch, never recomputed from the title: the PR was opened from
-// that branch, and a retitled issue would otherwise name one that does not
-// exist. It resolves the same directory the daemon's mode-aware prepare
-// resolved and positions it on the same branch, because the daemon has already
-// done the fetch before the container starts; this stage only binds
-// tc.Dir/tc.Branch. An empty branch fails closed rather than silently
-// preparing base.
+// StagePrepareWorktreeOnBranch binds tc.Dir and tc.Branch to the worktree the
+// daemon positioned on the task's persisted PR branch. An empty branch fails.
 func StagePrepareWorktreeOnBranch() Stage {
 	return prepareWorktreeStage("prepare", func(tc *TaskContext) (PrepareTarget, error) {
 		if tc.Task.Branch == "" {
@@ -169,17 +145,9 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 	}}
 }
 
-// StageCommitPush commits everything in the worktree and pushes the
-// branch. When the builder completed with no changes (BuildNoChanges is
-// set), the issue is already resolved  --  close it with a comment instead
-// of erroring on an empty tree.
-//
-// When StageBaselineGate already committed a real fix (BaselineFixed) and
-// the build stage made nothing further, the worktree has no *new*
-// uncommitted changes -- CommitAll correctly reports changed=false -- but
-// there is still a real, gate-verified commit sitting on the branch that
-// must reach a PR rather than being discarded with the rest of an
-// abandoned worktree. Push runs regardless of changed in that case.
+// StageCommitPush commits the worktree and pushes the branch. With no changes
+// it closes the issue with a comment, unless a baseline fix was committed, in
+// which case it still pushes.
 func StageCommitPush(message func(*TaskContext) string) Stage {
 	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.BuildNoChanges {
@@ -274,12 +242,7 @@ func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	t := tc.Task
 	title := fmt.Sprintf("%s (archie)", t.Title)
 	if t.IsForgeBacked() {
-		// Best-effort. The link is cosmetic -- it puts the branch in the
-		// issue's sidebar on Gitea and does nothing on GitHub -- so failing
-		// the stage on it meant the pull request, the entire point of the
-		// run, was never opened and the task parked. A retry then re-links
-		// the same branch, which Gitea answers with a conflict, so every
-		// retry parked again.
+		// Best-effort: the link is cosmetic.
 		if err := tc.Forge.LinkBranch(ctx, t.Owner, t.Repo, t.IssueNumber, tc.Branch); err != nil {
 			if tc.Log != nil {
 				tc.Log.Warn("link branch to issue failed; opening the PR anyway",
@@ -294,11 +257,7 @@ func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	}
 	t.PRNumber = num
 	tc.Outcome = Outcome{Status: StatusPROpen, Detail: fmt.Sprintf("PR #%d", num)}
-	// The captures taken while committing and pushing ran before this PR
-	// existed, so they carry no number and the changed-files view cannot link
-	// it. This is the one point where the number is known and the worktree is
-	// still there to measure, so it is captured here rather than left for a
-	// read to reconstruct. Reporting only: captureChanges never fails the stage.
+	// Capture again now that the PR number is known.
 	tc.captureChanges(ctx, capturedAfterOpenPR)
 	return nil
 }

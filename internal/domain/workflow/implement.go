@@ -10,20 +10,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
-// Bounds on how much of a failing gate command's output rides along at each
-// point in this stage. They serve different purposes and are sized
-// independently, not derived from one another:
-//   - baselineWarnLogBytes is the tail shown in daemon/container logs. Test
-//     runners put the useful failure after their long list of passing packages,
-//     so keeping the head made the operator log actively misleading.
-//   - baselineMissionBytes is what the builder agent sees -- generous, since
-//     it needs enough context to actually diagnose the failure.
-//   - baselineParkOutputBytes is what a human (or Archie's own chat tools)
-//     sees in the park reason when the builder couldn't fix it. It used to
-//     be zero: the returned error carried only a status string, so a park
-//     reason like "go build ./... fails ... (status: failed)" gave no way to
-//     see the actual compiler error. It stays comfortably under the store's
-//     own park-reason cap (see this package's Task.ParkReason clip).
+// Byte limits on failing gate output: the tail logged, what the builder sees,
+// and what the park reason keeps.
 const (
 	baselineWarnLogBytes    = 2048
 	baselineMissionBytes    = 3000
@@ -52,11 +40,7 @@ func stageBaselineGateRun(ctx context.Context, tc *TaskContext) error {
 		if err == nil {
 			continue
 		}
-		// A failure the environment itself caused -- the command could not
-		// run, or its output names a host resource the gate needs and does
-		// not have -- is not a pre-existing code defect: no repair agent in
-		// the worktree can fix it. Park with the cause and the output rather
-		// than spend a run budget on a builder that cannot succeed
+		// An environment failure cannot be repaired in the worktree, so park.
 		if cause := gateEnvironmentCause(string(out), err); cause != "" {
 			return baselineEnvironmentError(argv, string(out), cause)
 		}
@@ -215,13 +199,8 @@ func Implement() Workflow {
 	}
 }
 
-// implementPRBody is the PR summary footer for the implement workflow. It
-// reports the fresh-vs-cached breakdown of tc.Task.TokensUsed (see
-// formatTokenUsage) so the operator isn't misled by the raw prompt-token sum
-// -- most of it is typically prefix-cache hits billed at a steep discount,
-// not full price.
-//
-// This used to also append the adversarial self-review's findings section.
+// implementPRBody is the implement workflow's PR footer: token usage split
+// into fresh and cached.
 func implementPRBody(tc *TaskContext) string {
 	return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
 		tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))

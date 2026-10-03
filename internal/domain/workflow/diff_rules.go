@@ -13,21 +13,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 )
 
-// DiffRulesStepName is the registered workflow step type that applies a
-// repository's declarative rules to the committed diff.
-//
-// It is the supported migration target for the deleted .archie/gate.go hook.
-// That hook was repository-authored Go, discovered in the worktree and
-// interpreted in-process, exporting
-//
-//	func Check(gate.GateContext) []gate.Finding
-//
-// where each Finding carried a level ("error" blocked, "warn" was advisory) and
-// an optional file and line. Its useful behaviour -- project-specific rules
-// that shell commands cannot express, reported against the lines a change
-// introduces -- is what this step type carries, with the rules as data an
-// operator writes in a stored workflow definition rather than code read out of
-// the repository being worked on:
+// DiffRulesStepName is the step type that matches declarative rules against
+// the lines the committed change adds:
 //
 //	steps:
 //	  - type: gate.diff-rules
@@ -37,28 +24,11 @@ import (
 //	          level: error
 //	          path: '\.go$'
 //	          pattern: 'panic\('
-//	          message: new panic() call  --  use error returns instead
+//	          message: new panic() call, use error returns instead
 //
-// The step diffs the change the branch has COMMITTED against the repository's
-// base branch, matches each rule against the ADDED lines of that diff, and
-// reports every match with its file and new-file line number. An error-level
-// finding parks the run with the findings in the task's park reason; a
-// warn-level finding is logged and nothing else. A rule that matches nothing is
-// silent, and the number of added lines read is logged on every run, so
-// "checked nothing" is distinguishable from "found nothing".
-//
-// Where the step sits is part of its contract, not a matter of taste: the rules
-// read commits, never the worktree's own edits (Trees.Diff reports the merge
-// base against HEAD), so the step must follow the step that commits the change.
-// A run that would read no committed change while the worktree still holds
-// uncommitted work fails on the spot and says which step it must follow,
-// instead of reporting no findings for a change it never read.
-//
-// What it deliberately does not do is inspect a changed file's whole contents:
-// a rule reads what the change adds, so a rule cannot be satisfied or broken by
-// code the change did not touch. Anything a diff-shaped rule cannot express
-// belongs in the repository's configured gate commands (config.Repo.Gate),
-// which already run on the host.
+// The diff is the branch's commits against the base branch, so the step must
+// follow the step that commits. An error-level match parks the run with the
+// findings; a warn-level match is logged.
 const DiffRulesStepName = "gate.diff-rules"
 
 // DiffRuleLevel values. An error-level finding parks the run; a warn-level
@@ -165,26 +135,14 @@ func runDiffRules(ctx context.Context, tc *TaskContext, rules []compiledDiffRule
 	return nil
 }
 
-// uncommittedChangeReporter is the optional capability through which a Trees
-// implementation reports whether a worktree holds work no commit has captured
-// yet: staged, unstaged or untracked. It is separate from the Trees contract for
-// the same reason changeStatsReader is (steps.go): it is a capability one
-// consumer needs, not a question every Trees implementation must answer. Both
-// production implementations do answer it -- *worktree.Manager reads git, and
-// hybridTrees forwards to its local manager, which is the path every production
-// run takes.
+// uncommittedChangeReporter reports whether a worktree holds uncommitted,
+// unstaged or untracked work.
 type uncommittedChangeReporter interface {
 	HasUncommittedChanges(ctx context.Context, dir string) (bool, error)
 }
 
-// refuseAChangeThatIsNotCommitted fails the step when it read no committed
-// change at all while the worktree still holds work. It is the guard the empty
-// diff alone cannot provide: an empty diff is either "nothing has changed" or
-// "the change is not committed yet", and only the worktree can say which.
-//
-// A clean worktree with nothing committed is a genuine no-op and is allowed. A
-// Trees implementation that cannot answer at all is refused rather than assumed
-// clean, because for a gate silence about the change is a failure, not a pass.
+// refuseAChangeThatIsNotCommitted fails the step when no committed change was
+// read but the worktree still holds work, or when the worktree cannot say.
 func refuseAChangeThatIsNotCommitted(ctx context.Context, tc *TaskContext) error {
 	const follow = "this step must follow the step that commits the change"
 
@@ -202,12 +160,8 @@ func refuseAChangeThatIsNotCommitted(ctx context.Context, tc *TaskContext) error
 	return fmt.Errorf("%s: no committed change to check but the worktree holds uncommitted work: %s", DiffRulesStepName, follow)
 }
 
-// logRuleFinding records one finding under the severity of its effect -- a
-// blocking finding is a warning an operator acts on, an advisory one is
-// informational -- while the rule's own declared level rides along as
-// rule_level. The field is not called "level": that key is slog's own record
-// level, and a record carrying it twice is a coin toss for whichever reader
-// keeps one.
+// logRuleFinding logs a finding as a warning when it blocks and as info when
+// advisory, with the rule's declared level as rule_level.
 func logRuleFinding(tc *TaskContext, finding diffFinding) {
 	attributes := []any{
 		"rule_level", finding.Level,
@@ -378,14 +332,8 @@ type diffLine struct {
 	Text string
 }
 
-// addedDiffLines returns the lines a unified diff ADDS, each with the path of
-// the file it lands in and its line number in the file the change produces.
-//
-// The diff is parsed by internal/domain/workflow/prreview, which owns the one
-// parser this repository reads diffs with -- the review pipeline positions its
-// findings by it. This maps that parser's result into the shape the rules
-// matcher reads, so a rule and a review comment can never disagree about which
-// line a change introduced.
+// addedDiffLines returns the lines a unified diff adds, with their file path
+// and new-file line number, using the prreview diff parser.
 func addedDiffLines(diff string) []diffLine {
 	added := prreview.AddedLines(prreview.ParseDiff(diff))
 	lines := make([]diffLine, 0, len(added))

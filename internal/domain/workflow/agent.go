@@ -13,11 +13,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/skill"
 )
 
-// AgentStage is the reusable bridge from a workflow stage to an
-// agentloop run. Every LLM-driven stage in any workflow (implement's
-// planner/builder, tdd's test-writer/fixer, feasibility's analyst)
-// is an AgentStage with a different mission, gate, and result handler  --
-// never a new engine.
+// AgentStage runs one LLM-driven workflow stage on the agent runtime with its
+// own mission, gate and result handler.
 type AgentStage struct {
 	Name string
 	// Role selects the model via cfg.Models[Role]; falls back to
@@ -34,11 +31,8 @@ type AgentStage struct {
 	// MaxSteps overrides the configured step budget when > 0 (planner
 	// stages are cheaper than builder stages).
 	MaxSteps int
-	// ProtectGlobs blocks write/edit on matching paths for this stage  --
-	// an environmental constraint, not a prompt rule (TDD's fix stage
-	// protects the committed repro tests; every builder stage protects
-	// the repo's generated files). The returned globs are combined
-	// with the repo's configured protected suffixes.
+	// ProtectGlobs blocks write/edit on matching paths for this stage, in
+	// addition to the repo's protected suffixes.
 	ProtectGlobs func(*TaskContext) []string
 	// CaptureTools adds structured-output tools whose calls are returned
 	// as data rather than receiving callbacks into daemon state.
@@ -313,11 +307,9 @@ func missionWithSkill(tc *TaskContext, mission string) string {
 	return "Follow these project-specific guidelines:\n\n" + tc.SkillBody + "\n\n---\n\n" + mission
 }
 
-// loadSkillBody loads the SKILL.md body and plugins for the current
-// workflow. Skills declare
-// their workflow in metadata.archie.workflow  --  no hardcoded mapping.
-// When metadata.archie.plugins is non-empty, only the listed plugin files
-// are loaded in declared order; otherwise all *.go files are globbed.
+// loadSkillBody loads the SKILL.md body and plugins for the current workflow,
+// matched by metadata.archie.workflow. Listed plugins load in declared order;
+// otherwise every *.go file is loaded.
 func loadSkillBody(tc *TaskContext) string {
 	catalog, _ := skill.Catalog(tc.Dir)
 	entry := skill.SkillForWorkflow(catalog, tc.Task.Workflow)

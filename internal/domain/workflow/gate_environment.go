@@ -7,26 +7,10 @@ import (
 	"strings"
 )
 
-// gateEnvironmentCause reports why a failed gate command is an environment
-// failure the baseline repair agent cannot fix, or "" when the failure is an
-// ordinary code failure the agent can act on.
-//
-// Only two signals are treated as reliable enough to act on:
-//
-//   - the command could not be started at all. os/exec reports a missing or
-//     non-executable binary as *exec.Error before the gate runs a line of its
-//     own, and no source change in the repository can make a tool that is not
-//     installed appear.
-//   - the combined output names host infrastructure the gate needs and does
-//     not have, such as a Docker daemon the test harness spawns containers on.
-//     These are the phrasings the tools themselves emit when their dependency
-//     is absent, not an inference drawn from the exit
-//     status.
-//
-// The second signal is deliberately a closed, literal set: a marker is added
-// with the incident that produced it, never by inference. A false negative
-// only spends the repair budget a code failure would have spent anyway, but a
-// false positive would park a task the builder could have fixed.
+// gateEnvironmentCause returns why a failed gate command is an environment
+// failure the repair agent cannot fix, or "" for an ordinary code failure.
+// Two signals count: the command could not start, or its output contains one
+// of a fixed set of missing-infrastructure messages.
 func gateEnvironmentCause(out string, runErr error) string {
 	if execErr, ok := errors.AsType[*exec.Error](runErr); ok {
 		return "the gate command could not be started (" + execErr.Error() + ")"

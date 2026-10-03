@@ -11,11 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
-// Declared workflow outputs: how a run writes one and how a wait:true caller
-// publishes one. A run's only structured
-// results are capture calls, so declared outputs ride the capture path: each
-// is offered to the run's agent stages as a capture tool named after it, and
-// the engine applies, validates, publishes and persists the accepted values.
+// Declared workflow outputs are written through capture tools named after
+// them; the engine validates, publishes and persists accepted values.
 
 // workflowInterface is the declaration the run's compiled workflow carries
 // (Workflow.Interface, set by Run); a stage body invoked outside Run falls
@@ -191,11 +188,9 @@ func (tc *TaskContext) validateFinishOutputs() error {
 	return tc.workflowInterface().CheckOutputs(tc.Task.Outputs)
 }
 
-// publishCalleeOutputs publishes a successful callee's outputs the call step
-// assigns into the caller's own set. An output the callee never wrote leaves
-// the caller's output absent -- the caller's own required judgment decides; a
-// written null counts as not written; a value whose type the caller's declared
-// output cannot accept is refused, naming the output.
+// publishCalleeOutputs copies a successful callee's assigned outputs into the
+// caller's. An unwritten or null output stays absent; a type the caller's
+// declaration cannot accept is refused.
 func (tc *TaskContext) publishCalleeOutputs(assignments map[string]string, calleeOutputs map[string]any) error {
 	if len(assignments) == 0 {
 		return nil

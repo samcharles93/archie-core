@@ -18,12 +18,7 @@ type localPRSource struct {
 
 var _ PRSource = (*localPRSource)(nil)
 
-// Metadata returns the task's own title and body as the PR's title and body
-// -- the same text OpenPR uses to open the real PR moments later. Commit
-// messages are left empty, matching the external PRSource implementation's
-// precedent (internal/infrastructure/prsource): neither Trees nor Task
-// carries them structured, and they are only one of three hallucination-check
-// inputs, not load-bearing alone.
+// Metadata returns the task's own title and body as the PR's.
 func (s *localPRSource) Metadata(context.Context, string, string, int) (PRMetadata, error) {
 	return PRMetadata{Title: s.tc.Task.Title, Body: s.tc.Task.Body}, nil
 }
@@ -33,14 +28,8 @@ func (s *localPRSource) Diff(ctx context.Context, _, _ string, _ int) (string, e
 	return s.tc.Trees.Diff(ctx, s.tc.Dir, s.tc.Repo.BaseBranch())
 }
 
-// Snapshot exports the task's own worktree HEAD, no .git present, and
-// reports the commit SHA it was measured on -- read through the same
-// changeStatsReader capability captureChanges already uses, since Trees'
-// core contract has no head-SHA method. A Trees implementation without that
-// capability (a test fake, most commonly) snapshots successfully but
-// reports an empty SHA; postPRReview already treats an empty headSHA as "not
-// measured" rather than fails the run over it, matching captureChanges'
-// same convention.
+// Snapshot exports the worktree HEAD without .git and reports its commit SHA,
+// empty when Trees cannot report it.
 func (s *localPRSource) Snapshot(ctx context.Context, _, _ string, _ int, destDir string) (string, error) {
 	if err := s.tc.Trees.Snapshot(ctx, s.tc.Dir, destDir); err != nil {
 		return "", err
@@ -56,11 +45,7 @@ func (s *localPRSource) Snapshot(ctx context.Context, _, _ string, _ int, destDi
 	return stats.HeadSHA, nil
 }
 
-// parkDetailBytes bounds how much of a park Detail the rendered blocking
-// findings occupy, matching the deleted adversarial-self-review's
-// reviewDetailBytes (diff_rules.go's own park Detail cap headroom comment
-// still points at that constant by name; it named this cap, not a specific
-// symbol).
+// parkDetailBytes bounds the blocking findings rendered into a park reason.
 const parkDetailBytes = 4000
 
 // unchallengedBlockingFindings returns the scored findings the merge gate
@@ -90,28 +75,11 @@ func renderBlockingFindingsDetail(findings []prreview.ScoredFinding) string {
 	return clip(b.String(), parkDetailBytes)
 }
 
-// StagePRReviewAndOpenPR runs the pr-review pipeline's decision phases (1-8)
-// against the task's own uncommitted change, then opens the PR body builds
-// and posts the pipeline's advisory findings against it -- archie's own PRs
-// trigger. An unchallenged blocking
-// finding parks the task with the findings instead of opening a PR; a
-// pipeline stage failure parks the task the same way any other stage failure
-// does. Once the PR is open, posting failure is logged and does not revert
-// the outcome the PR's existence already earned -- the same best-effort
-// convention the deleted StagePostReviewComments followed.
-//
-// The operator-approval gate is deliberately not spliced in here: it belongs
-// to the standalone pr-review workflow, where an operator's response
-// re-reviews a pull request that already exists to post to. This trigger
-// reviews a change with no PR and no place to post yet, so a wait here would
-// end the implement run before its PR was opened.
-//
-// This must run every decision stage from inside one Stage.Run body rather
-// than as separate Stage entries in the workflow's list: the engine ends a
-// run the instant any stage sets tc.Outcome (workflow.go's Run loop), so a
-// stage that opens the PR could never be reached if the review phases were
-// spliced in as their own preceding stages -- OpenPR's own doc comment names
-// this exact pattern ("call this and then do so in the same stage").
+// StagePRReviewAndOpenPR reviews the task's own change with the pr-review
+// decision stages, then opens the PR and posts the findings to it. A blocking
+// finding parks the task instead of opening the PR. Posting failures are
+// logged only. The stages run inside this one stage because the engine stops
+// at the first stage that sets an outcome.
 func StagePRReviewAndOpenPR(body func(*TaskContext) string) Stage {
 	return stagePRReviewAndOpenPR(prReviewDecisionStages(), body)
 }

@@ -77,11 +77,8 @@ var precisionGateSchema = json.RawMessage(`{
 	"required": ["verdicts"]
 }`)
 
-// runPrecisionGate runs the precision gate's single classification-role call
-// over every current finding. A failed or malformed call keeps every finding
-// unfiltered -- the same recall-first fallback runEvidenceVerifier and
-// runAdversary already use: a gate that could not run is not evidence any
-// finding should drop.
+// runPrecisionGate classifies every finding in one call. A failed call keeps
+// all findings.
 func runPrecisionGate(ctx context.Context, tc *TaskContext, findings []prreview.Finding) []prreview.Finding {
 	var listing strings.Builder
 	for i, f := range findings {
@@ -226,11 +223,8 @@ func evidenceListing(tc *TaskContext, candidates []evidenceCandidate) string {
 	return listing.String()
 }
 
-// A finding below high priority is never sent, and always kept: the verifier
-// exists to catch a hallucinated critical, not to grade a nitpick. A failed or
-// malformed verifier call keeps every finding unfiltered -- the pipeline is
-// recall-first, so a verifier that could not run is not evidence any finding is
-// wrong; the error is intentionally swallowed here, not propagated.
+// Only high-priority findings are verified; the rest are kept. A failed call
+// keeps every finding.
 func runEvidenceVerifier(ctx context.Context, tc *TaskContext, findings []prreview.Finding) ([]prreview.Finding, error) {
 	candidates := highPriorityCandidates(findings)
 	if len(candidates) == 0 {
@@ -354,11 +348,8 @@ func applyAdversaryVerdicts(out []prreview.Finding, calls []json.RawMessage) {
 	}
 }
 
-// It reads intake's machine-written confidence and is told to be more sceptical
-// above the threshold. A failed or malformed call leaves every finding's
-// Adversary verdict unset (neither confirmed nor challenged) and adds nothing
-// -- an adversary that could not run has reached no verdict, which is different
-// from confirming everything.
+// The adversary is more sceptical above intake's confidence threshold. A
+// failed call leaves verdicts unset.
 func runAdversary(ctx context.Context, tc *TaskContext, findings []prreview.Finding) ([]prreview.Finding, error) {
 	if len(findings) == 0 {
 		return findings, nil
