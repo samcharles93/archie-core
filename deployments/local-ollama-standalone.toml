@@ -21,7 +21,7 @@ database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 target = "127.0.0.1:8585"
 
 # The State Store gRPC service owns the PostgreSQL task data; archied and
-# archie-gateway dial it and never open those tables themselves (§12 step 7).
+# archie-gateway dial it and never open those tables themselves.
 # Host-only deployment: the agent runs on the host, so the loopback target
 # 127.0.0.1:9090 needs no token. Start archie-state-store with the matching
 # `-listen 127.0.0.1:9090`.

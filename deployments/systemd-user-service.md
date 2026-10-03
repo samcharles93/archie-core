@@ -19,7 +19,7 @@ The Gateway unit is `archie-gateway.service`, written by `install.sh` beside
 The State Store unit is `archie-state-store.service`. It owns the task data in
 PostgreSQL and serves the `StateStore` gRPC contract. BOTH `archied` and
 `archie-gateway` dial it via `[services.state].target` (see the `archied`
-config below) and never open the task tables themselves (`docs/prds/state-store-contract.md` §12 step 7). A
+config below) and never open the task tables themselves. A
 host-only agent uses the loopback bind with no token below; a container-mode
 agent needs the Docker bridge gateway address plus a bearer token via
 `--token`/`STATE_STORE_TOKEN` or `[services.state].target_token`, and a
@@ -35,8 +35,7 @@ The Telegram, email and webhook channels are served by `archie-messaging`, not
 by `archied`, since the v1.30.0 extraction. `archied` starts no gateway for them
 and logs nothing when one is absent, so a host that updates across v1.30.0
 without this unit runs on with dead channels and a daemon that looks perfectly
-healthy -- that was `archie-core-1c01`, found after two days of a silently dead
-Telegram bot. `install.sh` writes this unit on a fresh install;
+healthy. `install.sh` writes this unit on a fresh install;
 `scripts/archie-update-install` refuses an
 update when a host is missing a unit and names what is missing, which now fires
 for a host that drifted or predates this release rather than the normal path.
@@ -51,13 +50,12 @@ lines preserve that store-then-gateway order.
 
 ## 2. UI Service Unit (`~/.config/systemd/user/archie-ui.service`)
 
-The dashboard is served by the standalone UI Service, not by `archied`
-(UI cutover, `archie-core-8cda.5.4`). It reads the same `config.toml`, dials
+The dashboard is served by the standalone UI Service, not by `archied`. It reads the same `config.toml`, dials
 the Gateway and State Store targets already in it, and binds `[web].listen`.
 A non-loopback bind requires a dashboard token (`-token`, or `-token-file` to
 mint and persist one);
 
-**Auth note (deliberate design, `archie-core-8cda.5.5`):** unlike `archied`,
+**Auth note:** unlike `archied`,
 `archie-ui` has no secret registry — it resolves `GATEWAY_TOKEN` and
 `STATE_STORE_TOKEN` from its **process environment only** (or from the
 `target_token` values in `config.toml`). Whatever starts `archie-ui` is
@@ -193,8 +191,8 @@ fall back to a host model loop.
 ## 6. Pinning the archie-agent Image
 
 `ghcr.io/samcharles93/archie-agent:latest` is a moving target: every push to
-`main` that touches the runtime's package closure re-publishes it (see
-`.github/workflows/deploy.yml`), so `latest` can change under a running
+`main` that touches the runtime's package closure re-publishes it
+(`.github/workflows/deploy.yml`), so `latest` can change under a running
 deployment with no warning and no way to reproduce a prior build.
 
 As of this writing, `archie-agent` has **no published semantic-version tag**

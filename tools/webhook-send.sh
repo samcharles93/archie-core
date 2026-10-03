@@ -4,7 +4,7 @@
 #
 #   capture (default)  POST /webhooks/capture/{source} on the dashboard
 #                      listener. Token-free, stores the redacted event for
-#                      the Event inspector (docs/prds/event-capture-storage.md).
+#                      the Event inspector.
 #                      Proves the capture -> inspector half of the Events chain.
 #
 #   forge (--forge)    POST to [forge].webhook_addr (default port 8645; the

@@ -5,7 +5,7 @@
 #
 # Its declared output (summary) is offered to the agent stages as a capture
 # tool named after it; a wait:true caller publishes it as one of its own
-# outputs (docs/prds/workflow-call-outputs.md).
+# outputs.
 id: firewall-investigate
 repository: none
 profile: network-investigator

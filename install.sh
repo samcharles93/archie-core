@@ -175,7 +175,7 @@ echo "==> Building native archie binaries..."
   # derived from whatever tags a local checkout happens to have. Deriving it
   # here made a source-built host claim a release it was not running, and made
   # the stamp a function of the commit graph, which is the one input a
-  # content-checksum build cache cannot see (archie-core-pdq2). A source build
+  # content-checksum build cache cannot see. A source build
   # says `dev`; its traceability is the checkout it came from.
   GATEWAY_VERSION="dev"
   RUNTIME_VERSION="dev"
@@ -183,14 +183,14 @@ echo "==> Building native archie binaries..."
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
   # Every host binary carries the release it was built from, so the updater can
-  # ask each installed binary what it is (archie-core-k94o).
+  # ask each installed binary what it is.
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION}"
   # archied does not run alone: the State Store owns the task data, the Gateway
   # serves the chat contract, the dashboard is its own process, and the
   # Messaging Service owns the chat channels. Building only archied leaves it
   # unable to boot, and omitting archie-messaging leaves the Telegram, email and
-  # webhook channels dead with no error anywhere (archie-core-1c01). This list,
+  # webhook channels dead with no error anywhere. This list,
   # the zip's two lists and the two in scripts/archie-update-install must agree;
   # TestDistZipShipsEveryHostCommand fails when they do not.
   for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks; do
@@ -426,7 +426,7 @@ if [ "${INSTALL_SYSTEMD}" = true ] && command -v systemctl &>/dev/null && [ -d "
   # Every service this installer builds gets a unit, with the contents the
   # runbook used to tell an operator to paste by hand. The runbook is a
   # description now, not the mechanism: a fresh install must not need four
-  # hand-written units before its own updater will run (archie-core-enow), and
+  # hand-written units before its own updater will run, and
   # the contents must not live in two places to drift apart.
   cat <<EOF > "${SYSTEMD_USER_DIR}/archied.service"
 [Unit]
@@ -505,7 +505,7 @@ WantedBy=default.target
 EOF
 
   # The Telegram, email and webhook channels run here, not in archied: without
-  # this unit a host looks healthy while its channels are dead (archie-core-1c01).
+  # this unit a host looks healthy while its channels are dead.
   cat <<EOF > "${SYSTEMD_USER_DIR}/archie-messaging.service"
 [Unit]
 Description=Archie Messaging Service

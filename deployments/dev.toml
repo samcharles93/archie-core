@@ -1,7 +1,7 @@
 # Development overlay for `task dev` and `task dev:dashboard`.
 #
 # Match Vite's API/event proxy without changing the installed configuration.
-# After the UI cutover (archie-core-8cda.5.4) the dashboard on :8484 is the
+# The dashboard on :8484 is the
 # archie-ui process's listener, not archied's; this overlay is what both
 # `go run ./cmd/archied -config-overlay deployments/dev.toml` and
 # `go run ./cmd/archie-ui -config-overlay deployments/dev.toml` read. Only
@@ -23,7 +23,6 @@ listen = "127.0.0.1:8484"
 # when a port is already taken on the host -- before the
 # listen key existed the collision could only be worked around by hand-writing
 # a matching target and passing -listen, and it read as a code fault.
-# (docs/prds/state-store-contract.md §12 step 7).
 [services.state]
 target = "127.0.0.1:9091"
 listen = "127.0.0.1:9091"

@@ -4,8 +4,7 @@ This archive contains six linux/amd64 binaries:
 
 - **`archied`** — the resident daemon: polls your forge for assigned issues
   and dispatches them into sandboxed `archie-agent` containers. It serves no
-  dashboard: the web UI is `archie-ui`'s process (UI cutover,
-  `archie-core-8cda.5.4`).
+  dashboard: the web UI is `archie-ui`'s process.
 - **`archie-ui`** — serves the operator dashboard and the webhook capture
   receiver, dialing the Gateway and State Store gRPC contracts. Reads only
   `[services.*]`, `[web]` and `[capture]` from the shared `config.toml`.
@@ -15,8 +14,7 @@ This archive contains six linux/amd64 binaries:
 - **`archie-messaging`** — serves the Telegram, email and webhook channels,
   dialing the Gateway for the chat contract and the State Store for the stored
   channel settings. `archied` runs no gateway for those channels, so without
-  this process they are simply absent — and nothing logs an error
-  (`archie-core-1c01`), which is why it has a unit of its own in
+  this process they are simply absent — and nothing logs an error, which is why it has a unit of its own in
   `deployments/systemd-user-service.md`.
 - **`archie-state-store`** — owns the task data in PostgreSQL behind
   a gRPC contract. `archied` and `archie-gateway` are gRPC clients of it, not

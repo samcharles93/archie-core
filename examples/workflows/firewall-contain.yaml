@@ -2,8 +2,7 @@
 # firewall-investigate (workflow.call, wait: true) hands its findings upward
 # from its declared summary, and this workflow's own agent stage decides and
 # records the containment as its own declared outputs. Paste it into the
-# dashboard's workflow definitions alongside firewall-investigate
-# (docs/prds/workflow-call-outputs.md).
+# dashboard's workflow definitions alongside firewall-investigate.
 id: firewall-contain
 repository: none
 profile: network-investigator

@@ -25,7 +25,7 @@ database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 target = "127.0.0.1:8585"
 
 # The State Store gRPC service owns the PostgreSQL task data; archied and
-# archie-gateway dial it and never open those tables themselves (§12 step 7).
+# archie-gateway dial it and never open those tables themselves.
 # This deployment runs the agent in containers, so target is the Docker bridge
 # gateway (172.17.0.1) the container can reach, with a matching target_token
 # that archie-state-store validates. Host-only agent: use 127.0.0.1:9090 with
@@ -78,8 +78,7 @@ max_uptime = "60m"
 pull_policy = "missing"
 
 [web]
-# Bound by the archie-ui process (the host-run dashboard after the UI
-# cutover, archie-core-8cda.5.4); it dials the [services.*] targets above --
+# Bound by the archie-ui process; it dials the [services.*] targets above --
 # the bridge-gateway State Store address works from the host too.
 listen = "127.0.0.1:8484"
 # Trust X-Forwarded-Proto when fronted by a reverse proxy (e.g. Traefik)

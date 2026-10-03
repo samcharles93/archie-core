@@ -49,8 +49,7 @@ serves the `ChatContract` gRPC API on the configured target.
 The State Store service (`archie-state-store`) owns the task data in the
 PostgreSQL database `database_url` names and serves the `StateStore` gRPC
 contract. BOTH `archied` and `archie-gateway` dial it via
-`[services.state].target` and never open the task tables themselves
-(`docs/prds/state-store-contract.md` §12 step 7). The templates set
+`[services.state].target` and never open the task tables themselves. The templates set
 `[services.state]` accordingly: a host-only agent reaches a loopback bind
 (`127.0.0.1:9090`) with no token, while a container-mode agent needs the
 Docker bridge gateway address plus a matching bearer token (`target_token` /
@@ -60,7 +59,7 @@ loopback.
 ## Running the dashboard
 
 The dashboard is served by the standalone UI Service (`archie-ui`), not by
-`archied` (UI cutover, `archie-core-8cda.5.4`; `docs/prds/ui-service-boundary.md`).
+`archied`.
 It reads the same `config.toml`, dials the Gateway and State Store targets
 already configured there, and binds `[web].listen` (`127.0.0.1:8484` by
 default). Start it after the Gateway and the State Store:
@@ -120,7 +119,7 @@ curl -s http://127.0.0.1:9091/health/detailed                                # s
 A running State Store holds the `state-store` ownership lock on its database;
 `archied` and `archie-gateway` never open the task tables directly, so a second
 store process on the same `database_url` refuses to start, and a consumer that
-opens the task tables indicates dual-store ownership (`docs/prds/state-store-contract.md` §12 step 7/8).
+opens the task tables indicates dual-store ownership.
 The readiness probe is the single-writer check the runbook has against a
 degraded store: a `503` from `/health/detailed` means `archied` should be
 started only after the store is healthy.

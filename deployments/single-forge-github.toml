@@ -24,8 +24,8 @@ diff_cap_lines = 400
 target = "127.0.0.1:8585"
 
 # The State Store gRPC service owns the PostgreSQL task data. archied and
-# archie-gateway dial it here and never open those tables themselves
-# (docs/prds/state-store-contract.md §12 step 7). This deployment runs the
+# archie-gateway dial it here and never open those tables themselves.
+# This deployment runs the
 # agent in containers, so the target must be the Docker bridge gateway address
 # (172.17.0.1) that the container can reach, and a non-loopback target requires
 # a matching target_token that archie-state-store validates -- start it with the

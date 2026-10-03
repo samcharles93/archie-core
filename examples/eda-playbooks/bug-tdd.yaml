@@ -8,7 +8,7 @@
 #
 # This file is the workflow playbook shape: exactly one action, position:
 # workflow. Action playbooks (one or more module actions) load and type-check
-# but do not execute yet -- see docs/prds/multi-action-playbooks.md.
+# but do not execute yet.
 #
 # A trigger matches on either axis, and both are checked when both are given:
 #
@@ -21,8 +21,7 @@
 #           issue. This is the axis an instance defines for itself: it binds
 #           your own taxonomy to a workflow with no code change. See
 #           label-trigger.yaml. The `when` condition is a CEL
-# expression over `event` -- see docs/prds/eda-playbook-engine.md, resolved
-# open question 1.
+# expression over `event`.
 #
 # A matching playbook decides the task's workflow ahead of the kind/label
 # binding files, and a workflow it names that is not defined parks the task

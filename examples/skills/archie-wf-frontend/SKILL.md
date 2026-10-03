@@ -29,7 +29,7 @@ Both must exit 0. If either fails, the stage parks with the lint output.
 
 ## How to use in your project
 
-1. Copy `.agents/skills/archie-wf-frontend/` into your repo
+1. Copy this skill directory into your skills directory
 2. Add to your daemon config gate:
    ```toml
    gate = [
