@@ -6,19 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
-	"github.com/samcharles93/ai-sdk/toolkit"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
-	"github.com/samcharles93/archie-core/internal/skill"
-	"github.com/samcharles93/archie-core/internal/skillscript"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -78,11 +73,6 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req agentrun.Req
 		return agentrun.Result{}, fmt.Errorf("build central tool set: %w", err)
 	}
 	captureTools := captureToolSet(req.CaptureTools, captures)
-	scriptTools := scriptToolSet(workspace)
-	pluginTools, err := pluginToolSet(req, workspace, centralTools, captureTools, scriptTools)
-	if err != nil {
-		return agentrun.Result{}, err
-	}
 	res, err := r.run(ctx, agentloop.Config{
 		Runtime:    r.runtime,
 		ModelRef:   req.Model,
@@ -108,8 +98,6 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req agentrun.Req
 		Extra: mergeToolSets(
 			allowedTools(centralTools, r.AllowTools),
 			captureTools,
-			allowedTools(scriptTools, r.AllowTools),
-			allowedTools(pluginTools, r.AllowTools),
 		),
 		Logger: r.logger(req),
 	})
@@ -151,43 +139,6 @@ func resultFromRun(req agentrun.Request, res agentloop.Result, appended []string
 		result.Detail = "agent returned no status (possible model connectivity issue)"
 	}
 	return result
-}
-
-func pluginToolSet(req agentrun.Request, workspace string, occupied ...core.ToolSet) (core.ToolSet, error) {
-	if req.ReadOnly || len(req.Protection.Suffixes)+len(req.Protection.Globs) > 0 || len(req.Gate.Commands) > 0 {
-		return nil, nil
-	}
-	builtins := toolkit.NewRegistry()
-	if err := toolkit.RegisterBuiltins(builtins, workspace); err != nil {
-		return nil, fmt.Errorf("register built-in tools for plugin collision check: %w", err)
-	}
-	reserved := map[string]struct{}{"finish": {}, "write_note": {}}
-	for _, name := range builtins.Names() {
-		reserved[name] = struct{}{}
-	}
-	set := make(core.ToolSet, len(req.Plugins))
-	for _, spec := range req.Plugins {
-		if _, exists := reserved[spec.Name]; exists {
-			return nil, fmt.Errorf("plugin tool %q conflicts with an agent-loop tool", spec.Name)
-		}
-		for _, tools := range occupied {
-			if _, exists := tools[spec.Name]; exists {
-				return nil, fmt.Errorf("plugin tool %q conflicts with an existing tool", spec.Name)
-			}
-		}
-		plugin := skill.Plugin{Name: spec.Name, Src: spec.Src}
-		set[spec.Name] = core.NewTypedTool(
-			spec.Name,
-			"Run the project-bundled "+spec.Name+" plugin.",
-			func(_ context.Context, args struct {
-				Input string `json:"input"`
-			},
-			) (string, error) {
-				return plugin.Run(args.Input)
-			},
-		)
-	}
-	return set, nil
 }
 
 func (r *LoopRunner) logger(req agentrun.Request) *slog.Logger {
@@ -233,34 +184,6 @@ func makeCaptureHandler(spec agentrun.CaptureTool, captures map[string][]json.Ra
 			captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
 		}
 		return reply, nil
-	}
-}
-
-// scriptToolSet exposes run_go_script, which runs a Yaegi Go script from the
-// workspace and returns its output.
-func scriptToolSet(workspace string) core.ToolSet {
-	return core.ToolSet{
-		"run_go_script": core.NewTypedTool(
-			"run_go_script",
-			"Run a Yaegi-interpreted Go script (e.g. a skill's bundled scripts/*.go helper) and return everything it printed.",
-			func(ctx context.Context, args struct {
-				Path string `json:"path" jsonschema:"description=Path to the .go script, relative to the workspace root."`
-			},
-			) (string, error) {
-				if strings.TrimSpace(args.Path) == "" {
-					return "run_go_script rejected: arguments must be a JSON object with a non-empty path field", nil
-				}
-				full := filepath.Join(workspace, args.Path)
-				if rel, err := filepath.Rel(workspace, full); err != nil || strings.HasPrefix(rel, "..") {
-					return "run_go_script rejected: path escapes the workspace", nil //nolint:nilerr // rejection feedback lets the model retry with a valid path
-				}
-				out, err := skillscript.RunContext(ctx, full)
-				if err != nil {
-					return fmt.Sprintf("run_go_script failed: %v\n%s", err, out), nil
-				}
-				return out, nil
-			},
-		),
 	}
 }
 

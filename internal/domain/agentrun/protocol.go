@@ -78,10 +78,6 @@ type Request struct {
 	Protection    Protection    `json:"protection"`
 	Notes         string        `json:"notes,omitempty"`
 	CaptureTools  []CaptureTool `json:"capture_tools,omitempty"`
-	// Plugins are bundled Yaegi plugins from the skill's plugins/ directory.
-	// Each entry carries the name and source so the agent can register them as
-	// tools.
-	Plugins []PluginSpec `json:"plugins,omitempty"`
 	// Harness, when set, runs the stage on an external coding-agent CLI
 	// instead of the built-in loop. The worker in a Kit container is the
 	// daemon's own archie-agent build, so it always understands this field.
@@ -110,12 +106,6 @@ type HarnessSpec struct {
 	// carrying {{.MCPConfig}}, the path of a standard mcpServers config.
 	// A stage with capture tools needs it.
 	MCPConfig []string `json:"mcp_config,omitempty"`
-}
-
-// PluginSpec is a bundled Yaegi plugin passed from daemon to agent.
-type PluginSpec struct {
-	Name string `json:"name"`
-	Src  string `json:"src"`
 }
 
 // Validate rejects requests that this runner cannot safely interpret.

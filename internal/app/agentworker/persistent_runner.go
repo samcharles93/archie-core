@@ -3,7 +3,6 @@ package agentworker
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
@@ -15,7 +14,6 @@ type persistentRunner struct {
 	enabled     bool
 	sessionPath string
 	memoryPath  string
-	pluginsDir  string
 }
 
 type memoryRecord struct {
@@ -50,27 +48,12 @@ func (r persistentRunner) Run(ctx context.Context, workspace string, request age
 	if !r.enabled {
 		return r.Runner.Run(ctx, workspace, request, report)
 	}
-	sessionPath, memoryPath, pluginsDir := r.sessionPath, r.memoryPath, r.pluginsDir
+	sessionPath, memoryPath := r.sessionPath, r.memoryPath
 	if sessionPath == "" {
 		sessionPath = storage.SessionPath
 	}
 	if memoryPath == "" {
 		memoryPath = storage.MemoryPath
-	}
-	if pluginsDir == "" {
-		pluginsDir = storage.PluginsDir
-	}
-	for i := range request.Plugins {
-		plugin := &request.Plugins[i]
-		filename := plugin.Name + ".go"
-		if err := storage.StagePlugin(pluginsDir, filename, []byte(plugin.Src)); err != nil {
-			return agentrun.Result{}, fmt.Errorf("stage plugin %s: %w", plugin.Name, err)
-		}
-		source, err := os.ReadFile(pluginsDir + "/" + filename)
-		if err != nil {
-			return agentrun.Result{}, fmt.Errorf("read staged plugin %s: %w", plugin.Name, err)
-		}
-		plugin.Src = string(source)
 	}
 
 	result, runErr := r.Runner.Run(ctx, workspace, request, report)

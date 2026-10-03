@@ -106,34 +106,6 @@ func ReadJSONLines[T any](path string, fn func(T) error) error {
 	return nil
 }
 
-// StagePlugin writes a bundled plugin unless persistent project storage
-// already contains a plugin with the same filename. Persistent copies are
-// operator-owned overrides and therefore win over daemon-staged source.
-func StagePlugin(dir, name string, source []byte) error {
-	if filepath.Base(name) != name || name == "." || name == "" {
-		return fmt.Errorf("invalid plugin filename %q", name)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create plugin directory: %w", err)
-	}
-	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, os.ErrExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("create staged plugin: %w", err)
-	}
-	if _, err := f.Write(source); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("write staged plugin: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close staged plugin: %w", err)
-	}
-	return nil
-}
-
 // WorktreeMountDir is the fixed container path where a task's worktree is
 // bind-mounted. archie-agent uses this path directly rather than the host
 // path archied's worktree.Manager reports  --  the two processes see the same
@@ -141,12 +113,11 @@ func StagePlugin(dir, name string, source []byte) error {
 const WorktreeMountDir = "/data/worktree"
 
 // Persistent storage paths share the per-repository volume so session output,
-// project memory, and staged plugins survive individual task containers.
+// and project memory survive individual task containers.
 const (
 	PersistentMountDir = "/data/repo"
 	SessionPath        = PersistentMountDir + "/session.jsonl"
 	MemoryPath         = PersistentMountDir + "/memory.jsonl"
-	PluginsDir         = PersistentMountDir + "/plugins"
 )
 
 // MCPNPMCacheMountDir is where the npm cache for npx MCP servers is mounted

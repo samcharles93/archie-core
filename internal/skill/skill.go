@@ -22,7 +22,6 @@ type Frontmatter struct {
 		Archie *struct {
 			Tools    []string `yaml:"tools"`
 			Engine   string   `yaml:"engine"`
-			Plugins  []string `yaml:"plugins,omitempty"`
 			Workflow string   `yaml:"workflow,omitempty"`
 		} `yaml:"archie"`
 	} `yaml:"metadata"`

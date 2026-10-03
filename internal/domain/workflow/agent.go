@@ -145,7 +145,6 @@ func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) (agentrun.Req
 		Protection:    protection,
 		Notes:         tc.Task.Notes,
 		CaptureTools:  captureTools,
-		Plugins:       pluginSpecs(tc.SkillPlugins),
 	}, nil
 }
 
@@ -286,18 +285,6 @@ func GateFromRepo(repo config.Repo, budgets config.Budgets) agentrun.Gate {
 	return agentrun.Gate{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
 }
 
-// pluginSpecs converts skill.Plugin to agentrun.PluginSpec for transport.
-func pluginSpecs(plugins []skill.Plugin) []agentrun.PluginSpec {
-	if len(plugins) == 0 {
-		return nil
-	}
-	out := make([]agentrun.PluginSpec, len(plugins))
-	for i, p := range plugins {
-		out[i] = agentrun.PluginSpec{Name: p.Name, Src: p.Src}
-	}
-	return out
-}
-
 // missionWithSkill prepends the skill body (loaded from SKILL.md) to the
 // stage's mission. When no skill is loaded, the mission is returned unchanged.
 func missionWithSkill(tc *TaskContext, mission string) string {
@@ -307,9 +294,8 @@ func missionWithSkill(tc *TaskContext, mission string) string {
 	return "Follow these project-specific guidelines:\n\n" + tc.SkillBody + "\n\n---\n\n" + mission
 }
 
-// loadSkillBody loads the SKILL.md body and plugins for the current workflow,
-// matched by metadata.archie.workflow. Listed plugins load in declared order;
-// otherwise every *.go file is loaded.
+// loadSkillBody loads the SKILL.md body for the current workflow, matched by
+// metadata.archie.workflow.
 func loadSkillBody(tc *TaskContext) string {
 	catalog, _ := skill.Catalog(tc.Dir)
 	entry := skill.SkillForWorkflow(catalog, tc.Task.Workflow)
@@ -327,13 +313,5 @@ func loadSkillBody(tc *TaskContext) string {
 		return ""
 	}
 	body = strings.TrimSpace(body)
-	if body != "" && tc.SkillPlugins == nil {
-		var pluginNames []string
-		if fm.Metadata.Archie != nil {
-			pluginNames = fm.Metadata.Archie.Plugins
-		}
-		plugins, _ := skill.LoadPlugins(tc.Dir, entry.Dir, pluginNames)
-		tc.SkillPlugins = plugins
-	}
 	return body
 }
