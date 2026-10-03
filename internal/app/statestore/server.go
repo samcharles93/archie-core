@@ -266,7 +266,7 @@ func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
 	if b.pg != nil {
 		packages := storepkg.Service{
-			Registry: registry.LocalRegistry{},
+			Registry: registry.OCIRegistry{},
 			Store:    postgres.NewInstalledPackages(b.pg),
 		}
 		// A projection failure degrades the org resources a package would have

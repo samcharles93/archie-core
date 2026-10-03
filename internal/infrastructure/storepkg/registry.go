@@ -27,21 +27,20 @@ const (
 	maxPackageBytes  = 64 << 20
 )
 
-// LocalRegistry accepts a local OCI registry over HTTP and verifies the
-// manifest and sole layer before returning declarative package content.
-type LocalRegistry struct{}
+// OCIRegistry fetches a package from an OCI registry and verifies the pinned
+// manifest and sole layer before returning package content. A loopback
+// registry is reached over plain HTTP; every other host over HTTPS. The digest
+// pin, not the transport, is what makes the content trustworthy.
+type OCIRegistry struct{}
 
-var _ domain.Registry = LocalRegistry{}
+var _ domain.Registry = OCIRegistry{}
 
-func (LocalRegistry) Fetch(ctx context.Context, reference, pin string) (domain.Descriptor, []byte, error) {
-	if !localReference(reference) {
-		return domain.Descriptor{}, nil, errors.New("package registry must be local")
-	}
+func (OCIRegistry) Fetch(ctx context.Context, reference, pin string) (domain.Descriptor, []byte, error) {
 	repository, err := remote.NewRepository(reference)
 	if err != nil {
 		return domain.Descriptor{}, nil, err
 	}
-	repository.PlainHTTP = true
+	repository.PlainHTTP = loopbackReference(reference)
 	_, stream, err := repository.FetchReference(ctx, pin)
 	if err != nil {
 		return domain.Descriptor{}, nil, err
@@ -68,7 +67,8 @@ func (LocalRegistry) Fetch(ctx context.Context, reference, pin string) (domain.D
 	return decodeOCI(manifest, layer, pin)
 }
 
-func localReference(reference string) bool {
+// loopbackReference reports whether the reference names a registry on this host.
+func loopbackReference(reference string) bool {
 	host, _, ok := strings.Cut(reference, "/")
 	if !ok {
 		return false
