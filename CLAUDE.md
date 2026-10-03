@@ -1,418 +1,151 @@
 # AGENTS.md
 
-Guidance for any coding agent working in this repository.
-
-Keep every rule here harness-agnostic: name the required behaviour, not the tool
-that provides it (e.g. "spawn a fresh reviewer that did not write the code", not
-a specific sub-command).
-
-## Code Quality & Refactoring Standards
-
-- **Zero Patch Stacking:** Never apply more than two sequential fixes to the
-  same logic block. If a solution fails twice, scrap the block and rewrite it
-  cleanly.
-- **Root-Cause Fixes:** Fix invalid state at the producer, not via defensive
-  checks at the consumer.
-- **Architectural Simplicity:** Prefer a complete 20-line rewrite over a 5-line
-  band-aid that adds conditional complexity or obscures intent.
-- **Revert on Flail:** If an implementation becomes convoluted to satisfy edge
-  cases, discard the approach and select a simpler design.
+Rules for any agent working in this repository. Short on purpose: every rule
+here changes a decision. If a rule stops changing decisions, delete it.
 
 ## What this is
 
-**archied** is a resident daemon that polls a forge (GitHub, Gitea) for issues
-assigned/labelled to it, works each one in an isolated git worktree through a
-routed workflow (bootstrap / implement / TDD / feasibility), and opens pull
-requests for human review.
+**archie-core** is event-driven agentic automation. An event (a forge issue,
+a webhook capture, a schedule, a chat message) is matched to a workflow,
+the workflow runs an agent in an isolated container, and the result lands
+somewhere a human reviews it. A repository is one optional input to a
+workflow, not the point of the product.
 
-Architecture of record lives in `docs/architecture/` -- `organisation.md` for
-the package map, `agent-system.md` for the workflow-execution lifecycle and its
-invariants, `plugins-and-extensions.md` for engine families. Read it before
-making non-trivial changes. Key invariants: env-enforced gates, model never runs
-git, and agent execution functions as a strict data boundary. Before adding a new
-plugin engine, satisfy
-`docs/architecture/plugins-and-extensions.md#plugin-engine-rule-strict`.
+The product is unfinished. Many features are half-built, and the codebase
+carries far more code, binaries, docs and tooling than it delivers. The job
+right now is to finish features and shrink the codebase, not to extend it.
 
-Before changing an area (frontend UI, agent, workflows, daemon, State Store,
-control plane), read its page in `docs/development/`: it names every layer the
-change must reach. This is not optional colour reading -- archie-core is built
-as an extensible, customisable surface, not a fixed product, so a change that
-looks complete inside one package routinely is not: a new setting that never
-reaches the control-plane schema descriptor and dashboard parses but never
-renders, is never editable, and never live-applies, exactly like a config
-field with no consumer. The dev-docs page for the area is where that
-cross-layer reach is written down; read it before starting, not after
-something downstream turns out silently unwired. This applies whether the
-work is yours directly or handed to a subagent or crew worker -- carry the
-relevant docs/development page into their prompt, the same way a bead ID is
-carried; "figure out what else needs updating" left implicit is exactly the
-gap this note exists to close.
+## Authority
 
-## Scope Discipline
+When sources disagree, the higher one wins:
 
-`docs/architecture/` is authoritative for settled design.
-`docs/architecture/migration-decisions.md` is the open decision register for the
-domain migration.
+1. The maintainer's instruction in this session.
+2. This file.
+3. The code as it is in the tree.
+4. Beads issues (`bd show <id>`): the plan for a piece of work.
+5. Everything else (memories, comments, old docs) is a hint. Verify it
+   against the code before acting on it.
 
-- **Settled design exists** → Implement it immediately with a diff. Do not
-  produce design prose. If a small detail is missing, ask the maintainer
-  directly.
-- **No settled design exists (or open in `migration-decisions.md`)** → Write a
-  decisive, 1-page design doc before coding. Land new capabilities in
-  `docs/prds/` and migration questions in
-  `docs/architecture/migration-decisions.md`. Promote to `docs/architecture/`
-  only after implementation lands.
-- **Strictly Prohibited:** Ownership ledgers, field-level inventories,
-  current-state traces, parity matrices for their own sake, and
-  planning/refactor tracking issues.
-- **Solo Project Context:** Prefer the smallest workable change over extensive
-  defensive scaffolding.
-- **Verify handed-over input before acting on it.** An export, transcript, or
-  artifact that is empty, missing, or truncated is a blocking fact: report it
-  before starting work that assumes its contents. Never reconstruct the intent
-  from the working tree instead.
-- **PRD writing:** Read and follow `docs/prds/RULES.md` before creating or
-  editing a PRD.
+There are no PRDs, architecture docs or repo skills. Old ones live outside
+the repo and are not guidance. Do not recreate them.
 
-## Deployment Model
+## How to decide
 
-- **Systemd is optional:** `deployments/` holds supported profiles
-  (`single-forge-github.toml`, `multi-forge-github-gitea.toml`,
-  `local-ollama-standalone.toml`, `docker-nats-stack.toml`,
-  `systemd-user-service.md`). Never assume a systemd unit exists.
-- **Chat filesystem confinement:** Builtin tools default to workspace jail via
-  `SetPathConfinement(!unrestricted)`. Unrestricted access requires
-  `[chat] unrestricted_filesystem = true`.
-- **NATS endpoint immutability:** The daemon passes agent containers its startup
-  connection URL (`d.ConnectedNATS.URL`). Containers and daemon must resolve
-  this address. Embedded mode binds to the Docker bridge gateway. A SIGHUP
-  reload of `nats.url` logs an error requiring restart to prevent split-brain
-  delivery.
-- **Container pull policy:** `containers.pull_policy` must be `"missing"`
-  (default) or `"always"`. Private registries need `containers.registry_auth`
-  (a `SecretRef` resolving to a `registry.AuthConfig` JSON document); without it
-  the pull is anonymous and a private registry answers 401. Refresh explicitly
-  via `docker compose pull agent`.
-- **Docker Compose:** `docker-compose.yml` carries optional external NATS and
-  the `agent` build stanza. The agent uses a `build` profile so `up -d nats`
-  never starts it as a persistent service.
-- **Config path:** Runtime configuration lives at
-  `${XDG_CONFIG_HOME:-~/.config}/archie/config.toml`. Nothing in the working
-  tree is load-bearing at runtime.
+- **Broken beats new.** A bug that blocks work gets fixed now, with the
+  smallest change that unblocks it. No design doc, no new mechanism.
+- **Cheapest option first.** Before building anything, name the smallest
+  change that solves the problem, including changing configuration or
+  deleting something. If your plan adds a new mechanism (RPC, process,
+  binary, abstraction, config field, tool) or grows past about 100 lines,
+  stop and present the cheap option to the maintainer first.
+- **Delete before adding.** Unused code, dead paths, fallbacks nobody takes
+  and features nobody runs get removed, not maintained. Solo project, single
+  user: breaking changes need no compatibility shims.
+- **Finish before starting.** Prefer completing a half-built feature end to
+  end over starting a new one.
+- **No new binaries.** A new command is a subcommand of an existing binary.
+  A binary exists only for a real process boundary (separate deploy,
+  scaling, security or failure domain).
+- **No compensating tools.** Do not write a linter, checker or generator to
+  enforce something a simpler design would make unnecessary. Fix the design.
+- **A setting must work end to end.** A config field that parses but has no
+  consumer is a bug. Settings are edited through the control plane (API and
+  dashboard), never by requiring a server login.
+- **Ask only for real decisions.** Product direction and trade-offs the
+  maintainer owns are questions. Everything with a conventional answer is
+  not: decide, do it, say what you chose.
 
-## Release Process
+## Code
 
-See `RELEASING.md`. Most sessions touch only `archied`, making releases
-gateway-only (`RUNTIME=skip`) by default. Skip untouched components
-automatically and note it in the handoff.
+- Idiomatic Go. Small functions, explicit errors, no package-level mutable
+  state, no god objects. `internal/app/archied/bootstrap.go` is the
+  counter-example: never add to it. New wiring belongs to the feature that
+  needs it.
+- Dependencies point inward: `cmd → app → {domain, infrastructure}`,
+  `infrastructure` implements `domain` interfaces, `domain` imports neither.
+  `cmd/` parses flags and calls `app`, nothing else.
+- Fix invalid state where it is produced, not with checks where it is
+  consumed.
+- If a fix fails twice, throw the block away and rewrite it simply.
+- Comments say why, briefly. No migration history, phase names or issue
+  narration in code.
+- Generated files (`ui/dist/`, protobuf, sqlc) are regenerated and committed
+  with the change that caused them, never hand-edited.
 
-## Build & Test
+## Tests
 
-Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
-[Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, Node/npm, and a
-running Docker daemon: Postgres tests start `postgres:18` through
-testcontainers via `internal/infrastructure/postgres/pgtest`).
-`golangci-lint` is the single writer for ordinary Go formatting; standalone
-`gofumpt` formats generated protobuf contracts only.
+The default for a change is no new test. Write one only when:
 
-```bash
-task build      # build archied and archie-agent binaries into bin/
-task test       # go test -short ./... (cached; task test:full runs everything uncached)
-task test:ui    # dashboard node tests (DOM-building primitives)
-task ui         # build dashboard into ui/dist (LAW asset)
-task fmt        # go fix ./... && golangci-lint fmt
-task vet        # go vet ./...
-task lint       # golangci-lint run ./...
-task check      # fmt + proto:lint + proto:check + docs:check + vet + lint + build + test + test:tools + test:ui (The Definitive Gate)
-task dev        # archied live-reload + Vite HMR together on :5173
-```
+- something actually broke: write the test that reproduces it, see it fail
+  on the assertion, then fix; or
+- the change alters one of these seams: State Store SQL semantics
+  (transition guards, idempotent dispatch, cancellation), security
+  boundaries (HMAC, grants, path confinement, egress, secrets), the workflow
+  step contract, or the import-boundary rules.
 
-Single package/test runs:
+A test that exists must catch a real regression, survive refactoring, run
+fast, and be cheap to keep. Never test wiring, constants, defaults, struct
+shapes, fakes, or call order. One table-driven test per behaviour; extend
+the table instead of adding a second test. Prefer making an invalid state
+unrepresentable to testing that it is rejected. Test helpers live in
+`_test.go` files only.
+
+## Invariants
+
+These protect users. Do not weaken them without the maintainer's say-so.
+
+- The model never runs git. Commits and pushes go through the daemon.
+- The daemon's own credentials never enter an agent container. Containers get
+  task-scoped grants that are revoked when the task ends.
+- Webhook HMAC is verified before the payload is parsed.
+- Task briefs go in `<worktree>/.git/task.json`, never the worktree root.
+- NATS: task and RPC replies use `msg.Respond`; flush after registering a
+  responder; `ARCHIE_TASKS` is a work queue, so never bind overlapping
+  consumers.
+- `ai-sdk` `FullStream` must be drained completely.
+
+## Build and gate
 
 ```bash
-go test ./internal/domain/workflow/... -run TestName -v -count=1
+task build   # binaries into bin/
+task test    # go test -short ./...
+task ui      # dashboard into ui/dist
+task check   # the gate
 ```
 
-## Repository Hygiene
+Requires Go 1.27, Task, golangci-lint, Node/npm and Docker.
+Adopt `task fmt` and `go fix` output as-is.
 
-- **Generated assets are LAW:** Never modify, revert, or ignore generated files
-  in `ui/dist/` or schema outputs. Incorporate them into relevant commits.
-- **Ignored paths:** Never commit build artifacts, binaries (`/bin/`,
-  `/archied`), DB files, working screenshots, `.references/`, or
-  `node_modules/`.
-- **Scratch files:** Place scratch files strictly in `/tmp` or the harness
-  scratch space. Never put scratch files in the working tree
-  (`worktree.CommitAll` will stage them).
-- **Conventional Commits:** Scope by package: `feat(webui): ...`,
-  `fix(build): ...`, `chore(release): ...`.
-- **Commit policy:** Commit finished, gate-clean changes (`task check`
-  passing) without asking. Push only when instructed.
+- `task check` gates the commit: `task check && git commit ...`. Never claim
+  a gate result you did not just produce on that exact tree; if the gate
+  could not run, say what you did verify.
+- Commit finished work without asking. Stage only your own paths and commit
+  in the same command. Conventional Commits scoped by package, short
+  messages. Push only when told.
+- Never commit binaries, build output, scratch files or `.references/`.
+  Scratch goes in `/tmp`.
+- Runtime config lives at `${XDG_CONFIG_HOME:-~/.config}/archie/config.toml`.
+  Nothing in the working tree is read at runtime. Systemd is optional.
+- Releases: `RELEASING.md`.
 
-## Organisation (Strict Domain-Driven Architecture)
+## Issues (beads)
 
-`docs/architecture/organisation.md` is authoritative. Do not follow flat
-structures found in legacy packages.
-
-### Layers and Ownership
-
-- `internal/domain/<area>/`: Domain logic, entities, state machines, commands,
-  events, and required contracts (interfaces). Never imports infrastructure or
-  app.
-- `internal/infrastructure/<service>/`: Implementations of domain contracts
-  (persistence, forge clients, external transports, config loading).
-- `internal/app/<application>/`: Dependency injection, wiring domain to
-  infrastructure, lifecycle management, and shutdown ordering.
-- `cmd/<binary>/`: CLI flag parsing, OS signal traps, and entry point routing
-  only. No domain wiring.
-
-### Invariants
-
-- **Dependency Flow:** `cmd → app → {domain, infrastructure}`, with
-  `infrastructure → domain` implementing contracts. Downward/inward dependencies
-  only.
-- **Cross-Cutting Packages:** `logging`, `events`, `eventbus`,
-  `taskstate` sit directly under `internal/`. They may be imported by any layer,
-  but **must import zero internal packages**. No `shared/`, `utils/`, or
-  `common/` catch-alls. `policy` is designed but not built
-  (`docs/architecture/policy.md`).
-- **File Layout:** One file per API concern (`api_tasks.go`, `api_logs.go`). A
-  package owns its on-disk format end-to-end (e.g. `internal/logging` defines
-  and reads its format; transport layers do not parse).
-- **Frontend:** Features live in `ui/src/<feature>/` with colocated `.js` and
-  `.css`. Extract to `ui/src/base/` only on the second distinct consumer.
-
-## Per-Package Invariants & Traps
-
-- **Config fields (cross-cutting): a field that parses is not a field that works.**
-  A knob added to a struct the extensible surface reuses _parses_ everywhere
-  without taking effect anywhere, and a knob read from the wrong layer is just
-  as invisible: a file key is only a seed once a stored resource outranks it.
-  Before adding or reusing a config field, name its consumer, and reject the
-  configuration when there is none - which is what this repo now does for
-  per-identity `forge.intake`. Two documents carry the detail:
-  `.agents/skills/archie-config-and-flags` holds the wiring matrix, the
-  decoded-but-unwired ledger and the three shapes an unwired field can take;
-  `docs/architecture/configuration.md` is the authority on the config model and
-  its reloadability criterion.
-
-- **`internal/channels/telegram/`:**
-- The long-polling worker must call `dropPendingUpdates(ctx, b)` before
-  `b.Start(ctx)` and on `/restart`.
-- Always publish command menus to `default`, `all_private_chats`, and
-  `all_group_chats` simultaneously via `commands.go` to avoid scope shadowing
-  from legacy registrations.
-
-- **`ai-sdk` Streaming:** `FullStream` writes synchronously and MUST be drained
-  completely to prevent producer deadlocks. Do not rely on `TextStream` (drops
-  deltas).
-- **NATS Invariants:**
-- `ARCHIE_TASKS` uses `jetstream.WorkQueuePolicy`. Do not bind overlapping
-  consumer filters; use `Fetch` on existing durables instead of new `Subscribe`
-  calls.
-- RPC and task responses must use core NATS `msg.Respond` to write to ephemeral
-  `_INBOX.*` subjects, not `eventbus.Publisher`.
-- Always flush connections (`nc.Flush()`) immediately after registering
-  responders to avoid race conditions on initial requests.
-
-- **`internal/gateway/` Chat Prompt:** System prompt `<tools>` blocks are
-  rendered strictly from the active `core.ToolSet`. Never decouple prompt tool
-  definitions from passed runtime tools.
-- **`internal/container/pool.go` (`WriteTaskJSON`):** Write task briefs to
-  `<worktree>/.git/task.json`. Never place them in the worktree root (`go-git`
-  `Add{All:true}` ignores `.gitignore` and leaks root files into branch
-  commits).
-- **MCP Providers:** Daemon registers providers as optional via
-  `providerRegistry.RegisterOptional`. Missing or failed providers log warnings
-  and degrade health without terminating the process.
-- **`internal/infrastructure/staterpc/` (State Store gRPC contract):**
-  Authority is `docs/prds/state-store-contract.md` (rev. 2e) -- read it before
-  changing this package or its callers.
-- The proto (`proto/state/v1/state.proto`, service `StateStoreService`,
-  package `statev1` in `internal/contracts/state/v1/`) is one gRPC service
-  fronting every ratified store contract, including grant management; the Go
-  consumer facades
-  stay narrow (`workflow.Store`, `store.TaskStore`, etc., all ≤8 methods
-  except the `TaskStore` composite) via `staterpc.Client`'s multiple `var _`
-  assertions -- never add a Go interface method without a matching RPC.
-- Error sentinels (`store.ErrStaleTransition`, `ErrBindingNotFound`, ...)
-  cross the wire via `mapError`/`unmapError` in `values.go`, matched on
-  `(code, exact canonical message)`. Changing a canonical message string
-  breaks `errors.Is` on the client without changing behaviour visibly --
-  treat those message constants as part of the wire contract.
-- The State Store is a standalone process (`cmd/archie-state-store`, run via
-  `archied.RunStateStore`) -- the daemon and Gateway never own the task
-  tables or serve this service in-process; `boot.openStateStore` in
-  `internal/app/archied/state_store.go` is the only place the task store
-  is built. Never add a second listener for the same
-  service, and never reintroduce an in-process serving path in the
-  daemon/Gateway (`TestOpenStoresNeverOwnsTaskDB` guards this).
-- Per-task credentials are scoped, not just authenticated: `daemon.
-StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
-  task-scoped grant at the remote State Store via `RegisterTaskGrant` before
-  `ContainerPool.Acquire` and revokes it via `RevokeTaskGrant` on `Release`
-  (`acquireTaskContainer`/`process` in `internal/daemon/daemon.go`). Fails
-  closed (parks the task) if a State Store is configured but no issuer is
-  wired -- it must never fall back to forwarding the daemon's own
-  administrative token. Server-side, `staterpc.TaskGrants.UnaryInterceptor`
-  authorises a task-scoped token for only `Update`/`Transition`/`InsertEvent`
-  on its own task ID; every other RPC (including `RegisterTaskGrant`/
-  `RevokeTaskGrant` themselves and the streaming capture RPCs) requires the
-  administrative token.
-- `archie-agent` has exactly one `workflow.Store` path: gRPC via
-  `staterpc.Client` (`agenttransport/nats.Transport.Store`), using the
-  `STATE_STORE_URL`/`STATE_STORE_TOKEN` env the daemon injects. The legacy
-  NATS `storerpc` transport is deleted (`internal/storerpc` no longer
-  exists); do not reintroduce a dual-path selection.
-- `store.BindingDispatcher.RecordDispatch` takes no `*sql.Tx` (dropped in
-  `.4.2` -- it cannot cross a gRPC boundary; production always passed `nil`).
-  Do not reintroduce a transaction parameter on a producer-owned store
-  interface that a remote adapter must also implement.
-- **`internal/forge/webhook/` (forge webhook receiver):**
-- Verify HMAC (`webhookguard.VerifyHMAC` against `X-Hub-Signature-256`) before
-  parsing the payload, never after -- an unverified body must not reach
-  `github.ParseWebHook`.
-- Do not give the webhook-built `workintake.TaskEnvelope` a delivery-source-
-  specific idempotency key. `IdempotencyKey()` is keyed on `owner/repo/number`
-  only so a webhook-delivered issue and a later poll of the same issue dedup
-  against each other via `PublishUnique`; adding an event ID or timestamp to
-  the key defeats that and reintroduces poll/webhook double-dispatch.
-- Webhook intake refuses to start when `[[identities]]` is configured (one
-  receiver, one dispatch config). Do not silently enable it for multi-identity
-  deployments without first building per-identity routing -- see
-  `docs/architecture/messaging-and-work-intake.md`'s "Intake provenance"
-  section.
-- **`internal/domain/embedding/` + `internal/infrastructure/embedding/`:**
-  Embedding client contract + implementation. Config-driven exactly like chat
-  model roles: `models.embedding = "provider/model"` plus a `[providers.*]`
-  entry. `infrastructure/embedding.New` degrades to `(nil, false)` -- never an
-  error -- for a missing role, unknown provider, unsupported class, or
-  unresolved credential; wired as an optional capability in
-  `bootstrap.go`'s `setupEmbeddings`. Only provider classes matching
-  `config.Provider`'s shape are supported (openai, gemini, ollama, cohere,
-  mistral) -- azure needs a `Deployment` field this config type doesn't have.
-- **`internal/domain/sampling/`:** The curator `Sampler` interface (see
-  `docs/prds/curator-sampler-wave1.md`) plus four pure, deterministic
-  strategies (recency, staleness, random, all). No curator consumes a
-  `Sampler` yet -- `curator.Registrar` is untouched by this package.
-
-## Development Protocol
-
-1. **Red (Failing Test):** For behaviour with real logic, branching, or a
-   contract, write failing table-driven tests first against target behaviour.
-   Verify the failure originates from test assertions, not compilation errors.
-   Do not write tests that restate an assignment or a constant: a test that
-   cannot fail for an interesting reason is noise in the gate.
-   - **A test is a maintenance liability, not free insurance.** Every test
-     added is code the project now carries forever: it must compile, it must
-     keep passing as the code around it changes, and someone reads it during
-     every future change to that area. Write one because a real regression
-     would slip through without it, not because the function was touched.
-   - **Never pin a literal end-user config value, database row, or settings
-     document as the thing under test.** Test the validation rule, the
-     migration's shape, or the round-trip contract -- not one operator's
-     specific `config.toml` value, a hand-picked DB fixture that mirrors real
-     data, or a setting's current default. Those change for reasons that have
-     nothing to do with a regression, and a test pinned to one breaks on
-     every such change, which is cost with no signal.
-   - **Test-only helpers, fakes and fixtures live in `_test.go` files (or a
-     package no production `.go` file imports), never in a file the binary
-     ships.** `go build` does not compile `_test.go` files into the binary,
-     but an exported "test helper" living in a regular source file compiles
-     into every binary that imports the package, whether or not a test ever
-     runs. If a helper must be shared across packages, put it behind a
-     build-tagged or `_test.go`-suffixed file in an `xtest`-style package,
-     not behind a normal export.
-   - **Coverage is not the goal.** A codebase that grows mostly because tests
-     multiplied faster than the feature they cover is a symptom, not
-     progress -- prefer fewer, sharper tests over one per line changed.
-2. **Green (Implementation):** Implement minimal code to satisfy the failing
-   tests.
-3. **Quality Gate:** Run `task check`.
-   - **The gate gates the commit.** Let the gate's exit status decide whether
-     the commit runs, as one conditional chain (`check && commit && push`).
-     Writing them as separate statements on one command line makes the gate
-     decorative: nothing reads its status but the operator, and a failure is
-     discovered after it has already been pushed.
-   - **Never assert a gate result you have not just produced on that exact
-     tree.** A commit message outlives the tree it describes, and "verified"
-     is read by people who were not there. If the tree moved, describe the
-     change and let the run speak.
-4. **Formatting is LAW:** Adopt all formatting and simplification changes from
-   `task fmt` (`go fix` + the configured golangci-lint formatters) verbatim.
-   Never revert or fight canonical linter/formatter diffs.
-5. **No standing adversarial-review pass (for contributors):** Do not spawn a
-   separate fresh-context reviewer pass on every change as a matter of course.
-   Red-green TDD plus `task check` is the gate; a manual adversarial pass is
-   opt-in per request — ask before running one. This is the rule for a human or
-   agent _contributor_. Separately, archied runs its own PR review pipeline
-   (`docs/prds/pr-review-agent.md`) before it opens a PR of its own — see that
-   PRD's Triggers section ("archie's own PRs"). It supersedes the older
-   single-reviewer stage and the `repo.review_enabled` setting, both since
-   removed. The two paths are distinct: you
-   run a manual pass when asked; archied runs its own before it opens a PR.
-6. **Linter Guard:**
-
-- When using `errorlint` fixes, ensure boolean predicates (e.g.
-  `exitErr.ExitCode() == 1`) are retained alongside `errors.As`.
-- When extracting loops/conditionals, verify slice mutations and pointer
-  semantics do not duplicate elements.
-
-## Issue Tracking (Beads)
-
-All task management is tracked via **bd (beads)**. Do not write local Markdown
-TODO lists or use non-Beads trackers.
-
-### Commands
+Work is tracked in `bd`, never in Markdown TODO files.
 
 ```bash
-bd ready               # List unclaimed work
-bd show <id>           # View issue details
-bd update <id> --claim # Claim an issue
-bd close <id>          # Mark issue complete
-bd remember            # Persist cross-session architectural facts
+bd ready | bd show <id> | bd update <id> --claim | bd close <id>
 ```
 
-- Run `bd prime` to inspect full engine context.
-- Use `bd remember` for knowledge retention. Do not write to root `MEMORY.md`
-  files.
-- Issues live in a local Dolt DB, synced to its own `git+` remote via
-  `bd dolt push`/`bd dolt pull`. `.beads/issues.jsonl` and
-  `.beads/interactions.jsonl` are local-only export/audit files
-  (`.gitignore`d, `export.auto: false`) -- never `git add` them and never
-  create a commit whose only content is beads bookkeeping. Bead state moves
-  through Dolt, not through git commits on this repo.
-- **A bead never carries production instance detail.** No operator host name,
-  hostname, IP or port, filesystem path, PID, or credential -- in the body
-  _or_ the title, since both sync to the Dolt remote and are therefore
-  published. Write the mechanism and the evidence shape instead ("a production
-  host", "the State Store target", "the host's `config.toml`"), and put the
-  host-specific facts in the operator's memos instance, which the bead may
-  point at. This is the same class of rule as never committing a credential:
-  the tracker is not a private store.
+- An issue is the plan: what is wrong or wanted, and how you know it is
+  done. Keep it to that.
+- Bead state syncs through Dolt (`bd dolt push/pull`, only when told), not
+  git. Never commit `.beads/` exports.
+- No host names, IPs, paths, PIDs or credentials in any bead: they are
+  published.
+- File follow-up work you find as a bead. Do not fix it in passing.
 
-## Session Completion Protocol
+## Changing this file
 
-1. **Log remaining work:** File new items via `bd` for identified debt or
-   follow-up tasks.
-2. **Run gate:** Verify `task check` passes completely clean.
-3. **Update tracker:** Close finished issues via `bd close <id>`. This alone
-   is not commit-worthy -- do not stage or commit `.beads/` for it.
-4. **Commit:** Only for actual code/doc changes, scoped to the files that
-   changed.
-
-   ```bash
-   git add <scoped-files>
-   git commit -m "feat(scope): description"
-   ```
-
-5. **Sync & Push Policy:** Do not push to git remotes or run `bd dolt push`
-   unless explicitly instructed.
-6. **Handoff:** Report changed files, gate verification results, and active
-   issue states.
-
-## Maintaining this file
-
-Keep this file for knowledge useful to almost every future agent session in this project.
-Do not repeat what the codebase already shows; point to the authoritative file or command instead.
-Prefer rewriting or pruning existing entries over appending new ones.
-When updating this file, preserve this bar for all agents and keep entries concise.
+A rule is added only after a real failure it would have prevented, and it
+must say which decision it changes. Remove rules that no longer change
+decisions. Keep it short enough to read in full every session.

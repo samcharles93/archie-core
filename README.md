@@ -14,12 +14,8 @@ network operations, service management, and software delivery. You define the
 process and the access it requires; agents work through its stages, using the
 context of each event to decide how to accomplish the task.
 
-Archie is under active development. The model below describes the project's
-approved direction, with implementation progressing across event automation and
-organisation access control. The
-[event automation design](docs/prds/event-automation.md) and
-[organisations and access design](docs/prds/orgs-and-access.md) describe those
-capabilities and their delivery stages.
+Archie is under active development and not every capability below is
+finished.
 
 ## From an event to an outcome
 
@@ -82,30 +78,12 @@ See the
 for a workflow that uses typed inputs, a network investigator profile, and no
 repository.
 
-## Organisations, identities, and controlled execution
+## Identities and controlled execution
 
-The approved access model organises automation into **organisations** and
-**workspaces**. An organisation owns its members, agent identities, secrets,
-profiles, and workflows. Workspaces group sources, mappings, bindings, and runs
-by team responsibility or environment, such as network operations in production.
-Each organisation can enable the default workflows it needs and add its own.
-
-Agents act as their own identities. A workflow names the identity it runs as;
-secrets and permissions are granted to that identity. Starting an agent is an
-audited action, with a record of the workflow and the event or member that
-initiated it.
-
-The design combines roles for routine administration with attribute-based
-policies for resources and execution context. Policies apply from the instance
-through the organisation, workspace, identity, workflow, and individual object.
-Lower levels can narrow access, and a denial takes precedence. Organisation and
-workspace policy also determines which actions require approval from another
-member.
-
-Authorised runs receive credentials scoped to their identity, workspace, and
-work. Event data supplies the task's inputs; it cannot grant additional access.
-The [organisations and access design](docs/prds/orgs-and-access.md) defines this
-model; it remains an active implementation area.
+Agents act as their own identities, with secrets and permissions granted to
+that identity. Runs receive credentials scoped to their task; event data
+supplies inputs and cannot grant access. Organisations, workspaces and
+policy-based access control are in progress.
 
 ## Building and operating automations
 
@@ -114,22 +92,15 @@ and task activity. The intended authoring path starts with a real payload or an
 example: identify its structure, map the fields you need, select a workflow, and
 approve the binding.
 
-Sources default to signed delivery. The event automation design also allows an
-explicitly approved unsigned source for systems that cannot sign payloads, with
-that status visible to operators. Binding changes require re-approval before
-they can dispatch work.
-
-Playbooks and extension points provide additional orchestration through
-workflows, modules, channels, and forges. The
-[playbook engine design](docs/prds/eda-playbook-engine.md) describes how
-registered capabilities become actions that event rules can call.
+Sources default to signed delivery; an unsigned source must be explicitly
+approved. Binding changes require re-approval before they can dispatch work.
 
 ## Develop locally
 
 The repository requires Go 1.27, [Task](https://taskfile.dev/), Node.js and npm,
 and Docker with a running daemon. The development stack starts PostgreSQL 18
-through Docker Compose. Install the Go formatting and lint tools listed in
-[CLAUDE.md](CLAUDE.md#build--test) before running the full quality gate.
+through Docker Compose. See [AGENTS.md](AGENTS.md) for the tools the quality
+gate needs.
 
 ```bash
 task dev
@@ -162,21 +133,11 @@ but systemd is optional.
 
 ## Documentation
 
-- [Event automation](docs/prds/event-automation.md) — sources, schemas,
-  mappings, bindings, workflows, and agent profiles.
-- [Organisations and access](docs/prds/orgs-and-access.md) — tenancy,
-  identities, permissions, approvals, and audit.
-- [Playbook engine](docs/prds/eda-playbook-engine.md) — event rules and
-  extensible actions.
-- [Architecture decisions](docs/prds/01-project-management.md) — approved design
-  and open migration questions.
-- [Development guides](docs/development/index.md) — change checklists by area.
-- [Deployment examples](deployments/README.md) — configuration templates and
-  operating notes.
-- [Release process](RELEASING.md) — how releases are built and published.
+- [Your first playbook](docs/guides/first-playbook.md)
+- [Deployment examples](deployments/README.md)
+- [Release process](RELEASING.md)
 
-Contributions should follow [AGENTS.md](AGENTS.md), including its testing,
-generated-file, and commit rules.
+Contributions follow [AGENTS.md](AGENTS.md).
 
 ## License
 

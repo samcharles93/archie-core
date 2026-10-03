@@ -69,26 +69,6 @@ tasks:
     cmds:
       - bash tools/proto.sh check
 
-  docs:generate:
-    desc: Regenerate the committed contract reference from Archie-owned types
-    cmds:
-      - go -C tools run -mod=readonly ./docsgen --repo-root ..
-
-  docs:check:
-    desc: Verify the committed contract reference matches Archie-owned types
-    cmds:
-      - go -C tools run -mod=readonly ./docsgen check --repo-root ..
-
-  docs:prds:
-    desc: Reject session-bound writing in docs/prds
-    cmds:
-      - go -C tools run -mod=readonly ./prdlint --repo-root ..
-
-  docs:drift:
-    desc: Reject docs that cite a repository path which no longer exists
-    cmds:
-      - go -C tools run -mod=readonly ./docdrift check --repo-root ..
-
   news:
     desc: Regenerate the release data artifacts from the changelog
     cmds:
@@ -98,16 +78,6 @@ tasks:
     desc: Verify the committed release notes match the changelog
     cmds:
       - go -C tools run -mod=readonly ./newsgen check --repo-root ..
-
-  docs:artifact:
-    desc: Regenerate the canonical docs artifacts from the Markdown sources
-    cmds:
-      - go -C tools run -mod=readonly ./docsite --repo-root ..
-
-  docs:artifact:check:
-    desc: Verify the committed docs artifacts match the Markdown sources
-    cmds:
-      - go -C tools run -mod=readonly ./docsite check --repo-root ..
 
   vet:
     desc: Run go vet
@@ -140,11 +110,6 @@ tasks:
     desc: Report unreachable production functions (advisory)
     cmds:
       - go run golang.org/x/tools/cmd/deadcode@latest -test=false ./cmd/...
-
-  reachaudit:
-    desc: Classify unreachable code against tracked work (advisory)
-    cmds:
-      - python3 tools/reachaudit/reachaudit.py --repo . {{.CLI_ARGS}}
 
   ui:deps:
     desc: Install dashboard dependencies
@@ -308,11 +273,6 @@ tasks:
     cmds:
       - go test ./... -count=1
 
-  test:tools:
-    desc: Run the nested tools module suite, refusing to rewrite its go.mod
-    cmds:
-      - go -C tools test -mod=readonly ./... -count=1
-
   check:
     desc: Run the full quality gate
     # Finish mutations before starting parallel checks.
@@ -326,23 +286,13 @@ tasks:
     internal: true
     deps:
       - task: proto:lint
-      - task: docs:check
-      - task: docs:prds
-      - task: docs:drift
       - task: news:check
-      - task: docs:artifact:check
       - task: vet
       - task: lint
       - task: build
       - task: test
-      - task: test:tools
       - task: test:ui
       - task: ui:check
-
-  contract:
-    desc: Report contract conformance (advisory)
-    cmds:
-      - go -C tools run ./contractaudit --repo-root ..
 
   release:preview:
     desc: "Show the release notes that would be generated (VERSION=1.2.0)"

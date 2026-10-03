@@ -364,12 +364,8 @@ fi
 
 # Generate config.toml through archied setup rather than here.
 #
-# The installer hand-rolling TOML already drifted from the schema once: the
-# generated branch hardcoded the GitHub token key and the Gitea host, so choosing
-# Gitea produced a config naming a token the installer never wrote. The durable
-# fix, decided in docs/architecture/configuration.md, is that the code writing
-# the config is the code that reads it -- archied setup renders it, and archied
-# loads it.
+# archied setup renders the config, so the code writing it is the code that
+# reads it.
 #
 # The answers collected above are passed as parameters. Secrets are passed as
 # REFERENCES to the env keys set_env_key just wrote, never as values: a value on a
@@ -405,10 +401,7 @@ fi
 # 6. Seed skills, personas, memories, and onboarding tasks
 echo "==> Seeding skills and templates..."
 
-# Copy built-in skills from .agents/skills and examples/skills
-if [ -d "${SRC_DIR}/.agents/skills" ]; then
-  cp -rf "${SRC_DIR}/.agents/skills/"* "${ARCHIE_CONFIG_DIR}/skills/" 2>/dev/null || true
-fi
+# Copy built-in skills from examples/skills
 if [ -d "${SRC_DIR}/examples/skills" ]; then
   cp -rn "${SRC_DIR}/examples/skills/"* "${ARCHIE_CONFIG_DIR}/skills/" 2>/dev/null || true
 fi

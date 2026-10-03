@@ -46,8 +46,7 @@ the reader, not whether a sentence is negative:
   experience, so it belongs, worded as a caveat on the capability and paired
   with the behaviour that compensates for it.
 
-Design constraints and withheld capabilities belong in `docs/architecture/`,
-where implementers look, because there they are requirements rather than news.
+Design constraints and withheld capabilities are not release news.
 Do not apply this mechanically: deleting a caveat a reader needs misleads them,
 which is the failure this rule exists to prevent.
 

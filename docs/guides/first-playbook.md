@@ -3,9 +3,7 @@
 This walks through the whole no-code path the event-capture epic promises:
 point an external app's webhook at archie, see the real payload it sends,
 map the fields you care about, bind them to a workflow, and watch the next
-matching event turn into a task -- no code, no redeploy, no restart. See
-`docs/architecture/bindings.md` for the model and threat model behind each
-step below.
+matching event turn into a task -- no code, no redeploy, no restart.
 
 ## 1. Send a test event
 
@@ -26,9 +24,7 @@ curl -X POST http://localhost:8484/webhooks/capture/sentry \
 ```
 
 This event isn't signed yet, so it's captured but marked **unauthenticated**
--- visible for you to design against, but incapable of triggering anything
-(`docs/architecture/bindings.md`'s threat-model section explains why: an
-unauthenticated event can never match a binding, no matter how it looks).
+-- visible for you to design against, but incapable of triggering anything: an unauthenticated event can never match a binding.
 
 ## 2. Inspect the captured payload
 
@@ -68,8 +64,7 @@ Save. The binding starts in **draft** -- nothing fires yet.
 A **draft** or freshly-**edited** binding needs an explicit human approval
 before it can ever match a live event -- this is deliberate, not a missing
 step: an operator authoring a binding is a considered act, an event arriving
-is not, and nothing should self-arm (`docs/architecture/bindings.md`'s
-threat-model section, point 2). Click **Approve**. Status becomes **armed**.
+is not, and nothing should self-arm. Click **Approve**. Status becomes **armed**.
 
 ## 6. Fire it for real
 
@@ -89,8 +84,7 @@ curl -X POST http://localhost:8484/webhooks/capture/sentry \
 
 This event is captured as **authenticated**, matched against your armed
 binding, and dispatched into a new task through the exact same
-gate/worktree/sandbox pipeline every other task goes through -- see
-`docs/architecture/messaging-and-work-intake.md`'s "Intake provenance". Check
+gate/worktree/sandbox pipeline every other task goes through. Check
 the **Tasks** page; a new task should appear, its body built from the fields
 your mapping resolved.
 

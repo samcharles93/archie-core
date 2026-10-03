@@ -7,8 +7,7 @@
 # exactly that, silently -- and with more than one agent working in its own
 # worktree, each could "pass" while producing a different bundle.
 #
-# So this builds somewhere temporary and compares, the rule docs:check already
-# follows for docs/data/generated/contracts.json. A mismatch means ui/src
+# So this builds somewhere temporary and compares. A mismatch means ui/src
 # changed without `task ui`, or the bundle was hand-edited; the fix is the same
 # either way.
 set -euo pipefail
