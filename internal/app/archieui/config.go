@@ -12,18 +12,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// Resolve produces the effective Options: flag values win, and a field the
-// operator left empty falls back to the configuration file's projection, then
-// to a process default. It ends with validate, so a caller that gets no error
-// holds a startable configuration.
-//
-// The projection is an allowlist of the values this process needs --
-// [services.gateway].{target,target_token}, [services.state].{target,
-// target_token}, [web].{listen,trust_forwarded_headers} and [capture]. The UI
-// reads the same file the daemon does because operators already keep the
-// service endpoints there, but Options has no field for anything else in it:
-// the daemon's forge credentials, model catalog, workflow routing, NATS
-// settings, filesystem jail and agent/container settings have nowhere to land
+// Resolve returns the effective Options: flags first, then the config file's
+// projection, then defaults, and validates the result.
 func Resolve(o Options, log *slog.Logger) (Options, error) {
 	if o.Config != "" {
 		cfg, found, err := readProjection(o.Config, o.Overlay, log)
@@ -87,24 +77,7 @@ func project(cfg config.Config) projection {
 	}
 }
 
-// withEnvTokens fills a service token the operator gave neither on the command
-// line nor in [services.*].target_token. The config loader does not expand
-// environment variables, and config.example.toml documents the environment as
-// how a remote consumer presents these tokens, so without this a deployment
-// that supplies them by env dials with an empty bearer and staterpc.Dial
-// refuses a non-loopback start.
-//
-// It runs here rather than inside project() because the process is fully
-// drivable by flags: readProjection returns early when there is no config
-// file, so a fallback living in the file's projection would miss exactly the
-// flags-only deployment that needs it.
-//
-// This reads the process environment only. The daemon resolves the same names
-// through a secret.Registry, which also consults bws and any Yaegi-loaded
-// engine; the UI process deliberately does not compose that runtime, because
-// ui-service-boundary.md's deletion gate forbids a secret runtime package
-// here. A token held in a secret manager must therefore be exported into
-// archie-ui's environment by whatever starts it.
+// withEnvTokens fills service tokens left unset from the environment.
 func withEnvTokens(o Options) Options {
 	if o.Gateway.Token == "" {
 		o.Gateway.Token = os.Getenv("GATEWAY_TOKEN")
@@ -155,14 +128,7 @@ func merge(o Options, p projection) Options {
 }
 
 func withDefaults(o Options) Options {
-	// This is the one config key the UI and the daemon read with opposite
-	// meanings: in the daemon, Web.Listen = "off" disables the dashboard
-	// (config.Config "off" is a sentinel, not an address). In a dedicated UI
-	// process there is no sense disabling the only thing it does, so "off"
-	// falls through to the default listener. None of the other projected
-	// values is overloaded this way; if "off" ever means something else here
-	// it must be pinned with a test, because it is exactly where an operator
-	// preparing the split would set it.
+	// "off" disables the daemon's dashboard but means the default listener here.
 	if o.Listen == "" || o.Listen == "off" {
 		o.Listen = defaultListen
 	}

@@ -7,11 +7,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
-// Key is a scored finding's stable identity inside one gate document: file,
-// line and title. Findings carry no ID, so this is what an operator's
-// selection names and what filtering matches on. The document stores the key
-// beside the finding (task.ReviewGateFinding), because the operator surface
-// never sees this type.
+// Key identifies a scored finding by file, line and title.
 func (f ScoredFinding) Key() string {
 	return fmt.Sprintf("%s:%d:%s", f.File, f.LineStart, f.Title)
 }

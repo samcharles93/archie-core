@@ -28,17 +28,8 @@ func (c HTTPTransportConfig) effectiveTimeout() time.Duration {
 	return c.Timeout
 }
 
-// HTTPTransport implements [Transport] over HTTP/StreamableHTTP. Each
-// [Send] makes an HTTP POST with the JSON-RPC request body and returns the
-// JSON-RPC response. [Notify] fires an HTTP POST and discards the response
-// body — notifications don't expect a JSON-RPC reply.
-//
-// This transport is stateless (no persistent connection), so Start/Stop
-// are not needed. It satisfies the [Transport] interface directly. Being
-// stateless, it has no server→client channel and therefore does not
-// implement serverRequestRouter: a server-initiated request (MCP sampling)
-// cannot arrive over it at all, rather than arriving and being dropped.
-// A deployment that needs sampling must use stdio or SSE.
+// HTTPTransport is a stateless HTTP Transport: each Send is a POST. It cannot
+// receive server-initiated requests.
 type HTTPTransport struct {
 	config HTTPTransportConfig
 	client *http.Client

@@ -1,18 +1,5 @@
-// Package playbook is the EDA playbook document type and its event coordinator:
-// the rich trigger+actions YAML shape with CEL `when` conditions and `args`
-// values (open question 1, resolved to CEL). A playbook is one of two shapes
-// (multi-action-playbooks.md, D2):
-//
-//   - a workflow playbook is exactly one `workflow` action, unchanged from
-//     the original boundary, and is routed by the daemon's definition pin;
-//   - an action playbook is one or more `module` actions in order, each with
-//     a registered `kind`, `args`, and an optional `when`/`id`. Store.Run
-//     executes it.
-//
-// The two shapes never mix in one playbook. This is an ADDITIONAL routing
-// source alongside the flat kind/label binding files: the daemon consults a
-// matching workflow playbook before those bindings when it pins a task's
-// workflow definition. The binding loaders themselves are untouched.
+// Package playbook loads EDA playbooks: a trigger plus either one workflow
+// action or ordered module actions, with CEL `when` and `args`.
 package playbook
 
 import (
@@ -59,12 +46,7 @@ type Store struct {
 
 // Playbook is one trigger+actions document.
 type Playbook struct {
-	// ID is the playbook's stable identity for execution-time idempotency:
-	// its file path relative to the configured directory root. It is unique
-	// within a single Load because the EDA loader walks one directory's
-	// entries and filenames there are inherently unique -- the doc's claim
-	// about "the directory-loader's collision rule" belongs to the ROUTING
-	// loader (workflow.LoadPlaybookDirs), a different loader.
+	// ID is the playbook's path relative to the directory root.
 	ID string
 	// Version is a content hash of the loaded file, recomputed on every
 	// load. It pins dispatched-run provenance to the exact definition active
@@ -93,11 +75,7 @@ type Trigger struct {
 // routed yet.
 type Action struct {
 	Position string
-	// ID is an optional stable identifier for this action. When present it
-	// is the key later actions read this action's result under
-	// (actions.<id>). Workflow actions use the shared stable-identifier
-	// grammar; module actions must use a CEL identifier so the id can be
-	// read through `actions.<id>` field selection.
+	// ID optionally names this action so later actions can read actions.<id>.
 	ID string
 	// Kind is the module kind name (position: module only); empty for a
 	// workflow action.
@@ -111,12 +89,8 @@ type Action struct {
 	// Nil or empty means the action takes no args.
 	Args map[string]*expr.Program
 
-	// env is the per-action CEL environment this action's expressions were
-	// compiled against: the prior actions' declared ids and their kinds'
-	// Result types. It is compile-only: expr.Env.Eval reads only the
-	// compiled Program (the cost limit is baked in at Compile) and never
-	// reads the Env receiver. It is unset only for a hand-built Action
-	// (tests, pre-load composition); loaded actions always carry it.
+	// env is the CEL environment this action's expressions were compiled
+	// against.
 	env *expr.Env
 }
 
@@ -178,12 +152,7 @@ func at(path string, line int) string {
 	return fmt.Sprintf("%s:%d", path, line)
 }
 
-// Module action ids are stricter than workflow ids because they must also be
-// readable as `actions.<id>` in CEL field selection. The authoritative check
-// is expr.IsCELFieldName (which compiles the probe), plus a lowercase policy:
-// the id must be a lowercase CEL field name, so `Build` -- a valid CEL
-// identifier -- is rejected for its case, while a CEL keyword such as `in` is
-// rejected because `actions.in` has no field-selection spelling.
+// Module action ids must be lowercase CEL field names.
 
 // validateActionIDs enforces the WORKFLOW id shape and uniqueness. An absent
 // id is fine (ids are optional); a declared id must match the
@@ -229,14 +198,8 @@ func validateModuleActionIDs(path string, actions []rawAction) error {
 	return nil
 }
 
-// Load reads every *.yaml/*.yml playbook in dir, validates each against the
-// two-shape boundary (exactly one workflow action, or one or more module
-// actions; never mixed), and compiles each when expression and args value
-// against the action's per-playbook environment. ANY failure -- malformed
-// YAML, a mixed/unsupported/empty action shape, an unknown kind, a when
-// compile error, an args key error -- fails the whole load: the reject-at-load
-// philosophy of the parent design doc. A missing directory is an empty store
-// (matching the flat binding loaders' convention).
+// Load reads and compiles every playbook in dir. Any invalid playbook fails
+// the load. A missing directory is an empty store.
 func Load(dir string, modules Modules) (*Store, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -360,11 +323,8 @@ func compileActions(path string, raw []rawAction, schemas KindSchemas) ([]Action
 	}
 }
 
-// validateActionShapeField rejects a field from the other shape being present
-// on an action: a workflow action must not declare kind (module-only), and a
-// module action must not declare workflow (workflow-only). yaml.Unmarshal
-// accepts both keys, so this is where a silently-ignored foreign key becomes
-// a reported load failure naming the playbook and the action index.
+// validateActionShapeField rejects a field belonging to the other action
+// shape.
 func validateActionShapeField(path string, i int, pos string, a *rawAction) error {
 	switch pos {
 	case "workflow":
@@ -505,14 +465,8 @@ func checkArgType(path, label, kind string, argsSchema reflect.Type, key string,
 	return nil
 }
 
-// compileArgs compiles every args value as a CEL expression at load, keyed by
-// arg name. J2 has no literal/expression split: the YAML scalar text IS the
-// CEL source, so a string literal is quoted inside YAML and a number or
-// context read is written as CEL. When argsSchema is non-nil (a module kind's
-// Args struct) every key must name one of its fields; workflow actions pass
-// nil and keep free-form args. Each program goes through the same
-// compile/reference validation as `when`, with label naming the offending
-// action and the args key naming the offending field.
+// compileArgs compiles each args value as CEL. With argsSchema, every key
+// must name one of its fields.
 func compileArgs(path string, lines map[string]int, label, kind string, raw map[string]string, env *expr.Env, argsSchema reflect.Type) (map[string]*expr.Program, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -543,12 +497,7 @@ func compileArgs(path string, lines map[string]int, label, kind string, raw map[
 	return args, nil
 }
 
-// validateArgsKeys rejects an args key the kind's Args struct does not define
-// (multi-action-playbooks.md, D4), so an arg typo is a load failure rather
-// than a dispatch-time shape mismatch. Go field names are lower-cased to the
-// YAML spelling (Message -> message), and the YAML key is compared verbatim:
-// the decoder also matches literal lower-case keys, so `Message` is rejected
-// here rather than loading and then failing at dispatch.
+// validateArgsKeys rejects args keys the kind's Args struct does not define.
 func validateArgsKeys(path string, lines map[string]int, label, kind string, argsSchema reflect.Type, raw map[string]string) error {
 	t := argsSchema
 	if t.Kind() == reflect.Pointer {
@@ -575,14 +524,7 @@ func validateArgsKeys(path string, lines map[string]int, label, kind string, arg
 	return nil
 }
 
-// compileExpr compiles one playbook expression and applies the remaining
-// load-time reference check: every `actions` read must be statically
-// resolvable to a prior action id. The per-playbook object type rejects an
-// undeclared or forward id and a dynamic `actions` read at compile time; the
-// one spelling it does not reject is a bare `actions` value read, which this
-// check still refuses. field is the human-readable expression location used in
-// errors (`when condition` or `args["name"]`), so a failure names the
-// playbook path and the offending expression.
+// compileExpr compiles one expression and rejects a bare `actions` read.
 func compileExpr(path, field, src string, env *expr.Env) (*expr.Program, error) {
 	prg, err := env.Compile(strings.TrimSpace(src))
 	if err != nil {
@@ -605,13 +547,7 @@ type DispatchInput struct {
 	Labels []string
 	// Kind is the routing kind the labels produced (workintake.KindForLabels).
 	Kind string
-	// TaskID is the originating task's identity, used to derive the event_id
-	// half of the playbook_dispatches idempotency ledger key. It carries the
-	// TaskEnvelope.IdempotencyKey() value ("archie:owner/repo/number"), the
-	// stable identity available at the discovery/dispatch point (pollNATS and
-	// the webhook receiver both compute kind/labels from a TaskEnvelope before
-	// any workflow.Task row exists). It is NOT a workflow.Task.ID int64, which
-	// does not exist until the task is persisted.
+	// TaskID is the originating task's idempotency key, used as the event id.
 	TaskID string
 	// Event is the event payload exposed as `event` in CEL expressions. For
 	// a workflow-kind dispatch this carries the label/kind fields cheaply
@@ -619,11 +555,8 @@ type DispatchInput struct {
 	Event map[string]any
 }
 
-// IsActionPlaybook reports whether pb is an action playbook (one or more
-// module actions), as opposed to a workflow playbook (exactly one workflow
-// action). It is the single two-shape predicate shared by Dispatch (which
-// routes only workflow playbooks) and Run (which executes only action
-// playbooks), so the two can never disagree.
+// IsActionPlaybook reports whether pb has module actions rather than a
+// workflow action.
 func (pb *Playbook) IsActionPlaybook() bool {
 	return len(pb.Actions) != 1 || pb.Actions[0].Position != "workflow"
 }
@@ -654,11 +587,8 @@ func (pb *Playbook) Match(input DispatchInput) bool {
 	return true
 }
 
-// Decision is what the coordinator selected for one event: the workflow a
-// matching playbook's action names, plus the provenance of the definition
-// that chose it. Version pins the decision to the exact file content active
-// when it fired, and both fields are the first two components of the
-// per-action idempotency key the resolved gap-2 scheme derives
+// Decision is the workflow a matching playbook selected, with its playbook
+// id and version.
 type Decision struct {
 	PlaybookID string
 	Version    string
@@ -673,21 +603,8 @@ type Decision struct {
 	ActionPosition int
 }
 
-// Dispatch returns the workflow name the first matching workflow playbook
-// selects for the input, and whether any playbook matched. Action playbooks
-// choose no workflow, so they are skipped here and executed by Run. No match
-// means trigger
-// mismatch or a when condition evaluating false, and the caller keeps its own
-// routing.
-//
-// The name is returned rather than a compiled workflow because the production
-// caller (the daemon's definition pin) decides against the active definition
-// collection, not against a compiled registry; whether the named workflow
-// exists is that caller's check, in the same place it makes it for every
-// other routing source.
-//
-// A when evaluation error follows the resolved doc's J3: the condition
-// evaluates to false and dispatch is skipped (the caller logs).
+// Dispatch returns the workflow the first matching workflow playbook names,
+// and whether one matched. A `when` error counts as false.
 func (s *Store) Dispatch(input DispatchInput) (Decision, bool) {
 	// Nil-receiver-safe: a composition root that builds its daemon before the
 	// playbook load hands over a nil store, and "no playbooks" is the honest
@@ -723,15 +640,7 @@ func evalContext(input DispatchInput) expr.Context {
 	}
 }
 
-// EvalArgs evaluates a compiled action's args against the dispatch context,
-// returning the resulting name->value map. Run evaluates args the same way
-// against a context that also carries earlier actions' results. An action declaring no args evaluates to an empty map, nil-program entries
-// are skipped, and the first evaluation error is returned. Nil-receiver-safe
-// for the pre-load composition phase.
-//
-// Asymmetry with `when`: `when` is a predicate, so an evaluation error is
-// false (J3: skip + log); `args` is data, so an evaluation error has no
-// meaningful substitute and is returned to the caller to abort the playbook run
+// EvalArgs evaluates an action's args and returns the first error.
 func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) {
 	if s == nil {
 		return map[string]any{}, nil

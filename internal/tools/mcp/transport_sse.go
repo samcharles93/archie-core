@@ -18,11 +18,8 @@ type SSETransportConfig struct {
 	// SSEEndpoint is the GET URL for the server→client event stream (e.g.
 	// "https://mcp.example.com/sse"). Required.
 	SSEEndpoint string
-	// MessageEndpoint is the POST URL for client→server messages. When
-	// empty (the common case), the client discovers it from the
-	// "endpoint" SSE event sent by the server after connecting — this
-	// is the MCP SSE spec behaviour; the server's endpoint event carries
-	// the full POST URL including a session-id query parameter.
+	// MessageEndpoint is the POST URL for client messages. Empty discovers it
+	// from the server's "endpoint" event.
 	MessageEndpoint string
 	// Headers are additional HTTP headers sent with every request.
 	Headers map[string]string
@@ -522,15 +519,8 @@ func readEndpointEvent(r *bufio.Reader) (string, error) {
 	return strings.TrimSpace(data), nil
 }
 
-// readSSEEvent reads one complete SSE event from the stream. It returns the
-// event type and data payload. SSE fields are:
-//
-//	event: <type>\n
-//	data: <payload>\n
-//	\n   (blank line terminates the event)
-//
-// Lines beginning with ':' are comments and are skipped. Multiple "data:"
-// lines are concatenated with newlines (per the SSE spec).
+// readSSEEvent reads one SSE event and returns its type and data. Comment
+// lines are skipped; multiple data lines are joined with newlines.
 func readSSEEvent(r *bufio.Reader) (event, data string, err error) {
 	var dataLines []string
 	for {

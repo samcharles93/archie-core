@@ -11,11 +11,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
-// Run executes every action playbook whose trigger matches input, in load
-// order. Each action goes through
-// InvokeOnce, so it fires at most once per (playbook, version, event,
-// action). A failure stops only its own playbook; the rest still run, and
-// the failures are returned joined, each naming its playbook and action.
+// Run executes every matching action playbook in load order, each action at
+// most once. A failure stops only its playbook; failures are returned
+// joined.
 func (s *Store) Run(ctx context.Context, ledger storecontract.PlaybookDispatcher, log *slog.Logger, input DispatchInput) error {
 	if s == nil {
 		return nil

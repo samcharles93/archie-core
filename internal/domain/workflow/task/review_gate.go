@@ -6,22 +6,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// ReviewGate is the operator-approval gate's whole conversation with the
-// operator, encoded on the task's review_gate column
-//
-// It lives with the task record it encodes, the way EncodeInputs does, for the
-// same reason: the dashboard process renders and answers a gate, and it must
-// not link the workflow engine that owns the finding type the pipeline reads.
-// The findings therefore cross this document as opaque JSON beside the key an
-// operator's selection names (ReviewGateFinding); only the pipeline decodes
-// them.
-//
-// The offer half -- the findings, the head SHA, the pull request's identity
-// and the workflow the wait resumes -- is written by the gate stage before it
-// ends the run in waiting_human. The answer half -- the outcome, the finding
-// keys an approve posts and the instructions a re-review carries -- is
-// written back by the response path in the guarded requeue that clears the
-// wait.
+// ReviewGate is the operator-approval gate document stored on the task: the
+// offered findings and context, and the operator's answer.
 type ReviewGate struct {
 	// Findings is the review the operator is answering. An approve keeps it
 	// (the resumed run posts it, filtered by Selection); a re-review's

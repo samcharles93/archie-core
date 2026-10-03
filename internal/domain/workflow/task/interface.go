@@ -62,11 +62,7 @@ type WorkflowInterface struct {
 	DeclaredNeeds WorkflowNeeds `yaml:"needs" json:"needs"`
 }
 
-// Needs reports the harness requirements the interface carries: the declared
-// needs, plus the captures a declared output forces, because an output is
-// written through a capture tool. Profile selection reads this rather than
-// DeclaredNeeds, so a workflow that declares outputs cannot name a Kit profile
-// whose harness serves no capture tools.
+// Needs returns the declared needs plus captures when outputs are declared.
 func (w WorkflowInterface) Needs() WorkflowNeeds {
 	needs := w.DeclaredNeeds
 	if len(w.Outputs) > 0 {
@@ -160,12 +156,8 @@ func (w WorkflowInterface) CheckInputs(values map[string]any) error {
 	return nil
 }
 
-// CheckOutputs rejects declared-output values that do not satisfy the
-// declared outputs: the same rules CheckInputs applies to inputs (required,
-// undeclared, wrong type), read from the other side of the interface.
-// A written null
-// counts as not written, as CheckInputs treats a null input; an unwritten
-// optional output leaves its key absent rather than null.
+// CheckOutputs validates output values against the declared outputs. Null
+// counts as not written.
 func (w WorkflowInterface) CheckOutputs(values map[string]any) error {
 	for name, spec := range w.Outputs {
 		v, ok := values[name]

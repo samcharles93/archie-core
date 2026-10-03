@@ -13,17 +13,8 @@ import (
 	"strings"
 )
 
-// BlastRadius returns the files inside fsys that a change reaches without
-// touching: the files that import a changed file, and the files a changed file
-// imports. It is the review's other half -- a line that breaks its callers
-// still compiles, so the callers have to be read even though the diff never
-// mentions them.
-//
-// Paths are relative to fsys's root and are matched as the diff wrote them. An
-// import that cannot be resolved to a file inside fsys -- a standard library
-// package, a node module, a file this snapshot does not carry -- contributes
-// nothing: a guessed path would put a file nobody can open into the review's
-// scope.
+// BlastRadius returns the files that import a changed file or that a changed
+// file imports. Unresolvable imports are ignored.
 func BlastRadius(fsys fs.FS, changed []string) ([]string, error) {
 	graph, err := buildImportGraph(fsys)
 	if err != nil {
@@ -51,11 +42,8 @@ func BlastRadius(fsys fs.FS, changed []string) ([]string, error) {
 	return radius, nil
 }
 
-// ExposureCounts returns, for every file the change reaches without touching,
-// how many changed files reach it: a fan-in count computed from the same
-// import graph BlastRadius walks. It is BlastRadius's detail, not its
-// replacement -- the coverage gate needs to tell a file three unrelated
-// changed files each reach apart from one only one of them happens to import.
+// ExposureCounts returns, for each file BlastRadius reaches, how many changed
+// files reach it.
 func ExposureCounts(fsys fs.FS, changed []string) (map[string]int, error) {
 	graph, err := buildImportGraph(fsys)
 	if err != nil {
@@ -174,14 +162,8 @@ func modulePath(fsys fs.FS) (string, error) {
 	return "", nil
 }
 
-// goPackageFiles maps every Go import path this snapshot owns to the files
-// that package contains. The module path is what turns a directory into an
-// import path, so an import resolves only when a directory of the snapshot
-// really is the package that path names.
-//
-// A _test.go file is left out: it is never part of what an importer compiles,
-// so no import path resolves to one. A test file's own imports are still edges
-// of its own -- a test that exercises the change is read with it.
+// goPackageFiles maps each Go import path in the snapshot to its non-test
+// files.
 func goPackageFiles(paths []string, module string) map[string][]string {
 	if module == "" {
 		return nil

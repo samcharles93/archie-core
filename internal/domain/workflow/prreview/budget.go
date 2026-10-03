@@ -10,16 +10,8 @@ type Budget struct {
 	WallClock time.Duration
 }
 
-// PhaseExhausted reports whether phase (1-based, counting the phase about to
-// start) has already spent its share, given how much of the run's total
-// budget every phase up to and including it is allotted out of phases total.
-//
-// The check is against the cumulative allotment through phase, not phase's
-// own isolated slice: an earlier phase's underspend is not wasted, but its
-// overspend still eats into a later phase's share. That is what "a phase
-// whose share is spent is skipped" means for a phase that has not started
-// yet and so has spent nothing of its own -- the run's spend so far is
-// compared against how much the whole run should have spent by this point.
+// PhaseExhausted reports whether the run's spend exceeds the cumulative share
+// allotted through phase (1-based) of phases.
 func (b Budget) PhaseExhausted(phase, phases, tokensSpent int, elapsed time.Duration) bool {
 	if phase <= 0 || phases <= 0 {
 		return false

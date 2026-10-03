@@ -136,14 +136,8 @@ type ScoreInputs struct {
 	BlastRadiusFiles int
 }
 
-// Score drops the findings under their severity's confidence floor, scores
-// what is left, merges the duplicates among the survivors and ranks the rest by
-// score. The same findings always produce the same scores and the same order,
-// whatever order they were handed in.
-//
-// The floor comes before the merge, so a discarded finding cannot shadow a kept
-// one, and the merge is a clustering rather than a scan, so a chain of
-// overlapping findings collapses the same way however it was listed.
+// Score drops findings below their severity's confidence floor, scores and
+// merges the rest, and ranks them. The result is deterministic.
 func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 	scored := make([]ScoredFinding, 0, len(findings))
 	for _, finding := range findings {
@@ -202,17 +196,9 @@ func sameKey(a, b ScoredFinding) bool {
 	return a.File == b.File && a.Category == b.Category
 }
 
-// mergeRun unions the overlapping ranges of one (file, category) group into
-// clusters. The group arrives ordered by line, so a cluster is a run of members
-// whose start is inside the range the run has already covered -- which is what
-// makes the overlap transitive: 1-2, 2-3 and 3-4 are one cluster even though
-// 1-2 and 3-4 do not touch. A run that begins where the previous one ended is
-// two clusters: line 13 and the range 10-12 are two places.
-//
-// The cluster contributes the highest-scoring member, because that is the one
-// that says the most, over the union of the cluster's lines, because the
-// cluster is the claim and it covers every line of it. It is blocking when any
-// member is: a merge may discard wording, never a verdict.
+// mergeRun merges overlapping line ranges in one (file, category) group,
+// keeping the best-scoring member over the union of lines. Blocking if any
+// member is.
 func mergeRun(group []ScoredFinding) []ScoredFinding {
 	clusters := make([]findingCluster, 0, len(group))
 	for _, member := range group {
@@ -230,11 +216,7 @@ func mergeRun(group []ScoredFinding) []ScoredFinding {
 	return merged
 }
 
-// findingCluster is the run of overlapping findings one output finding stands
-// for: the best member's wording and score, the union of the members' lines,
-// and the disjunction of their verdicts. The best member is kept whole, so
-// choosing between two members reads the fields they carry and never the
-// cluster's widened range.
+// findingCluster is a run of overlapping findings.
 type findingCluster struct {
 	best     ScoredFinding
 	first    int
@@ -384,11 +366,8 @@ var severityAliases = map[Severity]Severity{
 	Severity("trivial"): SeverityNitpick,
 }
 
-// normalizeSeverity reads a severity as one of the rubric's four words, however
-// it is spelled or capitalised. A word the rubric does not know is read as a
-// suggestion: the lowest weight that keeps a plausible finding in the review
-// rather than the highest, because an unrecognised word is not evidence of
-// severity.
+// normalizeSeverity maps a severity to one of the four rubric words;
+// unknown words become suggestion.
 func normalizeSeverity(severity Severity) Severity {
 	lowered := Severity(strings.ToLower(strings.TrimSpace(string(severity))))
 	switch lowered {
@@ -426,11 +405,8 @@ func IsHighPriority(f Finding) bool {
 	}
 }
 
-// ReviewEventFor decides the event a review is submitted with: a blocking
-// finding requests changes, and anything else -- including a review that found
-// nothing -- is a comment. A pipeline that found nothing has said nothing about
-// the change, and an approval from a reviewer that did not look is worse than
-// silence.
+// ReviewEventFor returns REQUEST_CHANGES when any finding blocks, else
+// COMMENT. It never approves.
 func ReviewEventFor(findings []ScoredFinding) ReviewEvent {
 	for _, finding := range findings {
 		if finding.Blocking {

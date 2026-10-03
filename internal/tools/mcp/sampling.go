@@ -54,11 +54,8 @@ type SamplingResult struct {
 	StopReason string          `json:"stopReason,omitempty"`
 }
 
-// SamplingHandler answers one server-initiated sampling request from a
-// configured model. It returns a Go error for a refused or failed
-// completion; the client maps that to a JSON-RPC internal error so the
-// server sees the failure for its own request only, never a dropped
-// session.
+// SamplingHandler answers a server's sampling request. Errors become JSON-RPC
+// internal errors.
 type SamplingHandler func(ctx context.Context, req SamplingRequest) (SamplingResult, error)
 
 // ServerRequestHandler answers one request the MCP server sent to this

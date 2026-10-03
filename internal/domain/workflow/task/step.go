@@ -40,11 +40,7 @@ type StepStart struct {
 	ParentID int64
 	Kind     string
 	Name     string
-	// CalledExecutionID names the WorkflowExecution a `call` step started.
-	// The store refuses a value that is not the caller's own callee (the
-	// callee's call_parent_task_id must name this execution), so a step's
-	// tree cannot cross runs: a cancel of that execution would otherwise
-	// cancel work the caller never started. Non-call kinds leave it 0.
+	// CalledExecutionID is the execution a call step started; 0 for other kinds.
 	CalledExecutionID int64
 }
 

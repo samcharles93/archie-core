@@ -42,11 +42,8 @@ type deps struct {
 	Denials    access.DenialStore
 }
 
-// compose builds the dashboard server for the UI process from contract-backed
-// dependencies only. Fields left at zero are daemon-local handles; their
-// handlers answer 501/503 or empty. Config writes stay with the daemon. Task
-// logs are read through the State Store, and this process is the only listener
-// for POST /webhooks/capture/{source}.
+// compose builds the dashboard server from contract-backed dependencies.
+// Unset fields answer 501/503 or empty.
 func compose(d deps) *webui.Server {
 	srv := &webui.Server{
 		Store:                 d.Store,
@@ -84,12 +81,8 @@ func compose(d deps) *webui.Server {
 	if bindings, ok := d.Store.(storecontract.BindingStore); ok {
 		srv.Bindings = bindings
 	}
-	// Harness OAuth token sets are a ratified State Store contract, and the
-	// same client already carries them. Withholding it would leave the
-	// harness page answering 503 on a deployment that has the store.
-	// The setup terminal itself is not wired here: its
-	// implementation owns a container, which this process must not link, so
-	// the route stays a documented 503 until a daemon-side contract exists.
+	// Harness token status comes from the State Store; the setup terminal is not
+	// available here.
 	if secrets, ok := d.Store.(storecontract.HarnessSecretStore); ok {
 		srv.HarnessSecrets = secrets
 	}
@@ -99,12 +92,7 @@ func compose(d deps) *webui.Server {
 	if d.Chat != nil {
 		srv.Chat = &webui.ChatService{Contract: d.Chat}
 	}
-	// The task-log read crosses the State Store contract: the files live in
-	// the state directory that process owns, so this one asks for the log
-	// rather than opening a path. Withholding
-	// it would degrade a page that has an owner, and would leave the dashboard
-	// claiming task logging was not enabled -- see wireTaskLogs.
-	// The policy chain: wired together or not at all
+	// The policy chain: wired together or not at all.
 	srv.Access = d.Access
 	srv.Principals = d.Principals
 	srv.Denials = d.Denials
@@ -128,12 +116,8 @@ func wireTaskLogs(d deps, srv *webui.Server) {
 	srv.TaskLogs = logs
 }
 
-// wireCaptureSurfaces attaches the capture read, the source editor and the
-// intake receiver. All resolve from d.Store's contracts: CaptureStore backs
-// the inspector's list and the mapping preview's scan window, SourceStore
-// resolves the source whose signing setting verifies an event. A store that
-// does not implement one degrades that half with a warning rather than
-// aborting the process, mirroring the daemon's own adapter selection.
+// wireCaptureSurfaces attaches capture listing, source editing and intake. A
+// store missing a contract degrades that part with a warning.
 func wireCaptureSurfaces(d deps, srv *webui.Server) {
 	captures, hasCaptures := d.Store.(storecontract.CaptureStore)
 	sources, hasSources := d.Store.(storecontract.SourceStore)
@@ -164,12 +148,8 @@ func wireCaptureSurfaces(d deps, srv *webui.Server) {
 	}
 }
 
-// captureArrivalPublisher persists a capture's arrival event through the
-// State Store, where the daemon's bus drain persists every other activity
-// event; the event pump then delivers it to every connected browser. A nil
-// store records captures without announcing them (compose's test-only
-// shape); an insert failure is logged, not surfaced -- the capture row is
-// already durable, and the inspector refetches on its next view.
+// captureArrivalPublisher persists a capture's arrival event. Failures are
+// logged.
 func captureArrivalPublisher(d deps) func(context.Context, events.Event) {
 	if d.Store == nil {
 		return nil

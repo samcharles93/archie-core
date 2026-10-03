@@ -1,9 +1,4 @@
-// Package mcp implements the Model Context Protocol (MCP) transport layer.
-//
-// The stdio transport manages an MCP server subprocess over stdin/stdout
-// using JSON-RPC 2.0 message framing with Content-Length headers (the same
-// framing used by LSP). This is the foundational transport that most local
-// MCP servers use.
+// Package mcp implements an MCP client over stdio, HTTP and SSE transports.
 package mcp
 
 import "encoding/json"

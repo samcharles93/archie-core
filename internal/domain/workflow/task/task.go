@@ -1,10 +1,5 @@
-// Package task is the task-execution vocabulary of the workflow domain:
-// the Task record, its lifecycle statuses, and the narrow Store contract
-// workflow stages call mid-run. It split out of package workflow
-// so the UI process can hold the vocabulary without
-// linking the pipeline engine there -- which drags in agentexec, skill and
-// tools. package workflow keeps aliases, so daemon-side callers are
-// unaffected.
+// Package task defines the Task record, its statuses and the Store contract
+// workflow stages use.
 package task
 
 import (
@@ -66,13 +61,8 @@ type Task struct {
 	// (parking-to-queued transitions). When it reaches the configured
 	// max_retries the daemon moves the task to StatusDead.
 	RetryCount int `json:"retry_count"`
-	// RetryMode is the operator's worktree choice for the next dispatch of this
-	// task (taskstate.RetryMode): refresh onto the base branch, or continue the
-	// work already pushed on Branch. The retry action writes it -- and the
-	// reaction consumer writes continue when it queues a remediation -- and the
-	// daemon's prepareWorkspace reads it to position the worktree. Empty reads
-	// as the explicit default, RefreshOntoBase; it is never inferred from the
-	// workflow at dispatch.
+	// RetryMode is the worktree mode for the next dispatch; empty means
+	// RefreshOntoBase.
 	RetryMode string `json:"retry_mode"`
 	// WatchCommentID is the poll backstop's high-water mark over forge
 	// review-comment IDs for this task (pr-review-remediation.md decision
@@ -84,11 +74,8 @@ type Task struct {
 	// and comment IDs are independent forge sequences, and one combined
 	// cursor would silently skip reviews once a larger comment ID landed.
 	ReviewCursor int64 `json:"review_cursor"`
-	// Source is "forge" (default; a real forge issue backs this task) or
-	// "chat" (created via /spawn with no forge issue). Workflow stages
-	// and daemon reconciliation must skip forge-only operations (issue
-	// labels, comments, replies) for chat-sourced tasks; IssueNumber on
-	// a chat task is a synthetic value, not a real forge issue.
+	// Source is "forge" or "chat". Chat tasks have a synthetic IssueNumber and
+	// skip forge operations.
 	Source string `json:"source"`
 	// Identity is the archie identity that owns this task (chat-spawned
 	// tasks only; empty for forge-sourced tasks and single-identity
@@ -110,47 +97,22 @@ type Task struct {
 	// the workflow's declared inputs at dispatch. They reach the agent as
 	// structured data, never as body text.
 	Inputs map[string]any `json:"inputs,omitempty"`
-	// Outputs are the structured results this run wrote to the workflow's
-	// declared outputs. The set is
-	// attempt-scoped: a claim starts the next attempt with an empty set and
-	// the finish write replaces the row's set wholesale. Callers read these
-	// only from a successful terminal state, through WorkflowCallStatus.
+	// Outputs are this attempt's declared outputs.
 	Outputs map[string]any `json:"outputs,omitempty"`
-	// ReviewPayload is the JSON-encoded review unit (the forge review's
-	// actionable comments) the remediate workflow's current run must address.
-	// The daemon's reaction consumer injects it before queuing a remediation
-	// run, so the run is recoverable from the task record itself rather than
-	// only from a prompt. Empty outside a remediation run. RetryCount doubles
-	// as the remediation round counter for this same task, bounded by the
-	// repo's existing max_retries (decision 5's round cap).
+	// ReviewPayload is the JSON review unit the remediate run must address.
 	ReviewPayload string `json:"review_payload"`
 	// ParkClass is the producer-recorded answer to "what kind of
 	// intervention does this park need?" (taskstate.ParkClass). Set at the
 	// park site, never inferred from reason text; needs_human is the
 	// default an unclassified park reads as.
 	ParkClass string `json:"park_class"`
-	// RemediationRounds counts review-triggered remediation rounds,
-	// bounded by the repo's max_retries (pr-review-remediation.md
-	// decision 5). Deliberately separate from RetryCount, the operator
-	// budget: one shared counter made N operator retries eat the
-	// review-remediation budget and vice versa.
+	// RemediationRounds counts review-triggered remediation rounds.
 	RemediationRounds int `json:"remediation_rounds"`
-	// ReviewGate is the operator-approval gate's whole conversation with the
-	// operator, persisted as one JSON document (prreview.EncodeReviewGate): the
-	// offer the gate writes before it waits for an operator -- the scored
-	// findings, the head SHA, the pull request's identity and the workflow the
-	// wait resumes -- and the answer the response path fills in -- the outcome,
-	// the selected findings' keys for an approve and the instructions for a
-	// re-review. Without it, "post the selected findings" cannot mean the
-	// findings the operator saw: the resumed run recomputes them with agent
-	// calls. Empty for a task that never reached the gate.
+	// ReviewGate is the encoded review gate document; empty if the task never
+	// reached the gate.
 	ReviewGate string `json:"review_gate"`
-	// RereviewRounds counts how many operator re-reviews the pr-review gate
-	// granted, incremented in the same guarded write that requeues the
-	// re-review and capped at prreview.MaxRereviewRounds.
-	// Deliberately
-	// separate from both RetryCount and RemediationRounds -- one shared
-	// counter made unrelated retries draw another phase's budget down.
+	// RereviewRounds counts operator re-reviews, capped at
+	// prreview.MaxRereviewRounds.
 	RereviewRounds int `json:"rereview_rounds"`
 	// CallParentTaskID is the task whose workflow.call step started this
 	// one; 0 on a root run. A caller reads only the tasks it started,
@@ -182,14 +144,7 @@ func (t Task) IsForgeBacked() bool {
 	return t.Source != SourceChat
 }
 
-// EffectivePRNumber resolves the pull request a pr-review task targets:
-// PRNumber when a producer already set it directly (archie's own PRs, which
-// never goes through binding/chat input assignment), otherwise the pr_number
-// input a binding (watched repositories) or a chat task (the operator
-// trigger) assigned generically through Inputs. Returns 0 when neither is
-// set. DecodeInputs (the store's round-trip) decodes a JSON number as
-// json.Number; a caller that built Inputs by hand in Go may use float64 or
-// int instead, so all three are accepted.
+// EffectivePRNumber returns PRNumber, else the pr_number input, else 0.
 func (t Task) EffectivePRNumber() int {
 	if t.PRNumber != 0 {
 		return t.PRNumber
@@ -218,12 +173,8 @@ type Store interface {
 	Update(ctx context.Context, t *Task) error
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
 	InsertEvent(ctx context.Context, e events.Event) (int64, error)
-	// StartStep records a StepExecution entering running:
-	// the store creates the row,
-	// enforces the step transition table and the execution's own status, and
-	// writes the transition's stage_start event in the same transaction. It
-	// returns the step's id and the persisted event, which the caller publishes
-	// to its bus after the write commits.
+	// StartStep records a step entering running and returns its id and the
+	// persisted event.
 	StartStep(ctx context.Context, s StepStart) (int64, events.Event, error)
 	// FinishStep moves one step to its outcome under the same table, writing
 	// the stage_finish event in the same transaction, and returns that event
@@ -231,11 +182,7 @@ type Store interface {
 	FinishStep(ctx context.Context, s StepFinish) (events.Event, error)
 }
 
-// Definition is the operator-safe snapshot of an executable workflow. It
-// contains only identity and stage order, never executable function values.
-// It lives with the task vocabulary (not with the engine in package
-// workflow) for the same reason this package exists: dashboards render
-// Definitions without linking the engine.
+// Definition is a workflow's id and stage order.
 type Definition struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`

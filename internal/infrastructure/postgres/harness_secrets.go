@@ -73,11 +73,8 @@ func (s *EDA) PutHarnessSecret(ctx context.Context, secret harnesssecret.Secret)
 	return nil
 }
 
-// sealHarnessSecret JSON-marshals the token set and encrypts it under
-// bindingcipher.HarnessSecretDomain -- its own domain separator, distinct
-// from BindingDomain's, so a row cannot be relocated between the two tables
-// and still authenticate. OAuth tokens require a configured encryption key;
-// the binding store's legacy plaintext fallback does not apply here.
+// sealHarnessSecret encrypts the token set under HarnessSecretDomain. An
+// encryption key is required.
 func (s *EDA) sealHarnessSecret(payload harnessSecretPayload) (string, error) {
 	if s.cipher == nil {
 		return "", errors.New("postgres: harness secrets require an encryption key")

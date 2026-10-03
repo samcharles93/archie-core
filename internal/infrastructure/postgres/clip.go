@@ -7,11 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// clip limits s to n bytes without splitting a UTF-8 rune. It is the exact
-// write-side normalisation the SQLite store applied before inserting event
-// detail, transition detail, park reasons and review payloads: a generated
-// query that drops it lets an oversized value through where the old store
-// truncated it.
+// clip limits s to n bytes without splitting a UTF-8 rune.
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s

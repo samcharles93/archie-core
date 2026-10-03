@@ -20,13 +20,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// buildAccessChain loads the stored policies over the wire and builds the
-// engine. The wire client satisfies the two access contracts the dashboard
-// needs alongside the engine.
-// buildAccessChain loads the stored policies over the wire and builds the
-// engine. A State Store serving no policies has no chain to evaluate: the
-// dashboard degrades to the credential check rather than refusing to serve,
-// so an unavailable policy store is a warning, not a boot failure.
+// buildAccessChain loads stored policies and builds the access engine. With
+// no policies it returns nil and logs a warning.
 func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (access.Authorizer, []infraaccess.Problem, error) {
 	stored, err := store.ListPolicies(ctx)
 	if err != nil {
@@ -138,11 +133,8 @@ func Run(ctx context.Context, options Options) error {
 	return serve(ctx, listener, srv.Handler(), opts)
 }
 
-// serve runs handler on listener until ctx ends, then shuts the HTTP server
-// down within ShutdownTimeout so in-flight dashboard requests finish before
-// the contract clients close. A graceful shutdown that overruns its deadline
-// is a normal shutdown under load, not a process failure: the remaining
-// connections are force-closed and serve reports clean.
+// serve runs handler until ctx ends, then shuts down within
+// ShutdownTimeout.
 func serve(ctx context.Context, listener net.Listener, handler http.Handler, opts Options) error {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: opts.ReadHeaderTimeout}
 	serveErr := make(chan error, 1)

@@ -10,17 +10,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
-// InvokeOnce runs one playbook action at most once per
-// (playbook, version, event, action) tuple, record-before-invoke: the ledger
-// row is committed before fn runs, so a redelivered action (the same
-// structural key) skips without repeating a non-revocable side effect.
-// The structural key is computed
-// from Decision.PlaybookID, Decision.Version, input.TaskID (the event_id) and
-// Decision.ActionID; when the action declares no id the 1-based
-// Decision.ActionPosition is used instead -- it is never a CEL expression. A
-// key with an empty component (or no fallback position) is rejected before
-// the ledger write rather than recorded as a degenerate row that collapses
-// distinct events onto one key.
+// InvokeOnce runs fn at most once per (playbook, version, event, action),
+// recording the ledger row first. The action's id, or its position, keys the
+// action; a key with an empty part is refused.
 func InvokeOnce(ctx context.Context, ledger storecontract.PlaybookDispatcher, log *slog.Logger, decision Decision, input DispatchInput, fn func(context.Context) error) error {
 	if decision.ActionID == "" && decision.ActionPosition < 1 {
 		return fmt.Errorf("playbook action has no id and no 1-based position (playbook_id=%q)", decision.PlaybookID)

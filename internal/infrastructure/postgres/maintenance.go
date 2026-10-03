@@ -89,11 +89,8 @@ func AcquireAll(ctx context.Context, pool *pgxpool.Pool, names []string) (releas
 	return release, nil
 }
 
-// Backup writes a whole-database pg_dump archive to out. It takes no claim:
-// pg_dump reads one consistent snapshot, so it is safe against serving
-// processes, which is what the update installer needs. The archive goes to a
-// scratch file and replaces out only once pg_restore can read it back, so a
-// failed run never costs the previous good snapshot.
+// Backup writes a pg_dump archive to out, replacing it only once pg_restore
+// can read the new archive.
 func Backup(ctx context.Context, databaseURL, out string) error {
 	tmp, err := os.CreateTemp(filepath.Dir(out), filepath.Base(out)+".tmp*")
 	if err != nil {
@@ -134,14 +131,9 @@ func ValidateSnapshot(ctx context.Context, path string) ([]string, error) {
 	return tables, nil
 }
 
-// Restore replaces the whole database with the snapshot at from. It is
-// destructive: every write after the snapshot is lost. It refuses unless it
-// can claim every service role, so no serving process is running and none can
-// start until it finishes; a claim that cannot be checked is a refusal too.
-//
-// pg_restore --clean drops only what the archive holds, so tables a later
-// migration created are dropped first; otherwise they would survive into the
-// restored schema and break the next upgrade's migration.
+// Restore replaces the whole database with the snapshot at from. It refuses
+// unless it can claim every service role. Tables the archive lacks are
+// dropped first.
 func Restore(ctx context.Context, databaseURL, from string) error {
 	tables, err := ValidateSnapshot(ctx, from)
 	if err != nil {

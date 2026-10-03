@@ -1,11 +1,3 @@
-// Orgs, workspaces, memberships and agent assignments: the Postgres
-// implementation of internal/domain/org's contracts, plus the resumable
-// default org/workspace upgrade the State Store runs at boot
-//
-// The upgrade refuses nothing itself; the refusal to serve scoped calls
-// until it has finished is enforced by the boot order -- the State Store
-// runs this upgrade before its gRPC listener starts, and a failed upgrade
-// fails the boot (fail closed) rather than serving records with no org.
 package postgres
 
 import (
@@ -244,10 +236,7 @@ func (s *Store) UpgradeDefaultOrg(ctx context.Context) error {
 }
 
 // runUpgradePhase stamps one phase's tables and records its ledger row in one
-// transaction, after making sure the default org and workspace exist and
-// every agent identity belongs to the default org. An interrupted phase
-// leaves no ledger row, so the next start re-runs it from the beginning --
-// every stamp is idempotent on rows the upgrade has not covered yet.
+// transaction. An interrupted phase reruns from the start.
 func (s *Store) runUpgradePhase(ctx context.Context, name string, stamps []func(context.Context, *postgresdb.Queries) (int64, error)) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

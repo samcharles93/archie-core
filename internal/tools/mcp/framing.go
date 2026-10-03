@@ -21,13 +21,8 @@ func writeMessage(w io.Writer, data []byte) error {
 	return err
 }
 
-// readMessage reads one newline-delimited JSON-RPC message from r and returns
-// the raw JSON bytes without its line ending.
-//
-// r must be a *bufio.Reader. Callers that hold a plain io.Reader should
-// wrap it once with bufio.NewReader and reuse that wrapper across
-// multiple readMessage calls  --  creating a new bufio.Reader per call
-// silently drops buffered data and breaks multi-message streams.
+// readMessage reads one newline-delimited JSON-RPC message from r, which must
+// be a reused *bufio.Reader.
 func readMessage(r io.Reader) ([]byte, error) {
 	br, ok := r.(*bufio.Reader)
 	if !ok {

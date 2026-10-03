@@ -1,12 +1,5 @@
-// Package prreview is the deterministic core of the PR review pipeline: diff
-// parsing, change clustering, blast radius, evidence extraction, scoring,
-// deduplication, line mapping and the review event. Everything the pipeline
-// can compute is computed here, so identical findings always produce identical
-// scores, order and verdicts, and the agents around them only reason.
-//
-// It imports the standard library only, and the workflow package imports it
-// rather than the reverse: code that cannot reach the store, the forge or the
-// worktree is code whose data boundary stays visible.
+// Package prreview is the deterministic part of the PR review pipeline: diff
+// parsing, clustering, blast radius, evidence, scoring and the review event.
 package prreview
 
 import (
@@ -123,21 +116,13 @@ const rootClusterName = "root"
 const (
 	gitFilePrefix = "diff --git "
 	devNull       = "/dev/null"
-	// oldSidePrefix and newSidePrefix are the a/ and b/ git puts in front of
-	// the two sides of its own diff. They are not part of the path: a finding
-	// anchored to "b/x" names a file the snapshot does not have. A plain
-	// unified diff written by another tool carries no prefix, and a path whose
-	// first directory really is "a" or "b" keeps it, because only its own
-	// side's prefix is stripped.
+	// Git's a/ and b/ path prefixes, stripped from their own side only.
 	oldSidePrefix = "a/"
 	newSidePrefix = "b/"
 )
 
-// gitHeaderPaths reads both paths out of a "diff --git" line, each without its
-// side prefix. git writes the paths plainly, or C-quoted when one of them holds
-// something it has to escape -- and a quoted line names both sides in quotes,
-// because a path that needs escaping is exactly a path this line could not be
-// split on a space.
+// gitHeaderPaths returns both paths from a "diff --git" line, unquoted and
+// without prefixes.
 func gitHeaderPaths(line string) (oldPath, newPath string) {
 	rest := strings.TrimPrefix(line, gitFilePrefix)
 	if oldField, remaining, quoted := quotedField(rest); quoted {
@@ -152,11 +137,7 @@ func gitHeaderPaths(line string) (oldPath, newPath string) {
 	return strings.TrimPrefix(rest[:split], oldSidePrefix), strings.TrimRight(rest[split+len(" b/"):], " \r")
 }
 
-// headerPath reads the path out of a "--- " or "+++ " header: git's "b/main.go",
-// a plain unified diff's path with a timestamp after a tab, a /dev/null side, or
-// the C-quoted form git writes for a path it has to escape. side is the prefix
-// that side of a git diff carries; it is stripped here and only here, so the
-// other side's prefix survives in a path that happens to start with it.
+// headerPath returns the path from a "--- " or "+++ " header, stripping side.
 func headerPath(field, side string) string {
 	if quoted, _, ok := quotedField(field); ok {
 		return strings.TrimPrefix(unquotePath(quoted), side)
@@ -265,11 +246,7 @@ func parseFileType(field string) int {
 // "@@" may contain anything, so nothing after it is matched.
 var hunkHeaderRE = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
-// fileInProgress is the parser's state for the file section it is inside. The
-// section's headers are read into it as facts -- which paths, what kind of
-// change, which object type -- and close() turns those facts into one status,
-// so the status is a statement about the section and not about the line of it
-// that happened to come last.
+// fileInProgress is the parser state for the current file section.
 type fileInProgress struct {
 	change  FileChange
 	oldPath string
@@ -314,11 +291,7 @@ func newSectionInProgress(line string) *fileInProgress {
 	return file
 }
 
-// note reads one of the file's own header lines: the old and new paths, the
-// /dev/null side that makes a file an addition or a deletion, the rename pair,
-// and the mode lines -- which say the same thing for a file whose patch has no
-// hunks at all. Anything else the section says -- index, similarity -- says
-// nothing about where the change is, which is all findings are positioned by.
+// note records one header line of the file section.
 func (f *fileInProgress) note(line string) {
 	switch {
 	case strings.HasPrefix(line, "--- "):
@@ -352,12 +325,7 @@ func (f *fileInProgress) note(line string) {
 	}
 }
 
-// status is what the section's own headers said the change did to the file,
-// read off every fact the section stated at once. A rename wins over a mode
-// change, because git reports a file that was renamed and had its mode changed
-// as a rename; an addition or a deletion wins over a type change, because a
-// file that was not there has no old type; and a mode change between two
-// permission sets of one object type is a modification, not a typechange.
+// status derives the file's change status from its headers.
 func (f *fileInProgress) status() FileStatus {
 	switch {
 	case f.renamed:
@@ -415,13 +383,8 @@ func headerPair(lines []string, index int) bool {
 	return index+1 < len(lines) && strings.HasPrefix(lines[index+1], "+++ ")
 }
 
-// opensNextFile reports whether the header pair at index begins the next file
-// rather than being body text of this one. A pair is body text -- a removed
-// line whose text begins "-- " followed by an added line whose text begins
-// "++ " -- while the open hunk is still waiting for the lines its header
-// counted; and a section has read its own "+++ " line before a pair can be
-// another file's, because the pair of the section being opened is its own
-// header.
+// opensNextFile reports whether the header pair at index starts the next
+// file rather than being hunk content.
 func (f *fileInProgress) opensNextFile(lines []string, index int) bool {
 	return f.headerSeen && !f.hunkOpen() && headerPair(lines, index)
 }
@@ -474,11 +437,7 @@ func (f *fileInProgress) close() FileChange {
 	return change
 }
 
-// ParseDiff parses a unified diff into per-file changes: the file sections
-// "diff --git" opens, the sections a "--- "/"+++ " header pair opens in a diff
-// that has no such line, their rename, mode and /dev/null headers, and the
-// hunks that carry the change. It is the one parser: every position, count and
-// path this package reports is read here.
+// ParseDiff parses a unified diff into per-file changes.
 func ParseDiff(diff string) []FileChange {
 	var (
 		files []FileChange

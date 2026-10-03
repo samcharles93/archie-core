@@ -10,13 +10,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 )
 
-// newReadinessRegistry builds the registry behind GET /health/detailed. The
-// UI is ready when both of its mandatory remote contracts answer within the
-// dependency timeout; each probe consumes the dependency's own result over
-// the wire and never inspects its manager, registry or database
-//
-// The component names match the daemon dashboard's, so the readiness view
-// reads the same whichever process serves it.
+// newReadinessRegistry builds the readiness probes for the Gateway and State
+// Store.
 func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messaging.ChatContract, problems []infraaccess.Problem) *health.Registry {
 	return health.NewRegistry(
 		readiness.NewProblemProbe("access_policies", problems),

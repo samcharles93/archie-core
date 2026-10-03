@@ -18,11 +18,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// Store is the PostgreSQL implementation of the State Store. It carries the
-// full task/event/identity/status surface behind the storecontract interfaces,
-// with the control-plane resource surface embedded from Resources. The pool is
-// process-scoped and owned by the composition (internal/app/archied), not by
-// the Store, so Close is a no-op.
+// Store is the PostgreSQL State Store. The pool belongs to the caller, so
+// Close is a no-op.
 type Store struct {
 	pool *pgxpool.Pool
 	*Resources
@@ -37,16 +34,9 @@ func (s *Store) queries() *postgresdb.Queries {
 	return postgresdb.New(s.pool)
 }
 
-// guardTransition locks the task's row and checks the status write the caller
-// is about to perform: a row whose status is not the expected from is stale
-// (ErrStaleTransition), a from->to pair outside the shared transition table is
-// refused with ErrIllegalTransition.
-// Staleness is decided first, so
-// a caller that is wrong about the row's state gets the stale sentinel even
-// when its pair is also unroutable. The row stays locked for the caller's
-// transaction, so the checks cannot race the guarded write that follows.
-// A missing row is stale, matching what the guarded update alone used to
-// return.
+// guardTransition locks the task row and checks the transition: a status
+// other than from is ErrStaleTransition, a disallowed pair is
+// ErrIllegalTransition. A missing row is stale.
 func guardTransition(ctx context.Context, q *postgresdb.Queries, taskID int64, from, to string) error {
 	status, err := q.LockTaskStatus(ctx, taskID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -74,11 +64,8 @@ func (s *Store) Close() error { return nil }
 // JSON-safe floor that keeps synthetic issue numbers clear of real ones.
 const syntheticIssueNumberBase = 1_000_000_000_000_000
 
-// structuredPayloadBytes is the write-side bound the store applies to a
-// structured payload (review_payload today, task outputs now). A value that
-// would exceed it is refused for outputs -- clipped JSON does not parse, and a
-// caller must receive an object or nothing -- where the legacy review payload
-// is still clipped.
+// structuredPayloadBytes bounds structured payloads. Oversized outputs are
+// refused; review payloads are clipped.
 const structuredPayloadBytes = 4000
 
 // taskFromRow maps the generated task row to the workflow.Task the daemon and
@@ -159,11 +146,8 @@ func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int
 	return n > 0, nil
 }
 
-// EnqueueChatTask inserts a queued chat-sourced task and returns the full row.
-// The store allocates the synthetic issue number durably so processes sharing
-// the database cannot generate the same value. inputs are the task's workflow
-// inputs (the operator trigger's pr_number, for instance); a chat task carries
-// no binding provenance, so the insert is the only writer of that column.
+// EnqueueChatTask inserts a queued chat task with a store-allocated synthetic
+// issue number.
 func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*workflow.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
@@ -226,11 +210,8 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 	return taskFromRow(t), nil
 }
 
-// Transition moves a task to a new status and records the audit detail. The
-// from status guards the update; a mismatch returns ErrStaleTransition without
-// writing an audit row, and a from->to pair outside the shared transition
-// table returns ErrIllegalTransition. Transitioning to parked also stores
-// detail as ParkReason in the same transaction.
+// Transition moves a task from `from` to `to` with an audit row. Parking
+// also stores detail as ParkReason.
 func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -295,11 +276,7 @@ func (s *Store) ParkTask(ctx context.Context, taskID int64, from, detail, class 
 
 // Update persists mutable task fields written by workflows.
 func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
-	// The row write is where a run's outputs land.
-	// An encoded set past the bound the store applies to a structured payload
-	// is refused rather than clipped: clipped JSON does not parse, and a caller
-	// would receive a broken object as a value. The engine turns the refusal
-	// into a park, so nothing silently loses its structured result.
+	// Oversized outputs are refused, not clipped.
 	outputs, err := task.EncodeOutputs(t.Outputs)
 	if err != nil {
 		return fmt.Errorf("store: encode task %d outputs: %w", t.ID, err)
@@ -414,12 +391,8 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, ret
 	})
 }
 
-// RespondReviewGate is the review gate response write:
-// one guarded
-// requeue that records the operator's answer, increments rereview_rounds for
-// a re-review only, and writes one audit row -- all in one transaction. The
-// cap is checked under the row lock the transition guard takes, so two
-// simultaneous re-reviews cannot both spend the last round.
+// RespondReviewGate records the operator's gate answer and requeues, counting
+// re-reviews against the cap under the row lock.
 func (s *Store) RespondReviewGate(ctx context.Context, taskID int64, fromStatus, gate string, rereview bool, maxRounds int) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -520,11 +493,8 @@ func (s *Store) ArchiveTask(ctx context.Context, taskID int64, fromStatus string
 	return eventID, nil
 }
 
-// RecoverStale re-queues tasks left running by a crashed or replaced daemon
-// and, in the same transaction, moves the steps those executions left running
-// to the step transition table's interrupted outcome: one event row per step
-// transition and the execution's audit row land in the same write. The next
-// attempt starts with fresh steps; earlier attempts are never rewritten.
+// RecoverStale requeues tasks left running and marks their running steps
+// interrupted, in one transaction.
 func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -671,12 +641,9 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 	return taskFromRow(t), nil
 }
 
-// StartCall enqueues the callee of callerTaskID's workflow.call step.
-// The store owns the table, so it re-checks
-// both runtime invariants the engine checks: the caller must be running and
-// the call must not pass workflow.MaxCallDepth. The callee inherits the
-// caller's org, workspace, identity, owner and repo, and takes a fresh
-// synthetic issue number, the same allocator chat tasks use.
+// StartCall enqueues a workflow.call callee inheriting the caller's org,
+// workspace, identity and repo. The caller must be running and within
+// workflow.MaxCallDepth.
 func (s *Store) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*workflow.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
@@ -703,11 +670,7 @@ func (s *Store) StartCall(ctx context.Context, callerTaskID int64, wf string, in
 	return taskFromRow(callee), nil
 }
 
-// callRefusal names why EnqueueCallTask inserted nothing. The three refusals
-// are distinct failures an operator reads differently: a missing caller is a
-// problem, a caller that is not running is a stale retry, and a depth
-// refusal is the limit doing its job. The two behavioural ones carry the
-// caller's detail in the log and the sentinel across the wire.
+// callRefusal explains why EnqueueCallTask inserted nothing.
 func (s *Store) callRefusal(ctx context.Context, callerTaskID int64) error {
 	caller, err := s.queries().TaskByID(ctx, callerTaskID)
 	if errors.Is(err, pgx.ErrNoRows) {

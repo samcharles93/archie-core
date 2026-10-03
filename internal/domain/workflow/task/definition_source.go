@@ -1,12 +1,7 @@
 package task
 
-// WorkflowDefinitionEntry is one workflow's portable YAML as the control plane
-// stores and serves it. YAML stays canonical and can be copied between Archie
-// installations.
-//
-// It lives with the task vocabulary rather than with the engine for the same
-// reason Definition does: a dashboard reads the stored collection without
-// linking the workflow engine, which the UI process must never pull in.
+// WorkflowDefinitionEntry is one workflow's YAML as stored in the control
+// plane.
 type WorkflowDefinitionEntry struct {
 	ID   string `json:"id"`
 	YAML string `json:"yaml"`

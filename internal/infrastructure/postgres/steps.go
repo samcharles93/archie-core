@@ -20,12 +20,8 @@ import (
 // bus after the write commits, and the daemon's event sink skips
 // already-persisted rows by their assigned ID -- the EmitDurable convention.
 
-// StartStep records a StepExecution entering running: the row is created
-// pending, guarded into running under the shared step transition table, and
-// the stage_start event is appended in the same transaction. The execution's
-// row is locked for the whole write, so its status check cannot race the
-// guarded updates, and org and workspace are stamped from it -- the request's
-// ownership fields are ignored, like every owned record.
+// StartStep creates a step and moves it to running, appending stage_start in
+// the same transaction. Org and workspace come from the execution row.
 func (s *Store) StartStep(ctx context.Context, start task.StepStart) (int64, events.Event, error) {
 	if !task.ValidStepKind(start.Kind) {
 		return 0, events.Event{}, fmt.Errorf("%w: unknown step kind %q", storecontract.ErrInvalidStep, start.Kind)
@@ -98,11 +94,8 @@ func (s *Store) StartStep(ctx context.Context, start task.StepStart) (int64, eve
 	return stepID, event, nil
 }
 
-// verifyCallStep refuses a call step whose callee is not this run's own:
-// the callee's call_parent_task_id must name the recording execution, or the
-// call step cannot record (a missing callee is the caller's stale view).
-// Without this check a cancel of the recording run would sweep work it never
-// started.
+// verifyCallStep refuses a call step whose callee is not this execution's
+// own.
 func (s *Store) verifyCallStep(ctx context.Context, q *postgresdb.Queries, start task.StepStart) error {
 	if start.CalledExecutionID == 0 {
 		return nil
@@ -151,11 +144,9 @@ type stepParentState struct {
 	underTerminal bool
 }
 
-// FinishStep moves one step to its outcome under the shared step transition
-// table, writing the stage_finish event in the same transaction and returning
-// it for the caller's post-commit publish. A step that is missing, that is
-// not the named execution's, or whose status does not match from is stale; an
-// off-table from->to pair is refused as an illegal transition.
+// FinishStep moves a step to its outcome and returns the stage_finish event.
+// A missing, foreign or mismatched step is stale; a disallowed pair is
+// illegal.
 func (s *Store) FinishStep(ctx context.Context, finish task.StepFinish) (events.Event, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -245,12 +236,8 @@ func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map
 	return data
 }
 
-// ListSteps reads one execution's recorded steps, every attempt oldest first
-// when attempt is 0, or just the one it names. It is the dashboard run
-// detail's authoritative source,
-// replacing the fold over stage_start/stage_finish events tasks.stage used to
-// back -- unlike StartStep/FinishStep, this is a plain read with no
-// transition to guard, so it takes no transaction.
+// ListSteps returns an execution's steps, for every attempt when attempt is
+// 0.
 func (s *Store) ListSteps(ctx context.Context, executionID int64, attempt int) ([]task.StepExecution, error) {
 	rows, err := s.queries().ListStepExecutions(ctx, postgresdb.ListStepExecutionsParams{
 		ExecutionID: executionID, Attempt: int64(attempt),
@@ -287,14 +274,8 @@ func stepParentID(parentID int64) pgtype.Int8 {
 	return pgtype.Int8{Int64: parentID, Valid: parentID != 0}
 }
 
-// CancelExecution is the one cancel path: one transaction moves every
-// non-terminal StepExecution of the execution's current attempt to cancelled --
-// one event row each -- and the execution itself to the status the operator
-// action names, under the shared execution transition table. Staleness is
-// decided before legality, as guardTransition decides it, and the audit row
-// lands in the same write. The caller cancels the in-memory context after this
-// commits; the worker's next step write then fails ErrStaleTransition and
-// stops.
+// CancelExecution cancels the current attempt's open steps and moves the
+// execution to `to`, in one transaction with events and an audit row.
 func (s *Store) CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -367,12 +348,8 @@ func (s *Store) CancelExecution(ctx context.Context, taskID int64, reason, to st
 	return ids, nil
 }
 
-// cancelWaitedCallees cancels each callee the caller was still waiting on
-// through its own CancelExecution, under its own lifecycle, in the caller's
-// write's aftermath -- the callee's own steps and its own move to the same
-// destination. A chain of calls is bounded by the call depth the enqueue
-// enforces, so the recursion is finite; a callee that cannot be cancelled is
-// reported, and the caller's own record stands either way.
+// cancelWaitedCallees cancels each callee the caller was waiting on.
+// Failures are reported; the caller's cancel stands.
 func (s *Store) cancelWaitedCallees(ctx context.Context, waiting []postgresdb.WaitingCallStepsRow, reason, to string) error {
 	var failures []error
 	for _, call := range waiting {

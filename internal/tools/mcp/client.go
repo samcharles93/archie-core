@@ -13,11 +13,7 @@ import (
 // protocolVersion is the MCP protocol version this client speaks.
 const protocolVersion = "2024-11-05"
 
-// Transport is the narrow interface Client depends on  --  satisfied by
-// [*StdioTransport]. Tests substitute a fake to avoid spawning a real
-// subprocess. Notify is separate from Send because a notification (no
-// "id") never gets a JSON-RPC response  --  a transport whose Send always
-// waits for a correlated reply would hang forever if asked to send one.
+// Transport sends requests and notifications to an MCP server.
 type Transport interface {
 	Send(ctx context.Context, body []byte) ([]byte, error)
 	Notify(ctx context.Context, body []byte) error
@@ -31,11 +27,7 @@ type Client struct {
 	transport  Transport
 	serverName string
 	nextID     atomic.Int64
-	// callMu serializes tools/call requests to this server. Most MCP
-	// servers are single-threaded processes and don't expect or handle
-	// concurrent requests safely, so serializing is the default. A server
-	// whose config declares it handles concurrent requests gets no callMu:
-	// nil means this server's calls are never held apart.
+	// callMu serializes tools/call to this server. Nil allows concurrent calls.
 	callMu *sync.Mutex
 	// samplingHandler answers server-initiated sampling/createMessage
 	// requests. Set once at construction, so reading it from a transport
@@ -54,15 +46,9 @@ func WithSamplingHandler(handler SamplingHandler) ClientOption {
 	return func(c *Client) { c.samplingHandler = handler }
 }
 
-// NewClient builds a Client over transport. serverName identifies this
-// MCP server in log/error messages; it need not match the server's own
-// self-reported name. parallelToolCalls drops the per-server serialization
-// of tools/call: false (the default) keeps one call in flight at a time,
-// true lets the caller's own concurrency through.
-//
-// A transport that can receive server-initiated requests gets this client
-// registered as their handler; one that cannot (the stateless HTTP
-// transport) has no server→client channel for them to arrive on.
+// NewClient builds a Client over transport. parallelToolCalls allows
+// concurrent tools/call. The client handles server-initiated requests when
+// the transport supports them.
 func NewClient(transport Transport, serverName string, parallelToolCalls bool, opts ...ClientOption) *Client {
 	c := &Client{transport: transport, serverName: serverName}
 	if !parallelToolCalls {
@@ -77,11 +63,8 @@ func NewClient(transport Transport, serverName string, parallelToolCalls bool, o
 	return c
 }
 
-// handleServerRequest dispatches one server-initiated request. The MCP spec
-// defines sampling/createMessage as the request a server sends to a client;
-// everything else is method-not-found. A request this client cannot answer
-// always gets an explicit JSON-RPC error response -- dropping it would leave
-// the server blocked on a reply that never comes.
+// handleServerRequest answers sampling/createMessage and returns
+// method-not-found for anything else.
 func (c *Client) handleServerRequest(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, *ErrorData) {
 	if method != "sampling/createMessage" {
 		return nil, &ErrorData{Code: ErrCodeMethodNotFound, Message: "method not found: " + method}
@@ -156,11 +139,8 @@ type ResourceContent struct {
 	Blob     string `json:"blob,omitempty"`
 }
 
-// CallToolResult is the result of tools/call. IsError reports a
-// tool-level failure (the call reached the tool, which then failed) as
-// distinct from a transport or JSON-RPC protocol error  --  the MCP spec
-// requires tool failures to be reported this way so the calling LLM sees
-// the failure content instead of a bare error.
+// CallToolResult is a tools/call result. IsError reports a tool-level
+// failure.
 type CallToolResult struct {
 	Content []ContentBlock `json:"content"`
 	IsError bool           `json:"isError,omitempty"`
@@ -212,11 +192,8 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolSchema, error) {
 	}
 }
 
-// CallTool invokes a tool by name with the given arguments. A non-nil
-// error means the call could not be completed at all (transport failure,
-// malformed response, unknown method). A tool that ran and failed is
-// reported via CallToolResult.IsError, not a Go error  --  see
-// [CallToolResult].
+// CallTool calls a tool. A Go error means the call failed; a tool failure is
+// CallToolResult.IsError.
 func (c *Client) CallTool(ctx context.Context, name string, arguments map[string]any) (CallToolResult, error) {
 	if c.callMu != nil {
 		c.callMu.Lock()

@@ -1,14 +1,5 @@
-// Package archieui composes the standalone UI Service: the operator-facing
-// HTTP surface and the compiled SPA, served against a Gateway and a State
-// Store running in other processes.
-//
-// The two rules that shape this package are that the UI owns only process-local
-// settings ("HTTP listen address and read/header/shutdown timeouts; UI asset
-// source or build mode; UI authentication mode and token reference; Gateway
-// endpoint and credential reference; State Store endpoint and credential
-// reference; readiness endpoint and dependency timeout policy"), and that it
-// "must never implement [configuration] policy by holding or mutating a shared
-// config.Holder".
+// Package archieui composes the standalone dashboard service, talking to the
+// Gateway and State Store over their contracts.
 package archieui
 
 import (
@@ -55,18 +46,12 @@ type Options struct {
 	// use. It is the explicit opt-in to a non-loopback listener: without it
 	// a reachable bind must be given a token.
 	TokenFile string
-	// OidcIssuer and OidcAudience are endpoint references for the identity
-	// provider, not configuration. The issuer is read for its discovery document
-	// and signing keys, and the audience is the resource identifier this process
-	// accepts credentials for. Both empty leaves the shared-token gate in place;
-	// an issuer with no audience is refused rather than accepted without the check.
+	// OidcIssuer and OidcAudience configure the identity provider. Both empty
+	// keeps the shared token; an issuer without an audience is refused.
 	OidcIssuer   string
 	OidcAudience string
-	// OidcClientID and OidcClientSecretEnv are the provider registration for the
-	// browser sign-in. The secret itself is never a flag: the flag names the
-	// environment variable holding it, so it cannot reach a process listing or a
-	// log line. No client id means no sign-in flow, which is what an instance
-	// that only accepts agent tokens wants.
+	// OidcClientID and OidcClientSecretEnv register the browser sign-in; the
+	// secret is read from the named env var. No client ID disables sign-in.
 	OidcClientID        string
 	OidcClientSecretEnv string
 	// OidcRedirectURL is the callback the provider returns the browser to. Its
@@ -77,15 +62,8 @@ type Options struct {
 	// operator did not say, and the file (else false) decides.
 	TrustForwardedHeaders *bool
 
-	// Capture configures the unbound webhook capture receiver this process
-	// mounts on its bypass mux. At the
-	// cutover this process is the only listener
-	// serving POST /webhooks/capture/{source}: the receiver persists what
-	// arrives through the State Store contract, and the daemon's
-	// binding-dispatch loop consumes captures from the same store, so the
-	// HTTP front door moves without moving the owner of work intake. Zero
-	// fields fall back to configuration.DefaultCapture, the same defaults a
-	// decoded config would carry.
+	// Capture configures the webhook capture receiver. Zero fields use
+	// configuration.DefaultCapture.
 	Capture CaptureOptions
 
 	// Gateway and State are the two remote contracts the dashboard consumes.

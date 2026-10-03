@@ -230,12 +230,9 @@ func (s *Store) BindSubject(ctx context.Context, id identity.IdentityID, subject
 	return tx.Commit(ctx)
 }
 
-// BootstrapIdentities seeds the system identity and the configured legacy
-// names idempotently, migrating any forge tasks that still carry a legacy
-// name to the stable id. Each legacy name is derived through
-// identity.FromLegacyName, so a name this store cannot turn into an identity is
-// reported rather than silently skipped -- the file loader refuses the same
-// names (configuration.validateIdentities).
+// BootstrapIdentities seeds the system identity and the legacy names, and
+// moves tasks carrying a legacy name to its stable id. Invalid names are
+// errors.
 func (s *Store) BootstrapIdentities(ctx context.Context, legacyNames []string) error {
 	values := make([]identity.Identity, 0, len(legacyNames)+1)
 	values = append(values, identity.System())

@@ -80,14 +80,8 @@ func (c StdioTransportConfig) effectiveShutdownGrace() time.Duration {
 
 // ── Transport ───────────────────────────────────────────────────────────
 
-// StdioTransport manages an MCP server subprocess, sending JSON-RPC 2.0
-// messages to its stdin and receiving responses from its stdout. Messages
-// use MCP's newline-delimited JSON framing.
-//
-// The transport supports automatic restart with exponential backoff when
-// the subprocess dies unexpectedly. Use [StdioTransport.Start] to begin,
-// [StdioTransport.Send] to exchange messages, and [StdioTransport.Stop]
-// to shut down cleanly.
+// StdioTransport runs an MCP server subprocess, exchanging newline-delimited
+// JSON-RPC over stdin/stdout, and restarts it with backoff when it dies.
 type StdioTransport struct {
 	config StdioTransportConfig
 
@@ -289,12 +283,7 @@ func (t *StdioTransport) Stop(_ context.Context) error {
 	return nil
 }
 
-// Send writes a JSON-RPC 2.0 request to the subprocess stdin and waits for
-// the matching response on stdout. It uses the "id" field from the JSON
-// body to correlate the response.
-//
-// Send returns an error if the transport is not running, if the write fails,
-// if the context is cancelled, or if the transport is stopped while waiting.
+// Send writes a request and waits for the response with the same id.
 func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) {
 	// Extract the message ID from the body for response correlation.
 	msgID, err := extractMessageID(body)
@@ -356,11 +345,7 @@ func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) 
 	}
 }
 
-// Notify writes a JSON-RPC 2.0 notification (a message with no "id") to
-// the subprocess stdin without waiting for a response  --  notifications
-// have none by definition. Using [StdioTransport.Send] for a
-// notification would hang until ctx is cancelled, since Send always
-// waits for a reply keyed by the (absent) id.
+// Notify writes a notification without waiting for a response.
 func (t *StdioTransport) Notify(ctx context.Context, body []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -397,20 +382,9 @@ func (t *StdioTransport) startSubprocess(ctx context.Context) error {
 	return t.commitSpawnedProcess(ctx, cmd, stdin, stdout, false)
 }
 
-// commitSpawnedProcess installs a freshly spawned subprocess as the
-// transport's active one and starts its reader goroutine. spawnProcess runs
-// without t.mu held (it performs a real fork/exec), so a concurrent Stop()
-// can close t.stopCh and commit StateStopped while a spawn is still in
-// flight. commitSpawnedProcess re-checks stopCh under the lock immediately
-// before committing: if Stop() already won, the just-spawned subprocess is
-// discarded (killed and reaped) instead of clobbering the Stopped state
-// Stop() already reported to its own caller. Both startSubprocess (a fresh
-// Start()) and attemptRestart's success path (a crash-triggered restart)
-// funnel through this single guarded commit point.
-//
-// resetStartupFailures resets the spawn-failure counter on success; it is
-// true only for attemptRestart, since Start() already resets both crash and
-// startup-failure counters itself before the first spawn attempt.
+// commitSpawnedProcess installs a spawned subprocess and starts its reader,
+// unless Stop has already run, in which case the process is killed.
+// resetStartupFailures resets the spawn-failure counter.
 func (t *StdioTransport) commitSpawnedProcess(ctx context.Context, cmd *exec.Cmd, stdin io.WriteCloser, stdout *bufio.Reader, resetStartupFailures bool) error {
 	t.mu.Lock()
 	if t.isStopped() {
@@ -615,14 +589,8 @@ func (t *StdioTransport) failAllPendingLocked() {
 	}
 }
 
-// attemptRestart runs the auto-restart loop with exponential backoff.
-// It is called after a subprocess crash and runs until either the
-// transport is stopped, max retries (for spawn failures) are exceeded,
-// or the subprocess successfully starts.
-//
-// Crash loops where the process starts but immediately dies are bounded
-// by exponential backoff growing up to MaxBackoff. Spawn failures
-// (binary not found, permissions, etc.) count against MaxRetries.
+// attemptRestart restarts a crashed subprocess with exponential backoff until
+// it starts, the transport stops, or spawn failures reach MaxRetries.
 func (t *StdioTransport) attemptRestart(ctx context.Context) {
 	for {
 		// Check preconditions under lock.
@@ -698,16 +666,8 @@ func (t *StdioTransport) computeBackoffLocked() time.Duration {
 	return d
 }
 
-// writeMessageWithTimeout writes a framed message to w, bounding the write
-// itself (not any subsequent response wait) by timeout. A non-positive
-// timeout writes with no bound, matching writeMessage directly.
-//
-// The write runs in a goroutine so a wedged writer (e.g. a full stdin pipe
-// because the subprocess has stopped reading) cannot block the caller past
-// timeout. Since io.Writer gives no way to cancel an in-flight Write, the
-// goroutine is left to finish on its own if the timeout fires; the errCh
-// buffer of 1 lets it deliver into a channel nobody is receiving on anymore
-// without leaking.
+// writeMessageWithTimeout writes a framed message, giving up after timeout. A
+// non-positive timeout waits indefinitely.
 func writeMessageWithTimeout(w io.Writer, data []byte, timeout time.Duration) error {
 	if timeout <= 0 {
 		return writeMessage(w, data)

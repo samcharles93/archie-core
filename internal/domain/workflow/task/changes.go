@@ -1,16 +1,6 @@
 package task
 
-// ChangeStats is the change one attempt produced, measured at the moment it
-// was committed or pushed.
-//
-// It is a measurement, not a view: the worktree it was read from is deleted on
-// merge, close and no-PR terminal states, and a retry resets the branch onto
-// its base, so this is the only record of what an attempt actually changed.
-// Nothing re-derives it after the fact.
-//
-// The value types live in this subpackage because package workflow must not
-// import internal/worktree. Both the workflow engine and persistence boundary
-// can use the measurement without depending on git infrastructure.
+// ChangeStats is what one attempt changed, measured at commit or push time.
 type ChangeStats struct {
 	BaseSHA string       `json:"base_sha"`
 	HeadSHA string       `json:"head_sha"`
@@ -53,9 +43,6 @@ const (
 	ChangeTypeChanged = "typechange"
 )
 
-// MaxCapturedFiles caps how many file entries one capture persists. Unlike
-// Event.Detail, an event's data is not length-limited by the store, so this cap
-// is what keeps one large refactor from writing an unbounded payload. A capture
-// that dropped entries keeps the totals of the full set and reports itself as
-// truncated.
+// MaxCapturedFiles caps the file entries one capture stores; totals still
+// cover all files.
 const MaxCapturedFiles = 200

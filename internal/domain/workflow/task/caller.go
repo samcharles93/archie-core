@@ -2,17 +2,10 @@ package task
 
 import "context"
 
-// Caller is what a workflow.call step uses to start a callee run and read it
-// back while waiting. It is the consumer-owned contract the workflow engine
-// holds (the same shape as Store), satisfied by *staterpc.Client for an
-// agent-container run: the callee is a first-class task the State Store
-// derives from the caller's row.
+// Caller starts a workflow.call callee and reads it back.
 type Caller interface {
-	// StartCall enqueues the callee task for callerTaskID's workflow.call
-	// step: org, workspace, identity, owner, repo and issue number are
-	// derived from the caller's row, the callee carries the call's inputs,
-	// and the callee's depth is the caller's + 1. The store refuses a
-	// caller that is not running and a call past the depth limit.
+	// StartCall enqueues the callee for callerTaskID's call step at depth + 1.
+	// It fails if the caller is not running or the depth limit is exceeded.
 	StartCall(ctx context.Context, callerTaskID int64, workflow string, inputs map[string]any) (*Task, error)
 	// CallStatus reads one call's callee: its status, latest transition detail
 	// and written outputs. A store only answers for a task whose

@@ -13,11 +13,9 @@ type Dimension struct {
 	Priority     float64
 }
 
-// MergeDimensions drops duplicate dimension names across the lenses' outputs
-// (keeping the higher-priority copy), sorts by priority, and cuts the tail at
-// cap. Order is stable for equal priority: the input order of the first lens
-// that produced the name wins, so re-running the same lenses in the same
-// order always keeps the same dimensions.
+// MergeDimensions deduplicates dimensions by name, keeping the higher
+// priority, sorts by priority and keeps the first limit. Ties keep input
+// order.
 func MergeDimensions(lensOutputs [][]Dimension, limit int) []Dimension {
 	byName := make(map[string]Dimension)
 	order := make([]string, 0)
