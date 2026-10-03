@@ -45,8 +45,9 @@ channel settings, and reads the same `config.toml`. Like `archie-ui` it resolves
 `GATEWAY_TOKEN` and `STATE_STORE_TOKEN` from its process environment, hence the
 `EnvironmentFile`:
 
-`install.sh` writes `archie-messaging.service`, whose `After=` and `Wants=`
-lines preserve that store-then-gateway order.
+`install.sh` writes `archie-messaging.service`. Its `After=` and `Wants=`
+lines only tidy the start sequence: nothing depends on that order, because
+each service waits for the peers it needs.
 
 ## 2. UI Service Unit (`~/.config/systemd/user/archie-ui.service`)
 

@@ -2,25 +2,22 @@
 
 This archive contains six linux/amd64 binaries:
 
-- **`archied`** — the resident daemon: polls your forge for assigned issues
-  and dispatches them into sandboxed `archie-agent` containers. It serves no
-  dashboard: the web UI is `archie-ui`'s process.
-- **`archie-ui`** — serves the operator dashboard and the webhook capture
-  receiver, dialing the Gateway and State Store gRPC contracts. Reads only
-  `[services.*]`, `[web]` and `[capture]` from the shared `config.toml`.
-- **`archie-gateway`** — serves the chat (`ChatContract`) surface `archied`,
-  `archie-ui` and `archie-messaging` dial. Runs as its own process; `archied`
-  never embeds a gateway.
-- **`archie-messaging`** — serves the Telegram, email and webhook channels,
-  dialing the Gateway for the chat contract and the State Store for the stored
-  channel settings. `archied` runs no gateway for those channels, so without
-  this process they are simply absent — and nothing logs an error, which is why it has a unit of its own in
-  `deployments/systemd-user-service.md`.
-- **`archie-state-store`** — owns the task data in PostgreSQL behind
-  a gRPC contract. `archied` and `archie-gateway` are gRPC clients of it, not
-  owners of the database.
-- **`archie-playbooks`** — standalone CLI to lint playbook binding YAML
-  before it reaches `archied`.
+Each service owns its data and reaches the others only through their gRPC
+contracts (or NATS, for task actions):
+
+| Service | Owns | Reaches |
+|---|---|---|
+| `archie-state-store` | tasks, events, control-plane settings, identities and access policies, installed packages (PostgreSQL) | nothing |
+| `archie-gateway` | conversations (PostgreSQL, its own tables) and every model call: chat turns, curators, MCP tools and sampling | State Store; daemon over NATS for task actions |
+| `archied` | dispatch: forge polling, the task queue, the embedded NATS broker, agent containers | State Store; Gateway |
+| `archie-messaging` | the Telegram, email and webhook channel connections | Gateway; State Store for channel settings |
+| `archie-ui` | the dashboard and the webhook capture receiver | Gateway; State Store |
+
+- **`archie-playbooks`** is a CLI that lints playbook binding YAML before it
+  reaches `archied`.
+
+Without `archie-messaging` the channels are simply absent, so it needs a unit
+of its own (`deployments/systemd-user-service.md`).
 
 `archie-agent` (the per-task sandboxed runtime) is **not** in this archive —
 it only ever runs inside the Docker container `archied` spawns per task, never
@@ -44,9 +41,10 @@ as a host binary. Pull it from GHCR: `ghcr.io/samcharles93/archie-agent`.
    providers) and place any secrets in `~/.config/archie/env` or referenced
    `secret://` locations.
 
-3. Start the five processes, in order (`archie-state-store` and
-   `archie-gateway` first — `archied`, `archie-ui` and `archie-messaging` dial
-   both at startup):
+3. Start the five processes. Order does not matter: a service whose peer is
+   not up yet waits for it and reports it as degraded on its health surface
+   meanwhile. The Gateway waits for the daemon's NATS endpoint when the broker
+   is embedded.
 
    ```bash
    ./archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090 &
