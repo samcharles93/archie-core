@@ -2,11 +2,13 @@ package controlplane
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 const (
@@ -15,6 +17,7 @@ const (
 	ToolSettingsKind             = "tool-settings"
 	PluginSettingsKind           = "plugin-settings"
 	ContainerRuntimePoliciesKind = "container-runtime-policies"
+	ExtensionSettingsKind        = controlplanerpc.ExtensionSettingsKind
 )
 
 type schedulingPolicy struct {
@@ -26,10 +29,9 @@ type schedulingPolicy struct {
 }
 
 type pluginSettings struct {
-	PluginDir       string `json:"plugin_dir"`
-	ModuleDir       string `json:"module_dir"`
-	SecretEngineDir string `json:"secret_engine_dir"`
-	SkillsDir       string `json:"skills_dir"`
+	PluginDir string `json:"plugin_dir"`
+	ModuleDir string `json:"module_dir"`
+	SkillsDir string `json:"skills_dir"`
 }
 
 func operationalDefinitions() []Definition {
@@ -47,12 +49,33 @@ func operationalDefinitions() []Definition {
 		// restart. A removal cannot unload Yaegi's interpreter, so it stays an
 		// outstanding apply-status problem rather than a restart of the whole kind
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
-			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
+			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
+		// Live: each process that supervises extensions re-reads this on its sync
+		// tick, then starts, restarts or stops what changed.
+		{Kind: ExtensionSettingsKind, Title: "Extension settings", ApplyMode: "live", Document: controlplanerpc.ExtensionSettings{}, Seed: func(config.Config) any { return controlplanerpc.ExtensionSettings{} }, Validate: validateExtensions},
 		// Live: the container pool reads these on every acquire and the dispatcher
 		// is resized on publish.
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "live", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
+}
+
+// validateExtensions refuses a blank or repeated extension name: the name is
+// the installed package the setting enables.
+func validateExtensions(input []byte) error {
+	return validateAs(input, func(doc controlplanerpc.ExtensionSettings) error {
+		seen := make(map[string]struct{}, len(doc.Extensions))
+		for _, setting := range doc.Extensions {
+			if strings.TrimSpace(setting.Name) == "" {
+				return fmt.Errorf("extension name is required")
+			}
+			if _, dup := seen[setting.Name]; dup {
+				return fmt.Errorf("extension %q is listed twice", setting.Name)
+			}
+			seen[setting.Name] = struct{}{}
+		}
+		return nil
+	})
 }
 
 // validatePluginSettings accepts every value.

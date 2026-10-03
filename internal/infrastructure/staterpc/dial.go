@@ -33,6 +33,9 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		// Keepalive detects a dead peer on an otherwise silent watch stream.
 		grpc.WithKeepaliveParams(ClientKeepaliveParams()),
+		// GetInstalledPackage returns the whole layer, which for an extension is
+		// a plugin binary well past gRPC's default 4 MiB receive limit.
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxPackageResponseBytes)),
 	}
 	if token != "" {
 		// Both call shapes need the credential: the server's interceptors
@@ -50,6 +53,10 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 	}
 	return NewClient(conn), func() { _ = conn.Close() }, nil
 }
+
+// maxPackageResponseBytes is the package layer cap plus headroom for the rest
+// of the response.
+const maxPackageResponseBytes = 80 << 20
 
 // ClientKeepaliveParams are Dial's keepalive settings: ping after 10s idle,
 // 5s timeout, no pings without streams.

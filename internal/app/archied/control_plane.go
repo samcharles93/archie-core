@@ -399,15 +399,14 @@ func (b *boot) resizeTaskDispatcher(maxConcurrency int) {
 	}
 }
 
-// startPluginReconcile establishes the plugin, module and secret-engine
-// directory reconciliation on the apply-status restamp interval. Boot calls it
-// after loadPlugins, loadWorkflows and configuredSecretRegistry have loaded
+// startPluginReconcile establishes the plugin and module directory
+// reconciliation on the apply-status restamp interval. Boot calls it
+// after loadPlugins and loadWorkflows have loaded
 // the directories, so the seed records what is already running and the first
 // tick loads only what appears or changes afterwards.
 func (b *boot) startPluginReconcile(ctx context.Context) {
 	r := newPluginReconciler(b.log, pluginReconcileTargets{
 		host:    b.capabilityHost,
-		secrets: b.secrets,
 		modules: b.modules,
 		dirs:    func() config.Config { return b.cfgHolder.Get() },
 		relayer: func(ctx context.Context) error {

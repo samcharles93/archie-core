@@ -54,7 +54,7 @@ func (s *Service) reconcileOnce(ctx context.Context) error {
 	if version == 0 || version <= s.appliedVersion.Load() {
 		return nil
 	}
-	next, err := resolveChatSecrets(base, layered)
+	next, err := resolveChatSecrets(base, layered, s.secrets)
 	if err != nil {
 		// A credential this process cannot resolve is a document rejection: the
 		// running channels keep serving and the version stays reported as not
@@ -74,12 +74,11 @@ func (s *Service) reconcileOnce(ctx context.Context) error {
 // projection, resolving the store's secret references. A channel whose token
 // cannot be resolved stays off rather than composing with an empty credential
 // (the startup rule, config.go resolveTelegramToken).
-func resolveChatSecrets(base ResolvedConfig, layered config.ChatConfig) (ResolvedConfig, error) {
+func resolveChatSecrets(base ResolvedConfig, layered config.ChatConfig, secrets *secret.Registry) (ResolvedConfig, error) {
 	next := base
 	next.Telegram, next.Email, next.Webhook = layered.Telegram, layered.Email, layered.Webhook
 	next.WebhookAddr, next.ShowToolCalls = layered.WebhookAddr, layered.ShowToolCalls
 
-	secrets := secret.NewRegistry()
 	token, err := resolveTelegramToken(layered.Telegram, secrets)
 	if err != nil {
 		return next, fmt.Errorf("resolve database telegram token: %w", err)

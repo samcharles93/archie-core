@@ -24,7 +24,7 @@ import (
 
 const (
 	maxManifestBytes = 256 << 10
-	maxPackageBytes  = 2 << 20
+	maxPackageBytes  = 64 << 20
 )
 
 // LocalRegistry accepts a local OCI registry over HTTP and verifies the

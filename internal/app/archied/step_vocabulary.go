@@ -1,6 +1,7 @@
 package archied
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
@@ -65,8 +66,8 @@ func (b *boot) openDaemonWorkflowDefinitions() error {
 //
 // The gateway root calls openStateStoreAdapter directly and stops there; the
 // daemon-only half stays out of that function for the reason above it.
-func (b *boot) openDaemonStateSurfaces() error {
-	if err := b.openStateStoreAdapter(); err != nil {
+func (b *boot) openDaemonStateSurfaces(ctx context.Context) error {
+	if err := b.openStateStoreAdapter(ctx); err != nil {
 		return err
 	}
 	if err := b.openDaemonWorkflowDefinitions(); err != nil {

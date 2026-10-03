@@ -33,6 +33,9 @@ type deps struct {
 	Chat          messaging.ChatContract
 	Health        *health.Registry
 	Settings      *messaging.SettingsCommand
+	// Secrets resolves channel credential references, including those naming an
+	// extension engine.
+	Secrets *secret.Registry
 	// SettingsSource enables live channel-settings reconciliation. Nil disables
 	// it.
 	SettingsSource chatSettingsSource
@@ -81,6 +84,7 @@ type Service struct {
 	// wants the latest state of every channel.
 	publish  chan struct{}
 	cfg      ResolvedConfig
+	secrets  *secret.Registry
 	log      *slog.Logger
 	chat     messaging.ChatContract
 	health   *health.Registry
@@ -111,6 +115,7 @@ type Service struct {
 func compose(ctx context.Context, d deps) (*Service, error) {
 	srv := &Service{
 		cfg:               d.Config,
+		secrets:           d.Secrets,
 		log:               d.Log,
 		chat:              d.Chat,
 		health:            d.Health,
@@ -175,7 +180,7 @@ func composeTelegram(ctx context.Context, d deps) (*channelInstance, error) {
 		}
 		tg := telegram.New(cfg.TelegramToken, cfg.Telegram.AllowedUserIDs, d.Log)
 		tg.Settings = d.Settings
-		configureTelegram(ctx, tg, cfg, d.Chat, d.Log)
+		configureTelegram(ctx, tg, cfg, d.Chat, d.Secrets, d.Log)
 		if err := tg.ValidateConfig(telegramValidateConfigMap(cfg.Telegram)); err != nil {
 			return nil, fmt.Errorf("chat.telegram config invalid: %w", err)
 		}

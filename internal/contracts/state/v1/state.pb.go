@@ -10575,6 +10575,7 @@ type PackageAuthority struct {
 	ForgePermissions   []string               `protobuf:"bytes,3,rep,name=forge_permissions,json=forgePermissions,proto3" json:"forge_permissions,omitempty"`
 	Triggers           []string               `protobuf:"bytes,4,rep,name=triggers,proto3" json:"triggers,omitempty"`
 	Tools              []string               `protobuf:"bytes,5,rep,name=tools,proto3" json:"tools,omitempty"`
+	Env                []string               `protobuf:"bytes,6,rep,name=env,proto3" json:"env,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -10640,6 +10641,13 @@ func (x *PackageAuthority) GetTriggers() []string {
 func (x *PackageAuthority) GetTools() []string {
 	if x != nil {
 		return x.Tools
+	}
+	return nil
+}
+
+func (x *PackageAuthority) GetEnv() []string {
+	if x != nil {
+		return x.Env
 	}
 	return nil
 }
@@ -12763,13 +12771,14 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x0fdescriptor_json\x18\x05 \x01(\fR\x0edescriptorJson\x12\x14\n" +
 	"\x05layer\x18\x06 \x01(\fR\x05layer\x12#\n" +
 	"\rupdate_policy\x18\a \x01(\tR\fupdatePolicy\x12I\n" +
-	"\x12accepted_authority\x18\b \x01(\v2\x1a.state.v1.PackageAuthorityR\x11acceptedAuthority\"\xc5\x01\n" +
+	"\x12accepted_authority\x18\b \x01(\v2\x1a.state.v1.PackageAuthorityR\x11acceptedAuthority\"\xd7\x01\n" +
 	"\x10PackageAuthority\x12/\n" +
 	"\x13credential_services\x18\x01 \x03(\tR\x12credentialServices\x12!\n" +
 	"\fegress_hosts\x18\x02 \x03(\tR\vegressHosts\x12+\n" +
 	"\x11forge_permissions\x18\x03 \x03(\tR\x10forgePermissions\x12\x1a\n" +
 	"\btriggers\x18\x04 \x03(\tR\btriggers\x12\x14\n" +
-	"\x05tools\x18\x05 \x03(\tR\x05tools\"x\n" +
+	"\x05tools\x18\x05 \x03(\tR\x05tools\x12\x10\n" +
+	"\x03env\x18\x06 \x03(\tR\x03env\"x\n" +
 	"\x15InstallPackageRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +

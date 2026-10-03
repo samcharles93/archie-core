@@ -138,6 +138,7 @@ func authorityProto(a storepkg.Authority) *pb.PackageAuthority {
 		ForgePermissions:   a.ForgePermissions,
 		Triggers:           a.Triggers,
 		Tools:              a.Tools,
+		Env:                a.Env,
 	}
 }
 
@@ -151,6 +152,7 @@ func authorityValue(value *pb.PackageAuthority) storepkg.Authority {
 		ForgePermissions:   value.GetForgePermissions(),
 		Triggers:           value.GetTriggers(),
 		Tools:              value.GetTools(),
+		Env:                value.GetEnv(),
 	}
 }
 

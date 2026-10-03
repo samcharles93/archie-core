@@ -1120,6 +1120,7 @@ message PackageAuthority {
   repeated string forge_permissions = 3;
   repeated string triggers = 4;
   repeated string tools = 5;
+  repeated string env = 6;
 }
 message InstallPackageRequest {
   string org_id = 1;

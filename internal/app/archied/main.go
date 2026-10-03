@@ -365,6 +365,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		b.log.Error("runtime settings unavailable", "err", err)
 		return 1
 	}
+	b.openForge()
 	if err := b.startLiveSettings(ctx); err != nil {
 		b.log.Error("live settings unavailable", "err", err)
 		return 1

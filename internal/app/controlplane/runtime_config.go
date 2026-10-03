@@ -182,7 +182,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
 		}
-		out.PluginDir, out.ModuleDir, out.SecretEngineDir, out.SkillsDir = settings.PluginDir, settings.ModuleDir, settings.SecretEngineDir, settings.SkillsDir
+		out.PluginDir, out.ModuleDir, out.SkillsDir = settings.PluginDir, settings.ModuleDir, settings.SkillsDir
 		return nil
 	}); err != nil {
 		return config.Config{}, nil, err

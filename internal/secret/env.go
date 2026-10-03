@@ -9,8 +9,7 @@ import (
 // default built-in engine and is always registered.
 type envEngine struct{}
 
-func (e *envEngine) Name() string    { return "env" }
-func (e *envEngine) Version() string { return "1.0.0" }
+func (e *envEngine) Name() string { return "env" }
 
 func (e *envEngine) Resolve(key string) (string, error) {
 	v, ok := os.LookupEnv(key)

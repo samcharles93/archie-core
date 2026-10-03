@@ -187,7 +187,7 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   tools: ["tool-settings"],
   personas: ["personas"],
   schedules: ["schedules"],
-  plugins: ["plugin-settings"],
+  plugins: ["plugin-settings", "extension-settings"],
   containers: ["container-runtime-policies"],
   review: ["review-settings"],
   workflows: ["workflow-definitions"],

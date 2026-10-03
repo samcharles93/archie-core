@@ -19,18 +19,16 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
-	"github.com/samcharles93/archie-core/internal/secret"
 )
 
-// The three directory families a plugin-settings document names and a
+// The directory families a plugin-settings document names and a
 // reconciliation reads.
 const (
 	reconcilePlugins = "plugin"
 	reconcileModules = "module"
-	reconcileSecrets = "secret"
 )
 
-// pluginReconciler loads plugin, module and secret-engine files that appear or
+// pluginReconciler loads plugin and module files that appear or
 // change in the directories the running configuration names, so an operator can
 // drop a file beside a running daemon and have it take effect without a
 // restart. Yaegi cannot unload an interpreter, so a removed file's code keeps
@@ -53,15 +51,14 @@ type pluginReconciler struct {
 
 type pluginReconcileTargets struct {
 	host    *plugin.Host
-	secrets *secret.Registry
 	modules *module.ModuleRegistry
-	// dirs returns the running configuration, the source of the three
+	// dirs returns the running configuration, the source of the
 	// directories. It is read each tick so a changed directory retargets the
 	// next reconciliation without a restart.
 	dirs func() config.Config
-	// relayer re-runs the configuration layering after a secret engine loads
-	// or changes, which re-resolves provider credentials against the new
-	// engine. Nil in tests that do not layer.
+	// relayer re-runs the configuration layering, which re-resolves provider
+	// credentials against the engines running by then. Nil in tests that do not
+	// layer.
 	relayer func(ctx context.Context) error
 	// report publishes the reconciliation outcome, including a nil error on a
 	// clean pass so an outstanding removal clears.
@@ -89,7 +86,7 @@ func newPluginReconciler(log *slog.Logger, targets pluginReconcileTargets) *plug
 
 // seed records the files the boot load already evaluated, so the first tick
 // loads only what appeared or changed since boot. The daemon calls it after
-// loadPlugins, loadWorkflows and configuredSecretRegistry have run.
+// loadPlugins and loadWorkflows have run.
 func (r *pluginReconciler) seed() {
 	next := make(map[string]loadedPluginFile)
 	for _, spec := range r.categories(r.dirs()) {
@@ -137,11 +134,10 @@ func (r *pluginReconciler) categories(cfg config.Config) []reconcileCategory {
 	return []reconcileCategory{
 		{reconcilePlugins, cfg.PluginDir},
 		{reconcileModules, cfg.ModuleDir},
-		{reconcileSecrets, cfg.SecretEngineDir},
 	}
 }
 
-// reconcile re-reads the three directories against the running config and
+// reconcile re-reads the plugin and module directories against the running config and
 // loads every new or changed file. It returns the outstanding problems -- a
 // removal, a failed load, an unreadable directory -- joined, and reports the
 // same through apply status. A nil return is a clean pass and clears the
@@ -166,10 +162,9 @@ func (r *pluginReconciler) reconcile(ctx context.Context) error {
 
 	r.loaded = next
 
-	// The layering re-runs every tick, not only when a secret engine changed:
-	// it re-resolves provider credentials, so a provider disabled at boot for
-	// an unresolvable engine is re-resolved on the first tick that finds it,
-	// and a changed directory retargets the next tick without a restart
+	// The layering re-runs every tick: it re-resolves provider credentials, so a
+	// provider disabled at boot for an unresolvable engine is re-resolved on the
+	// first tick that finds it
 	if r.relayer != nil {
 		if err := r.relayer(ctx); err != nil {
 			problems = append(problems, fmt.Errorf("re-resolve provider credentials: %w", err))
@@ -228,11 +223,6 @@ func (r *pluginReconciler) load(ctx context.Context, category, path string) erro
 		return r.loadPlugin(ctx, path)
 	case reconcileModules:
 		return r.loadModule(path)
-	case reconcileSecrets:
-		if r.secrets == nil {
-			return errors.New("no secret registry to load into")
-		}
-		return r.secrets.LoadFile(path, secretEngineSymbols...)
 	default:
 		return fmt.Errorf("unknown reconcile category %q", category)
 	}

@@ -1,0 +1,264 @@
+package secretengine
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/hashicorp/go-hclog"
+
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
+	"github.com/samcharles93/archie-core/internal/secret"
+)
+
+// orgID is the single-operator install's org, the one packages are installed in.
+const orgID = "default"
+
+// Source is what the runner reads: the extension-settings resource and the
+// installed packages.
+type Source struct {
+	// Query reads a control-plane resource, as *controlplanerpc.Client does.
+	Query controlplanerpc.ResourceReader
+	// Packages reads installed packages, as *staterpc.Client does.
+	Packages interface {
+		ListInstalled(ctx context.Context, orgID string) ([]storepkg.Installed, error)
+		GetInstalled(ctx context.Context, orgID, name string) (storepkg.Installed, error)
+	}
+}
+
+// Runner keeps the enabled secret-engine extensions running and registered.
+// An extension runs when its package is installed, its authority is accepted
+// and the extension-settings resource enables it; the process sees only the
+// environment variables the accepted authority names.
+type Runner struct {
+	host     *extension.Host
+	registry *secret.Registry
+	source   Source
+	cacheDir string
+	log      *slog.Logger
+
+	// report records the extension-settings version a sync applied, with its
+	// outcome. Nil reports nothing.
+	report func(ctx context.Context, version int64, err error)
+
+	mu      sync.Mutex
+	running map[string]runningEngine
+}
+
+type runningEngine struct {
+	digest   string
+	settings string
+}
+
+// NewRunner returns a Runner that registers engines into registry and keeps
+// extracted binaries under cacheDir.
+func NewRunner(host *extension.Host, registry *secret.Registry, source Source, cacheDir string, log *slog.Logger) *Runner {
+	return &Runner{host: host, registry: registry, source: source, cacheDir: cacheDir, log: log, running: make(map[string]runningEngine)}
+}
+
+// ReportTo makes every sync record its outcome through report.
+func (r *Runner) ReportTo(report func(ctx context.Context, version int64, err error)) {
+	r.report = report
+}
+
+// Run syncs every interval until ctx ends.
+func (r *Runner) Run(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := r.Sync(ctx); err != nil {
+				r.log.Warn("secret engine sync", "err", err)
+			}
+		}
+	}
+}
+
+// Sync starts the engines that should run and are not, restarts those whose
+// package, settings or process changed, and stops the rest. It returns the
+// problems it met; a failed engine does not stop the others.
+func (r *Runner) Sync(ctx context.Context) error {
+	settings, version, err := r.enabled(ctx)
+	if err == nil {
+		err = r.apply(ctx, settings)
+	}
+	if r.report != nil && version > 0 {
+		r.report(ctx, version, err)
+	}
+	return err
+}
+
+func (r *Runner) apply(ctx context.Context, settings map[string]controlplanerpc.ExtensionSetting) error {
+	installed, err := r.source.Packages.ListInstalled(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("list installed packages: %w", err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var problems []error
+	want := make(map[string]bool)
+	for _, pkg := range installed {
+		setting, ok := settings[pkg.Name]
+		if !ok || !setting.Enabled || pkg.AcceptedAuthority == nil || len(secretEngines(pkg.Descriptor)) == 0 {
+			continue
+		}
+		want[pkg.Name] = true
+		if err := r.ensure(ctx, pkg, setting); err != nil {
+			problems = append(problems, fmt.Errorf("secret engine %q: %w", pkg.Name, err))
+		}
+	}
+	for name := range r.running {
+		if want[name] {
+			continue
+		}
+		r.host.Stop(name)
+		r.registry.Unregister(name)
+		delete(r.running, name)
+		_ = os.RemoveAll(filepath.Join(r.cacheDir, name))
+	}
+	return errors.Join(problems...)
+}
+
+func (r *Runner) enabled(ctx context.Context) (map[string]controlplanerpc.ExtensionSetting, int64, error) {
+	byName := make(map[string]controlplanerpc.ExtensionSetting)
+	version, _, err := r.source.Query.Query(ctx, controlplanerpc.ExtensionSettingsKind, func(value []byte) error {
+		var doc controlplanerpc.ExtensionSettings
+		if err := json.Unmarshal(value, &doc); err != nil {
+			return err
+		}
+		for _, setting := range doc.Extensions {
+			byName[setting.Name] = setting
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("read extension settings: %w", err)
+	}
+	return byName, version, nil
+}
+
+func secretEngines(d storepkg.Descriptor) []storepkg.Extension {
+	var out []storepkg.Extension
+	for _, extension := range d.Contributes.Extensions {
+		if extension.Surface == storepkg.SurfaceSecretEngine {
+			out = append(out, extension)
+		}
+	}
+	return out
+}
+
+func (r *Runner) ensure(ctx context.Context, pkg storepkg.Installed, setting controlplanerpc.ExtensionSetting) error {
+	encoded, err := json.Marshal(setting.Settings)
+	if err != nil {
+		return err
+	}
+	have, running := r.running[pkg.Name]
+	current := running && have.digest == pkg.Digest && have.settings == string(encoded) && r.host.Alive(pkg.Name)
+	if current {
+		return nil
+	}
+	engines := secretEngines(pkg.Descriptor)
+	if len(engines) != 1 {
+		return fmt.Errorf("a package serves one secret engine, this one declares %d", len(engines))
+	}
+	binary, sum, err := r.materialize(ctx, pkg, engines[0].Path)
+	if err != nil {
+		return err
+	}
+	spec := extension.Spec{Name: pkg.Name, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env)}
+	engine, err := Start(ctx, r.host, spec, setting.Settings)
+	if err != nil {
+		return err
+	}
+	r.registry.Register(engine)
+	r.running[pkg.Name] = runningEngine{digest: pkg.Digest, settings: string(encoded)}
+	return nil
+}
+
+// materialize writes the package's extension binary under the cache, keyed by
+// package digest, and returns its path and sha256. A binary already there for
+// this digest is reused.
+func (r *Runner) materialize(ctx context.Context, pkg storepkg.Installed, file string) (string, string, error) {
+	full, err := r.source.Packages.GetInstalled(ctx, orgID, pkg.Name)
+	if err != nil {
+		return "", "", fmt.Errorf("get installed package: %w", err)
+	}
+	files, err := storepkg.FilesFromLayer(full.Layer)
+	if err != nil {
+		return "", "", err
+	}
+	content, ok := files[file]
+	if !ok {
+		return "", "", fmt.Errorf("package layer has no %q", file)
+	}
+	sum := sha256.Sum256(content)
+	dir := filepath.Join(r.cacheDir, pkg.Name, hex.EncodeToString(sum[:8]))
+	target := filepath.Join(dir, path.Base(file))
+	if existing, err := os.ReadFile(target); err == nil && sha256.Sum256(existing) == sum {
+		return target, hex.EncodeToString(sum[:]), nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", "", err
+	}
+	tmp, err := os.CreateTemp(dir, ".extract-*")
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return "", "", err
+	}
+	if err := tmp.Chmod(0o700); err != nil {
+		_ = tmp.Close()
+		return "", "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", "", err
+	}
+	if err := os.Rename(tmp.Name(), target); err != nil {
+		return "", "", err
+	}
+	return target, hex.EncodeToString(sum[:]), nil
+}
+
+// Close stops every running engine.
+func (r *Runner) Close() { r.host.Close() }
+
+// Supervise starts a Runner for process, runs its first sync before returning
+// so the caller's next resolution can see the engines, and keeps syncing until
+// ctx ends. A failed sync degrades references naming an extension engine and
+// is retried each tick; it never stops the caller. The returned Runner's Close
+// stops the engines.
+func Supervise(ctx context.Context, registry *secret.Registry, source Source, process string, report func(ctx context.Context, version int64, err error), log *slog.Logger) *Runner {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		log.Warn("secret engines unavailable: no cache directory", "err", err)
+		return &Runner{host: extension.NewHost(hclog.NewNullLogger())}
+	}
+	host := extension.NewHost(hclog.New(&hclog.LoggerOptions{Name: "extension", Level: hclog.Warn}))
+	runner := NewRunner(host, registry, source, filepath.Join(cache, "archie", "extensions", process), log)
+	runner.ReportTo(report)
+	if err := runner.Sync(ctx); err != nil {
+		log.Warn("secret engines", "err", err)
+	}
+	go runner.Run(ctx, applystatus.RestampInterval)
+	return runner
+}

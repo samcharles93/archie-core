@@ -143,7 +143,7 @@ func (b *boot) openGatewayState(ctx context.Context) error {
 	if err := b.claimGatewayOwnership(ctx); err != nil {
 		return err
 	}
-	if err := b.openStateStoreAdapter(); err != nil {
+	if err := b.openStateStoreAdapter(ctx); err != nil {
 		return err
 	}
 	if err := b.loadRuntimeConfig(ctx); err != nil {

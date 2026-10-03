@@ -1,53 +1,27 @@
 // Package secret provides a pluggable secrets-engine registry. Engines
-// resolve SecretRef values (engine + key) into strings at daemon startup,
-// keeping credentials out of config files and serialized worker contracts.
+// resolve SecretRef values (engine + key) into strings, keeping credentials
+// out of config files and serialized worker contracts.
 //
-// The "env" and "bws" engines are compiled in. Other backends (sops,
-// Vault/OpenBao) may ship as Yaegi-loaded .go plugins under a configurable
-// directory via Registry.LoadDir, mirroring internal/plugin conventions.
+// Only the "env" engine is compiled in. Every other backend is an extension
+// served over the secretengine.v1 gRPC surface and registered here while it
+// is enabled.
 package secret
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
-	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/traefik/yaegi/interp"
-
-	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
-
-// safeResolve calls e.Resolve(key) with panic recovery. An interpreted
-// (Yaegi-loaded) engine is untrusted relative to the daemon's own
-// logic: a defect in the engine itself must degrade the credential it
-// was resolving, not crash the process that's resolving it -- e.g. at
-// boot, in internal/app/archied/provider_secrets.go.
-func safeResolve(e Engine, key string) (string, error) {
-	return yaegiutil.Safe(e.Name(), func() (string, error) {
-		return e.Resolve(key)
-	})
-}
 
 // Engine resolves secret references into their plaintext values.
 // Implementations must be safe for concurrent use.
 type Engine interface {
 	// Name returns a unique engine identifier (e.g. "env", "bws", "sops").
 	Name() string
-	// Version returns a semver string for dependency tracking.
-	Version() string
 	// Resolve looks up a secret by key and returns its value. Returns an
 	// error when the key is unknown or the backend is unreachable.
-	//
-	// Caution for callers: a Yaegi-loaded engine whose exported value
-	// omits the Resolve function resolves every key to ("", nil) rather
-	// than failing (see secretextract's generated wrapper nil-guards) --
-	// check for an empty string in addition to a non-nil error before
-	// trusting a resolved secret.
 	Resolve(key string) (string, error)
 }
 
@@ -98,7 +72,7 @@ func (r *Registry) Getenv(key string) string {
 	}
 	r.mu.RUnlock()
 	for _, engine := range engines {
-		value, err := safeResolve(engine, key)
+		value, err := engine.Resolve(key)
 		value = strings.TrimSpace(value)
 		if err != nil || value == "" {
 			continue
@@ -122,93 +96,20 @@ func (r *Registry) Resolve(ref SecretRef) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("secret engine %q not registered", ref.Engine)
 	}
-	return safeResolve(e, ref.Key)
+	return e.Resolve(ref.Key)
 }
 
-// LoadDir discovers and evaluates .go files in dir. Each file must export
-// a variable named "Engine" that implements the Engine interface. Failed
-// engines are logged and skipped  --  the daemon starts with the remaining
-// set, matching internal/plugin.LoadDir's degrade-gracefully behavior.
-// Returns the count of newly registered engines.
-//
-// extraSymbols are additional Yaegi symbol tables made available to
-// interpreted code. Callers should pass secretextract.Symbols so that
-// interpreted types can satisfy the secret.Engine interface across the
-// Yaegi/Go boundary, and enginehost.Symbols so plugins can run CLIs with
-// a real host environment (yaegi's interpreted os/exec cannot pass env
-// to children). See cmd/archied/provider_secrets.go for the production
-// wiring.
-func (r *Registry) LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) (int, error) {
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("secret: read dir %s: %w", dir, err)
-	}
-
-	var names []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-
-	loaded := 0
-	for _, name := range names {
-		if err := r.LoadFile(filepath.Join(dir, name), extraSymbols...); err != nil {
-			slog.Default().Warn("skipping secret engine", "file", name, "err", err)
-			continue
-		}
-		loaded++
-	}
-	return loaded, nil
+// Unregister removes the named engine. Removing one that is not registered is
+// not an error.
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.engines, name)
 }
 
-// LoadFile evaluates one secret-engine file and registers the engine it
-// exports. Each file is package main and needs a fresh interpreter to avoid
-// symbol collisions, so the boot load (LoadDir) and a live directory
-// reconciliation both load through here rather than through two copies of the
-// interpreter setup.
-//
-// The interpreter is seeded with the host environment: yaegi's interpreted os
-// package keeps a private env otherwise, so an engine reading
-// SOPS_FILE/VAULT_*/AGE_* via os.Getenv would silently see nothing.
-func (r *Registry) LoadFile(path string, extraSymbols ...map[string]map[string]reflect.Value) error {
-	src, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("secret: read %s: %w", path, err)
-	}
-	i, err := yaegiutil.New(interp.Options{Env: os.Environ()}, extraSymbols...)
-	if err != nil {
-		return fmt.Errorf("secret: %s: interpreter setup: %w", path, err)
-	}
-	e, err := yaegiutil.Resolve[Engine](i, string(src), "main.Engine")
-	if err != nil {
-		return fmt.Errorf("secret: %s: %w", path, err)
-	}
-	r.Register(e)
-	return nil
-}
-
-// DefaultRegistry returns a singleton pre-loaded with the built-in env engine.
-// Use this when you need a one-off secret resolution without threading a
-// Registry through the entire call stack.
-func DefaultRegistry() *Registry {
-	return defaultReg
-}
-
-var defaultReg = &Registry{engines: map[string]Engine{
-	"env": &envEngine{},
-	"bws": newBWSEngine(),
-}}
-
-// NewRegistry creates a Registry pre-loaded with the built-in env and
-// Bitwarden Secrets Manager engines.
+// NewRegistry creates a Registry holding the built-in env engine.
 func NewRegistry() *Registry {
 	r := &Registry{engines: make(map[string]Engine)}
 	r.Register(&envEngine{})
-	r.Register(newBWSEngine())
 	return r
 }

@@ -224,12 +224,11 @@ type ReviewView struct {
 // StorageView is where archied keeps its state on disk. All paths, no
 // secrets.
 type StorageView struct {
-	WorkDir         string `json:"work_dir"`
-	StateDir        string `json:"state_dir"`
-	DatabaseURL     string `json:"database_url"`
-	SkillsDir       string `json:"skills_dir,omitempty"`
-	PluginDir       string `json:"plugin_dir,omitempty"`
-	SecretEngineDir string `json:"secret_engine_dir,omitempty"`
+	WorkDir     string `json:"work_dir"`
+	StateDir    string `json:"state_dir"`
+	DatabaseURL string `json:"database_url"`
+	SkillsDir   string `json:"skills_dir,omitempty"`
+	PluginDir   string `json:"plugin_dir,omitempty"`
 }
 
 // ContainersView is how sandboxed task execution is configured.
@@ -351,12 +350,11 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			ApproveBeforePost: cfg.Review.ApproveBeforePost,
 		},
 		Storage: StorageView{
-			WorkDir:         cfg.WorkDir,
-			StateDir:        cfg.StateDir,
-			DatabaseURL:     cfg.DatabaseURL,
-			SkillsDir:       cfg.SkillsDir,
-			PluginDir:       cfg.PluginDir,
-			SecretEngineDir: cfg.SecretEngineDir,
+			WorkDir:     cfg.WorkDir,
+			StateDir:    cfg.StateDir,
+			DatabaseURL: cfg.DatabaseURL,
+			SkillsDir:   cfg.SkillsDir,
+			PluginDir:   cfg.PluginDir,
 		},
 		Containers: ContainersView{
 			Image:          cfg.Containers.Image,

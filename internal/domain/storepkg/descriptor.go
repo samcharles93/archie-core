@@ -36,7 +36,22 @@ type Contributions struct {
 	Skills     []string `yaml:"skills"`
 	MCPServers []string `yaml:"mcpServers"`
 	Defaults   []string `yaml:"defaults"`
+	// Extensions are executable plugins the host launches as processes. They
+	// are the only package files allowed to carry an executable mode.
+	Extensions []Extension `yaml:"extensions"`
 }
+
+// Extension is one plugin binary in the package layer and the gRPC surface it
+// serves.
+type Extension struct {
+	Surface string `yaml:"surface"`
+	Path    string `yaml:"path"`
+}
+
+// Surfaces are the extension surfaces the host defines a contract for.
+const SurfaceSecretEngine = "secretengine"
+
+func validSurface(surface string) bool { return surface == SurfaceSecretEngine }
 
 // PackageRef identifies a required package or Kit. References are pinned to
 // immutable content digests so dependency resolution cannot drift by tag.
@@ -52,6 +67,8 @@ type Authority struct {
 	ForgePermissions   []string `yaml:"forgePermissions"`
 	Triggers           []string `yaml:"triggers"`
 	Tools              []string `yaml:"tools"`
+	// Env names the host environment variables an extension process may read.
+	Env []string `yaml:"env"`
 }
 
 // File describes one path carried in the package layer and its Unix mode.
@@ -87,7 +104,8 @@ func Decode(r io.Reader) (Descriptor, error) {
 }
 
 // Validate checks descriptor identity, references, authority values, and
-// that every listed package file remains declarative and non-executable.
+// that every listed package file remains declarative and non-executable, except
+// the binaries a package declares as extensions.
 func (d Descriptor) Validate() error {
 	if d.APIVersion != APIVersion {
 		return fmt.Errorf("apiVersion must be %q", APIVersion)
@@ -112,17 +130,48 @@ func (d Descriptor) Validate() error {
 	if err := d.Authority.Validate(); err != nil {
 		return err
 	}
+	executable, err := d.validateExtensions()
+	if err != nil {
+		return err
+	}
 	for i, file := range d.Files {
-		if err := validateFile(file); err != nil {
+		if err := validateFile(file, executable[file.Path]); err != nil {
 			return fmt.Errorf("package file %d: %w", i, err)
 		}
 	}
 	return nil
 }
 
+// validateExtensions checks each extension names a known surface and a
+// declared, owner-executable file, and returns the set of extension paths.
+func (d Descriptor) validateExtensions() (map[string]bool, error) {
+	modes := make(map[string]uint32, len(d.Files))
+	for _, file := range d.Files {
+		modes[file.Path] = file.Mode
+	}
+	paths := make(map[string]bool, len(d.Contributes.Extensions))
+	for i, extension := range d.Contributes.Extensions {
+		if !validSurface(extension.Surface) {
+			return nil, fmt.Errorf("extension %d: unknown surface %q", i, extension.Surface)
+		}
+		mode, ok := modes[extension.Path]
+		if !ok {
+			return nil, fmt.Errorf("extension %d: %q is not a declared package file", i, extension.Path)
+		}
+		if mode&0o100 == 0 {
+			return nil, fmt.Errorf("extension %d: %q must be owner-executable", i, extension.Path)
+		}
+		if paths[extension.Path] {
+			return nil, fmt.Errorf("extension %d: %q is listed twice", i, extension.Path)
+		}
+		paths[extension.Path] = true
+	}
+	return paths, nil
+}
+
 func (d Descriptor) hasContribution() bool {
 	return len(d.Contributes.Workflows)+len(d.Contributes.Prompts)+len(d.Contributes.Skills)+
-		len(d.Contributes.MCPServers)+len(d.Contributes.Defaults) > 0
+		len(d.Contributes.MCPServers)+len(d.Contributes.Defaults)+len(d.Contributes.Extensions) > 0
 }
 
 func validForgePermission(permission string) bool {
@@ -134,10 +183,13 @@ func validForgePermission(permission string) bool {
 	}
 }
 
-func validateFile(file File) error {
+func validateFile(file File, extension bool) error {
 	clean := path.Clean(file.Path)
 	if file.Path == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(file.Path) {
 		return fmt.Errorf("path must be a relative package path")
+	}
+	if extension {
+		return nil
 	}
 	if file.Mode&0o111 != 0 {
 		return fmt.Errorf("executable file modes are not allowed")

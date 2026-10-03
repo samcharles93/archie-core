@@ -5,43 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"reflect"
 	"strings"
-
-	"github.com/traefik/yaegi/stdlib/unrestricted"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/secret/enginehost"
-	"github.com/samcharles93/archie-core/internal/secret/secretextract"
 )
-
-// secretEngineSymbols is the Yaegi symbol set every secret-engine load uses:
-// the generated interface bridge, the host-side CLI helper, and unrestricted
-// symbols for parity with skillscript interpretation. The boot load and a
-// live directory reconciliation share it so an engine always loads the same
-// way.
-var secretEngineSymbols = []map[string]map[string]reflect.Value{
-	secretextract.Symbols, enginehost.Symbols, unrestricted.Symbols,
-}
-
-func configuredSecretRegistry(cfg *config.Config, log *slog.Logger) (*secret.Registry, error) {
-	registry := secret.NewRegistry()
-	if cfg.SecretEngineDir != "" {
-		// Secret engines are operator-authored code in the same trust
-		// domain as the daemon config, and the shipped engines run CLIs
-		// (sops, vault, age). They shell out through enginehost.Run (the
-		// host-side helper) because yaegi's interpreted os/exec cannot
-		// pass an environment to child processes; unrestricted symbols
-		// are included for parity with skillscript interpretation.
-		loaded, err := registry.LoadDir(cfg.SecretEngineDir, secretEngineSymbols...)
-		if err != nil {
-			return nil, fmt.Errorf("load secret engines from %q: %w", cfg.SecretEngineDir, err)
-		}
-		log.Info("secret engines loaded", "count", loaded)
-	}
-	return registry, nil
-}
 
 func resolveProviderSecrets(cfg *config.Config, registry *secret.Registry, log *slog.Logger) error {
 	if err := resolveProviderMap("root", cfg.Providers, registry, log); err != nil {
@@ -121,11 +89,8 @@ func providerSecretEnvName(scope, providerID string) string {
 }
 
 // ResolveProviders resolves cfg's provider credentials the way the daemon does
-// at boot, for a tool that calls models outside the daemon.
+// at boot, for a tool that calls models outside the daemon. Only the env engine
+// is available there: extension engines run inside the processes that supervise them.
 func ResolveProviders(cfg *config.Config, log *slog.Logger) error {
-	secrets, err := configuredSecretRegistry(cfg, log)
-	if err != nil {
-		return err
-	}
-	return resolveProviderSecrets(cfg, secrets, log)
+	return resolveProviderSecrets(cfg, secret.NewRegistry(), log)
 }

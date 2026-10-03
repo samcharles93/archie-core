@@ -29,6 +29,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	registry "github.com/samcharles93/archie-core/internal/infrastructure/storepkg"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 func configuredIdentityNames(cfg config.Config) []string {
@@ -250,11 +251,9 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 // archie-gateway process on their own store and are out of state-store scope.
 func (b *boot) openStateStore(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
-	secrets, err := configuredSecretRegistry(&cfg, log)
-	if err != nil {
-		log.Error("configure secrets", "err", err)
-		return err
-	}
+	// The State Store serves the installed packages extension engines come from,
+	// so it resolves its own references through the env engine only.
+	secrets := secret.NewRegistry()
 	b.secrets = secrets
 	bindingCipher, err := bindingCipherFromConfig(cfg, secrets)
 	if err != nil {

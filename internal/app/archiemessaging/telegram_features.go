@@ -13,15 +13,16 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // configureTelegram wires the operator seams telegram.Gateway leaves to its
 // composition root. RunningVersions is supplied here from this process's own
 // build stamp; see messagingRunningVersions.
-func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedConfig, chat messaging.ChatContract, log *slog.Logger) {
+func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedConfig, chat messaging.ChatContract, secrets *secret.Registry, log *slog.Logger) {
 	g.Version = gatewayVersionReporter(ctx, chat, cfg.Options.DependencyTimeout)
 	g.SetShowToolCalls(cfg.ShowToolCalls)
-	g.Reload = telegramReloader(cfg.Options, log)
+	g.Reload = telegramReloader(cfg.Options, secrets, log)
 	g.RunningVersions = messagingRunningVersions
 
 	if updates := updateService(cfg); updates != nil {
@@ -82,10 +83,13 @@ func updateService(cfg ResolvedConfig) *releaseupdate.Service {
 // telegramReloader re-resolves the token and allowlist from this service's own
 // configuration on /restart. A reload that cannot produce a token is refused so
 // the running bot keeps the credential it is already authenticated with.
-func telegramReloader(o Options, log *slog.Logger) func(*telegram.Gateway) error {
+func telegramReloader(o Options, secrets *secret.Registry, log *slog.Logger) func(*telegram.Gateway) error {
 	return func(g *telegram.Gateway) error {
 		reloaded, err := Resolve(o, log)
 		if err != nil {
+			return fmt.Errorf("reload config: %w", err)
+		}
+		if err := reloaded.resolveTokens(secrets, log); err != nil {
 			return fmt.Errorf("reload config: %w", err)
 		}
 		if reloaded.TelegramToken == "" {

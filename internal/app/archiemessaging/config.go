@@ -44,8 +44,10 @@ type projection struct {
 	showToolCalls bool
 }
 
-// Resolve loads the configuration, extracts the messaging projection, resolves
-// credentials, and applies defaults.
+// Resolve loads the configuration, extracts the messaging projection and
+// applies defaults. Credentials are not resolved here: they may name an
+// extension engine that starts only after the State Store is dialed, so
+// resolveTokens runs afterwards.
 func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 	var proj projection
 	if o.Config != "" {
@@ -64,28 +66,11 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 		return ResolvedConfig{}, err
 	}
 
-	secrets := secret.NewRegistry()
-	tgToken, err := resolveTelegramToken(proj.telegram, secrets)
-	if err != nil {
-		return ResolvedConfig{}, fmt.Errorf("resolve telegram token: %w", err)
-	}
-
-	// An unresolvable webhook secret is not fatal: the route still serves,
-	// with signature validation off, which is what it did before a secret
-	// was ever configurable. It is logged so the degradation is visible.
-	whSecret, err := resolveWebhookSecret(proj.webhook, secrets)
-	if err != nil {
-		log.Error("webhook secret unresolvable; starting with signature validation disabled",
-			"engine", proj.webhook.Secret.Engine, "key", proj.webhook.Secret.Key, "err", err)
-	}
-
 	return ResolvedConfig{
 		Options:       o,
-		TelegramToken: tgToken,
 		Telegram:      proj.telegram,
 		Email:         proj.email,
 		Webhook:       proj.webhook,
-		WebhookSecret: whSecret,
 		WebhookAddr:   proj.webhookAddr,
 		WorkDir:       proj.workDir,
 		BotUser:       proj.botUser,
@@ -163,4 +148,22 @@ func resolveWebhookSecret(route config.WebhookRoute, secrets *secret.Registry) (
 		return secrets.Resolve(route.Secret)
 	}
 	return "", nil
+}
+
+// resolveTokens fills the channel credentials from the file configuration. An
+// unresolvable webhook secret is not fatal: the route still serves, with
+// signature validation off, which is what it did before a secret was ever
+// configurable. It is logged so the degradation is visible.
+func (c *ResolvedConfig) resolveTokens(secrets *secret.Registry, log *slog.Logger) error {
+	token, err := resolveTelegramToken(c.Telegram, secrets)
+	if err != nil {
+		return fmt.Errorf("resolve telegram token: %w", err)
+	}
+	c.TelegramToken = token
+	c.WebhookSecret, err = resolveWebhookSecret(c.Webhook, secrets)
+	if err != nil {
+		log.Error("webhook secret unresolvable; starting with signature validation disabled",
+			"engine", c.Webhook.Secret.Engine, "key", c.Webhook.Secret.Key, "err", err)
+	}
+	return nil
 }

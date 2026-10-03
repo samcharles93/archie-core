@@ -14,7 +14,8 @@ func (a Authority) Covers(b Authority) bool {
 		listCovers(a.EgressHosts, b.EgressHosts) &&
 		listCovers(a.ForgePermissions, b.ForgePermissions) &&
 		listCovers(a.Triggers, b.Triggers) &&
-		listCovers(a.Tools, b.Tools)
+		listCovers(a.Tools, b.Tools) &&
+		listCovers(a.Env, b.Env)
 }
 
 func listCovers(have, want []string) bool {
@@ -46,6 +47,7 @@ func (a Authority) Validate() error {
 		{name: "egress host", grants: a.EgressHosts},
 		{name: "trigger", grants: a.Triggers},
 		{name: "tool", grants: a.Tools},
+		{name: "env var", grants: a.Env},
 	}
 	for _, field := range fields {
 		for i, grant := range field.grants {

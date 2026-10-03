@@ -405,25 +405,22 @@ func (b *boot) setupLogging() error {
 	return nil
 }
 
-// openStores wires the secret registry, forge client and both stores.
+// openStores wires the secret registry and the conversation store. The
+// registry starts with the env engine only; extension engines join it once the
+// State Store client exists (openStateStoreAdapter), so nothing here resolves a
+// reference that may name one.
 func (b *boot) openStores(ctx context.Context) error {
-	cfg, log := b.cfg, b.log
-	secrets, err := configuredSecretRegistry(&cfg, log)
-	if err != nil {
-		log.Error("configure secrets", "err", err)
-		return err
-	}
-	b.secrets = secrets
-	if err := resolveProviderSecrets(&b.cfg, secrets, log); err != nil {
-		log.Error("resolve provider secrets", "err", err)
-		return err
-	}
-	b.forgeClient, b.token = resolveForge(cfg.Forge, secrets, log)
-
+	b.secrets = secret.NewRegistry()
 	return b.openChatSessions(ctx)
 }
 
-func (b *boot) openStateStoreAdapter() error {
+// openForge builds the forge client. It runs after the runtime settings are
+// layered, so a token held by an extension engine can resolve.
+func (b *boot) openForge() {
+	b.forgeClient, b.token = resolveForge(b.cfg.Forge, b.secrets, b.log)
+}
+
+func (b *boot) openStateStoreAdapter(ctx context.Context) error {
 	target := strings.TrimSpace(b.cfg.Services.Get(config.ServiceNameState).Target)
 	if target == "" {
 		return fmt.Errorf("services.state.target is required: archied/archie-gateway no longer own archie.db; the standalone archie-state-store process owns it (docs/prds/state-store-contract.md §12 step 7)")
@@ -440,6 +437,7 @@ func (b *boot) openStateStoreAdapter() error {
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)
+	b.startSecretEngines(ctx, client)
 	return nil
 }
 
@@ -447,7 +445,7 @@ func (b *boot) openStateStage(ctx context.Context) error {
 	if err := b.openStores(ctx); err != nil {
 		return err
 	}
-	if err := b.openDaemonStateSurfaces(); err != nil {
+	if err := b.openDaemonStateSurfaces(ctx); err != nil {
 		return err
 	}
 	return b.openAccessChain(ctx)

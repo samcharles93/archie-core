@@ -15,7 +15,6 @@ const KIND = "plugin-settings";
 interface PluginSettings {
   plugin_dir: string;
   module_dir: string;
-  secret_engine_dir: string;
   skills_dir: string;
 }
 
@@ -47,12 +46,6 @@ const error = computed(() => store.stateFor(KIND).error);
         <div class="flex flex-wrap items-center gap-3">
           <Input id="pl-modules" v-model="dirs.module_dir" class="max-w-md font-mono" />
           <DraftHint :kind="KIND" path="module_dir" />
-        </div>
-      </SettingRow>
-      <SettingRow label="Secret engine directory" for="pl-secrets" hint="Empty: built-in engines only.">
-        <div class="flex flex-wrap items-center gap-3">
-          <Input id="pl-secrets" v-model="dirs.secret_engine_dir" class="max-w-md font-mono" />
-          <DraftHint :kind="KIND" path="secret_engine_dir" />
         </div>
       </SettingRow>
       <SettingRow label="Skills directory" for="pl-skills" hint="Empty: work directory.">

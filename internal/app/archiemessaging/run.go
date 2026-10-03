@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
@@ -30,6 +31,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	defer closeGateway()
 
+	secrets := secret.NewRegistry()
 	health := newReadinessRegistry(cfg.Options, chat)
 	var settings *messaging.SettingsCommand
 	var closeStateStore func()
@@ -51,16 +53,18 @@ func Run(ctx context.Context, o Options) error {
 		closeStateStore = closeClient
 		defer closeStateStore()
 		controlPlaneClient := controlplanerpc.NewRPCClient(stateStore.ControlPlane())
+		reporter := applystatus.New(applystatus.Messaging, stateStore, log)
+		defer secretengine.Supervise(ctx, secrets, secretengine.Source{Query: controlPlaneClient, Packages: stateStore}, applystatus.Messaging, func(ctx context.Context, version int64, err error) {
+			reporter.Report(ctx, controlplanerpc.ExtensionSettingsKind, version, err)
+		}, log).Close()
 		chatSettings, channelVersion, settingsErr := controlPlaneClient.RuntimeChatConfig(ctx, config.ChatConfig{
 			Telegram: cfg.Telegram, Email: cfg.Email, Webhook: cfg.Webhook, WebhookAddr: cfg.WebhookAddr, ShowToolCalls: cfg.ShowToolCalls,
 		})
 		if settingsErr != nil {
 			return fmt.Errorf("load channel settings: %w", settingsErr)
 		}
-		reporter := applystatus.New(applystatus.Messaging, stateStore, log)
 		reporter.Report(ctx, controlplanerpc.ChannelSettingsKind, channelVersion, nil)
 		go reporter.Run(ctx)
-		secrets := secret.NewRegistry()
 		cfg.Telegram, cfg.Email, cfg.Webhook, cfg.WebhookAddr, cfg.ShowToolCalls = chatSettings.Telegram, chatSettings.Email, chatSettings.Webhook, chatSettings.WebhookAddr, chatSettings.ShowToolCalls
 		cfg.TelegramToken, settingsErr = resolveTelegramToken(chatSettings.Telegram, secrets)
 		if settingsErr != nil {
@@ -75,7 +79,13 @@ func Run(ctx context.Context, o Options) error {
 		settingsSource, applyReporter, appliedVersion = controlPlaneClient, reporter, channelVersion
 	}
 
+	if cfg.Options.StateStore.Target == "" {
+		if err := cfg.resolveTokens(secrets, log); err != nil {
+			return err
+		}
+	}
 	srv, err := compose(ctx, deps{
+		Secrets:        secrets,
 		ChannelStatus:  channelStatusStore,
 		Config:         cfg,
 		Log:            log,
