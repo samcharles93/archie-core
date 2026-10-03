@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samcharles93/ai-sdk/runtime"
+	"github.com/samcharles93/ai-sdk/catalog"
 
 	"github.com/samcharles93/archie-core/internal/config"
 )
@@ -56,7 +56,7 @@ type catalogProvider struct {
 	NPM    string                          `json:"npm"`
 	API    string                          `json:"api"`
 	Env    []string                        `json:"env"`
-	Models map[string]runtime.CatalogModel `json:"models"`
+	Models map[string]catalog.Model `json:"models"`
 }
 
 func Load(ctx context.Context, opts Options) (Snapshot, error) {
@@ -90,7 +90,7 @@ func Load(ctx context.Context, opts Options) (Snapshot, error) {
 func fetch(ctx context.Context, opts Options) ([]byte, error) {
 	url := strings.TrimSpace(opts.URL)
 	if url == "" {
-		url = runtime.DefaultCatalogURL
+		url = catalog.DefaultURL
 	}
 	client := opts.HTTPClient
 	if client == nil {
@@ -195,7 +195,7 @@ func usableProvider(key string, source catalogProvider, opts Options) (Provider,
 
 func providerRuntimeDefaults(source catalogProvider) (class, baseURL string) {
 	class = "openai-compatible"
-	if mapped, ok := runtime.NPMClassMapping[source.NPM]; ok {
+	if mapped, ok := catalog.NPMClassMapping[source.NPM]; ok {
 		class = mapped
 	}
 	return class, source.API
@@ -210,7 +210,7 @@ func firstSetEnv(names []string, getenv func(string) string) string {
 	return ""
 }
 
-func toolModels(source map[string]runtime.CatalogModel) []Model {
+func toolModels(source map[string]catalog.Model) []Model {
 	models := make([]Model, 0, len(source))
 	for key, model := range source {
 		if !model.ToolCall {
