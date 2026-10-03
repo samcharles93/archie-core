@@ -1,6 +1,6 @@
 # Running this distribution
 
-This archive contains six linux/amd64 binaries:
+This archive contains five linux/amd64 binaries:
 
 Each service owns its data and reaches the others only through their gRPC
 contracts (or NATS, for task actions):
@@ -13,8 +13,8 @@ contracts (or NATS, for task actions):
 | `archie-messaging` | the Telegram, email and webhook channel connections | Gateway; State Store for channel settings |
 | `archie-ui` | the dashboard and the webhook capture receiver | Gateway; State Store |
 
-- **`archie-playbooks`** is a CLI that lints playbook binding YAML before it
-  reaches `archied`.
+`archied playbooks lint` checks playbook binding YAML before it reaches the
+daemon, and `archied playbooks serve` is its language server for editors.
 
 Without `archie-messaging` the channels are simply absent, so it needs a unit
 of its own (`deployments/systemd-user-service.md`).
@@ -69,15 +69,15 @@ as a host binary. Pull it from GHCR: `ghcr.io/samcharles93/archie-agent`.
 
 ## Verifying an install
 
-`archie-playbooks lint -dir <playbooks-dir>` validates playbook binding YAML
+`archied playbooks lint -dir <playbooks-dir>` validates playbook binding YAML
 against the same schema `archied` loads at startup — run it against your
 playbooks directory before pointing `archied` at it.
 
 ## Version
 
 This archive's binaries are built from the `archied` release tag in its
-filename; `archie-ui`, `archie-gateway`, `archie-state-store`,
-`archie-messaging` and `archie-playbooks` ship at that same version rather than
+filename; `archie-ui`, `archie-gateway`, `archie-state-store` and
+`archie-messaging` ship at that same version rather than
 being independently tagged (see `RELEASING.md` in the source repository for why
 only `archied` and `archie-agent` are independently versioned).
 
@@ -85,5 +85,4 @@ only `archied` and `archie-agent` are independently versioned).
 `archied` are services that must be running and addressable; `archie-messaging`
 carries the Telegram, email and webhook channels since the v1.30.0 extraction, so
 an install (or an upgrade across v1.30.0) needs its unit as well -- see
-`deployments/systemd-user-service.md`. `archie-playbooks` is a CLI and runs on
-demand.
+`deployments/systemd-user-service.md`.

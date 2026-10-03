@@ -193,12 +193,12 @@ echo "==> Building native archie binaries..."
   # webhook channels dead with no error anywhere. This list,
   # the zip's two lists and the two in scripts/archie-update-install must agree;
   # TestDistZipShipsEveryHostCommand fails when they do not.
-  for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks; do
+  for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging; do
     go build -ldflags "${LDFLAGS}" -o "${ARCHIE_BIN_DIR}/${cmd}" "./cmd/${cmd}"
   done
   install -m755 "${SRC_DIR}/scripts/archie-update-install" "${ARCHIE_BIN_DIR}/archie-update-install"
 )
-echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-messaging, archie-playbooks and updater to ${ARCHIE_BIN_DIR}/"
+echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-messaging and updater to ${ARCHIE_BIN_DIR}/"
 
 # 5. Interactive Configuration: Forge & LLM Provider Setup
 if [ ! -f "${ENV_FILE}" ]; then
@@ -563,7 +563,7 @@ echo "  ✓ Archie Core Installation Complete!"
 echo "============================================================"
 echo ""
 echo "Installation Details:"
-echo "  - Binaries   : ${ARCHIE_BIN_DIR}/{archied,archie-state-store,archie-gateway,archie-ui,archie-messaging,archie-playbooks}"
+echo "  - Binaries   : ${ARCHIE_BIN_DIR}/{archied,archie-state-store,archie-gateway,archie-ui,archie-messaging}"
 echo "  - Agent image: ghcr.io/samcharles93/archie-agent:latest"
 echo "  - Config     : ${ARCHIE_CONFIG_DIR}/config.toml"
 echo "  - Secrets    : ${ENV_FILE}"

@@ -6,8 +6,8 @@ version covering whatever changed; the components' entries are labelled sections
 inside it (`### archied`, `### archie-agent`), not separate numbers or separate
 pages.
 
-The host bundle ships six processes — `archied`, `archie-gateway`,
-`archie-state-store`, `archie-ui`, `archie-messaging`, `archie-playbooks` — and
+The host bundle ships five processes (`archied`, `archie-gateway`,
+`archie-state-store`, `archie-ui`, `archie-messaging`), and
 one version covers all of them. `archie-agent`, the per-task sandboxed runtime,
 ships as a container image and its changes are the `## [version]` release's
 `### archie-agent` section.
@@ -105,7 +105,7 @@ Tagging one version produces, from a single `deploy` run:
   follows `:edge`.
 - **A GitHub Release with a distribution zip** — `dist-zip` builds every process
   the reference deployment runs (`archied`, `archie-gateway`,
-  `archie-state-store`, `archie-ui`, `archie-messaging`, `archie-playbooks`) for
+  `archie-state-store`, `archie-ui`, `archie-messaging`) for
   linux/amd64, packs them with `deployments/INSTRUCTIONS.md` and `CHANGELOG.md`,
   and attaches the zip to the Release. The Release body is that version's
   `## [version]` section of `CHANGELOG.md`.

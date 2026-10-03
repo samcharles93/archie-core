@@ -54,7 +54,7 @@ func (s *server) Initialize(context.Context, *protocol.InitializeParams) (*proto
 				Save:      protocol.Boolean(true),
 			},
 		},
-		ServerInfo: protocol.ServerInfo{Name: "archie-playbooks"},
+		ServerInfo: protocol.ServerInfo{Name: "archied-playbooks"},
 	}, nil
 }
 
@@ -101,7 +101,7 @@ func diagnose(u uri.URI) *protocol.PublishDiagnosticsParams {
 		out.Diagnostics = append(out.Diagnostics, protocol.Diagnostic{
 			Range:    protocol.Range{Start: protocol.Position{Line: line}, End: protocol.Position{Line: line + 1}},
 			Severity: protocol.DiagnosticSeverityError,
-			Source:   protocol.NewOptional("archie-playbooks"),
+			Source:   protocol.NewOptional("archied-playbooks"),
 			Message:  protocol.String(finding),
 		})
 	}

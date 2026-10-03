@@ -1,4 +1,4 @@
-// Package archieplaybooks implements the archie-playbooks CLI, using the
+// Package archieplaybooks implements the `archied playbooks` command, using the
 // daemon's own playbook loaders.
 package archieplaybooks
 

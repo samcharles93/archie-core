@@ -99,7 +99,7 @@ tasks:
   lint:playbooks:
     desc: Validate playbook bindings
     cmds:
-      - go run ./cmd/archie-playbooks lint -dir ./playbooks
+      - go run ./cmd/archied playbooks lint -dir ./playbooks
 
   vuln:
     desc: Scan for known vulnerabilities (requires network access)

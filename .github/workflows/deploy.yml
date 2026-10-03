@@ -273,7 +273,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=archie-agent
 
   # Packages every host-run binary (archied, archie-gateway,
-  # archie-state-store, archie-ui, archie-messaging, archie-playbooks) as a
+  # archie-state-store, archie-ui, archie-messaging) as a
   # linux/amd64 zip for a
   # non-Docker install. Independent of build-and-push: it never touches the
   # archied/archie-agent image jobs, and a gateway-only release (no
@@ -329,7 +329,7 @@ jobs:
           # list and the copy list below stop matching the commands in cmd/.
           ldflags="-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary -X github.com/samcharles93/archie-core/internal/buildinfo.Version=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${{ steps.version.outputs.version }}"
           mkdir -p dist
-          for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging archie-playbooks; do
+          for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging; do
             go build -ldflags "$ldflags" -o "dist/$cmd" "./cmd/$cmd"
           done
 
@@ -339,7 +339,7 @@ jobs:
           set -e
           name="archie-core-archied-v${{ steps.version.outputs.version }}-linux-amd64"
           mkdir -p "$name"
-          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-ui dist/archie-messaging dist/archie-playbooks "$name/"
+          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-ui dist/archie-messaging "$name/"
           cp deployments/INSTRUCTIONS.md CHANGELOG.md "$name/"
           # README.md doesn't exist yet in this repo; include it once it does
           # rather than fail the release on its absence.

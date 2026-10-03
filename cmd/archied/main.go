@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/app/archieplaybooks"
 )
 
 func main() {
@@ -14,6 +15,9 @@ func main() {
 	// store, NATS, or the running daemon's configuration.
 	if archied.IsSetupArgs(args) {
 		os.Exit(archied.RunSetup(args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(args) > 0 && args[0] == "playbooks" {
+		os.Exit(archieplaybooks.Run(args[1:], os.Stderr))
 	}
 	os.Exit(archied.Run())
 }
