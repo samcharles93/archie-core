@@ -153,6 +153,10 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 		return access.ActionReadLogs, access.KindTask, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/identities"):
 		return actionManage(action), access.KindIdentity, segmentValue(path, 2), true
+	case matchPrefix(path, "/api/extensions"):
+		// Installing and enabling an extension runs a process on the host, so it
+		// is the same administration as editing a control-plane resource.
+		return actionManage(action), access.KindPolicy, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/control-plane/resources"):
 		return actionManage(action), access.KindPolicy, segmentValue(path, 3), true
 	case matchPrefix(path, "/api/chat"):

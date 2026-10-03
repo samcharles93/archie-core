@@ -11,6 +11,7 @@ import ToolsPage from "@/settings/ToolsPage.vue";
 import HistoryPage from "@/settings/HistoryPage.vue";
 import PersonasPage from "@/settings/PersonasPage.vue";
 import SchedulesPage from "@/settings/SchedulesPage.vue";
+import ExtensionsPage from "@/settings/ExtensionsPage.vue";
 import PluginsPage from "@/settings/PluginsPage.vue";
 import ContainerRuntimePage from "@/settings/ContainerRuntimePage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
@@ -256,6 +257,18 @@ const routes = [
       settings: true,
       label: "Tools & MCP",
       description: "The tools agents can call, and the MCP servers that add more.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/extensions",
+    name: "settings-extensions",
+    component: ExtensionsPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Extensions",
+      description: "Installable extensions: install, accept what they may use, enable.",
       section: "settings",
     },
   },

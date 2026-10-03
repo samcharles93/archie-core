@@ -44,6 +44,7 @@ const settings: NavSpec = {
         "/settings/repositories",
         "/settings/identities",
         "/settings/tools",
+        "/settings/extensions",
         "/settings/plugins",
       ],
     },

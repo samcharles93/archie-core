@@ -174,6 +174,7 @@ export type ControlPlanePage =
   | "personas"
   | "schedules"
   | "plugins"
+  | "extensions"
   | "containers"
   | "review"
   | "workflows";
@@ -187,7 +188,8 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   tools: ["tool-settings"],
   personas: ["personas"],
   schedules: ["schedules"],
-  plugins: ["plugin-settings", "extension-settings"],
+  plugins: ["plugin-settings"],
+  extensions: ["extension-settings"],
   containers: ["container-runtime-policies"],
   review: ["review-settings"],
   workflows: ["workflow-definitions"],

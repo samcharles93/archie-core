@@ -16,6 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -78,6 +79,10 @@ type Server struct {
 	// never carries actor, source, or request IDs.
 	ControlPlane controlpb.ControlPlaneServiceClient
 	Identities   identity.Repository
+
+	// Packages is the State Store's installed-package surface, behind the
+	// extensions page. Nil answers 503.
+	Packages storepkg.Manager
 
 	// ApplyStatus reports which control-plane resource version each process
 	// is running. Optional: nil renders an empty page rather than failing the
@@ -272,6 +277,11 @@ func (s *Server) registerHarnessRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/extensions", s.handleExtensions)
+	mux.HandleFunc("POST /api/extensions", s.handleExtensionInstall)
+	mux.HandleFunc("POST /api/extensions/{name}/accept", s.handleExtensionAccept)
+	mux.HandleFunc("PUT /api/extensions/{name}/enabled", s.handleExtensionEnabled)
+	mux.HandleFunc("DELETE /api/extensions/{name}", s.handleExtensionRemove)
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
 	mux.HandleFunc("GET /api/control-plane/apply-status", s.handleApplyStatus)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}", s.handleControlPlaneQuery)

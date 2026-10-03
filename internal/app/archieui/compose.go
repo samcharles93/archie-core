@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
@@ -58,6 +59,9 @@ func compose(d deps) *webui.Server {
 	}
 	if snapshots, ok := d.Store.(storecontract.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)
+	}
+	if packages, ok := d.Store.(storepkg.Manager); ok {
+		srv.Packages = packages
 	}
 	if steps, ok := d.Store.(storecontract.StepReader); ok {
 		srv.Steps = steps
