@@ -228,7 +228,6 @@ type StorageView struct {
 	StateDir    string `json:"state_dir"`
 	DatabaseURL string `json:"database_url"`
 	SkillsDir   string `json:"skills_dir,omitempty"`
-	PluginDir   string `json:"plugin_dir,omitempty"`
 }
 
 // ContainersView is how sandboxed task execution is configured.
@@ -354,7 +353,6 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			StateDir:    cfg.StateDir,
 			DatabaseURL: cfg.DatabaseURL,
 			SkillsDir:   cfg.SkillsDir,
-			PluginDir:   cfg.PluginDir,
 		},
 		Containers: ContainersView{
 			Image:          cfg.Containers.Image,

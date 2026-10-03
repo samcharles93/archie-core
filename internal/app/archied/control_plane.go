@@ -372,7 +372,6 @@ func (b *boot) resizeTaskDispatcher(maxConcurrency int) {
 // tick loads only what appears or changes afterwards.
 func (b *boot) startPluginReconcile(ctx context.Context) {
 	r := newPluginReconciler(b.log, pluginReconcileTargets{
-		host:    b.capabilityHost,
 		modules: b.modules,
 		dirs:    func() config.Config { return b.cfgHolder.Get() },
 		relayer: func(ctx context.Context) error {

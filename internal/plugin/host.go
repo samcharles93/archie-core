@@ -186,44 +186,6 @@ type Module interface {
 	Stop(context.Context) error
 }
 
-// AdaptLegacy wraps a metadata-only Plugin as a no-op lifecycle module.
-func AdaptLegacy(legacy Plugin) (Module, error) {
-	if isNilPlugin(legacy) {
-		return nil, errors.New("legacy plugin is nil")
-	}
-	name, version, err := safeLegacyInfo(legacy)
-	if err != nil {
-		return nil, err
-	}
-	manifest := Manifest{
-		ID:           name,
-		Name:         name,
-		Version:      version,
-		APIVersion:   HostAPIVersion,
-		Capabilities: []CapabilityKind{"plugin.metadata"},
-	}
-	if err := manifest.Validate(); err != nil {
-		return nil, fmt.Errorf("legacy plugin manifest: %w", err)
-	}
-	return &legacyModule{manifest: manifest}, nil
-}
-
-type legacyModule struct {
-	manifest Manifest
-}
-
-func (m *legacyModule) Manifest() Manifest {
-	return m.manifest.clone()
-}
-
-func (m *legacyModule) Start(context.Context) error {
-	return nil
-}
-
-func (m *legacyModule) Stop(context.Context) error {
-	return nil
-}
-
 type hostState uint8
 
 const (
@@ -428,10 +390,6 @@ func isNilModule(module Module) bool {
 	return isNilInterface(module)
 }
 
-func isNilPlugin(legacy Plugin) bool {
-	return isNilInterface(legacy)
-}
-
 func isNilInterface(value any) bool {
 	if value == nil {
 		return true
@@ -443,15 +401,6 @@ func isNilInterface(value any) bool {
 	default:
 		return false
 	}
-}
-
-func safeLegacyInfo(legacy Plugin) (name, version string, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("legacy plugin metadata panic: %v", recovered)
-		}
-	}()
-	return legacy.Name(), legacy.Version(), nil
 }
 
 func safeManifest(module Module) (manifest Manifest, err error) {
@@ -495,122 +444,6 @@ func reverseClone(values []string) []string {
 	return out
 }
 
-// Add registers and starts a module on a host that is already running, the
-// running-state half of a live plugin load.
-// The module starts on its own -- every module registered before it is already
-// running -- and a failed start removes it again without disturbing them. On a
-// host that has not started, Add behaves like Register and the module starts
-// with the rest.
-func (h *Host) Add(ctx context.Context, module Module) error {
-	h.opMu.Lock()
-	defer h.opMu.Unlock()
-
-	manifest, err := prepareModule(module)
-	if err != nil {
-		return err
-	}
-
-	h.mu.Lock()
-	h.ensureModulesLocked()
-	if _, exists := h.modules[manifest.ID]; exists {
-		h.mu.Unlock()
-		return fmt.Errorf("plugin module %q is already registered", manifest.ID)
-	}
-	h.modules[manifest.ID] = &registeredModule{module: module, manifest: manifest}
-	h.registration = append(h.registration, manifest.ID)
-	state := h.state
-	h.mu.Unlock()
-
-	switch state {
-	case hostIdle:
-		// Not started yet: Start will pick this module up with the rest.
-		return nil
-	case hostRunning:
-	default:
-		h.remove(manifest.ID)
-		return fmt.Errorf("plugin host cannot add a module from state %d", state)
-	}
-
-	// Every registered module is running while the host is running, so a
-	// dependency that is not registered cannot be satisfied by a later module
-	// in this pass; refuse and let the next reconciliation retry once it is.
-	for _, dependency := range manifest.Dependencies {
-		if !h.registered(dependency) {
-			h.remove(manifest.ID)
-			return fmt.Errorf("plugin module %q depends on unregistered module %q", manifest.ID, dependency)
-		}
-	}
-
-	if err := safeStart(ctx, manifest.ID, module); err != nil {
-		h.remove(manifest.ID)
-		return err
-	}
-	h.mu.Lock()
-	h.started = append(h.started, manifest.ID)
-	h.mu.Unlock()
-	return nil
-}
-
-// Replace swaps the module whose manifest id matches for a new one while the
-// host is running. The old module is stopped and the new one started; when
-// the new start fails the old one is restarted, so a refused replacement
-// leaves the running set as it was. Replacing a module another running module
-// depends on is refused rather than swapped, because the dependent would keep
-// calling a stopped implementation.
-func (h *Host) Replace(ctx context.Context, module Module) error {
-	h.opMu.Lock()
-	defer h.opMu.Unlock()
-
-	manifest, err := prepareModule(module)
-	if err != nil {
-		return err
-	}
-
-	h.mu.Lock()
-	previous, exists := h.modules[manifest.ID]
-	if !exists {
-		h.mu.Unlock()
-		return fmt.Errorf("plugin module %q is not registered", manifest.ID)
-	}
-	if dependent, ok := h.runningDependentLocked(manifest.ID); ok {
-		h.mu.Unlock()
-		return fmt.Errorf("plugin module %q is required by running module %q and cannot be replaced", manifest.ID, dependent)
-	}
-	wasStarted := slices.Contains(h.started, manifest.ID)
-	h.mu.Unlock()
-
-	if !wasStarted {
-		// Not running: swap the registration only, so a later Start uses the
-		// replacement.
-		h.mu.Lock()
-		h.modules[manifest.ID] = &registeredModule{module: module, manifest: manifest}
-		h.mu.Unlock()
-		return nil
-	}
-
-	if err := safeStop(ctx, manifest.ID, previous.module); err != nil {
-		return err
-	}
-	if err := safeStart(ctx, manifest.ID, module); err != nil {
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
-		restartErr := safeStart(rollbackCtx, manifest.ID, previous.module)
-		cancel()
-		return errors.Join(err, restartErr)
-	}
-	h.mu.Lock()
-	h.modules[manifest.ID] = &registeredModule{module: module, manifest: manifest}
-	h.mu.Unlock()
-	return nil
-}
-
-// Has reports whether a module with id is registered, running or not.
-func (h *Host) Has(id string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	_, ok := h.modules[id]
-	return ok
-}
-
 // Manifests returns the registered modules' manifests sorted by id. It is the
 // read side of the running set: a live load reports what is loaded from here.
 func (h *Host) Manifests() []Manifest {
@@ -638,38 +471,4 @@ func prepareModule(module Module) (Manifest, error) {
 		return Manifest{}, err
 	}
 	return manifest.clone(), nil
-}
-
-// registered reports whether id is registered. The caller holds no lock.
-func (h *Host) registered(id string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	_, ok := h.modules[id]
-	return ok
-}
-
-// runningDependentLocked returns a started module other than id that depends
-// on id, which is what makes replacing id unsafe. The caller holds h.mu.
-func (h *Host) runningDependentLocked(id string) (string, bool) {
-	for _, startedID := range h.started {
-		if startedID == id {
-			continue
-		}
-		entry, ok := h.modules[startedID]
-		if !ok {
-			continue
-		}
-		if slices.Contains(entry.manifest.Dependencies, id) {
-			return startedID, true
-		}
-	}
-	return "", false
-}
-
-// remove unregisters id, the rollback of a refused Add.
-func (h *Host) remove(id string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.modules, id)
-	h.registration = slices.DeleteFunc(h.registration, func(v string) bool { return v == id })
 }

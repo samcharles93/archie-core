@@ -179,7 +179,6 @@ func DefaultConfigPath() string {
 // applyGeneralDefaults derives the paths and limits that have no owning
 // section.
 func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
-	cfg.PluginDir = expandHomePath(cfg.PluginDir)
 	cfg.ModuleDir = expandHomePath(cfg.ModuleDir)
 	cfg.SkillsDir = expandHomePath(cfg.SkillsDir)
 	cfg.WorkDir = expandHomePath(cfg.WorkDir)

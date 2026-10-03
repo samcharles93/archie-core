@@ -376,9 +376,6 @@ type Config struct {
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`
-	// PluginDir is an optional directory of Yaegi daemon plugins (*.go), each
-	// exporting a "Plugin" variable. Failed plugins are skipped.
-	PluginDir string `toml:"plugin_dir" yaml:"plugin_dir"`
 	// ModuleDir is an optional directory of Yaegi module implementations, one
 	// *.go file per kind exporting "Run". A broken module stops startup.
 	ModuleDir string `toml:"module_dir" yaml:"module_dir"`

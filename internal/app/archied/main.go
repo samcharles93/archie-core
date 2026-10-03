@@ -37,7 +37,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -190,9 +189,6 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 	if err := b.loadWorkflows(); err != nil {
-		return 1
-	}
-	if err := b.loadPlugins(); err != nil {
 		return 1
 	}
 	// Every directory loader has run by here, so the reconciliation seeds the
@@ -422,18 +418,6 @@ func updateReportPath(workDir, identity string) string {
 		workDir,
 		fmt.Sprintf("update-report-%x.json", identityHash[:8]),
 	)
-}
-
-// safePluginInfo calls Name() and Version() on a plugin, recovering from
-// panics. A panicking plugin must not crash the daemon at startup.
-func safePluginInfo(p plugin.Plugin) (name, version string) {
-	defer func() {
-		if r := recover(); r != nil {
-			name = "(panic)"
-			version = "(panic)"
-		}
-	}()
-	return p.Name(), p.Version()
 }
 
 // startContainers brings up the mandatory autonomous-worker pool and storage

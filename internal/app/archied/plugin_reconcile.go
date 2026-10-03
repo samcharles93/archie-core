@@ -17,16 +17,11 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
-	"github.com/samcharles93/archie-core/internal/plugin"
-	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 )
 
 // The directory families a plugin-settings document names and a
 // reconciliation reads.
-const (
-	reconcilePlugins = "plugin"
-	reconcileModules = "module"
-)
+const reconcileModules = "module"
 
 // pluginReconciler loads plugin and module files that appear or
 // change in the directories the running configuration names, so an operator can
@@ -50,7 +45,6 @@ type pluginReconciler struct {
 }
 
 type pluginReconcileTargets struct {
-	host    *plugin.Host
 	modules *module.ModuleRegistry
 	// dirs returns the running configuration, the source of the
 	// directories. It is read each tick so a changed directory retargets the
@@ -132,7 +126,6 @@ type reconcileCategory struct {
 
 func (r *pluginReconciler) categories(cfg config.Config) []reconcileCategory {
 	return []reconcileCategory{
-		{reconcilePlugins, cfg.PluginDir},
 		{reconcileModules, cfg.ModuleDir},
 	}
 }
@@ -219,33 +212,11 @@ func (r *pluginReconciler) reconcileCategory(ctx context.Context, spec reconcile
 
 func (r *pluginReconciler) load(ctx context.Context, category, path string) error {
 	switch category {
-	case reconcilePlugins:
-		return r.loadPlugin(ctx, path)
 	case reconcileModules:
 		return r.loadModule(path)
 	default:
 		return fmt.Errorf("unknown reconcile category %q", category)
 	}
-}
-
-func (r *pluginReconciler) loadPlugin(ctx context.Context, path string) error {
-	if r.host == nil {
-		return errors.New("no plugin host to load into")
-	}
-	loaded, err := plugin.LoadFile(path, pluginextract.Symbols)
-	if err != nil {
-		return err
-	}
-	module, err := plugin.AdaptLegacy(loaded)
-	if err != nil {
-		return err
-	}
-	// The manifest id is the plugin's name, so an edited file that keeps its
-	// name replaces the running module and a new name adds one.
-	if r.host.Has(module.Manifest().ID) {
-		return r.host.Replace(ctx, module)
-	}
-	return r.host.Add(ctx, module)
 }
 
 func (r *pluginReconciler) loadModule(path string) error {

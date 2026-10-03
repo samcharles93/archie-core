@@ -52,8 +52,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/plugin"
-	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -176,8 +174,7 @@ type boot struct {
 	chatTasks           gateway.TaskCreator
 	defaultChatIdentity string
 
-	startGateways  []func()
-	capabilityHost *plugin.Host
+	startGateways []func()
 	// pluginReconciler loads plugin and module files dropped into
 	// the running config's directories without a restart. Nil before boot's
 	// startPluginReconcile, and in processes that load no directory (the
@@ -590,36 +587,6 @@ func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
 	return nil
 }
 
-// loadPlugins loads daemon plugins from the configured plugin directory
-// (Layer 2). Failed plugins are skipped  --  the daemon starts with the
-// remaining set.
-func (b *boot) loadPlugins() error {
-	cfg, log := b.cfg, b.log
-	b.capabilityHost = plugin.NewHost()
-	if cfg.PluginDir == "" {
-		return nil
-	}
-	plugins, err := plugin.LoadDir(cfg.PluginDir, pluginextract.Symbols)
-	if err != nil {
-		log.Error("plugin load failed", "dir", cfg.PluginDir, "err", err)
-		return err
-	}
-	for _, p := range plugins {
-		name, version := safePluginInfo(p)
-		module, err := plugin.AdaptLegacy(p)
-		if err != nil {
-			log.Warn("daemon plugin capability registration skipped", "name", name, "version", version, "err", err)
-			continue
-		}
-		if err := b.capabilityHost.Register(module); err != nil {
-			log.Warn("daemon plugin capability registration skipped", "name", name, "version", version, "err", err)
-			continue
-		}
-		log.Info("daemon plugin loaded", "name", name, "version", version)
-	}
-	return nil
-}
-
 func (b *boot) buildWorktreeManager() {
 	cfg := b.cfg
 	b.trees = &worktree.Manager{
@@ -884,26 +851,8 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 	go reloadLoop(ctx, reloadCh, reloadController, log)
 }
 
-//nolint:contextcheck // shutdown runs after the parent context is cancelled
-func shutdownCapabilityHost(capabilityHost *plugin.Host, log *slog.Logger) func() {
-	return func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := capabilityHost.Stop(stopCtx); err != nil {
-			log.Error("capability host shutdown", "err", err)
-		}
-	}
-}
-
 func (b *boot) startServices(ctx context.Context) error {
 	log := b.log
-	capabilityHost := b.capabilityHost
-	b.addCleanup(shutdownCapabilityHost(capabilityHost, log))
-	if err := b.capabilityHost.Start(ctx); err != nil {
-		log.Error("capability host startup", "err", err)
-		return err
-	}
-
 	if err := b.d.Startup(ctx); err != nil {
 		log.Error("startup", "err", err)
 		return err

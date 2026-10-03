@@ -24,7 +24,7 @@ func TestExtensionRoutesAreAdministration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			action, kind, _ := accessRequest(httptest.NewRequest(tt.method, tt.path, nil))
+			action, kind, _ := accessRequest(httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil))
 			if action != tt.action || kind != access.KindPolicy {
 				t.Fatalf("accessRequest = %q on %q, want %q on %q", action, kind, tt.action, access.KindPolicy)
 			}
