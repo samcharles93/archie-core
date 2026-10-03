@@ -7,13 +7,8 @@ import (
 	"os"
 )
 
-// Report is the phase-2 outcome of an update: whether the daemon came back
-// up healthy after restarting, written by whichever process determined that
-// (the deployment's restart/health-check tooling) and read, relayed to
-// Channel/ChatID/ThreadID, and cleared by whichever archied process boots
-// next -- which may be the newly installed version (success) or the
-// previous one, if a crash-loop forced a rollback before this code could
-// ever run on the new version.
+// Report is an update's post-restart outcome, written by the restart tooling
+// and relayed by the next archied boot.
 type Report struct {
 	Channel     string            `json:"channel"`
 	ChatID      int64             `json:"chat_id"`

@@ -114,11 +114,8 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 	return unmapError(err)
 }
 
-// StartStep and FinishStep record the run's step executions
-// under the run credential, which
-// the State Store's grant interceptor scopes to the execution the requests
-// name. Each returns the transition's persisted event for the caller's
-// post-commit publish.
+// StartStep and FinishStep record step executions and return the persisted
+// event.
 func (c *Client) StartStep(ctx context.Context, s task.StepStart) (int64, events.Event, error) {
 	r, err := c.client.StartStep(ctx, &pb.StartStepRequest{
 		ExecutionId: s.ExecutionID, Attempt: int64(s.Attempt),

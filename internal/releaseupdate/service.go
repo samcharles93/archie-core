@@ -23,11 +23,8 @@ type Catalog interface {
 	Check(context.Context) (Snapshot, error)
 }
 
-// Installer applies an approved update. It reports only work it has actually
-// started; callers remain responsible for telling users the final result.
-// The returned Result covers only the synchronous phase (fetch/build/
-// install) -- whether a subsequent restart actually came up healthy is
-// reported later, out of band, via a Report (see pending_report.go).
+// Installer applies an approved update. The restart outcome is reported
+// later as a Report.
 type Installer interface {
 	Install(context.Context, Snapshot, InstallMeta, func(string)) (Result, error)
 }
@@ -38,15 +35,8 @@ type Component struct {
 	Installed string
 	Available string
 	Changelog string
-	// InstallType and Reference describe how this component is actually
-	// deployed -- "binary"/"container"/"embedded"/"external", and a
-	// deployment-specific pointer such as an image digest or a NATS URL.
-	// The external check command that populates Installed/Available cannot
-	// know either of these: it reports what version exists, not how this
-	// particular instance was installed. See Service.Enrich, which fills
-	// them in from sources that actually know (this process's own build
-	// stamp, an observed archie-agent version, deployment configuration for
-	// a third-party dependency this repo doesn't build).
+	// InstallType and Reference describe how this component is deployed, filled
+	// by Service.Enrich.
 	InstallType string
 	Reference   string
 }
@@ -93,25 +83,11 @@ type Service struct {
 	Installer Installer
 	StatePath string
 
-	// InstallType gates Install: it must be a value the release pipeline
-	// actually stamps (see package installtype), never "" or
-	// installtype.Unknown, or Install refuses to run the configured
-	// Installer at all. The composition root wires this from
-	// installtype.Type() -- Service itself never reads that package
-	// directly, so a test can exercise every InstallType without touching
-	// process-wide state.
+	// InstallType must be a stamped install type, or Install refuses to run.
 	InstallType string
 
-	// Enrich supplies InstallType/Reference for a known component ID (see
-	// ComponentDaemon, ComponentAgent, ComponentNATS), using sources the
-	// external check command has no way to know -- this process's own
-	// compiled-in installtype.Type(), an archie-agent version actually
-	// observed at runtime (daemon.AgentStatus), or deployment configuration
-	// for a third-party dependency archie doesn't build. Optional: nil (or
-	// a component ID Enrich doesn't recognise, or an empty installType
-	// return) leaves whatever the check command itself reported untouched,
-	// so a check command that DOES report its own value is never silently
-	// overwritten.
+	// Enrich returns a component's install type and reference. Nil or an empty
+	// result leaves the check command's values.
 	Enrich func(componentID string) (installType, reference string)
 
 	mu         sync.Mutex
@@ -193,12 +169,7 @@ func (s *Service) Defer(ctx context.Context, recipient int64, expected Snapshot)
 // instance was actually deployed.
 var ErrUnknownInstallType = errors.New("refusing to install: install type is unknown")
 
-// ErrInstallInProgress is returned by Install when another install is
-// already running. Telegram and the web dashboard each keep their own
-// local "already in progress" flag for a quick UI response, but both are
-// wired to the same Service in production -- this is the one guard that
-// actually sees both, since a caller-local bool would let one adapter start
-// a second install while the other's is still copying binaries.
+// ErrInstallInProgress is returned when another install is running.
 var ErrInstallInProgress = errors.New("an update is already in progress")
 
 // installTimeout bounds an install after it has been deliberately detached
@@ -206,17 +177,8 @@ var ErrInstallInProgress = errors.New("an update is already in progress")
 // script would hold the in-progress lock forever.
 const installTimeout = 30 * time.Minute
 
-// Install runs the configured Installer. The context it hands the
-// Installer is intentionally NOT ctx: ctx belongs to whatever triggered the
-// update (a chat message handler cancelled by /restart, an HTTP request
-// cancelled by a client disconnect), and exec.CommandContext SIGKILLs its
-// child the instant that context is cancelled. The install script backs up
-// and overwrites the live binaries with plain, non-atomic copies -- a kill
-// mid-copy can leave the daemon unable to start, with the one thing that
-// could roll that back (the watchdog) never launched because the script
-// never reached that line. Detaching the install from ctx, bounded by
-// installTimeout instead, is what actually makes the caller's own
-// lifecycle safe to interrupt without corrupting an in-flight update.
+// Install runs the Installer under installTimeout, detached from ctx so a
+// cancelled caller cannot kill an install mid-copy.
 func (s *Service) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
 	if s == nil || s.Installer == nil {
 		return Result{}, errors.New("update installation is not configured")
@@ -269,11 +231,7 @@ func saveDeferrals(path string, state deferrals) error {
 	return writeFileAtomic(path, data)
 }
 
-// writeFileAtomic writes data to path via a temp file in the same
-// directory, synced and renamed into place, so a reader never observes a
-// partially written file. Shared by saveDeferrals and WritePendingReport --
-// both are small JSON state files under the same operational directory
-// (cfg.WorkDir) with the same durability requirement.
+// writeFileAtomic writes data to path through a synced temp file and rename.
 func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

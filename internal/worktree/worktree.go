@@ -1,20 +1,6 @@
-// Package worktree owns archied's git operations: fresh clone per task,
-// branch, commit as the bot identity, push, diff stats, cleanup. The
-// daemon performs these deterministically  --  the model's shell tool never
-// drives git.
-//
-// Implemented with go-git rather than by shelling out to the git binary.
-// Two consequences are worth knowing:
-//
-//   - The forge token never leaves the process. The previous
-//     implementation wrote a GIT_ASKPASS helper script and exported the
-//     token into every child environment; authentication is now an
-//     in-process http.BasicAuth value.
-//   - There is no per-repo object cache. go-git can clone with shared
-//     alternates but has no equivalent of `--dissociate`, so a cached
-//     bare repo would remain a live dependency of every worktree built
-//     from it and expiring one would corrupt running tasks. Each task
-//     gets an independent full clone instead.
+// Package worktree performs archied's git operations with go-git: clone,
+// branch, commit, push, diff and cleanup. Each task gets an independent full
+// clone.
 package worktree
 
 import (
@@ -43,16 +29,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
-// preparedSentinel marks a worktree as fully cloned, branched and
-// configured. Its presence is what makes Prepare idempotent: the daemon
-// may prepare a worktree before the task container is acquired.
-//
-// It lives inside .git deliberately. The previous implementation kept it
-// in the working tree and hid it via .git/info/exclude, which worked
-// because `git add -A` honours that file -- go-git's Add does NOT, so the
-// sentinel was committed and pushed onto every task branch. Nothing under.
-// git can ever be tracked, so placing it here removes the failure mode
-// rather than papering over it.
+// preparedSentinel marks a worktree as prepared, making Prepare idempotent.
+// It lives in .git so it is never committed.
 const preparedSentinel = ".git/archie-prepared"
 
 type Manager struct {
@@ -94,12 +72,7 @@ func ValidCoordinates(owner, repo string, issue int) bool {
 		owner != "." && owner != ".." && repo != "." && repo != ".."
 }
 
-// auth builds the HTTP credential for clone, fetch and push.
-//
-// Forges accept a personal access token as the password with any
-// non-empty username, so the bot's own name is used. A nil return means
-// no token was configured and go-git attempts an anonymous request,
-// which is correct for a public read.
+// auth returns the HTTP credential, or nil for anonymous access.
 func (m *Manager) auth() []gitclient.Option {
 	if m.Token == "" {
 		return nil
@@ -120,32 +93,16 @@ func (m *Manager) signature() *object.Signature {
 	return &object.Signature{Name: m.BotUser, Email: m.BotEmail, When: time.Now()}
 }
 
-// Target selects the commit a prepared worktree is positioned at.
-//
-// The zero value is Fresh: a run that starts new work is reset onto
-// origin/<base>. A non-empty Target is a resume: the worktree is reset onto
-// origin/<that branch>, continuing the work an earlier attempt already pushed.
-//
-// The branch travels with the choice rather than being recomputed from the
-// title, because a resume must land on the branch the open pull request lives
-// on: a retitled issue would otherwise name a branch that does not exist.
-//
-// It is a string rather than a bool or an enum precisely so the branch to
-// resume onto is carried by the choice; a bool would force a second parameter
-// and let a caller select a resume without naming what it resumes onto.
+// Target is the branch a worktree is positioned on. Empty (Fresh) resets onto
+// origin/<base>; a branch name resumes onto origin/<branch>.
 type Target string
 
 // Fresh is the fresh-run target: reset onto origin/<base>.
 const Fresh Target = ""
 
-// Prepare creates (or reuses) the task's clone and positions it on target,
-// returning the worktree directory and the branch it is on.
-//
-// A missing clone is created for either target. That is what lets a resume
-// recover a worktree the terminal cleanup, an expired volume or a different
-// host removed before a retry. Fresh lands it on origin/<base>; a resume lands
-// it on origin/<branch> and fails closed when that branch is not on the remote
-// rather than falling back to base.
+// Prepare clones the task's worktree if missing and positions it on target,
+// returning its directory and branch. A resume fails if the branch is not on
+// the remote.
 func (m *Manager) Prepare(
 	ctx context.Context,
 	owner, repo, base string,
@@ -289,12 +246,7 @@ func (m *Manager) refresh(ctx context.Context, dir, base, branch string) error {
 	return resetOnto(r, dir, branch, baseHash, remoteBase(base))
 }
 
-// resume re-syncs an already-prepared worktree onto its branch's remote tip
-// without resetting to base, so a remediation can continue work on the PR
-// branch an earlier attempt already pushed. It is refresh's complement: refresh
-// resets to origin/<base> for a fresh run; resume resets to origin/<branch> so
-// the committed PR work survives. It is reached through Prepare's Target, and
-// the worktree it opens is one Prepare has already cloned when it was missing.
+// resume resets an existing worktree onto origin/<branch>.
 func (m *Manager) resume(ctx context.Context, dir, branch string) error {
 	r, err := git.PlainOpen(dir)
 	if err != nil {
@@ -314,21 +266,8 @@ func (m *Manager) resume(ctx context.Context, dir, branch string) error {
 	return resetOnto(r, dir, branch, *tip, remoteBase(branch))
 }
 
-// resetOnto discards the worktree's current contents and points branch at
-// commit, leaving a clean tree that matches commit.
-//
-// The ORDER here is the substance of the function, and it is deliberately the
-// opposite of the checkout-then-reset-then-clean it replaced. A previous
-// attempt -- an interrupted stage, a killed container, or a build run inside
-// the root sandbox -- can leave a path whose type contradicts the tree being
-// reset onto as well as untracked output beside it. go-git's reset cannot
-// write a file where a directory sits, nor create a directory through a file;
-// it failed with `openat <path>: is a directory` / `not a directory` before it
-// could apply anything, and the Create-fallback that used to follow reported
-// that as a branch that already existed. Clearing the worktree against the
-// TARGET tree first removes exactly those conflicts -- an on-disk directory the
-// tree declares as a file is untracked, and so is a file the tree declares as a
-// directory -- so the reset that follows has nothing left to collide with.
+// resetOnto removes everything the target tree does not contain, then points
+// branch at commit with a clean tree.
 func resetOnto(r *git.Repository, dir, branch string, commit plumbing.Hash, label string) error {
 	target, err := commitTree(r, commit)
 	if err != nil {
@@ -351,21 +290,8 @@ func resetOnto(r *git.Repository, dir, branch string, commit plumbing.Hash, labe
 	return nil
 }
 
-// checkOutBranch switches the worktree to branch, creating it at commit when it
-// does not exist yet.
-//
-// Whether the branch exists is resolved from the reference store rather than
-// inferred from a failed checkout. A checkout fails for reasons that have
-// nothing to do with a missing branch -- most often a path in the working tree
-// the tree cannot be written over -- and treating any such failure as "the
-// branch does not exist yet" produced `a branch named "refs/heads/<branch>"
-// already exists`: it named a branch that was never the problem and hid the
-// real cause from the park reason an operator reads to decide what to do.
-//
-// Creating from an explicit commit rather than from HEAD matters too: a branch
-// removed while HEAD still pointed at it (a renamed branch, a half-finished
-// refresh) made go-git's create path read an unresolvable HEAD and fail with
-// "reference not found" instead of creating the branch.
+// checkOutBranch checks out branch, creating it at commit if it does not
+// exist.
 func checkOutBranch(r *git.Repository, wt *git.Worktree, branch string, commit plumbing.Hash) error {
 	ref := plumbing.NewBranchReferenceName(branch)
 	opts := &git.CheckoutOptions{Branch: ref, Force: true}
@@ -397,13 +323,7 @@ func commitTree(r *git.Repository, commit plumbing.Hash) (*object.Tree, error) {
 	return tree, nil
 }
 
-// cleanUntracked removes every path under dir that tree does not contain:
-// untracked files, whole directories of build output, and any path whose type
-// on disk contradicts what the tree declares.
-//
-// It is given the tree the worktree is being reset ONTO, not HEAD: the point is
-// to leave nothing behind that the incoming tree cannot be written over, and
-// on a retry HEAD is one of the things being replaced.
+// cleanUntracked removes every path under dir that tree does not contain.
 func cleanUntracked(dir string, tree *object.Tree) error {
 	files := make(map[string]struct{})
 	dirs := make(map[string]struct{})
@@ -424,12 +344,7 @@ func cleanUntracked(dir string, tree *object.Tree) error {
 		}
 		rel = filepath.ToSlash(rel)
 		if rel == ".git" {
-			// SkipDir on a non-directory skips the rest of the *parent*
-			// directory -- at the worktree root, the whole walk. .git is a
-			// file, not a directory, in a linked worktree, so returning
-			// SkipDir there would abandon cleaning entirely. Either shape
-			// is left untouched; only the directory shape needs descent
-			// suppressed.
+			// Leave a .git file or directory alone.
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -490,14 +405,7 @@ func (m *Manager) setIdentity(r *git.Repository) error {
 	}
 	cfg.User.Name = m.BotUser
 	cfg.User.Email = m.BotEmail
-	// Pin signing off for this repository.
-	//
-	// go-git honours the host's global git config, and it cannot sign:
-	// it has no gpg fallback, only an ObjectSigner plugin. A developer
-	// or CI image with commit.gpgSign=true set globally would therefore
-	// make every bot commit fail with "cannot auto-sign commit". The
-	// daemon's behaviour must not depend on the ambient git config of
-	// whatever machine it happens to run on.
+	// Disable commit signing; go-git cannot sign.
 	cfg.Raw.Section("commit").SetOption("gpgsign", "false")
 	if err := r.SetConfig(cfg); err != nil {
 		return fmt.Errorf("write repo config: %w", err)
@@ -639,12 +547,8 @@ func (m *Manager) patch(ctx context.Context, dir, base string) (*object.Patch, e
 	return p, err
 }
 
-// patchFromMergeBase is patch plus the commit the diff was actually taken
-// against. That commit is the merge base of base and HEAD, which is NOT base's
-// tip once anyone has landed on the base branch since this branch diverged.
-// A capture records it beside the file list it measured, so the two describe
-// one change set: re-resolving origin/<base> on the side would name the new
-// tip instead.
+// patchFromMergeBase returns the patch and the merge-base commit it was taken
+// against.
 func (m *Manager) patchFromMergeBase(ctx context.Context, dir, base string) (*object.Patch, plumbing.Hash, error) {
 	r, err := git.PlainOpen(dir)
 	if err != nil {
@@ -680,15 +584,8 @@ func (m *Manager) patchFromMergeBase(ctx context.Context, dir, base string) (*ob
 	return p, bases[0].Hash, nil
 }
 
-// HasUncommittedChanges reports whether the worktree holds work no commit has
-// captured yet: staged, unstaged or untracked. Ignored files do not count, the
-// same rule CommitAll's own status check applies when it decides whether there
-// is anything to commit.
-//
-// It exists because Diff cannot answer this: Diff reports what the branch has
-// committed against the merge base and never reads the worktree, so a stage
-// that must inspect the committed change has no way to tell "nothing has
-// changed" from "the change is not committed yet" without this.
+// HasUncommittedChanges reports whether the worktree has staged, unstaged or
+// untracked changes, ignoring ignored files.
 func (m *Manager) HasUncommittedChanges(ctx context.Context, dir string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -772,14 +669,8 @@ func (m *Manager) ChangedFiles(ctx context.Context, dir, base string) ([]string,
 // a change across types is a typechange.
 const fileTypeMask = 0o170000
 
-// ChangedFileStats reports what HEAD changed against base, as the per-file
-// status and line counts one attempt's capture records. It reuses patch's
-// three-dot semantics: diffing against the remote tip instead would attribute
-// every commit landed on base since the branch started to this task.
-//
-// ChangedLines, Diff and ChangedFiles stay the shape stages call; this is the
-// same measurement with the detail a capture needs, so there is still exactly
-// one diff path -- and it reports the base that path diffed against.
+// ChangedFileStats reports HEAD's per-file changes against the merge base
+// with base.
 func (m *Manager) ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error) {
 	// The diffed base is the merge base patchFromMergeBase diffed against, not
 	// base's tip: the recorded pair has to describe the file list beside it.
@@ -797,13 +688,7 @@ func (m *Manager) ChangedFileStats(ctx context.Context, dir, base string) (task.
 	}
 
 	patches := p.FilePatches()
-	// Paths come from FilePatches and counts from Stats, joined by position,
-	// because Stats() carries one entry per patch that produced textual chunks
-	// and SKIPS the rest (binary files, and any change whose content is
-	// identical). Reading the two lists off the same index would shift every
-	// later file's counts onto the wrong path as soon as one binary file is in
-	// the change. Totals come from Stats so they agree with ChangedLines, which
-	// sums the same list.
+	// Stats has no entry for binary or content-identical files.
 	stats := p.Stats()
 	next := 0
 	files := make([]task.FileChange, 0, len(patches))
@@ -864,11 +749,7 @@ func fileChange(fp fdiff.FilePatch) task.FileChange {
 	return change
 }
 
-// Snapshot exports HEAD's tracked files into a fresh, empty destDir with no.
-// git directory: file contents only, no commit history, branch name, or reflog.
-// Used to build the reviewer's isolated workspace -- stripping.git is what
-// makes the implementer's reasoning (commit messages, branch name, history)
-// structurally unreachable rather than merely undisclosed.
+// Snapshot exports HEAD's tracked files into destDir, without .git.
 func (m *Manager) Snapshot(ctx context.Context, dir, destDir string) error {
 	r, err := git.PlainOpen(dir)
 	if err != nil {
@@ -954,11 +835,8 @@ func remoteBase(base string) string {
 	return "refs/remotes/" + git.DefaultRemoteName + "/" + base
 }
 
-// CheckoutPR materialises an existing pull request's head commit in a fresh
-// full clone so the caller can Diff it against its base and Snapshot it for
-// operator-triggered review. The head must already be pushed to the same
-// repository (archie's own PRs always are); a cross-repo or deleted head is
-// refused rather than half-reviewed. The returned cleanup removes the clone.
+// CheckoutPR clones a pull request's head into a fresh directory. The head
+// must be in the same repository. The cleanup removes the clone.
 func (m *Manager) CheckoutPR(ctx context.Context, owner, repo, headRef, baseRef string) (dir string, cleanup func(), err error) {
 	if m.WorkDir != "" {
 		if err := os.MkdirAll(m.WorkDir, 0o755); err != nil {
@@ -1003,13 +881,8 @@ func (m *Manager) CheckoutPR(ctx context.Context, owner, repo, headRef, baseRef 
 	return dir, cleanup, nil
 }
 
-// resolveBase finds the commit the task branch is compared against.
-//
-// The fully-qualified remote-tracking ref is tried first because that is
-// what a clone produces and it cannot be shadowed. The bare "origin/<base>"
-// revision is tried second so that resolution stays as permissive as
-// `git diff origin/<base>...HEAD` was  --  git resolves that short form
-// against refs/heads too, and repositories built that way exist.
+// resolveBase resolves the base commit from refs/remotes/origin/<base>, then
+// origin/<base>.
 func resolveBase(r *git.Repository, base string) (plumbing.Hash, error) {
 	candidates := []plumbing.Revision{
 		plumbing.Revision(remoteBase(base)),

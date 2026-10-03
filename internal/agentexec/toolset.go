@@ -13,23 +13,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
-// ToolLimits are the configured result limits for one chat turn or agent
-// stage. It holds only settings, never accumulated state, so it is safe to
-// store on a long-lived runner and share across tasks.
-//
-// A negative limit means no limit; see config.ToolPolicy for why zero cannot
-// carry that meaning.
+// ToolLimits are the tool result limits for one turn or stage. A negative
+// limit means none.
 type ToolLimits struct {
 	MaxResultChars int
 	SpillDir       string
 }
 
-// EnsureSpillDir creates the spill directory if one is configured.
-//
-// Call it once at startup. Without it the directory never exists, and a
-// failed spill write falls back to inline truncation -- spilling looks
-// configured and does nothing. An empty SpillDir is not an error: it
-// selects inline truncation deliberately.
+// EnsureSpillDir creates the spill directory if one is set.
 func (l ToolLimits) EnsureSpillDir() error {
 	if l.SpillDir == "" {
 		return nil
@@ -137,21 +128,9 @@ func (o ToolSetOptions) excludes(entry tools.ToolEntry) bool {
 	return slices.Contains(o.ExcludeToolsets, entry.Toolset)
 }
 
-// BuildToolSet converts every currently-available entry in reg into an
-// ai-sdk core.ToolSet, ready to pass as core.GenerateOptions.Tools for a
-// multi-step chat turn. A nil registry (memory/tools disabled) returns
-// an empty set. Invalid availability callbacks and dynamic schemas return
-// errors instead of panicking or silently hiding an advertised tool.
-//
-// core.Tool.Execute exchanges JSON-encoded strings with the model;
-// tools.Handler exchanges a decoded map. The returned Execute functions
-// do the JSON <-> map translation and surface decode failures as errors
-// rather than silently dropping malformed model input.
-//
-// This is the only path from a registered tools.ToolEntry to a model, so it is
-// also where result limits are enforced. The model runtime owns the tool loop
-// and decides what to invoke, so archie cannot gate a batch -- but it builds
-// every Execute closure here, which makes per-call accounting reachable.
+// BuildToolSet converts reg's available entries into an ai-sdk ToolSet,
+// translating JSON input and enforcing result limits. A nil registry returns
+// an empty set.
 func BuildToolSet(reg *tools.Registry, opts ToolSetOptions) (aicore.ToolSet, error) {
 	if reg == nil {
 		return aicore.ToolSet{}, nil
@@ -159,13 +138,7 @@ func BuildToolSet(reg *tools.Registry, opts ToolSetOptions) (aicore.ToolSet, err
 	return BuildToolSetFrom(reg.All(), opts)
 }
 
-// BuildToolSetFrom converts a loose slice of entries under the same rules as
-// [BuildToolSet].
-//
-// It exists for tools that are bound per turn rather than registered globally
-// -- the task tools carry the calling gateway's identity, so there is one set
-// of them per gateway and they cannot live in the process-wide registry. Pass
-// the same ToolSetOptions to both calls so a single turn shares one budget.
+// BuildToolSetFrom is BuildToolSet over a slice of entries.
 func BuildToolSetFrom(entries []tools.ToolEntry, opts ToolSetOptions) (aicore.ToolSet, error) {
 	set := aicore.ToolSet{}
 	for _, entry := range entries {
@@ -223,14 +196,8 @@ func safeResolvedSchema(entry tools.ToolEntry) (schema tools.JSONSchema, err err
 	return entry.ResolvedSchema(), nil
 }
 
-// toolExecute adapts a tools.ToolEntry's Handler to core.Tool's
-// Execute(ctx, jsonInput string) (jsonOutput string, err error) shape, and
-// applies the turn's result accounting.
-//
-// The cap is applied to the marshalled payload rather than to the handler's
-// return value, because the marshalled form is what actually reaches the
-// model: JSON escaping can change the length materially, so capping the Go
-// value would bound the wrong string.
+// toolExecute adapts a ToolEntry's handler to an ai-sdk Execute and caps the
+// marshalled result.
 func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Context, string) (string, error) {
 	limit := opts.resultLimit(entry)
 	return func(ctx context.Context, input string) (result string, err error) {
@@ -275,11 +242,8 @@ func requireApproval(ctx context.Context, entry tools.ToolEntry, opts ToolSetOpt
 	}
 	decision, err := opts.Approval.RequestApproval(approveCtx, entry.Name, desc)
 	if err != nil {
-		// Distinguish a tool-level timeout (our own deadline) from a
-		// turn-level cancellation (/stop). A turn cancellation must
-		// propagate as a context error; a tool timeout must surface as
-		// a plain error so the model can report it instead of the turn
-		// aborting.
+		// A tool timeout is a plain error; a turn cancellation stays a context
+		// error.
 		if (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) && ctx.Err() == nil {
 			return fmt.Errorf("tool %s: approval timed out after %v", entry.Name, tools.ToolApprovalTimeout)
 		}

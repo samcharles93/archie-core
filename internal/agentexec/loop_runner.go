@@ -40,13 +40,9 @@ type LoopRunner struct {
 	// Limits bounds the size of tool results fed back into the stage. The
 	// zero value applies no limits.
 	Limits ToolLimits
-	// AllowTools is the agent profile's allowlist over the tools archie adds
-	// (central/MCP, repository scripts and skill plugins). Empty allows them
-	// all. A stage's capture tools are how it returns structured results, so
-	// they are never filtered. The agent loop's built-in file tools are not
-	// covered either: ai-sdk agentloop registers them itself with no filter
-	// hook, so they are always present (read-only when the stage asks), and
-	// restricting them needs an ai-sdk change.
+	// AllowTools is the profile's allowlist over archie-added tools. Empty allows
+	// all. Capture tools and agentloop's built-in file tools are never
+	// filtered.
 	AllowTools []string
 }
 
@@ -62,16 +58,8 @@ func NewLoopRunner(
 	return runner
 }
 
-// workspaceToolset names the central-registry toolset a task agent must not
-// inherit. Those tools are rooted at the chat workspace, not the task's
-// worktree, and they reach the filesystem through their own handlers -- so
-// agentloop's ReadOnly and ProtectPaths, which gate only the tools agentloop
-// registers itself, do not apply to them. A feasibility stage running
-// ReadOnly could otherwise write, and a TDD fix stage could edit the very
-// tests it is being graded against.
-//
-// This is an invariant of task execution rather than a deployment choice, so
-// it is not configurable.
+// workspaceToolset is the central toolset a task agent never gets: its tools
+// work on the chat workspace and bypass ReadOnly and ProtectPaths.
 const workspaceToolset = "workspace"
 
 func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
@@ -357,12 +345,8 @@ func isNonEmptyString(object map[string]json.RawMessage, field string) bool {
 	return ok && json.Unmarshal(raw, &text) == nil && strings.TrimSpace(text) != ""
 }
 
-// scriptToolSet exposes run_go_script: interpreting a Yaegi Go script
-// bundled with a skill or living
-// anywhere else in the workspace, and returning what it printed. This is
-// how an agent following a skill's instructions ("run scripts/gitleaks.go
-// to scan for secrets") actually executes a .go helper without a Go
-// toolchain in the sandbox.
+// scriptToolSet exposes run_go_script, which runs a Yaegi Go script from the
+// workspace and returns its output.
 func scriptToolSet(workspace string) core.ToolSet {
 	return core.ToolSet{
 		"run_go_script": core.NewTypedTool(

@@ -1,11 +1,6 @@
 package releaseupdate
 
-// InstallMeta identifies who to notify once an installed update finishes
-// restarting. The process that calls Install returns before the daemon
-// actually restarts (the reference installer queues the restart through a
-// detached unit so restarting archied.service doesn't kill the installer
-// mid-run), so this identity has to survive the restart on disk -- see
-// Report and WritePendingReport.
+// InstallMeta identifies who to notify after the update restarts.
 type InstallMeta struct {
 	Channel  string
 	ChatID   int64
@@ -24,11 +19,8 @@ type ComponentResult struct {
 	Status string `json:"status"` // "updated", "unchanged", or "failed"
 }
 
-// Result is the structured outcome of the synchronous phase of an install:
-// fetch/build/install, before any restart happens. Previous and Installed
-// map a component ID to its version. Field names are snake_case in JSON to
-// match the install script's ARCHIE_UPDATE_RESULT sentinel line -- see
-// command.go and scripts/archie-update-install.
+// Result is the outcome of an install before restart. Previous and Installed
+// map component IDs to versions.
 type Result struct {
 	Previous         map[string]string `json:"previous"`
 	Installed        map[string]string `json:"installed"`

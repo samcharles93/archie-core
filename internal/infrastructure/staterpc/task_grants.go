@@ -91,20 +91,14 @@ func (g *TaskGrants) taskFor(token string) int64 {
 }
 
 // authorizesTaskScopedCall reports whether a task-scoped token may make this
-// call: only when the RPC is in taskScopedTargets and targets taskID. Every
-// other RPC, including grant registration, is refused, so a task grant only
-// narrows. workflow.call and step-execution writes carry the caller's own task
-// ID; the handler checks step membership, so this never reads the database.
+// call: only RPCs in taskScopedTargets that target taskID.
 func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
 	target := taskScopedTargets[fullMethod]
 	return target != nil && target(req) == taskID
 }
 
-// taskScopedTargets maps each RPC a task grant may ever authorize to the
-// function naming the task ID its request targets (0 for a request it cannot
-// read). Held as data so the sanctioned widenings stop growing a switch: a
-// new authorized RPC registers one row here, and the deny-by-default rule
-// above covers everything else.
+// taskScopedTargets maps each RPC a task grant may call to the task ID its
+// request targets.
 var taskScopedTargets = map[string]func(any) int64{
 	pb.StateStoreService_Update_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.UpdateRequest)

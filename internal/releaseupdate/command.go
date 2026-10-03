@@ -36,21 +36,15 @@ func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-// CommandInstaller runs the deployment's own install command. HealthURL is
-// the base URL its restart tooling must poll for /healthz -- only this
-// process knows which address it actually serves, so a script left to guess
-// one rolls back releases that came up healthy. Empty
-// leaves ARCHIE_HEALTH_URL as the environment already has it.
+// CommandInstaller runs the deployment's install command. HealthURL is
+// passed as ARCHIE_HEALTH_URL when set.
 type CommandInstaller struct {
 	Command   []string
 	HealthURL string
 }
 
-// Install runs the configured command and streams its stdout to progress
-// line by line as the command emits it -- the earlier CombinedOutput-based
-// version buffered everything until exit, so callers saw nothing until the
-// whole update either finished or failed. One stdout line may be a
-// structured Result instead of prose; see updateResultSentinel.
+// Install runs the command, streaming stdout lines to progress. One line may
+// be a structured Result.
 func (i CommandInstaller) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
 	if len(i.Command) == 0 {
 		return Result{}, fmt.Errorf("update install command is empty")

@@ -5,69 +5,35 @@ import (
 	"strings"
 )
 
-// Component IDs used by the reference install script and watchdog in the
-// Result and Report JSON documents (scripts/archie-update-install,
-// scripts/archie-update-watchdog). They are named here because the
-// composition root has to key its running-version map by exactly these
-// strings for verification to match anything -- a typo would otherwise
-// silently downgrade every component to "unverifiable" and restore the
-// false-success behaviour this file exists to prevent.
+// Component IDs used by the install script and watchdog.
 const (
 	ComponentDaemon = "daemon"
 	ComponentAgent  = "agent"
-	// ComponentNATS identifies the NATS server in a Snapshot's Components,
-	// by the same convention -- a third-party dependency archie doesn't
-	// build and Report never claims to have installed, but Service.Enrich
-	// can still describe from deployment configuration (embedded vs
-	// external, and the URL an external server was configured with).
+	// ComponentNATS identifies the NATS server.
 	ComponentNATS = "nats"
 )
 
-// Version placeholders that carry no release information. Both mean "nobody
-// recorded a real version here", and neither may be compared as though it
-// were one: doing so turns a healthy update whose bookkeeping went missing
-// into a reported failure.
-//
-//   - VersionUnknown is what the reference watchdog substitutes when it
-//     cannot tell what was installed ("${ARCHIE_UPDATE_INSTALLED_GATEWAY:-unknown}").
-//   - VersionDev is what an unstamped build reports for itself: it is the
-//     default of gatewayVersion/runtimeVersion in cmd/archied, of
-//     GATEWAY_VERSION in Dockerfile.archied, and of the version Taskfile.yml
-//     falls back to when git describes no tag. A plain `go build` or an
-//     untagged image is therefore "dev", not a release.
+// Placeholder versions that are never compared: VersionUnknown from the
+// watchdog, VersionDev from unstamped builds.
 const (
 	VersionUnknown = "unknown"
 	VersionDev     = "dev"
 )
 
-// VersionDrift is one component whose reported install the running system
-// contradicts: the installer said it put Claimed into service, but the
-// component itself reports it is running Running. Both are the versions as
-// recorded rather than normalized, so an operator sees the strings the two
-// sides actually wrote; renderers should trim them for display.
+// VersionDrift is a component running a different version than the one
+// claimed installed.
 type VersionDrift struct {
 	ID      string
 	Claimed string
 	Running string
 
-	// RunningIsPrevious reports whether the version actually running is the
-	// one this update set out to replace. True is the ordinary case -- the
-	// install silently did nothing and the pre-update process is still there
-	// answering the health probe. False means what is running is neither the
-	// installed version nor the replaced one, and a caller must NOT describe
-	// that as "still on the old release": it does not know what happened,
-	// and asserting a cause it cannot support is the same defect as the
-	// false success this type exists to catch.
+	// RunningIsPrevious reports whether the running version is the one the
+	// update replaced.
 	RunningIsPrevious bool
 }
 
-// Verification is the outcome of checking a Report's claims against the
-// versions actually running. Every component the Report claims to have
-// installed lands in exactly one of the three sets.
-//
-// Unverified is not a lesser Drift: a caller that cannot tell the two apart
-// will either cry wolf over components that simply cannot self-report, or
-// keep asserting success it never checked. Both have shipped here.
+// Verification sorts each claimed component into confirmed, drifted or
+// unverified.
 type Verification struct {
 	// Confirmed lists component IDs whose claimed version matches what the
 	// component reports for itself, in ID order.
@@ -81,23 +47,9 @@ type Verification struct {
 	Unverified []string
 }
 
-// Verify compares what r claims was installed against the versions actually
-// running now.
-//
-// This exists because a Report is entirely self-reported. The reference
-// watchdog decides "passed" from an HTTP health probe, which proves only
-// that *a* daemon is answering -- if the new binary never actually made it
-// into service, the previous one answers the probe just as happily, and the
-// watchdog then copies the version the installer *intended* into Installed.
-// The result reads as a successful upgrade to a version that is not running.
-// That is not hypothetical: it shipped, and a task run immediately after a
-// reported-successful update hit the exact bug the update was supposed to
-// fix.
-//
-// running maps a component ID (see ComponentDaemon and ComponentAgent) to
-// the version that component reports for itself -- archied's own compiled-in
-// build version, for instance, which no installer can talk it out of. A
-// component absent from running is Unverified, not drifting.
+// Verify compares the versions r claims were installed with the versions
+// components report running. Components absent from running are
+// unverified.
 func (r Report) Verify(running map[string]string) Verification {
 	var result Verification
 	for id, claimed := range r.Installed {
@@ -133,18 +85,8 @@ func IsRecordedVersion(version string) bool {
 	return ok
 }
 
-// comparableVersion reduces a recorded version to the form both sides of a
-// comparison can be expected to agree on, and reports whether it carries any
-// usable information at all.
-//
-// Normalization is deliberately minimal: surrounding whitespace, and a
-// single leading "v" or "V" so an installer that records the git tag
-// "v1.9.11" matches a binary stamped "1.9.11" (the reference installer
-// strips that prefix itself, but nothing forces another deployment shape
-// to). Everything else is compared exactly -- an installer is expected to
-// record the version it stamped, not a differently formatted description of
-// it, and guessing at looser equivalences here would start hiding the very
-// mismatches this check is for.
+// comparableVersion trims whitespace and a leading "v", and reports whether
+// the version is real.
 func comparableVersion(version string) (string, bool) {
 	normalized := strings.TrimSpace(version)
 	if len(normalized) > 0 && (normalized[0] == 'v' || normalized[0] == 'V') {

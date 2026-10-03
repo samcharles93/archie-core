@@ -15,12 +15,8 @@ import (
 // turn-sized output allowance on a single request.
 const DefaultSamplingMaxTokens = 4096
 
-// SamplingMessages maps a server's sampling messages onto chat messages. Both
-// MCP sampling host paths use it -- the daemon's chat handler and the agent
-// worker's task handler -- so the same server is answered the same way
-// wherever the client runs. A non-text content block or an unknown role is
-// rejected rather than silently dropped: answering from a partial prompt would
-// be a wrong answer, not a degraded one.
+// SamplingMessages converts sampling messages to chat messages. Non-text
+// content and unknown roles are errors.
 func SamplingMessages(req protocol.SamplingRequest) ([]chat.Message, error) {
 	if len(req.Messages) == 0 {
 		return nil, errors.New("mcp sampling: the request has no messages")
@@ -44,13 +40,8 @@ func SamplingMessages(req protocol.SamplingRequest) ([]chat.Message, error) {
 	return messages, nil
 }
 
-// SamplingMaxTokens bounds a delegated completion to the request's own
-// maxTokens, falling back to DefaultSamplingMaxTokens, and never past the
-// model's own output ceiling (zero when the ceiling is unknown). A
-// reasoning-class model gets no bound at all: its provider rejects the
-// `max_tokens` parameter the chat-completions provider emits for a non-zero
-// bound. Both the daemon's chat path and the agent worker answer sampling
-// with this, so the same server gets the same bound on either path.
+// SamplingMaxTokens returns the request's maxTokens or the default, capped at
+// the model's ceiling. Reasoning models get no bound.
 func SamplingMaxTokens(requested, modelCeiling int, reasoning bool) int {
 	maxTokens := requested
 	if maxTokens <= 0 {

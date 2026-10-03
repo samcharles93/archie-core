@@ -7,14 +7,8 @@ import (
 	"time"
 )
 
-// EventCursorLayout is the fixed-width UTC layout every persisted event's at
-// column and every EventsSince cursor is built with. Fixed width is the whole
-// point: time.RFC3339Nano trims trailing zeros, so a whole-second row
-// ("...05Z") and a full-precision row ("...05.123456789Z") would compare out
-// of chronological order as strings. With nine fractional digits always
-// present, lexicographic order is chronological order. It mirrors edastore's
-// capturedAtLayout, which exists for the same reason; the two stores now share
-// this rule.
+// EventCursorLayout is the fixed-width UTC layout for event times and cursors,
+// so string order is time order.
 const EventCursorLayout = "2006-01-02T15:04:05.000000000Z"
 
 // cursorSeparator joins the sort key and the row id inside a cursor. The sort

@@ -10,41 +10,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 )
 
-// LogPublisher is the minimal capability SystemLogHandler needs: fire a
-// message at a subject without waiting for a reply. Declared here rather
-// than taking *nats.go's Conn or eventbus.Bus so the handler can be tested
-// with a fake and never gains capabilities (subscribe, request/reply) it has
-// no use for. *nats.Conn already satisfies this with no adapter needed.
+// LogPublisher publishes a message to a subject without waiting.
 type LogPublisher interface {
 	Publish(subject string, data []byte) error
 }
 
-// SystemLogHandler tees slog records to a wrapped handler -- normally the
-// agent's own stderr, kept for an operator attached to a live container --
-// and additionally publishes each one, JSON-encoded as a logging.Entry, to
-// SubjectForSystem(taskID): the return channel documented in subjects.go for
-// "log dumps, health... observability" that previously had no publisher.
-//
-// The wire payload is a marshaled logging.Entry -- {"time","level","msg",
-// "fields":{...}} -- meant to be round-tripped with json.Unmarshal straight
-// back into a logging.Entry. This is deliberately NOT the same shape
-// logging.decode() parses: decode() reads raw slog JSON *log lines* off
-// disk, where every non-{time,level,msg} key sits at the top level and
-// decode() moves it into Fields itself. Handing decode() this payload
-// instead of json.Unmarshal would nest everything one level too deep, under
-// a literal "fields" key, and silently lose every real field name. A future
-// consumer of this subject must unmarshal directly
-// into logging.Entry, not call decode() on these bytes.
-//
-// Publishing is fire-and-forget. A core NATS Publish call is already
-// non-blocking -- it queues to the connection's outbound buffer and returns,
-// and the client itself drops writes rather than blocking once its
-// reconnect buffer is full -- so this handler does not duplicate that
-// behaviour with a second, home-grown bounded queue. A publish or marshal
-// failure is reported once via the wrapped handler and then swallowed: log
-// shipping must never block or fail the run it is reporting on, and a dead
-// NATS connection is already visible through every stage subsequently
-// failing to report its own result.
+// SystemLogHandler writes slog records to a wrapped handler and publishes
+// each as a JSON logging.Entry to SubjectForSystem(taskID). Publish failures
+// are reported once and never block.
 type SystemLogHandler struct {
 	next    slog.Handler
 	pub     LogPublisher
@@ -86,12 +59,7 @@ func (h *SystemLogHandler) Handle(ctx context.Context, record slog.Record) error
 	return h.next.Handle(ctx, record)
 }
 
-// warnAtMostOnce reports the first system-log delivery failure (marshal or
-// publish, either way this record's own history is now missing on the
-// daemon side) via the wrapped handler, then goes quiet -- a dead
-// connection would otherwise turn every subsequent line into a second
-// failure notice on stderr, drowning out the output an operator is trying
-// to read.
+// warnAtMostOnce reports the first publish failure only.
 func (h *SystemLogHandler) warnAtMostOnce(ctx context.Context, at time.Time, cause error) {
 	h.warnOnce.Do(func() {
 		warning := slog.NewRecord(at, slog.LevelWarn,

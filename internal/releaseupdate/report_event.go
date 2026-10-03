@@ -8,12 +8,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
-// ReportEvent turns a phase-2 Report, plus its verification against
-// the versions actually running, into the activity-stream event the
-// dashboard renders. Unlike Telegram's formatPendingReport, this ships the
-// structured Verification rather than pre-rendered prose, so the frontend
-// controls presentation -- the two channels' operators read the same facts
-// through different UIs, not necessarily the same sentence.
+// ReportEvent turns a Report and its verification into a dashboard event.
 func ReportEvent(report Report, running map[string]string) events.Event {
 	verification := report.Verify(running)
 	drift := make([]map[string]any, 0, len(verification.Drift))
@@ -40,13 +35,8 @@ func ReportEvent(report Report, running map[string]string) events.Event {
 	}
 }
 
-// summarizeReport is the one-line summary shown in the dashboard's
-// activity feed, which renders event.Detail generically for every event
-// kind (see ui/src/dashboard/dashboard.js activityRow). It condenses the
-// same facts internal/channels/telegram/update.go's formatPendingReport
-// spells out at length -- not a byte-identical wording, since the two
-// surfaces render differently, but the same four outcomes: confirmed,
-// drifted, unverified, or rolled back.
+// summarizeReport returns a one-line summary: confirmed, drifted, unverified
+// or rolled back.
 func summarizeReport(report Report, verification Verification) string {
 	if report.RolledBack {
 		return "Update failed its health check and was rolled back to the previous version."

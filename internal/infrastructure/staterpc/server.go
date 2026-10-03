@@ -43,12 +43,7 @@ var (
 	errBindingTaskCreatorUnavailable = status.Error(codes.Unavailable, "binding task creator unavailable")
 	errPlaybookDispatcherUnavailable = status.Error(codes.Unavailable, "playbook dispatcher unavailable")
 	errWorkflowCallerUnavailable     = status.Error(codes.Unavailable, "workflow caller unavailable")
-	// errTaskLogsUnavailable is the "this process cannot read task logs at
-	// all" answer, and it is deliberately distinct from a found=false read
-	// result: only the first is a deployment matter. A dashboard that receives
-	// this reports that the log cannot be read here; it must never turn it
-	// into "task logging was not enabled for this run", which is what the
-	// absent-handle path used to do.
+	// errTaskLogsUnavailable reports that this process cannot read task logs.
 	errTaskLogsUnavailable = status.Error(codes.Unavailable, msgTaskLogsUnavailable)
 )
 
@@ -129,12 +124,8 @@ type Deps struct {
 	// Denials records and lists denial records. Optional: nil disables the
 	// pair with codes.Unavailable.
 	Denials access.DenialStore
-	// TaskLogs reads one task attempt's persisted log out of the state
-	// directory this process owns. Optional, and nil is the honest default for
-	// a store service that shares no state directory with the daemon:
-	// ReadTaskLog then answers codes.Unavailable, which the dashboard reports
-	// as "this process cannot read logs" rather than as "this attempt has no
-	// log". Conflating those two is the bug this contract exists to fix.
+	// TaskLogs reads task attempt logs. Nil answers ReadTaskLog with
+	// Unavailable.
 	TaskLogs storecontract.TaskLogStore
 	Log      *slog.Logger
 }
@@ -165,13 +156,7 @@ func (s *server) logErr(rpc string, err error) error {
 	return mapError(err)
 }
 
-// validationFailure answers a write the owning feature's own Validate refused.
-// The domain-managed kinds (identities, captures, mappings, bindings) are
-// advertised in the control-plane catalog but are not stored as generic
-// documents, so it is these RPC handlers -- not the catalog -- that must apply
-// the feature's rule. The rule itself stays in the domain package; this only
-// translates its error for the wire, and it is deliberately not codes.Internal
-// (an unjudged value is the caller's fault, not this process's).
+// validationFailure maps a domain validation error to InvalidArgument.
 func validationFailure(err error) error {
 	return status.Error(codes.InvalidArgument, err.Error())
 }
@@ -221,11 +206,7 @@ func (s *server) Transition(ctx context.Context, r *pb.TransitionRequest) (*pb.T
 	return &pb.TransitionResponse{}, nil
 }
 
-// StartStep and FinishStep are the step-execution writes.
-// Each is the store's own
-// transaction -- guarded row write plus the event row -- and the store's
-// response carries the persisted event back for the caller's post-commit
-// publish.
+// StartStep and FinishStep write a step transition and return its event.
 func (s *server) StartStep(ctx context.Context, r *pb.StartStepRequest) (*pb.StartStepResponse, error) {
 	if s.deps.Steps == nil {
 		return nil, status.Error(codes.Unavailable, "step recorder unavailable")

@@ -41,15 +41,7 @@ func timeValue(t *timestamppb.Timestamp) time.Time {
 	return t.AsTime()
 }
 
-// mapValues maps a slice of proto values to domain values, always returning a
-// non-nil result for empty input.
-//
-// Protobuf decodes an empty `repeated` field to nil, and Go marshals a nil
-// slice to JSON null rather than []. Returning nil here made every decoded
-// collection field's JSON type depend on whether it happened to have contents,
-// and made the wire path disagree with the local path, which normalises its own
-// slices. []B{} for empty input keeps the shape stable at every call site
-// without making each one remember to guard.
+// mapValues maps a slice, returning an empty non-nil slice for empty input.
 func mapValues[A, B any](in []A, f func(A) B) []B {
 	if len(in) == 0 {
 		return []B{}
@@ -417,27 +409,13 @@ const (
 	// errors.Is on the client without changing behaviour visibly.
 	msgRereviewCapReached = "store: re-review cap reached"
 	msgInternal           = "state store: internal error"
-	// msgTaskLogsUnavailable is the public phrase for "this service has no
-	// task-log reader". It is a wire contract like the sentinels above: the
-	// client rehydrates logging.ErrTaskLogsUnavailable from (Unavailable, this
-	// message), and a caller depends on that to tell "this process cannot read
-	// logs" from "this attempt has no log".
+	// msgTaskLogsUnavailable is part of the wire contract for
+	// ErrTaskLogsUnavailable.
 	msgTaskLogsUnavailable = "task log reader unavailable"
 )
 
-// mapError converts a store sentinel error into a structured gRPC status
-// carrying a short, public, stable message -- never the raw wrapped chain
-// (which may contain SQL, provider detail, or secrets). Infra errors map to
-// codes.Internal with a sanitised message; the caller is expected to log the
-// full error server-side before calling mapError.
-//
-// A context cancellation/deadline raised by the store must retain its identity,
-// not be folded into codes.Internal: gRPC-Go surfaces
-// context.Canceled/DeadlineExceeded to the client only for those exact codes,
-// and the agent's workflow consumer depends on errors.Is(err,
-// context.DeadlineExceeded) to distinguish an interrupted stage from a failed
-// one. So a context error maps to its own gRPC code (and unmapError rehydrates
-// it back to the sentinel).
+// mapError converts a store sentinel to a gRPC status with a stable public
+// message; other errors become Internal. Context errors keep their codes.
 func mapError(err error) error {
 	if err == nil {
 		return nil
@@ -456,25 +434,8 @@ func mapError(err error) error {
 	return status.Error(codes.Internal, msgInternal)
 }
 
-// unmapError rehydrates a gRPC status error back to the store sentinel it
-// came from, so a caller's errors.Is(err, storecontract.ErrX) keeps working across
-// the wire. A non-status error (e.g. a transport failure) is returned
-// unchanged.
-//
-// The deadline/cancel identity must survive too: the agent's
-// deadlineStore bounds each Store call with context.WithTimeout, and the
-// workflow consumer checks errors.Is(err, context.DeadlineExceeded) to
-// decide whether a stage was interrupted by shutdown rather than failed
-// (workflow.go). gRPC-Go surfaces an expired or cancelled context as a
-// *status.Error whose code is DeadlineExceeded or Canceled, so we rehydrate
-// those back to the standard context sentinels -- otherwise the consumer
-// would (wrongly) park a task that was merely interrupted.
-//
-// Unavailable carries one message this package owns: the absent task-log
-// reader. It is rehydrated for the same reason the error sentinels are --
-// the dashboard's whole bug was rendering "this process cannot read logs" as
-// "the attempt has no log", and only the typed error makes that distinction
-// available to a caller.
+// unmapError turns a gRPC status back into its store sentinel, context error
+// or ErrTaskLogsUnavailable. Non-status errors are returned unchanged.
 func unmapError(err error) error {
 	if err == nil {
 		return nil
