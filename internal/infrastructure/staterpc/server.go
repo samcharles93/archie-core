@@ -36,6 +36,7 @@ var (
 	errConfigSnapshotsUnavailable    = status.Error(codes.Unavailable, "config snapshot store unavailable")
 	errChannelStatusUnavailable      = status.Error(codes.Unavailable, "channel status store unavailable")
 	errApplyStatusUnavailable        = status.Error(codes.Unavailable, "apply status store unavailable")
+	errPresenceUnavailable           = status.Error(codes.Unavailable, "presence store unavailable")
 	errMappingUnavailable            = status.Error(codes.Unavailable, "mapping store unavailable")
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
 	errSourceUnavailable             = status.Error(codes.Unavailable, "source store unavailable")
@@ -76,6 +77,7 @@ type Deps struct {
 	// the honest answer for a store service no messaging process is writing to.
 	ChannelStatus storecontract.ChannelStatusStore
 	ApplyStatus   storecontract.ApplyStatusStore
+	Presence      storecontract.PresenceStore
 	Mappings      storecontract.MappingStore
 	EventTypes    storecontract.EventTypeStore
 	// MappingMatches counts the events each mapping resolved. Optional: nil
@@ -554,6 +556,40 @@ func (s *server) GetConfigSnapshot(ctx context.Context, _ *pb.GetConfigSnapshotR
 		return &pb.GetConfigSnapshotResponse{}, nil
 	}
 	return &pb.GetConfigSnapshotResponse{Snapshot: configSnapshotProto(snapshot), Found: true}, nil
+}
+
+func (s *server) presence() (storecontract.PresenceStore, error) {
+	if s.deps.Presence == nil {
+		return nil, errPresenceUnavailable
+	}
+	return s.deps.Presence, nil
+}
+
+func (s *server) PutPresence(ctx context.Context, r *pb.PutPresenceRequest) (*pb.PutPresenceResponse, error) {
+	ps, err := s.presence()
+	if err != nil {
+		return nil, err
+	}
+	if err := ps.PutPresence(ctx, presenceValue(r.Presence)); err != nil {
+		return nil, s.logErr("PutPresence", err)
+	}
+	return &pb.PutPresenceResponse{}, nil
+}
+
+func (s *server) ListPresence(ctx context.Context, _ *pb.ListPresenceRequest) (*pb.ListPresenceResponse, error) {
+	ps, err := s.presence()
+	if err != nil {
+		return nil, err
+	}
+	presences, err := ps.ListPresence(ctx)
+	if err != nil {
+		return nil, s.logErr("ListPresence", err)
+	}
+	out := make([]*pb.Presence, 0, len(presences))
+	for _, presence := range presences {
+		out = append(out, presenceProto(presence))
+	}
+	return &pb.ListPresenceResponse{Presences: out}, nil
 }
 
 func (s *server) channelStatuses() (storecontract.ChannelStatusStore, error) {

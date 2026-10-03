@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
@@ -189,6 +190,7 @@ func (b *server) openState(ctx context.Context) error {
 	b.cfg, b.runtimeVersions = cfg, versions
 	b.cfgHolder.Set(cfg)
 	go b.applyStatus.Run(ctx)
+	go presence.Run(ctx, presence.Gateway, servicekit.Build(), client, nil, b.log)
 	return nil
 }
 

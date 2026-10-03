@@ -23,6 +23,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
@@ -338,6 +339,9 @@ func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if css, ok := b.st.(storecontract.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css
 	}
+	if ps, ok := b.st.(storecontract.PresenceStore); ok {
+		deps.Presence = ps
+	}
 	if as, ok := b.st.(storecontract.ApplyStatusStore); ok {
 		deps.ApplyStatus = as
 	}
@@ -406,7 +410,7 @@ func serveStateStore(ctx context.Context, listener net.Listener, deps staterpc.D
 // and answers 503 when the store is degraded. It is the standalone process's
 // counterpart to the daemon's /healthz + /health/detailed (internal/webui).
 func (b *server) startStateStoreReadiness(ctx context.Context, readyAddr string) error {
-	registry := health.NewRegistry(readiness.NewStoreProbe(b.st))
+	registry := b.readinessRegistry()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -427,6 +431,10 @@ func (b *server) startStateStoreReadiness(ctx context.Context, readyAddr string)
 	return b.serveHealth(ctx, readyAddr, mux, "state store readiness")
 }
 
+func (b *server) readinessRegistry() *health.Registry {
+	return health.NewRegistry(readiness.NewStoreProbe(b.st))
+}
+
 // startOptionalSurfaces starts the HTTP surfaces this process serves beside
 // the gRPC contract, each enabled only by its own flag.
 //
@@ -435,6 +443,9 @@ func (b *server) startStateStoreReadiness(ctx context.Context, readyAddr string)
 // own decision, not to the boot sequence that triggers it -- the same reason
 // reportUnseededResources is a method.
 func (b *server) startOptionalSurfaces(ctx context.Context, options Options) error {
+	if ps, ok := b.st.(storecontract.PresenceStore); ok {
+		go presence.Run(ctx, presence.StateStore, servicekit.Build(), ps, b.readinessRegistry(), b.log)
+	}
 	if options.ReadyAddr != "" {
 		if err := b.startStateStoreReadiness(ctx, options.ReadyAddr); err != nil {
 			return err

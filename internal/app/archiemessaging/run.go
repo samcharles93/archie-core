@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -65,6 +67,7 @@ func Run(ctx context.Context, o Options) error {
 		}
 		reporter.Report(ctx, controlplanerpc.ChannelSettingsKind, channelVersion, nil)
 		go reporter.Run(ctx)
+		go presence.Run(ctx, presence.Messaging, servicekit.Build(), stateStore, health, log)
 		cfg.Telegram, cfg.Email, cfg.Webhook, cfg.WebhookAddr, cfg.ShowToolCalls = chatSettings.Telegram, chatSettings.Email, chatSettings.Webhook, chatSettings.WebhookAddr, chatSettings.ShowToolCalls
 		cfg.TelegramToken, settingsErr = resolveTelegramToken(chatSettings.Telegram, secrets)
 		if settingsErr != nil {

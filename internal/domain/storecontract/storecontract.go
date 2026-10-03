@@ -165,6 +165,13 @@ type ApplyStatusStore interface {
 	ListApplyStatus(ctx context.Context) ([]ApplyStatus, error)
 }
 
+// PresenceStore holds one record per running service instance. Writers are
+// the services themselves; readers are the UI and archied status.
+type PresenceStore interface {
+	PutPresence(ctx context.Context, presence Presence) error
+	ListPresence(ctx context.Context) ([]Presence, error)
+}
+
 // MappingStore persists payload field mappings. Deliberately separate from
 // TaskStore and CaptureStore for the same reason those are split: the
 // dashboard's mapping editor should only acquire the mapping surface, not the
@@ -321,6 +328,19 @@ type ApplyStatus struct {
 	AppliedVersion int64     `json:"applied_version"`
 	Error          string    `json:"error,omitempty"`
 	ReportedAt     time.Time `json:"reported_at"`
+}
+
+// Presence is one running service instance. Ready and Detail summarise its
+// readiness probes; Detail names the degraded ones.
+type Presence struct {
+	Service     string    `json:"service"`
+	InstanceID  string    `json:"instance_id"`
+	Version     string    `json:"version"`
+	InstallType string    `json:"install_type"`
+	StartedAt   time.Time `json:"started_at"`
+	ReportedAt  time.Time `json:"reported_at"`
+	Ready       bool      `json:"ready"`
+	Detail      string    `json:"detail,omitempty"`
 }
 
 // WorkflowStat is one row of the per-workflow metrics table.

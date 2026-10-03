@@ -277,6 +277,17 @@ type PlaybookDispatch struct {
 	DispatchedAt    time.Time
 }
 
+type Presence struct {
+	Service     string
+	InstanceID  string
+	Version     string
+	InstallType string
+	StartedAt   time.Time
+	ReportedAt  time.Time
+	Ready       bool
+	Detail      string
+}
+
 type Resource struct {
 	Kind      string
 	Value     []byte

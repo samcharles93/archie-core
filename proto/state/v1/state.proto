@@ -120,6 +120,12 @@ service StateStoreService {
   rpc PutApplyStatus(PutApplyStatusRequest) returns (PutApplyStatusResponse);
   rpc ListApplyStatus(ListApplyStatusRequest) returns (ListApplyStatusResponse);
 
+  // Presence: every running service instance re-stamps one record, so a
+  // record past the staleness window means that instance is down.
+  // Administrative.
+  rpc PutPresence(PutPresenceRequest) returns (PutPresenceResponse);
+  rpc ListPresence(ListPresenceRequest) returns (ListPresenceResponse);
+
   // Task log: one task attempt's persisted log. Task log files live in the
   // state directory this process owns, so the dashboard reads them over this
   // contract rather than opening them itself
@@ -874,6 +880,23 @@ message PutApplyStatusRequest { ApplyStatus status = 1; }
 message PutApplyStatusResponse {}
 message ListApplyStatusRequest {}
 message ListApplyStatusResponse { repeated ApplyStatus statuses = 1; }
+
+// Presence is one running service instance. ready and detail summarise its
+// readiness probes; detail names the degraded ones.
+message Presence {
+  string service = 1;
+  string instance_id = 2;
+  string version = 3;
+  string install_type = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp reported_at = 6;
+  bool ready = 7;
+  string detail = 8;
+}
+message PutPresenceRequest { Presence presence = 1; }
+message PutPresenceResponse {}
+message ListPresenceRequest {}
+message ListPresenceResponse { repeated Presence presences = 1; }
 
 // TaskLogEntry mirrors internal/logging.Entry: one decoded log line. fields
 // carries every remaining key as a JSON object string, the same way Event

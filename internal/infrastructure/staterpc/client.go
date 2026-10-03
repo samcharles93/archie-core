@@ -60,6 +60,7 @@ var (
 	_ storecontract.ConfigSnapshotStore  = (*Client)(nil)
 	_ storecontract.ChannelStatusStore   = (*Client)(nil)
 	_ storecontract.ApplyStatusStore     = (*Client)(nil)
+	_ storecontract.PresenceStore        = (*Client)(nil)
 	_ storecontract.ExecutionCanceller   = (*Client)(nil)
 	_ identity.Repository                = (*Client)(nil)
 	_ storepkg.Manager                   = (*Client)(nil)
@@ -429,6 +430,28 @@ func (c *Client) ListApplyStatus(ctx context.Context) ([]storecontract.ApplyStat
 		statuses = append(statuses, applyStatusValue(status))
 	}
 	return statuses, nil
+}
+
+// PutPresence re-stamps this service instance's record. Administrative.
+func (c *Client) PutPresence(ctx context.Context, presence storecontract.Presence) error {
+	_, err := c.client.PutPresence(ctx, &pb.PutPresenceRequest{Presence: presenceProto(presence)})
+	if err != nil {
+		return unmapError(err)
+	}
+	return nil
+}
+
+// ListPresence reads every service instance's record.
+func (c *Client) ListPresence(ctx context.Context) ([]storecontract.Presence, error) {
+	reply, err := c.client.ListPresence(ctx, &pb.ListPresenceRequest{})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	out := make([]storecontract.Presence, 0, len(reply.Presences))
+	for _, presence := range reply.Presences {
+		out = append(out, presenceValue(presence))
+	}
+	return out, nil
 }
 
 // ListCaptures streams one capture per message; see StreamCaptures in

@@ -23,11 +23,13 @@ import (
 	natsio "github.com/nats-io/nats.go"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -177,6 +179,9 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 
 	if err := b.setupGatewayClient(); err != nil {
 		return 1
+	}
+	if ps, ok := b.stateStore.(storecontract.PresenceStore); ok {
+		go presence.Run(ctx, b.processName, servicekit.Build(), ps, b.healthRegistry, b.log)
 	}
 	// The daemon publishes the configuration view, which carries the catalog's
 	// model limits.

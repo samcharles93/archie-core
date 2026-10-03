@@ -597,6 +597,35 @@ func applyStatusValue(status *pb.ApplyStatus) storecontract.ApplyStatus {
 	}
 }
 
+func presenceProto(presence storecontract.Presence) *pb.Presence {
+	return &pb.Presence{
+		Service:     presence.Service,
+		InstanceId:  presence.InstanceID,
+		Version:     presence.Version,
+		InstallType: presence.InstallType,
+		StartedAt:   timestamp(presence.StartedAt),
+		ReportedAt:  timestamp(presence.ReportedAt),
+		Ready:       presence.Ready,
+		Detail:      presence.Detail,
+	}
+}
+
+func presenceValue(presence *pb.Presence) storecontract.Presence {
+	if presence == nil {
+		return storecontract.Presence{}
+	}
+	return storecontract.Presence{
+		Service:     presence.Service,
+		InstanceID:  presence.InstanceId,
+		Version:     presence.Version,
+		InstallType: presence.InstallType,
+		StartedAt:   timeValue(presence.StartedAt),
+		ReportedAt:  timeValue(presence.ReportedAt),
+		Ready:       presence.Ready,
+		Detail:      presence.Detail,
+	}
+}
+
 // taskLogEntryProto and taskLogEntryValue mirror internal/logging.Entry, whose
 // Fields map crosses as a JSON object string exactly as events.Event.Data does
 // (see eventDataJSON above). The logging package owns that format end to end;

@@ -36,6 +36,15 @@ func (q *Queries) DeleteChannelStatusNotIn(ctx context.Context, dollar_1 []strin
 	return err
 }
 
+const deletePresenceBefore = `-- name: DeletePresenceBefore :exec
+DELETE FROM presence WHERE reported_at < $1
+`
+
+func (q *Queries) DeletePresenceBefore(ctx context.Context, reportedAt time.Time) error {
+	_, err := q.db.Exec(ctx, deletePresenceBefore, reportedAt)
+	return err
+}
+
 const listApplyStatus = `-- name: ListApplyStatus :many
 SELECT process, kind, applied_version, error, reported_at
 FROM apply_status ORDER BY process, kind
@@ -89,6 +98,40 @@ func (q *Queries) ListChannelStatus(ctx context.Context) ([]ChannelStatus, error
 			&i.Configured,
 			&i.ReloadSupported,
 			&i.ObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPresence = `-- name: ListPresence :many
+SELECT service, instance_id, version, install_type, started_at, reported_at, ready, detail
+FROM presence ORDER BY service, instance_id
+`
+
+func (q *Queries) ListPresence(ctx context.Context) ([]Presence, error) {
+	rows, err := q.db.Query(ctx, listPresence)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Presence
+	for rows.Next() {
+		var i Presence
+		if err := rows.Scan(
+			&i.Service,
+			&i.InstanceID,
+			&i.Version,
+			&i.InstallType,
+			&i.StartedAt,
+			&i.ReportedAt,
+			&i.Ready,
+			&i.Detail,
 		); err != nil {
 			return nil, err
 		}
@@ -184,5 +227,42 @@ type UpsertConfigSnapshotParams struct {
 // boundary.
 func (q *Queries) UpsertConfigSnapshot(ctx context.Context, arg UpsertConfigSnapshotParams) error {
 	_, err := q.db.Exec(ctx, upsertConfigSnapshot, arg.Schema, arg.Document, arg.PublishedAt)
+	return err
+}
+
+const upsertPresence = `-- name: UpsertPresence :exec
+INSERT INTO presence (service, instance_id, version, install_type, started_at, reported_at, ready, detail)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (service, instance_id) DO UPDATE SET
+    version = excluded.version,
+    install_type = excluded.install_type,
+    started_at = excluded.started_at,
+    reported_at = excluded.reported_at,
+    ready = excluded.ready,
+    detail = excluded.detail
+`
+
+type UpsertPresenceParams struct {
+	Service     string
+	InstanceID  string
+	Version     string
+	InstallType string
+	StartedAt   time.Time
+	ReportedAt  time.Time
+	Ready       bool
+	Detail      string
+}
+
+func (q *Queries) UpsertPresence(ctx context.Context, arg UpsertPresenceParams) error {
+	_, err := q.db.Exec(ctx, upsertPresence,
+		arg.Service,
+		arg.InstanceID,
+		arg.Version,
+		arg.InstallType,
+		arg.StartedAt,
+		arg.ReportedAt,
+		arg.Ready,
+		arg.Detail,
+	)
 	return err
 }

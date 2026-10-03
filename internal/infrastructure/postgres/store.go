@@ -129,6 +129,7 @@ var (
 	_ storecontract.ConfigSnapshotStore = (*Store)(nil)
 	_ storecontract.ChannelStatusStore  = (*Store)(nil)
 	_ storecontract.ApplyStatusStore    = (*Store)(nil)
+	_ storecontract.PresenceStore       = (*Store)(nil)
 	_ task.Caller                       = (*Store)(nil)
 	_ workflow.Store                    = (*Store)(nil)
 )

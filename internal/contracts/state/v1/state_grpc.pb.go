@@ -75,6 +75,8 @@ const (
 	StateStoreService_ListChannelStatus_FullMethodName          = "/state.v1.StateStoreService/ListChannelStatus"
 	StateStoreService_PutApplyStatus_FullMethodName             = "/state.v1.StateStoreService/PutApplyStatus"
 	StateStoreService_ListApplyStatus_FullMethodName            = "/state.v1.StateStoreService/ListApplyStatus"
+	StateStoreService_PutPresence_FullMethodName                = "/state.v1.StateStoreService/PutPresence"
+	StateStoreService_ListPresence_FullMethodName               = "/state.v1.StateStoreService/ListPresence"
 	StateStoreService_ReadTaskLog_FullMethodName                = "/state.v1.StateStoreService/ReadTaskLog"
 	StateStoreService_StreamTaskLogContent_FullMethodName       = "/state.v1.StateStoreService/StreamTaskLogContent"
 	StateStoreService_InsertCapture_FullMethodName              = "/state.v1.StateStoreService/InsertCapture"
@@ -230,6 +232,11 @@ type StateStoreServiceClient interface {
 	// Both are administrative.
 	PutApplyStatus(ctx context.Context, in *PutApplyStatusRequest, opts ...grpc.CallOption) (*PutApplyStatusResponse, error)
 	ListApplyStatus(ctx context.Context, in *ListApplyStatusRequest, opts ...grpc.CallOption) (*ListApplyStatusResponse, error)
+	// Presence: every running service instance re-stamps one record, so a
+	// record past the staleness window means that instance is down.
+	// Administrative.
+	PutPresence(ctx context.Context, in *PutPresenceRequest, opts ...grpc.CallOption) (*PutPresenceResponse, error)
+	ListPresence(ctx context.Context, in *ListPresenceRequest, opts ...grpc.CallOption) (*ListPresenceResponse, error)
 	// Task log: one task attempt's persisted log. Task log files live in the
 	// state directory this process owns, so the dashboard reads them over this
 	// contract rather than opening them itself
@@ -878,6 +885,26 @@ func (c *stateStoreServiceClient) ListApplyStatus(ctx context.Context, in *ListA
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) PutPresence(ctx context.Context, in *PutPresenceRequest, opts ...grpc.CallOption) (*PutPresenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutPresenceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PutPresence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListPresence(ctx context.Context, in *ListPresenceRequest, opts ...grpc.CallOption) (*ListPresenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPresenceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListPresence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) ReadTaskLog(ctx context.Context, in *ReadTaskLogRequest, opts ...grpc.CallOption) (*ReadTaskLogResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReadTaskLogResponse)
@@ -1418,6 +1445,11 @@ type StateStoreServiceServer interface {
 	// Both are administrative.
 	PutApplyStatus(context.Context, *PutApplyStatusRequest) (*PutApplyStatusResponse, error)
 	ListApplyStatus(context.Context, *ListApplyStatusRequest) (*ListApplyStatusResponse, error)
+	// Presence: every running service instance re-stamps one record, so a
+	// record past the staleness window means that instance is down.
+	// Administrative.
+	PutPresence(context.Context, *PutPresenceRequest) (*PutPresenceResponse, error)
+	ListPresence(context.Context, *ListPresenceRequest) (*ListPresenceResponse, error)
 	// Task log: one task attempt's persisted log. Task log files live in the
 	// state directory this process owns, so the dashboard reads them over this
 	// contract rather than opening them itself
@@ -1673,6 +1705,12 @@ func (UnimplementedStateStoreServiceServer) PutApplyStatus(context.Context, *Put
 }
 func (UnimplementedStateStoreServiceServer) ListApplyStatus(context.Context, *ListApplyStatusRequest) (*ListApplyStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListApplyStatus not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PutPresence(context.Context, *PutPresenceRequest) (*PutPresenceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutPresence not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListPresence(context.Context, *ListPresenceRequest) (*ListPresenceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPresence not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ReadTaskLog(context.Context, *ReadTaskLogRequest) (*ReadTaskLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReadTaskLog not implemented")
@@ -2823,6 +2861,42 @@ func _StateStoreService_ListApplyStatus_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_PutPresence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutPresenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PutPresence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PutPresence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PutPresence(ctx, req.(*PutPresenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListPresence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPresenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListPresence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListPresence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListPresence(ctx, req.(*ListPresenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_ReadTaskLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReadTaskLogRequest)
 	if err := dec(in); err != nil {
@@ -3752,6 +3826,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListApplyStatus",
 			Handler:    _StateStoreService_ListApplyStatus_Handler,
+		},
+		{
+			MethodName: "PutPresence",
+			Handler:    _StateStoreService_PutPresence_Handler,
+		},
+		{
+			MethodName: "ListPresence",
+			Handler:    _StateStoreService_ListPresence_Handler,
 		},
 		{
 			MethodName: "ReadTaskLog",

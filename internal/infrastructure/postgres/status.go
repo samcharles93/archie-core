@@ -123,3 +123,43 @@ func (s *Store) ListApplyStatus(ctx context.Context) ([]storecontract.ApplyStatu
 	}
 	return out, nil
 }
+
+// PutPresence replaces one instance's record and drops records whose
+// instance stopped re-stamping long ago, so restarts do not accumulate rows.
+func (s *Store) PutPresence(ctx context.Context, presence storecontract.Presence) error {
+	reported := presence.ReportedAt
+	if reported.IsZero() {
+		reported = time.Now()
+	}
+	q := s.queries()
+	if err := q.UpsertPresence(ctx, postgresdb.UpsertPresenceParams{
+		Service: presence.Service, InstanceID: presence.InstanceID, Version: presence.Version,
+		InstallType: presence.InstallType, StartedAt: presence.StartedAt.UTC(), ReportedAt: reported.UTC(),
+		Ready: presence.Ready, Detail: presence.Detail,
+	}); err != nil {
+		return fmt.Errorf("store: put presence: %w", err)
+	}
+	if err := q.DeletePresenceBefore(ctx, reported.Add(-presenceRetention).UTC()); err != nil {
+		return fmt.Errorf("store: prune presence: %w", err)
+	}
+	return nil
+}
+
+// presenceRetention is how long a stopped instance stays listed as down.
+const presenceRetention = 24 * time.Hour
+
+// ListPresence returns every instance's record, ordered by (service, instance).
+func (s *Store) ListPresence(ctx context.Context) ([]storecontract.Presence, error) {
+	rows, err := s.queries().ListPresence(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: list presence: %w", err)
+	}
+	out := make([]storecontract.Presence, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, storecontract.Presence{
+			Service: r.Service, InstanceID: r.InstanceID, Version: r.Version, InstallType: r.InstallType,
+			StartedAt: r.StartedAt, ReportedAt: r.ReportedAt, Ready: r.Ready, Detail: r.Detail,
+		})
+	}
+	return out, nil
+}

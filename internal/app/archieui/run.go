@@ -9,11 +9,14 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -108,11 +111,8 @@ func Run(ctx context.Context, options Options) error {
 	// events back out of the State Store over the same cursor SSE catch-up
 	// uses. Backgrounded so priming past a large events table cannot delay the
 	// listener.
-	go func() {
-		if err := srv.PumpEvents(ctx, opts.EventPollInterval); err != nil {
-			log.Error("event pump stopped; the activity feed will only show history", "err", err)
-		}
-	}()
+	go pumpEvents(ctx, srv, opts.EventPollInterval, log)
+	go presence.Run(ctx, presence.UI, servicekit.Build(), tasks, srv.Health, log)
 	liveCtx, stopLive := context.WithCancel(ctx)
 	defer stopLive()
 	go srv.RunLive(liveCtx)
@@ -156,5 +156,11 @@ func serve(ctx context.Context, listener net.Listener, handler http.Handler, opt
 			return nil
 		}
 		return err
+	}
+}
+
+func pumpEvents(ctx context.Context, srv *webui.Server, interval time.Duration, log *slog.Logger) {
+	if err := srv.PumpEvents(ctx, interval); err != nil {
+		log.Error("event pump stopped; the activity feed will only show history", "err", err)
 	}
 }
