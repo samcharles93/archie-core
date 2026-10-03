@@ -1,16 +1,3 @@
-// Lifted from tau internal/agent/tools/find.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//   - discovery is confined to the active workspace. Module-cache and other
-//     absolute paths are rejected so find cannot list home or pkg/mod trees.
-//   - runFindGoFallback split into compileFindFilter and findWalkVisitor to
-//     satisfy golangci-lint's gocognit limit. No behavioural change.
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (

@@ -1,13 +1,7 @@
 package configuration
 
 // DeniedKeys are the config keys the runtime overlay may never set, mapped
-// to the reason shown to the operator. database_url and state_dir are read
-// before the overlay store can be opened, and work_dir pins the whole working
-// layout. Enforced at write time (the
-// API returns 4xx) and again in the overlay's Set, not silently dropped at
-// read time. Owned here rather than in the overlay package so the webui
-// config renderer can reference the policy without linking the overlay's
-// SQLite store.
+// to the reason shown to the operator.
 var DeniedKeys = map[string]string{
 	"database_url": "required for bootstrap; cannot be changed at runtime",
 	"state_dir":    "required for bootstrap; cannot be changed at runtime",

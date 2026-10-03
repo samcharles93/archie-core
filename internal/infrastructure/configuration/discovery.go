@@ -11,13 +11,8 @@ import (
 // confDirName is the subdirectory holding additional feature files.
 const confDirName = "conf.d"
 
-// fileSet is the outcome of scanning one configuration directory: which file
-// carries the daemon-level settings, which files carry recognised features,
-// and which carry opaque extras.
-//
-// Scanning previously returned four bare values (two paths and two maps),
-// which left the caller to remember that YAML wins over TOML and that extras
-// are keyed by feature name.
+// fileSet is the result of scanning a configuration directory: the main
+// file, feature files and extras.
 type fileSet struct {
 	mainYAML string
 	mainTOML string

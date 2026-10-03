@@ -26,13 +26,7 @@ type Document struct {
 	// Provenance lists the files that produced Config, in precedence order.
 	Provenance Provenance
 
-	// UnknownKeys lists dotted TOML key paths present in a loaded file that
-	// no decode target consumed (e.g. "containers.max_concurrancy" for a
-	// misspelled max_concurrency) -- present so a typo'd key is visible
-	// instead of silently parsing, validating and doing nothing. Sorted
-	// and de-duplicated. A missing key that a YAML config source carries
-	// is not yet detected here (plan-config-drift.md step 1 note); this
-	// is TOML-only for now.
+	// UnknownKeys lists sorted TOML key paths no decode target consumed.
 	UnknownKeys []string
 }
 
@@ -77,13 +71,8 @@ func xdgDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// xdgConfigHome returns $XDG_CONFIG_HOME, falling back to ~/.config, and
-// finally to a relative path when the home directory is unknowable.
-//
-// os.UserConfigDir is the XDG-spec-shaped function and is deliberately not
-// used: it resolves to ~/Library/Application Support on darwin and returns an
-// error rather than a relative path for a relative $XDG_CONFIG_HOME, so two
-// archie processes would read two different configuration files.
+// xdgConfigHome returns $XDG_CONFIG_HOME, else ~/.config, else a relative
+// path.
 func xdgConfigHome() string {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
 		return dir
@@ -139,25 +128,14 @@ func validateOverlayPath(overlayPath, basePath string, baseIsDir bool) error {
 	return nil
 }
 
-// Overlay loads basePath, then decodes overlayPath into the same value so
-// only the fields the overlay sets are replaced -- every field it omits keeps
-// the base value. This lets a deployment-specific file (config.docker.toml)
-// declare only what differs instead of restating the whole schema. An empty
-// overlayPath is equivalent to [Loader.File].
+// Overlay loads basePath, then replaces only the fields overlayPath sets. An
+// empty overlayPath is equivalent to File.
 func (l *Loader) Overlay(basePath, overlayPath string) (*Document, error) {
 	return l.overlayFile(basePath, overlayPath)
 }
 
-// ApplyOverlay decodes the runtime config overlay (a nested map of
-// dotted-path values from the overlay store) into a copy of doc with the
-// same field-level precedence as a file overlay, records the overlay
-// origin, then applies defaults and validates. It is used at boot and on
-// reload to layer dashboard-edited overrides over the file config.
-//
-// ApplyOverlay never mutates its input: the returned Document owns fresh
-// copies of the Config and the provenance chain, so a decode or
-// validation failure leaves the caller's document (and whatever it was
-// published from) exactly as it was.
+// ApplyOverlay layers runtime overrides over a copy of doc, then defaults and
+// validates. doc is not mutated.
 func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Document, error) {
 	next := *doc
 	next.Config = doc.Config.Clone()
@@ -208,15 +186,8 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	return l.finalize(doc, validateBootstrap)
 }
 
-// overlayFileKeys reports the keys of an overlay file that nothing consumes. It
-// has two sources, because the file's own decode and the fold's apply decode do
-// not match keys the same way: TOML accepts a key that differs only in case,
-// while the yaml decode the fold uses does not. A key only the file's decode
-// matches would therefore be consumed by the report below and dropped in
-// silence by the apply, so the apply's own view of the mapping is unioned in.
-//
-// The second decode here is deliberate: it is what carries TOML's Undecoded()
-// view of the file, which the raw mapping cannot report (it consumes every key).
+// overlayFileKeys returns the overlay file's keys that neither the TOML
+// decode nor the overlay apply consumes.
 func overlayFileKeys(path string, mapping map[string]any, target reflect.Type) ([]string, error) {
 	decoded, err := decodeConfigFileKeys(path, reflect.New(target).Interface())
 	if err != nil {
@@ -225,11 +196,7 @@ func overlayFileKeys(path string, mapping map[string]any, target reflect.Type) (
 	return append(decoded, unmatchableKeys(mapping, target)...), nil
 }
 
-// unmatchableKeys returns the dotted paths of the keys in mapping that the fold's
-// yaml decode cannot match to a field of target. It descends the way foldOverrides
-// does -- through structs and through string-keyed maps of structs -- so it sees
-// the same keys the apply does. A slice of tables is not descended: the yaml
-// decode replaces it wholesale, so anything inside it is a value, not a key.
+// unmatchableKeys returns the keys in mapping that match no field of target.
 func unmatchableKeys(mapping map[string]any, target reflect.Type) []string {
 	var out []string
 	for key, value := range mapping {
@@ -273,11 +240,8 @@ func prefixed(prefix string, keys []string) []string {
 	return keys
 }
 
-// unknownKeys returns the keys present in both a and b: one config file
-// feeds more than one decode target (&doc.Config and &doc.Scheduling), so
-// a key legitimately owned by one target decodes cleanly there and only
-// shows up in the other target's undecoded set. Only a key neither target
-// consumed is a real unknown key (Hazard 1, plan-config-drift.md).
+// unknownKeys returns the keys present in both a and b, i.e. consumed by
+// neither decode target.
 func unknownKeys(a, b []string) []string {
 	if len(a) == 0 || len(b) == 0 {
 		return nil
@@ -295,13 +259,8 @@ func unknownKeys(a, b []string) []string {
 	return out
 }
 
-// unregisteredServiceKeys reports [services.<name>] sections naming a service
-// nobody registered.
-//
-// Undecoded() cannot see these. Services is a map, so TOML decodes any section
-// under [services] into it successfully, and a typo'd [services.gatway] would
-// load clean where the previous struct form reported it. The registry is the
-// authority on which names exist, so ask it.
+// unregisteredServiceKeys returns [services.<name>] sections for unregistered
+// services.
 func unregisteredServiceKeys(services config.Services) []string {
 	var out []string
 	for name := range services {
@@ -331,7 +290,7 @@ func sortedUnique(keys []string) []string {
 	return out
 }
 
-// Dir loads configuration from a directory tree:
+// Dir loads configuration from a directory:
 //
 //	config.yaml             daemon-level settings
 //	config.gateway.yaml     chat channels and platforms
@@ -341,13 +300,8 @@ func sortedUnique(keys []string) []string {
 //	config.identities.yaml  identity settings
 //	conf.d/*.yaml           additional feature files
 //
-// A missing feature file means the feature is absent, not an error. Legacy
-// config.toml is the fallback when config.yaml is absent; YAML wins when
-// both exist.
-//
-// When overlayDir is non-empty its files are applied on top of baseDir, with
-// the same field-level precedence as [Loader.Overlay]. The overlay directory
-// need not contain a main config.
+// Missing feature files are fine. config.toml is used when config.yaml is
+// absent. A non-empty overlayDir is applied on top.
 func (l *Loader) Dir(baseDir, overlayDir string) (*Document, error) {
 	doc := &Document{}
 
@@ -428,16 +382,7 @@ func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool, layer L
 	return nil
 }
 
-// finalize applies defaults, then validates. The order matters: validation
-// judges the defaulted configuration, including values the operator never
-// wrote.
-//
-// validate is a parameter because the two kinds of caller produce different
-// documents. Every file source ([Loader.File], [Loader.Overlay], [Loader.Dir])
-// produces a BOOTSTRAP document and passes validateBootstrap: the settings the
-// control plane owns are layered over it later, so a stale value in one of them
-// must not fail the load. [Loader.ApplyOverlay] layers overrides onto a
-// document that is already effective, so it passes [Validate].
+// finalize applies defaults, then validate.
 func (l *Loader) finalize(doc *Document, validate func(*config.Config) error) (*Document, error) {
 	doc.UnknownKeys = sortedUnique(append(doc.UnknownKeys, unregisteredServiceKeys(doc.Config.Services)...))
 	l.applyDefaults(&doc.Config)

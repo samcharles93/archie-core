@@ -11,11 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-// decodeConfigFileKeys decodes path into target, dispatching on extension,
-// additionally returning target's undecoded top-level keys for a TOML
-// source (see decodeTOMLKeys). A YAML source has no equivalent hook yet
-// (plan-config-drift.md step 1 note) and always reports none -- unchanged
-// behaviour, not a claim of completeness.
+// decodeConfigFileKeys decodes path into target by extension and returns
+// undecoded top-level keys for TOML files.
 func decodeConfigFileKeys(path string, target any) ([]string, error) {
 	switch filepath.Ext(path) {
 	case ".yaml", ".yml":
@@ -27,11 +24,7 @@ func decodeConfigFileKeys(path string, target any) ([]string, error) {
 	}
 }
 
-// decodeFileMapping parses a configuration file into the nested mapping it
-// carries, with no typed target. An overlay needs this shape: a typed decode
-// cannot distinguish a key the file omits from a key it sets to the zero
-// value, and that distinction is what carrying the fields of a partially
-// addressed map entry forward is built on (see applyOverlayFile).
+// decodeFileMapping parses a configuration file into an untyped nested map.
 func decodeFileMapping(path string) (map[string]any, error) {
 	var doc map[string]any
 	switch filepath.Ext(path) {
@@ -53,13 +46,8 @@ func decodeFileMapping(path string) (map[string]any, error) {
 	return doc, nil
 }
 
-// decodeTOMLKeys decodes a TOML file into target, additionally
-// returning the top-level dotted key paths present in the file that
-// target did not consume (toml.MetaData.Undecoded()). A single decode
-// target's undecoded set is not by itself "unknown" -- see Hazard 1 in
-// .local/issue-tracker/plan-config-drift.md, one file can legitimately
-// feed more than one target -- callers combine this with the other
-// target's undecoded set before treating anything as a real unknown key.
+// decodeTOMLKeys decodes a TOML file into target and returns the top-level
+// keys target did not consume.
 func decodeTOMLKeys(path string, target any) ([]string, error) {
 	meta, err := toml.DecodeFile(path, target)
 	if err != nil {
@@ -76,11 +64,7 @@ func decodeTOMLKeys(path string, target any) ([]string, error) {
 	return keys, nil
 }
 
-// decodeYAML decodes a YAML file into target.
-//
-// Every decode error names its file. The previous loadMainConfig returned
-// bare yaml.Unmarshal and toml.DecodeFile errors, so a syntax error in one
-// of several files gave no clue which one to open.
+// decodeYAML decodes a YAML file into target. Errors name the file.
 func decodeYAML(path string, target any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -93,17 +77,8 @@ func decodeYAML(path string, target any) error {
 }
 
 // decodeFeature decodes a feature file into the part of cfg it describes.
-//
-// Most feature files carry top-level keys matching Config fields and decode
-// into cfg directly. Memory and tools are sub-structs whose keys sit at the
-// top level of their own file rather than nested under a "memory:" or
-// "tools:" key, so they decode into the sub-struct.
-//
-// An overlay layer's feature file is folded over the base layer, for the same
-// reason and with the same precedence as a main overlay file. The keys that fold
-// reports are dropped here: only a main file reports unknown keys today
-// (decodeMain), and a feature file reporting a second, differently-shaped set
-// would be a new surface rather than a fix to this one.
+// Memory and tools files decode into their sub-structs. Overlay feature files
+// fold over the base.
 func decodeFeature(cfg *config.Config, feature Feature, path string, layer Layer) error {
 	target := any(cfg)
 	switch feature {
@@ -119,12 +94,7 @@ func decodeFeature(cfg *config.Config, feature Feature, path string, layer Layer
 	return decodeYAML(path, target)
 }
 
-// decodeExtra decodes an unrecognised conf.d/ file into cfg.Extra under name.
-//
-// Unlike the previous implementation this reports failures instead of
-// skipping them: silently dropping a file the operator wrote, because it
-// happened to be unreadable or malformed, presents as the setting simply not
-// taking effect.
+// decodeExtra decodes an unrecognised conf.d/ file into cfg.Extra[name].
 func decodeExtra(cfg *config.Config, name, path string) error {
 	var value any
 	if err := decodeYAML(path, &value); err != nil {

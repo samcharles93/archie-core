@@ -1,26 +1,3 @@
-// Lifted from tau internal/agent/tools/grep.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//   - the embedded ripgrep binaries (upstream internal/tools/builtin/rg) were
-//     removed. They were 14MB of tracked binaries that were re-extracted to a
-//     temporary directory on every run. grepBinary now resolves rg from PATH
-//     and the existing pure-Go grepFallback covers its absence.
-//   - discovery is confined to the active workspace. Module-cache and other
-//     absolute paths are rejected so grep cannot search home or pkg/mod trees.
-//   - makeGrepExecutor, grepFallback, and grepDirFallback were split into
-//     smaller helpers (resolveGrepTargets, runGrepBinary, grepExplicitTargets,
-//     setGrepResultsRelPath, grepWalkVisitor) to satisfy golangci-lint
-//     cyclop/gocognit limits. No behavioural change.
-//   - the workspace codesearch index integration was removed: GrepIndex, the
-//     candidate-narrowing path, the codesearch backend retry, and the
-//     search_backend metric are gone, and grep always walks the requested
-//     path directly.
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -47,11 +24,7 @@ const (
 	grepDefaultLimit = 100
 	grepMaxBytes     = 24 * 1024
 
-	// grepMaxContext bounds context_before/context_after. Large context values
-	// spend the whole byte budget on padding: at the default limit of 100
-	// matches, every extra context line is 100 extra lines of output, so a
-	// request for 10 lines either side truncates long before it has shown 100
-	// distinct matches. Clamping keeps the budget on matches instead.
+	// grepMaxContext bounds context_before and context_after.
 	grepMaxContext = 5
 )
 
@@ -198,11 +171,7 @@ func runGrepBinary(
 	err := cmd.Run()
 	output := stdout.String()
 	if output == "" && err != nil {
-		// Exit 1 means "no matches"; exit 2 means a real failure (bad
-		// pattern, unreadable path). Reporting the latter as an empty
-		// result would have the model state a file contains nothing when
-		// the search never ran, so the code must be checked, not just the
-		// error type.
+		// Exit 1 is no matches; exit 2 is a failure.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			return Result{Content: "no matches found"}
@@ -530,13 +499,7 @@ func buildGrepArgs(p GrepParams) []string {
 	return args
 }
 
-// grepBinary resolves ripgrep from PATH. When it is absent the caller falls
-// back to grepFallback, the pure-Go search, so this returning an error is an
-// ordinary outcome rather than a failure.
-//
-// Upstream tau embeds ripgrep binaries for each platform and extracts one to
-// a temporary directory on demand. That cost 14MB of tracked binaries and
-// wrote the binary out again on every run, which is why it was removed here.
+// grepBinary finds rg on PATH. Without it the caller uses grepFallback.
 func grepBinary() (string, error) {
 	return exec.LookPath("rg")
 }

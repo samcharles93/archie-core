@@ -1,12 +1,3 @@
-// Lifted from tau internal/agent/tools/write.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -128,11 +119,9 @@ func isRegularFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// checkExistingFile returns the prior content of an existing regular file and,
-// when a write should not proceed, a blocking error result. It enforces the
-// read-before-write rule and overwrite opt-in, returning nil when the file may
-// be written. Non-regular or missing paths return an empty content and no
-// block.
+// checkExistingFile returns an existing file's content and, when the write
+// must not proceed, an error result. It enforces read-before-write and
+// overwrite opt-in.
 func checkExistingFile(path, cwd, relPath string, overwrite bool, rt *ReadTracker) (string, *Result) {
 	if !isRegularFile(path) {
 		return "", nil

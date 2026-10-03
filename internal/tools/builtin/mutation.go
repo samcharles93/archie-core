@@ -1,26 +1,11 @@
-// Lifted from tau internal/agent/tools/mutation.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
 	"sync"
 )
 
-// MutationQueue serializes write operations to the same file path,
-// preventing concurrent edits from clobbering each other during
-// parallel tool execution.
-//
-// A sync.RWMutex coordinates between shell commands and file-mutation
-// tools. File mutations (write, edit) take a read lock so they
-// can run concurrently with each other. Shell commands take the write
-// lock, blocking all file mutations for the duration of the command.
+// MutationQueue serializes writes per file path. File mutations share a read
+// lock; shell commands take the write lock.
 type MutationQueue struct {
 	mu    sync.Mutex
 	locks map[string]*mutexEntry
@@ -55,17 +40,8 @@ func (q *MutationQueue) GlobalUnlock() {
 	q.globalMu.Unlock()
 }
 
-// Acquire returns a lock for the given file path. The caller must call
-// the returned release function when done with the mutation.
-//
-// Acquire blocks while the global write lock is held (i.e. while a shell
-// command is running).
-//
-// Usage:
-//
-//	release := q.Acquire("/path/to/file.go")
-//	defer release()
-//	// ... perform read-modify-write ...
+// Acquire locks path and returns the release function. It blocks while a
+// shell command runs.
 func (q *MutationQueue) Acquire(path string) (release func()) {
 	// Take a read lock so shell commands (which take the write lock)
 	// block until we're done, and we block while a shell command runs.

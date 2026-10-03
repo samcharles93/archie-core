@@ -1,15 +1,3 @@
-// Lifted from tau internal/agent/tools/read.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//   - serveReadContent split into readOffsetLimitWindow and
-//     readTrailingNotice to satisfy golangci-lint's cyclop limit. No
-//     behavioural change.
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -40,11 +28,7 @@ const DefaultReadLines = 400
 var readSchema = Schema{
 	Name:        "read",
 	Description: fmt.Sprintf("Read file contents; pointed at a directory it returns a listing. Omitted limits return at most %d lines; set full:true only when the complete file is genuinely needed. Output is always capped at %d lines or %s and includes a continuation offset.", DefaultReadLines, DefaultMaxLines, FormatSize(DefaultMaxBytes)),
-	// NOTE: file is a compatibility alias for path; the executor
-	// handles the fallback (file → path) and returns a clear error
-	// when both are empty. We intentionally do NOT use anyOf here
-	// because the OpenAI Responses API rejects schemas with
-	// anyOf/oneOf/allOf at the top level of the parameters object.
+	// file is an alias for path. No anyOf: the OpenAI Responses API rejects it.
 	Parameters: json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -81,12 +65,7 @@ const (
 	maxSuggestionScan = 20000
 )
 
-// suggestPaths looks for files sharing the missing path's basename. Reads that
-// fail on a plausible-but-wrong path cost a round trip plus a follow-up find;
-// naming the real location lets the model correct itself immediately.
-//
-// The match is on basename alone, which is loose, but a wrong suggestion costs
-// one line of output while no suggestion costs a whole round trip.
+// suggestPaths lists files sharing the missing path's basename.
 func suggestPaths(cwd, missing string) string {
 	if cwd == "" {
 		return ""
@@ -363,11 +342,7 @@ func serveReadContent(cwd, path string, p readParams, info os.FileInfo, state *r
 		return Result{Content: fmt.Sprintf("offset %d exceeds file length (%d lines)", startLine, totalLines), IsError: true}
 	}
 
-	// Skip lines this session has already been shown from an unchanged
-	// file. Repeated reads were 23.6% of all tool result tokens across
-	// analysed sessions - one file was read 58 times in a single session.
-	// full:true is the deliberate escape hatch for a model that has lost
-	// the earlier content (compaction, handoff) and needs it resent.
+	// Skip lines already shown from an unchanged file unless full is set.
 	requestedStart := startLine
 	if rt != nil && !p.Full {
 		novelStart, novelEnd, hasNovel := rt.Novel(cwd, p.Path, FileIdentity(info), startLine, endLine)
@@ -411,11 +386,7 @@ func readOffsetLimitWindow(p readParams, totalLines int) (startLine, endLine int
 	return startLine, endLine
 }
 
-// readTrailingNotice returns the suffix appended to the served content: a
-// shell-fallback hint when the first requested line alone exceeded the byte
-// limit, a continuation hint when the byte limit truncated mid-range, or a
-// continuation hint when a user-specified limit stopped before EOF. Returns
-// "" when none apply.
+// readTrailingNotice returns the hint appended after served content, or "".
 func readTrailingNotice(p readParams, tr TruncationResult, lines []string, startLine, endLine, totalLines int) string {
 	switch {
 	case tr.Truncated && tr.OutputLines == 0:

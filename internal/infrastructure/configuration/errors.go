@@ -2,14 +2,7 @@ package configuration
 
 import "errors"
 
-// Sentinel errors callers can match with errors.Is. Everything else this
-// package returns is wrapped with the offending path via %w.
-//
-// The distinction that matters to a caller is whether the operator can fix
-// the problem by editing a file (ErrInvalidInput) or whether the
-// configuration could not be read at all (ErrNoConfigFile, ErrUnreadable).
-// The previous code signalled all of these with fmt.Errorf strings prefixed
-// "config: ", so a caller had to match on message text to tell them apart.
+// Sentinel errors for errors.Is. Other errors are wrapped with the path.
 var (
 	// ErrInvalidInput reports configuration that decoded successfully but
 	// describes something unusable -- an unknown enum value, a missing

@@ -1,12 +1,3 @@
-// Lifted from tau internal/agent/tools/read_tracker.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -46,23 +37,14 @@ func NewReadTracker() *ReadTracker {
 	}
 }
 
-// FileIdentity is a cheap fingerprint of a file's current state. Size plus
-// modification time is enough here: a rewrite that preserves both is
-// indistinguishable from no change, and the cost of being wrong is a stale
-// suppression notice the model can override with full:true. Hashing every
-// re-read would be strictly more accurate and materially more expensive.
+// FileIdentity fingerprints a file by size and modification time.
 func FileIdentity(info os.FileInfo) string {
 	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
 }
 
-// Novel reports which part of [start,end] the model has not already been shown
-// for this file, and records the whole request as served.
-//
-// It returns ok=false when the request is entirely covered, meaning read should
-// suppress the body. When only part is new AND that part is contiguous, the
-// narrowed range is returned. A request whose novel portion is fragmented is
-// served whole, because stitching disjoint fragments into one response is more
-// confusing to the model than simply repeating some lines.
+// Novel returns the part of [start,end] not yet shown for this file and
+// records the request. ok is false when all of it was shown. A fragmented
+// remainder is served whole.
 func (rt *ReadTracker) Novel(cwd, path, identity string, start, end int) (ns, ne int, ok bool) {
 	abs := resolvePath(cwd, path)
 

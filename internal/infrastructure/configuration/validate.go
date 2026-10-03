@@ -38,34 +38,8 @@ var (
 	memoryEngines    = []string{memoryEngineBuiltin}
 )
 
-// Validate judges a configuration a process will run with -- every check that
-// can reject one -- against a config.Config value already built in memory, e.g.
-// by archied setup before it has written anything to disk. It is a superset of
-// what [Loader] applies to a file (validateBootstrap): a check over a setting
-// the control plane owns belongs here and not there, so that a stale TOML value
-// cannot fail a process's startup.
-//
-// It judges an EFFECTIVE document: the bootstrap file with every setting the
-// control plane owns layered over it. That layering happens at exactly one
-// place, boot.runtimeConfig (internal/app/archied/control_plane.go), which runs
-// this afterwards; the daemon and the Gateway both go through it, and the
-// readiness config probe re-runs it against the running value. A database value
-// that will not validate therefore stops the process rather than starting it
-// degraded.
-//
-// A plain file document is judged by validateBootstrap instead: see the split
-// there for why the loader must not apply this to it.
-//
-// Like validate, it does not apply defaults. Several checks (dispatch.trigger,
-// forge.type) only pass once a default has been filled
-// in, and defaulting is currently unexported ((*Loader).applyDefaults). A
-// cfg built by hand, with those fields left zero-valued, will fail
-// validation that a config loaded through [Loader.File] would pass. Callers
-// that build a config directly (rather than decoding one through a Loader)
-// must fill in the same defaults themselves, or -- the safer option, since
-// it can't drift from what the real load path does -- render the config to
-// TOML and load it back through a Loader instead of calling Validate on the
-// in-memory value directly.
+// Validate checks an effective configuration, including settings the control
+// plane owns. It does not apply defaults.
 func Validate(cfg *config.Config) error {
 	return validate(cfg)
 }
@@ -79,19 +53,8 @@ func validate(cfg *config.Config) error {
 	return validateDatabaseOwned(cfg)
 }
 
-// validateBootstrap reports the first problem in the settings a bootstrap
-// document still owns: the file config a process reads before it can reach the
-// State Store. [Loader] applies this to every file source.
-//
-// It deliberately omits the settings the control plane stores, because a stale
-// TOML value in one of them must not be able to fail a process's startup.
-// archie-state-store resolves its file config and seeds the control-plane
-// resources from that same document on a fresh database, and a seed it cannot
-// validate is skipped rather than fatal (controlplane.Server.ImportConfig), so
-// a check left here is a check that can still block it. Those checks live in
-// validateDatabaseOwned and run on the effective document instead -- which is
-// where the process that uses the value refuses it, and where the operator's
-// fix is the file again.
+// validateBootstrap checks the settings a file configuration still owns,
+// skipping those the control plane stores.
 func validateBootstrap(cfg *config.Config) error {
 	if err := validateForgeIntake(cfg); err != nil {
 		return err
@@ -111,14 +74,8 @@ func validateBootstrap(cfg *config.Config) error {
 	return validateCapture(cfg)
 }
 
-// validateDatabaseOwned reports the first problem in a setting the control
-// plane owns. Each check below judges a field that a control-plane resource is
-// seeded from and replaces wholesale: providers (provider-settings),
-// poll_interval and dispatch (scheduling-policy), containers
-// (container-runtime-policies), and the repository lists
-// (repository-policies). It runs on the effective document, after that
-// replacement, which is the only point at which the value being judged is the
-// value a process will use.
+// validateDatabaseOwned checks the settings the control plane owns:
+// providers, scheduling, containers and repositories.
 func validateDatabaseOwned(cfg *config.Config) error {
 	if err := validateDispatch(cfg); err != nil {
 		return err
@@ -159,12 +116,7 @@ func validateMemory(cfg *config.Config) error {
 	return nil
 }
 
-// validateCapture rejects negative capture settings. applyDefaults fills
-// every zero value with a positive default, so this only fires on an
-// explicit negative value -- which would make time.Duration/AddDate math
-// and the token-bucket rate limiter behave nonsensically (e.g. a negative
-// retention window would prune every row on every insert, including the one
-// just written).
+// validateCapture rejects negative capture settings.
 func validateCapture(cfg *config.Config) error {
 	if cfg.Capture.Retention < 0 {
 		return fmt.Errorf("%w: capture.retention must not be negative", ErrInvalidInput)
@@ -184,12 +136,7 @@ func validateCapture(cfg *config.Config) error {
 	return nil
 }
 
-// validatePollInterval rejects a non-positive poll interval.
-// applyDefaults fills PollInterval == 0 with the default, so this only
-// fires on an explicit negative value -- which would panic
-// time.NewTicker/Reset in the daemon's poll loops, at boot and (worse)
-// on a SIGHUP reload mid-run, when the edit that broke it is no longer
-// fresh in the operator's mind.
+// validatePollInterval rejects a negative poll interval.
 func validatePollInterval(cfg *config.Config) error {
 	if cfg.PollInterval <= 0 {
 		return fmt.Errorf("%w: poll_interval must be positive", ErrInvalidInput)
@@ -197,13 +144,8 @@ func validatePollInterval(cfg *config.Config) error {
 	return nil
 }
 
-// validateDispatch rejects a "label" or "either" trigger left with no label
-// to match. GitHub's issues-list API treats an empty label filter as no
-// filter at all and returns every open issue in the repo -- a live incident
-// (GH#445) queued 124 unrelated issues in one poll cycle this way, after
-// [dispatch.labels] (a different field, mapping task states to their own
-// labels) was configured while the actual trigger-match label was left
-// blank.
+// validateDispatch rejects a "label" or "either" trigger with no label: an
+// empty label filter matches every open issue.
 func validateDispatch(cfg *config.Config) error {
 	if !DispatchTriggerValid(cfg.Dispatch.Trigger) {
 		return fmt.Errorf("%w: dispatch.trigger %q (want %s)", ErrInvalidInput, cfg.Dispatch.Trigger, list(dispatchTriggers))
@@ -214,27 +156,13 @@ func validateDispatch(cfg *config.Config) error {
 	return nil
 }
 
-// DispatchTriggerValid reports whether trigger names a discovery rule the daemon
-// can poll with. It is exported because the scheduling-policy resource validator
-// (internal/app/controlplane) judges the same field: that resource is seeded
-// from cfg.Dispatch and replaces it wholesale once the database owns it, so a
-// value this package rejects must not be storable, and a value it accepts must
-// not be rejected there. One definition, both layers.
+// DispatchTriggerValid reports whether trigger is a known discovery rule.
 func DispatchTriggerValid(trigger string) bool {
 	return oneOf(trigger, dispatchTriggers)
 }
 
-// validateForgeIntake checks the forge intake mode and that webhook intake has
-// the secret and listen address it needs. An unset intake resolves to "poll"
-// without mutating cfg, so Validate (which does not apply defaults) accepts a
-// hand-built config the same way Loader.File accepts its on-disk form.
-//
-// It also refuses the intake settings that no code path reads: the ones on a
-// [[identities]] entry, and a root webhook intake paired with [[identities]].
-// The receiver is single-identity by construction
-// (bootstrap.setupForgeWebhook binds one dispatch predicate and one secret),
-// so those two spellings could only have been accepted-and-ignored -- the root
-// one silently downgrading to polling at startup.
+// validateForgeIntake checks the intake mode and webhook settings, and
+// rejects webhook intake with [[identities]] or on an identity.
 func validateForgeIntake(cfg *config.Config) error {
 	intake := cfg.Forge.Intake
 	if intake == "" {
@@ -258,22 +186,11 @@ func validateForgeIntake(cfg *config.Config) error {
 	return validateIdentityForgeIntake(cfg.Identities)
 }
 
-// identityIntakes is the intake modes a [[identities]] entry may declare.
-// "poll" is the whole list: the receiver reads the root [forge] block only, so
-// a per-identity "webhook" would have no effect (see
-// validateIdentityForgeIntake). Named separately from forgeIntakes so a
-// rejection for a typo does not advertise modes the identity cannot have.
+// identityIntakes are the intake modes an identity may declare.
 var identityIntakes = []string{config.ForgeIntakePoll}
 
-// validateIdentityForgeIntake refuses the intake settings on a [[identities]]
-// entry. IdentityConfig.Forge is the same type as the root [forge] block, so
-// identities[N].forge.intake, .webhook_secret and .webhook_addr all DECODE --
-// but every read of them is of the root block (this file and
-// bootstrap.setupForgeWebhook), and per-identity intake never reached even
-// this function. An operator could therefore write a webhook intake that
-// parsed, validated, and did nothing while the identity went on polling.
-// Reject it at the source: intake per identity is a migration
-// (internal/domain/workintake routing), not a setting.
+// validateIdentityForgeIntake rejects intake settings on an identity; only
+// the root forge's are read.
 func validateIdentityForgeIntake(identities []config.IdentityConfig) error {
 	for i, id := range identities {
 		switch id.Forge.Intake {
@@ -296,11 +213,8 @@ func validateIdentityForgeIntake(identities []config.IdentityConfig) error {
 	return nil
 }
 
-// identitySettingPath renders the location of a per-identity setting, naming
-// the identity as well as indexing it: an operator reading a rejection for a
-// four-entry [[identities]] block finds the offender by its name instead of
-// counting entries. The name is omitted when it is empty, because this runs
-// before validateIdentities has required it.
+// identitySettingPath renders a per-identity setting's location, with its
+// name when set.
 func identitySettingPath(i int, id config.IdentityConfig, field string) string {
 	if id.Name == "" {
 		return fmt.Sprintf("identities[%d].%s", i, field)
@@ -327,11 +241,8 @@ func validateProviders(providers map[string]config.Provider) error {
 	return nil
 }
 
-// validateIdentityStructure judges the shape of the identity definitions: the
-// fields a process needs to know which identities exist and which credentials
-// each one commits and calls with. The repository lists inside them are judged
-// by validateRepositoryContents, because repositories are a control-plane
-// resource that replaces the file's list after the merge.
+// validateIdentityStructure checks identity definitions, excluding their
+// repository lists.
 func validateIdentityStructure(cfg *config.Config) error {
 	if len(cfg.Identities) == 0 {
 		return validateSingleIdentity(cfg)
@@ -363,12 +274,7 @@ func validateIdentities(identities []config.IdentityConfig) error {
 	return nil
 }
 
-// ForgeDisabled reports whether a forge type explicitly opts out of forge
-// integration. It is the single definition shared by config validation and
-// cmd/archied's resolveForge: adding or removing an alias here applies to
-// both paths together. It is not consulted by forge.New, which has its own
-// construction-time dispatch for disabled types (and the empty string);
-// that dispatch is a different concern from this validation predicate.
+// ForgeDisabled reports whether a forge type disables forge integration.
 func ForgeDisabled(t string) bool {
 	return t == forgeTypeNone || t == forgeTypeOff || t == forgeTypeDisabled
 }
@@ -386,12 +292,8 @@ func validateSingleIdentity(cfg *config.Config) error {
 	return nil
 }
 
-// validateRepositoryContents judges the repositories themselves, whichever list
-// they appear in. The shared list is the decision the database's copy replaces,
-// so it is verified on the effective document -- after that replacement, which is
-// the only point the value being judged is the one a process will use. The
-// per-identity lists are verified there for a different reason: no resource
-// carries them, and the daemon is the only process that reads them
+// validateRepositoryContents checks the shared and per-identity repository
+// lists.
 func validateRepositoryContents(cfg *config.Config) error {
 	if len(cfg.Identities) == 0 {
 		return ValidateRepositories(cfg.Repos)
@@ -404,14 +306,8 @@ func validateRepositoryContents(cfg *config.Config) error {
 	return nil
 }
 
-// ValidateRepositories judges a repository list: owner and name present, no
-// duplicate entries, and a test glob the gate can compile. It is exported
-// because the repository-policies resource validator (internal/app/controlplane)
-// judges the same list -- that resource is seeded from these and replaces them
-// wholesale, so the two layers must not disagree about which lists are valid, in
-// either direction: a list one layer accepts and the other refuses is a config
-// that boots file-side and stores nowhere, or a stored value the daemon then
-// refuses to start with.
+// ValidateRepositories checks a repository list: owner and name set, no
+// duplicates, and a valid test glob.
 func ValidateRepositories(repos []config.Repo) error {
 	seen := make(map[string]struct{}, len(repos))
 	for i, r := range repos {
@@ -493,12 +389,7 @@ func validateContainers(cfg *config.Config) error {
 	if err := cfg.Containers.ValidateCredentialBindings(); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
-	// A registry credential that names only one half of the reference can only
-	// be a typo, and the pool cannot resolve it into the header a private
-	// registry needs -- the same rule resolveProviderMap applies to provider
-	// keys. The zero reference is deliberately accepted: anonymous pulls are
-	// the behaviour for a deployment with no private registry, and this field
-	// existing must not change that.
+	// A registry credential must set both engine and key, or neither.
 	if ref := cfg.Containers.RegistryAuth; ref != (config.SecretRef{}) && (ref.Engine == "" || ref.Key == "") {
 		return fmt.Errorf("%w: containers.registry_auth must name both an engine and a key, got {engine: %q, key: %q}", ErrInvalidInput, ref.Engine, ref.Key)
 	}

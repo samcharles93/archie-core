@@ -39,11 +39,7 @@ type SoulSeedResult struct {
 	Action SoulSeedAction
 }
 
-// ConfigDir resolves the configuration directory for a selected config path:
-// the path itself when it is a directory, otherwise the directory containing
-// the selected file. It is how the SOUL file, which sits beside the config,
-// follows an explicitly selected `-config` file as well as the default
-// directory.
+// ConfigDir returns configPath if it is a directory, else its parent.
 func ConfigDir(configPath string) string {
 	if info, err := os.Stat(configPath); err == nil && info.IsDir() {
 		return configPath
@@ -56,18 +52,8 @@ func SoulPath(configPath string) string {
 	return filepath.Join(ConfigDir(configPath), SoulFilename)
 }
 
-// SeedSoul writes the starter SOUL into the configuration directory when no
-// file exists and leaves an existing file untouched. It never overwrites a user
-// edit, including an empty file.
-//
-// The check is content, not provenance, because the only durable copy of a
-// file-owned SOUL is the file itself: an operator who edited it by hand leaves
-// no writer identity to consult, so a body that differs from the build's
-// shipped document is treated as theirs.
-//
-// The caller owns the decision to seed at all. A failure is returned rather
-// than suppressed, because whether a missing starter is fatal belongs to the
-// caller that needs the file, not to the seeder.
+// SeedSoul writes the starter SOUL file when none exists. It never
+// overwrites an existing file.
 func SeedSoul(configPath, shipped string) (SoulSeedResult, error) {
 	dir := ConfigDir(configPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

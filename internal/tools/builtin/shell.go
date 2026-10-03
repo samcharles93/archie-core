@@ -1,22 +1,3 @@
-// Lifted from tau internal/agent/tools/shell.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//   - the command runs in its own process group and cancellation signals
-//     the whole group. Upstream relies on exec.CommandContext's default,
-//     which kills only the direct shell, so `go test ./...` left its test
-//     binary running and `nohup x &` survived outright. archie's /stop
-//     cancels the turn context, so without this the command it was aimed
-//     at would keep going. tau applies the same treatment to spawned
-//     agents in agent.go; this extends it to the shell tool.
-//   - makeShellExecutor split into buildShellCmd, formatShellOutput, and
-//     shellErrorResult to satisfy golangci-lint's gocognit limit. No
-//     behavioural change.
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -221,11 +202,7 @@ func shellErrorResult(ctx context.Context, err error, timeout time.Duration, con
 	return Result{Content: fmt.Sprintf("error executing command: %v", err), IsError: true}
 }
 
-// goTestSummaryRe matches cmd/go's per-package result lines: "ok", "FAIL" and
-// "?" (no test files). Note it must NOT match "---", which prefixes per-test
-// result lines ("--- PASS: TestX") - exactly the noise being collapsed. A
-// package that fails to build reports as "FAIL <pkg> [build failed]", so the
-// package-level failure case is already covered by the FAIL alternative.
+// goTestSummaryRe matches go test's per-package result lines.
 var goTestSummaryRe = regexp.MustCompile(`^(ok|FAIL|\?)\s`)
 
 // goTestInvocationRe matches a `go test` invocation, allowing for a leading
@@ -233,14 +210,8 @@ var goTestSummaryRe = regexp.MustCompile(`^(ok|FAIL|\?)\s`)
 // match wrappers like gotestsum, whose output format differs.
 var goTestInvocationRe = regexp.MustCompile(`(^|[;&|]\s*)go\s+test\b`)
 
-// collapseGoTestOutput reduces a PASSING `go test` run to its per-package
-// summary lines. A single `go test ./internal/tui2/... -v` in the analysed
-// sessions took 14.2s and returned 11,044 tokens - 11% of all shell result
-// tokens in one call - despite every test having passed, where the only
-// information the model needed was "they passed".
-//
-// Failing runs are returned verbatim: on failure the per-test detail is the
-// entire point, and collapsing it would force a re-run to recover it.
+// collapseGoTestOutput reduces a passing go test run to its per-package
+// summary lines. Failing output is unchanged.
 func collapseGoTestOutput(command, output string, succeeded bool) (string, bool) {
 	if !succeeded || !goTestInvocationRe.MatchString(command) {
 		return output, false

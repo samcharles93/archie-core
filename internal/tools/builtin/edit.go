@@ -1,12 +1,3 @@
-// Lifted from tau internal/agent/tools/edit.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -236,13 +227,8 @@ type editSpan struct {
 	editIdx    int    // index of the edit that produced this span (for errors)
 }
 
-// applyEdits resolves every edit against the ORIGINAL content, validates that
-// the resulting replacement spans do not overlap, and applies them in one
-// pass. It never partially applies: any error leaves the content untouched.
-//
-// Matching is exact first; if old_text is not found, a fuzzy pass retries the
-// match with trailing whitespace stripped from every line of both the content
-// and old_text, which recovers the most common exact-match failure.
+// applyEdits applies every edit against the original content in one pass,
+// or none on any error. Overlapping edits are an error.
 func applyEdits(content string, edits []EditAction) (string, error) {
 	var spans []editSpan
 
@@ -268,11 +254,8 @@ func applyEdits(content string, edits []EditAction) (string, error) {
 	return renderSpans(content, spans), nil
 }
 
-// resolveEditSpans resolves one edit against the original content into the
-// span(s) it applies. Matching is exact first; if old_text is not found, a
-// fuzzy pass retries the match with trailing whitespace stripped from every
-// line of both the content and old_text, which recovers the most common
-// exact-match failure.
+// resolveEditSpans finds an edit's spans: exact match first, then ignoring
+// trailing whitespace.
 func resolveEditSpans(content string, edit EditAction, i int) ([]editSpan, error) {
 	matches := indexAll(content, edit.OldText)
 
@@ -345,16 +328,8 @@ func editNotFoundError(idx int, content, oldText string) error {
 	return errors.New(base)
 }
 
-// nearestMatchHint locates the most likely intended location for a failed
-// old_text and quotes the file's actual text there, so the model can correct
-// the edit from the error alone instead of spending a round trip re-reading
-// the file. stale_edit was 6.7% of all edit calls across analysed sessions.
-//
-// The anchor is the first non-blank line of old_text compared with leading and
-// trailing whitespace removed, because indentation drift is the dominant cause:
-// the model reproduces the right code at the wrong nesting depth. Matching on
-// content alone is deliberately loose - a wrong hint costs nothing beyond a few
-// lines of output, whereas no hint costs a whole round trip.
+// nearestMatchHint quotes the file's text where a failed old_text most likely
+// belongs, matched on its first non-blank line ignoring indentation.
 func nearestMatchHint(content, oldText string) string {
 	var anchor string
 	wantLines := strings.Split(oldText, "\n")

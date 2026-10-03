@@ -1,14 +1,4 @@
-// Lifted from tau internal/agent/tools/registry.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
-// Package tools provides the tool registry and built-in tool implementations
-// for the Tau agent coordinator.
+// Package builtin provides the agent's built-in file and shell tools.
 package builtin
 
 import (

@@ -39,12 +39,7 @@ func (o Origin) String() string {
 	return fmt.Sprintf("%s (%s %s)", o.Path, o.Layer, o.Role)
 }
 
-// Provenance is the ordered list of files that produced a configuration,
-// earliest first, so a later entry overrides an earlier one.
-//
-// Nothing recorded where a value came from before. With overlays, feature
-// files and conf.d/ all able to set the same field, "which file set this?"
-// was answerable only by re-deriving the precedence rules by hand.
+// Provenance lists the files that produced a configuration, earliest first.
 type Provenance struct {
 	Origins []Origin
 }

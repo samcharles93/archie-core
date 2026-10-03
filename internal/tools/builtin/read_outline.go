@@ -1,12 +1,3 @@
-// Lifted from tau internal/agent/tools/read_outline.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -44,15 +35,8 @@ func tsOutlineRe() *regexp.Regexp {
 	return regexp.MustCompile(`^(export\s|async\s+function\s|function\s|class\s|interface\s|type\s|const\s|enum\s)`)
 }
 
-// outlineFor renders a line-numbered index of a large source file's top-level
-// declarations, or "" when an outline is not appropriate.
-//
-// 15 reads in the analysed corpus landed in the 4k-16k token buckets, roughly
-// 18% of all read tokens. DefaultReadLines bounds the line count but not the
-// value: the first 400 lines of a 1,500-line file are mostly imports and
-// whichever declarations happen to sort first, which is rarely what the model
-// was looking for. An index of the whole file plus a targeted follow-up read is
-// both cheaper and more likely to land on the right code.
+// outlineFor returns a line-numbered index of a large source file's
+// top-level declarations, or "".
 func outlineFor(path string, lines []string) string {
 	pattern, ok := outlinePatterns[strings.ToLower(filepath.Ext(path))]
 	if !ok {

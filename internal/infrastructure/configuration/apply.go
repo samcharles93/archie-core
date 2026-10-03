@@ -11,18 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-// ApplyOverlayValues decodes overrides (a nested map of dotted-path
-// values, as produced by the overlay store) into cfg using the same
-// field-level precedence as a file overlay: only the keys present are
-// replaced, every field the overlay omits keeps its existing value.
-//
-// This is the decode half of the runtime config overlay. The loader's
-// ApplyOverlay wraps it with defaulting, validation and provenance; the
-// dashboard PATCH path calls it on a copy of the published config and
-// validates the materialised result before persisting. Either way the
-// caller owns the cfg value -- pass a copy when the base must survive.
-//
-// overrides is read, never mutated.
+// ApplyOverlayValues decodes a nested map of overrides into cfg, replacing
+// only the keys present. overrides is not mutated.
 func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
 	if len(overrides) == 0 {
 		return nil
@@ -30,19 +20,8 @@ func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
 	return applyOverlayMapping(cfg, overrides)
 }
 
-// applyOverlayFile layers the overlay file at path over target, with the same
-// field-level precedence ApplyOverlayValues gives a map overlay, and reports the
-// file's keys that nothing consumes. target is whatever the overlay addresses:
-// the whole config for a main file, one sub-struct for a feature file.
-//
-// Both processed overlay forms go through it -- the single overlay file, and an
-// overlay directory's main and feature files -- so neither can lose the fields of
-// a map-valued entry it only partly addresses. A conf.d/*.yaml extra in an
-// overlay directory does not: decodeExtra stores a whole file under
-// cfg.Extra[name] and nothing reads that map, so there is no entry to fold into.
-// Decoding an overlay into target directly replaces such an entry wholesale,
-// which is how an overlay naming only services.state.target cleared the
-// target_token the base file set.
+// applyOverlayFile layers the overlay file at path over target and returns
+// the file's unconsumed keys.
 func applyOverlayFile(path string, target any) ([]string, error) {
 	mapping, err := decodeFileMapping(path)
 	if err != nil {
@@ -54,17 +33,8 @@ func applyOverlayFile(path string, target any) ([]string, error) {
 	return overlayFileKeys(path, mapping, structTypeOf(target))
 }
 
-// applyOverlayMapping is the decode both overlay paths share: the fields each
-// map-valued entry the overlay does not name are folded forward out of the
-// entry target already holds, and the completed mapping is then decoded over it.
-//
-// yaml gives a struct field the field-level treatment ApplyOverlayValues
-// promises, but a map VALUE is decoded into a fresh zero value: an entry the
-// overlay only partially addresses would lose every field it does not name, so
-// an operator changing services.state.target alone would silently drop
-// target_token. Folding here, once, is what makes the promise hold for every
-// map of structs (services, image.hosted, image.local, providers) instead of
-// at each field's reader.
+// applyOverlayMapping decodes doc over target, first carrying forward the
+// fields of map entries that doc only partly sets.
 func applyOverlayMapping(target any, doc map[string]any) error {
 	folded, err := foldOverrides(reflect.ValueOf(target), doc)
 	if err != nil {
@@ -90,13 +60,8 @@ func structTypeOf(target any) reflect.Type {
 	return t
 }
 
-// foldOverrides returns doc with the fields its map entries omit carried
-// forward from the entries cfg already holds. It descends through structs, so
-// {"image": {"hosted": {...}}} folds the same way as an override written at the
-// top level.
-//
-// Only mapping-valued map entries need it: yaml keeps the entries a map of
-// scalars does not name, and a struct field it does not name keeps its value.
+// foldOverrides returns doc with the fields its map entries omit filled from
+// cfg's existing entries, descending through structs.
 func foldOverrides(cfg reflect.Value, doc map[string]any) (map[string]any, error) {
 	if cfg.Kind() == reflect.Pointer {
 		if cfg.IsNil() {

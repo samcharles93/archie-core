@@ -25,11 +25,7 @@ const (
 	defaultPullPolicy      = "missing"
 	defaultContainerImage  = "ghcr.io/samcharles93/archie-agent:latest"
 
-	// defaultMaxResultChars bounds one tool result. It matches the 50KB the
-	// lifted workspace tools already truncate themselves at
-	// (tools/builtin.DefaultMaxBytes), so those stay the binding limit and
-	// only tools with no truncation of their own -- skill bodies, MCP
-	// results -- see a change.
+	// defaultMaxResultChars bounds one tool result.
 	defaultMaxResultChars = 50_000
 
 	defaultWebFetchTimeout = 30 * time.Second
@@ -55,15 +51,7 @@ const (
 	defaultHealthDependencyTimeout = 5 * time.Second
 )
 
-// applyDefaults fills in every absent value. It never reports an error and
-// never rejects input.
-//
-// Defaulting and validation were previously interleaved: functions named
-// applyXDefaults also returned validation errors, and functions named
-// validateX quietly mutated the config. That made it impossible to answer
-// "what did the operator actually set?" -- the only way to see the supplied
-// input was to not call them. Splitting them means defaults can be applied,
-// inspected, and reasoned about independently of whether the result is valid.
+// applyDefaults fills every absent value. It never validates.
 func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyServiceDefaults(cfg)
 	if cfg.Health.Listen == "" {
@@ -85,14 +73,7 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 }
 
 // applyServiceDefaults fills each registered service's absent addresses from
-// its registration. It iterates the registry rather than naming services, so a
-// new service needs no branch here -- only its RegisterService call.
-//
-// A registered service always ends with an entry, so later code can read
-// cfg.Services.Get(name) without distinguishing "absent section" from
-// "section with every field defaulted". An empty registered Target is a
-// service whose target the operator must supply, and stays empty for
-// validation to reject rather than being defaulted to something dialable.
+// its registration. An empty registered target stays empty for validation.
 func applyServiceDefaults(cfg *config.Config) {
 	if cfg.Services == nil {
 		cfg.Services = config.Services{}
@@ -119,11 +100,7 @@ func applyMemoryDefaults(cfg *config.Config) {
 	}
 }
 
-// DefaultCapture returns the webhook capture endpoint's default settings.
-// applyCaptureDefaults fills a decoded
-// config with them; the UI process composes the same capture receiver and
-// must produce the same effective values when it is driven by flags alone
-// and no configuration file projected [capture] to it.
+// DefaultCapture returns the default capture settings.
 func DefaultCapture() config.CaptureConfig {
 	return config.CaptureConfig{
 		Retention:     config.Duration(defaultCaptureRetention),
@@ -164,17 +141,8 @@ func applyToolPolicyDefaults(cfg *config.Config) {
 		cfg.Tools.Policy.MaxResultChars = defaultMaxResultChars
 	}
 
-	// SpillDir is deliberately NOT defaulted.
-	//
-	// Spilling hands the model a file path to read back, and the read tool is
-	// confined to chat.workspace. A default under work_dir is outside that for
-	// any workspace narrower than the whole home directory, and always outside
-	// a task agent's worktree -- so the model would be given a path it cannot
-	// open and the result would be lost rather than displaced. Truncating
-	// inline at least shows the first part of the result and says so.
-	//
-	// An operator who wants spilling points this at a directory inside the
-	// workspace; startup warns when it is not (see cmd/archied).
+	// SpillDir is not defaulted: spilled results must be inside the read tool's
+	// workspace to be readable.
 	applyWebFetchDefaults(cfg)
 }
 
@@ -189,11 +157,7 @@ func applyWebFetchDefaults(cfg *config.Config) {
 	}
 }
 
-// DefaultWorkDir returns the work directory an unset work_dir would have been
-// given. Callers that must fall back when a configured path turns out to be
-// unusable use this so the fallback is the same location the operator would
-// have got by saying nothing, rather than a second guess that only this
-// caller knows about.
+// DefaultWorkDir returns the default work directory.
 func DefaultWorkDir() string {
 	return filepath.Join(xdgDataHome(), "archie", "work")
 }
@@ -206,13 +170,8 @@ func DefaultConfigDir() string {
 	return filepath.Join(xdgConfigHome(), "archie")
 }
 
-// DefaultConfigPath returns the configuration file an archie binary reads when
-// -config is not given. Every binary that asks a question about a deployment
-// has to read this path to be answering about the same deployment, so the rule
-// lives here once and the binaries take it from here. Deriving it a second way
-// is what went wrong before: os.UserConfigDir is a plausible-looking source for
-// the same value that disagrees with this one on darwin and for a relative
-// $XDG_CONFIG_HOME.
+// DefaultConfigPath returns the config file archie binaries read when
+// -config is not given.
 func DefaultConfigPath() string {
 	return filepath.Join(DefaultConfigDir(), "config.toml")
 }
@@ -227,11 +186,7 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	cfg.WorkDir = expandHomePath(cfg.WorkDir)
 	cfg.StateDir = expandHomePath(cfg.StateDir)
 	cfg.Chat.Workspace = expandHomePath(cfg.Chat.Workspace)
-	// DatabaseURL has no default and is not path-expanded: it is a connection
-	// URL, not a file path. Empty means "not configured", which the State
-	// Store refuses at boot (fail closed) rather than a value this loader can
-	// invent -- a wrong default would point a production store at a database
-	// that does not exist.
+	// DatabaseURL has no default.
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(l.dataHome(), "archie", "work")
 	}
@@ -325,16 +280,8 @@ func applyDispatchDefaults(cfg *config.Config) {
 	}
 }
 
-// applyIdentityDefaults derives forge-appropriate commit emails wherever the
-// operator omitted one, for both deployment shapes, and adopts a sole
-// [[identities]] entry as the root single-identity values.
-//
-// The root fields are not merely the legacy single-identity shape: consumers
-// that are inherently single-agent read them (the session curator is built with
-// cfg.BotUser), so leaving the root empty beside exactly one identity is an
-// empty address rather than an unused field, and every curated session is
-// skipped for want of an agent. With two or more identities there is no single
-// answer, so the root is left alone for the operator to name deliberately.
+// applyIdentityDefaults fills omitted commit emails and copies a sole
+// [[identities]] entry into the root single-identity fields.
 func applyIdentityDefaults(cfg *config.Config) {
 	if len(cfg.Identities) > 0 {
 		for i := range cfg.Identities {

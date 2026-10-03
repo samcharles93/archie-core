@@ -1,12 +1,3 @@
-// Lifted from tau internal/agent/tools/bridge.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
-//
-// Mutations from upstream:
-//   - package renamed tools -> builtin (archie-core already has an
-//     internal/tools package holding the registry these are registered into).
-//
-// Refresh by diffing against that path at a newer tau commit. Do not
-// edit without recording the change above.
 package builtin
 
 import (
@@ -27,11 +18,7 @@ type UIBridge interface {
 	Input(ctx context.Context, title, placeholder string) (string, error)
 	Notify(title, level string)
 	Log(chunk string)
-	// SessionID returns the session this bridge instance is scoped to for
-	// the current tool call, or "" when there is no session context (e.g.
-	// NonInteractiveBridge). Tools that need to correlate their own
-	// forwarded events to the calling session (e.g. the agent tool) read
-	// this instead of requiring it to be threaded through static config.
+	// SessionID returns the current tool call's session, or "".
 	SessionID() string
 }
 
