@@ -39,7 +39,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
-	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
@@ -54,7 +53,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
@@ -239,13 +237,6 @@ type boot struct {
 	// layering applied. Set once at boot before the runtime-resource watches
 	// start, which read it as their resume points.
 	runtimeVersions map[string]int64
-
-	// embeddings is nil unless models["embedding"] and a working provider
-	// credential are both configured -- see setupLLMAndChat's "Embeddings
-	// capability" section. Consumers must treat a nil embeddings the same
-	// as domainembedding.ErrUnavailable: skip, never fail startup or an
-	// unrelated call.
-	embeddings domainembedding.Client
 
 	// transcriber is the optional voice-transcription capability. It is built
 	// beside the chat runtime from this process's own [models]/[providers],
@@ -699,15 +690,6 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 	return closeDocker
 }
 
-func (b *boot) setupEmbeddings(cfg config.Config, log *slog.Logger) {
-	if client, ok := infraembedding.New(cfg, infraembedding.Options{}); ok {
-		b.embeddings = client
-		log.Info("embedding capability enabled", "role", infraembedding.Role)
-	} else if cfg.Models[infraembedding.Role] != "" {
-		log.Warn("embedding capability configured but unavailable; capability disabled", "role", infraembedding.Role)
-	}
-}
-
 func (b *boot) setupTranscriber(cfg config.Config, log *slog.Logger) {
 	client, ok := transcription.New(cfg.Models, cfg.Providers, transcription.Options{
 		ResolveSecret: b.secrets.Resolve,
@@ -720,20 +702,16 @@ func (b *boot) setupTranscriber(cfg config.Config, log *slog.Logger) {
 	}
 }
 
-func (b *boot) setupLLMAndChat(ctx context.Context) error {
-	cfg, log := b.cfg, b.log
-
-	if err := b.setupChatRuntime(ctx, cfg); err != nil {
-		return err
-	}
-
-	b.setupEmbeddings(cfg, log)
-	contract, cleanup, err := composeChatContract(cfg.Services, b.secrets)
+// setupGatewayClient dials the Gateway, which owns every model call. The daemon
+// only enqueues the chat tasks scheduled workflows create.
+func (b *boot) setupGatewayClient() error {
+	b.setupChatTasks(b.cfg)
+	contract, cleanup, err := composeChatContract(b.cfg.Services, b.secrets)
 	if err != nil {
 		return err
 	}
 	b.addCleanup(cleanup)
-	b.chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
+	b.chat = &webui.ChatService{Contract: contract}
 	b.setupReadinessProbes()
 	return nil
 }
@@ -1319,7 +1297,10 @@ func (b *boot) setupForgeWebhook() {
 
 func (b *boot) publishConfig(ctx context.Context, cfg config.Config) {
 	b.cfgHolder.Set(cfg)
-	b.publishConfigSnapshot(ctx)
+	// The daemon owns the published configuration view.
+	if b.processName != applystatus.Gateway {
+		b.publishConfigSnapshot(ctx)
+	}
 }
 
 func (b *boot) configOrigins() []webui.ConfigOrigin {
@@ -1386,8 +1367,6 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 	signal.Notify(reloadCh, syscall.SIGHUP)
 	b.addCleanup(func() { signal.Stop(reloadCh) })
 	go reloadLoop(ctx, reloadCh, reloadController, log)
-
-	b.chatController.WithRuntime(b.d)
 }
 
 //nolint:contextcheck // shutdown runs after the parent context is cancelled
@@ -1409,17 +1388,10 @@ func (b *boot) startServices(ctx context.Context) error {
 		log.Error("capability host startup", "err", err)
 		return err
 	}
-	for _, skipped := range b.providerRegistry.Skipped() {
-		log.Error("tool provider unavailable; archie is running without its tools",
-			"provider", skipped.ID, "err", skipped.Err)
-	}
 
 	if err := b.d.Startup(ctx); err != nil {
 		log.Error("startup", "err", err)
 		return err
-	}
-	if err := b.curatorRuntime.Start(ctx); err != nil {
-		log.Error("curator runtime startup", "err", err)
 	}
 	if b.schedulingEngine != nil {
 		if err := b.schedulingEngine.Start(ctx); err != nil {

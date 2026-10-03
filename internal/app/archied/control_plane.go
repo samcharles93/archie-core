@@ -251,7 +251,7 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 	if err := b.startWorkflowExecutionSettings(ctx); err != nil {
 		return fmt.Errorf("workflow execution settings: %w", err)
 	}
-	if err := b.startRuntimeResourceWatches(ctx, b.runtimeVersions); err != nil {
+	if err := b.startRuntimeResourceWatches(ctx, b.runtimeVersions, runtimeResourceKinds); err != nil {
 		return fmt.Errorf("runtime resource watches: %w", err)
 	}
 	return nil
@@ -292,14 +292,22 @@ var runtimeResourceKinds = []string{
 	controlplane.ContainerRuntimePoliciesKind,
 }
 
+// gatewayRuntimeKinds are the kinds the Gateway applies live: the settings its
+// chat runtime and tool providers are built from.
+var gatewayRuntimeKinds = []string{
+	controlplane.ProviderSettingsKind,
+	controlplane.ModelRoleAssignmentsKind,
+	controlplane.ToolSettingsKind,
+}
+
 // startRuntimeResourceWatches keeps a watch per live kind established for the
 // life of the process. versions carries the resume point each kind starts
 // from, the versions boot's layering recorded. The first stream per kind is
 // opened synchronously, so a control plane that cannot be watched at all
 // fails the boot that asked for it; after that the watch does not return, it
 // reconnects (see keepWatch, whose backoff rules these watches ride).
-func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[string]int64) error {
-	for _, kind := range runtimeResourceKinds {
+func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[string]int64, kinds []string) error {
+	for _, kind := range kinds {
 		updates, err := b.controlPlane.WatchResource(ctx, kind, versions[kind])
 		if err != nil {
 			return fmt.Errorf("watch %s: %w", kind, err)

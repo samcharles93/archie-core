@@ -384,24 +384,15 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 
-	if err := b.setupLLMAndChat(ctx); err != nil {
+	if err := b.setupGatewayClient(); err != nil {
 		return 1
 	}
-	// The catalog's consumers exist from here on, and the daemon is the
-	// process that owns the published configuration, so this is where the
-	// live catalog refresh belongs. The standalone Gateway reads the catalog
-	// once at boot and runs no control-plane watches (RunGateway).
+	// The daemon publishes the configuration view, which carries the catalog's
+	// model limits.
 	b.startModelCatalogRefresh(ctx)
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
-	// setupMemoryEngine must run before setupCurators: curator.Registrar
-	// captures b.memEngines at construction time, so built the other way
-	// round every curator would hold a nil engine source.
-	if err := b.setupMemoryEngine(); err != nil {
-		return 1
-	}
-
 	if err := b.loadWorkflows(); err != nil {
 		return 1
 	}
@@ -415,16 +406,10 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.registerNATSRPC(); err != nil {
 		return 1
 	}
-	b.setupCurators(ctx)
-
 	if err := b.setupScheduling(); err != nil {
 		return 1
 	}
 
-	if err := b.registerTools(); err != nil {
-		return 1
-	}
-	b.registerStandaloneTools()
 	b.buildDaemon()
 	b.wireConfigSurfaces(ctx, args.cfgPath, args.overlayPath)
 

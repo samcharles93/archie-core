@@ -7,10 +7,7 @@ package archied
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -34,7 +31,6 @@ func (b *boot) setupReadinessProbes() {
 		readiness.NewStoreProbe(b.stateStore),
 		readiness.NewConfigProbe(b.cfgHolder.Get, configuration.Validate),
 		readiness.NewDiskProbeTargets(diskProbeTargets(cfg)),
-		readiness.NewModelProbe(b.chatModels.ActiveModel, b.chatModels.Models, modelReachProbe(cfg, b.chatModels.ActiveModel)),
 		// The daemon no longer runs a chat channel, so it cannot observe one's
 		// lifecycle; channel health is the Messaging Service's own probe. What
 		// this process depends on is the Gateway answering, so that is what it
@@ -84,41 +80,5 @@ func diskProbePath(cfg config.Config) string {
 		return cfg.WorkDir
 	default:
 		return "."
-	}
-}
-
-// modelReachProbe returns a live reachability check for the active model. It
-// resolves the active model's provider and, when the provider has a custom
-// base URL, performs a short-timeout HTTP request to it: any response
-// (including 401/404) proves the endpoint is reachable, while a network error
-// or an unconfigured provider reports unreachable. A provider using its SDK
-// default endpoint is assumed reachable, because no custom endpoint exists to
-// probe.
-func modelReachProbe(cfg config.Config, active func() string) func(context.Context) error {
-	return func(ctx context.Context) error {
-		model := active()
-		provider, _, _ := strings.Cut(model, "/")
-		if provider == "" {
-			return fmt.Errorf("active model %q has no provider", model)
-		}
-		p, ok := cfg.Providers[provider]
-		if !ok {
-			return fmt.Errorf("provider %q not configured", provider)
-		}
-		if p.BaseURL == "" {
-			return nil
-		}
-		reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, p.BaseURL, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		_ = resp.Body.Close()
-		return nil
 	}
 }

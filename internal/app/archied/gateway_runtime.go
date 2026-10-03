@@ -56,16 +56,7 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	b.providerOutcomes = newProviderOutcomeRecorder()
 	b.statusHealth = newStatusHealth(b)
 
-	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
-	var chatTasks gateway.TaskCreator
-	if len(profiles) > 0 {
-		chatTasks = gateway.NewStoreTaskCreatorForProfiles(
-			chatTaskWriterAdapter{enqueue: b.stateStore.EnqueueChatTask},
-			profiles,
-		)
-	}
-	b.chatTasks = chatTasks
-	b.defaultChatIdentity = defaultChatIdentity
+	b.setupChatTasks(cfg)
 	var canceller storecontract.ExecutionCanceller
 	if ec, ok := b.stateStore.(storecontract.ExecutionCanceller); ok {
 		canceller = ec
@@ -89,6 +80,19 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 // cannot be watched at all fails the boot that asked for it rather than
 // leaving the process running personas it can no longer update; after that the
 // watch reconnects instead of ending (see keepWatch).
+// setupChatTasks wires the task creator chat commands and scheduled workflows
+// enqueue through.
+func (b *boot) setupChatTasks(cfg config.Config) {
+	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
+	if len(profiles) > 0 {
+		b.chatTasks = gateway.NewStoreTaskCreatorForProfiles(
+			chatTaskWriterAdapter{enqueue: b.stateStore.EnqueueChatTask},
+			profiles,
+		)
+	}
+	b.defaultChatIdentity = defaultChatIdentity
+}
+
 func (b *boot) watchPersonas(ctx context.Context, version int64) error {
 	updates, err := b.controlPlane.WatchPersonas(ctx, version)
 	if err != nil {

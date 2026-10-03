@@ -187,6 +187,15 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	for _, skipped := range b.providerRegistry.Skipped() {
 		b.log.Warn("gateway tool provider unavailable", "provider", skipped.ID, "err", skipped.Err)
 	}
+	if err := b.startRuntimeResourceWatches(ctx, b.runtimeVersions, gatewayRuntimeKinds); err != nil {
+		return nil, fmt.Errorf("runtime resource watches: %w", err)
+	}
+	b.startModelCatalogRefresh(ctx)
+	// Curators wake on this process's turns and read its conversations.
+	b.setupCurators(ctx)
+	if err := b.curatorRuntime.Start(ctx); err != nil {
+		b.log.Error("curator runtime startup", "err", err)
+	}
 	return contract, nil
 }
 

@@ -275,47 +275,6 @@ func (p *DiskProbe) Check(ctx context.Context) health.Result {
 
 // --- model ---
 
-// ModelProbe reports whether a model is configured (an active model is
-// selected) and reachable (a live network check succeeds). Reachability is a
-// narrow function so the probe is deterministic in tests and the composition
-// root supplies the real provider probe.
-type ModelProbe struct {
-	ActiveModel func() string
-	Models      func() []string
-	Reach       func(context.Context) error
-}
-
-// NewModelProbe returns a model probe. The reachability probe is optional:
-// nil means the probe only verifies configuration, not the network.
-func NewModelProbe(active func() string, models func() []string, reach func(context.Context) error) *ModelProbe {
-	return &ModelProbe{ActiveModel: active, Models: models, Reach: reach}
-}
-
-func (p *ModelProbe) Name() string { return "model" }
-
-func (p *ModelProbe) Check(ctx context.Context) health.Result {
-	active := ""
-	if p.ActiveModel != nil {
-		active = p.ActiveModel()
-	}
-	models := 0
-	if p.Models != nil {
-		models = len(p.Models())
-	}
-	if active == "" && models == 0 {
-		return health.Result{Status: health.StatusDegraded, Detail: "no model configured"}
-	}
-	if p.Reach == nil {
-		return health.Result{Status: health.StatusOK, Detail: "model " + active + " configured"}
-	}
-	if err := p.Reach(ctx); err != nil {
-		return health.Result{Status: health.StatusDegraded, Detail: "model unreachable: " + err.Error()}
-	}
-	return health.Result{Status: health.StatusOK, Detail: "model " + active + " reachable"}
-}
-
-// --- gateway ---
-
 // ChannelState is a per-channel lifecycle fact as the gateway probe sees it.
 // It is a projection of the channels.Manager's Status, kept in this package
 // so the probe does not depend on the channels package's concrete type.
