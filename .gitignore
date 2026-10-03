@@ -36,8 +36,6 @@ config.production.toml
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
-.impeccable/
-.serena/
 .beads/issues.jsonl
 .beads/interactions.jsonl
 .mcp.json
@@ -46,9 +44,6 @@ config.production.toml
 .local/
 __pycache__/
 *.pyc
-
-# Local site build output.
-/site/
 
 # Locally-trusted development certificates (mkcert and friends). The private
 # key is generated per machine and must never be committed.
