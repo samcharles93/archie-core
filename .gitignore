@@ -49,3 +49,6 @@ __pycache__/
 # key is generated per machine and must never be committed.
 *.pem
 *.key
+
+# Local symlink to the archipelago marketplace repo
+/archipelago
