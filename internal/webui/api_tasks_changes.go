@@ -60,11 +60,8 @@ type capturePayload struct {
 	task.ChangeStats
 }
 
-// capturePayloadKeys is the exact key set one capture carries, derived from
-// capturePayload's own json tags rather than restated beside them: the reader
-// and the key set cannot disagree. A payload that renamed, dropped or added a
-// key is refused, because reading it leniently is how a lost truncation marker
-// becomes "not truncated" and a dropped file list becomes "nothing changed".
+// capturePayloadKeys is capturePayload's JSON key set; payloads with any other
+// key set are refused.
 var capturePayloadKeys = structKeys(reflect.TypeFor[capturePayload]())
 
 // structKeys collects the JSON key names a struct declares, recursing into the
@@ -114,15 +111,8 @@ func (s *Server) handleTaskChanges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, taskChangesView{TaskID: t.ID, Attempt: attempt, Found: recorded, Captures: captures})
 }
 
-// capturedChanges folds a task's events into the captures recorded for one
-// attempt, oldest first (events are read in insert order, which is capture
-// order).
-//
-// recorded reports that the attempt has at least one capture event even when its
-// payload could not be read: a capture that happened is provenance whether or not
-// this read can decode it, and answering "no capture was recorded" would be a
-// false statement about it. A payload that is absent, in a schema this build does
-// not read, or otherwise malformed is skipped rather than failing the read.
+// capturedChanges returns one attempt's change captures, oldest first.
+// recorded is true when a capture event exists even if unreadable.
 func capturedChanges(evs []events.Event, attempt int) (captures []changeCaptureView, recorded bool) {
 	captures = []changeCaptureView{}
 	for _, e := range evs {
@@ -139,12 +129,8 @@ func capturedChanges(evs []events.Event, attempt int) (captures []changeCaptureV
 	return captures, recorded
 }
 
-// decodeCapture reads one capture event. It reports false when the event carries
-// no data, when its payload is not in the schema this build reads, when its key
-// set is not exactly the one this reader declares, or when the payload is
-// malformed. The totals are passed through as recorded and never recomputed from
-// the file entries, because the producer's totals cover the full change set even
-// when the entries were capped.
+// decodeCapture reads one capture event, or reports false for a missing,
+// unknown or malformed payload.
 func decodeCapture(e events.Event) (changeCaptureView, bool) {
 	if len(e.Data) == 0 {
 		return changeCaptureView{}, false

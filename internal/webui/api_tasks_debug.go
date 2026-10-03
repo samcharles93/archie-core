@@ -7,18 +7,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
-// taskDebugView is GET /api/tasks/{id}/debug: the stored task record as it is,
-// and every event recorded for the task. It is deliberately not a generic
-// store-dump route -- the task list is capped at 100 rows, so a page that wanted
-// to show an older task's raw provenance had no row to join against. Nothing
-// here is projected, filtered or re-spelled: reading it is the point.
-//
-// Events are UNFILTERED. A debug view that silently hid the events of other
-// attempts would be worse than useless; each event carries its own attempt, so
-// the operator sees everything and can attribute it. Attempt reports only which
-// attempt the page had selected. No log payload is included: the log tab already
-// serves it, and embedding it would duplicate a large body for no new
-// information.
+// taskDebugView is GET /api/tasks/{id}/debug: the raw task record and all of
+// its events.
 type taskDebugView struct {
 	TaskID  int64          `json:"task_id"`
 	Attempt int            `json:"attempt"`

@@ -10,12 +10,6 @@ import (
 )
 
 // handleLogs serves a page of log history.
-//
-// This handler is transport only: parsing the log format belongs to the
-// logging package, which owns it. Live output reaches the dashboard over the
-// existing /api/stream stream; this endpoint exists so the view has history from
-// before the browser connected, which is the whole reason file logging landed
-// first.
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	path := s.logFile()
 	if path == "" {
@@ -94,11 +88,7 @@ func mergeComponents(history []string, live []logging.Entry) []string {
 	return components
 }
 
-// logFile reports the log path this process can read, or "" when it has
-// none. It is deliberately this process's own setting rather than the
-// daemon's [log].file: the history lives on the daemon's disk, so a
-// dashboard running elsewhere cannot read it by learning its path. Serving
-// remote log history needs a contract, which /api/logs does not yet have.
+// logFile returns this process's readable log path, or "".
 func (s *Server) logFile() string {
 	return strings.TrimSpace(s.LogFile)
 }

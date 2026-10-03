@@ -11,12 +11,7 @@ type SkillView struct {
 	Source      string `json:"source"`
 }
 
-// SkillCatalog is the webui-owned source of the dashboard's skill
-// catalogue. It is deliberately a view over already-discovered entries, not
-// the discovery machinery: the cataloguer (internal/skill) drags the agent
-// toolchain in, and the UI process must not link it.
-// Whoever owns the runtime -- the daemon, via its config -- supplies an
-// adapter at bootstrap; an unwired catalog degrades to an empty page.
+// SkillCatalog lists the discovered skills. Unwired returns an empty list.
 type SkillCatalog interface {
 	Skills() []SkillView
 }

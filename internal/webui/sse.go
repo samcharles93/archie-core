@@ -15,14 +15,7 @@ import (
 // sseBacklogPageSize bounds one EventsSince fetch during catch-up.
 const sseBacklogPageSize = 200
 
-// sseNoiseKinds are event kinds published for internal wiring rather than
-// for a dashboard viewer: turn_completed fires on every chat turn so
-// input-driven curators can wake on it (see events.KindTurnCompleted), and
-// carries no task correlation (TaskID is always 0, Detail a raw session ID)
-// -- on a dashboard where "Live activity" is otherwise almost entirely
-// task lifecycle events, it drowned the signal it sits next to. Curators
-// read the Bus directly and are unaffected by excluding a kind here, at the
-// SSE boundary, rather than at publish.
+// sseNoiseKinds are event kinds not sent to the dashboard stream.
 var sseNoiseKinds = map[string]bool{
 	events.KindTurnCompleted: true,
 }
@@ -174,11 +167,8 @@ func (s *sseStream) writeLive(update liveUpdate, id string) bool {
 	return true
 }
 
-// writeErrorComment reports a backlog fetch failure as an SSE comment.
-// Comments are invisible to EventSource's own event parsing, but writing
-// one and flushing before the handler returns is what actually reaches the
-// client: it ends the response, which is what drives EventSource's
-// reconnect.
+// writeErrorComment writes a backlog failure as an SSE comment and ends the
+// response, so the client reconnects.
 func (s *sseStream) writeErrorComment(err error) {
 	_, _ = s.w.Write([]byte(":error " + err.Error() + "\n\n"))
 	s.fl.Flush()
@@ -207,15 +197,8 @@ func (s *sseStream) catchUp(ctx context.Context, target string) bool {
 	}
 }
 
-// sendPage sends every event in backlog newer than s.since, advancing it as
-// it goes. reachedTarget reports whether target was reached mid-page --
-// stopping there is correct, since nothing beyond it is needed yet -- and
-// ok reports whether every send succeeded.
-//
-// since advances past a filtered-out event (sseVisible false) exactly as it
-// would for a sent one: EventsSince only ever returns events after since, so
-// leaving since behind a filtered event would make the next catchUp refetch
-// it forever.
+// sendPage sends backlog events newer than s.since, advancing it past sent
+// and filtered events. It stops at target.
 func (s *sseStream) sendPage(backlog []events.Event, target string) (reachedTarget, ok bool) {
 	for _, e := range backlog {
 		cursor := storecontract.EventCursor(e.At, e.ID)
@@ -233,11 +216,7 @@ func (s *sseStream) sendPage(backlog []events.Event, target string) (reachedTarg
 	return false, true
 }
 
-// drain relays broadcast events after the initial catch-up. A broadcast can
-// reach the client before its event lands in the durable store, so each one
-// first fills any persisted gap ahead of it, then is delivered directly if
-// catch-up did not already cover it -- both paths go through the same
-// since-based deduplication.
+// drain relays broadcasts after catch-up, filling any persisted gap first.
 func (s *sseStream) drain(ctx context.Context, conn <-chan liveUpdate, stale <-chan struct{}, logs <-chan logging.Entry) {
 	for {
 		select {

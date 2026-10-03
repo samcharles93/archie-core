@@ -77,16 +77,8 @@ type forgeCoordinates struct {
 	forgeType string
 }
 
-// resolveForge reads the forge layout once for a request and returns each
-// task's coordinates from it.
-//
-// The projection publishes per-identity forges (ConfigView.Identities), so a
-// multi-identity deployment links each task to the forge that owns it. The
-// matching rules are the ones recovered from the pre-cutover resolver
-// (forgeConfigForTask, 57d9be5): an exact identity name first, then repository
-// ownership, and an ambiguous repository -- two identities claiming the same
-// owner/name -- falling back to the default forge rather than pointing at
-// either. Without this, every row in such a deployment renders unlinked.
+// resolveForge returns a function mapping a task to its forge: by identity
+// name, then repository owner, else the default forge.
 func (s *Server) resolveForge(ctx context.Context) func(task.Task) forgeCoordinates {
 	unlinked := func(task.Task) forgeCoordinates { return forgeCoordinates{} }
 	view, ok, err := s.configSource()(ctx)
@@ -94,11 +86,7 @@ func (s *Server) resolveForge(ctx context.Context) func(task.Task) forgeCoordina
 		return unlinked
 	}
 	if len(view.Identities) == 0 {
-		// Nothing per-identity was published. A single-identity deployment's
-		// one forge is the whole answer. A document that reports identities
-		// but carries none is one an older daemon published, and there is
-		// nothing to attribute a task to -- so the links are withheld rather
-		// than pointed at the wrong forge.
+		// No per-identity forges published: links are withheld.
 		if view.MultiIdentity {
 			return unlinked
 		}
@@ -198,11 +186,7 @@ type taskActionRequest struct {
 	// absent selection means all of them. It is ignored by every other
 	// action.
 	Findings []string `json:"findings"`
-	// RetryMode is the operator's worktree choice for a retry
-	// (taskstate.RetryMode): refresh onto the base branch, or continue the
-	// work already pushed on the task's branch. The retry control sends one;
-	// an empty value means the explicit default, refresh_onto_base. It is
-	// ignored by every other action.
+	// RetryMode is the worktree mode for a retry; empty means refresh_onto_base.
 	RetryMode string `json:"retry_mode"`
 }
 
@@ -281,17 +265,9 @@ func taskMutation(action taskstate.Action) bool {
 	}
 }
 
-// authorizeTaskMutation applies the browser mutation contract at the handler
-// boundary: JSON only, a non-simple custom header, and a matching Origin when
-// the browser supplies one. The custom header forces cross-origin callers
-// through a CORS preflight, which this server never permits.
-//
-// Origin comparison previously validated against the daemon's own direct network
-// connection (r.TLS). It now validates against the effective external scheme
-// and host, deriving them from X-Forwarded-Proto and X-Forwarded-Host only when
-// explicit proxy header trust is enabled (Web.TrustForwardedHeaders). When trust
-// is disabled (the default), forwarded headers are ignored to prevent untrusted
-// clients from forging Origin scheme checks on exposed daemons.
+// authorizeTaskMutation requires JSON, a custom header and, when present, a
+// same-origin Origin. Forwarded headers are trusted only with
+// TrustForwardedHeaders.
 func (s *Server) authorizeTaskMutation(w http.ResponseWriter, r *http.Request) bool {
 	if r.Header.Get("X-Archie-CSRF") != "1" {
 		http.Error(w, "missing CSRF header", http.StatusForbidden)
@@ -355,15 +331,7 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 	return strings.EqualFold(u.Scheme, wantScheme) && strings.EqualFold(u.Host, wantHost)
 }
 
-// applyOperatorTaskAction sends the action to whoever owns task execution.
-// The dashboard operator is authenticated and acts across identities, which
-// the Gateway contract carries as its own method.
-//
-// The UI process cannot run this itself: retry limits come from the daemon's
-// configuration, closing the forge issue needs its forge client, the
-// timeline needs its event bus, and stopping running work needs the
-// goroutine or container that is executing it. Composing a local service
-// over the task store alone would silently drop all four.
+// applyOperatorTaskAction sends an operator's task action to the Gateway.
 func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action taskstate.Action, res taskactions.ActionPayload) error {
 	if s.Chat == nil || s.Chat.Contract == nil {
 		return fmt.Errorf("%w: no gateway contract is wired", taskactions.ErrUnavailable)

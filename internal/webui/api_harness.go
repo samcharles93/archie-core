@@ -46,16 +46,8 @@ type harnessProfileDoc struct {
 	Kit string `json:"kit"`
 }
 
-// HarnessTerminal opens an ephemeral setup session for one Kit profile: a
-// duplex byte stream to the container's PTY, on the same egress path a Kit
-// task runs on.
-//
-// It is a seam, not an implementation. The container, the sandbox network and
-// the egress session belong to the daemon, and the dashboard process is
-// forbidden from linking them. A composition wires whichever transport carries
-// the session; nil answers the route 503 rather than pretending a terminal
-// exists. The interface's method types are stdlib only, so a future transport
-// that implements it cannot drag a banned package into the UI binary.
+// HarnessTerminal opens a setup session to a Kit profile's container PTY.
+// Nil answers 503.
 type HarnessTerminal interface {
 	Open(ctx context.Context, orgID, profile string) (io.ReadWriteCloser, error)
 }

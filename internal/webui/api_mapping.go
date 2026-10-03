@@ -240,18 +240,12 @@ func (s *Server) captureByID(ctx context.Context, id string) (*storecontract.Cap
 	return nil, nil
 }
 
-// captureScanWindowDefault bounds captureByID's linear scan when
-// CaptureMaxEvents is unset (zero or negative, matching CaptureConfig's own
-// "zero means default" convention). Matches CaptureConfig's documented
-// default so an unconfigured deployment's scan window still covers its
-// whole table.
+// captureScanWindowDefault bounds captureByID's scan when CaptureMaxEvents is
+// unset.
 const captureScanWindowDefault = 5000
 
-// mappingCaptureScanWindow ties captureByID's scan bound to the operator's
-// actual configured retention (CaptureMaxEvents), rather than a constant
-// that silently drifts out of sync with it -- an operator raising
-// [capture] max_events above the old hardcoded 5000 would otherwise make a
-// genuinely still-retained capture 404 as "not found" during preview.
+// mappingCaptureScanWindow returns the configured capture retention, or the
+// default.
 func mappingCaptureScanWindow(configuredMaxEvents int) int {
 	if configuredMaxEvents <= 0 {
 		return captureScanWindowDefault

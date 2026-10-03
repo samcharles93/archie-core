@@ -62,12 +62,7 @@ type chatMessageView struct {
 	Media []chatMediaView `json:"media,omitempty"`
 }
 
-// chatMediaView is one attachment a message carried, as the dashboard reads
-// it. The bytes are turn-scoped and are gone before a record is stored, so
-// this view carries only what survived persistence, and FileID is left out on
-// purpose: it is the platform's download handle, not an address, so handing
-// it to a browser only invites a fetch that cannot work. URL is present
-// exactly when the attachment itself carried one.
+// chatMediaView is a stored message attachment as the dashboard reads it.
 type chatMediaView struct {
 	Type     string `json:"type"`
 	FileName string `json:"file_name,omitempty"`
@@ -326,15 +321,7 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"reply": reply.Text, "session_id": reply.SessionID})
 }
 
-// chatStreamEvent is one `data: {...}` frame of the chat stream. A tool frame
-// names the tool in Tool, carries its one-line outcome in Text, and signals
-// failure through Failed  --  a structured field, so the browser styles the
-// two apart by reading it rather than by sniffing a "failed:" prefix out of
-// Text, which a successful tool's own output can start with too.
-//
-// Text is always emitted, empty or not: the browser concatenates it and
-// assigns it, so a missing key would put the string "undefined" into the
-// transcript on a turn whose reply is empty.
+// chatStreamEvent is one frame of the chat stream. Text is always emitted.
 type chatStreamEvent struct {
 	Type       string `json:"type"`
 	Text       string `json:"text"`
@@ -350,16 +337,8 @@ type chatStreamEvent struct {
 	Label string `json:"label,omitempty"`
 }
 
-// chatStreamSink adapts the stream writer to messaging.TurnStream so text and
-// tool activity reach the browser through one ordered path.
-//
-// showToolCalls gates ToolCall the same way Telegram's liveReply gates its
-// own tool narration: config.ChatConfig.ShowToolCalls is one setting for
-// every chat channel, so an operator who turned it off gets no tool frames
-// on the dashboard either, not just in Telegram. It is snapshotted into the
-// sink at stream start rather than read live, for the same reason Telegram
-// snapshots it per-reply -- a config reload mid-turn must not change what a
-// turn already in flight narrates.
+// chatStreamSink writes turn text and tool activity to the browser stream.
+// showToolCalls is fixed for the stream.
 type chatStreamSink struct {
 	write         func(chatStreamEvent)
 	showToolCalls bool
@@ -400,16 +379,8 @@ func (s chatStreamSink) ToolCall(event messaging.ToolCallEvent) {
 	})
 }
 
-// Media has no inline rendering path on the dashboard yet, so it degrades to a
-// link in the delta stream -- the same fallback Telegram's liveReply uses when
-// its own SendMedia call fails.
-//
-// A local file cannot be linked and this channel cannot upload one, so it
-// is REPORTED as undelivered rather than skipped. Skipping was right while
-// media meant a hosted URL; once send_file could hand this sink a host
-// path, silence here meant the model announced a file it had sent and
-// nothing arrived -- the precise defect send_file was built to end,
-// reappearing on the channel that cannot deliver.
+// Media is sent as a link in the text stream; a local file is reported as
+// undelivered.
 func (s chatStreamSink) Media(event messaging.MediaEvent) {
 	att := event.Attachment
 	switch {
@@ -427,14 +398,8 @@ func (s chatStreamSink) Media(event messaging.MediaEvent) {
 	}
 }
 
-// chatShowToolCalls reports config.ChatConfig.ShowToolCalls, the one setting
-// shared by every chat channel. It reads the configuration projection this
-// process renders, so a dashboard that displays a published snapshot honours
-// the operator's setting instead of assuming it off.
-//
-// Off (the default) when no projection is available, matching the field's own
-// off-by-default doc comment: a dashboard without config must not narrate tool
-// activity nobody opted into.
+// chatShowToolCalls reports config.ChatConfig.ShowToolCalls, false when no
+// config is available.
 func (s *Server) chatShowToolCalls(ctx context.Context) bool {
 	view, found, err := s.configSource()(ctx)
 	if err != nil || !found {

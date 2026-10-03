@@ -1,19 +1,5 @@
 package webui
 
-// Configuration schema contract: descriptor types and
-// hand-authored field/section metadata for the Configuration page.
-//
-// This is deliberately NOT a reflection-based schema over config.Config.
-// internal/config/config.go's own package doc marks it "scheduled for
-// dissolution: its types and methods are to be reassigned to the domains
-// whose behaviour they describe" -- a generic schema-from-struct-tags
-// mechanism would be built on a foundation this repo has already decided to
-// remove. Every field below is already a deliberate ConfigView allowlist
-// entry (see api_config.go's own comment on why that allowlist exists); this
-// attaches a label to a value that was already vetted as safe to show,
-// rather than inventing a new safety boundary.
-//
-
 // ConfigFieldType is how the frontend's generic renderer decides what
 // control to show for a field. FieldStructured fields (repositories,
 // models, providers) opt out of the generic renderer entirely and keep
@@ -45,13 +31,8 @@ type ConfigField struct {
 	LockedReason string `json:"locked_reason,omitempty"`
 	// Options lists the valid values for a FieldEnum field.
 	Options []string `json:"options,omitempty"`
-	// RestartRequired reports that changing this field through the
-	// dashboard will not take effect until archied restarts. Sourced from
-	// internal/app/archied/reload.go's reloadableFields/reloadableSubFields
-	// allowlist -- webui does not import that app-layer package (dependency
-	// direction: app -> infrastructure, not the reverse), so the answer is
-	// copied by hand per field below and must be re-checked whenever
-	// reload.go's allowlist changes.
+	// RestartRequired reports that a change takes effect only after a restart.
+	// Kept in step with internal/app/archied/reload.go by hand.
 	RestartRequired bool `json:"restart_required"`
 }
 
@@ -64,23 +45,8 @@ type ConfigSection struct {
 	Fields      []ConfigField `json:"fields"`
 }
 
-// configFieldDescriptors is the hand-authored catalog: one entry per field
-// ConfigView exposes today, in the section grouping settings.js already
-// renders. Values and LockedReason are attached separately
-// against a live ConfigView; this list is the
-// data-independent half of the contract -- key, label, type, and the
-// safety-relevant property (restart_required) that must be decided
-// deliberately rather than defaulted.
-//
-// RestartRequired is set from internal/app/archied/reload.go as of this
-// writing:
-//   - reloadableFields lists BotUser, BotEmail, Label, DiffCapLines, Budgets,
-//     Models -- all reloadable.
-//   - reloadableSubFields["Forge"] allows only Host -- Forge.Type requires a
-//     restart.
-//   - Web is absent from both allowlists entirely, so it requires a restart.
-//   - WorkDir and DatabaseURL are locked (configuration.DeniedKeys), not merely
-//     restart-required -- the dashboard cannot change them at all.
+// configFieldDescriptors lists every ConfigView field with its section,
+// label, type and whether it needs a restart.
 func configFieldDescriptors() []ConfigSection {
 	return []ConfigSection{
 		{
@@ -149,12 +115,7 @@ func configFieldDescriptors() []ConfigSection {
 	}
 }
 
-// configFieldValues maps each descriptor key to its current value out of a
-// live ConfigView. A plain switch, not reflection, for the same reason
-// configFieldDescriptors is hand-authored: every value here already passed
-// through ConfigView's own secret-safe allowlist, so this only has to
-// answer "which already-safe field does this key mean," never "is this
-// field safe to show."
+// configFieldValues maps each descriptor key to its value in view.
 func configFieldValues(view ConfigView) map[string]any {
 	return map[string]any{
 		"bot_user":                  view.Identity.BotUser,
@@ -176,13 +137,8 @@ func configFieldValues(view ConfigView) map[string]any {
 	}
 }
 
-// buildConfigSchema attaches a live ConfigView's values and locked reasons to
-// the static descriptor catalog, producing the
-// sections handleConfig returns to the dashboard. The catalog
-// (configFieldDescriptors) and the per-request state (configFieldValues,
-// view.Locked) are kept as two separate functions deliberately: one is
-// data-independent and safe to unit-test as a fixed catalog, the other is
-// "what does this specific running config say."
+// buildConfigSchema attaches view's values and locked reasons to the
+// descriptor catalog.
 func buildConfigSchema(view ConfigView) []ConfigSection {
 	values := configFieldValues(view)
 	sections := configFieldDescriptors()

@@ -1,12 +1,3 @@
-// The access chain at the dashboard and API request path: the second of the two
-// places that call the Authorizer. A request that carries an identity is
-// assembled into a principal; the action and resource kind are derived from the
-// route; the chain decides; a denial is recorded with the level that decided it
-// and reported as forbidden without the reason.
-//
-// The shared token is the single-operator install's owner of the default org:
-// the token principal is
-// assembled here, not looked up, until principal credentials exist.
 package webui
 
 import (
@@ -172,11 +163,7 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 	case matchSegment(path, "/api/sources/", "/secret"):
 		return access.ActionUpdate, access.KindSecret, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/harness/terminal"):
-		// Opening the setup terminal captures the binding's OAuth tokens, so
-		// it is the update action on the secret.
-		// The shipped
-		// org-owner and org-admin policies grant it; the terminal is
-		// admin-only.
+		// Opening the setup terminal updates the binding's secret.
 		return access.ActionUpdate, access.KindSecret, "", true
 	case matchPrefix(path, "/api/harness/bindings"):
 		return access.ActionRead, access.KindSecret, "", true

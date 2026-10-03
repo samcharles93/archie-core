@@ -143,26 +143,13 @@ type ConfigView struct {
 	// dashboard to the reason. The UI renders these rows disabled rather
 	// than silently omitting the edit affordance.
 	Locked map[string]string `json:"locked,omitempty"`
-	// MultiIdentity reports that the deployment configures [[identities]],
-	// so Identity and Repositories describe the default identity alone.
-	// Identities below carries the rest; a consumer attributing a task to
-	// its forge reads that, and a document that sets this flag without
-	// carrying them (one published by an older daemon) must withhold the
-	// links rather than guess.
+	// MultiIdentity reports that [[identities]] is configured, so Identity and
+	// Repositories describe only the default identity.
 	MultiIdentity bool `json:"multi_identity,omitempty"`
-	// Identities publishes each configured identity's forge and the
-	// repositories it owns, which is everything a process rendering task
-	// rows needs to answer "which forge owns this task" -- see
-	// Server.resolveForge (api_tasks.go). Empty for a single-identity
-	// deployment, whose forge is Identity above.
+	// Identities lists each identity's forge and repositories. Empty for a
+	// single-identity deployment.
 	Identities []ForgeIdentityView `json:"identities,omitempty"`
-	// Schema is the field-descriptor catalog attached to
-	// this view's own values and locked reasons -- see config_schema.go. It
-	// carries the labels, sections and types a generic configuration renderer
-	// needs, instead of making each rendering process hardcode them; the flat
-	// fields stay for existing consumers (structured cards, provenance,
-	// reload/lock plumbing) rather than being removed in the same change that
-	// adds their replacement.
+	// Schema is the field-descriptor catalog for the configuration page.
 	Schema []ConfigSection `json:"schema"`
 }
 
@@ -185,11 +172,7 @@ type ForgeRepoView struct {
 	Name  string `json:"name"`
 }
 
-// ForgeIdentityView is one configured identity's forge coordinates plus the
-// repositories it owns. It is deliberately narrower than IdentityView and
-// RepoView: the task board needs to locate a repository, not to render the
-// configuration page, and an identity's token -- or any of its other
-// settings -- must not travel to the browser for either purpose.
+// ForgeIdentityView is an identity's forge coordinates and repositories.
 type ForgeIdentityView struct {
 	Name      string          `json:"name"`
 	ForgeType string          `json:"forge_type"`
@@ -279,26 +262,12 @@ type WebView struct {
 	TrustForwardedHeaders bool   `json:"trust_forwarded_headers"`
 }
 
-// handleConfig returns a read-only, secret-free view of the running
-// configuration.
-//
-// This handler builds ConfigView field by field from an explicit allowlist
-// rather than marshalling config.Config and stripping fields afterward:
-// config.Config carries config.SecretRef values (forge tokens, provider API
-// keys) and there is no way to guarantee a strip-after-marshal approach
-// keeps working as fields are added to Config in the future. An allowlist
-// fails safe -- a new secret field added upstream is simply absent here
-// until someone deliberately adds it.
-// ConfigViewSchema names the projection's shape. It travels with a published
-// snapshot so a reader can refuse a document it does not understand, and it
-// changes when ConfigView's JSON shape changes incompatibly.
+// ConfigViewSchema names ConfigView's JSON shape; it changes on incompatible
+// changes.
 const ConfigViewSchema = "webui.ConfigView/1"
 
-// ConfigViewSource supplies the configuration projection the page renders.
-// The process that owns configuration builds it; a process that only displays
-// configuration reads the published snapshot instead. found is false when no
-// configuration is available to render, which the handler answers with an
-// empty object rather than an error.
+// ConfigViewSource supplies the configuration view. found is false when there
+// is none.
 type ConfigViewSource func(ctx context.Context) (ConfigView, bool, error)
 
 // configSource returns the projection source, or an empty one when
@@ -352,14 +321,8 @@ type CatalogProviderView struct {
 	Models    []string `json:"models"`
 }
 
-// BuildConfigView renders the dashboard's secret-free configuration
-// projection. The configuration owner calls it -- the daemon publishes the
-// result as a snapshot (storecontract.ConfigSnapshot) and a process that only
-// displays configuration reads that snapshot back through RemoteConfigView.
-//
-// It is deliberately a function, not a method: rendering the view is not a
-// property of an HTTP server, and the process that owns configuration is not
-// the process that serves this page.
+// BuildConfigView renders the secret-free configuration view from an explicit
+// allowlist of fields.
 func BuildConfigView(in ConfigViewInput) ConfigView {
 	cfg := in.Config
 	provenance := append([]ConfigOrigin(nil), in.Provenance...)
@@ -421,13 +384,7 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 	return view
 }
 
-// chatChannelConfigured reports whether any conversational front-end is
-// configured. The setup checklist needs the answer, not the tokens, so the
-// projection carries the boolean.
-//
-// The definition lives in config.ChatConfig.FrontEnds, not here: the daemon's
-// channel status manager answers the same question on /api/channels, and
-// deciding it twice is how the two answers drifted apart.
+// chatChannelConfigured reports whether any chat front-end is configured.
 func chatChannelConfigured(chat config.ChatConfig) bool {
 	return chat.AnyFrontEndConfigured()
 }
@@ -440,11 +397,8 @@ type ChannelStatusSource interface {
 	Snapshot() []status.Status
 }
 
-// RemoteChannelStatus reads channel state from the State Store, where the
-// process hosting the channels publishes it. It is the reader half of the same
-// split RemoteConfigView serves: the writer is another process and the reader is
-// this one, so a reader that cannot reach the store reports nothing rather than
-// inventing a state, and the page shows no channels instead of wrong ones.
+// RemoteChannelStatus reads channel state from the State Store; unreachable
+// reports none.
 func RemoteChannelStatus(channels storecontract.ChannelStatusStore) ChannelStatusSource {
 	return remoteChannelStatus{channels: channels}
 }
@@ -519,13 +473,8 @@ func reposView(repos []config.Repo) []RepoView {
 	return out
 }
 
-// identityForgesView renders each configured identity's forge coordinates and
-// the repositories it owns. This is the half of a multi-identity deployment's
-// configuration the task board needs: a process that holds no configuration
-// answers "which forge owns this task" from here (api_tasks.go's
-// resolveForge). Only the coordinates and the repository names cross -- an
-// identity's token is a secret reference and must not, and nothing else on
-// IdentityConfig is needed to locate a repository.
+// identityForgesView returns each identity's forge coordinates and
+// repository names.
 func identityForgesView(identities []config.IdentityConfig) []ForgeIdentityView {
 	out := make([]ForgeIdentityView, 0, len(identities))
 	for _, id := range identities {

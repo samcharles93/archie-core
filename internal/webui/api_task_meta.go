@@ -28,14 +28,8 @@ type taskMetaView struct {
 	ConfigSchema   string                    `json:"config_schema"`
 }
 
-// buildTaskMeta derives the lifecycle presentation catalog: the status
-// vocabulary (with label, pill severity, "needs you" grouping), the operator
-// action controls (with label, button variant, confirm prompt), the retry
-// worktree modes (with label, description and which is the default), the
-// changes_captured status labels and the schema stamp a config_captured
-// payload carries. Everything the dashboard can present that also exists on
-// the server is derived here, so the frontend never has to keep a hand-synced
-// copy of the vocabulary or the control set.
+// buildTaskMeta returns the task status vocabulary, operator actions, retry
+// modes and capture labels the dashboard renders.
 func buildTaskMeta() taskMetaView {
 	return taskMetaView{
 		Statuses:   taskstate.Statuses(),

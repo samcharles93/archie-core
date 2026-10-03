@@ -15,13 +15,7 @@ type CuratorActionView struct {
 	Reason string    `json:"reason"`
 }
 
-// CuratorStatus is the webui-owned surface over the running curator
-// registry: the names, point-in-time health, and recent activity the
-// dashboard's curator view renders. It is deliberately narrower than the
-// registry itself -- whose engine contract drags in the agent toolchain --
-// so the UI process holds the view without linking it.
-// Whoever owns the registry supplies an adapter at
-// bootstrap.
+// CuratorStatus is the dashboard's view of the curator registry.
 type CuratorStatus interface {
 	Names() []string
 	Health(ctx context.Context) map[string]CuratorHealthView
@@ -42,11 +36,7 @@ type CuratorActivity struct {
 type CuratorView struct {
 	Name   string            `json:"name"`
 	Health CuratorHealthView `json:"health"`
-	// LastRunAt is a pointer so a curator that has never run omits the
-	// field entirely instead of serializing time.Time's zero value
-	// ("0001-01-01T00:00:00Z") -- json's "omitempty" does not treat a
-	// zero-valued struct as empty, and a non-empty string is truthy to
-	// the dashboard's "has this run yet" check.
+	// LastRunAt is nil when the curator has never run.
 	LastRunAt      *time.Time          `json:"last_run_at,omitempty"`
 	LastRunActions int                 `json:"last_run_actions"`
 	RecentActions  []CuratorActionView `json:"recent_actions"`

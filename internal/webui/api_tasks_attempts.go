@@ -39,11 +39,8 @@ type taskAttemptsView struct {
 	Attempts           []taskAttemptView `json:"attempts"`
 }
 
-// taskAttemptView is one attempt's rail entry. The bounds and duration are
-// measured from the attempt's own events: the span between its first and last
-// recorded event, which therefore includes any waiting-for-a-human gap rather
-// than understating wall time (design AMENDMENTS 0.1, F3). Every optional
-// field is omitted when it is not known rather than sent as a zero.
+// taskAttemptView is one attempt, bounded by its first and last event.
+// Unknown fields are omitted.
 type taskAttemptView struct {
 	Attempt    int             `json:"attempt"`
 	Status     string          `json:"status"`
@@ -66,13 +63,8 @@ type taskStageView struct {
 	Error      string     `json:"error"`
 }
 
-// handleTaskAttempts serves the stage rail: one task's attempts, each with the
-// stages it recorded. Attempt bounds, event counts and which attempt numbers
-// exist still come from the task's events (an attempt can carry events with
-// no step, e.g. agent calls, so events remain the complete attempt index);
-// the stages themselves are step_executions, the authoritative record,
-// not a fold over
-// stage_start/stage_finish events.
+// handleTaskAttempts returns a task's attempts from its events, each with the
+// stages recorded as step executions.
 func (s *Server) handleTaskAttempts(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.taskByPathID(w, r)
 	if !ok {
@@ -122,12 +114,8 @@ func (s *Server) taskByPathID(w http.ResponseWriter, r *http.Request) (*task.Tas
 	return t, true
 }
 
-// taskAttemptTarget resolves a per-attempt read: the task its {id} names and the
-// attempt it asks for. An absent or zero "attempt" parameter selects the task's
-// current attempt, which is what a human means by "why did this park?" -- the
-// most recent run, not an arbitrary earlier retry. Zero is not an attempt: it is
-// the value that means "unattributed" on an event, so reading "attempt zero"
-// would read a bucket rather than a run.
+// taskAttemptTarget resolves the task in {id} and the requested attempt,
+// defaulting to the current one.
 func (s *Server) taskAttemptTarget(w http.ResponseWriter, r *http.Request) (*task.Task, int, bool) {
 	t, ok := s.taskByPathID(w, r)
 	if !ok {
@@ -149,14 +137,8 @@ func (s *Server) taskAttemptTarget(w http.ResponseWriter, r *http.Request) (*tas
 	return t, attempt, true
 }
 
-// attemptsFromEvents folds a task's timeline into its rail: one entry per
-// attempt the events attribute to, ordered by attempt, plus the number of events
-// that carry no attempt at all.
-//
-// Events with attempt 0 are counted and then dropped, never grouped. Zero means
-// unattributed -- every row written before the column existed and every
-// deliberately task-agnostic producer carries it -- so grouping them would
-// present unrelated activity as attempt zero's rail.
+// attemptsFromEvents groups a task's events by attempt and counts events with
+// no attempt.
 func attemptsFromEvents(evs []events.Event, steps []task.StepExecution, taskStatus string, currentAttempt int) ([]taskAttemptView, int) {
 	grouped := make(map[int][]events.Event)
 	numbers := make([]int, 0, 4)
@@ -242,11 +224,7 @@ func attemptBounds(evs []events.Event) (first, last time.Time) {
 	return first, last
 }
 
-// stageViewsFromSteps builds an attempt's ordered stage occurrences directly
-// from its recorded StepExecutions -- the authoritative record,
-// not a fold over
-// stage_start/stage_finish events. Only kind "stage" steps are shown: agent
-// and call steps are the tree's own detail, not this rail's.
+// stageViewsFromSteps returns an attempt's stage steps in order.
 func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageView {
 	stages := []taskStageView{}
 	for _, s := range steps {
@@ -270,11 +248,8 @@ func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageV
 	return stages
 }
 
-// mapStepStatus reads the rail's status vocabulary off a step's own recorded
-// status. A step still recorded running past this attempt -- the daemon
-// crashed or restarted without marking it -- reads interrupted rather than
-// running: RecoverStale is what corrects the row itself, and until it runs
-// this is the honest read of a stale one.
+// mapStepStatus maps a step status; a step still running after its attempt
+// ended reads interrupted.
 func mapStepStatus(status taskstate.StepStatus, inFlight bool) string {
 	switch status {
 	case taskstate.StepSucceeded:
@@ -293,12 +268,8 @@ func mapStepStatus(status taskstate.StepStatus, inFlight bool) string {
 	}
 }
 
-// attemptStatus reads one status off an attempt's stages. The task's own record
-// outranks the events: an attempt the daemon is executing right now is running
-// whatever its events have recorded so far -- including the ones that have
-// recorded no stages at all. Otherwise no stage is left RUNNING to read: every
-// stage still open when the daemon is not executing this attempt is folded as
-// interrupted, which is what the next case reports.
+// attemptStatus derives an attempt's status from its stages and whether it is
+// running now.
 func attemptStatus(stages []taskStageView, inFlight bool) string {
 	if inFlight {
 		return attemptStatusRunning

@@ -42,13 +42,7 @@ const (
 )
 
 // IsLoopback reports whether a listen address is reachable only from this
-// machine.
-//
-// Loopback binds need no token. Archie's agent already runs shell, write and
-// edit tools on the host, so anyone with local access has the capability
-// regardless; a lock here would only obstruct the operator. What a token
-// protects is *exposure* -- an instance reachable from a network -- so that is
-// the only case where one is required.
+// machine. Loopback binds need no token.
 func IsLoopback(listen string) bool {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(listen))
 	if err != nil {
@@ -62,12 +56,8 @@ func IsLoopback(listen string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// DashboardURL renders a listen address as a URL a human can actually open.
-//
-// A wildcard bind ("0.0.0.0:8484", ":8484", "[::]:8484") is a valid thing to
-// listen on but not a valid thing to visit, and printing it verbatim gives the
-// operator a link that goes nowhere. The host is substituted for localhost,
-// which is correct for the machine reading the log.
+// DashboardURL renders a listen address as an openable URL, with localhost
+// for wildcard hosts.
 func DashboardURL(listen, token string) string {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(listen))
 	if err != nil {
@@ -112,18 +102,9 @@ func LoadOrCreateToken(path string) (string, error) {
 	return tok, nil
 }
 
-// requireToken wraps h with the credential check this process is configured for.
-//
-// With an identity provider configured, the check is a provider-issued bearer
-// token that resolves to a named identity, and a request that cannot produce one
-// is refused. With no provider, the shared token is the gate, which is the
-// frictionless loopback behaviour a single-operator instance wants.
-//
-// The token may arrive as ?t=... once; it is then moved into a
-// SameSite=Strict, HttpOnly cookie and the caller redirected to the clean URL.
-// One click on the URL archied logs is the whole setup.
-// The token is read per request rather than captured when the handler is
-// built, so a Server whose Token is set after Handler() is still protected.
+// requireToken checks the request's credential: a provider-issued bearer
+// token when an identity provider is configured, else the shared token. A
+// ?t= token is moved into a cookie and the request redirected.
 func (s *Server) requireToken(h http.Handler) http.Handler {
 	if s.Authenticate != nil {
 		return s.requireIdentity(h)
@@ -179,14 +160,8 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 	})
 }
 
-// requireIdentity authenticates a request from a provider-issued bearer token and
-// attaches the identity that token resolved to.
-//
-// Nothing about the caller is read from the request body, a header or a query
-// parameter: the subject comes from the credential the provider signed, and the
-// identity is the record that subject is bound to. That is why an agent's action
-// can be attributed at all -- a caller cannot assert who it is, it can only
-// present what the provider gave it.
+// requireIdentity authenticates a provider bearer token and attaches the
+// identity it resolves to.
 func (s *Server) requireIdentity(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		credential, ok := bearerCredential(r)
@@ -203,12 +178,7 @@ func (s *Server) requireIdentity(h http.Handler) http.Handler {
 	})
 }
 
-// bearerCredential reads the credential a request presented. An empty token is
-// reported as absent rather than as a rejected one: there is nothing to verify.
-//
-// A browser cannot set a header on a navigation, so after the sign-in flow the
-// provider's token is read from its cookie. That cookie holds the provider's
-// credential, not an archie session: it is verified here on every request.
+// bearerCredential returns the request's bearer token or provider cookie.
 func bearerCredential(r *http.Request) (string, bool) {
 	const prefix = "Bearer "
 	header := r.Header.Get("Authorization")
@@ -308,11 +278,8 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// refuseUnidentified answers a request archie could not attribute to an identity.
-//
-// The status is HTTP's own distinction: absent or unverifiable credentials are
-// 401 and name the scheme, while a credential that verified for an identity that
-// may not act is 403 -- the caller proved who it is and is still not allowed.
+// refuseUnidentified answers 401 for missing or invalid credentials and 403
+// for an identity that may not act.
 func (s *Server) refuseUnidentified(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	allowed := errors.Is(err, identity.ErrIdentityInactive) || errors.Is(err, identity.ErrSubjectUnbound)
@@ -327,11 +294,7 @@ func (s *Server) refuseUnidentified(w http.ResponseWriter, r *http.Request, err 
 		w.Header().Set("WWW-Authenticate", `Bearer realm="archie"`)
 	}
 	if !allowed && wantsDocument(r) {
-		// A browser that cannot authenticate is sent to sign in, when this
-		// instance has a sign-in flow: re-presenting a credential is the only
-		// thing that helps, and a shared-token paste page would be meaningless
-		// here. A refusal the caller cannot fix by signing in again -- a
-		// suspended identity -- is answered rather than redirected.
+		// Send browsers to sign in, unless signing in again cannot help.
 		if s.Login != nil {
 			http.Redirect(w, r, loginPath, http.StatusSeeOther)
 			return
@@ -365,16 +328,7 @@ func wantsDocument(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// authPage answers an unauthenticated or rejected browser navigation with a page
-// a human can act on: the access token is pasted once, the existing ?t=
-// exchange sets the cookie, and the redirect lands on the dashboard.
-//
-// The page is deliberately self-contained. index.html, the bundle and every
-// other asset sit behind requireToken too, so a page that referenced anything
-// would render unstyled for exactly the visitor who needs it.
-//
-// The status stays 401: a login page served as 200 is cached, and reads as
-// success to anything that only checks the status.
+// authPage serves a self-contained 401 page for pasting the access token.
 func (s *Server) authPage(w http.ResponseWriter, reason string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -424,13 +378,8 @@ button { margin-top: 1rem; width: 100%; padding: 0.6rem 0.7rem; border: 0; borde
 </html>
 `
 
-// sameOriginPath rebuilds a redirect target from a request path and raw
-// query, collapsing any leading "//" down to a single slash first.
-//
-// A path of "//evil.example/x" is a valid http.Redirect Location that
-// browsers treat as protocol-relative, sending the client off-host. Since
-// this path is echoed back from the incoming request URL, an attacker can
-// choose it, so it must never reach http.Redirect verbatim.
+// sameOriginPath rebuilds a redirect target, collapsing a leading "//" so it
+// cannot redirect off-host.
 func sameOriginPath(path, rawQuery string) string {
 	// URL.Path has already been decoded by net/http. Treat backslashes as
 	// separators before checking for a protocol-relative path, because browsers

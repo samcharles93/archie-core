@@ -116,11 +116,8 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "task_id": taskID})
 }
 
-// enabledWorkflowInterface returns the interface workflow id declares, and
-// whether it is defined and enabled for the caller's org. The interface is what
-// the work-request handler checks a request's inputs against, so a task whose
-// workflow declaration the request cannot satisfy is refused before it is
-// admitted.
+// enabledWorkflowInterface returns a workflow's declared interface and whether
+// it is defined and enabled for the caller's org.
 func (s *Server) enabledWorkflowInterface(ctx context.Context, id string) (task.WorkflowInterface, bool, error) {
 	entry, found, err := s.workflowEntry(ctx, id)
 	if err != nil || !found {

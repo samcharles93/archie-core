@@ -41,13 +41,8 @@ type componentVersionStatus struct {
 	Status          string `json:"status"`
 }
 
-// versionStatusFor decides one component's status from its check-command
-// claim (installed) against the version actually observed running (running,
-// ok). Order matters: drift is checked before update_available because a
-// claim the running system actively contradicts is a more fundamental
-// problem than a newer release merely existing -- an operator who only
-// sees "update available" on a component that is silently not running what
-// it claims would look in the wrong place.
+// versionStatusFor compares a component's claimed version with the running
+// one. Drift is reported before update_available.
 func versionStatusFor(component releaseupdate.Component, running string, ok bool) string {
 	if ok && component.Installed != "" && running != component.Installed {
 		return statusDrift

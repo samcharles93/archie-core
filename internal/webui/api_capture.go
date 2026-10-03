@@ -5,22 +5,11 @@ import (
 	"strconv"
 )
 
-// defaultCapturesListLimit is used when the limit query param is absent,
-// non-numeric, non-positive, or wider than the int32 SQL LIMIT the store
-// binds. A raw strconv.ParseInt zero value (its error
-// case) must never reach ListCaptures directly -- SQL "LIMIT 0" returns zero
-// rows, which would make an unrecognised or missing limit look identical to
-// "no captures exist" instead of "show the default page."
+// defaultCapturesListLimit applies when the limit parameter is missing,
+// invalid or out of range.
 const defaultCapturesListLimit = 100
 
-// handleCaptures lists recent captured events, newest first, for the
-// dashboard's event inspector. Token-gated like every other
-// /api/* route -- captured payloads are visible only to an authenticated
-// operator.
-//
-// This is the read half of event capture. The write half is the receiver in
-// internal/infrastructure/captureintake, mounted on the bypass mux via
-// CaptureIntake; the dashboard displays captures and mounts the route.
+// handleCaptures lists recent captured events, newest first.
 func (s *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 	if s.Captures == nil {
 		writeJSON(w, map[string]any{"captures": []any{}, "enabled": false})

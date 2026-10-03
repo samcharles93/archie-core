@@ -26,12 +26,7 @@ type Server struct {
 	Store storecontract.TaskStore
 	Log   *slog.Logger
 
-	// Steps lists one execution's recorded StepExecutions:
-	// the run detail's
-	// authoritative source, GET /api/tasks/{id}/attempts. Nil degrades the
-	// route to reporting no steps rather than folding stage_start/
-	// stage_finish events, which tasks.stage used to back and no longer
-	// exists to fall back to.
+	// Steps lists an execution's recorded steps. Nil reports none.
 	Steps storecontract.StepReader
 
 	// ConfigSource supplies the configuration projection GET /api/config
@@ -46,15 +41,7 @@ type Server struct {
 	// LogFeed is the daemon diagnostic stream. It is separate from Events,
 	// which contains persisted task lifecycle activity only.
 	LogFeed *logging.Feed
-	// TaskLogs reads each task's persisted log output. Composition gives this
-	// process whichever implementation it can use: the daemon (whose state
-	// directory holds the files) its own *logging.TaskRegistry, and the
-	// dashboard process, which owns no such directory, the State Store client
-	// -- the read crosses a contract rather than opening a file.
-	// Nil means this process has no
-	// task-log capability at all, which the handlers report as disabled rather
-	// than as "the attempt has no log": those are different claims and only one
-	// of them is about configuration.
+	// TaskLogs reads task logs. Nil means this process cannot read them.
 	TaskLogs TaskLogSource
 
 	// Channels reports actual adapter lifecycle, independently of configuration.
@@ -104,26 +91,17 @@ type Server struct {
 	// stay frictionless -- see IsLoopback.
 	Token string
 
-	// Authenticate resolves a credential a request presented to the identity
-	// that may act, and is the whole of the provider integration: verification
-	// and binding both live behind it. Non-nil replaces the shared token, so
-	// every request resolves to a named identity or is refused; nil keeps the
-	// shared-token gate for an instance with no provider configured.
+	// Authenticate resolves a presented credential to an identity. Non-nil
+	// replaces the shared token.
 	Authenticate func(context.Context, string) (identity.Identity, error)
 
-	// Login drives the provider's browser flow, so a person can sign in and the
-	// dashboard learns who they are. Nil removes the sign-in routes, which is what
-	// an instance with no provider configured gets. It is separate from
-	// Authenticate because a caller may present a token without ever signing in
-	// through a browser -- an agent does exactly that.
+	// Login drives the provider's browser sign-in. Nil removes the sign-in
+	// routes.
 	Login identity.LoginFlow
 
-	// Access evaluates the policy chain for each request.
-	// Optional: nil keeps the credential
-	// check as the whole gate -- the documented behaviour of an install that
-	// has not built the chain. Principals assembles the request principal
-	// from the acting identity; Denials records refusals. All three are
-	// wired together at composition or not at all.
+	// Access evaluates the policy chain, Principals builds the request principal
+	// and Denials records refusals. All three or none; nil leaves the credential
+	// check as the only gate.
 	Access     access.Authorizer
 	Principals access.PrincipalSource
 	Denials    access.DenialStore
@@ -142,17 +120,8 @@ type Server struct {
 	// used to bound captureByID's scan window (api_mapping.go).
 	// CaptureIntake is the write half's mount.
 	CaptureMaxEvents int
-	// CaptureIntake serves POST /webhooks/capture/{source} on the bypass
-	// mux, alongside /healthz: capture must accept unauthenticated
-	// senders, so it cannot sit behind requireToken. The handler is owned
-	// by internal/infrastructure/captureintake.Receiver; this package only
-	// mounts the route and reads the rows back. The UI process composes
-	// it from the cutover change -- it is the only
-	// dashboard listener left, and a capture POST answered by the
-	// token-gated mux would leave intake with no owner. Nil removes the
-	// route, which is what a store without the capture contract gets:
-	// two listeners with the same intake authority is what the boundary
-	// forbids.
+	// CaptureIntake serves unauthenticated POST /webhooks/capture/{source}. Nil
+	// removes the route.
 	CaptureIntake http.Handler
 
 	// Mappings persists payload field mappings.
@@ -175,12 +144,8 @@ type Server struct {
 	// /api/sources route answer 503 and marks no binding unsigned.
 	Sources storecontract.SourceStore
 
-	// HarnessSecrets reads each credential binding's captured OAuth token
-	// set, so the harness page can report whether a binding is configured,
-	// when it expires and which scopes it carries.
-	// The token values
-	// themselves never reach the browser. Optional: nil answers
-	// /api/harness/bindings 503 rather than claiming the org has none.
+	// HarnessSecrets reports each credential binding's OAuth token status, never
+	// the values. Nil answers 503.
 	HarnessSecrets storecontract.HarnessSecretStore
 
 	// HarnessTerminal opens the setup terminal, a duplex PTY session in an
@@ -189,21 +154,14 @@ type Server struct {
 	// dashboard consumes it over a contract and never links one.
 	HarnessTerminal HarnessTerminal
 
-	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
-	// initiated update use the same post-restart notification route as a
-	// Telegram-initiated update. The web UI has no durable chat identity, so
-	// composition supplies an authorized Telegram recipient when one exists.
-	// When either value is empty, UpdateReportPath remains in use.
+	// TelegramUpdateReportPath and TelegramUpdateChatID route a dashboard
+	// update's post-restart report to Telegram. Either empty uses
+	// UpdateReportPath.
 	TelegramUpdateReportPath string
 	TelegramUpdateChatID     int64
 
-	// UpdateReportPath is where the update watchdog leaves the phase-2
-	// outcome of a dashboard-initiated install for this process to relay on
-	// its next boot -- the webui counterpart of
-	// channels/telegram.Gateway.UpdateReportPath. Empty (the default unless
-	// composition wires it) means dashboard-initiated updates get no
-	// phase-2 report: the operator only sees the
-	// synchronous install result, never restart/health/version outcome.
+	// UpdateReportPath is where the update watchdog leaves a dashboard-initiated
+	// update's outcome for relay on next boot. Empty disables it.
 	UpdateReportPath string
 
 	// RunningVersions reports, per component ID (see releaseupdate.Report.Verify),
@@ -379,12 +337,8 @@ func (s *Server) Handler() http.Handler {
 	return top
 }
 
-// handleHealthz is a liveness probe for local, unauthenticated callers --
-// most notably the update watchdog script, which polls it after restarting
-// archied to decide whether the new version came up or the update needs to
-// be rolled back (see scripts/archie-update-watchdog). It deliberately
-// bypasses requireToken: the token protects the dashboard from remote
-// access, not this process's own local restart tooling.
+// handleHealthz is the unauthenticated liveness probe the update watchdog
+// polls.
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))

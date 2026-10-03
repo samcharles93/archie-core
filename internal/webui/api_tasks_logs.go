@@ -11,24 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 )
 
-// handleTaskLogs serves one task attempt's persisted log history, the same
-// way handleLogs serves the daemon-wide log -- transport only, parsing
-// belongs to the logging package.
-//
-// A request with no "attempt" query param defaults to the task's current
-// Attempt from the store, since that is what a human or Archie's own chat
-// tool means by "why did task N park?" almost every time: the most recent
-// run, not an arbitrary earlier retry.
-//
-// Two outcomes are kept apart on purpose, because only one of them is about
-// the operator's configuration. A process with no task-log reader cannot say
-// anything about an attempt, so it reports disabled and the page explains that
-// this process cannot read logs. A process WITH a reader and an attempt with
-// no log file reports found=false, which the page states as no log recorded
-// for the attempt. Collapsing the second into the first is what made the
-// dashboard claim "task logging is optional and was not enabled for this run"
-// for every attempt of every task in a deployment where logging is
-// unconditional.
+// handleTaskLogs serves one attempt's log history, defaulting to the current
+// attempt. No reader reports disabled; no log file reports found=false.
 func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 	id, attempt, ok := s.taskLogTarget(w, r)
 	if !ok {
@@ -79,14 +63,8 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleTaskLogDownload serves one task attempt's log verbatim as a file
-// download -- the log itself rather than a decoded view of it, because an
-// operator who asks for a download wants to read it in their own tooling or
-// hand it to someone else.
-//
-// The conditions stay apart here too. A process with no reader answers 503,
-// not 404: "there is no log for this attempt" is a claim only a process that
-// can look is in a position to make.
+// handleTaskLogDownload serves one attempt's raw log as a download. No reader
+// answers 503.
 func (s *Server) handleTaskLogDownload(w http.ResponseWriter, r *http.Request) {
 	id, attempt, ok := s.taskLogTarget(w, r)
 	if !ok {
@@ -98,15 +76,8 @@ func (s *Server) handleTaskLogDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Headers are set before the read because the body streams straight from
-	// the reader into the response: a log file is unbounded input, so
-	// buffering it to size the response would defeat the reason the reader
-	// streams at all. The attempt's own name is known up front.
-	//
-	// Everything after this point must therefore CLEAR them before writing an
-	// error, never add to them: a 404 still carrying `Content-Disposition:
-	// attachment` is a browser download of the error text under a .log
-	// filename, and the NDJSON type would misdescribe it too.
+	// The body streams, so headers are set first and must be cleared before
+	// writing an error.
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+taskLogFilename(id, attempt)+`"`)
 
@@ -134,14 +105,8 @@ func (s *Server) handleTaskLogDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// taskLogTarget resolves the {id} path value and the task it names, returning
-// the attempt to read: the "attempt" query parameter when the request names
-// one, otherwise the task's current Attempt. It answers the request itself and
-// reports false when either step fails.
-//
-// The resolution itself is taskAttemptTarget's, shared with the attempt rail,
-// the changed-files read and the debug view, so every per-attempt read of one
-// task selects the same attempt for the same request.
+// taskLogTarget resolves the task and attempt for a log read, answering the
+// request itself on failure.
 func (s *Server) taskLogTarget(w http.ResponseWriter, r *http.Request) (id int64, attempt int, ok bool) {
 	t, attempt, ok := s.taskAttemptTarget(w, r)
 	if !ok {
@@ -194,12 +159,7 @@ func taskLogFilename(taskID int64, attempt int) string {
 	return "task-" + strconv.FormatInt(taskID, 10) + "-attempt-" + strconv.Itoa(attempt) + ".log"
 }
 
-// taskLogReader is the task-log read capability this process has, or nil when
-// it has none. The seam is a narrow interface rather than a concrete registry
-// so the same handlers serve both processes: the daemon holds a registry over
-// its own state directory, the dashboard holds the State Store client. A
-// consumer-owned seam is the difference between the dashboard degrading
-// honestly and the dashboard opening another process's files.
+// taskLogReader returns this process's task-log reader, or nil.
 func (s *Server) taskLogReader() TaskLogSource {
 	if s == nil {
 		return nil

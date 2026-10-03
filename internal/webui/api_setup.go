@@ -12,16 +12,7 @@ type SetupStep struct {
 	Done   bool   `json:"done"`
 }
 
-// handleSetup reports which parts of archied are configured.
-//
-// The checklist exists so a new operator is told what is missing rather than
-// shown a dashboard of zeroes and left to infer it. Steps are phrased as
-// actions in plain language -- "Connect a chat channel", not "channels.telegram
-// .bot_token unset" -- because someone who already knows the config key does
-// not need the checklist.
-//
-// Every step is derived from live state, so the list disappears on its own
-// once setup is complete rather than needing to be dismissed.
+// handleSetup reports which setup steps are still missing, from live state.
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	steps := []SetupStep{}
 
