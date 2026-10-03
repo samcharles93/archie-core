@@ -29,6 +29,7 @@ linters:
     - nestif
 
     # Architecture
+    - depguard
     - importas
     - interfacebloat
 
@@ -61,6 +62,34 @@ linters:
     - usetesting
 
   settings:
+    # Each service links only its own composition: services reach each other
+    # through their gRPC contracts, never another service's packages.
+    depguard:
+      rules:
+        gateway-service:
+          files: ["**/internal/app/archiegateway/**"]
+          deny:
+            - {pkg: "github.com/samcharles93/archie-core/internal/daemon", desc: "the daemon is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/webui", desc: "the web UI is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/archied", desc: "the daemon is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/statestore", desc: "reach the State Store through its contract"}
+        state-store-service:
+          files: ["**/internal/app/statestore/**"]
+          deny:
+            - {pkg: "github.com/samcharles93/archie-core/internal/daemon", desc: "the daemon is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/webui", desc: "the web UI is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/gateway", desc: "the Gateway is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/archied", desc: "the daemon is another service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/archiegateway", desc: "the Gateway is another service"}
+            - {pkg: "github.com/nats-io", desc: "the State Store serves gRPC only"}
+        shared:
+          files: ["**/internal/app/servicekit/**", "**/internal/app/chattask/**"]
+          deny:
+            - {pkg: "github.com/samcharles93/archie-core/internal/daemon", desc: "shared code must not pull in a service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/webui", desc: "shared code must not pull in a service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/archied", desc: "shared code must not pull in a service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/archiegateway", desc: "shared code must not pull in a service"}
+            - {pkg: "github.com/samcharles93/archie-core/internal/app/statestore", desc: "shared code must not pull in a service"}
     cyclop:
       max-complexity: 15
     dupl:
