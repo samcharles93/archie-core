@@ -41,9 +41,11 @@ When sources disagree, the higher one wins:
   breaking changes need no compatibility shims.
 - **Finish before starting.** Prefer completing a half-built feature end to end
   over starting a new one.
-- **No new binaries.** A new command is a subcommand of an existing binary. A
-  binary exists only for a real process boundary (separate deploy, scaling,
-  security or failure domain).
+- **Services own contracts.** A service is a gRPC contract in
+  `proto/<service>/v1` and one binary that serves it. Services reach each other
+  only through those contracts, never through another service's tables or
+  packages. A new command is a subcommand of an existing binary. A new binary
+  exists only for a new service or a real process boundary.
 - **No compensating tools.** Do not write a linter, checker or generator to
   enforce something a simpler design would make unnecessary. Fix the design.
 - **A setting must work end to end.** A config field that parses but has no
@@ -89,6 +91,10 @@ to testing that it is rejected. Test helpers live in `_test.go` files only.
 
 These protect users. Do not weaken them without the maintainer's say-so.
 
+- Failure stays local. Any service may crash, restart or be absent without
+  losing accepted work or taking another service down. Callers retry, degrade
+  and report the dependency as unhealthy; they never exit because a peer is
+  missing, and work is acknowledged only once it is durable.
 - The model never runs git. Commits and pushes go through the daemon.
 - The daemon's own credentials never enter an agent container. Containers get
   task-scoped grants that are revoked when the task ends.
