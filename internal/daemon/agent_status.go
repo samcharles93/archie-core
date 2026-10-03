@@ -2,14 +2,8 @@ package daemon
 
 import "sync"
 
-// AgentStatus tracks the most recent version and install type an archie-agent
-// worker reported about itself. It is observed passively, off ordinary
-// taskrun.Response traffic in runViaAgent -- there is no dedicated poll, since
-// every archie-agent process is task-scoped and ephemeral, not a long-lived
-// process the daemon could query on demand the way it can Telegram's gateway.
-//
-// Before the first task completes, nothing is known: Snapshot's ok return
-// reports that honestly rather than a caller guessing a value.
+// AgentStatus holds the version and install type the last archie-agent task
+// response reported. Unknown until the first task completes.
 type AgentStatus struct {
 	mu          sync.RWMutex
 	version     string
@@ -17,12 +11,7 @@ type AgentStatus struct {
 	observed    bool
 }
 
-// Observe records the version/install-type an archie-agent worker reported
-// in a task response. Called for every completed task, so the value always
-// reflects whichever agent build most recently ran -- the same one that is
-// actually in service, not the version archied's own release pipeline
-// stamped for it (those two can diverge, which is exactly what this exists
-// to catch).
+// Observe records an agent's reported version and install type.
 func (s *AgentStatus) Observe(version, installType string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

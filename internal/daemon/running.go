@@ -12,14 +12,7 @@ type RunningTask struct {
 	Identity string
 }
 
-// runningTasks tracks the tasks currently executing so they can be stopped
-// on request.
-//
-// A task's cancel function is the only handle that reaches work already in
-// flight. Without it the store can record that a task was cancelled while
-// the task carries on -- which is what /cancel did: it refused outright
-// when a task was running, so the one case worth interrupting was the one
-// case it would not touch.
+// runningTasks tracks executing tasks so they can be cancelled.
 type runningTasks struct {
 	mu      sync.Mutex
 	entries map[int64]*runningEntry

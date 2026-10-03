@@ -41,12 +41,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
-// TaskBus is the messaging the daemon needs: announce discovered work,
-// collect it back, and ask a worker to run a task.
-//
-// Declared here rather than taking eventbus.Bus because a domain defines the
-// smallest interface required to do its work -- the daemon never subscribes
-// or creates reply inboxes.
+// TaskBus publishes discovered work, collects it back, and asks a worker to
+// run a task.
 type TaskBus interface {
 	PublishUnique(ctx context.Context, subject, idempotencyKey string, payload []byte) error
 	Fetch(ctx context.Context) (eventbus.Message, error)
@@ -60,11 +56,8 @@ type WorktreeGrantIssuer interface {
 	Issue(task *workflow.Task) (token string, revoke func(), err error)
 }
 
-// StateStoreGrantIssuer gives one container dispatch a State Store credential
-// scoped to that task's own workflow.Store RPCs (Update, Transition,
-// InsertEvent) -- never the daemon's own administrative credential. The
-// daemon owns grant lifetime (issue before Acquire, revoke on Release); the
-// transport implementation (staterpc.GrantIssuer) owns token mechanics.
+// StateStoreGrantIssuer issues a State Store credential scoped to one task's
+// own Update, Transition and InsertEvent calls.
 type StateStoreGrantIssuer interface {
 	Issue(task *workflow.Task) (token string, revoke func(), err error)
 }
@@ -77,14 +70,8 @@ type NATSEndpoint struct {
 	Token string
 }
 
-// StateStoreEndpoint is the State Store gRPC target (and the bearer token the
-// daemon presents, when one is configured) that containerEnv injects as
-// STATE_STORE_URL / STATE_STORE_TOKEN so archie-agent authenticates to the
-// same remote archie-state-store service the daemon dials.
-// After the in-process
-// serving path is deleted this
-// is always the configured [services.state].target, never a daemon-owned
-// listener.
+// StateStoreEndpoint is the State Store target and token passed to agent
+// containers.
 type StateStoreEndpoint struct {
 	URL   string
 	Token string
@@ -94,17 +81,11 @@ type Daemon struct {
 	// Cfg publishes the running configuration. Read through Cfg() so a
 	// reload swaps the published snapshot atomically. See config.Holder.
 	Cfg *config.Holder
-	// ConnectedNATS is the endpoint and credential the daemon's own client
-	// connected with at startup. Container env is built from this, not from
-	// live config or environment, so reload cannot point new containers at a
-	// broker the daemon is not publishing on. The zero value is invalid in
-	// production composition and remains useful only to fail closed in tests.
+	// ConnectedNATS is the endpoint the daemon connected with at startup;
+	// container env uses it, never live config.
 	ConnectedNATS NATSEndpoint
-	// ConnectedStateStore is the State Store gRPC target (and token) the
-	// daemon's own client dialed at startup. containerEnv injects these as
-	// STATE_STORE_URL / STATE_STORE_TOKEN so archie-agent reaches the same
-	// remote archie-state-store service; it is always the configured
-	// [services.state].target after the in-process serving path is deleted.
+	// ConnectedStateStore is the State Store target the daemon dialed at
+	// startup, passed to containers.
 	ConnectedStateStore StateStoreEndpoint
 	Store               storecontract.TaskStore
 	// Mappings persists payload field mappings.
@@ -115,11 +96,8 @@ type Daemon struct {
 	// Bindings persists playbook bindings.
 	// Optional: nil disables the binding dispatch loop (legacy behaviour).
 	Bindings storecontract.BindingStore
-	// BindingDispatcher is the dispatch-time helper surface for bindings:
-	// list undispatched captures, look up armed bindings by source for the
-	// matcher, and write the at-most-once dedup ledger row. Split from
-	// BindingStore to keep the CRUD interface under the interfacebloat
-	// limit. Optional: nil disables the dispatch loop.
+	// BindingDispatcher lists undispatched captures, finds armed bindings and
+	// records dispatches. Nil disables binding dispatch.
 	BindingDispatcher storecontract.BindingDispatcher
 	// MappingMatches counts each event a mapping resolved at dispatch.
 	// Optional: nil leaves match counts unrecorded.
@@ -143,11 +121,7 @@ type Daemon struct {
 	Trees   *worktree.Manager
 	Bus     *events.Bus
 	Log     *slog.Logger
-	// Tasks is the NATS task distribution bus: the poller publishes
-	// discovered work over it and runViaAgent requests execution through it.
-	// NATS startup is mandatory (there is no broker-off execution mode), so
-	// production composition always sets it. Nil appears only in tests and
-	// is handled fail-closed at the publish/run sites.
+	// Tasks is the NATS task bus. Always set in production.
 	Tasks TaskBus
 	// reactionConsumer is built lazily by drainReactions and kept for its
 	// lifetime drop counter.
@@ -155,12 +129,8 @@ type Daemon struct {
 	// reactionPublisher is built lazily by scanPRReviews; an indirection
 	// only so tests can swap the delivery without the bus.
 	reactionPublisher ReactionPublisher
-	// Reactions pulls the review-reaction fan-out stream.
-	// Each cycle it is drained into
-	// queued remediate runs before the task drain, so a reaction can be
-	// claimed in the same pass that carried it. Optional: nil disables the
-	// reaction consumer (tests, or a deployment without the reaction
-	// stream).
+	// Reactions is the review-reaction stream, drained into remediate runs each
+	// cycle. Nil disables it.
 	Reactions      ReactionSource
 	WorktreeGrants WorktreeGrantIssuer
 	// StateStoreGrants issues per-task State Store credentials for container
@@ -170,25 +140,15 @@ type Daemon struct {
 	StateStoreGrants StateStoreGrantIssuer
 	// KitLauncher starts tasks whose agent profile is a Kit. Nil parks them.
 	KitLauncher KitLauncher
-	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
-	// taskrun request that fails with nats.ErrNoResponders, giving a
-	// freshly spawned archie-agent container time to connect to NATS, set
-	// up its task-scoped core-NATS subscription, and become reachable before the daemon
-	// gives up and parks the task. ContainerPool.Acquire returns as soon
-	// as Docker has issued the start syscall, not once that setup
-	// finishes, so without this bound the very first request after a
-	// container spawn fails deterministically. Zero uses
+	// TaskRunReadyTimeout bounds how long runViaAgent retries a taskrun request
+	// while the new container has not subscribed yet. Zero uses
 	// defaultTaskRunReadyTimeout.
 	TaskRunReadyTimeout time.Duration
 	// TaskRunRetryBackoff is the delay between retry attempts within
 	// TaskRunReadyTimeout. Zero uses defaultTaskRunRetryBackoff.
 	TaskRunRetryBackoff time.Duration
-	// AgentStatus records the version/install-type the most recently
-	// completed archie-agent task response reported about itself, for
-	// releaseupdate.Report.Verify to check an update claim against. Nil
-	// disables observation -- runViaAgent skips the Observe call rather
-	// than reporting the agent as unverifiable via a zero value, which
-	// would read as a checked "unknown" rather than "never wired".
+	// AgentStatus records agent versions for update verification. Nil disables
+	// it.
 	AgentStatus *AgentStatus
 
 	// ContainerPool manages Docker container lifecycle. Nil means autonomous
@@ -213,19 +173,12 @@ type Daemon struct {
 	IdentityRepository identity.Repository
 	RootIdentityID     identity.IdentityID
 
-	// KindWorkflows and LabelWorkflows are the resolved kind/label ->
-	// workflow-name routing bindings loaded at startup (WorkflowRoutingFile,
-	// WorkflowLabelsFile, PlaybookDirs). They travel in taskrun.Request so
-	// the archie-agent process that calls workflow.Route applies the same
-	// bindings the daemon loaded; nil means built-in defaults.
+	// KindWorkflows and LabelWorkflows are the routing bindings loaded at
+	// startup, sent to the agent. Nil means defaults.
 	KindWorkflows  workflow.KindWorkflows
 	LabelWorkflows workflow.LabelWorkflows
-	// Playbooks is the loaded EDA playbook set (workflow and action
-	// playbooks, internal/domain/eda/playbook). It is consulted before the
-	// kind/label bindings when a task's workflow definition is pinned: a
-	// workflow playbook is an operator's explicit rule for one trigger, where
-	// the bindings are a table of defaults. Nil means no playbooks are loaded
-	// and routing is exactly the binding behaviour.
+	// Playbooks are the loaded EDA playbooks, consulted before kind/label
+	// bindings when pinning a workflow. Nil means none.
 	Playbooks interface {
 		Dispatch(playbook.DispatchInput) (playbook.Decision, bool)
 		Run(context.Context, storecontract.PlaybookDispatcher, *slog.Logger, playbook.DispatchInput) error
@@ -246,11 +199,8 @@ type Daemon struct {
 		WorkflowEnablement(context.Context) (workflowtask.WorkflowEnablement, error)
 	}
 
-	// TaskLogs persists each task's own log output (including a sandboxed
-	// container's, which otherwise disappears at AutoRemove) and mirrors it
-	// live onto the dashboard feed, wired by the composition root. Nil
-	// disables task logging (backward compatible); every TaskRegistry
-	// method is nil-receiver-safe, so process() calls it unconditionally.
+	// TaskLogs persists each task's log output and mirrors it to the dashboard.
+	// Nil disables task logging.
 	TaskLogs *logging.TaskRegistry
 
 	// running holds a cancel function for every task currently executing,
@@ -326,20 +276,8 @@ func (d *Daemon) Startup(ctx context.Context) error {
 // an unreachable host would otherwise hold boot open indefinitely.
 const sweepTimeout = 2 * time.Minute
 
-// sweepAccess accepts pending invitations and verifies push access for the
-// root forge and for every configured identity's forge.
-//
-// The root is swept even in multi-identity mode. Run takes runIdentities
-// there and never polls the root repo list, but polling is not the only way a
-// task reaches a repo: dispatchBinding enqueues with an empty identity and
-// resolveBindingRepo falls back to the root repo list, and forgeFor/repoFor
-// resolve an empty identity to the root forge and root repos. Root targets
-// stay reachable, so they stay worth verifying; a deployment with no root
-// forge configured gets the noop client, whose sweep is silent.
-//
-// Each forge is swept in its own goroutine under its own deadline, mirroring
-// Run's goroutine-per-identity isolation. Warnings alone isolate a failing
-// sibling; they do not isolate a stalled one.
+// sweepAccess accepts pending invitations and verifies push access on the
+// root forge and every identity's forge, each in its own goroutine.
 func (d *Daemon) sweepAccess(ctx context.Context) {
 	sweep := func(identity string, fg forge.Forge, repos []config.Repo) {
 		log := d.Log
@@ -410,17 +348,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 }
 
-// runIdentities starts one goroutine per identity plus one shared
-// maintenance-and-drain loop.
-//
-// Polling is identity-scoped: each identity goroutine polls only its own
-// repos via its own forge client and enqueues under its own name. It never
-// drains or reconciles. Maintenance and draining are store-wide, not
-// identity-scoped, so they run once in a single shared loop  --  that keeps
-// the global max_concurrency cap and the per-repo serialization intact
-// across identities (N per-identity dispatchers would multiply the cap and
-// split the same-repo lock), and it ensures reconcilePRs and storage
-// cleanup actually run in multi-identity mode.
+// runIdentities polls each identity in its own goroutine and runs
+// maintenance and draining once in a shared loop, keeping the global
+// concurrency cap and per-repo serialization.
 func (d *Daemon) runIdentities(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -619,11 +549,9 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 // single cycle's worst-case latency on a backlog.
 const bindingDispatchBatchLimit = 100
 
-// dispatchBindings walks identified captures on sources with an armed
-// binding and offers each capture to every armed binding on its source.
-// Each binding dispatches it at most once (dispatchOneBinding).
-//
-// Nil Bindings, BindingDispatcher or BindingTaskCreator disables the loop.
+// dispatchBindings offers each identified capture to every armed binding on
+// its source. Nil Bindings, BindingDispatcher or BindingTaskCreator disables
+// it.
 func (d *Daemon) dispatchBindings(ctx context.Context) {
 	if d.Bindings == nil || d.BindingDispatcher == nil || d.BindingTaskCreator == nil {
 		return
@@ -700,16 +628,11 @@ func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping
 	return m
 }
 
-// dispatchOneBinding offers one capture to one binding. The binding applies
-// when its mapping belongs to the capture's event type. The mapping resolves
-// the payload (a required-field failure records binding_dispatch_failure and
-// stops), counts the match, and the binding's filter must admit the resolved
-// parameters. The workflow it targets must accept the binding's inputs and
-// repository (resolveBindingTarget). The dispatch is then claimed in the binding_dispatches ledger
-// before the task is enqueued: a capture stays listed until every binding for
-// its event type has dispatched it, so the claim is what stops a binding that
-// already fired from firing again on a later cycle. A failed enqueue after the
-// claim loses that dispatch, which is the at-most-once side of the trade.
+// dispatchOneBinding offers one capture to one binding: the mapping must
+// match the capture's event type and resolve required fields, the filter
+// must admit the values, and the workflow must accept the inputs. The
+// dispatch is claimed in the ledger before the task is enqueued, so each
+// binding fires at most once per capture.
 func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, workflows workflow.WorkflowDefinitionCollection) {
 	m := d.bindingMapping(ctx, b)
 	if m == nil || m.EventTypeID != c.EventType {
@@ -776,11 +699,8 @@ func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c store
 	}
 }
 
-// authorizeDispatch evaluates the policy chain for the workflow's identity
-// before the dispatch is claimed: the identity may `run` the workflow in its
-// workspace, with the event's signature result and source address as context.
-// A denial is recorded with the level that decided it and the deciding
-// policies, and reported as a binding_dispatch_failure.
+// authorizeDispatch checks the identity may run the workflow. A denial is
+// recorded and reported as a binding_dispatch_failure.
 func (d *Daemon) authorizeDispatch(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, target bindingTarget) bool {
 	if d.Access == nil || d.Principals == nil {
 		return true
@@ -856,12 +776,7 @@ func (d *Daemon) recordDispatchFailure(ctx context.Context, b binding.Binding, c
 	})
 }
 
-// hasBlockingFailure reports whether any of the failures belongs to a
-// required field. The mapping package reports failures only by field
-// name and reason -- the Field's Required flag is on the Field
-// declaration, so the dispatch loop re-derives it from the full
-// Field list. Failures on optional fields are warnings, not blocks:
-// the workflow still receives a partial value map.
+// hasBlockingFailure reports whether any failure is on a required field.
 func hasBlockingFailure(fields []mapping.Field, failures []mapping.Failure) bool {
 	if len(failures) == 0 {
 		return false
@@ -895,15 +810,8 @@ func renderBindingBody(values map[string]any, c storecontract.CapturedEvent) str
 	return strings.Join(parts, "\n")
 }
 
-// resolveBindingRepo picks the owner/repo a binding-spawned task
-// operates against. A binding that pins Owner/Repo (binding.Binding's
-// Owner/Repo fields, validated as a complete pair or not set at all)
-// dispatches to that target unconditionally -- multi-repo deployments
-// use this to disambiguate. An unpinned binding falls back to the
-// single-configured-repo behaviour that predates the pin: with exactly
-// one configured repo the choice is unambiguous; with zero or more than
-// one the loop refuses to dispatch (logged below) so a binding cannot
-// silently fire against the wrong target.
+// resolveBindingRepo returns the binding's pinned owner/repo, or the only
+// configured repo. With zero or several repos and no pin it refuses.
 func (d *Daemon) resolveBindingRepo(b binding.Binding) (string, string, bool) {
 	if b.Owner != "" && b.Repo != "" {
 		return b.Owner, b.Repo, true
@@ -1020,11 +928,8 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 	})
 }
 
-// taskDispatcher bounds task execution globally while preserving the default
-// one-task-per-repository safety rule. Submit order is retained within a repo;
-// tasks for different repos may run concurrently. Repos for which
-// allowConcurrent reports true opt out of the same-repo serialization
-// entirely  --  the global slot limit is the only bound on their concurrency.
+// taskDispatcher limits concurrent tasks globally and runs one task per repo
+// at a time, in submit order, unless the repo allows concurrency.
 type taskDispatcher struct {
 	allowConcurrent func(task *workflow.Task) bool
 
@@ -1164,12 +1069,8 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, cfg config.Config
 	d.acknowledge(ctx, fg, cfg, repo, is)
 }
 
-// PublishTask validates, resolves the producing identity's org, encodes and
-// publishes a task envelope. The idempotency key means rediscovering the same
-// issue on a later poll does not enqueue the work twice. It is the single
-// enqueue path shared by the poller and the forge webhook intake, so neither
-// can drift in how a discovered issue becomes a task -- including the org the
-// key is built from.
+// PublishTask validates a task envelope, stamps the producing identity's
+// org and publishes it. The idempotency key dedups rediscovered issues.
 func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) error {
 	if d.Tasks == nil {
 		return fmt.Errorf("publish task %s: no task bus configured", task.Ref())
@@ -1189,12 +1090,8 @@ func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) 
 	return d.Tasks.PublishUnique(ctx, task.Subject(), task.IdempotencyKey(), payload)
 }
 
-// PublishReaction stamps the resolved org on a reaction and publishes it on
-// the reaction subject. A reaction the review scan already stamped with its
-// task's org keeps it; otherwise (the webhook producer, single-identity) the
-// root identity's org is used, so a webhook and a poll delivery of one review
-// key the same. It is the single reaction write path shared by the scan and
-// the webhook receiver.
+// PublishReaction stamps the org on a review reaction, defaulting to the
+// root identity's, and publishes it.
 func (d *Daemon) PublishReaction(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error {
 	if d.Tasks == nil {
 		return fmt.Errorf("publish reaction %s: no task bus configured", reaction.Ref())
@@ -1231,11 +1128,8 @@ func (d *Daemon) publisherIdentity(ref string) identity.IdentityID {
 	return identity.IdentityID(ref)
 }
 
-// identityOrg resolves the org an identity serves through the State Store
-// before a producer publishes. An unwired PrincipalSource (an install with no
-// State Store) resolves to the default org; a store failure is returned so the
-// producer retries rather than publishing under a guessed org, which would key
-// the same issue differently on a later delivery.
+// identityOrg resolves an identity's org. No PrincipalSource means the
+// default org; a store error is returned.
 func (d *Daemon) identityOrg(ctx context.Context, id identity.IdentityID) (org.OrgID, error) {
 	if d.Principals == nil {
 		return org.DefaultOrgID, nil
@@ -1330,12 +1224,8 @@ func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) []forge.Issue
 	return d.pollIssuesWithConfig(ctx, d.Forge, d.Cfg.Get(), repo)
 }
 
-// closeResolvedIssue closes the forge issue behind a finished task.
-//
-// A chat task's issue number is synthetic and matches no forge issue, so it
-// is skipped. Failure is logged rather than returned: the task's own state is
-// already correct, and the next reconcile pass will not retry, so a warning
-// is the honest outcome -- the issue simply stays open.
+// closeResolvedIssue closes a finished task's forge issue, skipping chat
+// tasks. Failures are logged.
 func (d *Daemon) closeResolvedIssue(ctx context.Context, fg forge.Forge, task *workflow.Task, comment string) {
 	if !task.IsForgeBacked() {
 		return
@@ -1366,25 +1256,12 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			d.Log.Warn("PR state check failed", "pr", t.PRNumber, "err", err)
 			continue
 		}
-		// OpenPRs returns a deliberately narrow projection of a pr_open task
-		// (id/owner/repo/issue/pr/status/source/identity) that does not carry
-		// the attempt, so the outcome event below reads it from the task's own
-		// row. A failed lookup costs attribution and never the merge handling:
-		// the status transition and the worktree cleanup still run. OpenPRs
-		// carries attempt, so these events are attributed without a second
-		// read per open PR on every reconcile tick.
 		attempt := t.Attempt
 		switch state {
 		case "merged":
 			_ = d.Store.Transition(ctx, t.ID, workflow.StatusPROpen, workflow.StatusMerged, "")
 			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
-			// Close the issue ourselves rather than relying on the forge
-			// noticing a "Closes #N" in the PR body. Nothing else closes it:
-			// LinkBranch is sidebar linkage on Gitea and a no-op on GitHub.
-			// Left open the issue stays labelled and assigned, the next poll
-			// re-enqueues it, and once the dashboard's Clear removes the task
-			// row that is a second implementation and a second PR for work
-			// already merged.
+			// Close the issue explicitly; nothing else does.
 			d.closeResolvedIssue(ctx, fg, &t, fmt.Sprintf(
 				"Closed by #%d, merged by archie.", t.PRNumber,
 			))
@@ -1408,11 +1285,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 }
 
 func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
-	// Register before any work starts so the task is stoppable for its
-	// whole life, including the slow setup -- clone, worktree prepare,
-	// image pull -- which is exactly when someone realises they asked for
-	// the wrong thing. Every caller reaches execution through here, so
-	// this is the one place that has to do it.
+	// Register first so the task can be stopped during setup.
 	ctx, finished := d.running.begin(ctx, task.ID, task.Identity)
 	defer finished()
 	defer d.openTaskLog(task)()
@@ -1464,14 +1337,8 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	defer d.ContainerPool.Release(ctx, ctr)
 	defer revokeStateStoreGrant()
 
-	// Hand the whole task to archie-agent in one NATS round trip. archie-agent
-	// proxies Store/Forge/worktree-push calls back to archied over storerpc/
-	// forgerpc/worktreerpc  --  by the time runViaAgent returns, the task's
-	// terminal state already landed via those calls. The task's identity
-	// travels in the taskrun request; the agent scopes its forgerpc and
-	// worktreerpc clients to that identity, and the daemon registered one
-	// server pair per identity (plus the root pair), so a container-mode
-	// task is always served by its own forge client and worktree manager.
+	// Run the whole task in archie-agent, which calls back to the daemon for
+	// store, forge and push operations.
 	limitCtx, stopLimit := withTaskTimeLimit(ctx, d.configFor(task).Budgets.TaskWallClock.Std())
 	runCtx, stopWatch := withContainerExit(limitCtx, ctr.Exited())
 	d.runViaAgent(runCtx, task, repo, profile, nil)
@@ -1510,17 +1377,8 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		}
 		return dir, true
 	}
-	// The retry action writes the worktree mode onto the task row
-	// (taskstate.RetryMode): continue_pushed_work resumes the branch the task
-	// already pushed, refresh_onto_base resets onto base. The mode is never
-	// inferred here from the workflow -- the reaction consumer writes
-	// continue_pushed_work when it queues a remediation, so every path that
-	// needs a resume records that choice explicitly. This runs before Acquire,
-	// because the daemon holds the forge credential that fetches the branch and
-	// the container must find the work already in place. It also runs on a
-	// retry whose local worktree is gone: Prepare clones a missing worktree for
-	// either target, which is how a resume reaches a task whose clone the
-	// terminal cleanup removed.
+	// The retry mode on the task decides whether to resume the pushed branch or
+	// reset onto base. Prepare clones a missing worktree either way.
 	target := worktree.Fresh
 	if taskstate.NormalizeRetryMode(task.RetryMode) == taskstate.RetryContinuePushedWork {
 		if task.Branch == "" {
@@ -1532,11 +1390,7 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		}
 		target = worktree.Target(task.Branch)
 	}
-	// Every task gets an independent full clone. The former
-	// PreparePersistent path shared objects with a per-repo bare cache;
-	// go-git has no --dissociate, so a shared cache would stay a live
-	// dependency of each worktree and expiring one would corrupt running
-	// tasks. repo.PersistentStorage still governs the container volume.
+	// Every task gets an independent full clone.
 	dir, branch, err := trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels, target)
 	if err != nil {
 		reason := "worktree prepare failed: " + err.Error()
@@ -1554,15 +1408,8 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 	return dir, true
 }
 
-// cleanupTerminalTaskWorktree removes a task's worktree once its forge side is
-// settled, unless the worktree still holds work no commit captured.
-//
-// The cleanliness guard is what keeps agent.run's deliverable: that step ends
-// the workflow StatusCompleted and works in a real clone whose edits it never
-// commits, so a status-only rule deletes the work. Nothing else holds it -- not
-// the branch, not the store. A worktree whose cleanliness cannot be read is
-// kept for the same reason: a wrong keep costs disk, a wrong delete costs the
-// work.
+// cleanupTerminalTaskWorktree removes a settled task's worktree, unless it
+// holds uncommitted work or its state cannot be read.
 func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow.Task, trees *worktree.Manager) {
 	if d.Store == nil || trees == nil || task == nil || !task.HasRepository() {
 		return
@@ -1578,12 +1425,7 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow
 	if latest == nil {
 		return
 	}
-	// Statuses whose forge side is settled, so the worktree holds nothing a
-	// later run needs: the PR merged, the PR was rejected, an operator refused
-	// the work, or the run finished without opening a PR at all (a no-change
-	// build, a triage that needed no code -- StatusCompleted). The PRNumber
-	// guard keeps the worktree when a PR exists for the reconciler; the
-	// cleanliness guard keeps it when it holds uncaptured work.
+	// Settled statuses. Keep the worktree while a PR exists.
 	switch latest.Status {
 	case workflow.StatusMerged, workflow.StatusRejected, workflow.StatusClosedWontDo, workflow.StatusCompleted:
 		if latest.PRNumber != 0 {
@@ -1623,13 +1465,8 @@ func (d *Daemon) worktreeHoldsUncapturedWork(ctx context.Context, trees *worktre
 	return false
 }
 
-// openTaskLog opens task's log sink for the lifetime of one process() call
-// and returns the function to close it. That lifetime covers preparation,
-// the full-task container handoff, and teardown. A failure to open is not
-// fatal to the task -- it means this
-// attempt's own output won't be recoverable if something goes wrong, which
-// is worse than the pre-existing state, not equal to it, so the run
-// proceeds rather than parking over a logging problem.
+// openTaskLog opens the task's log sink for one process() call and returns
+// its closer. Failure to open is logged, not fatal.
 func (d *Daemon) openTaskLog(task *workflow.Task) func() {
 	if err := d.TaskLogs.Open(task.ID, task.Attempt); err != nil {
 		d.Log.Warn("task log sink unavailable", "task", task.ID, "attempt", task.Attempt, "err", err)
@@ -1656,12 +1493,7 @@ func (d *Daemon) acquireTaskContainer(
 		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error(), taskstate.ParkTransient)
 	}
 
-	// A watched-repositories binding or the operator chat trigger assigns
-	// the pull request generically through Task.Inputs (its declared
-	// pr_number input); archie's own PRs sets PRNumber directly and never
-	// goes through either path. Resolving here, before the brief is
-	// written, means task.json and the prefetch below always agree with
-	// what every later reader (stagePRIntake, output posting) sees.
+	// Resolve the PR number from inputs before the brief is written.
 	if task.Workflow == "pr-review" {
 		task.PRNumber = task.EffectivePRNumber()
 	}
@@ -1671,13 +1503,8 @@ func (d *Daemon) acquireTaskContainer(
 		return nil, nil, false
 	}
 
-	// pr-review needs an external pull request's metadata, diff and head
-	// snapshot inside the container, but the container must never hold a forge
-	// credential. The daemon fetches it here, before the container exists,
-	// using its own credentialed forge client, and writes the result into
-	// workDir -- the same host directory Docker bind-mounts at
-	// storage.WorktreeMountDir -- so the sandboxed pipeline can read it back
-	// with prsource.MountSource and no network call of its own.
+	// Fetch the pull request with the daemon's forge credential into workDir,
+	// so the container reads it without credentials.
 	if task.Workflow == "pr-review" {
 		if err := prefetchPRReview(ctx, d.forgeFor(task), task.Owner, task.Repo, task.PRNumber, workDir); err != nil {
 			park("pr-review prefetch failed", err)
@@ -1779,22 +1606,9 @@ func (d *Daemon) parkCapabilityUnavailable(ctx context.Context, task *workflow.T
 	})
 }
 
-// parkRunningTask transitions a task from running to parked using a context
-// detached from caller cancellation, with a bounded timeout.
-//
-// The park carries the caller's taskstate.ParkClass: every call site states
-// what kind of intervention its park needs, and the store normalizes the
-// class, so an unclassified caller cannot silently mislabel a park.
-// When a task fails or is cancelled (e.g. via /stop or dashboard Stop), ctx is
-// already cancelled. Writing terminal state using the cancelled ctx fails
-// immediately in SQLite transactions and silently leaves the task row 'running'
-// indefinitely. Like container teardown in Pool.Release, terminal state
-// recording is cleanup on the way out of a task and must use a bounded context
-// that survives cancellation while preserving values.
-//
-// The transition remains guarded from StatusRunning: if the worker already
-// recorded a terminal state over storerpc, storecontract.ErrStaleTransition is returned
-// and ignored. Unexpected store errors are logged as warnings.
+// parkRunningTask moves a running task to parked with class, using a
+// bounded context that ignores cancellation. ErrStaleTransition is ignored;
+// other errors are logged.
 func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason string, class taskstate.ParkClass) {
 	if d.Store == nil {
 		return
@@ -1814,18 +1628,8 @@ func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason strin
 	d.recordPark(ctx, taskID, reason)
 }
 
-// recordPark writes one park reason into the task attempt's own log. Every
-// place that parks a task calls it, including the two capability parks in
-// process() that write their transition directly instead of going through
-// parkRunningTask -- a park an operator cannot read the reason for is the same
-// defect wherever it happens. Nothing daemon-side used to write to a task log
-// at all: the container's system-log subscription was the only writer, so an
-// attempt that parked before any container produced output left an empty log
-// file and an unexplained park reason.
-//
-// A task with no open sink (a retry this instance never dispatched, or logging
-// unwired) silently drops the entry, which is TaskRegistry.Write's own
-// contract.
+// recordPark writes a park reason to the attempt's log. Dropped when no sink
+// is open.
 func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 	d.TaskLogs.Write(ctx, taskID, logging.Entry{
 		Time:    time.Now(),
@@ -1835,16 +1639,9 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 	})
 }
 
-// containerEnv returns the environment variables passed to agent containers.
-// runViaAgent publishes a full-task handoff to archie-agent over the
-// infrastructure-owned task subject and waits for its completion report. Every durable
-// side effect (Store transitions, Forge calls, git push) happens inside
-// archie-agent's workflow.Run, proxied back to this daemon over
-// storerpc/forgerpc/worktreerpc  --  those RPC servers are the sole place a
-// terminal state gets written on success. runViaAgent only parks the task
-// itself when nothing else could have: the request never reached (or was
-// never answered by) an archie-agent, or archie-agent failed before its
-// own workflow.Run got a chance to record an outcome.
+// runViaAgent hands a task to archie-agent and waits for its result. It parks
+// the task only when the agent never answered or failed before recording an
+// outcome.
 func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentexec.HarnessSpec) {
 	grant, revoke, ok := d.publicationGrant(ctx, task)
 	if !ok {
@@ -1907,11 +1704,8 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	d.Log.Info("taskrun complete", "task", task.ID, "status", resp.Status)
 }
 
-// pinTaskProfile pins the task's workflow definition and resolves the agent
-// profile it names, parking the task when either fails. The park class is the
-// failing cause's own: an unusable profile, a corrupt stored pin and a
-// definition set that no longer offers the task's workflow all need an
-// operator, while a State Store read or persist failure is environmental.
+// pinTaskProfile pins the task's workflow definition and resolves its agent
+// profile, parking the task on failure.
 func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (config.AgentProfile, bool) {
 	if err := d.pinWorkflowDefinition(ctx, task); err != nil {
 		d.Log.Error("pin workflow definition failed", "task", task.ID, "err", err)
@@ -1938,13 +1732,8 @@ func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (confi
 	return config.AgentProfile{}, false
 }
 
-// validateProfileMeetsNeeds rejects a Kit profile whose harness cannot meet
-// what the workflow declares it needs: a workflow needing captures but naming a
-// profile whose Kit CLI serves none (no adapter, or one with no MCP config to
-// register archie-agent mcp against -- e.g. Codex, Pi, OMP per
-// agentexec.harnessAdapters). An image profile is never checked: the built-in
-// agent loop always supports both captures and gate retries, so Needs
-// constrains only the harness path.
+// validateProfileMeetsNeeds rejects a Kit profile whose harness cannot serve
+// the captures the workflow needs. Image profiles always pass.
 func validateProfileMeetsNeeds(profile config.AgentProfile, needs workflowtask.WorkflowNeeds) error {
 	if !profile.IsKit() || !needs.Captures {
 		return nil
@@ -1977,27 +1766,9 @@ func (d *Daemon) publicationGrant(ctx context.Context, task *workflow.Task) (str
 	return grant, revoke, true
 }
 
-// pinWorkflowDefinition puts the task's workflow definition pin in the state
-// the worker's compile requires before it runs a dispatch: a stored definition
-// that names the workflow the task row names
-// (agentworker.CompilePinnedWorkflow).
-//
-// A pin that is present, hash-valid and id-consistent is reused unchanged, so
-// the definition an operator had active when the task was pinned survives every
-// later dispatch even after the active definition moved on. Anything else -- no
-// pin, or a pin naming a workflow this task no longer runs -- is resolved again
-// from the active collection for the workflow the task names.
-//
-// The re-pin is what makes the waiting_human -> approved requeue dispatchable:
-// RequeueTask writes the new workflow column and leaves the previous run's
-// definition pinned, so the requeued row carries the two half-state values the
-// worker refuses to run. Resolving here, at the write, is where the row
-// becomes valid; a consumer that repaired it would only be tolerating a state
-// this producer is responsible for.
-//
-// An already-pinned definition is deliberately NOT refreshed to the operator's
-// current active one: a run's definition is pinned once, so a mid-flight
-// change to a definition never alters work already in progress.
+// pinWorkflowDefinition ensures the task carries a valid definition pin for
+// the workflow it names. A valid pin is kept; a missing or mismatched one is
+// resolved again from the active definitions.
 func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
 	pinned, ok, err := pinnedDefinitionID(task)
 	if err != nil {
@@ -2017,14 +1788,8 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 	return d.pinWorkflowFromCollection(ctx, task, collection, version)
 }
 
-// pinFailure carries the park class a workflow-definition pin failure needs.
-// The class is decided where the cause is known -- inside
-// pinWorkflowDefinition and pinWorkflowFromCollection -- never inferred from
-// the reason text at the park site. A defect in the task's own stored pin, or a
-// definition set that no longer offers the workflow the task names, is durable:
-// the same dispatch fails again on every requeue until an operator repairs the
-// row or the configuration, so it parks operator-actionable. Only a State
-// Store read or persist failure is environmental, where a requeue can succeed.
+// pinFailure carries the park class for a pin failure: operator-actionable
+// for a bad pin or missing workflow, transient for a store error.
 type pinFailure struct {
 	class taskstate.ParkClass
 	err   error
@@ -2043,11 +1808,8 @@ func pinParkClass(err error) taskstate.ParkClass {
 	return taskstate.ParkNeedsHuman
 }
 
-// pinnedDefinitionID reports the workflow a task's stored definition pin names,
-// with ok false for a task carrying no pin. It enforces what this package owns
-// about a stored pin: the YAML hashes to the digest recorded beside it, and it
-// declares an id at all. A pin failing either is a row an operator has to
-// resolve, not one to silently overwrite.
+// pinnedDefinitionID returns the workflow id a task's pin declares, checking
+// its digest. ok is false when there is no pin.
 func pinnedDefinitionID(task *workflow.Task) (string, bool, error) {
 	if task.WorkflowDefinitionYAML == "" {
 		return "", false, nil
@@ -2062,11 +1824,9 @@ func pinnedDefinitionID(task *workflow.Task) (string, bool, error) {
 	return id, true, nil
 }
 
-// runActionPlaybooks runs the action playbooks matching a task that is about
-// to be pinned, which happens once per task.
-// A run never affects routing and its failure never fails the task. A task
-// that already names a workflow is the approval requeue and is skipped, as
-// it is for workflow playbooks.
+// runActionPlaybooks runs the action playbooks matching a task before it is
+// pinned. Failures never fail the task; tasks already naming a workflow are
+// skipped.
 func (d *Daemon) runActionPlaybooks(ctx context.Context, task *workflow.Task) {
 	if d.Playbooks == nil || d.PlaybookLedger == nil || task.Workflow != "" {
 		return
@@ -2076,14 +1836,8 @@ func (d *Daemon) runActionPlaybooks(ctx context.Context, task *workflow.Task) {
 	}
 }
 
-// resolveWorkflowID picks the definition id to pin. A playbook whose trigger
-// matches the task decides, ahead of the kind/label bindings; anything else
-// falls through to workflow.ResolveWorkflowID unchanged.
-//
-// A task that already names a workflow is skipped entirely: that assignment is
-// the waiting_human -> approved requeue handoff, a decision already made about
-// this specific task, and a trigger that still matches its labels must not
-// overturn it.
+// resolveWorkflowID picks the definition to pin: a matching playbook, then
+// the kind/label bindings. A task already naming a workflow keeps it.
 func (d *Daemon) resolveWorkflowID(task *workflow.Task, available map[string]struct{}) (string, error) {
 	if d.Playbooks == nil || task.Workflow != "" {
 		return workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
@@ -2175,16 +1929,9 @@ func (d *Daemon) taskRunRetryBackoff() time.Duration {
 	return defaultTaskRunRetryBackoff
 }
 
-// requestTaskRun publishes the taskrun request and retries while no
-// archie-agent has subscribed yet (nats.ErrNoResponders): the container
-// pool's Acquire returns as soon as Docker has issued the start syscall,
-// not once the spawned container has connected to core NATS and subscribed
-// to this per-task subject --
-// a gap of hundreds of milliseconds to a few seconds that would otherwise
-// fail the very first request deterministically, every time, on every
-// task. Any error other than ErrNoResponders (encode failures, a context
-// that's already done, etc.) is returned immediately without retrying,
-// since those don't mean "not ready yet".
+// requestTaskRun publishes the taskrun request, retrying on
+// nats.ErrNoResponders until the container subscribes. Other errors return
+// at once.
 func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) ([]byte, error) {
 	subject := agentnats.SubjectForTask(taskID)
 	deadline := time.Now().Add(d.taskRunReadyTimeout())
@@ -2218,13 +1965,8 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 	if token := d.ConnectedNATS.Token; token != "" {
 		env = append(env, "NATS_TOKEN="+token)
 	}
-	// The State Store gRPC target follows the same seam as NATS_URL/
-	// NATS_TOKEN above. It is always
-	// the configured [services.state].target after the in-process serving
-	// path is deleted. stateStoreToken is this task's own scoped credential
-	// (see stateStoreGrantToken) -- never d.ConnectedStateStore.Token, which
-	// is the daemon's administrative credential and must never reach a
-	// container.
+	// Pass the State Store target with this task's scoped token, never the
+	// daemon's own.
 	if d.ConnectedStateStore.URL != "" {
 		env = append(env, "STATE_STORE_URL="+d.ConnectedStateStore.URL)
 		if stateStoreToken != "" {
@@ -2246,11 +1988,8 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 	return env
 }
 
-// stateStoreGrantToken issues this task's scoped State Store credential, or
-// ("", no-op revoke, nil) when no State Store is configured. It fails closed
-// -- rather than falling back to the daemon's administrative token -- when a
-// State Store is configured but no StateStoreGrantIssuer is wired, which is
-// a composition bug, not a runtime condition to paper over.
+// stateStoreGrantToken issues the task's scoped State Store token, or "" when
+// no State Store is configured. It fails when no issuer is wired.
 func (d *Daemon) stateStoreGrantToken(task *workflow.Task) (string, func(), error) {
 	if d.ConnectedStateStore.URL == "" {
 		return "", func() {}, nil
@@ -2268,17 +2007,8 @@ func (d *Daemon) configFor(task *workflow.Task) config.Config {
 	return d.Cfg.Get()
 }
 
-// captureAttemptConfig persists the effective task configuration this attempt
-// runs under, as a durable event on the attempt's own key.
-//
-// It is written where the configuration is materialised for the dispatch, so
-// the document is exactly what the run received. The published configuration
-// snapshot cannot answer this: it is the CURRENT configuration, replaced on
-// every publish, so a run that finished last week has no record anywhere else.
-//
-// Fail-open by construction: a configuration that could not be recorded is
-// worth a log line and nothing more. Parking a task over a reporting failure
-// would trade the run for the receipt.
+// captureAttemptConfig records the attempt's effective configuration as an
+// event. Failures are logged.
 func (d *Daemon) captureAttemptConfig(ctx context.Context, task *workflow.Task, cfg config.TaskConfig) {
 	if d.Store == nil {
 		return
@@ -2355,17 +2085,9 @@ func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 	return nil
 }
 
-// identityMayAct reports whether the identity a task carries may be acted on.
-// A denial also carries the park class the task would need: a name that no
-// longer resolves is fixable by re-adding the identity (transient), while a
-// retired or deactivated identity is a deliberate operator state (terminal).
-// An empty identity is the single-identity root and always may act. A
-// non-empty identity must resolve to a configured runner and pass the
-// lifecycle check; otherwise the returned reason says why it may not. This is
-// the single task-side fail-closed point, mirroring identity.Resolve's
-// credential-side behaviour: a task naming an identity archie no longer knows
-// -- renamed, retired, or deleted in the control plane -- must park, never
-// fall back to the root forge's credential.
+// identityMayAct reports whether a task's identity may act, and the park
+// class if not. Empty is the root identity. An unknown or inactive identity
+// never falls back to the root forge.
 func (d *Daemon) identityMayAct(ctx context.Context, name string) (bool, string, taskstate.ParkClass) {
 	if name == "" {
 		return true, "", ""
@@ -2442,12 +2164,8 @@ func (d *Daemon) repoFor(t *workflow.Task) (config.Repo, bool) {
 	return config.Repo{}, false
 }
 
-// allowConcurrentForTask reports whether the task's owning repo has opted
-// into concurrent task dispatch (config.Repo.AllowConcurrent). The repo is
-// resolved through repoFor, which selects the identity-scoped repo list when
-// task.Identity names a configured identity -- so multi-identity concurrency
-// policy comes from the identity's own config, not the root daemon's.
-// Unknown repos default to the safe, serialized behavior.
+// allowConcurrentForTask reports whether the task's repo allows concurrent
+// tasks. Unknown repos do not.
 func (d *Daemon) allowConcurrentForTask(task *workflow.Task) bool {
 	if !task.HasRepository() {
 		return true
@@ -2466,14 +2184,7 @@ func (d *Daemon) LastPollAt() time.Time {
 	return time.Unix(0, ns).UTC()
 }
 
-// markPoll stamps the start of a poll pass. It is called from both poll
-// paths: Run's single-identity loop (via poll) and runIdentities' per-identity
-// goroutines (via pollForIdentity).
-//
-// The stamp is the pass's START, not its completion: a pass that hangs on an
-// unreachable forge leaves the stamp stale, which is exactly the signal an
-// operator needs. Stamping the completion instead would leave the last
-// successful pass's time in place, so a wedged poller would look healthy.
+// markPoll stamps the start of a poll pass, so a hung pass shows as stale.
 func (d *Daemon) markPoll() {
 	d.lastPollAt.Store(time.Now().UnixNano())
 }

@@ -15,14 +15,9 @@ import (
 // on the envelope's source-independent key.
 type ReactionPublisher func(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error
 
-// scanPRReviewReactions is the poll backstop's core for one PR (decision 2):
-// list review activity since the task's persisted cursors, publish every
-// non-own record as a reaction, and return the advanced cursors. The cursors
-// advance past every record seen -- skipped own comments included -- so a
-// record is listed once and never re-listed on a later scan. On a publish
-// failure the error carries: the caller keeps the old cursors, and the next
-// scan re-fetches the records it did not get to (PublishUnique's dedup
-// absorbs any re-delivery).
+// scanPRReviewReactions publishes review activity on one PR since the
+// cursors and returns the advanced cursors. On a publish failure the caller
+// keeps the old cursors.
 func scanPRReviewReactions(
 	ctx context.Context,
 	reader forge.PullRequestReviewReader,
@@ -82,11 +77,8 @@ func scanPRReviewReactions(
 	return newReviewCursor, newCommentCursor, nil
 }
 
-// scanPRReviews runs the shared per-PR review scan over every open PR task
-// (reconcilePRs's shape): one pass over all pr_open tasks, each scanned with
-// the forge client its own identity owns. A forge without the review-reader
-// capability is skipped, not an error. Wired after reconcilePRs so a PR
-// that just left pr_open is not scanned for reactions in the same pass.
+// scanPRReviews scans every open PR task for review activity with its
+// identity's forge. Forges without review reading are skipped.
 func (d *Daemon) scanPRReviews(ctx context.Context) {
 	if d.Store == nil || d.Tasks == nil {
 		return
@@ -110,11 +102,7 @@ func (d *Daemon) scanPRReviews(ctx context.Context) {
 }
 
 func (d *Daemon) scanOnePR(ctx context.Context, reader forge.PullRequestReviewReader, t *workflowtask.Task) {
-	// The reactions this scan publishes key on the task's org, resolved from
-	// the owning identity through the same org RPC the poll uses, so a poll
-	// and a webhook delivery of one review collapse under one key. An org-RPC
-	// failure skips the task for this scan, cursors unchanged, rather than
-	// publishing under the default org.
+	// Resolve the org; on failure skip this task for now.
 	if t.Org == "" {
 		resolved, err := d.identityOrg(ctx, d.publisherIdentity(t.Identity))
 		if err != nil {
