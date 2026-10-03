@@ -38,10 +38,8 @@ type KitSpec struct {
 	InstallDone func()
 }
 
-// StartKit creates and starts a Kit container, then brings it to the state
-// a harness may run in: install hooks run as their users, the Kit's files
-// written as the harness user, and startup hooks run. A failing install or
-// foreground startup hook removes the container and returns the hook's
+// StartKit creates and starts a Kit container and runs its install and
+// startup hooks. A failing hook removes the container and returns its
 // output.
 func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error) {
 	var mounts []mount.Mount

@@ -14,20 +14,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/servicediscovery"
 )
 
-// Register announces service's instance ep with the registry and keeps its
-// heartbeat fresh until the returned Registration is unregistered or ctx is
-// cancelled.
-//
-// It writes the service's durable installed marker once (idempotent: an
-// existing marker is left alone) -- that marker is what makes the service
-// "installed" rather than NotInstalled -- then writes a live heartbeat entry
-// for ep and refreshes it on an interval. If the service's process stops
-// without calling Unregister (its ctx is cancelled, or it crashes), the entry
-// expires via the bucket TTL and watchers observe a Leave; only an explicit
-// uninstall of the whole service removes the installed marker.
-//
-// ep.ID must be non-empty and must not contain the registry key separator; the
-// service name must likewise avoid the separator (see the package doc).
+// Register writes service's installed marker if missing and heartbeats ep
+// until it is unregistered or ctx ends. ep.ID and service must not contain
+// the key separator.
 func (c *Client) Register(ctx context.Context, service string, ep servicediscovery.Endpoint) (*Registration, error) {
 	if ep.ID == "" {
 		return nil, fmt.Errorf("register %s: %w: endpoint ID is required", service, ErrInvalidConfig)

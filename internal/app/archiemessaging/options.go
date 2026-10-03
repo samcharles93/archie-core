@@ -1,9 +1,5 @@
-// Package archiemessaging composes the standalone Messaging Service: the external
-// channel connections (Telegram, email, webhook) served against a Gateway running
-// over its gRPC contract.
-//
-// The Messaging Service owns channel persistent connections and dispatches
-// turns directly to Gateway's ChatContract over gRPC.
+// Package archiemessaging composes the Messaging Service: chat channel
+// connections that send turns to the Gateway over gRPC.
 package archiemessaging
 
 import (

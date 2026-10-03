@@ -16,13 +16,8 @@ const (
 	markerSuffix = "-->"
 )
 
-// markerData is the provenance one block's marker carries. The same shape is
-// written into a scope's live document and into its HISTORY.md; the last two
-// fields are set only on a retained state, so a live block never carries
-// them.
-//
-// json escapes newlines, so the marker is always exactly one line: a field
-// containing one cannot break the block's first-line shape.
+// markerData is a block's provenance. The last two fields are set only on
+// retained states. JSON keeps the marker on one line.
 type markerData struct {
 	ID         string    `json:"id"`
 	Revision   int       `json:"revision"`

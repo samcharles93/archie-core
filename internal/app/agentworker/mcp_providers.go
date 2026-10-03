@@ -25,11 +25,9 @@ type mcpProviderSet struct {
 
 type mcpProviderBuilder func(config.MCPServer, mcp.SamplingHandler) (toolprovider.Engine, string, error)
 
-// startMCPProviders creates MCP transports from config, starts them,
-// discovers tools, and registers them into a local registry. A non-nil
-// sampling handler answers server-initiated sampling/createMessage requests
-// (nil leaves the method refused, the client's own default). Returns nil when
-// there are no servers configured.
+// startMCPProviders starts the configured MCP servers and registers their
+// tools. sampling answers sampling requests when non-nil. Returns nil with
+// no servers.
 func startMCPProviders(
 	ctx context.Context,
 	servers []config.MCPServer,
@@ -111,13 +109,7 @@ func mcpTransportForServer(
 		if command == "" {
 			return nil, fmt.Errorf("MCP stdio server %q requires a command", name)
 		}
-		// storage.MCPNPMCacheMountDir is a shared Docker volume mounted on
-		// every task container (internal/storage's alwaysOnCacheVolumes),
-		// so an npx-launched MCP server reuses a warm npm cache across
-		// tasks instead of re-resolving/re-downloading from the registry
-		// in each fresh ephemeral container. Mirrors the daemon's own
-		// npx MCP servers (cmd/archied/main.go's npmCacheServerEnv),
-		// which persists across daemon restarts the same way.
+		// Share the npm cache volume across task containers.
 		return mcp.NewStdioTransport(mcp.StdioTransportConfig{
 			Command: command,
 			Args:    append([]string(nil), server.Args...),

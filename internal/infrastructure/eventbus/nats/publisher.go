@@ -36,11 +36,7 @@ func (c *Client) publish(ctx context.Context, msg *nats.Msg) error {
 	return nil
 }
 
-// Request performs a core-NATS request/reply and returns the response payload.
-//
-// This exists so callers never need the raw connection: the original API
-// exposed Conn() *nats.Conn, which put the SDK type in every caller's
-// imports.
+// Request performs a core NATS request and returns the reply payload.
 func (c *Client) Request(ctx context.Context, subject string, payload []byte) ([]byte, error) {
 	conn, err := c.connection()
 	if err != nil {

@@ -24,11 +24,8 @@ var _ servicediscovery.ServiceRegistry = (*Client)(nil)
 // presence matters; the value exists so the bucket is self-describing.
 var installedMarkerValue = []byte("installed")
 
-// Client owns the NATS connection and the two registry buckets: a heartbeat
-// bucket (one live endpoint per instance) and a durable installed bucket (one
-// marker per service that has ever registered). It implements
-// [servicediscovery.ServiceRegistry] and provides the registration side a
-// service uses to announce itself.
+// Client implements servicediscovery.ServiceRegistry and registration over
+// the heartbeat and installed buckets.
 type Client struct {
 	conn      *nats.Conn
 	kv        jetstream.KeyValue // heartbeat bucket
@@ -37,13 +34,8 @@ type Client struct {
 	log       *slog.Logger
 }
 
-// Connect dials the broker and provisions the two registry buckets. The bucket
-// that carries heartbeats is configured with a TTL so stale entries expire
-// (with a marker TTL so watchers observe the expiry as a leave); the installed
-// bucket has no TTL so a marker persists for the life of the install.
-//
-// On any failure the partially-built connection is closed before returning, so
-// a failed Connect leaks nothing.
+// Connect dials NATS and creates the heartbeat bucket (with TTL) and the
+// installed bucket (without). On failure it closes the connection.
 func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error) {
 	cfg = cfg.withDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -138,13 +130,8 @@ func (c *Client) Close() {
 	c.log.Debug("service registry connection closed")
 }
 
-// Resolve returns the current healthy endpoints for service.
-//
-// It returns servicediscovery.ErrNotInstalled when the service's installed
-// marker is absent (the service was never installed). When the service is
-// installed but has no live endpoint right now -- all its heartbeats expired or
-// were unregistered -- it returns a possibly-empty slice and a nil error. That
-// distinction is the contract's governing semantic; see the package doc.
+// Resolve returns service's live endpoints, possibly none. It returns
+// servicediscovery.ErrNotInstalled when the service has no marker.
 func (c *Client) Resolve(ctx context.Context, service string) ([]servicediscovery.Endpoint, error) {
 	if err := c.requireInstalled(ctx, service); err != nil {
 		return nil, err
@@ -191,15 +178,9 @@ func (c *Client) Resolve(ctx context.Context, service string) ([]servicediscover
 	return eps, nil
 }
 
-// Watch returns a channel that emits Join and Leave events as service's
-// membership changes, until ctx is cancelled. The channel is closed when ctx
-// is cancelled.
-//
-// It returns servicediscovery.ErrNotInstalled when the service's installed
-// marker is absent at call time. A service that is installed but has no live
-// endpoint returns a live channel that simply does not emit until an endpoint
-// joins. Watching a service that becomes installed only after this call returns
-// requires re-calling Watch.
+// Watch emits Join and Leave events for service until ctx ends, then closes
+// the channel. It returns servicediscovery.ErrNotInstalled when the service
+// has no marker.
 func (c *Client) Watch(ctx context.Context, service string) (<-chan servicediscovery.Event, error) {
 	if err := c.requireInstalled(ctx, service); err != nil {
 		return nil, err
@@ -215,15 +196,8 @@ func (c *Client) Watch(ctx context.Context, service string) (<-chan servicedisco
 	return out, nil
 }
 
-// fanWatch translates KV updates into contract Events until ctx is cancelled or
-// the underlying watcher closes.
-//
-// A live instance heartbeats by re-Putting its key, which the KV watch reports
-// as another Put. That must not be re-emitted as a Join: only a genuine
-// appearance of an ID (including its first appearance in the initial snapshot)
-// is a Join, and only its genuine disappearance is a Leave. The known set
-// deduplicates refreshes so the stream carries membership changes, not
-// liveness pings.
+// fanWatch converts KV updates to Join and Leave events until ctx ends,
+// ignoring heartbeat refreshes.
 func (c *Client) fanWatch(ctx context.Context, service string, watcher jetstream.KeyWatcher, out chan<- servicediscovery.Event) {
 	defer close(out)
 	defer func() { _ = watcher.Stop() }()
@@ -283,13 +257,8 @@ func (c *Client) requireInstalled(ctx context.Context, service string) error {
 	return nil
 }
 
-// eventFromEntry converts one KV entry into a contract Event.
-//
-// A Put is a Join, and its value carries the full endpoint. A delete or purge
-// marker -- including one left by a heartbeat TTL expiry -- is a Leave; the
-// value is gone, so it reconstructs the instance from the key with an empty
-// address (the ID still identifies the instance). It reports false for an entry
-// it cannot interpret.
+// eventFromEntry converts a KV entry to an event: a Put is a Join, a delete
+// or expiry a Leave. It reports false for an entry it cannot read.
 func eventFromEntry(service string, entry jetstream.KeyValueEntry) (servicediscovery.Event, bool) {
 	switch entry.Operation() {
 	case jetstream.KeyValuePut:

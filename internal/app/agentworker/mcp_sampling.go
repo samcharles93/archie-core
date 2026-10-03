@@ -14,22 +14,13 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 )
 
-// taskSamplingModel is the model a task-scoped MCP server's sampling request
-// is answered with: the task's builder model, the same fallback an agent stage
-// whose role is unset uses (workflow.AgentStage.resolveModel) and the same
-// role the daemon's chat path falls back to. Empty means the task has no model
-// to answer with.
+// taskSamplingModel returns the task's builder model, or "".
 func taskSamplingModel(cfg config.TaskConfig) string {
 	return strings.TrimSpace(cfg.Models["builder"])
 }
 
-// taskSamplingHandler answers an MCP server's sampling/createMessage request
-// from the task's own model runtime, the same way the daemon's chat path
-// answers it from its chat model. The worker hosts the same configured MCP
-// servers as a chat turn, so without this a server's sampling request is
-// answered on one path and refused on the other. A missing runtime or model is
-// a refused request, never a dropped one: the client maps the returned error
-// to a JSON-RPC error for that request alone.
+// taskSamplingHandler answers MCP sampling requests with the task's model.
+// Without a runtime or model the request is refused.
 func taskSamplingHandler(llm *runtime.Runtime, cfg config.TaskConfig) mcp.SamplingHandler {
 	return func(ctx context.Context, req mcp.SamplingRequest) (mcp.SamplingResult, error) {
 		if llm == nil {

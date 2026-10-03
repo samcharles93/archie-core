@@ -8,15 +8,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels"
 )
 
-// runChannel supervises one channel for the life of the service. It starts the
-// channel and, when the channel stops because a restart was requested, starts
-// the replacement. A channel that returns on its own is recorded and not
-// restarted, so a channel whose configuration cannot run does not spin.
-//
-// The supervisor is per channel rather than one loop over every channel
-// because a channel-settings change must restart exactly the channel whose
-// settings changed: cancelling one run context stops one channel and leaves the
-// rest serving.
+// runChannel runs one channel and starts its replacement after a requested
+// restart. A channel that exits on its own is not restarted.
 func (s *Service) runChannel(ctx context.Context, c *channelInstance) {
 	defer s.wg.Done()
 	for {
@@ -74,13 +67,8 @@ func (s *Service) runChannel(ctx context.Context, c *channelInstance) {
 	}
 }
 
-// restartChannel stops the running channel id and starts a replacement built
-// from next. The replacement is built before the running channel is touched, so
-// a configuration this build cannot run leaves the running channel serving
-//
-// A channel that is not currently supervised is not restarted: it already
-// stopped on its own, and resurrecting it here would race that exit. The caller
-// reports it.
+// restartChannel builds a replacement for channel id from next, then stops
+// the old one and starts it. A channel not running is not restarted.
 func (s *Service) restartChannel(id string, next ResolvedConfig) error {
 	c := s.instanceByID(id)
 	if c == nil {

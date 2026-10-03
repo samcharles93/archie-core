@@ -18,14 +18,7 @@ const historyFileName = "HISTORY.md"
 // grouping by kind would be a second index over the same file.
 const historySectionName = "history"
 
-// historyMaxFileBytes bounds each scope's HISTORY.md, deliberately far above
-// the live document's bound (builtin's 100KB default, which is what
-// production passes: bootstrap builds the engine with a 0 maxFileBytes).
-//
-// It has its own bound because history grows on every Update and every Forget
-// while the live document does not. That question stays open; this bound only
-// makes reaching it a deliberate, enormous amount of history rather than an
-// accident.
+// historyMaxFileBytes bounds each scope's HISTORY.md.
 const historyMaxFileBytes = 4 * 1024 * 1024
 
 // appendHistory appends one retained state -- the record as it was while
@@ -45,12 +38,7 @@ func appendHistory(h *builtin.Store, m markerData, content string, at time.Time,
 	return nil
 }
 
-// revisionsOf returns one record's retained states as HISTORY.md holds them,
-// oldest first. Document order is append order, and a retained state is
-// appended exactly when it stops being live, so no sort is needed -- or
-// wanted: a crash between a history append and the live write leaves two
-// entries for one revision, and sorting would not make
-// that less true.
+// revisionsOf returns one record's retained states, oldest first.
 func revisionsOf(h *builtin.Store, scope domainmemory.Scope, id domainmemory.RecordID) []domainmemory.Revision {
 	var revisions []domainmemory.Revision
 	for _, block := range parseBlocks(h.Render()) {

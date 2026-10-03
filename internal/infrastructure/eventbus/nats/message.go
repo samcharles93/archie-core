@@ -12,11 +12,7 @@ import (
 // with the same value inside Config.DedupWindow are suppressed by the server.
 const idempotencyHeader = "Nats-Msg-Id"
 
-// message adapts a jetstream.Msg to the broker-neutral contract.
-//
-// It is unexported: callers receive it as an eventbus.Message, so no consumer
-// can reach the SDK type through it. Fetch once returned jetstream.Msg
-// directly, which put the NATS SDK in every consumer's imports.
+// message adapts a jetstream.Msg to eventbus.Message.
 type message struct {
 	msg jetstream.Msg
 }

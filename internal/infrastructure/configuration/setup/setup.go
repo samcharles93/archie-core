@@ -1,10 +1,5 @@
-// Package setup drives archied's interactive first-run configuration flow
-// and produces the TOML edits to persist it. See the [Run] doc comment for
-// why it returns edits rather than a config.Config: the whole point of this
-// feature is to stop the config-writing code and the config-reading code
-// disagreeing about the schema, and building a second, parallel
-// representation to validate against would reintroduce exactly that risk
-// inside setup itself.
+// Package setup runs archied's first-run configuration flow and returns the
+// TOML edits to persist it.
 package setup
 
 import (
@@ -16,14 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
-// SecretSink is where setup sends the secret values a step collects. setup
-// edits config.toml keys; it does not write the env file itself. Put is
-// expected to buffer rather than write immediately -- the caller commits only
-// once the config text setup produced has been proven loadable, so a
-// validation failure after some secrets were already prompted for never
-// leaves a secret written without the config that references it, or vice
-// versa. [EnvFileSink] is the concrete implementation for the env file that
-// sits beside config.toml; the caller owns the path and constructs it.
+// SecretSink receives the secret values setup collects. Put buffers; the
+// caller commits once the generated config is proven loadable.
 type SecretSink interface {
 	// Put records that key (as looked up through engine) must resolve to
 	// value once Commit is called.
@@ -53,19 +42,8 @@ type ExistingValues struct {
 // value and let Run decide the flattening order.
 type tableEdits = map[string]map[string]string
 
-// Params supplies pre-answered values for the setup flow's question sites.
-// Each step consults Params first and only asks the Prompter when the
-// corresponding field is unset, so an unattended install can state what it
-// wants without a terminal and without matching against prompt text -- the
-// brittleness class removed in 9a4f11c (prompt text is not a stable key for
-// a flag-to-answer mapping).
-//
-// Provider is a config class ("openai", "anthropic", "openrouter", "gemini",
-// "groq", "deepseek", "mistral", or "ollama" for the self-hosted path). Model
-// is the bare model name; the step adds the "class/" prefix. TelegramUserIDs
-// non-empty is the signal to configure Telegram -- the step already refuses
-// an empty allowlist, so an empty slice means "ask" (or "skip" when the
-// prompter's default is no).
+// Params pre-answers setup questions; a step prompts only for unset fields.
+// Provider is a config class; Model is the bare model name.
 type Params struct {
 	BotUser   string
 	Operator  string
@@ -74,34 +52,22 @@ type Params struct {
 	Provider  string // openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama
 	Model     string // bare model name; the step adds the "class/" prefix
 
-	// TelegramUserIDs is an access policy, not a credential: IDs are not secret.
-	// Non-empty means "configure Telegram".
-	// The three reference fields below name where an already-stored secret
-	// lives, as engine:key. A reference is not a secret -- an engine name and a
-	// key name are not sensitive -- which is why a reference may be
-	// parameterised while a value may not. When one is set the step writes the
-	// reference to TOML and asks nothing, because the value is already in the
-	// engine and setup does not own it.
+	// TelegramUserIDs non-empty configures Telegram. The reference fields name
+	// already-stored secrets as engine:key; when set, the step writes the
+	// reference without prompting.
 	ForgeTokenRef     config.SecretRef
 	ProviderAPIKeyRef config.SecretRef
 	TelegramTokenRef  config.SecretRef
 
 	TelegramUserIDs []int64
 
-	// There is deliberately no secret-valued field here, for forge tokens,
-	// provider API keys or bot tokens alike. Secrets are set in a secret engine
-	// and this flow only ever writes a reference to one; a value in Params would
-	// arrive from a command line, landing in shell history and process listings,
-	// and would be a second way to set a secret that no engine knows about.
-	// Values reach an engine through SecretSink, from a prompt.
+	// Secret values are never parameters; they come from a prompt through
+	// SecretSink.
 }
 
-// Run drives the interactive setup flow and returns the TOML edits to
-// apply. It does not read or write any file itself: the caller renders the
-// edits (tomlwrite.Generate against a fresh template, or tomlwrite.Apply
-// against an existing config's bytes for a re-run) and must prove the
-// result loads through a real configuration.Loader before installing it or
-// calling secrets.Commit.
+// Run drives the setup flow and returns the TOML edits to apply. It writes no
+// files; the caller must load the result before installing it or committing
+// secrets.
 func Run(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, existing ExistingValues) ([]tomlwrite.Edit, error) {
 	return RunParams(ctx, p, discovery, secrets, existing, Params{})
 }

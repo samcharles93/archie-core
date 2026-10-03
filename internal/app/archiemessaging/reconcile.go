@@ -20,12 +20,8 @@ type chatSettingsSource interface {
 	RuntimeChatConfig(ctx context.Context, base config.ChatConfig) (config.ChatConfig, int64, error)
 }
 
-// reconcileLoop re-reads the stored channel settings on the apply-status
-// restamp interval until ctx ends. A poll rather than a stream: the restamp
-// interval is the cadence every process already reports at, the messaging
-// process has no other control-plane watch to share a reconnect ladder with,
-// and a stored document that cannot be read must leave the running channels
-// alone.
+// reconcileLoop re-reads stored channel settings every restamp interval
+// until ctx ends.
 func (s *Service) reconcileLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.reconcileInterval)
 	defer ticker.Stop()
@@ -41,13 +37,8 @@ func (s *Service) reconcileLoop(ctx context.Context) {
 	}
 }
 
-// reconcileOnce re-reads the stored channel settings and, when the version
-// moved, applies the change to the running channels and records the outcome in
+// reconcileOnce applies changed channel settings and records the outcome in
 // apply status.
-//
-// The file document is re-resolved first, exactly as the /restart path does, so
-// the layering is the same projection boot used: the store overrides the file,
-// and a field the store omits keeps the file's value.
 func (s *Service) reconcileOnce(ctx context.Context) error {
 	base, err := Resolve(s.currentConfig().Options, s.log)
 	if err != nil {
@@ -102,22 +93,9 @@ func resolveChatSecrets(base ResolvedConfig, layered config.ChatConfig) (Resolve
 	return next, nil
 }
 
-// applyChannelSettings applies a freshly resolved chat config to the running
-// channels. A channel restarts only when its own transport settings changed;
-// every other channel keeps serving. It reports whether every requested restart
-// was carried out, so a rebuild that failed is retried rather than recorded as
-// applied.
-//
-// Machine-level settings do not restart a channel. The chat session defaults
-// (workspace, filesystem access, max steps, rate limit) are not part of the
-// messaging projection at all, and show_tool_calls is handed to the running
-// Telegram gateway in place, so both apply to turns that start after the change
-// rather than interrupting one in flight.
-//
-// The composed set and the listen addresses are fixed for the life of the
-// process. Enabling or disabling a channel and rebinding a listen address are
-// process bindings; the change is refused and reported for a restart instead of
-// applied.
+// applyChannelSettings restarts only channels whose transport settings
+// changed and reports whether every restart succeeded. Enabling or
+// disabling a channel or changing a listen address needs a process restart.
 func (s *Service) applyChannelSettings(next ResolvedConfig) (bool, error) {
 	current := s.currentConfig()
 	effective, outstanding := pinProcessBindings(current, next)

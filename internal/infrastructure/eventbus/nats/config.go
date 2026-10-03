@@ -36,12 +36,7 @@ type Config struct {
 	// StreamName is the JetStream stream holding the bound subjects.
 	StreamName string
 
-	// Subjects are the subjects the stream carries. Required.
-	//
-	// Composition supplies these rather than the package hardcoding them: the
-	// bus must not know which subjects belong to which domain, and archied
-	// and archie-agent previously declared the same stream separately, free
-	// to disagree about its subjects, retention and dedup window.
+	// Subjects are the stream's subjects. Required.
 	Subjects []string
 
 	// ConsumerName is the durable pull consumer Fetch reads from.
@@ -52,25 +47,11 @@ type Config struct {
 	// Required.
 	FilterSubject string
 
-	// Retention is the stream's retention policy. Nil defaults to
-	// jetstream.WorkQueuePolicy (each message claimed by exactly one
-	// consumer), which is correct for ARCHIE_TASKS task distribution. A
-	// fan-out reaction stream passes jetstream.LimitsPolicy so every
-	// registered consumer sees every matching event; under WorkQueuePolicy a
-	// second consumer on an overlapping filter subject silently receives
-	// nothing (the trap documented in CLAUDE.md). The pointer form is what
-	// lets "unset" default to WorkQueuePolicy when the policy's zero value
-	// (LimitsPolicy) is a valid explicit choice.
+	// Retention is the stream's retention policy. Nil means WorkQueuePolicy;
+	// fan-out streams use FanOutRetention.
 	Retention *jetstream.RetentionPolicy
 
-	// MaxAge is the maximum age of messages the stream retains. Nil leaves
-	// the stream unbounded by age, which is correct for ARCHIE_TASKS: under
-	// WorkQueuePolicy acked messages are discarded, so its only bound is
-	// outstanding work. The pointer form distinguishes "unset" (nil,
-	// unbounded, today's behaviour) from an explicit zero (also unbounded,
-	// but expressed on purpose), exactly like Retention. The fan-out
-	// reaction stream sets a finite MaxAge so acknowledged reactions cannot
-	// accumulate forever.
+	// MaxAge bounds message age. Nil or zero means unbounded.
 	MaxAge *time.Duration
 
 	// DedupWindow is how long JetStream remembers a Nats-Msg-Id, suppressing
@@ -142,13 +123,7 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
-// FanOutRetention returns a pointer to jetstream.LimitsPolicy for use as
-// Config.Retention. It exists so composition can select fan-out retention
-// without importing the NATS SDK: the retention policy type stays behind this
-// package's boundary, like every other JetStream type. LimitsPolicy is the one
-// policy that cannot be expressed by leaving Retention unset (withDefaults
-// treats nil as WorkQueuePolicy), so the choice must be visible at the call
-// site.
+// FanOutRetention returns jetstream.LimitsPolicy for Config.Retention.
 func FanOutRetention() *jetstream.RetentionPolicy {
 	policy := jetstream.LimitsPolicy
 	return &policy

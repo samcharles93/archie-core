@@ -10,15 +10,8 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 )
 
-// EmbeddedServer owns an in-process NATS server with JetStream enabled. It
-// wraps nats-server/v2/server.Server so the SDK type never leaks past this
-// package: callers get only the client URL and Shutdown, never the server.
-//
-// The daemon embeds one of these for single-process deployments so reaction
-// delivery and task distribution share the same transport whether NATS runs
-// as a separate server or in-process. The daemon
-// owns the lifecycle: StartEmbedded before dialing the client, Shutdown after
-// the client closes.
+// EmbeddedServer is an in-process NATS server with JetStream. Start it
+// before dialing and shut it down after the client closes.
 type EmbeddedServer struct {
 	srv   *server.Server
 	log   *slog.Logger
@@ -73,11 +66,8 @@ func StartEmbedded(ctx context.Context, opts EmbeddedOptions, log *slog.Logger) 
 	}
 	srv.Start()
 
-	// Start is asynchronous; wait for the accept loop. If the daemon's ctx is
-	// already cancelled (shutdown racing boot), stop the server rather than
-	// wait the full readiness window. A ctx cancelled during the wait is
-	// tolerated: the wait is bounded, and a healthy server is ready in
-	// milliseconds.
+	// Wait for the server to accept connections, or stop it if ctx is already
+	// cancelled.
 	if err := ctx.Err(); err != nil {
 		srv.Shutdown()
 		return nil, fmt.Errorf("embedded nats startup: %w", err)

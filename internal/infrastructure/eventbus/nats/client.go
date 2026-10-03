@@ -26,12 +26,8 @@ type Client struct {
 	log      *slog.Logger
 }
 
-// Connect dials the broker and provisions the stream and pull consumer. The
-// stream uses file storage and the retention policy from Config.Retention
-// (defaulting to work-queue for task distribution).
-//
-// On any failure the partially-built connection is closed before returning, so
-// a failed Connect leaks nothing.
+// Connect dials NATS and creates the stream and pull consumer. On failure it
+// closes the connection.
 func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -129,15 +125,8 @@ func (c *Client) Close() {
 	c.log.Debug("nats connection closed")
 }
 
-// CoreConn exposes the raw connection for the NATS-specific RPC layers
-// (forgerpc, worktreerpc, natsrpc) that register their own core-NATS
-// subscriptions. The State Store is a gRPC contract, not a core-NATS RPC.
-//
-// This is the single sanctioned escape hatch and exists only because those
-// packages are themselves NATS infrastructure, not domain code. Domain and
-// application packages must use [Publisher], [Consumer] or [Requester]
-// instead; taking the connection there would put SDK types back into their
-// imports, which is what this package exists to prevent.
+// CoreConn returns the raw connection for the NATS RPC packages. Other
+// packages use Publisher, Consumer or Requester.
 func (c *Client) CoreConn() (*nats.Conn, error) { return c.connection() }
 
 // connection returns the live connection, or ErrNotConnected.
@@ -148,13 +137,8 @@ func (c *Client) connection() (*nats.Conn, error) {
 	return c.conn, nil
 }
 
-// Connected reports whether this client's connection to the broker is live.
-//
-// It reads the connection the client already holds. It deliberately does not
-// dial to check reachability: a fresh connection would report the dial's
-// success rather than this process's own bus being up, and it would put a
-// network round trip with its own timeout inside a caller that may be a chat
-// command handler.
+// Connected reports whether the client's connection is live, without
+// dialing.
 func (c *Client) Connected() bool {
 	conn, err := c.connection()
 	if err != nil {

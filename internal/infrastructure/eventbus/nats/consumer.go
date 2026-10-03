@@ -9,11 +9,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/eventbus"
 )
 
-// Fetch returns the next message from the pull consumer.
-//
-// It reports eventbus.ErrNoMessage when the poll timeout expires with nothing
-// queued. The original API returned (nil, nil) in that case, which every
-// caller had to remember to distinguish from a real message.
+// Fetch returns the next message, or eventbus.ErrNoMessage when the poll
+// times out.
 func (c *Client) Fetch(ctx context.Context) (eventbus.Message, error) {
 	if _, err := c.connection(); err != nil {
 		return nil, fmt.Errorf("fetch: %w", err)

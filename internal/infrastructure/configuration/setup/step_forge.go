@@ -9,11 +9,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
-// forgeToken names the env var a forge type's token is stored under. Used
-// by both the config edit (forge.token = {engine="env", key=...}) and the
-// secret sink, for the same reason cloudProviders is a single table in
-// step_provider.go: the installer's original bug was these two writes
-// disagreeing.
+// forgeToken maps a forge type to the env var its token is stored under.
 var forgeToken = map[string]string{
 	"github": "ARCHIE_GITHUB_TOKEN",
 	"gitea":  "ARCHIE_GITEA_TOKEN",
@@ -90,22 +86,9 @@ func forgeChoice(name string) (int, error) {
 	}
 }
 
-// stepForgeWithToken records the forge type and host and, when the operator
-// supplies one, stores the token in the secret engine and writes only the
-// reference to TOML.
-//
-// The token is always read from the prompt surface. A secret must never travel
-// as a parameter: a value passed in would arrive from a command line, where it
-// lands in shell history and every process listing, and it would be a second
-// way for a secret to be set that no secret engine knows about.
-// stepForgeWithToken records the forge type and host and writes a reference to
-// the token when one is configured.
-//
-// A tokenRef means the value already lives in a secret engine, so setup writes
-// the reference and asks nothing. Otherwise the token comes from a prompt, and
-// only from a prompt: a value supplied as a parameter would arrive from a
-// command line, where it lands in shell history and every process listing, and
-// would be a second way to set a secret that no engine knows about.
+// stepForgeWithToken records the forge type and host and the token
+// reference: tokenRef when set, otherwise a token read from the prompt and
+// stored in the secret engine.
 func stepForgeWithToken(ctx context.Context, p Prompter, secrets SecretSink, forgeType, host, tokenPrompt string, tokenRef config.SecretRef) (tableEdits, error) {
 	edits := tableEdits{"forge": {
 		"type": tomlwrite.String(forgeType),

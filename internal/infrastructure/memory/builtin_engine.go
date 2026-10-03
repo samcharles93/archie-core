@@ -66,12 +66,8 @@ type BuiltinEngine struct {
 	log   *slog.Logger
 }
 
-// NewBuiltinEngine builds an engine that persists each scope under its own
-// subdirectory of root, named hex(sha256(scope.Key())): never the key or an
-// id as a path component, so an opaque channel id can never traverse out of
-// root and two ids a filesystem treats as equivalent can never collide.
-// maxFileBytes <= 0 uses the store's own default for the live document;
-// HISTORY.md always uses historyMaxFileBytes.
+// NewBuiltinEngine stores each scope under root/hex(sha256(scope.Key())).
+// maxFileBytes <= 0 uses the store default.
 func NewBuiltinEngine(root string, maxFileBytes int) *BuiltinEngine {
 	return &BuiltinEngine{root: root, maxFileBytes: maxFileBytes, stores: make(map[string]*scopeStores)}
 }
@@ -83,17 +79,7 @@ func (e *BuiltinEngine) Manifest() domainmemory.Manifest {
 	return domainmemory.Manifest{RequiresNetwork: false}
 }
 
-// Bind takes the registrar's clock, which stamps CreatedAt/UpdatedAt, and its
-// optional logger.
-//
-// It deliberately ignores Registrar.Events. The only warn-level finding this
-// engine produces is a scanner hit, and there is no ratified memory event
-// vocabulary to emit it in: internal/events declares kinds for tasks,
-// curators, workflow stages and scheduling, none for memory, and the
-// composition binds no memory event sink at all (bootstrap registers the
-// engine with an empty Registrar). Emitting an invented kind into a sink
-// nobody binds would look wired and not be. The scanner's warning is a
-// diagnostic, not an event, and goes to Registrar.Log (see scanContent).
+// Bind takes the registrar's clock and logger.
 func (e *BuiltinEngine) Bind(host domainmemory.Registrar) {
 	e.clock = host.Clock
 	e.log = host.Log
@@ -126,14 +112,8 @@ func (e *BuiltinEngine) now() time.Time {
 
 // ── storage ────────────────────────────────────────────────────────────
 
-// scopeStoresFor returns the scope's document pair, opening it on first use
-// and caching it. create is false on every read path: a read must not leave
-// a scope directory behind, and a scope nothing was ever written to answers
-// as absent rather than as empty-but-created.
-//
-// Callers must have validated the scope already: Scope.Key() is empty for an
-// invalid scope, and caching on "" would pool every invalid scope into one
-// store under one directory.
+// scopeStoresFor returns the scope's cached document pair. create is false
+// for reads, which never create a directory. scope must be valid.
 func (e *BuiltinEngine) scopeStoresFor(scope domainmemory.Scope, create bool) (*scopeStores, bool, error) {
 	key := scope.Key()
 	e.mu.Lock()
@@ -188,16 +168,8 @@ func sectionFor(kind string) (string, error) {
 	return kind, nil
 }
 
-// scanContent applies the family's scanner to content about to be persisted,
-// before anything is written.
-//
-// A block-level threat fails the write loudly -- loudly, because a scanner
-// hit that only logs is a control that looks wired and is not -- while a
-// warn-level hit is stored and logged, which is what its level is documented
-// to mean ("allow the write but emit a warning"). Warn covers the
-// sensitive-data patterns: an API key, a token or a private key in stored
-// content is worth an audit line even though it is not worth refusing the
-// write over, and a warning that goes nowhere is the same as no scan at all.
+// scanContent rejects content with a block-level scanner hit and logs
+// warn-level hits.
 func (e *BuiltinEngine) scanContent(content string) error {
 	result := contentScanner.ScanContent(content)
 	switch result.Level {
@@ -212,18 +184,8 @@ func (e *BuiltinEngine) scanContent(content string) error {
 	return nil
 }
 
-// storeContent returns the content a block will actually hold, so that the
-// record Create and Update answer with is the record a later Get reads back
-// rather than what the caller handed in.
-//
-// The trimming is what makes that true at the content's edges: builtin.Store
-// trims a block, so content that begins or ends with whitespace would come
-// back without it -- or, for whitespace that is itself a blank line, as an
-// empty record. Content that is nothing but whitespace is rejected here for
-// the same reason. Interior blank lines and "## " lines are the block
-// format's own delimiters rather than whitespace at an edge, and are carried
-// through instead: renderBlock escapes them and parseBlocks undoes it, so
-// accepted content is never cut at one.
+// storeContent returns content as it will be stored: trimmed, and rejected
+// when empty.
 func storeContent(content string) (string, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
@@ -332,11 +294,8 @@ func (e *BuiltinEngine) List(_ context.Context, scope domainmemory.Scope) ([]dom
 	return orderHeads(records), nil
 }
 
-// orderHeads returns heads most recently updated first. The input is in
-// document order, which is creation order for a document this engine wrote;
-// reversing before the stable sort makes creation order the tie-break for two
-// records sharing an UpdatedAt, which is the common case for a coarse clock or
-// one Create burst.
+// orderHeads returns heads most recently updated first, ties in creation
+// order.
 func orderHeads(records []domainmemory.Record) []domainmemory.Record {
 	slices.Reverse(records)
 	slices.SortStableFunc(records, func(a, b domainmemory.Record) int {
@@ -400,14 +359,7 @@ func (e *BuiltinEngine) Update(_ context.Context, in domainmemory.RecordUpdate) 
 		return domainmemory.Record{}, notFound(in.Scope, in.ID)
 	}
 
-	// Read the document as it is on disk before anything is decided from it.
-	// This engine caches the scope's document and rewrites it whole, so the
-	// copy it holds can be a whole write out of date -- the Expected check
-	// below would compare against a revision that is already superseded, and
-	// the rewrite that follows it would write the stale copy back over the
-	// current one. What this does not fix: the rewrite is still
-	// last-writer-wins for this record and every other one, between the reload
-	// and the write.
+	// Reload from disk before checking Expected.
 	if err := stores.live.Reload(); err != nil {
 		return domainmemory.Record{}, err
 	}

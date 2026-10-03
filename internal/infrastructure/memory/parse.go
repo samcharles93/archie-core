@@ -6,19 +6,8 @@ import (
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 )
 
-// sectionHeaderPrefix matches the markdown store's own format (builtin's
-// sectionHeaderPrefix is unexported): a "## " line starts a named section,
-// and blocks within it are separated by one blank line. This package only
-// reads back what it wrote through builtin.Store.Add, so it only needs that
-// one documented format, not the general case builtin.Store itself parses.
-//
-// Those two delimiters are the format's structure, and builtin.Store owns
-// them: a blank line ends a block and a "## " line starts a section, so
-// content holding either would be read back as structure -- cut at the
-// delimiter, the remainder unaddressable. Content is therefore escaped on
-// the way out and unescaped on the way back (see encodeBlockContent), which
-// keeps a record's content whole without giving the store a second format to
-// parse.
+// sectionHeaderPrefix starts a section in the store's format. Blank lines
+// and "## " lines in content are escaped (see encodeBlockContent).
 const sectionHeaderPrefix = "## "
 
 // parsedBlock is one marked block read back out of a rendered document: the
@@ -75,16 +64,8 @@ func renderBlock(m markerData, content string) (string, error) {
 // otherwise read as structure.
 const contentEscape = `\`
 
-// encodeBlockContent escapes the content lines the store's format would
-// otherwise read as its own structure -- a blank line ends a block, and a
-// "## " line starts a section -- so that a record's content survives the
-// write whole (see sectionHeaderPrefix). An empty line becomes one backslash,
-// and a line already starting with a backslash or with "## " gains one, so
-// the two are never ambiguous: everything is written verbatim except lines
-// that start with a backslash, and every content line can therefore be
-// recovered by dropping the backslash it starts with (decodeBlockContent).
-// The common record -- one paragraph, no delimiter in sight -- is written
-// exactly as the caller wrote it, so the document stays hand-editable.
+// encodeBlockContent escapes blank lines and lines starting with "## " or a
+// backslash by prefixing a backslash. decodeBlockContent reverses it.
 func encodeBlockContent(content string) string {
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
@@ -112,17 +93,8 @@ func decodeBlockContent(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// parseBlocks reads every marked block out of a rendered document.
-//
-// A block with no marker, or one whose marker does not decode, was not
-// written by this engine -- an operator hand-edited the file, or it predates
-// the marker -- and is skipped. This engine's Store contract is only ever
-// asked about records it assigned an id to, so inventing an id for an
-// unmarked block would be a worse answer than not seeing it.
-//
-// Blocks are returned in document order, which is append order for a
-// document this engine wrote, and therefore the order HISTORY.md's retained
-// states come back in.
+// parseBlocks returns the marked blocks in a document, in order. Unmarked or
+// undecodable blocks are skipped.
 func parseBlocks(rendered string) []parsedBlock {
 	var blocks []parsedBlock
 	section := ""

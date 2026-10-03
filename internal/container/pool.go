@@ -53,15 +53,8 @@ type TaskPayload struct {
 	Inputs map[string]any `json:"inputs,omitempty"`
 }
 
-// WriteTaskJSON writes the task payload to <workspace>/.git/task.json.
-// The workspace directory must already exist.
-//
-// It goes under .git deliberately. The workspace is the task worktree the
-// agent commits from, and worktree.CommitAll stages with go-git's All
-// option, which does not honour .gitignore or .git/info/exclude -- a brief
-// at the worktree root is swept into the agent's commit and pushed onto the
-// task branch. Nothing under .git can ever be tracked, which is the same
-// reasoning that moved the prepared sentinel there.
+// WriteTaskJSON writes the task payload to <workspace>/.git/task.json, where
+// it is never committed.
 func WriteTaskJSON(workspace string, payload TaskPayload) error {
 	if workspace == "" {
 		return fmt.Errorf("task.json: empty workspace path")
@@ -114,11 +107,8 @@ type Pool struct {
 	teardowns map[string]*containerTeardown
 }
 
-// current returns the settings a new acquire should use: the live source when
-// the pool has one, otherwise the construction-time Config. Only the fields a
-// container-runtime-policies document can carry are taken from the live
-// source; DockerClient, RequireHostGateway, RegistryAuth and GracePeriod stay
-// construction-time, because none of them is part of that document.
+// current returns the per-acquire settings from the live source when set,
+// else the construction Config.
 func (p *Pool) current() Config {
 	if p.live == nil {
 		return p.cfg
@@ -162,18 +152,10 @@ type Config struct {
 	RequireHostGateway bool
 }
 
-// NewPool connects to the Docker daemon, optionally pulls the image,
-// and cleans up orphaned containers from a previous daemon crash.
-//
-// If cfg.DockerClient is set, it is reused (caller owns Close).
-// Otherwise a new client is created via client.FromEnv (pool owns Close).
-//
-// live, when non-nil, is the pool's live source of the per-acquire settings a
-// container-runtime-policies document can change (Image, MaxConcurrency,
-// MaxUptime, PullPolicy, Network). It is read on every acquire, so a stored
-// change reaches the next container without a restart; nil means cfg is fixed
-// for the pool's life. DockerClient, RequireHostGateway, RegistryAuth and
-// GracePeriod stay construction-time because the document never carries them.
+// NewPool connects to Docker, optionally pulls the image and removes orphaned
+// containers. A set cfg.DockerClient is reused and not closed. live, when
+// non-nil, supplies Image, MaxConcurrency, MaxUptime, PullPolicy and Network
+// on every acquire.
 func NewPool(ctx context.Context, cfg Config, live func() Config, log *slog.Logger) (*Pool, error) {
 	cli := cfg.DockerClient
 	if cli == nil {
@@ -232,10 +214,8 @@ func NewPool(ctx context.Context, cfg Config, live func() Config, log *slog.Logg
 }
 
 // Acquire creates and starts a container from image (empty means the
-// configured image) with the given mounts and environment variables. Mounts
-// are provided by the caller (typically from a storage.Backend). If MaxUptime
-// is set, the pool schedules a hard stop and remove of the container once
-// that lifetime cap elapses, regardless of task state.
+// configured one). With MaxUptime set, the container is stopped and removed
+// once it elapses.
 func (p *Pool) Acquire(ctx context.Context, image string, mounts []storage.Mount, env []string) (*Container, error) {
 	// One snapshot for the whole acquire: the image, pull policy, network,
 	// concurrency cap and max-uptime cap are all read once, so a settings
@@ -365,36 +345,15 @@ func (p *Pool) watchExit(ctx context.Context, id string) <-chan struct{} {
 	return exited
 }
 
-// containerTeardown is the one-shot teardown state for a live container: its
-// armed max-uptime reaper, and whether Docker stop/remove has been claimed.
-//
-// Both the reaper and Release tear a container down, and Timer.Stop cannot
-// unwind a callback that has already begun, so cancelling the timer is not
-// enough to keep them from overlapping. Claiming decides the winner instead:
-// exactly one path talks to Docker, and the loser skips straight to its own
-// bookkeeping.
+// containerTeardown is a live container's max-uptime timer and whether its
+// Docker teardown has been claimed.
 type containerTeardown struct {
 	timer  *time.Timer
 	closed bool
 }
 
-// armMaxUptime schedules a hard stop and remove for a container once its
-// lifetime cap elapses. The timer never touches p.active: Release (or Close)
-// remains the only owner of the active slot.
-//
-// The entry and its timer are recorded in one critical section, so the
-// callback cannot run ahead of the bookkeeping it needs: time.AfterFunc hands
-// control to the callback as soon as the duration elapses, and the callback's
-// first act is claimReaper, which takes p.mu. Holding p.mu across both the
-// entry creation and the timer's creation is what makes that claim observe a
-// container that is armed rather than one that is mid-arm -- a timer recorded
-// after a callback had already fired (and a Release already forgotten the
-// entry) left an unclosed entry behind, with a one-shot timer that would never
-// fire again.
-//
-// The lock covers only bookkeeping: the callback runs on its own goroutine and
-// nothing here waits on it, and every Docker call it makes happens after it
-// has released p.mu.
+// armMaxUptime schedules a stop and remove after maxUptime, recording the
+// entry and timer under p.mu.
 func (p *Pool) armMaxUptime(ctx context.Context, maxUptime time.Duration, id string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -422,14 +381,8 @@ func (p *Pool) reapMaxUptime(ctx context.Context, id string) {
 	}
 }
 
-// claimReaper reports whether the max-uptime callback owns this container's
-// Docker teardown. The first claim wins; every later one is told to stay out.
-//
-// A missing entry is a loss, never a fresh claim: only armMaxUptime creates
-// entries, so no entry means MaxUptime was never armed or Release has already
-// forgotten the container -- in both cases the reaper has nothing to tear
-// down. Creating one here is exactly how a callback that was still running
-// when Release forgot the entry could resurrect it.
+// claimReaper reports whether the max-uptime callback may tear the container
+// down. A missing entry is a loss.
 func (p *Pool) claimReaper(id string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -441,15 +394,8 @@ func (p *Pool) claimReaper(id string) bool {
 	return true
 }
 
-// claimRelease reports whether Release owns this container's Docker teardown.
-//
-// Unlike the reaper, Release is the path that always exists: MaxUptime == 0
-// arms no reaper at all, so the absence of an entry must still be a win here.
-// The pool guarantees every acquired container is released exactly once, so by
-// the time Release runs an entry can be missing only because a reaper was
-// never armed -- an absent entry is never a live reaper in flight, since
-// nothing but Release's forgetTeardown deletes one, and that runs after this
-// claim.
+// claimRelease reports whether Release may tear the container down. A
+// missing entry is a win.
 func (p *Pool) claimRelease(id string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -464,12 +410,7 @@ func (p *Pool) claimRelease(id string) bool {
 	return true
 }
 
-// forgetTeardown disarms the reaper and drops the container's bookkeeping, so
-// the map does not grow for the life of the pool. Only Release calls this, as
-// the last step of a teardown it claimed, and deleting the entry is final: the
-// reaper's claimReaper looks the entry up and never creates one, so a callback
-// that was already running when the entry went away finds nothing to claim
-// instead of racing a fresh entry back into existence.
+// forgetTeardown stops the timer and deletes the container's entry.
 func (p *Pool) forgetTeardown(id string) {
 	p.mu.Lock()
 	t := p.teardowns[id]
@@ -496,18 +437,9 @@ func (p *Pool) teardownLocked(id string) *containerTeardown {
 	return t
 }
 
-// releaseDecision reports how Release should tear a container down: whether
-// to honour the configured post-completion grace period, and what Docker
-// stop timeout to request (nil means the container's configured timeout or
-// the engine default; a non-nil zero means stop immediately with SIGKILL,
-// skipping the graceful SIGTERM wait).
-//
-// A cancelled ctx means the release is happening because the task was
-// stopped, not because it finished -- /stop is an emergency brake, so
-// neither the grace period (meant for a task that completed on its own and
-// might get a follow-up) nor a graceful stop (meant to let a healthy
-// process wind down) apply. A still-live ctx is a normal completion, so
-// both keep their existing meaning.
+// releaseDecision reports whether Release honours the grace period and the
+// stop timeout to use. A cancelled ctx skips the grace period and kills
+// immediately.
 func releaseDecision(ctx context.Context, grace time.Duration) (honorGrace bool, stopTimeout *int) {
 	if ctx.Err() != nil {
 		zero := 0
@@ -530,18 +462,9 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 		time.Sleep(p.cfg.GracePeriod)
 	}
 
-	// Claim only now. MaxUptime is a cap from creation enforced regardless of
-	// task state, so the reaper must still be free to bite during the grace
-	// period above; claiming before the sleep would quietly extend the cap by
-	// GracePeriod. Losing the claim means the reaper already removed this
-	// container, so there is nothing left to stop.
+	// Claim after the grace period so MaxUptime still applies during it.
 	if p.claimRelease(c.ID) {
-		// Detach from ctx before stopping. Release runs on the way out of a
-		// task, and the most important reason a task is on its way out is
-		// that it was cancelled -- at which point ctx is already dead, the
-		// graceful stop fails immediately, and the container is left to the
-		// forced remove below. Teardown is cleanup, so it gets its own
-		// deadline rather than inheriting the caller's cancellation.
+		// Stop with a fresh deadline even if ctx is cancelled.
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 
@@ -658,15 +581,8 @@ func (p *Pool) pullImage(ctx context.Context, ref string) error {
 	return nil
 }
 
-// registryAuthHeader renders p.cfg.RegistryAuth into the value the Engine API
-// expects in ImagePullOptions.RegistryAuth (the base64url AuthConfig of the
-// X-Registry-Auth header), or "" when no credential is configured.
-//
-// A credential that cannot be rendered degrades to an anonymous pull with a
-// warning rather than failing the pull: one bad secret must not take every
-// autonomous task down with it, and the warning is what makes the 401 a private
-// registry will still answer explicable. A missing credential is silent -- it is
-// the deployment shape that has no private registry.
+// registryAuthHeader returns the X-Registry-Auth value, or "". A credential
+// that cannot be rendered logs a warning and pulls anonymously.
 func (p *Pool) registryAuthHeader(cfg Config, ref string) string {
 	if cfg.RegistryAuth == "" {
 		return ""
@@ -698,12 +614,8 @@ func encodeRegistryAuth(credential string) (string, error) {
 	return base64.URLEncoding.EncodeToString(payload), nil
 }
 
-// selfNetwork detects the user-defined Docker network the current
-// process's own container is attached to, by inspecting the container
-// named after our hostname (Docker sets a container's hostname to its
-// short ID by default). Returns "" if we're not running in a container,
-// the inspect fails, or we're only on the default bridge network  --  in
-// all of those cases Acquire falls back to Docker's normal default.
+// selfNetwork returns the user-defined network this process's container is
+// on, or "".
 func selfNetwork(ctx context.Context, cli *client.Client, log *slog.Logger) string {
 	hostname, err := os.Hostname()
 	if err != nil {

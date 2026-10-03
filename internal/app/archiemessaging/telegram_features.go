@@ -32,33 +32,14 @@ func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedCon
 	}
 }
 
-// messagingRunningVersions reports the component versions this process can
-// vouch for, for checking a relayed update report against
-// (releaseupdate.Report.Verify).
-//
-// archie-messaging is one of the processes in the archied release set (the
-// installer's GATEWAY_SERVICES), built from the same archied/v* tag and stamped
-// with buildinfo.Version by every build site (install.sh, the updater, the
-// release workflow and Taskfile). Its own compiled-in build is therefore
-// evidence that the release the installer claims actually reached this host: a
-// binary the update did not replace still reports the version it was built
-// from, which Verify reads as drift rather than false success. Reading the
-// version from the Gateway instead would report a different process's stamp,
-// which is the failure mode the check exists to catch (see
-//
-// The agent is deliberately absent: every archie-agent process is task-scoped
-// and observed only through daemon.AgentStatus, which this process does not
-// hold, so it must report Unverified rather than be guessed.
+// messagingRunningVersions reports this process's own build version for
+// update verification.
 func messagingRunningVersions() map[string]string {
 	return map[string]string{releaseupdate.ComponentDaemon: buildinfo.Version}
 }
 
-// gatewayVersionReporter renders /version from the Gateway's own build block.
-// It is read per call rather than captured at compose so an upgraded Gateway
-// is reported without restarting this process, and bounded by the same
-// dependency timeout the readiness probe uses so a hung Gateway answers the
-// command instead of leaving the operator with no reply at all. The service
-// context bounds it too, so a shutdown does not wait on an in-flight call.
+// gatewayVersionReporter renders /version from the Gateway's build info,
+// fetched per call with a timeout.
 func gatewayVersionReporter(ctx context.Context, chat messaging.ChatContract, timeout time.Duration) func() string {
 	return func() string {
 		callCtx := ctx
@@ -78,13 +59,8 @@ func gatewayVersionReporter(ctx context.Context, chat messaging.ChatContract, ti
 	}
 }
 
-// updateService builds /update from this service's own [chat.telegram]
-// commands, or nil when none is configured, which leaves the channel reporting
-// the command as unconfigured.
-//
-// Enrich is deliberately unset: the daemon filled it from [nats], which this
-// service must not decode, so the check command's own reported install type
-// stands.
+// updateService builds /update from [chat.telegram] commands, or nil when
+// none are configured.
 func updateService(cfg ResolvedConfig) *releaseupdate.Service {
 	if len(cfg.Telegram.UpdateCheckCommand) == 0 {
 		return nil

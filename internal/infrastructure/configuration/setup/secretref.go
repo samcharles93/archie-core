@@ -15,11 +15,6 @@ import (
 var engineNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // ParseSecretRef parses an "engine:key" secret reference.
-//
-// A reference is not a secret. An engine name and a key name are not sensitive,
-// which is exactly why a reference may be given as a parameter while a value may
-// not: the value lives in the engine, and this flow never sees it. Setup writes
-// the reference to TOML and stops there.
 func ParseSecretRef(s string) (config.SecretRef, error) {
 	engine, key, ok := strings.Cut(s, ":")
 	if !ok {

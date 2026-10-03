@@ -25,13 +25,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
-// hybridTrees implements workflow.Trees by splitting operations: Prepare
-// and Push (network ops needing the daemon's forge credential) proxy over
-// worktreerpc; CommitAll/Diff/ChangedFiles/ChangedLines are local git
-// operations run directly against the container's bind-mounted worktree.
-//
-// Prepare returns the bind-mounted worktree that archied prepared before the
-// container started. The sandbox has no remote prepare capability.
+// hybridTrees implements workflow.Trees: Push goes to the daemon over
+// worktreerpc; local git operations run on the bind-mounted worktree.
 type remoteTrees interface {
 	Push(ctx context.Context) error
 }
@@ -41,21 +36,12 @@ type hybridTrees struct {
 	local    *worktree.Manager
 	localDir string
 	branch   string
-	// worktreeUID and worktreeGID are the daemon's own host UID/GID
-	// (WORKTREE_UID/WORKTREE_GID, set by containerEnv), or -1 when unset. The
-	// agent runs as root inside the container, so a commit it writes to the
-	// bind-mounted worktree lands owned by UID 0 on the host; Push reconciles
-	// ownership back to the daemon's UID before handing off, since the daemon
-	// -- running as its own non-root host user -- is the one that reads those
-	// objects to actually push.
+	// worktreeUID and worktreeGID are the daemon's host UID/GID, or -1. Push
+	// chowns the worktree back to them.
 	worktreeUID, worktreeGID int
 }
 
-// Prepare binds the task's already-prepared, bind-mounted worktree. The
-// daemon positioned it before the container started, so this resolves the
-// directory and branch rather than doing network work. A resume target (the
-// PR branch a remediation continues) is returned verbatim; a fresh target uses
-// the branch the daemon computed and persisted on the task row.
+// Prepare returns the worktree the daemon already prepared and its branch.
 func (h *hybridTrees) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string, target workflow.PrepareTarget) (dir, branch string, err error) {
 	if target != workflow.PrepareFresh {
 		return h.localDir, string(target), nil
@@ -86,18 +72,8 @@ func (h *hybridTrees) reconcileOwnership(dir string) error {
 	return chownTree(dir, h.worktreeUID, h.worktreeGID)
 }
 
-// restoreWorktreeOwnership returns the deferred half of the ownership
-// contract: the agent runs as root inside the container, so a run that ends
-// without ever reaching CommitAll or Push (a gate failure that parks the task,
-// a stage error, an early return) has to hand the bind-mounted worktree back to
-// the daemon's own UID on its way out. The daemon is the process that later
-// cleans and resets that directory as a non-root host user, and it cannot even
-// unlink inside a root-owned directory -- so a parked attempt otherwise left a
-// worktree the next attempt could not start from, no matter what the refresh
-// did.
-//
-// Returns the func rather than deferring internally so the caller's own defer
-// runs it at the caller's return, not at this function's.
+// restoreWorktreeOwnership returns a func that chowns the worktree back to
+// the daemon's UID, for every way a run can end.
 func restoreWorktreeOwnership(trees *hybridTrees, dir string, log *slog.Logger) func() {
 	return func() {
 		if err := trees.reconcileOwnership(dir); err != nil {
@@ -122,37 +98,19 @@ func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, 
 	return h.local.ChangedLines(ctx, dir, base)
 }
 
-// ChangedFileStats is the capability the workflow captures a change through.
-// It is not part of workflow.Trees: it is asserted for as the unexported
-// optional interface package workflow declares, so a Trees implementation
-// without it degrades to no capture. Without this forwarder the in-container
-// path -- which is every production run, archie-agent executing the whole
-// workflow -- would be exactly that silent no-op.
+// ChangedFileStats forwards to the local worktree manager.
 func (h *hybridTrees) ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error) {
 	return h.local.ChangedFileStats(ctx, dir, base)
 }
 
-// HasUncommittedChanges is the capability the diff-rules placement guard reads
-// to tell "nothing has changed" from "not committed yet". It is not part of
-// workflow.Trees for the same reason ChangedFileStats is not, and without this
-// forwarder the in-container path -- every production run -- would answer the
-// guard for the wrong reason.
+// HasUncommittedChanges forwards to the local worktree manager.
 func (h *hybridTrees) HasUncommittedChanges(ctx context.Context, dir string) (bool, error) {
 	return h.local.HasUncommittedChanges(ctx, dir)
 }
 
 var _ workflow.Trees = (*hybridTrees)(nil)
 
-// chownTree recursively chowns dir to uid:gid so the daemon -- running as
-// its own host user -- can read loose objects the agent committed as root
-// inside the container.
-//
-// Lchown, not Chown: a repo can legitimately track a symlink whose target
-// doesn't exist inside the container (a relative link outside the
-// checkout, or to a tool the image doesn't ship). Chown follows the link
-// and fails on a dangling target, which would abort a push that would
-// otherwise have succeeded -- worse than the permission error this is
-// fixing. Lchown changes the link itself and never touches the target.
+// chownTree recursively lchowns dir to uid:gid.
 func chownTree(dir string, uid, gid int) error {
 	return filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
 		if err != nil {
@@ -200,12 +158,8 @@ func newTaskRunner(providers map[string]agentexec.Provider, log *slog.Logger) ag
 	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
 }
 
-// applyToolLimits wires the task's carried tool policy and its agent
-// profile's tool allowlist into a *LoopRunner: the result cap/spill, so a
-// worker-executed stage enforces the same limits the daemon's own chat path
-// applies (config.Config.Tools.Policy, carried non-secret via
-// TaskConfig.ToolPolicy), and the tools the profile allows. A runner that
-// isn't a *LoopRunner (e.g. a test fake) is left untouched.
+// applyToolLimits sets the task's tool policy and allowlist on a
+// *LoopRunner. Other runners are untouched.
 func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []string) {
 	runner, ok := agent.(*agentexec.LoopRunner)
 	if !ok {
@@ -268,14 +222,6 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		worktreeUID: worktreeOwnerID(os.Getenv("WORKTREE_UID")),
 		worktreeGID: worktreeOwnerID(os.Getenv("WORKTREE_GID")),
 	}
-	// The agent process runs as root inside the container, so everything this
-	// run writes into the bind-mounted worktree is owned by UID 0 on the host;
-	// CommitAll and Push hand it back on the success path. Doing the same here
-	// covers every OTHER way a run can end -- a gate failure that parks the
-	// task, a stage error, an early return -- because the daemon is the one
-	// that later cleans and resets this directory, as its own non-root host
-	// user, and it cannot even unlink a root-owned directory. Without this, a
-	// parked attempt left a worktree the next attempt could not start from.
 	defer restoreWorktreeOwnership(trees, workDir, log)()
 
 	// The MCP providers a task hosts share the same model runtime its agent
@@ -299,15 +245,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}
 	agent = persistentRunner{Runner: agent, enabled: req.Repo.PersistentStorage}
 
-	// A workflow run in this process publishes to an in-process *events.Bus
-	// the daemon cannot see -- archied and archie-agent are separate
-	// processes connected only by NATS. Without this bridge, tc.Emit is a
-	// silent no-op for every stage/outcome/park event this run produces,
-	// which is why the dashboard timeline showed nothing for any task
-	// executed through the container/NATS path. Nil
-	// dependencies.events (a caller with no NATS connection, e.g. tests
-	// that construct taskDependencies directly) leaves bus nil, and
-	// TaskContext.Emit is already nil-safe.
+	// Forward workflow events to the daemon over NATS.
 	var bus *events.Bus
 	if dependencies.events != nil {
 		bus = events.NewBus()
@@ -329,11 +267,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Log:        log,
 		Guardrails: dependencies.guardrails,
 	}
-	// pr-review reads an external pull request's data from workDir, which the
-	// daemon already populated before this task started (daemon's
-	// prefetchPRReview, writing under workDir/.archie-pr-review -- the same
-	// host directory Docker bind-mounts at storage.WorktreeMountDir) -- never
-	// over the network, and never with a forge credential in this process.
+	// pr-review reads the PR data the daemon prefetched into workDir.
 	if req.Task.Workflow == "pr-review" {
 		tc.PRSource = prsource.NewFromMount(filepath.Join(workDir, prsource.PrefetchDirName))
 	}
@@ -358,14 +292,8 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}, nil
 }
 
-// CompilePinnedWorkflow resolves and compiles the immutable definition the task
-// request carries, against this process's step vocabulary. Production execution
-// and the workflow step-vocabulary contract test both enter through it.
-//
-// A request that carries no definition is routed and pinned from the shipped
-// definitions, which writes the resolved workflow name, YAML, and digest back
-// onto req and req.Task: the run's TaskContext carries that task record, so the
-// pin has to land on the request the caller handed in.
+// CompilePinnedWorkflow compiles the definition the request carries. With
+// none, it pins one from the shipped definitions onto req and req.Task.
 func CompilePinnedWorkflow(req *taskrun.Request, steps *workflow.Manager) (workflow.Workflow, error) {
 	// steps is this process's required step vocabulary, so a nil one is a wiring
 	// mistake at the composition root (productionWorkerDependencies) rather than

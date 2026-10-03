@@ -28,16 +28,8 @@ var cloudProviders = []cloudProvider{
 	{name: "Mistral", class: "mistral", apiKeyEnv: "MISTRAL_API_KEY"},
 }
 
-// templateDefaultActiveProvider is the one provider table config.example.
-// toml ships active by default: [providers.openai], with
-// api_key = {engine="bws", key="OPENAI_API_KEY"}. bws is compiled in but
-// requires the bws CLI on PATH; on a machine without it (the common case)
-// resolving that key fails, and resolveProviderSecrets disables the provider
-// with a warning rather than stopping the daemon. Neutralising the table is
-// still setup's business: a provider the operator never chose should not be
-// left advertised and unusable, with a warning they did not cause. Choosing any
-// provider other than OpenAI, or choosing OpenAI but leaving its key blank,
-// therefore replaces this table.
+// templateDefaultActiveProvider is the provider config.example.toml enables
+// by default. Setup replaces that table unless OpenAI is chosen with a key.
 const templateDefaultActiveProvider = "openai"
 
 func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, params Params) (tableEdits, string, error) {
@@ -150,12 +142,8 @@ func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp c
 	return edits, cp.class + "/" + model, nil
 }
 
-// cloudKeyEdit obtains the api_key edit by prompting. An empty return means
-// "write no api_key and leave whatever the template has", which is the
-// configure-later case.
-//
-// There is no key parameter. A value supplied as one would arrive from a
-// command line and bypass the secret engine entirely; see Params.
+// cloudKeyEdit prompts for the API key and returns its edit. Empty means
+// configure later.
 func cloudKeyEdit(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider) (string, error) {
 	key, err := p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
 	if err != nil {

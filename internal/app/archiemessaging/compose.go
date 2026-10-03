@@ -33,11 +33,8 @@ type deps struct {
 	Chat          messaging.ChatContract
 	Health        *health.Registry
 	Settings      *messaging.SettingsCommand
-	// SettingsSource, when non-nil, enables the live channel-settings
-	// reconcile: the service re-reads the stored channel-settings resource on
-	// the apply-status restamp interval and restarts only the channels whose
-	// settings changed. Nil leaves the service with no live path, which is the
-	// honest state for a test or a process with no State Store.
+	// SettingsSource enables live channel-settings reconciliation. Nil disables
+	// it.
 	SettingsSource chatSettingsSource
 	// ApplyReporter records what this process applied. Nil reports nothing.
 	ApplyReporter *applystatus.Reporter
@@ -49,12 +46,8 @@ type deps struct {
 	ReconcileInterval time.Duration
 }
 
-// channelInstance is one composed channel and the runtime state that lets the
-// service restart it alone. channel and cancel are guarded by mu; rebuild is
-// immutable. The channel swaps when the stored settings change, which is what a
-// restart is: build the replacement, stop the old run context, start the new
-// instance. A channel with no in-place reload seam is therefore still
-// reloadable.
+// channelInstance is one composed channel and what is needed to restart it.
+// mu guards channel and cancel.
 type channelInstance struct {
 	name    string
 	rebuild func(ResolvedConfig) (channels.Channel, error)
@@ -113,11 +106,8 @@ type Service struct {
 	wg sync.WaitGroup
 }
 
-// compose builds the Service from resolved configuration. ctx is the service
-// lifetime: seams a channel invokes later (the Gateway version lookup) derive
-// their calls from it, so a shutdown cancels them. A channel whose
-// configuration is present but invalid fails composition rather than being
-// dropped: a front-end the operator configured must never silently not run.
+// compose builds the Service. ctx is the service lifetime. An invalid
+// configured channel fails composition.
 func compose(ctx context.Context, d deps) (*Service, error) {
 	srv := &Service{
 		cfg:               d.Config,
@@ -309,12 +299,7 @@ func (s *Service) Start(ctx context.Context) error {
 		go s.runChannel(ctx, c)
 	}
 
-	// Every configured channel has been handed its lifetime and the service
-	// blocks here serving them. Not earlier: a channel whose configuration is
-	// invalid fails composition, above, and READY must not precede it. Not
-	// later: a unit whose TimeoutStartSec expires first would restart a healthy
-	// process. Nothing is consumed until the unit says Type=notify, so this is
-	// inert on today's install.
+	// Notify systemd once every channel has started.
 	sdnotify.Ready(s.log)
 
 	<-ctx.Done()

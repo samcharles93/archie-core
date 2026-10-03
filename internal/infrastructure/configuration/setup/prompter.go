@@ -1,19 +1,9 @@
-// Package setup builds a config.Config and the TOML edits to persist it,
-// driven by archied's interactive first-run configuration flow. It has no
-// terminal dependency of its own: everything it needs from a user-facing
-// prompt surface is the [Prompter] interface below, so the step logic is
-// testable end to end without a TTY.
 package setup
 
 import "context"
 
-// Prompter is what setup's step logic needs from a prompt surface. The real
-// implementation talks to a terminal (internal/infrastructure/
-// terminalprompt); tests drive steps through a fake.
-//
-// Every method takes a context so a step can be cancelled mid-prompt (e.g.
-// Ctrl+C) rather than leaving the operator stuck at a prompt an outer
-// timeout or signal has already decided to abandon.
+// Prompter is the prompt surface setup asks questions through. Every method
+// takes a context so a prompt can be cancelled.
 type Prompter interface {
 	// Select presents options and returns the chosen index. Returns -1 and
 	// ctx.Err() if ctx is done before an answer is given.

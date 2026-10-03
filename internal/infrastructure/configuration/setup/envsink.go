@@ -9,18 +9,9 @@ import (
 	"strings"
 )
 
-// EnvFileSink is a SecretSink that stores secrets in the env file beside
-// config.toml (${XDG_CONFIG_HOME:-~/.config}/archie/env by default). The
-// daemon reads that file through systemd's EnvironmentFile, so the line
-// format must match what install.sh's set_env_key has always written -- a
-// single-quoted KEY='value' line, with an embedded single quote escaped as a
-// backslash between two single quotes -- rather than any other
-// plausible-looking format.
-//
-// Put buffers; nothing is written until Commit, and Commit rewrites the file
-// atomically with mode 0600. The caller must only Commit once the config
-// text referencing these secrets has been proven loadable, so a validation
-// failure leaves neither a config nor a secret on disk.
+// EnvFileSink stores secrets as KEY='value' lines in the env file beside
+// config.toml. Put buffers; Commit rewrites the file atomically with mode
+// 0600. Commit only after the config is proven loadable.
 type EnvFileSink struct {
 	path    string
 	entries map[string]string
@@ -104,11 +95,8 @@ func readEnvLines(path string) ([]string, error) {
 	return strings.Split(text, "\n"), nil
 }
 
-// escapeEnvValue renders value as the contents of a single-quoted
-// systemd EnvironmentFile value: a literal single quote becomes a backslash
-// between two single quotes. This is byte-for-byte what install.sh's
-// set_env_key produces, so the Go sink and the shell helper cannot disagree
-// about the on-disk format.
+// escapeEnvValue escapes v for a single-quoted EnvironmentFile value, as
+// install.sh's set_env_key does.
 func escapeEnvValue(v string) string {
 	return strings.ReplaceAll(v, "'", `'\''`)
 }

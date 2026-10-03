@@ -39,15 +39,8 @@ func reloadable(instance *channelInstance) bool {
 	return ok && gateway.Reload != nil
 }
 
-// ReloadChannel asks one channel to re-read its configuration. A channel that
-// does not support reload is refused with a reason rather than accepted and
-// ignored: the dashboard offers the action on the strength of the capability its
-// descriptor declares, so an accepted-then-nothing reload is a lie the operator
-// has no way to see through.
-//
-// The reload itself is the channel's own seam -- the telegram front-end re-reads
-// its token and allowlist -- so this function adds routing and a truthful
-// refusal, not a second implementation.
+// ReloadChannel asks one channel to reload its configuration, refusing
+// channels that cannot.
 func (s *Service) ReloadChannel(_ context.Context, id string) error {
 	for _, instance := range s.channels {
 		if instance.name != id {
@@ -65,16 +58,7 @@ func (s *Service) ReloadChannel(_ context.Context, id string) error {
 	return fmt.Errorf("messaging: no channel %q", id)
 }
 
-// lifecycleFor returns the report a channel writes its own state through. Each
-// channel gets its own closure, so one channel's failure marks only itself --
-// which is the reason the manager is keyed by channel rather than being one flag
-// on the service.
-//
-// Before this, Start handed every channel an empty channels.Lifecycle{}, so
-// nothing recorded starting, running or failed anywhere and
-// internal/channels/status.Manager had no production writer at all.
-// The channels have always reported: all three call
-// ReportStarting and ReportRunning on whichever lifecycle they are handed.
+// lifecycleFor returns the lifecycle a channel reports its own state through.
 func (s *Service) lifecycleFor(id string) channels.Lifecycle {
 	return channels.Lifecycle{
 		Starting: func() { s.status.MarkStarting(id); s.signalPublish() },
