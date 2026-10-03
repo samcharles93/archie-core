@@ -1,9 +1,4 @@
-// Package logging builds archied's logger.
-//
-// archied previously wrote only to stderr, so under systemd journald held the
-// sole copy and running by hand left nothing at all. A file sink gives a
-// durable record independent of the supervisor, and is what lets the dashboard
-// show anything from before it connected.
+// Package logging builds archied's logger and reads its JSON log files.
 package logging
 
 import (
@@ -42,12 +37,8 @@ const (
 	DefaultKeep      = 5
 )
 
-// New builds a logger and returns it with a closer for any file sink. The
-// closer is a no-op when only stderr is in use.
-//
-// A file that cannot be opened is reported but never fatal: losing the
-// durable copy is worse than losing the daemon, but not by enough to refuse
-// to start.
+// New builds a logger and a closer for its file sink. A file that cannot be
+// opened is reported, not fatal.
 func New(opts Options) (*slog.Logger, io.Closer, error) {
 	level := parseLevel(opts.Level)
 	handlerOpts := &slog.HandlerOptions{Level: level}
@@ -90,10 +81,6 @@ func parseLevel(s string) slog.Level {
 }
 
 // rotatingFile is a size-rotating io.WriteCloser.
-//
-// Deliberately hand-rolled rather than pulling in a rotation dependency: the
-// requirement is one file, a size cap and a retention count, and that is
-// materially less code than auditing and tracking a third-party module.
 type rotatingFile struct {
 	path    string
 	maxSize int64
@@ -157,15 +144,8 @@ func (r *rotatingFile) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// rotate renames the live file to .1, shifting existing generations down and
-// discarding anything past keep, then opens a fresh file at path.
-//
-// The live descriptor is kept open across the renames -- POSIX rename only
-// changes a directory entry, not what an open file descriptor points at --
-// so if the rename or the reopen below fails, r.f still refers to a
-// perfectly writable file (the original, or the just-rotated one) and the
-// caller's write is never lost. Closing the old descriptor only happens
-// once the new one is confirmed open.
+// rotate shifts path to path.1, dropping generations past keep, and opens a
+// new file. The old descriptor stays usable until the new one opens.
 func (r *rotatingFile) rotate() error {
 	// Oldest first, so each rename lands on a free slot.
 	_ = os.Remove(fmt.Sprintf("%s.%d", r.path, r.keep))

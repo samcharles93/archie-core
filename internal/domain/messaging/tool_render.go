@@ -42,16 +42,7 @@ func FailureKey(e ToolCallEvent) string {
 	return "success\x00" + strings.TrimSpace(e.Name) + "\x00" + toolPreview(e.Name, e.Output)
 }
 
-// ToolPreviewSeparator joins a tool's header to its preview. The preview is
-// always one line (every toolPreview path summarises to one), so it belongs
-// on the header line rather than in a block of its own: Telegram renders a
-// fenced block as a full code widget, and the block parser puts a spacer
-// paragraph before every block, so fencing one line cost four rendered
-// elements to show a word count.
-//
-// Keeping the preview on the line also means a fence marker in the output can
-// never reach column zero, which is why the preview is passed through
-// verbatim instead of having its backticks substituted away.
+// ToolPreviewSeparator joins a tool line's header and its one-line preview.
 const ToolPreviewSeparator = " · "
 
 func toolProgressBlock(name, emoji, status, preview string) string {

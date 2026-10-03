@@ -9,17 +9,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
-// containerRuntimePolicies is the container-runtime-policies resource document.
-// Its shape IS the contract the Web UI edits, so it is defined here with
-// explicit snake_case json tags and never handed the internal config.ContainerConfig
-// directly: that struct's tags belong to the TOML file format, and when it was
-// the document, encoding/json fell back to its Go field names -- "Image",
-// "MaxConcurrency", "LegacyEnabled" -- the only Go-cased resource left in the
-// registry. The two durations are config.Duration, which
-// already writes the string the file accepts; the leak was the keys only.
-//
-// Profiles is deliberately not a field here: config.ContainerConfig.Profiles is
-// json:"-", so this document never carries it either.
+// containerRuntimePolicies is the container-runtime-policies document, with
+// snake_case JSON keys.
 type containerRuntimePolicies struct {
 	Image          string          `json:"image"`
 	MaxConcurrency int             `json:"max_concurrency"`
@@ -37,11 +28,8 @@ type agentProfile struct {
 	Tools   []string `json:"tools,omitempty"`
 }
 
-// legacyContainerKeys are the Go field names encoding/json fell back to while
-// the document was the internal config struct. The decoder's case-insensitive
-// fallback compares whole keys, so "MaxConcurrency" never matches
-// "max_concurrency"; every store written before the reshape holds these keys,
-// so reading them is deliberate and everything else stays strict.
+// legacyContainerKeys maps Go-cased keys from older stored documents to
+// their current names.
 var legacyContainerKeys = map[string]string{
 	"Image": "image", "MaxConcurrency": "max_concurrency", "MaxUptime": "max_uptime",
 	"VolumeTTL": "volume_ttl", "PullPolicy": "pull_policy", "Network": "network",
@@ -69,11 +57,7 @@ func (p *containerRuntimePolicies) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	// "LegacyEnabled" decoded the removed containers.enabled switch during the
-	// window in which this resource existed, and stores written then hold it.
-	// It has no counterpart in the current shape -- it never had a runtime
-	// consumer -- so it is dropped rather than renamed: the strict decode would
-	// otherwise refuse a document every deployment of that window stores.
+	// LegacyEnabled has no current field; drop it.
 	delete(raw, "LegacyEnabled")
 	// "profiles"/"Profiles" carried config.ContainerConfig.Profiles before it
 	// moved to its own resource, AgentProfileKind; a document stored under
@@ -131,12 +115,8 @@ func validateContainers(input []byte) error {
 	})
 }
 
-// normalizeContainerPolicies canonicalizes the stored document: decoding into
-// the shape above and re-encoding writes the snake_case keys, dropping the
-// Go-cased keys an earlier revision stored. A document that still carries them
-// converges the next time it is written; reads tolerate them meanwhile
-// (containerRuntimePolicies), so nothing has to be re-saved before it can be
-// read again.
+// normalizeContainerPolicies re-encodes the stored document with snake_case
+// keys.
 func normalizeContainerPolicies(input []byte) ([]byte, error) {
 	var policies containerRuntimePolicies
 	if err := json.Unmarshal(input, &policies); err != nil {

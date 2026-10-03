@@ -8,11 +8,8 @@ import (
 	"strings"
 )
 
-// InteractiveChoice is one selectable option offered by a clarify or picker
-// prompt. ID is the value carried back to the caller; Label is what the
-// human sees. An adapter that renders a choice must return the option as it
-// was given (ID preserved), never a Label the human typed: callers correlate
-// on ID.
+// InteractiveChoice is one option in a clarify or picker prompt. Callers
+// match on ID.
 type InteractiveChoice struct {
 	ID    string
 	Label string
@@ -71,12 +68,8 @@ var (
 	ErrTextFallbackNotConfigured = errors.New("interactive: text fallback is missing Send or Reply")
 )
 
-// ClarifierOf returns sender's ClarifyRequester only when sender reports the
-// Clarify capability. A sender that implements the interface but reports
-// Clarify:false is treated as unable to clarify -- the capability is the
-// contract, not the method set -- and one that reports Clarify:true without
-// implementing the interface is treated the same way, so a mis-reporting
-// adapter degrades instead of panicking. It mirrors DeleterOf.
+// ClarifierOf returns sender's ClarifyRequester when it reports the Clarify
+// capability and implements the interface.
 func ClarifierOf(sender any) (ClarifyRequester, bool) {
 	if !CapabilitiesOf(sender).Clarify {
 		return nil, false
@@ -96,11 +89,8 @@ func PickerOf(sender any) (PickerRequester, bool) {
 	return picker, ok
 }
 
-// Interactive bundles the human-interaction requesters a channel adapter can
-// carry for one turn, resolved once from its capability report. The zero value
-// carries nothing, which is what a turn whose channel cannot ask a question
-// sees; the gateway turn reads it to decide whether to offer a question tool
-// at all rather than one that always fails.
+// Interactive holds the interaction requesters a channel supports for one
+// turn. The zero value supports none.
 type Interactive struct {
 	Clarifier ClarifyRequester
 	Picker    PickerRequester
@@ -193,14 +183,8 @@ func ParsePickerReply(req PickerRequest, reply string) (InteractiveChoice, bool)
 	return InteractiveChoice{}, false
 }
 
-// TextFallback renders clarify and picker prompts as plain text and reads the
-// human's typed reply. It is the degrade path for a channel with no native
-// question or selection UI, and the behaviour an adapter claims when it
-// reports Clarify/Picker without native widgets: the interaction still
-// happens, it just costs a typed answer instead of a tap.
-//
-// Send delivers one prompt; Reply blocks for the next human text. Both are
-// injected so the fallback carries no transport of its own.
+// TextFallback asks clarify and picker questions as plain text and reads the
+// typed reply.
 type TextFallback struct {
 	Send  func(ctx context.Context, text string) error
 	Reply func(ctx context.Context) (string, error)

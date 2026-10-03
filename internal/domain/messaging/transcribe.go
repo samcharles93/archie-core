@@ -6,23 +6,11 @@ import (
 	"strings"
 )
 
-// ErrTranscriptionUnavailable reports that the transcription capability
-// cannot serve right now: no role configured, an unknown or unsupported
-// provider, or a credential that could not be resolved. Infrastructure
-// implementations wrap it so a caller can degrade -- keep the media note --
-// instead of failing the turn.
+// ErrTranscriptionUnavailable reports that transcription is not configured
+// or cannot run.
 var ErrTranscriptionUnavailable = errors.New("transcription capability unavailable")
 
-// Transcriber turns recorded audio into text. It is a channel-neutral,
-// call-scoped capability: the messaging media layer defines what a
-// transcription is, and each frontend supplies the bytes its platform
-// produced. Implementations live in internal/infrastructure/transcription;
-// the domain never imports one.
-//
-// The same shape as image.Provider and embedding.Client: no Lifecycle,
-// because "can the capability serve right now" is exactly what a returned
-// error already communicates, and a missing capability must degrade rather
-// than fail the turn it arrived on.
+// Transcriber turns recorded audio into text.
 type Transcriber interface {
 	// Transcribe returns the transcript of audio, which must be non-empty.
 	// A failure is an error, never a panic; any error means the caller keeps
@@ -36,11 +24,8 @@ type Transcriber interface {
 // transcript from something the sender typed.
 const TranscriptionProvenance = "[voice transcription]"
 
-// TranscribedText renders a transcript as the text an inbound voice note
-// contributes to the turn, keeping any caption the sender attached after the
-// transcript. An empty transcript still yields the provenance marker, so the
-// agent knows audio arrived rather than silently treating the message as
-// empty.
+// TranscribedText returns the transcript with a provenance marker, followed
+// by any caption.
 func TranscribedText(transcript, caption string) string {
 	parts := []string{TranscriptionProvenance}
 	if t := strings.TrimSpace(transcript); t != "" {
@@ -52,21 +37,8 @@ func TranscribedText(transcript, caption string) string {
 	return strings.Join(parts, "\n")
 }
 
-// TranscribedMessageText renders the text a transcribed speech attachment
-// contributes to a message, preserving any caption the sender attached.
-//
-// messageText is the inbound text a channel frontend rendered for an
-// attachment: the media note alone, or the note followed by the sender's
-// caption on the next line. The note is a bracketed, self-describing
-// placeholder (see internal/channels/telegram's turnMessageText); it is
-// replaced by the provenance marker and transcript, and anything after it
-// survives as the caption. Text that carries no recognisable note is treated
-// as a caption in full, so nothing the sender wrote is dropped.
-//
-// The transcription happens on the model-owning side of the Messaging
-// boundary, which receives the audio bytes but not the caption as a separate
-// field; this is the function that turns the frontend's rendered text into
-// the transcript the turn is recorded with.
+// TranscribedMessageText replaces the media note in messageText with the
+// transcript, keeping any caption after it.
 func TranscribedMessageText(messageText, transcript string) string {
 	note, caption, _ := strings.Cut(messageText, "\n")
 	if !isMediaNote(note) {

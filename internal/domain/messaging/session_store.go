@@ -21,11 +21,8 @@ type SessionSource struct {
 	// name, DM thread).
 	ChannelID string `json:"channel_id"`
 
-	// ThreadID identifies the topic thread within the conversation, for
-	// platforms that support threading (Telegram supergroup topics,
-	// Slack threads, Discord forum posts). Empty for flat chats and the
-	// General topic. When non-empty, distinct threads within the same
-	// channel produce distinct sessions.
+	// ThreadID identifies a topic thread; distinct threads get distinct sessions.
+	// Empty for flat chats.
 	ThreadID string `json:"thread_id,omitempty"`
 }
 
@@ -59,18 +56,7 @@ type SessionContext struct {
 	LastActiveAt time.Time `json:"last_active_at"`
 }
 
-// SessionStore persists gateway session metadata and conversation history.
-// Each session tracks one platform, bot, and channel combination.
-//
-// Message history is stored and loaded as canonical Message records.
-// Session lifecycle records stay SessionContext:
-// a session's UUID key, platform/bot/title/branch metadata, and the fact
-// that several sessions share one channel/thread have no lossless home in
-// Conversation, whose composite identity is only
-// {ChannelID, ThreadID} and whose canonical Agent/user/binding ownership is
-// still open.
-// Conversation-keying the sessions is tracked as follow-up work once that
-// ownership settles.
+// SessionStore persists chat sessions and their message history.
 type SessionStore interface {
 	SessionLifecycle
 	MessageHistory

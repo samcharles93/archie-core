@@ -22,16 +22,9 @@ const projectionActor = "archie-state-store"
 // refuses the projection.
 const projectWriteAttempts = 3
 
-// WorkflowProjector carries an installed package's workflow contributions
-// into the org's workflow-definitions resource, the same document an operator
-// edits on the dashboard. The readers the
-// daemon holds read that resource per dispatch, so a projected workflow is
-// usable at the next dispatch and a withdrawn one stops dispatching, without
-// restarting processes.
-//
-// Apply merges: a contributed id that belongs to an operator or to another
-// package is refused (storepkg.ErrContributionCollision), never silently
-// replaced.
+// WorkflowProjector merges an installed package's workflows into the org's
+// workflow-definitions resource. Ids owned by an operator or another package
+// are refused.
 type WorkflowProjector struct {
 	store  ResourceStore
 	ledger storepkg.ProjectionLedger

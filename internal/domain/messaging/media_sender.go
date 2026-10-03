@@ -15,17 +15,10 @@ type SendResult struct {
 // implements.
 type AdapterCapabilities struct {
 	Media bool
-	// Delete reports whether the sender can remove a message it
-	// previously sent (MessageDeleter), which is what lets an
-	// EphemeralReply be retracted once its TTL elapses. A sender that
-	// cannot delete still delivers ephemeral replies, it just leaves them
-	// in place.
+	// Delete reports whether the sender can delete messages it sent.
 	Delete bool
-	// Clarify reports whether the sender can pose a clarifying question and
-	// carry the human's answer back (ClarifyRequester). The capability is
-	// about carrying the interaction, not about native widgets: an adapter
-	// with no button UI fulfils it through the text fallback rather than
-	// reporting false and stranding the question.
+	// Clarify reports whether the sender can ask a question and return the
+	// answer.
 	Clarify bool
 	// Picker reports whether the sender can present a single-choice
 	// selection and carry the chosen option back (PickerRequester), on the

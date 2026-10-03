@@ -43,17 +43,8 @@ type TaskSink struct {
 	file   *rotatingFile
 }
 
-// NewTaskSink opens the JSONL sink for one task attempt under baseDir,
-// creating its directory if needed, with the same size-based rotation as
-// the daemon-wide log.
-//
-// Unlike New (the daemon-wide logger), a task sink that fails to open
-// returns the error rather than falling back to stderr: New degrades
-// because losing the daemon over a broken log path is worse than losing the
-// durable copy, but there is no equivalent daemon-level fallback for one
-// task's log -- the caller (a workflow stage, or the daemon's NATS log
-// consumer) is better placed to decide what a missing sink means for that
-// task than this package is.
+// NewTaskSink opens the rotating JSONL sink for one task attempt. Unlike New,
+// it returns an error when the file cannot be opened.
 func NewTaskSink(baseDir string, taskID int64, attempt int, opts TaskSinkOptions) (*TaskSink, error) {
 	path := TaskLogPath(baseDir, taskID, attempt)
 	w, err := newRotatingFile(path, opts.MaxSizeMB, opts.Keep)

@@ -20,13 +20,7 @@ const (
 type schedulingPolicy struct {
 	PollInterval string `json:"poll_interval"`
 	MaxRetries   int    `json:"max_retries"`
-	// Label is the trigger-matching label the stored dispatch pairs with.
-	// It is a pointer, not a string, so a policy stored before the field
-	// existed decodes nil and leaves the file document's label in force when
-	// it is layered (runtime_config.go) -- the same absence-means-inherited
-	// shape a kind with no stored value has. Writes are stricter: the pairing
-	// rule below refuses a label-requiring trigger with no label, so the
-	// store can never bless the half of a pairing boot then refuses.
+	// Label is the dispatch trigger label. Nil keeps the file's label.
 	Label    *string         `json:"label,omitempty"`
 	Dispatch config.Dispatch `json:"dispatch"`
 }
@@ -45,13 +39,8 @@ func operationalDefinitions() []Definition {
 		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "live", Document: schedulingPolicy{}, Seed: func(cfg config.Config) any {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
-		// ApplyMode is live: the daemon diffs the stored MCP server set against
-		// the running providers -- connecting added servers, disconnecting
-		// removed ones and reconnecting changed ones while leaving unchanged
-		// servers untouched -- and rebuilds the web_fetch and minimax entries.
-		// A changed server whose new engine fails to start
-		// is rolled back to the old one, so the refusal is reported rather than
-		// leaving the server down.
+		// Live: changed MCP servers are reconnected, rolling back to the old engine
+		// if the new one fails to start.
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "live", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
 		// ApplyMode is live for additions: a stored directory change re-layers live
 		// and the daemon's reconciliation loads new and changed files without a
@@ -60,41 +49,13 @@ func operationalDefinitions() []Definition {
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
-		// ApplyMode is live: the container pool reads the published config on
-		// every acquire (image, pull policy, network, max uptime, concurrency
-		// cap) and the daemon resizes its running dispatcher after the publish,
-		// so neither a deferred container nor a queued task needs a restart.
-		// RegistryAuth is file-owned and never part of
-		// this document, so it stays a boot-resolved value.
+		// Live: the container pool reads these on every acquire and the dispatcher
+		// is resized on publish.
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "live", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
 }
 
-// validatePluginSettings accepts every value, deliberately.
-//
-// Two candidate rules were considered and are refused:
-//
-//   - That the directory must exist. Every consumer reads a missing directory as
-//     an empty one by design: plugin.LoadDir and secret.Registry.LoadDir return
-//     no entries and no error on os.IsNotExist, loadModules skips a kind whose
-//     file is absent, and playbook.Load returns an empty store. The no-error half
-//     is pinned by internal/secret's TestLoadDirNonexistent. An existence rule
-//     would turn each of those deliberate no-ops into a refused startup.
-//   - That the path must be absolute, or that skills_dir must sit under
-//     plugin_dir. No directory setting in this repository is validated for shape
-//     (work_dir, state_dir, chat.workspace, the routing and playbook paths and an
-//     MCP server's work_dir are all free-form), so a rule for these four alone
-//     would be arbitrary. It would also fail closed in the wrong place: a stored
-//     document is layered over the file and the boot path validates the result,
-//     so a rule added here refuses to start a daemon whose only problem is a
-//     value the store already holds.
-//
-// A "~/..." value is not the missing rule either: it is a path-expansion
-// concern, handled where the file is read (configuration.applyGeneralDefaults),
-// not a reason to refuse the document.
-//
-// It stays a real function rather than an inline no-op so that a rule, if one is
-// ever settled, has one obvious home.
+// validatePluginSettings accepts every value.
 func validatePluginSettings(input []byte) error {
 	return validateAs(input, func(pluginSettings) error { return nil })
 }
@@ -125,13 +86,7 @@ func validateScheduling(input []byte) error {
 		if !configuration.DispatchTriggerValid(policy.Dispatch.Trigger) {
 			return fmt.Errorf("dispatch.trigger %q is not a discovery rule the daemon can poll with", policy.Dispatch.Trigger)
 		}
-		// The pairing rule the file layer's validateDispatch enforces on the
-		// effective document, judged here on the data the resource carries:
-		// RuntimeConfig layers this label over the file's (an absent field
-		// leaves the file's label in force, which is what legacy policies
-		// decode with), so a stored label-requiring trigger with no label was
-		// a value the store blessed and boot refused -- the two-layer
-		// disagreement the parity test refuses to allow.
+		// A label-requiring trigger needs a label.
 		if workintake.RequiresLabel(policy.Dispatch.Trigger) && (policy.Label == nil || *policy.Label == "") {
 			return fmt.Errorf("label is required when dispatch.trigger is %q (an empty label matches every open issue)", policy.Dispatch.Trigger)
 		}

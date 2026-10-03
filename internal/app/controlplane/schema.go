@@ -20,14 +20,7 @@ var timeType = reflect.TypeFor[time.Time]()
 // standard duration for arithmetic.
 var stdDuration = reflect.TypeOf((*interface{ Std() time.Duration })(nil)).Elem()
 
-// durationLike reports whether t is a duration type that writes itself as the
-// string time.ParseDuration reads, rather than as its nanosecond count.
-//
-// It asks the type rather than listing the ones that exist, because a list goes
-// stale the moment a fourth duration type appears and the failure is silent in
-// the worst direction: the field derives as an integer and a client renders a
-// number box for a duration. That is exactly what the enumerated version of this
-// function did to scheduling.Duration when the schedules interval became one.
+// durationLike reports whether t marshals as a duration string.
 func durationLike(t reflect.Type) bool {
 	if !t.Implements(stdDuration) {
 		return false
@@ -36,24 +29,8 @@ func durationLike(t reflect.Type) bool {
 	return err == nil && len(encoded) > 0 && encoded[0] == '"'
 }
 
-// schemaJSON renders the JSON Schema a resource descriptor advertises, derived
-// from the document type the definition owns rather than written out beside it.
-//
-// Derivation is the point. A hand-written schema beside a struct drifts the
-// moment a field is added, and nothing catches it, because the document and its
-// schema are never compared -- which is exactly how twelve descriptors came to
-// advertise `{"type":"object"}` and no field metadata at all.
-//
-// It describes structure only: keys, types, and the `format`, `title` and `doc`
-// annotations a field declares in its own tags. It deliberately emits no prose
-// of its own. Field descriptions already have one home in this tree
-// (internal/webui/config_schema.go, keyed by dotted config path), and a second
-// would be two places to keep the same fact true.
-//
-// `required` is never emitted. An empty string is a legitimate value for nearly
-// every field here -- a blank workspace, a disabled rate limit -- so calling most
-// fields required would invite a client to enforce something the document does
-// not mean.
+// schemaJSON derives a resource's JSON Schema from its document type: keys,
+// types and tag annotations. It never emits required.
 func schemaJSON(document any) string {
 	if document == nil {
 		return bareObjectSchema

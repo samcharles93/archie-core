@@ -14,13 +14,8 @@ const (
 	TurnStatusCancelled TurnStatus = "cancelled"
 )
 
-// TurnRecord is the durable identity and outcome projection for one chat
-// generation. ResponseText is retained so a completed duplicate can replay
-// without depending on the bounded model-context history window. ToolCalls
-// is retained for the same reason and saved in the same call as
-// ResponseText, so a completed-duplicate replay (NATS redelivery, restart
-// RecoverTurns redelivery) can narrate the tool activity that produced the
-// answer instead of showing a tool-less duplicate beside the original.
+// TurnRecord is one chat generation's identity and outcome. ResponseText and
+// ToolCalls are kept so a duplicate can be replayed.
 type TurnRecord struct {
 	TurnID             string
 	SessionID          string

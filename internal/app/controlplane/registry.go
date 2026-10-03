@@ -18,11 +18,8 @@ import (
 type Definition struct {
 	Kind  string
 	Title string
-	// Document is a zero value of the resource's document type. The descriptor's
-	// JSON Schema is derived from it (see schemaJSON) rather than written out
-	// here, so the schema cannot drift from the document it describes. Nil means
-	// the definition names no document, which is why bareObjectSchema still
-	// exists as a fallback.
+	// Document is a zero value of the resource's document type; the JSON Schema
+	// is derived from it. Nil means no document.
 	Document  any
 	ApplyMode string
 	Seed      func(config.Config) any
@@ -75,50 +72,16 @@ type SeedSkip struct {
 	Err  error
 }
 
-// The audit identity every seed writes under. It is a constant rather than a
-// literal at each call site because a later boot reads it back: it is how a
-// stored value is told apart from one an operator replaced (seedWroteNewest),
-// and a writer whose identity its own reader cannot name cannot make that
-// distinction at all.
+// seedActor is the audit identity seeds write under.
 const (
 	seedActor  = "system:migration"
 	seedSource = "legacy-config"
 )
 
-// ImportConfig brings every control-plane resource up to date with the value
-// this build seeds for it, and reports the version each kind is left at.
-//
-// For a kind the store does not hold, that is the seed itself. For a kind it
-// does hold, the stored value wins and the seed writes nothing -- with one
-// exception, because the two ways a kind gets its content are not symmetric:
-//
-//   - A kind derived from the file config is seeded once and then owned by the
-//     store. Editing config.toml does not reach a database that holds a value
-//     for it, which is the whole point of the file being only a seed.
-//   - A kind whose document the build ships (the ones that set Definition.Defaults,
-//     the same set the catalog offers as "restore shipped") is not derived from
-//     operator input at all, so a stored copy is a copy of an older build's
-//     document and nothing else. A value like that is brought up to date, or a
-//     State Store upgraded under a running deployment keeps serving the previous
-//     release's document forever. For workflow-definitions that is not a stale
-//     setting but an outage: the collection validates as one document, so a
-//     stored step type this build no longer has fails every task's pin, whatever
-//     workflow the task names.
-//
-// A refreshed kind keeps its history: the value it replaced stays a revision in
-// resource_history. What is replaced is only the seed's own work -- a
-// definition set an operator replaced is theirs and is left alone, on the boot
-// that finds it and on every boot after.
-//
-// A seed the resource's own validator refuses is SKIPPED and returned in
-// skipped, not fatal. Nothing is written for that kind, so it stays ABSENT and
-// the file document's value stays the one in effect (Client.RuntimeConfig
-// leaves an absent kind alone), with the fix still in the file. The seed is
-// retried on the next start of this process, so correcting config.toml re-seeds
-// it. Fail closed belongs to the process that uses the value:
-// boot.runtimeConfig validates the effective document and refuses to start
-// archied with a value it cannot run with, which is what keeps an invalid value
-// from taking effect silently.
+// ImportConfig seeds every resource the store does not hold and returns the
+// version each kind is left at. A stored value is kept, except a shipped
+// document the seed itself wrote, which is refreshed. A seed its validator
+// refuses is skipped and returned in skipped.
 func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[string]int64, []SeedSkip, error) {
 	versions := make(map[string]int64, len(s.ordered))
 	var skipped []SeedSkip
@@ -147,11 +110,8 @@ func (r *seedRefusal) Error() string { return r.err.Error() }
 
 func (r *seedRefusal) Unwrap() error { return r.err }
 
-// seedKind seeds one kind if the store holds nothing for it, refreshes a
-// shipped document the seed itself wrote, and otherwise leaves the stored value
-// alone, returning the version the kind is left at. A *seedRefusal means the
-// value this build derived is not one the resource's validator accepts, and
-// nothing was written.
+// seedKind seeds, refreshes or leaves one kind and returns its version. A
+// *seedRefusal means the seed failed validation and nothing was written.
 func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config.Config) (int64, error) {
 	stored, storedErr := s.store.Resource(ctx, storecontract.DefaultOrgID, definition.Kind)
 	absent := errors.Is(storedErr, storecontract.ErrResourceNotFound)
@@ -160,13 +120,7 @@ func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config
 	}
 	value, err := definition.seededValue(cfg)
 	if err != nil {
-		// Skipped and reported, not fatal: nothing is written, so the kind
-		// stays absent and the file document's value is the one in effect,
-		// while the process that would RUN the value still fails closed on
-		// it (boot.runtimeConfig validates the effective document).
-		// seededValue wraps a seed's encode and validation failures together,
-		// which is why both take this path: the alternative is a second seed
-		// implementation here to tell them apart.
+		// Skipped, not fatal.
 		return 0, &seedRefusal{err: err}
 	}
 	if !absent && bytes.Equal(stored.Value, value) {
@@ -206,12 +160,8 @@ func expectedVersion(stored storecontract.Resource, absent bool) int64 {
 	return stored.Version
 }
 
-// shippedValueIsStale reports whether a stored value is the build's to replace:
-// the kind ships a document of its own (Defaults is set exactly for those, and
-// a file-derived seed never overwrites a stored value) and the revision the
-// seed itself wrote is the newest one. A newer revision carrying any other
-// identity is an operator's replacement, and an operator's replacement is not
-// the seed's to undo.
+// shippedValueIsStale reports whether the newest stored revision of a
+// shipped document was written by the seed.
 func (s *Server) shippedValueIsStale(ctx context.Context, definition Definition) (bool, error) {
 	if definition.Defaults == nil {
 		return false, nil
@@ -233,25 +183,14 @@ func (s *Server) seedWroteNewest(ctx context.Context, kind string) (bool, error)
 	return history[0].Actor == seedActor && history[0].Source == seedSource, nil
 }
 
-// seedRequestID is the idempotency key a seed writes under. It is derived from
-// the value rather than from the kind alone, because the key is spent the
-// moment it is in the ledger (resource_history's UNIQUE (kind, request_id), and
-// PutResource answers a known key from that ledger): a key derived from the
-// kind makes every later value a replay of the first one ever written, which is
-// how a document that changed in the build never reached a database the seed
-// had already written. Deriving it from the value keeps the write idempotent --
-// the same document twice is still one revision -- without making the second
-// document impossible.
+// seedRequestID is a seed write's idempotency key, derived from the kind and
+// value.
 func seedRequestID(kind string, value []byte) string {
 	sum := sha256.Sum256(value)
 	return "import:" + kind + ":" + hex.EncodeToString(sum[:])
 }
 
-// seededValue is the value the State Store writes for a kind it does not hold
-// yet: the definition's seed derived from cfg, run through the same Decode a
-// write applies. ImportConfig stores it; the offline config layering reads it
-// for the same reason, so "what the daemon sees for a kind that was never
-// stored" is one value rather than two.
+// seededValue is the value written for a kind the store does not hold.
 func (d Definition) seededValue(cfg config.Config) ([]byte, error) {
 	value, err := json.Marshal(d.Seed(cfg))
 	if err != nil {
@@ -286,18 +225,8 @@ func (s *Server) Owns(kind string) bool {
 	return ok
 }
 
-// ValidateStored decodes every stored resource with the definition that owns
-// it, using the same Decode the write path applies, and reports how many
-// resources it checked. Errors name the kind and the revision it was stored at,
-// which is what an operator needs to roll the value back.
-//
-// It is the write path's own check, not boot's: boot refuses on
-// configuration.Validate over the stored values layered onto the file config,
-// and the two disagree in both directions (this one rejects unknown fields
-// boot's decode ignores, while only boot checks dispatch.trigger and a positive
-// poll interval). A caller answering "would the daemon start" therefore needs
-// StoredRuntimeConfig and configuration.Validate as well -- see
-// validateStore in internal/app/archied/state_store_recovery.go.
+// ValidateStored decodes every stored resource with its definition and
+// returns how many it checked. Errors name the kind and revision.
 func (s *Server) ValidateStored(ctx context.Context) (int, error) {
 	checked := 0
 	var failures []error

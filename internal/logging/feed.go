@@ -99,12 +99,7 @@ func (h *FeedHandler) Handle(ctx context.Context, record slog.Record) error {
 	return h.next.Handle(ctx, record)
 }
 
-// WithAttrs bakes the current group prefix into each new attr's key
-// immediately, rather than storing it raw and re-deriving the key at
-// Handle-time from whatever the group chain has grown to by then. Deferring
-// it would nest an attr under a group added by a *later* WithGroup call it
-// was never actually inside -- slog's contract is that WithGroup affects
-// only attrs added afterwards.
+// WithAttrs prefixes attrs with the current group chain now.
 func (h *FeedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
 	clone.attrs = append(append([]slog.Attr(nil), h.attrs...), PrefixAttrs(attrs, h.groups)...)
@@ -119,14 +114,8 @@ func (h *FeedHandler) WithGroup(name string) slog.Handler {
 	return &clone
 }
 
-// PrefixAttrs renames each attr's key with the given dotted group chain, so
-// it carries its grouping with it regardless of what the chain grows to
-// later. Call this from a slog.Handler's WithAttrs, never from Handle: a
-// record's own attrs are always evaluated at the current group nesting, so
-// they're flattened with the live chain instead (see FlattenAttrs).
-// Exported for the same reason as FlattenAttrs: more than one handler needs
-// to get slog's group-nesting contract right (FeedHandler here, and
-// agentexec's system-log handler).
+// PrefixAttrs prefixes each attr's key with the group chain. For use in
+// WithAttrs.
 func PrefixAttrs(attrs []slog.Attr, groups []string) []slog.Attr {
 	if len(groups) == 0 {
 		return attrs
@@ -144,13 +133,8 @@ func PrefixAttrs(attrs []slog.Attr, groups []string) []slog.Attr {
 	return out
 }
 
-// FlattenAttrs merges base (handler-bound attrs from WithAttrs, already
-// keyed with whatever group chain was active when each was added -- see
-// prefixAttrs) with a record's own attrs, grouped under the chain currently
-// active at Handle-time, into the single flat map Entry.Fields expects on
-// decode. Exported because more than one slog.Handler needs to produce
-// Entry-shaped output from a slog.Record: FeedHandler here, and agentexec's
-// system-log handler shipping a task's own logs.
+// FlattenAttrs merges base with a record's attrs under the current group
+// chain into a flat map.
 func FlattenAttrs(record slog.Record, base []slog.Attr, groups []string) map[string]any {
 	fields := map[string]any{}
 	for _, attr := range base {
@@ -176,14 +160,7 @@ func addAttr(fields map[string]any, groups []string, attr slog.Attr) {
 	fields[key] = attrValue(attr.Value)
 }
 
-// attrValue resolves a slog attr to what Entry.Fields should hold on the
-// wire. Both consumers of FlattenAttrs (SystemLogHandler, FeedHandler)
-// json.Marshal Entry.Fields directly rather than through slog's own JSON
-// handler, so an `error` value must be resolved to its message string here:
-// encoding/json has no Error()-aware special case, and the concrete types
-// behind almost every Go error (errors.errorString, fmt.wrapError, ...) hold
-// only unexported fields, which marshal to `{}` and silently discard the
-// message.
+// attrValue resolves an attr for JSON encoding; errors become their message.
 func attrValue(v slog.Value) any {
 	if v.Kind() == slog.KindAny {
 		if err, ok := v.Any().(error); ok && !isNilError(err) {
@@ -193,13 +170,7 @@ func attrValue(v slog.Value) any {
 	return v.Any()
 }
 
-// isNilError reports whether err is nil in the way that matters before
-// calling Error(): a plain nil interface, or the classic Go footgun where a
-// non-nil interface wraps a nil concrete pointer (var e *T; var err error =
-// e -- err != nil is true). A logging package's whole job is to never be the
-// thing that crashes the process, so this checks for both rather than
-// trusting every Error() method in this module and its dependencies to
-// tolerate a nil receiver.
+// isNilError reports whether err is nil or a nil pointer in an interface.
 func isNilError(err error) bool {
 	if err == nil {
 		return true

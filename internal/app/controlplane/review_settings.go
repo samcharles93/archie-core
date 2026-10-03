@@ -28,11 +28,7 @@ func reviewSettingsDefinition() Definition {
 	}
 }
 
-// validateReviewSettings accepts every value, deliberately: both dials are free
-// booleans with no cross-field rule, and a stored value reaches its consumers
-// through the same layered cfg.Review boot validates. It stays a real function
-// rather than an inline no-op so a rule, if one is ever settled, has one
-// obvious home (validatePluginSettings is the precedent).
+// validateReviewSettings accepts every value.
 func validateReviewSettings(input []byte) error {
 	return validateAs(input, func(reviewSettings) error { return nil })
 }

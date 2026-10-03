@@ -5,58 +5,24 @@ import (
 	"time"
 )
 
-// Inbound is a message arriving from a channel together with the
-// transport context that is not part of the canonical record.
-//
-// Message is the record itself, exactly as it will be persisted. Channels
-// construct it directly: ConversationID addresses the chat (a Telegram
-// chat ID and topic thread, an email recipient, a webhook path), Sender is
-// the channel-native attribution, and Role is always RoleUser --
-// a channel only ever carries what a person said. ID is left empty for a
-// newly received message so the store derives one from SourceID, and
-// honoured when set, which is what lets a read-modify-write of a history
-// keep its identities rather than minting new ones.
+// Inbound is a received message plus transport context that is not
+// persisted. Message.Role is always RoleUser; an empty ID is derived from
+// SourceID.
 type Inbound struct {
 	Message Message
 	// Page is the dashboard route the operator is on when they sent
 	// this message. Transport-only: it reaches the system prompt and
 	// is never persisted. Empty for non-web channels.
 	Page string
-	// BudgetKey is what the Gateway charges this message against in its
-	// inbound rate limiter (internal/ratelimit), for a channel whose
-	// Message.SenderID is empty because it carries no per-person
-	// identity but still has a stable, operator-controlled source to
-	// budget -- a webhook's configured route path, today. It is
-	// deliberately not SenderID: SenderID means "this is who sent it",
-	// and several consumers (internal/app/archied/chat_identity.go,
-	// sessioncurator) read it as a person, so a route path in that field
-	// becomes a user identity. BudgetKey is transport-only and never
-	// persisted, exactly like Page. Empty means the message is not
-	// rate limited, which is correct for a source with no stable key of
-	// its own (the dashboard).
+	// BudgetKey is the rate-limit key for a channel with no per-person sender,
+	// such as a webhook route. Not persisted. Empty means not limited.
 	BudgetKey string
-	// Platform is the channel that carried this message ("telegram",
-	// "email", "webhook", "web"), named by the frontend that owns that
-	// channel. It is how the Gateway learns which channel it is serving:
-	// one Router serves all of them, so its own name is "web" even for a
-	// Telegram turn, which made SessionSource.Platform -- the first
-	// component of the session natural key -- a constant, and left the
-	// per-user identity policy unreachable with a real channel name.
-	// Transport-only and never persisted: the session
-	// record keeps the platform. Empty means the sender did not name its
-	// channel, and the Gateway falls back to its own name.
+	// Platform is the channel that carried the message. Not persisted. Empty
+	// falls back to the gateway's name.
 	Platform string
 
-	// Media carries files the sender attached to this message (photos,
-	// documents, voice, video) with their in-process bytes already
-	// downloaded. Like Page and BudgetKey it is transport-only: it never
-	// crosses a persistence boundary, and the stored Message records the
-	// attachment as a short textual note in its Text instead, because
-	// download URLs expire and raw media bytes must not silently inflate
-	// the transcript store. It does cross the inbound request to the
-	// Gateway process that runs the turn -- that process has no platform
-	// credential, so the bytes have no other way to reach the model. nil
-	// for a text-only message.
+	// Media are the message's attachments with their bytes. Sent to the Gateway
+	// but never persisted.
 	Media []MediaAttachment
 }
 
@@ -75,11 +41,8 @@ type SpawnRequest struct {
 	Identity string // the identity spawning this task; propagated from Router.Identity
 }
 
-// TaskCreator creates a native (non-forge-backed) task from a chat
-// command. The daemon supplies an implementation backed by the store.
-// When nil on a Router, /spawn returns "not configured". CreateTask
-// must return the task's real, durable database ID  --  never a
-// synthetic or fabricated value.
+// TaskCreator creates a chat task and returns its database ID. Nil makes
+// /spawn report "not configured".
 type TaskCreator interface {
 	CreateTask(ctx context.Context, req SpawnRequest) (taskID int64, err error)
 }

@@ -7,11 +7,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// ChatContract is the conversational boundary consumed by channel frontends.
-// Results are snapshots: callers must not rely on shared object identity.
-// It moved here from internal/gateway so the webui
-// and archie-ui processes can hold the contract without linking the gateway
-// runtime (and, transitively, its SQLite session store).
+// ChatContract is the chat boundary channel frontends call. Results are
+// snapshots.
 type ChatContract interface { //nolint:interfacebloat // wire contract intentionally covers the complete Gateway facade
 	Snapshot(context.Context) (ChatSnapshot, error)
 	GetSession(context.Context, string) (SessionContext, bool, error)
@@ -34,15 +31,9 @@ type ChatTaskActionContract interface {
 	// payload; the chat surface has no instruction or selection syntax, so it
 	// is the zero value there.
 	ApplyTaskAction(context.Context, string, int64, taskstate.Action, taskactions.ActionPayload) (TaskActionResult, error)
-	// ApplyOperatorTaskAction applies an action on behalf of an authenticated
-	// dashboard caller, who acts across identities. The actor is who the
-	// credential resolved to, or the zero Actor when the caller presented
-	// nothing archie could verify -- which is recorded unattributed rather than
-	// credited to a human. It is a separate method rather than an empty identity
-	// because "" is a real identity in a single-identity deployment (see
-	// chatTaskProfiles in the daemon). res carries the review gate answer
-	// payload: the operator's finding selection for approve, and the
-	// instructions a rereview requires.
+	// ApplyOperatorTaskAction applies an action for an authenticated dashboard
+	// operator acting across identities. A zero actor is recorded unattributed.
+	// res carries the review gate answer.
 	ApplyOperatorTaskAction(context.Context, taskactions.Actor, int64, taskstate.Action, taskactions.ActionPayload) (TaskActionResult, error)
 }
 

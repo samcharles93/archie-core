@@ -7,25 +7,9 @@ import (
 	"sync"
 )
 
-// Turns serialises chat turns per session and keeps the running turn
-// cancellable.
-//
-// Channel event loops are typically single-threaded -- go-telegram/bot,
-// for one, runs a single worker that calls handlers synchronously. Running
-// a turn on that goroutine blocks delivery of every subsequent update,
-// including the command meant to stop it: /stop would sit unread in the
-// update channel until the turn it was meant to kill had already finished.
-//
-// Submitting to Turns hands the work to a per-session goroutine and returns
-// immediately, so the event loop stays free and control commands are always
-// serviceable. Ordering is preserved by the lane being serial, not by the
-// event loop being blocked.
-//
-// Queues are unbounded and never shed. A dropped message is a silent
-// failure that surfaces much later as an agent that ignored something,
-// which costs far more to diagnose than the memory a backlog occupies.
-// [Turns.Stop] is the way a backlog is cleared -- deliberately, by the
-// person who created it.
+// Turns runs chat turns serially per session on their own goroutines, so
+// the channel's event loop stays free, and keeps the running turn
+// cancellable. Queues are unbounded.
 type Turns struct {
 	log *slog.Logger
 
@@ -33,26 +17,14 @@ type Turns struct {
 	lanes map[string]*lane
 }
 
-// queued is one pending turn: the work, already bound to its own
-// cancellable context, and the cancel that releases it.
-//
-// The context is derived when the turn is submitted rather than when it
-// starts running, which means a turn has a live cancel handle for its whole
-// time in the backlog. Stop can therefore cancel queued turns rather than
-// merely dropping them, and each turn stays tied to the caller that asked
-// for it -- it dies when that caller's context does.
+// queued is one pending turn with its own cancellable context.
 type queued struct {
 	run    func()
 	cancel context.CancelFunc
 }
 
-// lane is one session's serial worker.
-//
-// A single mutex guards the backlog, the running turn's cancel, and whether
-// a worker is live, so that Stop observes them together. Splitting them
-// would leave a window where a turn finishes between the backlog being
-// cleared and the cancel being called, letting a queued turn start after a
-// stop.
+// lane is one session's serial worker; one mutex guards its backlog, running
+// cancel and liveness.
 type lane struct {
 	mu      sync.Mutex
 	pending []queued
@@ -70,11 +42,8 @@ func NewTurns(log *slog.Logger) *Turns {
 	return &Turns{log: log, lanes: make(map[string]*lane)}
 }
 
-// Submit schedules run for the given session and returns without waiting
-// for it. run receives a context derived from ctx that [Turns.Stop] can
-// cancel.
-//
-// Submit never blocks and never rejects: messages queue.
+// Submit queues run for session and returns. run's context is cancelled by
+// Stop.
 func (t *Turns) Submit(ctx context.Context, session string, run func(context.Context)) {
 	turnCtx, cancel := context.WithCancel(ctx)
 
@@ -102,13 +71,8 @@ func (t *Turns) Submit(ctx context.Context, session string, run func(context.Con
 	}
 }
 
-// Stop cancels the session's running turn and discards everything queued
-// behind it. It reports whether a turn was actually cancelled and how many
-// queued turns were dropped.
-//
-// Dropping the queue is intentional. "Stop" means stop, not "stop this one
-// and immediately begin the next thing I said" -- starting the queued turn
-// would look to the sender exactly like the stop had failed.
+// Stop cancels the session's running turn and drops its queue, reporting
+// whether a turn was cancelled and how many were dropped.
 func (t *Turns) Stop(session string) (cancelled bool, dropped int) {
 	l := t.lane(session)
 	if l == nil {
@@ -200,14 +164,8 @@ func (t *Turns) retire(session string, l *lane) bool {
 	return true
 }
 
-// begin pops the oldest queued turn and publishes its cancel in the same
-// critical section. It reports false when the backlog is empty; the owning
-// Turns then retires the worker and map entry under both locks.
-//
-// The pop and the publish must happen together. Were the turn popped first
-// and its cancel published after, a Stop landing in between would see an
-// empty backlog and no running turn, report that nothing was happening, and
-// let the turn it should have killed start regardless.
+// begin pops the oldest queued turn and publishes its cancel atomically. It
+// reports false when the backlog is empty.
 func (l *lane) begin() (queued, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -228,13 +186,7 @@ func (l *lane) begin() (queued, bool) {
 	return next, true
 }
 
-// runOne executes one turn, always retracting its cancel afterwards so a
-// later Stop cannot cancel an already-finished turn.
-//
-// Panics are contained here rather than by the channel's own recovery
-// middleware: that middleware wraps the event-loop goroutine, and the turn
-// no longer runs on it. Without this, one bad turn would take the lane's
-// goroutine down and the session would silently stop answering forever.
+// runOne runs one turn, recovering panics, and clears its cancel afterwards.
 func (l *lane) runOne(next queued, log *slog.Logger) {
 	defer next.cancel()
 

@@ -16,17 +16,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
-// Client is the control-plane client for every resource that does not resolve
-// a workflow step type: catalog, history, settings, personas, schedules. It
-// carries no step vocabulary, so a process that never reads or writes a
-// workflow definition -- archie-messaging, which only loads channel settings,
-// and archie-gateway, which reads catalog, runtime settings and personas --
-// needs no provider set and cannot be failed by one.
-// Client is the control-plane client a process that serves the store uses. It
-// embeds the Messaging Service's client -- the generic resource read path and
-// the channel-settings projection -- and adds the resource-specific reads and
-// watches, which need the workflow and scheduling engines that such a process
-// already links.
+// Client reads and watches control-plane resources. It embeds the Messaging
+// Service's client and adds resource-specific reads.
 type Client struct {
 	*controlplanerpc.Client
 	rpc pb.ControlPlaneServiceClient
@@ -43,11 +34,7 @@ func NewRPCClient(client pb.ControlPlaneServiceClient) *Client {
 }
 
 // WorkflowDefinitionsClient reads and replaces the workflow-definitions
-// resource, the one control-plane surface whose stored values name workflow
-// step types. Resolving those names needs the step vocabulary the process
-// registered at its composition root, so the vocabulary is a constructor
-// dependency of this surface and of no other: a caller that cannot reach
-// workflow definitions cannot ask for one.
+// resource, resolving step types against the given vocabulary.
 type WorkflowDefinitionsClient struct {
 	rpc   pb.ControlPlaneServiceClient
 	steps workflow.StepRegistry
@@ -78,13 +65,8 @@ func (c *WorkflowDefinitionsClient) WorkflowDefinitions(ctx context.Context) (wo
 	return definitions, response.Resource.Version, err
 }
 
-// ReplaceWorkflowDefinitions replaces the collection. Passing
-// workflow.ShippedDefinitions() restores all shipped definitions while keeping
-// the previous override in resource history.
-//
-// No production process calls it today: the daemon's only consumer of this
-// surface reads (internal/daemon's WorkflowDefinitions interface), so this half
-// is reached by tests until a writer exists.
+// ReplaceWorkflowDefinitions replaces the collection, keeping the previous
+// value in history.
 func (c *WorkflowDefinitionsClient) ReplaceWorkflowDefinitions(ctx context.Context, definitions workflow.WorkflowDefinitionCollection, expectedVersion int64, actor, source, requestID string) (int64, error) {
 	value, err := encodeWorkflowDefinitions(definitions, c.steps)
 	if err != nil {
@@ -134,23 +116,14 @@ func (c *Client) WatchWorkflowExecutionSettings(ctx context.Context, afterVersio
 		func(err error) AppliedSettings { return AppliedSettings{Err: err} }), nil
 }
 
-// AppliedResource carries a watched resource's version only, without its
-// document. The kinds applied with it are applied by re-running the whole
-// layering, which reads every kind back from the store, so the document the
-// stream carries would be decoded and then thrown away; a stored value this
-// build cannot read is reported by the layering that refuses it (with
-// last-known-good kept), not by the watch.
+// AppliedResource is a watched resource's version, without its document.
 type AppliedResource struct {
 	Version int64
 	Err     error
 }
 
-// WatchResource streams version updates for any resource kind without
-// decoding the document. It is the shape the runtime-resource watches read:
-// keepWatch reconnects on it exactly as it does on a
-// typed stream, and the resume point still moves past a document the client
-// refused to decode -- the store answered with that version, and resuming
-// before it would re-offer it on every reconnect.
+// WatchResource streams version updates for a resource kind without decoding
+// documents.
 func (c *Client) WatchResource(ctx context.Context, kind string, afterVersion int64) (<-chan AppliedResource, error) {
 	stream, err := c.rpc.Watch(ctx, controlplanerpc.WatchRequest(ctx, kind, afterVersion))
 	if err != nil {
@@ -224,13 +197,7 @@ func watchUpdates[T any](
 	return out
 }
 
-// sendUpdate hands update to the reader of one Watch stream, reporting false
-// when ctx ended first. A reader leaves without draining what is left for it:
-// the watch that reads these streams returns on cancellation, so a bare send
-// parks this producer -- and the stream it holds -- for the rest of the
-// process's life, one goroutine and one channel per kind at every exit. That
-// coupling is load-bearing: the reader's prompt shutdown rests on this side
-// stopping on the same context, and neither half is safe alone.
+// sendUpdate sends update to out, returning false if ctx ends first.
 func sendUpdate[T any](ctx context.Context, out chan<- T, update T) bool {
 	select {
 	case out <- update:

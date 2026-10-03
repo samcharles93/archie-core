@@ -23,13 +23,7 @@ type mcpServerSettings struct {
 	URL             string   `json:"url,omitempty"`
 	SSEEndpoint     string   `json:"sse_endpoint,omitempty"`
 	MessageEndpoint string   `json:"message_endpoint,omitempty"`
-	// ParallelToolCalls is a pointer, not a bool, for the same reason
-	// schedulingPolicy.Label is: a resource seeded before this field existed
-	// carries no key for it, and the layering replaces cfg.Tools wholesale, so
-	// absence has to mean "leave the file document's value in force" rather
-	// than "false". A plain bool cannot tell the two apart, which made the
-	// file's parallel_tool_calls inert on every store that predates the field
-	// -- the stores that cannot be re-seeded.
+	// ParallelToolCalls is nil when not stored, keeping the file's value.
 	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
 	HeadersConfigured bool  `json:"headers_configured"`
 }

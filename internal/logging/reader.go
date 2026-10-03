@@ -14,11 +14,6 @@ import (
 )
 
 // Entry is one decoded log line.
-//
-// Reading lives here rather than in the dashboard because this package owns
-// the on-disk format. If the handler shape or field names change, the reader
-// changes with them in the same file, and no consumer has to know slog wrote
-// JSON with a "msg" key.
 type Entry struct {
 	ID      int64     `json:"id,omitempty"`
 	Time    time.Time `json:"time"`
@@ -38,14 +33,8 @@ type Query struct {
 	Levels []string
 	// Component matches the "component" field exactly. Empty means any.
 	Component string
-	// Stage matches the entry's own "stage" field exactly (case-insensitive).
-	// Empty means any.
-	//
-	// Only entries a stage tagged carry that field. Agent and tool output is
-	// logged by the runtime that produced it and carries no stage, so a stage
-	// filter NARROWS the file rather than covering it: the caller is obliged to
-	// say that, because an honest-looking filter over a partial field is worse
-	// than no filter. An entry with no stage never matches.
+	// Stage matches the entry's "stage" field, case-insensitively. Empty
+	// matches any. Entries without a stage never match.
 	Stage string
 	// Contains matches the message or any field value, case-insensitively.
 	Contains string
@@ -77,13 +66,7 @@ type Result struct {
 	Truncated bool `json:"truncated"`
 	// File is the path read, for the UI to show where this came from.
 	File string `json:"file"`
-	// Found reports whether the file existed. False with a nil error is not a
-	// failure: a caller asking for a log that has no file yet, or one whose
-	// attempt produced no output, must be told that rather than shown an empty
-	// page indistinguishable from a log that is genuinely empty. This is also
-	// what separates "there is no log for this attempt" from "this process
-	// cannot read logs at all" -- two conditions that a reader has to report
-	// differently because only the second is a configuration matter.
+	// Found reports whether the log file exists.
 	Found bool `json:"found"`
 }
 
@@ -96,11 +79,7 @@ type TaskLogPage struct {
 	Components []string `json:"components"`
 }
 
-// ErrTaskLogsUnavailable reports that this process cannot read task logs at
-// all -- no reader is configured here. It is deliberately not the same answer
-// as "this attempt has no log" (Result.Found = false): a caller that conflates
-// them tells an operator task logging is switched off when it is not, which is
-// the bug this error exists to prevent.
+// ErrTaskLogsUnavailable reports that this process cannot read task logs.
 var ErrTaskLogsUnavailable = errors.New("logging: task log reader unavailable")
 
 // taskLogChunkBytes bounds one write a TaskLogContent makes, so a reader that
@@ -108,11 +87,8 @@ var ErrTaskLogsUnavailable = errors.New("logging: task log reader unavailable")
 // io.Copy would otherwise hand it reads of its own choosing.
 const taskLogChunkBytes = 256 << 10
 
-// TaskLog reads one task attempt's persisted log from this registry. A nil
-// registry (task logging not configured for this process) reports
-// ErrTaskLogsUnavailable, never an empty page: a process that cannot read logs
-// must say so rather than implicate the attempt. Safe to call on a nil
-// receiver, like every other method here.
+// TaskLog reads one task attempt's log. A nil registry returns
+// ErrTaskLogsUnavailable.
 func (r *TaskRegistry) TaskLog(_ context.Context, taskID int64, attempt int, q Query) (TaskLogPage, error) {
 	if r == nil {
 		return TaskLogPage{}, ErrTaskLogsUnavailable
@@ -134,15 +110,8 @@ func (r *TaskRegistry) TaskLog(_ context.Context, taskID int64, attempt int, q Q
 	return page, nil
 }
 
-// TaskLogContent writes one task attempt's log to w exactly as it is on disk,
-// for a caller that wants the file rather than a decoded page. found is false,
-// with a nil error, when the attempt has no log file -- a normal state for an
-// attempt that produced no output, and not an error. A nil registry reports
-// ErrTaskLogsUnavailable, matching TaskLog.
-//
-// The content is streamed rather than returned as one slice because a log file
-// is unbounded input (it rotates at DefaultMaxSizeMB), and a caller moving it
-// across a transport with a message-size limit needs it in pieces.
+// TaskLogContent streams one attempt's raw log to w. found is false when
+// there is no file. A nil registry returns ErrTaskLogsUnavailable.
 func (r *TaskRegistry) TaskLogContent(_ context.Context, taskID int64, attempt int, w io.Writer) (bool, error) {
 	if r == nil {
 		return false, ErrTaskLogsUnavailable
@@ -161,14 +130,8 @@ func (r *TaskRegistry) TaskLogContent(_ context.Context, taskID int64, attempt i
 	return true, nil
 }
 
-// PageResult is what a single forward-paged call returns.
-//
-// Cursor is the byte offset within path at which the next page should
-// resume -- pass it back as Page's cursor argument. A Cursor equal to
-// or past the file's current size means there is nothing more to read.
-// MoreAvailable is true iff the scan saw at least one matching entry it
-// did not return because Limit was already satisfied; it does NOT imply
-// the file has been read to the end (combine with Truncated).
+// PageResult is one forward page. Pass Cursor back to continue.
+// MoreAvailable reports matches beyond Limit.
 type PageResult struct {
 	Entries       []Entry `json:"entries"`
 	Truncated     bool    `json:"truncated"`
@@ -221,17 +184,7 @@ func readWindow(path string) (w logWindow, found bool, err error) {
 	}
 	w.data = make([]byte, size)
 
-	// ReadAt, never Read: io.ReaderAt guarantees it either fills the
-	// buffer or returns a non-nil error, whereas Read may legally return
-	// fewer bytes with a nil error. A silent short read here would leave
-	// the tail of the buffer as zero bytes, which decode rejects -- so
-	// the NEWEST entries would vanish from every result while the call
-	// still reported success. That is the worst possible failure for a
-	// log reader, and it is the one Read invites.
-	//
-	// Guarded on len>0 because a zero-length ReadAt at end-of-file is
-	// permitted to return io.EOF, and an empty log is a valid empty
-	// result rather than an error.
+	// ReadAt fills the buffer or errors; skip it for an empty window.
 	if len(w.data) > 0 {
 		if _, err := f.ReadAt(w.data, w.start); err != nil {
 			return logWindow{}, false, fmt.Errorf("logging: read %s: %w", path, err)
@@ -240,34 +193,9 @@ func readWindow(path string) (w logWindow, found bool, err error) {
 	return w, true, nil
 }
 
-// readLines walks every JSONL line in path within the scan window
-// (tail-most maxScanBytes), invoking step with each decoded entry that
-// matches q and the file offset just past the line's terminating '\n'.
-// It returns whether the scan hit maxScanBytes before EOF (so older
-// matching entries exist that were not examined) and the file offset
-// the caller should use as its next-page Cursor.
-//
-// cursor=0 begins at the scan window's start (same as Tail); a cursor
-// past the scan window's start resumes partway through. A cursor at or
-// past EOF returns ok=false without invoking step -- either the caller
-// has read everything, or the file shrank under rotation.
-//
-// SCAN WINDOW IS A HARD CEILING, and it bounds pagination too. For a
-// file larger than maxScanBytes the oldest bytes are never examined by
-// ANY call, no matter how the caller pages: every call re-derives the
-// window from the CURRENT file size, and the cursor is clamped up into
-// it. Paging therefore walks the window exhaustively and stops; it does
-// not walk backwards into history. truncated=true is the signal that
-// this happened, and it is the caller's job to surface that rather than
-// implying the log was read whole. Rotated generations
-// (<path>.1, .2, ...) are separate files this function never opens.
-//
-// Implementation: the window is read into memory in one Read, then
-// walked by exact slice offsets. Offsets into a single contiguous
-// buffer are trivially correct, which an incremental reader over the
-// file is not: bufio.Reader buffers ahead, so its underlying file
-// position runs up to one buffer past its logical position and cannot
-// be used to derive a cursor.
+// readLines calls step for each matching entry in the last maxScanBytes of
+// path, with the offset after its line. It returns whether the window
+// excluded older data and the next cursor. Older data is never read.
 func readLines(path string, q Query, cursor int64, step func(e Entry, endOff int64) bool) (truncated bool, cursorOut int64, ok bool, err error) {
 	w, found, err := readWindow(path)
 	if err != nil || !found {
@@ -290,21 +218,10 @@ func readLines(path string, q Query, cursor int64, step func(e Entry, endOff int
 		return truncated, cursor, false, nil
 	}
 
-	// The caller's cursor is a file offset. Convert to an offset within
-	// `data` (which begins at windowStart). The clamp above guarantees
-	// cursor >= windowStart, so this cannot go negative; min() only
-	// guards against a caller-supplied cursor inside the window but past
-	// its end, which the EOF check above does not catch when the file is
-	// larger than maxScanBytes.
+	// Convert the file cursor to an offset in data.
 	cursorInWindow := min(cursor-windowStart, int64(len(data)))
 
-	// When the caller resumes at the very start of the scan window, the
-	// first line may have been truncated by the size-cap seek. Drop
-	// bytes up to and including the first '\\n' so the caller never sees
-	// a partial first entry. If there is no '\\n' at all, the file (or
-	// the visible window) is one giant unterminated line: report it as
-	// truncated (already true) and stop -- there is nothing for the
-	// caller to page through.
+	// Skip a partial first line at the window start.
 	if cursor == windowStart && truncated {
 		idx := bytes.IndexByte(data, '\n')
 		if idx < 0 {
@@ -316,28 +233,9 @@ func readLines(path string, q Query, cursor int64, step func(e Entry, endOff int
 	return truncated, walkWindow(data, windowStart, cursorInWindow, q, step), true, nil
 }
 
-// walkWindow invokes step for each entry in data at or after the
-// in-buffer offset from that decodes and matches q, and returns the FILE
-// offset at which the next page should resume.
-//
-// step receives the file offset just past the line it was given, and
-// returns false to stop the walk; walkWindow then returns the cursor
-// exactly there. A line that fails to decode is skipped rather than
-// ending the walk -- a log may carry subprocess output that does not
-// share our format.
-//
-// NOTE: a `false` return from step does NOT mean "no more matches". It
-// means "you have enough for this page; stop here so you can return to
-// the caller." The next call, started from the cursor walkWindow
-// returns, will revisit the file offset step saw and continue walking.
-// The caller is responsible for distinguishing the two outcomes via
-// the limit it passed.
-//
-// The returned cursor is the FILE offset of the first byte after the
-// last line walked, regardless of whether step stopped the walk early
-// or the buffer was exhausted. Cursor values are in the same coordinate
-// system across calls (file offset), so passing one straight back into
-// the next Page call resumes the walk cleanly.
+// walkWindow calls step for each matching entry from offset from, skipping
+// undecodable lines, and returns the file offset to resume at. step returns
+// false to stop.
 func walkWindow(data []byte, windowStart, from int64, q Query, step func(e Entry, endOff int64) bool) int64 {
 	pos := from
 	for pos < int64(len(data)) {
@@ -366,17 +264,9 @@ func walkWindow(data []byte, windowStart, from int64, q Query, step func(e Entry
 	return windowStart + pos
 }
 
-// Tail returns the most recent entries in path matching q.
-//
-// Entries are returned oldest-first so the UI can append newer ones from the
-// live stream without reordering. A missing file is not an error: file logging
-// is optional, and an empty result with a clear File value lets the caller say
-// so rather than showing a failure.
-//
-// Tail preserves the legacy ring-buffer semantics: when more than Limit
-// matching entries exist within the scan window, the OLDEST matches are
-// dropped and Truncated is set. Page is the forward-paged alternative --
-// callers that want every entry reachable should use Page, not Tail.
+// Tail returns the most recent matching entries in path, oldest first. A
+// missing file is not an error. Past Limit, older matches are dropped and
+// Truncated is set.
 func Tail(path string, q Query) (Result, error) {
 	res := Result{Entries: []Entry{}, File: path}
 	limit := q.Limit
@@ -387,11 +277,7 @@ func Tail(path string, q Query) (Result, error) {
 		limit = MaxTailLines
 	}
 
-	// found is read before readLines so an absent file is reported as such
-	// rather than only as an empty entry list -- see Result.Found. It is a
-	// Stat rather than a second readWindow: readLines reads the whole scan
-	// window, and doing that twice per Tail call would double the cost of
-	// every log view for one boolean.
+	// Stat for Found without reading the window twice.
 	if strings.TrimSpace(path) != "" {
 		if _, err := os.Stat(path); err == nil {
 			res.Found = true
@@ -413,11 +299,7 @@ func Tail(path string, q Query) (Result, error) {
 		return Result{}, err
 	}
 	if !ok {
-		// A "nothing to read" early return (file > maxScanBytes with no
-		// terminator in the window) is still Truncated: the scan cap
-		// fired. Preserve that signal even though we have no entries to
-		// surface -- the caller must know that older matching entries
-		// exist beyond what we examined.
+		// Truncated stays set even with no entries.
 		res.Truncated = truncated
 		return res, nil
 	}
@@ -426,26 +308,9 @@ func Tail(path string, q Query) (Result, error) {
 	return res, nil
 }
 
-// Page walks path forward from cursor, returning up to Limit matching
-// entries (clamped to MaxTailLines). A cursor of 0 starts at the
-// beginning of the scanned window, exactly as Tail does.
-//
-// The returned Cursor is the byte offset at which the next call should
-// resume; pass it back unchanged. When the file has been read to EOF
-// within maxScanBytes, Cursor equals the file's size and MoreAvailable
-// is false. Truncated is true when the scan cap fired before EOF,
-// meaning older matching entries exist that were never examined -- the
-// caller must decide whether to walk the rotation history or surface
-// the gap.
-//
-// A cursor that points past the file's current size returns an empty
-// page with MoreAvailable=false: rotation may have shrunk the file, and
-// the next page is whatever the file now contains.
-//
-// Cursor=0 with a file larger than maxScanBytes begins at the first
-// complete line AFTER the size-cap seek, exactly as Tail does --
-// identical output to Tail under the same query when Limit is large
-// enough to hold everything.
+// Page returns up to Limit matching entries from cursor, and the cursor to
+// resume at. Truncated means older entries were not examined. A cursor past
+// the end returns an empty page.
 func Page(path string, q Query, cursor int64) (PageResult, error) {
 	res := PageResult{Entries: []Entry{}, File: path}
 	limit := q.Limit
@@ -487,16 +352,8 @@ func Page(path string, q Query, cursor int64) (PageResult, error) {
 	for i, m := range matches {
 		res.Entries[i] = m.entry
 	}
-	// The cursor must resume AFTER the last entry this page returned, so
-	// the next call does not re-walk the same entries. When the walk
-	// stopped because the limit was reached (MoreAvailable), that resume
-	// point is the end of the last matching line. When the walk ran the
-	// whole buffer to completion (no more matches), the cursor is the
-	// walk's own end offset -- which can sit past trailing lines that
-	// failed the filter or failed to decode, and must, otherwise the next
-	// call would re-walk those trailing bytes forever. The two values
-	// differ only in the MoreAvailable=false case, which is exactly the
-	// case where the doc comment promises "Cursor equals the file's size".
+	// Resume after the last returned entry when the page filled, else at the end
+	// of the walk.
 	if res.MoreAvailable {
 		res.Cursor = matches[len(matches)-1].endOff
 	} else {
@@ -535,18 +392,8 @@ func decode(line []byte) (Entry, bool) {
 	return entry, true
 }
 
-// withinTimeBounds reports whether t satisfies q's Since/Until bounds.
-// Both bounds are inclusive, and an unset (zero) bound is no bound.
-//
-// An entry whose timestamp did not parse -- missing, non-string, or
-// malformed "time", all of which leave decode's Entry.Time zero rather
-// than dropping the record -- cannot be placed in a range, so ANY
-// time-bounded query excludes it. That check is explicit rather than
-// implied, because the two comparisons are not symmetric about the zero
-// time on their own: zero.Before(since) is true so Since would drop such
-// entries, while zero.After(until) is false so Until would silently keep
-// them, and "errors before noon" would come back carrying records with
-// no known time at all.
+// withinTimeBounds reports whether t is within q's inclusive Since/Until
+// bounds. An entry with no parsed time fails any bound.
 func (q Query) withinTimeBounds(t time.Time) bool {
 	if q.Since.IsZero() && q.Until.IsZero() {
 		return true

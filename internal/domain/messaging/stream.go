@@ -34,15 +34,8 @@ type MediaEvent struct {
 	Attachment MediaAttachment
 }
 
-// TurnStream receives a turn's output as it is produced.
-//
-// It replaces the plain delta callback so a channel can render tool activity
-// in the same ordered pass as the text: both arrive on the generating
-// goroutine, in the order the model produced them. Implementations must not
-// block  --  a slow renderer stalls generation  --  and must be safe to call
-// from that goroutine only.
-//
-// Callers that render text alone use DeltaFunc rather than implementing this.
+// TurnStream receives a turn's text and tool activity in order, on the
+// generating goroutine. Implementations must not block.
 type TurnStream interface {
 	// Delta appends the next fragment of assistant text.
 	Delta(text string)

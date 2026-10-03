@@ -27,11 +27,8 @@ type executionSettingsDocument struct {
 	MaxTaskRuntimeSeconds *int64 `json:"max_task_runtime_seconds" title:"Max task runtime seconds" doc:"Limit for a whole task run; the task is parked when it passes. 0 disables it."`
 }
 
-// ImportWorkflowExecutionSettings preserves the focused bootstrap API for callers
-// that do not own the complete legacy configuration document. It is the same
-// producer rule as ImportConfig, at this narrower entry point: a kind the store
-// holds is left alone, and a kind it does not hold is seeded under the one seed
-// identity (see seedActor and seedRequestID).
+// ImportWorkflowExecutionSettings seeds the workflow execution settings when
+// the store does not hold them.
 func (s *Server) ImportWorkflowExecutionSettings(ctx context.Context, settings workflow.ExecutionSettings) (int64, error) {
 	resource, err := s.store.Resource(ctx, storecontract.DefaultOrgID, WorkflowExecutionSettingsKind)
 	if err == nil {

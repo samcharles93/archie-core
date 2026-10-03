@@ -8,12 +8,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
-// The channel-settings DOCUMENT lives in internal/infrastructure/controlplanerpc,
-// beside the client that projects it, so a process that only reads stored
-// settings does not link this package's store-backed server and workflow engine.
-// These aliases keep the store-backed side reading the same
-// types by the same names it always used, so there is one definition of the
-// document rather than a copy on each side of the boundary.
+// Aliases for the channel-settings document defined in controlplanerpc.
 type (
 	channelSettings        = controlplanerpc.ChannelSettings
 	telegramSettings       = controlplanerpc.TelegramSettings
@@ -51,12 +46,7 @@ func validateChannels(input []byte) error {
 	})
 }
 
-// normalizeChannels canonicalizes the stored document: decoding into the shape
-// above and re-encoding writes the snake_case keys and the string duration,
-// dropping the Go-cased keys an earlier revision stored. A document that still
-// carries them converges the next time it is written; reads tolerate them
-// meanwhile (emailSettings, rateLimitSettings), so nothing has to be re-saved
-// before it can be read again.
+// normalizeChannels re-encodes the stored document with snake_case keys.
 func normalizeChannels(input []byte) ([]byte, error) {
 	var settings channelSettings
 	if err := json.Unmarshal(input, &settings); err != nil {

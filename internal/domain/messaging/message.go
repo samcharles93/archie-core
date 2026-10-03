@@ -1,10 +1,5 @@
-// Package messaging owns canonical Messages, Conversations, branches,
-// channel and source correlation, and typed tool-call/tool-result message
-// variants.
-//
-// Migrating internal/gateway/'s session, compression, approval, and branch
-// logic onto these types is deliberately out of scope here — see that section
-// for why, and bd for the tracked follow-up work.
+// Package messaging defines messages, conversations and the chat contracts
+// channels and the gateway share.
 package messaging
 
 import "time"
@@ -40,14 +35,8 @@ const (
 	RoleSystem    Role = "system"
 )
 
-// Conversation is a single thread of Messages within a channel, optionally
-// forked from another Conversation.
-//
-// Parent and child transcript isolation is exact: a fork sees the parent's
-// history up to ForkMessageID, and appends to its own independent
-// continuation. Nothing appended to the child is visible to the parent, and
-// nothing appended to the parent after the fork point is visible to the
-// child.
+// Conversation is a thread of Messages in a channel, optionally forked from
+// another at ForkMessageID. Fork and parent histories are isolated.
 type Conversation struct {
 	ID ConversationID
 
@@ -76,39 +65,18 @@ type Message struct {
 	// upstream identity.
 	SourceID string
 
-	// Sender is the channel-native display attribution (e.g. a Telegram
-	// username) recorded when the message was written. Like SourceID it
-	// is external correlation metadata, never the canonical identity: the
-	// canonical Role field is authoritative in-process. At the gateway wire
-	// boundary (internal/infrastructure/gatewayrpc) Role is deliberately
-	// dropped and rebuilt from Sender via RoleForSender, so Sender is also
-	// preserved for that reconstruction and for history search and
-	// transcript rendering.
+	// Sender is the channel-native display name of the author. Role is rebuilt
+	// from it at the gateway wire boundary.
 	Sender string
 
-	// SenderID is the channel-native stable identifier for the party that
-	// sent this message (e.g. a Telegram numeric user ID or an SMTP from
-	// address), distinct from Sender's human-readable display form. Empty
-	// when the channel has no stable per-person identity to offer -- which
-	// includes a webhook, whose configured route path is a source rather
-	// than a person and travels in the transport-only Inbound.BudgetKey
-	// instead. Used to key
-	// per-identity inbound controls and to derive a memory participant, so
-	// a non-person value here becomes a user identity to every consumer
-	// that reads it.
+	// SenderID is the channel-native stable ID of the person who sent the
+	// message, or empty when there is none.
 	SenderID string
 
 	Role Role
 	Text string
 
-	// Media carries attachment metadata for messages that arrived with a
-	// file (photo, document, video, audio): the platform attachment id, its
-	// name, type, and size, so the transcript records what was sent as
-	// data rather than as prose. The attachment bytes and any embedded
-	// Data field are deliberately NOT persisted -- they are turn-scoped --
-	// so this is the metadata a later reader (search, transcript, a
-	// re-look capability) can act on, including re-fetching through
-	// FileID where the platform allows it.
+	// Media is the message's attachment metadata, without bytes.
 	Media []MediaAttachment `json:"media,omitempty"`
 
 	// ToolCall and ToolResult are populated instead of Text for their

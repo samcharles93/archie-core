@@ -12,28 +12,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
-// resourceReader is the one read the layering performs: a resource kind's value
-// and the version it came from, or nothing at all when the store holds no value
-// for that kind. The gRPC client and the in-process server both provide it, so
-// "what the database covers in the running config" has exactly one
-// implementation. The offline validate runs the same code as boot, which is the
-// only way its verdict can be boot's verdict.
-//
-// found is false only for the reader that dials a live State Store: a kind with
-// no stored value leaves the file document's value in effect instead of failing
-// the process, which is the state a seed ImportConfig refused leaves behind
-// (controlplane.Server.ImportConfig skips it) and the state of a database the
-// migration has not reached yet. storeReader never reports absent -- it answers
-// with the seed the State Store would write -- so the offline verdict stays
-// boot's.
+// resourceReader returns a resource kind's value and version; found is false
+// when the store holds none.
 
-// RuntimeConfig applies restart-scoped database resources over bootstrap
-// configuration. Values intentionally absent from a control-plane projection,
-// such as secret-bearing MCP headers and channel update commands, remain
-// bootstrap-owned.
-//
-// It also returns the version of each kind it read, so the process that
-// layers them in can report which version it is running
+// RuntimeConfig layers stored resources over base and returns each kind's
+// version.
 func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
 	return runtimeConfigFrom(ctx, c, base)
 }
@@ -41,16 +24,8 @@ func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.
 // RuntimeChatConfig layers the stored channel settings over the file document's
 // chat section.
 
-// StoredRuntimeConfig is RuntimeConfig's layering over the store this server
-// owns, for a caller holding the database file rather than a connection to it.
-// Boot layers the stored settings onto the file config and then runs
-// configuration.Validate, so an offline check of that database has to make the
-// same first move with the same implementation; called with the config the
-// daemon would load, the result is the document boot decides on.
-//
-// A kind the store does not hold is read as the seed the State Store would
-// write for it from base (see storeReader.query), because that store seeds
-// every kind before it serves.
+// StoredRuntimeConfig is RuntimeConfig over this server's own store. Kinds
+// not stored are read as their seed.
 func (s *Server) StoredRuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
 	seeds, err := s.seededValues(base)
 	if err != nil {
@@ -59,11 +34,8 @@ func (s *Server) StoredRuntimeConfig(ctx context.Context, base config.Config) (c
 	return runtimeConfigFrom(ctx, storeReader{resources: s.store, seeds: seeds}, base)
 }
 
-// storeReader reads the server's own store. It mirrors what the gRPC read
-// answers -- a kind that is stored is the value and version it holds -- with
-// one difference: a kind the store does not hold yet is the value the State
-// Store seeds for it, since the daemon dials a store that has already run
-// ImportConfig over the same config.
+// storeReader reads this server's store, returning the seed for kinds it
+// does not hold.
 type storeReader struct {
 	resources ResourceStore
 	seeds     map[string][]byte
@@ -112,12 +84,7 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	// The stored role assignments own cfg.Models once the store carries a
-	// value, the way the provider layer above owns cfg.Providers: a role
-	// removed from the store is gone from the layered document too. The
-	// runtime-resource watches re-layer over an already-layered base,
-	// so json.Unmarshal's map merge here would
-	// resurrect a role the store deleted every time any watched kind changed.
+	// Stored role assignments replace cfg.Models outright.
 	if err := layerResource(ctx, reader, versions, ModelRoleAssignmentsKind, func(value []byte) error {
 		var roles map[string]string
 		if err := json.Unmarshal(value, &roles); err != nil {
@@ -146,12 +113,7 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 			return err
 		}
 		out.PollInterval, out.MaxRetries, out.Dispatch = config.Duration(interval), policy.MaxRetries, policy.Dispatch
-		// The label pairs with the trigger and layers with it: once the store
-		// carries one, it owns it, and the file can no longer drop the label a
-		// stored label-requiring trigger depends on. A policy stored before
-		// the field existed -- the nil the seed never produces -- leaves the
-		// file document's label in force, and boot's gate judges the pairing
-		// either way.
+		// A stored label replaces the file's.
 		if policy.Label != nil {
 			out.Label = *policy.Label
 		}
@@ -191,13 +153,8 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		}
 		servers := make([]config.MCPServer, 0, len(settings.MCPServers))
 		for _, server := range settings.MCPServers {
-			// This assignment replaces cfg.Tools wholesale, so every field the
-			// stored resource does not carry has to be taken back from the file
-			// or the operator's file value is dropped. Headers have always been
-			// file-owned; ParallelToolCalls joins them when the store predates
-			// the field, because a nil pointer means "no stored decision", not
-			// "false". A server with no file entry has nothing to inherit and
-			// gets the zero value.
+			// cfg.Tools is replaced wholesale, so keep file-owned fields: headers, and
+			// ParallelToolCalls when not stored.
 			parallelToolCalls := fileParallelToolCalls[server.Name]
 			if server.ParallelToolCalls != nil {
 				parallelToolCalls = *server.ParallelToolCalls
@@ -235,16 +192,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		if err := json.Unmarshal(value, &policies); err != nil {
 			return err
 		}
-		// Profiles survives this assignment untouched: containerRuntimePolicies
-		// carries no Profiles field at all (it is AgentProfileKind's document
-		// now), and settings() never sets it, so whatever the AgentProfileKind
-		// layering step below assigns is what's left standing regardless of
-		// which of the two runs first.
-		//
-		// RegistryAuth is the same shape of file-owned field, with no resource of
-		// its own to restore it later the way CredentialBindingsKind restores
-		// Credentials: the document cannot carry a secret reference, so it has to
-		// survive this assignment or the daemon pulls anonymously again.
+		// Keep the file-owned Profiles and RegistryAuth across the replacement.
 		profiles := out.Containers.Profiles
 		registryAuth := out.Containers.RegistryAuth
 		out.Containers = policies.settings()
@@ -254,11 +202,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	// AgentProfileKind is a separate resource from ContainerRuntimePoliciesKind
-	// (config.ContainerConfig.Profiles is json:"-") so a Kit profile applies
-	// without a restart: a stored value replaces the file's outright rather
-	// than merging into it, the same reason ModelRoleAssignmentsKind above
-	// reassigns out.Models wholesale instead of decoding into the existing map.
+	// Stored profiles replace the file's outright.
 	if err := layerResource(ctx, reader, versions, AgentProfileKind, func(value []byte) error {
 		var profiles map[string]agentProfile
 		if err := json.Unmarshal(value, &profiles); err != nil {
@@ -284,14 +228,8 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	return out, versions, nil
 }
 
-// layerResource decodes a resource and records the version it came from, so the
-// layering ends up holding the version of every kind it applied.
-//
-// A kind with no stored value is not an error and records no version: the file
-// document's value stays in effect. That is the state a seed the resource
-// validator refused leaves behind (controlplane.Server.ImportConfig skips it),
-// and failing here instead would stop the process with a database-named error
-// that editing config.toml cannot clear.
+// layerResource decodes a stored resource and records its version. A kind
+// with no stored value is skipped.
 func layerResource(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, kind string, decode func([]byte) error) error {
 	version, found, err := reader.Query(ctx, kind, decode)
 	if err != nil {

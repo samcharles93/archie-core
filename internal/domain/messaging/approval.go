@@ -49,11 +49,8 @@ func ApprovalFromContext(ctx context.Context) ApprovalRequester {
 	return a
 }
 
-// ApproverOf returns sender's ApprovalRequester only when sender reports the
-// Approval capability. Like ClarifierOf and PickerOf, the capability wins
-// over the method set: a sender that renders approvals but denies the
-// capability is treated as unable to, and one that claims it without
-// implementing the interface degrades instead of panicking.
+// ApproverOf returns sender's ApprovalRequester when it reports the
+// Approval capability and implements the interface.
 func ApproverOf(sender any) (ApprovalRequester, bool) {
 	if !CapabilitiesOf(sender).Approval {
 		return nil, false

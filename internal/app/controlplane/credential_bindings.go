@@ -2,12 +2,8 @@ package controlplane
 
 import "github.com/samcharles93/archie-core/internal/config"
 
-// CredentialBindingsKind is the control-plane resource mapping a Kit
-// credential@1 service name to an org secret
-// It exists so a binding applies without a restart, the same reason
-// AgentProfileKind is its own resource: [containers].credentials in
-// config.toml is only its seed, and kitrun.Launcher reads the live
-// control-plane document on every launch, never a value captured at boot.
+// CredentialBindingsKind is the resource mapping Kit credential service
+// names to org secrets. Applied live on each launch.
 const CredentialBindingsKind = "credential-bindings"
 
 // credentialBinding is one config.CredentialBinding as the document writes
