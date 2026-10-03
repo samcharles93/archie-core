@@ -1,10 +1,6 @@
 package config
 
-// CuratorDefinition is one [[curators]] entry: a curator definition as
-// seed data. It carries the curator.Manifest shape verbatim plus the
-// identity, lifecycle flag, and free-form instructions the manifest cannot
-// express. A definition missing interval is refused by configuration
-// validation, never defaulted.
+// CuratorDefinition is one [[curators]] entry. Interval is required.
 type CuratorDefinition struct {
 	Name         string `toml:"name" yaml:"name" json:"name"`
 	Enabled      bool   `toml:"enabled" yaml:"enabled" json:"enabled"`

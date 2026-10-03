@@ -19,11 +19,8 @@ const (
 	ServiceBoth = "both"
 )
 
-// ServiceSpec is everything the codebase knows about one service that is not
-// operator input. It exists so a service is declared once: the name, its
-// defaults, and the environment variable its token falls back to were
-// previously a struct field, a defaulting branch, and a hand-copied resolver
-// in three separate packages, with nothing keeping them in step.
+// ServiceSpec declares one service: name, defaults and token environment
+// variable.
 type ServiceSpec struct {
 	// Context is ServiceClient, ServiceServer, or ServiceBoth.
 	Context string
@@ -56,19 +53,8 @@ var (
 	serviceRegistry   = map[string]ServiceSpec{}
 )
 
-// RegisterService declares one service. It is the single entry point the
-// design calls for: adding a service is this call plus its consumer, with no
-// new struct field, defaulting branch, or accessor anywhere else.
-//
-// Re-registering a name replaces the previous spec, so a test can install a
-// throwaway service without disturbing the built-ins.
-//
-// It panics on a registration that cannot be honoured. Registrations come from
-// this repository's own init(), never from operator input, so an invalid one is
-// a programming error: there is no caller positioned to handle an error return,
-// and failing at process start is better than a service that binds somewhere
-// nobody dials. Context is enforced here rather than merely documented, so
-// "hosted" genuinely implies a bind address.
+// RegisterService declares one service, replacing any existing spec of that
+// name. It panics on an invalid registration.
 func RegisterService(context, name, target, listen, tokenEnv string) {
 	switch context {
 	case ServiceClient, ServiceServer, ServiceBoth:

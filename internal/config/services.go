@@ -5,14 +5,8 @@ import (
 	"strings"
 )
 
-// Services maps a registered service name to its connection settings, keyed by
-// the [services.<name>] section it was decoded from.
-//
-// It was a struct with one field per service. That stated each service's name
-// three times over -- here, in the loader's defaulting branches, and at every
-// consumer's field access -- so a new service meant editing all three and
-// nothing prevented them disagreeing. Which names are legitimate now comes
-// from RegisterService; see ServiceSpec.
+// Services maps a registered service name to its connection settings. Names
+// come from RegisterService.
 type Services map[string]ServiceConnection
 
 // Get returns the connection configured for name, or the zero value when the
@@ -22,13 +16,8 @@ func (s Services) Get(name string) ServiceConnection {
 	return s[name]
 }
 
-// ResolvedToken is the bearer token a client presents when dialling name: the
-// explicit target_token if set, otherwise the environment variable the service
-// registered. getenv is passed in rather than read directly so this stays free
-// of internal/secret, which imports this package.
-//
-// This replaces two resolvers that were identical apart from the variable name
-// each hard-coded.
+// ResolvedToken returns name's target_token, or the service's registered
+// environment variable.
 func (s Services) ResolvedToken(name string, getenv func(string) string) string {
 	if token := s[name].TargetToken; token != "" {
 		return token
@@ -40,14 +29,8 @@ func (s Services) ResolvedToken(name string, getenv func(string) string) string 
 	return getenv(spec.TokenEnv)
 }
 
-// RequireTarget returns the dial address for name, or an error naming the
-// config key when the operator has not supplied one.
-//
-// A service registered with an empty default target is one the operator must
-// configure, so this is the registry's own contract rather than a consumer's
-// private rule. It stays a lazy check at composition time, not a load-time
-// validation: a process that never dials a given service must still be able to
-// load a configuration that omits it.
+// RequireTarget returns name's dial address, or an error naming the config
+// key.
 func (s Services) RequireTarget(name string) (string, error) {
 	target := strings.TrimSpace(s[name].Target)
 	if target == "" {
@@ -56,24 +39,13 @@ func (s Services) RequireTarget(name string) (string, error) {
 	return target, nil
 }
 
-// ServiceConnection is a service's gRPC addresses plus the bearer token a
-// client presents when the target is non-loopback. A client reads only Target
-// and TargetToken; Listen belongs to the process that owns the service. The
-// struct does not itself register services or start listeners. Changes require
-// a daemon restart.
+// ServiceConnection is a service's gRPC addresses and client token.
+// Restart-required.
 type ServiceConnection struct {
 	Target string `toml:"target" yaml:"target"`
-	// Listen is the address the process that OWNS this service binds
-	// (archie-state-store, archie-gateway). It is read only by that process;
-	// every client ignores it. Defaulted from the service's registration, so
-	// a loaded config is never empty here -- an empty address reaches
-	// net.Listen as "any free port", which would silently move the service
-	// off the address its clients dial.
+	// Listen is the address the owning process binds. Always defaulted.
 	Listen string `toml:"listen" yaml:"listen"`
-	// TargetToken is the bearer token a client (daemon or agent) presents
-	// when dialing a non-loopback service target, and the standalone
-	// archie-state-store server validates. Empty means no token, which is
-	// the loopback-only, daemon-only listener topology permitted without
-	// auth.
+	// TargetToken is the bearer token clients present to a non-loopback target.
+	// Empty means none.
 	TargetToken string `toml:"target_token" yaml:"target_token"`
 }

@@ -1,10 +1,7 @@
 package config
 
-// ReloadStatus is the outcome of the most recent config reload attempt,
-// surfaced so the dashboard can tell the operator when the running
-// config is stale: a reload that failed validation leaves the daemon
-// running on the previous config, and that failure must be visible in
-// the UI, not buried in logs.
+// ReloadStatus is the outcome of the last config reload, shown on the
+// dashboard.
 type ReloadStatus struct {
 	// LastError is the validation error from the most recent failed
 	// reload attempt. Empty when the most recent attempt succeeded.

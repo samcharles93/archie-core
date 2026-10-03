@@ -1,14 +1,5 @@
-// Package config holds archied's configuration types.
-//
-// Loading them -- locating files, decoding TOML and YAML, applying overlays,
-// defaulting and validating -- belongs to
-// internal/infrastructure/configuration. This package no longer performs any
-// I/O, so importing a settings type no longer drags in a file decoder.
-//
-// The forge API token is deliberately not part of the file: it comes from a
-// configurable env var.
-//
-// Do not add new fields here that a single domain could own.
+// Package config holds archied's configuration types. Loading lives in
+// internal/infrastructure/configuration.
 package config
 
 import (
@@ -54,12 +45,9 @@ type Repo struct {
 	Name  string `toml:"name" json:"name" yaml:"name"`
 	// Base is the branch PRs target. Defaults to "main".
 	Base string `toml:"base" json:"base" yaml:"base"`
-	// Gate is the quality-gate command list for this repo, e.g.
-	// [["go","vet","./..."], ["task","check"]]. By convention the
-	// LAST command is the test runner  --  TDD workflows invert only
-	// that one with ExpectFailure during the repro stage and re-run
-	// it in capture-proof. Workflow stages may extend or override
-	// Gate (a TDD repro stage inverts the test command).
+	// Gate is the repo's gate command list, e.g. [["go","vet","./..."],
+	// ["task","check"]]. The last command is the test runner, which TDD's repro
+	// stage expects to fail.
 	Gate [][]string `toml:"gate" json:"gate" yaml:"gate"`
 	// Protect lists path suffixes agents must never write directly  --
 	// generated files (e.g. "_templ.go") whose sources they should edit
@@ -86,11 +74,8 @@ type Repo struct {
 	// being permanently parked (status "dead"). 0 means use the
 	// global Config.MaxRetries.
 	MaxRetries int `toml:"max_retries" json:"max_retries" yaml:"max_retries"`
-	// AllowConcurrent lets the daemon dispatch multiple tasks for this
-	// repo at once instead of the default FIFO one-task-per-repo
-	// serialization. Only safe for repos where concurrent worktrees
-	// won't collide (e.g. different base branches or packages per
-	// task). Still bounded by [containers].max_concurrency globally.
+	// AllowConcurrent lets several tasks run for this repo at once instead of
+	// one at a time.
 	AllowConcurrent bool `toml:"allow_concurrent" json:"allow_concurrent" yaml:"allow_concurrent"`
 }
 
@@ -300,20 +285,13 @@ type MCPServer struct {
 	// empty, the client discovers it from the server's "endpoint" SSE event.
 	MessageEndpoint string `toml:"message_endpoint" yaml:"message_endpoint" json:"message_endpoint,omitempty"`
 
-	// ParallelToolCalls lifts the client's serialization of tools/call for
-	// this server only, letting concurrent callers overlap. Default false:
-	// one call in flight at a time, because most MCP servers are
-	// single-threaded processes that do not handle concurrent requests
-	// safely. Set it only for a server whose implementation does.
+	// ParallelToolCalls allows concurrent tool calls to this server. Default
+	// false: one call at a time.
 	ParallelToolCalls bool `toml:"parallel_tool_calls" yaml:"parallel_tool_calls" json:"parallel_tool_calls"`
 }
 
-// ToolPolicy holds tool execution limits.
-//
-// The size limits use a negative value for "no limit". Defaulting cannot
-// distinguish an explicit 0 from an absent key, so zero has to stay available
-// as "unset, give me the default" -- which leaves negative as the only way an
-// operator can turn a cap off deliberately.
+// ToolPolicy holds tool execution limits. A negative size limit means no
+// limit; zero means the default.
 type ToolPolicy struct {
 	// MaxResultChars caps a single tool result before it reaches the model.
 	// Tools that set ToolEntry.MaxResultSizeChars override it.
@@ -327,12 +305,8 @@ type ToolPolicy struct {
 
 // WebFetchConfig controls the web_fetch tool.
 type WebFetchConfig struct {
-	// Enabled advertises the tool to the model. Nil means unset, which
-	// defaults to true.
-	//
-	// This is a pointer rather than a bool because defaulting cannot tell
-	// `enabled = false` from an absent key, and turning the tool off has to
-	// be expressible. Use IsEnabled rather than reading it directly.
+	// Enabled advertises the tool to the model; nil means true. Read it with
+	// IsEnabled.
 	Enabled *bool `toml:"enabled" yaml:"enabled" json:"enabled"`
 
 	// Timeout bounds one fetch including redirects.
@@ -352,11 +326,7 @@ type WebFetchConfig struct {
 // absent setting as enabled.
 func (c WebFetchConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
-// MinimaxConfig controls the generate_video tool
-// (internal/tools/minimax). Unlike WebFetchConfig, absent is disabled, not
-// enabled: web_fetch needs no credential and is safe as a silent default,
-// while this tool spends real API credits per call, so it stays off until
-// an operator explicitly turns it on and supplies a key.
+// MinimaxConfig controls the generate_video tool. Disabled unless configured.
 type MinimaxConfig struct {
 	// Enabled advertises the tool. Defaults to false (see the type doc).
 	Enabled bool `toml:"enabled" yaml:"enabled" json:"enabled"`
@@ -386,12 +356,8 @@ type ToolsConfig struct {
 type Config struct {
 	Services Services `toml:"services" yaml:"services"`
 	WorkDir  string   `toml:"work_dir" yaml:"work_dir"`
-	// SkillsDir is an optional path to a shared skills directory
-	// containing */SKILL.md files. When set, the
-	// daemon builds its workflow registry from the skill catalog
-	// (plugin-defined workflows override built-ins). When empty,
-	// only built-in workflows are available. Its skills are also the
-	// store a Kit's agent-skills@1 mounts, read-only, into the harness.
+	// SkillsDir is an optional directory of */SKILL.md skills. Its workflows
+	// override built-ins, and Kits mount it read-only.
 	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
 	// WorkflowRoutingFile is an optional path to a YAML file rebinding which
 	// registered workflow an intake Kind (bug/feature/bootstrap) prefers.
@@ -401,40 +367,20 @@ type Config struct {
 	// workflows (e.g. A label already owned by the kind set, or a duplicate
 	// binding, is a load failure per the design doc's collision rule.
 	WorkflowLabelsFile string `toml:"workflow_labels_file" yaml:"workflow_labels_file"`
-	// PlaybookDirs is an optional list of directories of *.yaml/*.yml binding
-	// files loaded at startup. Each file binds kinds and/or arbitrary labels to
-	// workflow names; the directories are an additional input to
-	// WorkflowRoutingFile and WorkflowLabelsFile, which remain supported
-	// unchanged. A binding key declared by more than one source -- two files,
-	// or two directories -- is a reported load failure (a collision), not a
-	// silent pick-one. When empty, no playbook directories are loaded.
-	// Repo-scoping of playbook dirs is a separate, later decision and is not
-	// attempted here.
+	// PlaybookDirs are optional directories of kind/label-to-workflow binding
+	// files. A key bound in more than one file is a load error.
 	PlaybookDirs []string `toml:"playbook_dirs" yaml:"playbook_dirs"`
-	// EDAPlaybookDir is an optional path to a directory of rich EDA playbook
-	// documents (*.yaml/*.yml: trigger + ordered actions with CEL `when`
-	// conditions, dispatched by the event coordinator). This is DISTINCT
-	// from PlaybookDirs, which holds FLAT binding files (kind/label ->
-	// workflow name) consumed by the routing loaders. A playbook here is a
-	// document (one trigger plus ordered actions: either exactly one
-	// workflow action or one or more module actions); a binding file there
-	// is a map of keys. When empty, no EDA playbook documents are loaded.
+	// EDAPlaybookDir is an optional directory of EDA playbook documents: a
+	// trigger plus ordered actions with CEL conditions.
 	EDAPlaybookDir string `toml:"eda_playbook_dir" yaml:"eda_playbook_dir"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`
-	// PluginDir is an optional path to a directory of Yaegi-interpreted
-	// daemon plugins (*.go files). Each file must export a "Plugin"
-	// variable satisfying the plugin.Plugin interface. Failed plugins
-	// are skipped  --  the daemon starts with the remaining set. When
-	// empty, no daemon plugins are loaded.
+	// PluginDir is an optional directory of Yaegi daemon plugins (*.go), each
+	// exporting a "Plugin" variable. Failed plugins are skipped.
 	PluginDir string `toml:"plugin_dir" yaml:"plugin_dir"`
-	// ModuleDir is an optional path to a directory of Yaegi-interpreted
-	// Module action implementations (*.go files, one per kind: log.go for
-	// the log kind). Each file must export a "Run" function matching the
-	// kind's generated contract. A broken module is a startup failure  --
-	// the daemon does not start with a partial module set. When empty, no
-	// modules are loaded.
+	// ModuleDir is an optional directory of Yaegi module implementations, one
+	// *.go file per kind exporting "Run". A broken module stops startup.
 	ModuleDir string `toml:"module_dir" yaml:"module_dir"`
 	// SecretEngineDir contains Yaegi secret-engine plugins. Built-in env and
 	// bws engines remain available when this is empty.
@@ -443,12 +389,8 @@ type Config struct {
 	// embedded NATS store and its endpoint file, the task-log registry, and
 	// the readiness disk probe's data target. Bootstrap-only.
 	StateDir string `toml:"state_dir" yaml:"state_dir"`
-	// DatabaseURL is the PostgreSQL connection URL the standalone State Store
-	// process opens at boot. It is bootstrap-only (the same class as
-	// state_dir and work_dir): the pool is opened once, so a runtime change cannot take
-	// effect, and it is refused by the runtime overlay. It has no default --
-	// an empty value is a startup error for the State Store, which fails
-	// closed rather than fall back to SQLite (the epic is Postgres-only).
+	// DatabaseURL is the PostgreSQL URL the State Store opens at boot. Required;
+	// bootstrap-only.
 	DatabaseURL  string   `toml:"database_url" yaml:"database_url"`
 	PollInterval Duration `toml:"poll_interval" yaml:"poll_interval"`
 	// Label marks issues archie should pick up.
@@ -459,22 +401,14 @@ type Config struct {
 	// A credential binding whose Org does not match a run's identity never
 	// resolves for it, regardless of what the identity is granted.
 	Org string `toml:"org" yaml:"org"`
-	// GrantedCredentials names the credential@1 services this identity may use,
-	// by CredentialBinding.Service. Empty grants none -- a binding existing is
-	// not a grant, the same fail-closed default the proxy itself already
-	// applies to an unbound required credential. Declared (what a Kit's
-	// descriptor asks for) and granted (this list) are two separate facts; only
-	// their intersection resolves, and neither widens the other.
+	// GrantedCredentials names the credential services this identity may use.
+	// Empty grants none.
 	GrantedCredentials []string `toml:"granted_credentials" yaml:"granted_credentials"`
 	// BotEmail is the git author email; defaults to the GitHub noreply
 	// address for BotUser.
 	BotEmail string `toml:"bot_email" yaml:"bot_email"`
-	// DiffCapLines parks a task whose diff exceeds this many changed lines.
-	// It is a pointer so an explicit 0 ("no cap") is distinguishable from an
-	// absent key, which takes the default: with a plain int the documented
-	// way to switch the cap off was indistinguishable from not configuring
-	// it, and the defaults pass silently rewrote it. Read it through
-	// [Config.DiffCap].
+	// DiffCapLines parks a task whose diff exceeds this many changed lines. Nil
+	// takes the default; 0 means no cap. Read it with DiffCap.
 	DiffCapLines *int `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
 
 	Forge    Forge    `toml:"forge" yaml:"forge"`
@@ -508,21 +442,13 @@ type Config struct {
 	// An empty BaseURL disables the sender entirely.
 	Artifacts ArtifactsConfig `toml:"artifacts" yaml:"artifacts"`
 
-	// Identities declares multi-identity configurations. When non-empty,
-	// each identity runs its own poll loop with its own forge client,
-	// worktree manager, repo list, model/provider config, and NATS subject
-	// namespace. When empty, the single-identity fields (BotUser,
-	// Forge, Repos, Models, Providers, Dispatch, PollInterval) are used
-	// unchanged for backward compatibility.
+	// Identities declares multiple identities, each with its own forge, repos,
+	// models and poll loop. Empty uses the single-identity fields.
 	Identities  []IdentityConfig       `toml:"identities" yaml:"identities"`
 	Repos       []Repo                 `toml:"repos" yaml:"repos"`
 	ModelLimits map[string]ModelLimits `toml:"-" yaml:"-" json:"-"`
 
-	// Curators holds curator definitions as seed data ([[curators]]).
-	// Each entry is a curator.Manifest plus name/enabled/instructions.
-	// Seed data only: the app layer registers each enabled definition
-	// through the one generic definition-driven engine, and (once
-	// persistence lands) a stored definition of the same name wins.
+	// Curators are curator definitions seeded from [[curators]].
 	Curators []CuratorDefinition `toml:"curators" yaml:"curators" json:"curators,omitempty"`
 
 	// Extra holds additional feature configuration from conf.d/ files that
@@ -611,18 +537,12 @@ type TaskConfig struct {
 	Review       Review     `json:"review"`
 }
 
-// DiffCapOf returns a DiffCapLines value for n. It exists because the field is
-// a pointer to keep "absent" distinct from an explicit 0, and a literal config
-// cannot take the address of a constant.
+// DiffCapOf returns a DiffCapLines value for n.
 //
 //go:fix inline
 func DiffCapOf(n int) *int { return new(n) }
 
-// DiffCap returns the effective changed-line cap: 0 means no cap, which is
-// also what an unconfigured value means once a Config has been built by hand
-// rather than loaded (tests, archie-agent's reconstructed Config). The loader's
-// defaults pass fills the absent case, so a loaded Config never reports 0
-// unless the operator asked for it.
+// DiffCap returns the changed-line cap; 0 means no cap.
 func (c Config) DiffCap() int {
 	if c.DiffCapLines == nil {
 		return 0
@@ -684,13 +604,7 @@ func cloneStringMap(src map[string]string) map[string]string {
 	return dst
 }
 
-// Clone returns a deep copy of c: every reference-type field (maps,
-// slices, and the reference fields nested inside them) is copied, so
-// mutating the returned value cannot touch c or anything sharing memory
-// with it. It is used before the runtime overlay (or a dashboard PATCH)
-// decodes into a snapshot, so a failed or partial decode cannot mutate
-// the published config -- Holder.Get returns a shallow copy whose maps
-// are shared with the published snapshot.
+// Clone returns a deep copy of c.
 func (c Config) Clone() Config {
 	c.Models = cloneStringMap(c.Models)
 	c.ModelLimits = maps.Clone(c.ModelLimits)
@@ -791,15 +705,8 @@ const (
 	NATSModeExternal = "external"
 )
 
-// NATSConfig configures NATS JetStream for task distribution and reaction
-// delivery. The mode selects how NATS is provided:
-//
-//	"embedded"  – an in-process nats-server (default; no external server)
-//	"external"  – connect to URL (required)
-//
-// An empty Mode resolves from URL: URL set means "external", URL empty means
-// "embedded". Autonomous workflow handoff always uses NATS; there is no
-// broker-off execution mode.
+// NATSConfig configures NATS JetStream. Mode is "embedded" (default) or
+// "external", which requires URL; empty Mode is external when URL is set.
 type NATSConfig struct {
 	// Mode selects embedded or external. Empty resolves from URL.
 	Mode string `toml:"mode" yaml:"mode"`
@@ -815,11 +722,7 @@ type NATSConfig struct {
 // All fields have defaults; an empty
 // [capture] section is valid and produces them -- capture is on by default.
 type CaptureConfig struct {
-	// Retention is how long a captured event is kept before prune-on-write
-	// deletes it. Zero or absent means the 7-day default; a positive value
-	// configured explicitly is used as-is; a deployment that wants no age
-	// bound sets it very large rather than using a magic "0 = unlimited"
-	// spelling, since 0 already means "use the default" here.
+	// Retention is how long a captured event is kept. Zero means 7 days.
 	Retention Duration `toml:"retention" yaml:"retention"`
 	// MaxEvents caps the table at this many newest rows; older rows are
 	// pruned on every insert regardless of age. Zero means the 5000 default.
@@ -827,11 +730,8 @@ type CaptureConfig struct {
 	// MaxBodyBytes rejects (413) any single POST body larger than this
 	// before it is read into memory. Zero means the 256 KiB default.
 	MaxBodyBytes int `toml:"max_body_bytes" yaml:"max_body_bytes"`
-	// RatePerSecond and RateBurst configure the per-remote-address token bucket
-	// (webhookguard.RateLimiter) applied before a request's body is read. Keyed
-	// by remote address, not the source path segment, since that segment is
-	// unregistered and attacker-chosen by design. Zero means the defaults (1
-	// req/s, burst 5).
+	// RatePerSecond and RateBurst configure the per-remote-address rate limit on
+	// capture requests. Zero means 1 req/s, burst 5.
 	RatePerSecond float64 `toml:"rate_per_second" yaml:"rate_per_second"`
 	RateBurst     int     `toml:"rate_burst" yaml:"rate_burst"`
 }
@@ -866,43 +766,18 @@ type ContainerConfig struct {
 	VolumeTTL Duration `toml:"volume_ttl" yaml:"volume_ttl"`
 	// PullPolicy controls image pulling: "missing" (default) or "always".
 	PullPolicy string `toml:"pull_policy" yaml:"pull_policy"`
-	// Network is the Docker network spawned agent containers join. Empty first
-	// tries the daemon's own network (for containerized composition), then uses
-	// Docker's default bridge. Embedded NATS binds the selected bridge's host
-	// gateway; external deployments can set a Compose network explicitly when
-	// workers must resolve broker service names (e.g. "archie-core_default").
+	// Network is the Docker network agent containers join. Empty uses the
+	// daemon's own network, then the default bridge.
 	Network string `toml:"network" yaml:"network"`
-	// Profiles are the named agent profiles a workflow selects with
-	// `profile:`. A workflow that names none runs under the default profile:
-	// Image and every tool.
-	// Profiles is excluded from the control-plane JSON document
-	// (container-runtime-policies): profiles are their own resource,
-	// AgentProfileKind, seeded from this field but validated and stored
-	// (and reloaded live) separately -- see internal/app/controlplane.
+	// Profiles are named agent profiles a workflow selects with `profile:`.
+	// Stored as their own control-plane resource.
 	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles" json:"-"`
-	// Credentials binds a Kit's credential@1 service names to org secrets.
-	// A binding names
-	// where the value comes from; it is not itself a grant -- an identity
-	// resolves a bound service only when its own Org matches and the service
-	// is in its GrantedCredentials.
-	// Credentials is excluded from the control-plane JSON document
-	// (container-runtime-policies): it is its own resource, CredentialBindingsKind,
-	// seeded from this field but validated and stored (and reloaded live)
-	// separately -- see internal/app/controlplane.
+	// Credentials binds Kit credential service names to org secrets. Stored as
+	// their own control-plane resource.
 	Credentials []CredentialBinding `toml:"credentials" yaml:"credentials" json:"-"`
-	// RegistryAuth is the credential a private registry requires when the
-	// configured image (or a profile's) is pulled. It uses the same
-	// secret-reference shape as every other credential in this file; the
-	// resolved value is a Docker registry.AuthConfig JSON document, e.g.
-	// {"username":"bot","password":"..."} ("identitytoken",
-	// "registrytoken" and "serveraddress" are honoured when present but
-	// optional -- the daemon derives the host from the image reference). The
-	// zero value means anonymous pulls, which is what the pool has always
-	// done; it never fails a deployment that has no private registry.
-	// RegistryAuth is file-owned, not part of the control-plane JSON document
-	// (container-runtime-policies): it is a secret reference, resolved at boot
-	// and restart-required, so the pool receives the resolved value rather
-	// than a stored one. See internal/container's encodeRegistryAuth.
+	// RegistryAuth resolves to a Docker registry.AuthConfig JSON document for
+	// pulling from a private registry. Zero means anonymous pulls. File-only;
+	// needs a restart.
 	RegistryAuth SecretRef `toml:"registry_auth" yaml:"registry_auth" json:"-"`
 }
 
@@ -921,14 +796,8 @@ type CredentialBinding struct {
 	Secret SecretRef `toml:"secret" yaml:"secret"`
 }
 
-// BoundCredentials returns the credential bindings one run may actually use:
-// every declared service (what a Kit's descriptor asks for) that is also
-// granted (the run's identity's GrantedCredentials) and belongs to org (the
-// run's identity's Org). This is the whole enforcement of "authority is an
-// intersection": declared and granted are two independent facts, neither
-// widens the other, and only a service present in all three -- org, granted,
-// declared -- resolves. A service missing from any one is simply absent from
-// the result; the caller (the egress resolver) treats that as unbound.
+// BoundCredentials returns the bindings a run may use: services that are
+// declared, granted, and belong to org.
 func (c ContainerConfig) BoundCredentials(org string, granted, declared []string) map[string]CredentialBinding {
 	grantedSet := make(map[string]bool, len(granted))
 	for _, g := range granted {
@@ -966,11 +835,8 @@ func (c ContainerConfig) ValidateCredentialBindings() error {
 	return nil
 }
 
-// AgentProfile is a named execution environment for an agent. Secrets and
-// forge or network access are granted to identities, not profiles.
-// A workflow's profile name is not checked
-// when the workflow is saved: a name with no profile here parks the task for
-// an operator when it is dispatched (daemon pinTaskProfile).
+// AgentProfile is a named agent execution environment. A workflow naming an
+// unknown profile parks at dispatch.
 type AgentProfile struct {
 	// Image is the container image; empty means [containers].image.
 	Image string `toml:"image" yaml:"image"`
@@ -1014,11 +880,7 @@ func (c ContainerConfig) ValidateProfiles() error {
 	return ValidateAgentProfiles(c.Profiles)
 }
 
-// ValidateAgentProfiles is ValidateProfiles's rule set, standalone so the
-// control-plane AgentProfileKind resource (internal/app/controlplane) can
-// apply the same rules to a stored value: the file document and the
-// resource that replaces it must not be able to disagree about which
-// profiles are valid.
+// ValidateAgentProfiles validates agent profiles.
 func ValidateAgentProfiles(profiles map[string]AgentProfile) error {
 	for name, p := range profiles {
 		if strings.TrimSpace(name) == "" {
@@ -1042,12 +904,7 @@ func ValidateAgentProfiles(profiles map[string]AgentProfile) error {
 	return nil
 }
 
-// Log configures where archied writes its logs.
-//
-// Without File set, output goes only to stderr -- which under systemd means
-// journald holds the sole copy, and running by hand leaves no record at all.
-// A file gives a durable copy independent of the supervisor, and is what lets
-// the dashboard show history from before it connected.
+// Log configures archied's log output. Without File, logs go to stderr only.
 type Log struct {
 	// File is the log file path. Empty disables file logging. The parent
 	// directory is created if missing.
@@ -1068,58 +925,21 @@ type Log struct {
 // ChatConfig configures conversational front-ends. Empty (Telegram.Token.Key ==
 // "") disables chat entirely.
 type ChatConfig struct {
-	// Operator is the display name of the person this deployment assists,
-	// shown to the chat agent as runtime metadata. Empty tells it nothing.
-	//
-	// This belongs in configuration, not in a prompt string: the operator's
-	// name is deployment data. It was previously compiled into the default
-	// persona, so every deployment claimed to work for one particular
-	// person, and that name was sent to the model provider on every turn
-	// regardless of who was running it.
+	// Operator is the name of the person this deployment assists, shown to the
+	// chat agent.
 	Operator string `toml:"operator" yaml:"operator"`
 	// Workspace is the directory the chat agent's file and shell tools are
 	// rooted at. Empty disables those tools entirely, which is the default:
 	// they read, write and execute, so the directory must be a deliberate
 	// choice rather than whatever the daemon happens to start in.
 	Workspace string `toml:"workspace" yaml:"workspace"`
-	// UnrestrictedFilesystem lifts the workspace jail from the chat agent's
-	// read, write, edit, find and grep tools, letting them reach any absolute
-	// path. Relative paths still resolve against Workspace.
-	//
-	// Off by default. Turn it on when the agent is a general-purpose operator
-	// rather than an assistant scoped to one project: partitioning and
-	// mounting a disk, migrating data between filesystems, or editing service
-	// units are all cross-filesystem by nature, and a jail makes them
-	// impossible.
-	//
-	// This widens which TOOL can do the work, not what the agent can reach.
-	// The shell tool has never been confined, so a jailed deployment only
-	// pushed the agent into doing everything through shell -- losing the
-	// truncation, line numbering and read-before-write protection the
-	// dedicated tools give it. Grant it deliberately all the same: it is the
-	// difference between an agent that can edit /etc directly and one that has
-	// to be asked to.
+	// UnrestrictedFilesystem lets the chat agent's file tools reach any absolute
+	// path. Relative paths still resolve against Workspace. Off by default.
 	UnrestrictedFilesystem bool `toml:"unrestricted_filesystem" yaml:"unrestricted_filesystem"`
-	// ShowToolCalls renders each completed tool call inline in the reply,
-	// naming the tool and one line of its result, before the answer built
-	// from them. It is off by default: it exists to make a wrong tool
-	// choice visible from the chat, and it narrates every internal step
-	// to do so, which is a privacy/noise cost on a chat surface anyone
-	// with dashboard or bot access can read.
-	//
-	// One setting, every chat channel: it lived under [chat.telegram]
-	// alone until the web dashboard grew its own tool narration with no
-	// way to turn it off, contradicting an operator who had already set
-	// this to false expecting no tool activity to be shown anywhere.
+	// ShowToolCalls shows each completed tool call in chat replies, on every
+	// channel. Off by default.
 	ShowToolCalls bool `toml:"show_tool_calls" yaml:"show_tool_calls"`
-	// MaxSteps caps how many model/tool round-trips one chat turn may take
-	// before the runtime stops and returns what it has. Zero uses the
-	// default.
-	//
-	// This is a real task budget, not a safety limit: a single question
-	// about a codebase routinely costs a read, several greps and a handful
-	// of edits, and running out mid-turn looks to the user like the agent
-	// simply gave up. Use /stop to interrupt, not a small step cap.
+	// MaxSteps caps model/tool round-trips per chat turn. Zero uses the default.
 	MaxSteps int `toml:"max_steps" yaml:"max_steps"`
 	// Models is the optional interactive-chat model catalog. When empty,
 	// chat falls back to the distinct model references assigned to workflow
@@ -1130,37 +950,16 @@ type ChatConfig struct {
 	// WebhookAddr is the host:port for the inbound webhook gateway.
 	// Empty disables the webhook gateway.
 	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
-	// Webhook configures the single route the inbound webhook gateway
-	// serves: its path, HMAC validation, payload text extraction, and
-	// reply delivery. The gateway implementation (internal/channels/webhook)
-	// has carried these fields since it was written; this is what lets a
-	// config value reach them.
+	// Webhook configures the inbound webhook route.
 	Webhook  WebhookRoute   `toml:"webhook" yaml:"webhook"`
 	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
-	// RateLimit budgets inbound messages per (channel, sender) across
-	// every chat channel. Zero MaxRequests (the default) leaves rate
-	// limiting off entirely -- it is an opt-in control, not a default
-	// throttle that could surprise an existing deployment. This key seeds
-	// the Channel settings resource, which the Web UI owns at runtime
-	// (live for the channel transports): editing the file does not change a
-	// stored value.
+	// RateLimit budgets inbound messages per channel and sender. Off unless set.
+	// Seeds the channel-settings resource.
 	RateLimit RateLimitConfig `toml:"rate_limit" yaml:"rate_limit"`
 }
 
-// RateLimitConfig configures the sliding-window inbound rate limiter
-// (internal/ratelimit) shared by every chat channel. This type is the shape of
-// the Channel settings resource (channel-settings,
-// internal/app/controlplane); the file key is only that resource's seed, and
-// the Web UI owns the value a running deployment limits with. Applied by
-// boot.startRateLimiter from the config boot.loadRuntimeConfig layers, so a
-// stored change to the limit takes effect on the next Gateway restart; the
-// channel transports are the half the Messaging Service reconciles live.
-//
-// A sender is identified per channel: Telegram by numeric user ID, email by the
-// SMTP from address, webhook by the configured route path -- which is a source,
-// not a person, so it reaches the limiter through the transport-only
-// Inbound.BudgetKey rather than through SenderID. Disabled unless both fields
-// are set to a positive value.
+// RateLimitConfig configures the inbound chat rate limiter. Disabled unless
+// both fields are positive.
 type RateLimitConfig struct {
 	// Window is the rolling interval MaxRequests is budgeted over.
 	Window time.Duration `toml:"window" yaml:"window"`
@@ -1175,12 +974,8 @@ func (c RateLimitConfig) Enabled() bool {
 	return c.Window > 0 && c.MaxRequests > 0
 }
 
-// TelegramConfig configures the Telegram Bot API channel.
-//
-// AllowedUserIDs is a deny-by-default allowlist: a Telegram bot is
-// reachable by anyone who knows its handle, so an empty list means the
-// gateway answers nobody rather than everybody. Chat tools run with the
-// daemon's own authority, so an open bot is an open shell.
+// TelegramConfig configures the Telegram channel. An empty AllowedUserIDs
+// answers nobody.
 type TelegramConfig struct {
 	// AllowedUserIDs lists the Telegram user IDs permitted to talk to the
 	// bot. It matches the sender (from.id), not the chat, so adding the
@@ -1238,11 +1033,7 @@ type Health struct {
 	// Listen is the address the daemon serves /healthz, /health and
 	// /health/detailed on. Defaulted, never empty in a loaded config.
 	Listen string `toml:"listen" yaml:"listen"`
-	// DependencyTimeout bounds one readiness probe's call into a service this
-	// process depends on but does not own, so a hung dependency degrades that
-	// probe instead of stalling the whole health report. It is the daemon's
-	// equivalent of the extracted services' -dependency-timeout flag.
-	// Defaulted, never zero in a loaded config.
+	// DependencyTimeout bounds one readiness probe's call to a dependency.
 	DependencyTimeout Duration `toml:"dependency_timeout" yaml:"dependency_timeout"`
 }
 
@@ -1270,11 +1061,7 @@ type Web struct {
 	// Listen is the dashboard address; "off" disables the web UI.
 	// Bind localhost (or a LAN/tailnet address)  --  there is no auth.
 	Listen string `toml:"listen" yaml:"listen"`
-	// TrustForwardedHeaders enables deriving the effective request scheme and
-	// host from X-Forwarded-Proto and X-Forwarded-Host headers during mutation
-	// Origin validation. Off by default: trusting forwarded headers
-	// unconditionally allows untrusted clients to spoof Origin scheme checks
-	// and bypass CSRF protection. Enable ONLY when archied is deployed behind
-	// a trusted reverse proxy that overwrites/strips untrusted forwarded headers.
+	// TrustForwardedHeaders uses X-Forwarded-Proto and X-Forwarded-Host for
+	// Origin checks. Enable only behind a trusted reverse proxy.
 	TrustForwardedHeaders bool `toml:"trust_forwarded_headers" yaml:"trust_forwarded_headers"`
 }
