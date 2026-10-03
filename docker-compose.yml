@@ -85,7 +85,7 @@ services:
 
   # ── example agent profile image ─────────────────────────────────────
   # The agent image plus network lookup tools, for a workflow that names
-  # `profile: network-investigator` (examples/workflows/firewall-investigate.yaml).
+  # `profile: network-investigator` (archipelago: workflows/firewall).
   # Build-only for the same reason as agent. It is local, so leave
   # containers.pull_policy at "missing": "always" would try to pull it.
   agent-net:

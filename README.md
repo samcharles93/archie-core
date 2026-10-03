@@ -73,9 +73,8 @@ Workflows can also call other workflows and pass data between them. Each called
 workflow has its own run and agent profile. A caller can wait for the result or
 continue while the called workflow runs independently.
 
-See the
-[firewall investigation example](examples/workflows/firewall-investigate.yaml)
-for a workflow that uses typed inputs, a network investigator profile, and no
+The archipelago marketplace's `workflows/firewall` package is an example of a
+workflow that uses typed inputs, a network investigator profile, and no
 repository.
 
 ## Identities and controlled execution
