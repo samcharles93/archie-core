@@ -153,7 +153,7 @@ tasks:
 
   dev:
     desc: Run development services and Vite at http://localhost:5173
-    deps: [dev:daemon, dev:gateway, dev:state-store, dev:dashboard, dev:ui]
+    deps: [dev:daemon, dev:gateway, dev:messaging, dev:state-store, dev:dashboard, dev:ui]
 
   dev:postgres:
     desc: Start PostgreSQL and wait for readiness
@@ -207,6 +207,12 @@ tasks:
         echo "state store did not come up on 127.0.0.1:9091 within 120s" >&2
         exit 1
       - go run ./cmd/archie-gateway -config-overlay deployments/dev.toml
+
+  dev:messaging:
+    desc: Run the development Messaging Service
+    cmds:
+      - for _ in $(seq 1 120); do nc -z 127.0.0.1 9091 && exit 0; sleep 1; done; echo "state store did not come up on 127.0.0.1:9091 within 120s" >&2; exit 1
+      - go run ./cmd/archie-messaging -config-overlay deployments/dev.toml
 
   dev:ui:
     desc: Run Vite (requires the dashboard backend)
