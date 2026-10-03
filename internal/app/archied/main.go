@@ -43,7 +43,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -689,23 +688,6 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 		Cursor:        page.Cursor,
 		MoreAvailable: page.MoreAvailable,
 	}, nil
-}
-
-// chatTaskActorAdapter sends messaging actions through the Gateway boundary.
-type chatTaskActorAdapter struct {
-	contract gateway.ChatContract
-}
-
-func (a chatTaskActorAdapter) ApplyChatTaskAction(
-	ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ActionPayload,
-) (gateway.TaskActionResult, error) {
-	if a.contract == nil {
-		return gateway.TaskActionResult{}, gateway.ErrChatCapabilityUnavailable
-	}
-	if identity == nil {
-		return a.contract.ApplyOperatorTaskAction(ctx, actor, taskID, action, res)
-	}
-	return a.contract.ApplyTaskAction(ctx, *identity, taskID, action, res)
 }
 
 func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {

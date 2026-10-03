@@ -1426,6 +1426,7 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 	b.chatController.WithRuntime(b.d)
 }
 
+//nolint:contextcheck // shutdown runs after the parent context is cancelled
 func shutdownCapabilityHost(capabilityHost *plugin.Host, log *slog.Logger) func() {
 	return func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1478,6 +1479,7 @@ func (b *boot) setupBackends(ctx context.Context) error {
 	return err
 }
 
+//nolint:contextcheck // shutdown runs after the parent context is cancelled
 func shutdownCuratorRuntime(rt *curator.Runtime, log *slog.Logger) func() {
 	return func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1488,6 +1490,7 @@ func shutdownCuratorRuntime(rt *curator.Runtime, log *slog.Logger) func() {
 	}
 }
 
+//nolint:contextcheck // shutdown runs after the parent context is cancelled
 func shutdownCuratorRegistry(reg *curator.Registry, log *slog.Logger) func() {
 	return func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
