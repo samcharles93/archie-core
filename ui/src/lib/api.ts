@@ -139,6 +139,7 @@ async function request<T = unknown>(
 
 export const api = {
   health: <T = unknown>() => request<T>("/health/detailed"),
+  services: <T = unknown>() => request<T>("/api/services"),
   summary: <T = unknown>() => request<T>("/api/summary"),
   tasks: <T = unknown>() => request<T>("/api/tasks"),
   taskMeta: <T = unknown>() => request<T>("/api/task-meta"),

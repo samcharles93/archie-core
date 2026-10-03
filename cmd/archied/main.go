@@ -16,6 +16,9 @@ func main() {
 	if archied.IsSetupArgs(args) {
 		os.Exit(archied.RunSetup(args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	if len(args) > 0 && args[0] == "status" {
+		os.Exit(archied.RunStatus(args[1:], os.Stdout, os.Stderr))
+	}
 	if len(args) > 0 && args[0] == "playbooks" {
 		os.Exit(archieplaybooks.Run(args[1:], os.Stderr))
 	}

@@ -83,3 +83,53 @@ func instanceID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// States a service reads as in the mesh view.
+const (
+	StateUp       = "up"
+	StateDegraded = "degraded"
+	StateDown     = "down"
+)
+
+// Service is one expected service as the mesh view shows it: its newest
+// record, or a zero record when it never reported.
+type Service struct {
+	storecontract.Presence
+	State string `json:"state"`
+}
+
+// Mesh reads every expected service from the stored records. A service with
+// no record, or whose newest record is stale, is down rather than omitted.
+func Mesh(records []storecontract.Presence, now time.Time) []Service {
+	newest := map[string]storecontract.Presence{}
+	for _, record := range records {
+		if current, ok := newest[record.Service]; !ok || record.ReportedAt.After(current.ReportedAt) {
+			newest[record.Service] = record
+		}
+	}
+	services := make([]Service, 0, len(Services()))
+	for _, name := range Services() {
+		record, ok := newest[name]
+		if !ok {
+			record.Service = name
+		}
+		service := Service{Presence: record, State: state(record, ok, now)}
+		if service.State == StateDown {
+			// The last probe result describes a process that is gone.
+			service.Detail = ""
+		}
+		services = append(services, service)
+	}
+	return services
+}
+
+func state(record storecontract.Presence, reported bool, now time.Time) string {
+	switch {
+	case !reported || Stale(record.ReportedAt, now):
+		return StateDown
+	case !record.Ready:
+		return StateDegraded
+	default:
+		return StateUp
+	}
+}

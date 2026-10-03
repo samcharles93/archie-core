@@ -88,6 +88,10 @@ type Server struct {
 	// is running. Optional: nil renders an empty page rather than failing the
 	// dashboard.
 	ApplyStatus storecontract.ApplyStatusStore
+
+	// Presence lists every service instance's record, behind the services
+	// card. Nil answers 503.
+	Presence storecontract.PresenceStore
 	// now is the clock applyState reads staleness against. Nil means
 	// time.Now; tests set it to pin a record's age.
 	now func() time.Time
@@ -284,6 +288,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/extensions/{name}", s.handleExtensionRemove)
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
 	mux.HandleFunc("GET /api/control-plane/apply-status", s.handleApplyStatus)
+	mux.HandleFunc("GET /api/services", s.handleServices)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}", s.handleControlPlaneQuery)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}/history", s.handleControlPlaneHistory)
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
