@@ -274,7 +274,7 @@ type boot struct {
 
 	startGateways  []func()
 	capabilityHost *plugin.Host
-	// pluginReconciler loads plugin, module and secret-engine files dropped into
+	// pluginReconciler loads plugin and module files dropped into
 	// the running config's directories without a restart. Nil before boot's
 	// startPluginReconcile, and in processes that load no directory (the
 	// Gateway), where a stored plugin-settings change still layers but loads
