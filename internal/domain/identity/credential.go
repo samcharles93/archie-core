@@ -62,11 +62,7 @@ type LoginFlow interface {
 	Exchange(ctx context.Context, code, codeVerifier string) (ProviderSession, error)
 }
 
-// SubjectResolver resolves a verified provider subject to the identity bound to
-// it. It is deliberately narrower than Repository: authenticating a request
-// needs to resolve a subject, not to administer identities, so a consumer that
-// only authenticates does not take a dependency on the whole identity CRUD
-// surface.
+// SubjectResolver resolves a provider subject to its bound identity.
 type SubjectResolver interface {
 	// ResolveSubject returns the identity a provider subject is bound to. It is
 	// the second binding beside the legacy-name alias: a name archie was
@@ -101,11 +97,7 @@ var (
 	ErrIdentityInactive = errors.New("identity may not act")
 )
 
-// Authenticate resolves a presented credential to the identity that may act.
-//
-// The order is deliberate: the credential is verified by the provider's own
-// keys before anything it contains is used, so no field of an unverified token
-// can select an identity.
+// Authenticate verifies rawToken, then resolves it to an identity.
 func Authenticate(ctx context.Context, subjects SubjectResolver, verifier Verifier, rawToken string) (Identity, Credential, error) {
 	if strings.TrimSpace(rawToken) == "" {
 		return Identity{}, Credential{}, ErrNoCredential
@@ -124,14 +116,8 @@ func Authenticate(ctx context.Context, subjects SubjectResolver, verifier Verifi
 	return value, credential, nil
 }
 
-// Resolve turns an already-verified credential into the identity that may act.
-//
-// It is the single place the binding and lifecycle rules are applied, so a path
-// that verified a credential itself -- the login callback exchanging an
-// authorization code -- cannot reach a different verdict from the path that
-// verified a presented token. A suspended identity is refused here even though
-// its credential verified, because suspension is archie's decision and must not
-// depend on the provider withdrawing a token.
+// Resolve maps a verified credential to its identity, refusing suspended
+// identities.
 func Resolve(ctx context.Context, subjects SubjectResolver, credential Credential) (Identity, error) {
 	if err := credential.Subject.Validate(); err != nil {
 		return Identity{}, fmt.Errorf("%w: %w", ErrCredentialRejected, err)

@@ -1,8 +1,5 @@
-// Package builtin implements the built-in, file-backed MemoryProvider. It
-// persists agent memory to MEMORY.md and USER.md as plain markdown, using
-// "## " headers to delimit named sections. Content within a section is
-// organized into blank-line-separated blocks; add/replace/remove act on
-// those blocks and on substrings within them.
+// Package builtin is a file-backed markdown memory store: "## " sections of
+// blank-line-separated blocks.
 package builtin
 
 import (

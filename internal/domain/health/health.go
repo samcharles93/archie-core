@@ -1,18 +1,5 @@
-// Package health is the readiness-probe contract for archie's operator
-// surfaces. It defines the probe shape (Name + Check), the resulting
-// Status vocabulary, and a Registry that runs a fixed set of probes and
-// aggregates their results into one report.
-//
-// Concrete probe implementations live in internal/infrastructure/health;
-// composition root wiring lives in internal/app/archied. This package owns
-// only the contract and the aggregation rule, so a new subsystem probe never
-// has to touch the HTTP surface or the composition root.
-//
-// The vocabulary is deliberately tiny: a probe is either `ok` (ready for
-// work) or `degraded` (not ready -- failed, or a required subsystem report it
-// cannot serve). There is no "unknown"; a probe that cannot run must say so
-// loudly by reporting degraded, because a readiness consumer treats anything
-// other than `ok` as a reason to stop routing work.
+// Package health defines readiness probes and aggregates their results. A
+// probe is ok or degraded.
 package health
 
 import "context"

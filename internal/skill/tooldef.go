@@ -7,14 +7,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
-// ActivateTool bridges a skill catalog into a single tools.ToolEntry a
-// chat turn's agent loop can offer the model: one tool named
-// "skill_activate", not one per skill  --  this is the same progressive
-// disclosure Catalog/LoadBody already implement (Tier 1 catalog entries
-// cost ~100 tokens each and are always in context via the tool schema;
-// Tier 2 full bodies are loaded only when the model actually activates a
-// skill). Returns nil when catalog is empty, so an empty skills
-// directory doesn't add a dead tool to the set.
+// ActivateTool returns a single skill_activate tool over catalog, or nil when
+// the catalog is empty.
 func ActivateTool(dir string, catalog []CatalogEntry) *tools.ToolEntry {
 	if len(catalog) == 0 {
 		return nil

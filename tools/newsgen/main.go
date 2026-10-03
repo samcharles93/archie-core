@@ -1,18 +1,5 @@
-// Command newsgen derives every published release fact from CHANGELOG.md.
-//
-// CHANGELOG.md is the release process's frozen notes: tools/release.sh
-// --prepare writes a section, the maintainer edits it, and --tag refuses to tag
-// a version without its section. Tags are deliberately not a source, because CI
-// and deployment check out shallow and a site build has no tags to read.
-//
-// Generated and committed artifacts:
-//
-//	docs/news/releases.json      the canonical, host-neutral fact set
-//	docs/news/redirects.json     the retired per-component URLs, mapped to pages
-//
-// `newsgen check` reproduces the output in memory and fails when the committed
-// files differ, which keeps a changelog edit from landing without updating the
-// artifacts consumed by the external documentation site.
+// Command newsgen generates docs/news/releases.json and redirects.json from
+// CHANGELOG.md. `newsgen check` fails when the committed files are stale.
 package main
 
 import (

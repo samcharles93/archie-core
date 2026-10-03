@@ -1,25 +1,5 @@
-// Package crondelivery is the delivery half of archied's cron/scheduling
-// capability: it turns a due job into an effect.
-//
-// The domain's ticker engine (internal/domain/scheduling) decides *when* a job
-// runs and hands over a scheduling.Job — identity and dispatch policy, nothing
-// more. This package owns what happens next, and it is the only place that
-// knows a job store exists. The engine sees one Runner (the Router); the
-// deliveries it dispatches to are a mapping this package holds.
-//
-// Three surfaces:
-//
-//   - ChatCourier sends a job's payload text to a chat.
-//   - WorkflowTask submits a job as a unit of work.
-//   - Router picks between them per job kind, and is the single Runner the
-//     engine is given.
-//
-// No implementation here talks to a channel, a broker or a forge. Each takes
-// the effect it needs as an injected function or narrow interface, so which
-// chat transport carries a message — and which intake path receives a task —
-// stays the deployment's decision (the wiring slice composes the real ones),
-// not the cron's. That is also what keeps this package testable without a
-// network.
+// Package crondelivery delivers due scheduled jobs: ChatCourier sends a chat
+// message, WorkflowTask submits work, and Router picks one per job kind.
 package crondelivery
 
 import (
@@ -31,29 +11,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 )
 
-// SpecLookup resolves a job id to its persisted spec.
-//
-// It is declared here (consumer-owned) rather than imported from the document's
-// owner as a concrete type so this package depends on the one method it uses.
-// scheduleResourceStore in internal/app/archied satisfies it as written, so a
-// deployment passes that in.
+// SpecLookup resolves a job id to its stored spec.
 type SpecLookup interface {
 	// Get returns the job and whether it was found; the error is reserved
 	// for I/O failures, matching scheduleResourceStore.Get.
 	Get(ctx context.Context, id string) (scheduling.JobSpec, bool, error)
 }
 
-// RunRecorder advances a job's schedule once a run has completed. It is
-// declared here (consumer-owned) for the same reason SpecLookup is, and
-// scheduleResourceStore satisfies it as written.
-//
-// MarkRun is the only step that moves a job's NextRun, so a store whose Due
-// keeps reporting an already-completed job keeps handing it back on every
-// tick: an interval job fires once per tick instead of once per interval. The
-// record is written only for a successful run, matching the store's own
-// contract that an interval or cron schedule fires "after the last successful
-// run" -- a failed run retries at the tick rate rather than silently skipping
-// its slot.
+// RunRecorder advances a job's schedule after a successful run.
 type RunRecorder interface {
 	// MarkRun records that id ran at runAt and advances NextRun to the
 	// schedule's next firing.
@@ -69,23 +34,10 @@ type RouterStore interface {
 	RunRecorder
 }
 
-// Courier sends one chat message. It is the whole outbound surface this
-// package needs, and it is injected: the concrete channel client lives in the
-// deployment, so an operator switching transports changes nothing here. That
-// is how "the channel choice stays the operator's, not the cron's" is enforced
-// — by construction, there is no channel to choose from here.
-//
-// An implementation must honour ctx: the engine bounds every run with a
-// timeout and cancels on shutdown, and a courier that blocks through
-// cancellation keeps the run in flight past the engine's own deadline.
+// Courier sends one chat message. It must honour ctx.
 type Courier func(ctx context.Context, chatID, text string) error
 
-// TaskSubmitter submits one unit of work to the work-intake path.
-//
-// identity is the submitting job's id; title and body are the job's detail and
-// payload. It is narrow on purpose: the concrete publisher builds the
-// work-intake envelope, because the envelope carries owner/repo/number fields
-// only the deployment can know. This package carries no forge vocabulary.
+// TaskSubmitter submits one unit of work.
 type TaskSubmitter interface {
 	Submit(ctx context.Context, identity, title, body string) error
 }

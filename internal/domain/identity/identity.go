@@ -95,21 +95,12 @@ func New(id IdentityID, kind Kind, displayName string) (Identity, error) {
 	return value, nil
 }
 
-// FromLegacyName builds the bot identity a configured name denotes -- the
-// identity a [[identities]] entry, or the single bot_user, seeds. It is the
-// one place a configuration name becomes an identity, so the file path that
-// seeds and the store path that creates cannot disagree: both derive through
-// New, and therefore through ValidDisplayName.
+// FromLegacyName builds the bot identity for a configured name.
 func FromLegacyName(legacyName string) (Identity, error) {
 	return New(StableID(legacyName), KindBot, legacyName)
 }
 
-// ValidDisplayName reports whether name can be an identity display name: the
-// non-empty-after-trimming rule Validate applies. A configuration loader that
-// seeds an identity from a name calls this so the values it accepts and the
-// values the store accepts are the same set, rather than two rules on one
-// string (a whitespace-only name passed the loader's empty-string test and
-// then failed here).
+// ValidDisplayName reports whether name is non-empty after trimming.
 func ValidDisplayName(name string) bool { return strings.TrimSpace(name) != "" }
 
 func (i Identity) Validate() error {

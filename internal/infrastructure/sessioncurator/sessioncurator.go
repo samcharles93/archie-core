@@ -18,13 +18,8 @@ const Name = "session-memory"
 // written.
 const ActionExtracted = "memory.extracted"
 
-// ActionSkipped records a session the pass could not address, so nothing was
-// written for it. The reason names what was missing: an agent id (the
-// deployment's bot user, empty when the composition resolved none), how many
-// distinct senders were found (zero for a dashboard or webhook session, more
-// than one for a group chat), and how many user messages carried no sender at
-// all -- unknown provenance rules a session out on its own, beside any number
-// of identified senders.
+// ActionSkipped records a session that could not be attributed, with the
+// reason.
 const ActionSkipped = "memory.skipped"
 
 // DefaultInterval is the check-in cadence used when nothing more
@@ -130,13 +125,9 @@ func effectiveSince(since, now time.Time) time.Time {
 	return since
 }
 
-// reviewOne extracts observations from one session's recent messages and
-// writes them through engine as agent-user memory for the session's single
-// participant. Returns nil (no Action) when nothing was extracted --
-// matching the skill curator's "a pass with nothing to report is not an
-// error" -- or when the session carries no messages at all. A session the
-// pass cannot address -- no agent, or no single participant -- is skipped
-// with an Action saying why.
+// reviewOne extracts observations from one session and writes them as
+// agent-user memory for its single participant. It returns nil when nothing
+// was extracted, or a skip action when the session cannot be attributed.
 func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngine, sess curator.SessionSummary) (*curator.Action, error) {
 	msgs, err := c.host.Conversations.Messages(ctx, sess.ID, messageTailSize)
 	if err != nil {
@@ -146,17 +137,7 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 		return nil, nil
 	}
 
-	// Resolve the address before spending a model call: an unaddressable
-	// session has nowhere to write, so there is nothing a model response
-	// could add. ScopeAgentUser is addressed by both ids, and a guess would
-	// file one person's facts under another's.
-	//
-	// An empty agent id is the composition having resolved no bot user for
-	// this deployment -- the session's own record cannot supply one (see
-	// Adapter). The engine would refuse the scope, which is the right
-	// refusal for a write with no address: what is wrong is writing it at
-	// all, so the skip belongs here, at the point the scope is produced, and
-	// not as a Pass error that abandons every other session's work.
+	// Skip sessions without an agent before calling the model.
 	if sess.AgentID == "" {
 		return &curator.Action{
 			At:     c.host.Clock.Now(),
@@ -197,12 +178,7 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 		facts = facts[:maxObservationsPerSession]
 	}
 
-	// Agent-user is the only defensible home for a derived fact about a
-	// person: agent scope would leak user A's facts to user B through the
-	// same agent, user scope would pool them across agents, and the session
-	// id this used to write stops meaning anything when the session ends.
-	// ScopeAgentUser is also what a later chat turn reads back, which is
-	// the whole point of writing these at all.
+	// Write to agent-user scope, which chat turns read back.
 	scope := domainmemory.Scope{
 		Kind:  domainmemory.ScopeAgentUser,
 		Agent: domainmemory.AgentID(sess.AgentID),
@@ -229,18 +205,9 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 	}, nil
 }
 
-// sessionParticipant returns the one participant a session's memory may be
-// attributed to, or -- when there is none -- the reason there isn't.
-//
-// Only user-role messages carry a person: an assistant message carries the
-// bot, so it can never manufacture a participant.
-//
-// A user-role message with an empty SenderID is part of the excerpt the
-// model reads but names nobody, so the session is unattributable outright,
-// even beside exactly one identified sender. The alternative -- skipping it
-// and attributing the rest -- would credit whoever that sender is with
-// facts drawn from content of unknown provenance, which is the isolation
-// failure the agent-user scope exists to prevent.
+// sessionParticipant returns the session's single user-role sender, or why
+// there is none. Any user message without a sender makes the session
+// unattributable.
 func sessionParticipant(msgs []curator.ConversationMessage) (participant, reason string) {
 	senders := make(map[string]struct{})
 	unidentified := 0

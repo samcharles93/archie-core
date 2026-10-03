@@ -21,12 +21,7 @@ type Activity struct {
 	Recent         []Action
 }
 
-// activityTracker records recent curator activity in memory, fed directly
-// from the runtime's own emit point (Runtime.emitRun) rather than by
-// re-subscribing to the event bus -- the runtime already has the pass
-// result in hand, and EventSink is fire-and-forget with no replay. Activity
-// resets on daemon restart, same as every other piece of runtime state the
-// curator family holds only in memory.
+// activityTracker records recent curator activity in memory.
 type activityTracker struct {
 	mu   sync.Mutex
 	data map[string]*Activity

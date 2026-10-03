@@ -9,13 +9,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-// ChannelSettings is the Channel settings resource document. Its shape IS the
-// contract the Web UI edits, so every nested object here is defined by this
-// file with explicit snake_case json tags and never handed an internal config
-// struct. Encoding/json falls back to Go field names when a tag is absent,
-// which is how "Window", "MaxRequests", "ListenAddr" and "RelayAddr" reached
-// operators in the first place -- a shape belonging to TOML, not to this
-// document.
+// ChannelSettings is the channel-settings resource document, with
+// snake_case JSON keys.
 type ChannelSettings struct {
 	Operator               string                 `json:"operator"`
 	ShowToolCalls          bool                   `json:"show_tool_calls"`
@@ -88,11 +83,8 @@ func (r *RateLimitSettings) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// DecodeRenamingLegacyKeys decodes an object into v after renaming each key in
-// legacy to the spelling v documents, and stays strict about everything else.
-// The strictness is the point: dropping unknown keys would let a typo
-// ("windows") read as "unset" and silently disable the setting, which is the
-// class of failure this shape exists to end.
+// DecodeRenamingLegacyKeys decodes data into v after renaming legacy keys.
+// Unknown keys are errors.
 func DecodeRenamingLegacyKeys(data []byte, legacy map[string]string, v any) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -117,11 +109,8 @@ func DecodeRenamingLegacyKeys(data []byte, legacy map[string]string, v any) erro
 	return decoder.Decode(v)
 }
 
-// ChannelDuration is a duration as this document writes it: the human string
-// the file accepts ("1m0s", the same spelling config.Duration emits), never a
-// nanosecond count. It still reads the count, because every document written
-// before this shape existed carries one, and reading both forms is what lets
-// those documents keep working without being re-saved.
+// ChannelDuration is written as a duration string; it also reads a
+// nanosecond count.
 type ChannelDuration time.Duration
 
 // Std is the standard-library duration, for arithmetic and for the marker

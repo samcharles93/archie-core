@@ -15,12 +15,8 @@ const (
 	KindTaskQueued  = "task_queued"
 	KindStageStart  = "stage_start"
 	KindStageFinish = "stage_finish" // data: duration_ms, error
-	// KindAgentFinish carries the stage's token economics as well as its
-	// outcome: tokens is the run total (agentexec.Result.TokensUsed) and the
-	// prompt/completion/cached/cache_creation breakdown is the provider's own
-	// accounting, forwarded verbatim for evaluation. The breakdown is absent
-	// on events persisted before it was carried across the agent boundary, so
-	// consumers must treat each field as optional rather than zero.
+	// KindAgentFinish carries the stage outcome and token usage. The breakdown
+	// fields are optional.
 	KindAgentFinish = "agent_finish" // data: status, stop_reason, tokens, iterations, model, prompt_tokens, completion_tokens, cached_tokens, cache_creation_tokens
 	// KindToolCall marks one completed tool invocation during an agent stage
 	// run. Only emitted for runners that execute in the same process as their
@@ -37,26 +33,14 @@ const (
 	// seeing, because it explains why a task changed course.
 	KindHumanApproved = "human_approved"
 	KindHumanRejected = "human_rejected"
-	// KindAgentApproved and KindAgentRejected record that an agent performed
-	// the action. They exist because the event kind describes the ACTOR: an
-	// agent approving under a person's standing authority is not a human
-	// approval, and recording it as one asserts something false. The authority
-	// it acted under is PrincipalID, which is a separate fact.
+	// KindAgentApproved and KindAgentRejected record an agent's action.
 	KindAgentApproved = "agent_approved"
 	KindAgentRejected = "agent_rejected"
-	// KindTaskApproved and KindTaskRejected record an approval or rejection that
-	// archie cannot attribute to anyone: the request carried no identity archie
-	// could verify. They are task-level events that claim nothing about the
-	// actor, which is the honest record -- a human's approval and an agent's are
-	// recorded as human_* and agent_* respectively.
+	// KindTaskApproved and KindTaskRejected record an unattributed approval or
+	// rejection.
 	KindTaskApproved = "task_approved"
 	KindTaskRejected = "task_rejected"
-	// KindHumanRereviewed, KindAgentRereviewed and KindTaskRereviewed record
-	// the operator asking the review gate for a re-review. The answer is
-	// neither an approval nor a rejection, and recording it as either would
-	// make the timeline claim a verdict the operator did not give. They follow
-	// the same actor/agent/task attribution split as the approved and rejected
-	// trios above.
+	// Re-review requests, by human, agent or unattributed.
 	KindHumanRereviewed = "human_rereviewed"
 	KindAgentRereviewed = "agent_rereviewed"
 	KindTaskRereviewed  = "task_rereviewed"
@@ -71,24 +55,13 @@ const (
 	KindWorkRequestSubmitted = "work_request_submitted"
 	KindLog                  = "log" // data: level, msg
 
-	// KindChangesCaptured records the change one attempt produced, read off
-	// the worktree at the moment it was committed or pushed, plus a final
-	// capture once OpenPR knows the number. It is durable
-	// provenance, not a live view: the worktree is deleted on merge, close
-	// and no-PR terminal states, and a retry resets the branch onto its base,
-	// so nothing can re-derive this after the fact. data: schema
-	// (ChangesCapturedSchema), owner, repo, base, branch, head_sha, base_sha,
-	// pr_number, captured_after, files[], totals, truncated.
+	// KindChangesCaptured records one attempt's change at commit or push time.
+	// data: schema, owner, repo, base, branch, head_sha, base_sha, pr_number,
+	// captured_after, files[], totals, truncated.
 	KindChangesCaptured = "changes_captured"
 
-	// KindConfigCaptured records the effective configuration one attempt ran
-	// under, captured where it is materialised for the dispatch. It is durable
-	// by requirement, not convenience: the published configuration snapshot is
-	// the CURRENT configuration and is replaced on every publish, so it cannot
-	// answer what a run that finished last week was configured with. This is
-	// the only record of that. data: schema (ConfigCapturedSchema) and document
-	// (the JSON encoding of the dispatch's config.TaskConfig, non-secret by
-	// construction and by test).
+	// KindConfigCaptured records the configuration one attempt ran with. data:
+	// schema and document (the dispatch's config.TaskConfig as JSON).
 	KindConfigCaptured = "config_captured"
 
 	// Curator family activity. Curator runs ride
@@ -98,11 +71,8 @@ const (
 	KindCuratorAction = "curator_action" // data: curator, type, detail, reason
 	KindCuratorError  = "curator_error"  // data: curator, phase, err
 
-	// Scheduled-job activity from the ticker engine
-	// (internal/domain/scheduling). A scheduled run has no task and no chat
-	// turn behind it, so without these a job that fired, stalled or failed
-	// is invisible everywhere. data: job, pool, duration_ms (run) and job,
-	// pool, phase, err (error).
+	// Scheduled job activity. data: job, pool, duration_ms (run); job, pool,
+	// phase, err (error).
 	KindJobRun   = "job_run"
 	KindJobError = "job_error"
 
@@ -112,12 +82,8 @@ const (
 	// trigger. data: session, channel.
 	KindTurnCompleted = "turn_completed"
 
-	// EDA edit activity (bindings and mappings on the captures store). Each
-	// successful write on the State Store's binding and mapping tables emits one
-	// event through the same task-DB path capture arrival uses, so a
-	// dashboard edit is visible on the activity stream without a manual
-	// refresh. data: id (the edited record), action (create, update,
-	// approve, delete).
+	// Binding and mapping edits. data: id, action (create, update, approve,
+	// delete).
 	KindBindingChanged = "binding_changed"
 	KindMappingChanged = "mapping_changed"
 
@@ -136,11 +102,8 @@ const (
 	// one; a wait:false callee reports on its own run.
 	KindWorkflowCallFinished = "workflow_call_finished"
 
-	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
-	// update -- whether the restarted daemon came back up healthy and on
-	// the version it claimed, relayed once on the boot that finds the
-	// pending report left by the update watchdog.
-	// data: health_check, rolled_back, confirmed, drift, unverified.
+	// KindUpdateReport is a dashboard update's post-restart outcome. data:
+	// health_check, rolled_back, confirmed, drift, unverified.
 	KindUpdateReport = "update_report"
 )
 
@@ -167,19 +130,9 @@ type Event struct {
 	Issue    int       `json:"issue,omitempty"`
 	Workflow string    `json:"workflow,omitempty"`
 	Stage    string    `json:"stage,omitempty"`
-	// Attempt attributes the event to one run of the task. Zero means
-	// UNATTRIBUTED, not "attempt zero": every row written before this field
-	// existed, and the deliberately task-agnostic producers, carry 0. A
-	// reader must report those as unattributable rather than presenting them
-	// as a first run. The tag is deliberately not omitempty so that
-	// unattributed and absent stay distinguishable on the wire and in the
-	// array the dashboard renders.
+	// Attempt is the task attempt; 0 means unattributed.
 	Attempt int `json:"attempt"`
-	// ActorID is the identity that performed the action this event records,
-	// derived from the credential the request presented. Empty means the event
-	// has no actor: the producers that are task-agnostic or pre-date this field
-	// make no claim about who acted, and a reader must report that rather than
-	// assume a human did.
+	// ActorID is the identity that acted; empty means no actor is claimed.
 	ActorID string `json:"actor_id,omitempty"`
 	// ActorKind is the acting identity's kind, kept beside ActorID so a reader
 	// can tell an agent's action from a person's without resolving the identity

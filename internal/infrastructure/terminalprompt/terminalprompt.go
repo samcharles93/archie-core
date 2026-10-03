@@ -1,9 +1,4 @@
-// Package terminalprompt is the real, TTY-backed implementation of the
-// prompt surface archied setup needs (see internal/infrastructure/
-// configuration/setup.Prompter, which this package satisfies structurally
-// -- it does not import that package, so there is no infrastructure ->
-// infrastructure edge for what is, structurally, just an interface
-// satisfaction).
+// Package terminalprompt implements setup's Prompter on a TTY.
 package terminalprompt
 
 import (
@@ -26,21 +21,11 @@ type Terminal struct {
 	out io.Writer
 	r   *bufio.Reader
 
-	// readSecret reads one line from the given fd without echoing it. It is
-	// a seam so tests can exercise ReadSecret's prompt/cancellation
-	// behaviour over a pipe -- term.ReadPassword itself only works on a
-	// real TTY fd, which New already requires for production use, so this
-	// field is never swapped outside a test.
+	// readSecret reads a line without echo.
 	readSecret func(fd int) ([]byte, error)
 }
 
-// New returns a Terminal reading from in and writing prompts to out. in
-// must be a real terminal: setup's non-interactive failure requirement
-// ("a non-TTY invocation without sufficient input fails with a clear
-// message rather than writing a partial config") is enforced here, at
-// construction, rather than by falling back to a degraded read mode that
-// would silently accept piped or redirected input and produce a config
-// nobody typed.
+// New returns a Terminal on in, which must be a terminal.
 func New(in *os.File, out io.Writer) (*Terminal, error) {
 	if !term.IsTerminal(int(in.Fd())) {
 		return nil, fmt.Errorf(
@@ -57,11 +42,8 @@ func New(in *os.File, out io.Writer) (*Terminal, error) {
 	}, nil
 }
 
-// readLine runs a blocking read in a goroutine and races it against
-// ctx.Done(). On cancellation the read is abandoned: the goroutine leaks
-// until the abandoned read itself returns (real input or EOF), which is
-// accepted because a cancelled setup command is expected to exit shortly
-// after via its own signal handling, taking the leaked goroutine with it.
+// readLine reads a line, returning early if ctx ends; the read goroutine
+// then finishes on its own.
 func (t *Terminal) readLine(ctx context.Context) (string, error) {
 	type result struct {
 		line string

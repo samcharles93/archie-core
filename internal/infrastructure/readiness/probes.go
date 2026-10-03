@@ -1,13 +1,4 @@
-// Package readiness implements the readiness probes declared by
-// internal/domain/health. Each probe is a thin adapter over a real subsystem
-// dependency: it answers with a live, current result rather than a constant,
-// so an operator calling /health/detailed sees the daemon's true state.
-//
-// The probes are deliberately dependency-light and injectable. Each takes
-// the narrowest useful shape -- an interface it defines, a function, or a
-// value -- so a probe never reaches into the daemon or a broad registry for
-// its inputs. Composition root wiring (internal/app/archied) builds the
-// concrete values and assembles the domain Registry.
+// Package readiness implements the health probes.
 package readiness
 
 import (
@@ -59,11 +50,8 @@ func (p *StoreProbe) Check(ctx context.Context) health.Result {
 
 // --- remote contract ---
 
-// ContractProbe reports whether a service this process consumes over the wire
-// answers a cheap call within a bounded timeout. It is the readiness signal
-// available to a process that depends on a service it does not own: the probe
-// consumes the dependency's own result and never inspects its manager, registry
-// or database.
+// ContractProbe checks that a remote service answers a cheap call within a
+// timeout.
 type ContractProbe struct {
 	ProbeName string
 	Timeout   time.Duration
@@ -210,16 +198,8 @@ func NewDiskProbeTargets(targets []DiskTarget) *DiskProbe {
 
 func (p *DiskProbe) Name() string { return "disk" }
 
-// reduceTargets collapses the configured targets to one per path: the first
-// target seen for a path wins its position, and the result keeps the strictest
-// requirement any target placed on that path.
-//
-// Position is what makes this necessary rather than using a plain set. With
-// root, an optional /var, then a required data path that resolves to /var, the
-// optional /var is the target that survives dedup -- and its optional rules
-// then apply to a path the daemon requires, so a vanished required path is
-// skipped as "optional absent" and the probe reports OK. Choosing the required
-// target (and its name) keeps the failure visible and correctly attributed.
+// reduceTargets keeps one target per path, in first-seen position, with the
+// strictest requirement for that path.
 func reduceTargets(targets []DiskTarget) []DiskTarget {
 	index := make(map[string]int, len(targets))
 	out := make([]DiskTarget, 0, len(targets))

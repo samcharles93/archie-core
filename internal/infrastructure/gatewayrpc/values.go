@@ -177,12 +177,7 @@ func intPointer(v *int64) *int {
 	return &n
 }
 
-// attachmentProtoList renders a message's attachments in wire shape for the
-// stored-history and outbound-event directions. Data is deliberately
-// unmapped: those directions must not carry a turn's bytes, and a persisted
-// record strips them too. An attachment with no fields beyond Data would
-// produce an empty wire message, which is still the honest encoding of
-// "metadata was stripped", and never happens for a real attachment.
+// attachmentProtoList converts attachments without their Data.
 func attachmentProtoList(media []messaging.MediaAttachment) []*pb.Media {
 	if len(media) == 0 {
 		return nil
@@ -197,11 +192,7 @@ func attachmentValueList(list []*pb.Media) []messaging.MediaAttachment {
 	return mapValues(list, attachmentValue)
 }
 
-// inboundAttachmentProtoList renders a turn's attachments for the inbound
-// request. Unlike the stored direction, Data rides along: the channel
-// frontend downloads the file, but the Gateway process that runs the turn
-// never holds the platform credential, so the bytes have no other way to
-// reach the model.
+// inboundAttachmentProtoList converts attachments including their Data.
 func inboundAttachmentProtoList(media []messaging.MediaAttachment) []*pb.Media {
 	if len(media) == 0 {
 		return nil

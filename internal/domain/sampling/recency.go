@@ -19,11 +19,7 @@ func (recencySampler) Sample(_ context.Context, candidates []Candidate, req Requ
 	return sorted[:effectiveCap(req.Cap, len(sorted))], nil
 }
 
-// sortByTime returns a stably-sorted copy of candidates, never mutating the
-// input. newestFirst true sorts descending by At (recency); false sorts
-// ascending (staleness). A stable sort keeps ties in input order, which is
-// what makes both strategies deterministic when candidates share a
-// timestamp.
+// sortByTime returns a stably sorted copy of candidates by At.
 func sortByTime(candidates []Candidate, newestFirst bool) []Candidate {
 	sorted := append([]Candidate(nil), candidates...)
 	slices.SortStableFunc(sorted, func(a, b Candidate) int {

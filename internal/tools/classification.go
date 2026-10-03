@@ -17,14 +17,7 @@ const (
 	// serialization, checkpointing, and stricter guardrail monitoring.
 	ClassMutating
 
-	// RequiresApproval marks a tool that must not execute without a human
-	// consent decision. The dispatch layer blocks the call until an
-	// ApprovalRequester resolves it (approve, permanently approve, or deny).
-	//
-	// It is independent of ClassMutating: writing a file is mutating but
-	// not necessarily gated (the agent loop's own path enforcement handles
-	// that), while deleting a session is gated because it is irreversible
-	// on a path the model controls.
+	// RequiresApproval marks a tool that needs human approval before each call.
 	RequiresApproval
 )
 

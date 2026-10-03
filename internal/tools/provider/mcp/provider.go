@@ -245,19 +245,12 @@ func (p *Provider) handlerFor(client *protocol.Client, originalName string) tool
 	}
 }
 
-// maxMediaBlockBase64Bytes caps the base64-encoded size of a single media
-// content block before it is decoded and written to disk. An MCP server is
-// a semi-trusted external process; without a cap, one misbehaving or
-// malicious response could force the daemon to allocate and persist an
-// unbounded amount of data. ~48MiB decoded (base64 is ~4/3 the size of the
-// decoded payload).
+// maxMediaBlockBase64Bytes caps one media block's base64 size.
 const maxMediaBlockBase64Bytes = 64 << 20 // 64MiB
 
-// writeMultimodalResult decodes and writes each media block to disk under
-// p.mediaDir/<tool name>/<call sequence>/, returning an envelope whose URLs
-// carry the local files for the channel to upload. Malformed base64 data
-// is a hard error -- the server sent a content block it claimed was media
-// but wasn't decodable.
+// writeMultimodalResult writes each media block under
+// mediaDir/<tool>/<call>/ and returns a result naming the files. Bad base64
+// is an error.
 func (p *Provider) writeMultimodalResult(toolName, summaryText string, media []protocol.ContentBlock) (tools.MultimodalResult, error) {
 	result := tools.MultimodalResult{IsMultimodal: true, Summary: summaryText}
 	root, err := p.mediaRoot()
@@ -265,12 +258,7 @@ func (p *Provider) writeMultimodalResult(toolName, summaryText string, media []p
 		return tools.MultimodalResult{}, err
 	}
 
-	// toolName is server-supplied (it comes from the MCP server's own
-	// tools/list response, not from caller-controlled input) and is used
-	// to build a filesystem path below. Never trust it: a malicious server
-	// could otherwise advertise a tool name like "../../etc/cron.d/x" to
-	// escape the media root. Reject any path separator or "." component
-	// outright rather than trying to sanitize it into something safe.
+	// The tool name comes from the server; refuse path traversal.
 	if err := rejectPathTraversal(toolName); err != nil {
 		return tools.MultimodalResult{}, fmt.Errorf("MCP tool name %q is not safe as a path component: %w", toolName, err)
 	}
@@ -321,11 +309,7 @@ func (p *Provider) writeMultimodalResult(toolName, summaryText string, media []p
 	return result, nil
 }
 
-// mediaRoot returns the provider's media directory, creating it under the
-// system temp directory on first use. Providers are long-lived relative to
-// a turn (the daemon keeps them for its whole lifetime; a task worker keeps
-// them for the task), so a lazily created root keeps text-only servers from
-// creating directories they never need.
+// mediaRoot returns the media directory, creating it on first use.
 func (p *Provider) mediaRoot() (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -388,12 +372,8 @@ func extensionForMimeType(mimeType string) string {
 	}
 }
 
-// mediaTypeForMimeType maps an MCP media MIME type onto the four-value
-// vocabulary gateway.MediaAttachment.Type uses. Only the photo formats the
-// Telegram photo endpoint accepts are classified "image": image/svg+xml and
-// image/tiff are images that a photo endpoint rejects outright, so they fall
-// through to "document" and still arrive as a file, mirroring
-// sendfile.MediaType's photo-format list.
+// mediaTypeForMimeType maps a MIME type to image, video, audio or document.
+// Only photo formats count as image.
 func mediaTypeForMimeType(mimeType string) string {
 	switch mimeType {
 	case "image/png", "image/jpeg", "image/gif", "image/webp":

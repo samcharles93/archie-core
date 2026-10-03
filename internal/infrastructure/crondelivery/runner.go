@@ -29,12 +29,7 @@ func NewChatCourier(specs SpecLookup, courier Courier) (*ChatCourier, error) {
 	return &ChatCourier{specs: specs, courier: courier}, nil
 }
 
-// Run hydrates the job's spec and sends its payload text to its target chat.
-//
-// The pre-check matters as much as the error wrap: a cancelled run must produce
-// no side effect, because the engine cancels on shutdown and a message sent
-// after that is one nobody asked for. The courier's own ctx handling covers
-// cancellation that arrives mid-send.
+// Run sends the job's payload to its chat. A cancelled ctx sends nothing.
 func (c *ChatCourier) Run(ctx context.Context, job scheduling.Job) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -69,11 +64,7 @@ func NewWorkflowTask(specs SpecLookup, submitter TaskSubmitter) (*WorkflowTask, 
 	return &WorkflowTask{specs: specs, submitter: submitter}, nil
 }
 
-// Run hydrates the job's spec and submits it as work.
-//
-// The title falls back to the job id when Detail is empty: a submitted task is
-// how a human finds the job that created it, and an untitled one is
-// unfindable.
+// Run submits the job as work, titled by Detail or the job id.
 func (w *WorkflowTask) Run(ctx context.Context, job scheduling.Job) error {
 	if err := ctx.Err(); err != nil {
 		return err

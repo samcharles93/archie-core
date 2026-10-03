@@ -6,13 +6,8 @@ import (
 	"path/filepath"
 )
 
-// writeFileAtomic writes data to path by writing to a temporary file in
-// the same directory and renaming it into place. A rename within the
-// same filesystem is atomic, so a reader never observes a partially
-// written file, and a crash mid-write leaves the original file (or no
-// file) intact rather than a corrupt one. The file is created with mode
-// 0600  --  pairing state (codes, approvals, rate-limit history) is
-// sensitive and must not be group/world readable.
+// writeFileAtomic writes data to path, mode 0600, through a temp file and
+// rename.
 func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")

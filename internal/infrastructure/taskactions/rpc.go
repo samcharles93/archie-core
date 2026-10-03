@@ -23,24 +23,15 @@ import (
 // execution; the standalone Gateway never mutates the task store directly.
 const actionSubject = "archie.gateway.task-action"
 
-// Identity is a pointer because its absence is meaningful: nil is a
-// caller authenticated across identities, which the daemon's service
-// distinguishes from any named identity, empty included. It is a SCOPE -- which
-// tasks the caller may touch -- and never an actor.
-//
-// Actor carries who performed the action and whose authority permitted it, as
-// resolved by the caller that verified the credential. Its absence is meaningful:
-// an absent actor records an unattributed action, never a human's.
+// actionRequest is a task action request. A nil Identity is a caller acting
+// across identities. A nil Actor records an unattributed action.
 type actionRequest struct {
 	Identity *string          `json:"identity"`
 	TaskID   int64            `json:"task_id"`
 	Action   taskstate.Action `json:"action"`
 	Actor    *actorPayload    `json:"actor,omitempty"`
-	// Instructions and Findings are the review gate answer payload
-	// (taskactions.ActionPayload). They are empty for every action but
-	// approve and rereview, and for chat surfaces, which carry no selection
-	// syntax. RetryMode is the worktree choice a retry carries; empty means
-	// the explicit default, refresh_onto_base.
+	// Instructions and Findings answer the review gate. RetryMode is the retry's
+	// worktree mode; empty means refresh_onto_base.
 	Instructions string              `json:"instructions,omitempty"`
 	Findings     []string            `json:"findings,omitempty"`
 	RetryMode    taskstate.RetryMode `json:"retry_mode,omitempty"`
@@ -114,12 +105,8 @@ func actionErrorFor(kind string, err error) error {
 	return err
 }
 
-// Register exposes only identity-scoped operator actions on the daemon. The
-// daemon retains execution cancellation, retry policy, forge closure and event
-// ownership; the Gateway's client reaches this responder over NATS.
-// Handlers run with context.Background() (the storerpc convention): the
-// daemon's lifecycle ctx is not request-scoped, and a cancelled boot ctx must
-// not poison later requests.
+// Register serves identity-scoped task actions over NATS. Handlers use
+// context.Background().
 func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (func(), error) {
 	return natsrpc.RegisterAll(nc, []natsrpc.Registration{{
 		Subject: actionSubject,

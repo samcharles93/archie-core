@@ -97,20 +97,9 @@ func (c EngineConfig) withDefaults() EngineConfig {
 	return c
 }
 
-// Engine is the ticker engine: one loop that asks the source what is due at
-// each tick and dispatches each due job to the pool it declares.
-//
-// Two invariants make the timing safe to reason about:
-//
-//   - A job never overlaps itself. While a run is queued or in flight, later
-//     ticks reporting the same ID are skipped, not stacked. A job slower than
-//     the tick interval therefore runs back-to-back, never fanned out.
-//   - The pools do not interfere. A blocked sequential job cannot delay a
-//     parallel one, and a saturated parallel cap cannot delay the sequential
-//     worker — they are separate dispatch paths sharing only the tick.
-//
-// Every failure is contained: a source error, a job error, a job panic and a
-// job timeout are each reported as an event and leave the loop running.
+// Engine asks the source what is due each tick and dispatches each job to
+// its pool. A job never overlaps itself, and the sequential and parallel
+// pools are independent. Errors, panics and timeouts are reported as events.
 type Engine struct {
 	source JobSource
 	runner Runner
@@ -160,14 +149,8 @@ func (e *Engine) MaxParallel() int { return e.cfg.MaxParallel }
 // JobTimeout reports the resolved per-run timeout.
 func (e *Engine) JobTimeout() time.Duration { return e.cfg.JobTimeout }
 
-// Start launches the tick loop and the sequential worker.
-//
-// An engine is single-use: starting one that is already started, or that has
-// been stopped, is an error. Restarting is refused rather than supported
-// because Stop leaves the dropped sequential backlog and the claims of runs
-// it did not wait for behind — a restarted engine would re-run stale queued
-// jobs and permanently suppress the jobs still marked claimed. Build a new
-// engine instead; it is a struct, not a resource.
+// Start launches the tick loop and the sequential worker. An engine can be
+// started only once.
 func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -194,11 +177,8 @@ func (e *Engine) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop halts ticking, drops any queued-but-unstarted runs, and waits for
-// in-flight runs to finish, bounded by ctx. If ctx expires first, in-flight
-// runs are cancelled and ctx's error is returned — a Runner that ignores
-// cancellation can still outlive Stop, which is why the deadline is the
-// caller's to set. Stopping an engine that never started is a no-op.
+// Stop halts ticking, drops queued runs and waits for running ones within
+// ctx, then cancels them. Stopping an unstarted engine is a no-op.
 func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	if !e.started {

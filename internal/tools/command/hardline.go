@@ -27,19 +27,9 @@ func (b *Blocked) Error() string {
 	return fmt.Sprintf("refused (%s): %s: %q", b.Rule, b.Reason, b.Segment)
 }
 
-// Hardline checks a command line against the rules that hold regardless of
-// configuration, approval, or operator instruction.
-//
-// This is deliberately a floor and not a security boundary. Anything with a
-// shell has countless ways around a pattern list, and pretending otherwise
-// would be worse than not having one. What it does buy is that the failure
-// modes with no recovery -- the ones where you cannot intervene afterwards
-// because the machine, the filesystem, or the gateway itself is gone -- are
-// not reachable by an ordinary mistake.
-//
-// Two rules exist specifically to keep intervention possible: an agent must
-// not be able to stop the daemon that hosts /stop, nor start a second one
-// outside the supervisor's control.
+// Hardline rejects command lines that would be unrecoverable: destroying the
+// system, or stopping or duplicating the daemon. It is a floor, not a
+// security boundary.
 func Hardline(line string) error {
 	return hardline(line, 0)
 }
@@ -72,13 +62,7 @@ func hardline(line string, depth int) error {
 	return nil
 }
 
-// checkSegment applies every rule to one command invocation, then follows
-// the segment into any command it merely wraps.
-//
-// Without that second step the rules are trivially defeated, and not only
-// by someone trying: `bash -c "rm -rf /"` is a shape models produce
-// unprompted, and `xargs rm -rf /` reads as ordinary shell. In both cases
-// the dangerous command is an argument, so nothing above sees it.
+// checkSegment applies every rule to one command and to any command it wraps.
 func checkSegment(seg Segment, depth int) error {
 	for _, rule := range rules {
 		if reason, hit := rule.check(seg); hit {
@@ -139,11 +123,8 @@ var wrappers = map[string]bool{
 	"setsid": true, "unbuffer": true, "script": true,
 }
 
-// unwrap returns the command a wrapper invokes.
-//
-// Flags, environment assignments, and bare numbers are skipped, the last
-// because several wrappers take a leading value -- `timeout 30 rm -rf /`
-// and `nice -n 10 rm -rf /` both have to resolve to the rm.
+// unwrap returns the command a wrapper runs, skipping flags, env assignments
+// and numbers.
 func unwrap(seg Segment) (Segment, bool) {
 	if !wrappers[baseName(seg.Name)] {
 		return Segment{}, false
@@ -203,12 +184,7 @@ var criticalPaths = map[string]bool{
 	"/proc": true, "/sys": true, "/dev": true,
 }
 
-// checkRecursiveDelete refuses a recursive rm whose target is a critical
-// path. A recursive delete elsewhere is ordinary work and is allowed.
-//
-// The command is resolved through baseName so that /bin/rm and rm are judged
-// alike, matching every sibling rule: comparing the raw segment name let
-// /bin/rm -rf / through while blocking rm -rf /.
+// checkRecursiveDelete refuses a recursive rm of a critical path.
 func checkRecursiveDelete(seg Segment) (string, bool) {
 	if baseName(seg.Name) != "rm" {
 		return "", false
@@ -375,11 +351,7 @@ func checkSudoStdin(seg Segment) (string, bool) {
 // to intervene.
 var daemonNames = map[string]bool{"archied": true, "archie-agent": true}
 
-// checkSelfTermination refuses killing the daemon that hosts the gateway.
-//
-// /stop, approvals, and every other control run inside archied. An agent
-// that can stop it can put itself beyond reach, and the only remaining
-// recourse is physical access to the host.
+// checkSelfTermination refuses killing archied.
 func checkSelfTermination(seg Segment) (string, bool) {
 	base := baseName(seg.Name)
 
@@ -411,11 +383,7 @@ func checkSelfTermination(seg Segment) (string, bool) {
 	return "", false
 }
 
-// checkDaemonLaunch refuses starting another daemon.
-//
-// A second archied outside the supervisor competes for the same Telegram
-// updates and the same queues, and nothing is tracking it -- so it cannot
-// be restarted, reconfigured, or stopped through any of the usual paths.
+// checkDaemonLaunch refuses starting another archied.
 func checkDaemonLaunch(seg Segment) (string, bool) {
 	name := baseName(seg.Name)
 	if name == "nohup" || name == "setsid" {

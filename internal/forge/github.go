@@ -202,11 +202,8 @@ func (c *GitHubClient) GetPullRequestDiff(ctx context.Context, owner, repo strin
 	return diff, nil
 }
 
-// GetRepoArchive fetches a gzipped tar archive of the repository at ref.
-// GetArchiveLink only resolves the download's final location; the archive's
-// bytes still have to be fetched with a plain, unauthenticated GET (the URL
-// GitHub redirects to is a pre-signed storage link, not a GitHub API
-// endpoint), so no forge token is attached to this second request.
+// GetRepoArchive downloads a gzipped tar of the repository at ref. The
+// download URL is pre-signed, so no token is sent.
 func (c *GitHubClient) GetRepoArchive(ctx context.Context, owner, repo, ref string) (io.ReadCloser, error) {
 	url, _, err := c.gh.Repositories.GetArchiveLink(ctx, owner, repo, github.Tarball, &github.RepositoryContentGetOptions{Ref: ref}, 5)
 	if err != nil {
@@ -301,19 +298,9 @@ func (c *GitHubClient) ReplyToReview(ctx context.Context, owner, repo string, nu
 	return nil
 }
 
-// CreateReviewComments posts line-anchored review comments, one GitHub call per
-// comment, anchored to the RIGHT (new) side of the pull request's head revision.
-//
-// The head SHA is read here rather than taken from the caller: it is what the
-// comments are anchored to, and the caller that produced the line numbers (a
-// workflow stage running in archie-agent) holds no forge credentials to read it
-// with. reviewedHeadSHA is the revision those line numbers were measured on, and
-// the set is refused outright if the head has moved past it -- see
-// reviewHeadDrift.
-//
-// A comment GitHub refuses -- a line that falls outside the diff, a file the
-// push renamed -- does not abandon the rest. The failures are joined and
-// returned, so one unanchorable finding cannot silently drop the others.
+// CreateReviewComments posts each comment on the PR head's new side, refused
+// if the head moved past reviewedHeadSHA. Failures are joined; the rest are
+// still posted.
 func (c *GitHubClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error {
 	head, err := c.reviewHeadSHA(ctx, owner, repo, number)
 	if err != nil {
@@ -369,13 +356,6 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, numbe
 func (c *GitHubClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
 	return nil
 }
-
-// State labels mirror the task lifecycle onto the forge so archie's
-// status is visible at a glance. SQLite remains the source of truth;
-// labels are the human-facing projection  --  and removing the parked
-// label is the forge-native retry trigger.
-// Label strings are configured via [dispatch.labels]; these are the
-// built-in defaults used as a fallback when config is absent.
 
 // stateLabelColors maps label name → colour for on-demand creation.
 var stateLabelColors = map[string]string{

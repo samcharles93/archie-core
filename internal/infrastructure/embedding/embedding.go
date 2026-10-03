@@ -41,18 +41,9 @@ type Options struct {
 	Timeout time.Duration
 }
 
-// New builds an embedding client from cfg.Models[Role] and the matching
-// cfg.Providers entry. It reports (nil, false) rather than an error when
-// the capability is not usable right now -- no role configured, an unknown
-// provider, an unsupported provider class, or a missing/blank credential
-// -- per the credential-missing-degrades-not-fatal rule (AGENTS.md):
-// callers must skip the capability, never fail daemon startup or an
-// unrelated call, over this.
-//
-// cfg.Providers is expected to already have secret refs resolved to
-// APIKeyEnv (see internal/app/archied/provider_secrets.go's
-// resolveProviderSecrets), the same precondition agentexec.NewRuntime
-// relies on for chat models.
+// New builds an embedding client from cfg.Models[Role] and its provider. It
+// returns (nil, false) when unavailable. Provider secrets must already be
+// resolved.
 func New(cfg config.Config, opts Options) (domainembedding.Client, bool) {
 	getenv := opts.Getenv
 	if getenv == nil {
@@ -103,12 +94,8 @@ func parseModelRef(ref string) (providerID, modelID string, ok bool) {
 	return providerID, modelID, true
 }
 
-// newSDKProvider constructs the ai-sdk embed.Provider for a config class.
-// Only classes matching config.Provider's shape (APIKey/BaseURL, no
-// provider-specific extra fields) are supported -- azure's Deployment
-// requirement, for example, has no field to source it from yet, so an
-// "azure" class degrades like any other unsupported class rather than
-// gaining a special-cased partial wiring.
+// newSDKProvider builds the ai-sdk embed provider for class. Unsupported
+// classes, including azure, return an error.
 func newSDKProvider(class, apiKey, baseURL string, httpClient *http.Client) (sdkembed.Provider, error) {
 	switch class {
 	case "openai", "openai-compatible":

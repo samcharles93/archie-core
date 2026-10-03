@@ -12,11 +12,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 )
 
-// buildRequest turns the assembled request into the engine's shape. The
-// context record carries only the fields that were set: a policy testing a
-// field the caller did not supply cannot match, which is the fail-closed
-// reading of "context: the event's signature result, the address it came
-// from, the time, and the run and step when the principal is an agent".
+// buildRequest converts a request for Cedar, including only the context
+// fields that were set.
 func buildRequest(p access.Principal, a access.Action, r access.Resource, c access.Context) types.Request {
 	record := types.RecordMap{}
 	if c.Signature != "" {
@@ -48,11 +45,7 @@ func buildRequest(p access.Principal, a access.Action, r access.Resource, c acce
 	}
 }
 
-// buildEntities assembles the entity graph policies may walk: the principal
-// (its org and effective role), the resource (its kind, org, workspace,
-// owner and state), and the org and workspace parents the resource hangs
-// from. A policy naming a parent the request does not supply simply does
-// not match.
+// buildEntities builds the principal, resource and parent entities.
 func buildEntities(p access.Principal, r access.Resource) cedar.EntityMap {
 	resOrg := r.Org
 	if resOrg == "" {

@@ -5,21 +5,13 @@ import (
 	"errors"
 )
 
-// ErrNotInstalled reports that a service has never been installed. It is
-// distinct from a service that is installed but currently has no healthy
-// endpoint: that case is an empty, non-error result, not ErrNotInstalled.
-// Implementations of [ServiceRegistry.Resolve] and [ServiceRegistry.Watch]
-// return it (wrapped, matched with errors.Is) when a service's "installed"
-// marker is absent. Callers match it and treat the capability as disabled.
+// ErrNotInstalled reports that a service was never installed. Callers treat
+// the capability as disabled.
 var ErrNotInstalled = errors.New("servicediscovery: service not installed")
 
 // Endpoint is one resolved instance of a service.
 type Endpoint struct {
-	// Service is the logical name the endpoint was registered under. It is
-	// redundant within the scope of a single Resolve/Watch call, but it makes
-	// the value self-describing and directly usable by a consumer that reads
-	// raw registry records (e.g. a custom gRPC resolver) rather than going
-	// through ServiceRegistry.
+	// Service is the name the endpoint registered under.
 	Service string `json:"service,omitempty"`
 
 	// ID distinguishes multiple instances of the same service. It is the
@@ -72,17 +64,11 @@ type Event struct {
 // It models network endpoints only. In-process services do not register here;
 // application composition selects local adapters independently of discovery.
 type ServiceRegistry interface {
-	// Resolve returns the current healthy endpoints for service. It returns
-	// [ErrNotInstalled] if service has never been installed. If service is
-	// installed but currently has no healthy endpoint, it returns a
-	// possibly-empty slice with a nil error -- callers distinguish that from
-	// NotInstalled to avoid treating an optional, disabled service as broken.
+	// Resolve returns service's live endpoints, possibly none, or
+	// ErrNotInstalled.
 	Resolve(ctx context.Context, service string) ([]Endpoint, error)
 
-	// Watch returns a channel that emits [Join] and [Leave] events as service's
-	// membership changes, until ctx is cancelled. It returns [ErrNotInstalled]
-	// if service has never been installed at the time of the call. A service
-	// that is installed but currently has no healthy endpoint returns a live
-	// channel that simply does not emit until an endpoint joins.
+	// Watch emits Join and Leave events for service until ctx ends, or returns
+	// ErrNotInstalled.
 	Watch(ctx context.Context, service string) (<-chan Event, error)
 }

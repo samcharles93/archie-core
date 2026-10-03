@@ -1,10 +1,3 @@
-// The shipped policies: the four org roles every org carries, and the
-// cross-org forbid the engine always enforces
-//
-// The role policies are Cedar policy text because that is what the engine
-// evaluates. They live in the domain so the store seeds them, the reset
-// command restores them, and the engine ships the same words regardless of
-// which process builds it.
 package access
 
 import "github.com/samcharles93/archie-core/internal/domain/org"

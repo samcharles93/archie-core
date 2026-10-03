@@ -1,8 +1,5 @@
-// Package controlplanerpc is the Messaging Service side of the control-plane
-// contract: the generic resource client, the channel-settings document it
-// projects, and the wire sentinels both sides match on. It exists so a service
-// that only reads stored settings does not link the store-backed server, the
-// workflow engine or the SQLite driver.
+// Package controlplanerpc is the control-plane resource client and the
+// channel-settings document.
 package controlplanerpc
 
 import (
@@ -44,13 +41,6 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 }
 
 func NewRPCClient(client pb.ControlPlaneServiceClient) *Client { return &Client{rpc: client} }
-
-// WorkflowDefinitionsClient reads and replaces the workflow-definitions
-// resource, the one control-plane surface whose stored values name workflow
-// step types. Resolving those names needs the step vocabulary the process
-// registered at its composition root, so the vocabulary is a constructor
-// dependency of this surface and of no other: a caller that cannot reach
-// workflow definitions cannot ask for one.
 
 // ResourceReader is the read side of the control-plane client: one resource
 // query per kind. The store-backed server implements it too, which is why the
@@ -109,15 +99,6 @@ func RuntimeChatConfigFrom(ctx context.Context, reader ResourceReader, base conf
 	}
 	return out, version, nil
 }
-
-// layerResource decodes a resource and records the version it came from, so the
-// layering ends up holding the version of every kind it applied.
-//
-// A kind with no stored value is not an error and records no version: the file
-// document's value stays in effect. That is the state a seed the resource
-// validator refused leaves behind (controlplane.Server.ImportConfig skips it),
-// and failing here instead would stop the process with a database-named error
-// that editing config.toml cannot clear.
 
 // ClientError maps a gRPC status onto the wire sentinels both sides match on.
 // It is exported because the store-backed server's own client methods need the

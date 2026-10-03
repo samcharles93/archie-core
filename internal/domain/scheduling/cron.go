@@ -36,11 +36,8 @@ var cronMacros = map[string]string{
 	"@hourly":   "0 * * * *",
 }
 
-// parseCronSpec parses the project's cron dialect: five space-separated
-// fields (minute, hour, day of month, month, day of week) each a wildcard,
-// value, range, step (*/n or a-b/n) or comma list of those, or one of the
-// @yearly, @annually, @monthly, @weekly, @daily, @midnight and @hourly
-// macros. Any failure wraps ErrInvalidSpec.
+// parseCronSpec parses a five-field cron expression or an @ macro. Errors
+// wrap ErrInvalidSpec.
 func parseCronSpec(expr string) (*cronSpec, error) {
 	spec, err := parseCron(expr)
 	if err != nil {

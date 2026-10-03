@@ -61,13 +61,8 @@ type Launcher struct {
 	// Kit container: the worker's own binary and the egress CA.
 	AgentBinary string
 	CAFile      string
-	// Config is read fresh on every Launch, never captured once at
-	// construction: credential bindings are their own live control-plane
-	// resource (controlplane.CredentialBindingsKind), so a binding added or
-	// changed after this daemon started must take effect on the very next
-	// dispatch, the same way an agent profile already does. A nil Secrets or
-	// Grants degrades every credential to unbound rather than panicking: a
-	// daemon with no Kit profile configured wires neither.
+	// Config is read on every Launch. Nil Secrets or Grants leave every
+	// credential unbound.
 	Config  *config.Holder
 	Secrets SecretResolver
 	Grants  Grants
@@ -91,11 +86,8 @@ type Request struct {
 	Adapter   string
 	WorkDir   string
 	WorkerEnv []string
-	// GateRetries is the workflow's declared gate-retry budget
-	// (task.WorkflowNeeds.GateRetries); zero means no stage gates its
-	// result. A composition with no agent-sessions resume verb cannot meet
-	// a positive one, and Launch refuses it rather than starting a
-	// container no gate failure could ever resume.
+	// GateRetries is the workflow's gate-retry budget. Launch refuses a positive
+	// budget without a resume verb.
 	GateRetries int
 	// Org and GrantedServices are the dispatching identity's own facts. A Kit
 	// credential resolves only where these agree with a configured
@@ -181,23 +173,10 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	return run, nil
 }
 
-// resolveCredentials computes the run's granted secrets -- the intersection
-// of what the Kit composition declares, what config.CredentialBinding
-// entries exist, and what the dispatching identity is granted and belongs
-// to -- and resolves each to a real value. granted is the run/service ->
-// value map for Grants.Grant; kinds is the service -> bound-kind map
-// kit.Assemble renders the container's credential state from. A service
-// failing any part of the intersection, or whose binding's secret does not
-// resolve, is simply absent from both: it stays unbound, exactly as if
-// credential@1 named a service nobody configured.
-//
-// The binding decides the kind, not the Kit's declaration: the sandbox kit
-// spec lets one credential declare apiKey and oauth together, meaning
-// "whichever the host has bound" (docker/claude-code-kit declares both for
-// anthropic). A binding naming a secret is therefore this run's API key even
-// when the Kit also declares OAuth, and a binding naming none is the org's
-// stored OAuth token set, carried with no value because the proxy reads the
-// tokens itself.
+// resolveCredentials resolves the run's credentials: services declared by
+// the Kit, bound in config, and granted to the identity's org. granted maps
+// run/service to value; kinds maps service to bound kind. A binding with a
+// secret is an API key; one without is the org's OAuth token set.
 func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapability) (granted map[string]string, kinds map[string]egress.CredentialKind) {
 	granted = map[string]string{}
 	kinds = map[string]egress.CredentialKind{}
@@ -217,11 +196,7 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 	bindings := config.ContainerConfig{Credentials: current}.BoundCredentials(req.Org, req.GrantedServices, declared)
 	for service, binding := range bindings {
 		if binding.Secret == (config.SecretRef{}) {
-			// The binding names no secret of its own. Only a Kit declaring
-			// OAuth gives the service a meaning then -- the org's captured
-			// token set. Anything else has nothing to carry and stays
-			// unbound, rather than resolving to an empty value the proxy
-			// would present as a credential.
+			// No secret: only OAuth gives the service a value.
 			if !oauth[service] {
 				continue
 			}
@@ -242,11 +217,8 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 	return granted, kinds
 }
 
-// oauthFacts reads the stored token set's scopes and expiry for each
-// OAuth-bound credential whose Kit renders a credential file. The store is
-// read only for a service this run bound as OAuth, and only those facts
-// leave here: the tokens stay behind, so the renderer has no way to write
-// one.
+// oauthFacts reads the stored scopes and expiry for each OAuth-bound
+// credential with a credential file.
 func (l *Launcher) oauthFacts(ctx context.Context, org string, creds []spec.CredentialCapability, kinds map[string]egress.CredentialKind) (map[string]kit.OAuthFacts, error) {
 	facts := map[string]kit.OAuthFacts{}
 	for _, c := range creds {

@@ -1,20 +1,5 @@
-// Package sendfile provides the send_file tool: it delivers a file that
-// exists on the daemon host to the chat the turn is running in.
-//
-// It exists because the agent could produce a file  --  a log dump, a
-// transcript, a screenshot  --  and had no way to hand it over. The media
-// path it did have was fetch-by-URL, which only ever worked for remotely
-// hosted assets, so a local path was accepted and silently delivered
-// nothing. Exposing a public URL for local files was rejected: it trades a
-// missing feature for a hosting and access-control problem.
-//
-// The tool does not send anything itself. It validates the file under the
-// same path policy the read tool applies and returns a
-// tools.MultimodalResult naming it, which the turn's channel delivers by
-// upload. That keeps the tool free of any channel binding  --  the tool
-// registry is process-wide, while a chat is per-turn  --  and makes every
-// failure it CAN detect (unreadable, absent, refused by confinement, too
-// large) a tool error the model sees, rather than a silent non-delivery.
+// Package sendfile provides send_file: it validates a host file under the
+// read tool's path policy and returns it for the turn's channel to upload.
 package sendfile
 
 import (
@@ -33,17 +18,7 @@ import (
 // ToolName is the registry name of the file-delivery tool.
 const ToolName = "send_file"
 
-// Upload ceilings, in bytes. These are the Telegram Bot API's, the
-// tightest among the channels that can deliver at all; checking them here
-// means an oversized file fails as a tool error the model can report
-// instead of as a delivery failure it never sees. The channel enforces its
-// own limits regardless -- this is an early, visible check, not the
-// authority.
-//
-// Images have their own, much lower ceiling. Applying MaxUploadBytes to
-// every type made the early check useless for exactly the type that needed
-// it: a 20 MB screenshot passed here, was reported to the model as sent,
-// and was then rejected by a layer the model cannot see.
+// Upload limits in bytes, matching the Telegram Bot API.
 const (
 	MaxUploadBytes      int64 = 50 * 1024 * 1024
 	MaxImageUploadBytes int64 = 10 * 1024 * 1024
@@ -60,13 +35,8 @@ func uploadLimit(mediaType string) int64 {
 	return MaxUploadBytes
 }
 
-// Tool builds the registry entry rooted at workspace. Relative paths
-// resolve against it, and confinement (when enabled) is measured from it,
-// exactly as for the read tool.
-//
-// Returns nil when workspace is empty: with no root there is no policy to
-// apply, and a tool that reads arbitrary host files into an outbound
-// message is not something to enable by defaulting.
+// Tool returns send_file rooted at workspace, or nil when workspace is
+// empty.
 func Tool(workspace string) *tools.ToolEntry {
 	if workspace == "" {
 		return nil
@@ -156,11 +126,7 @@ func prepare(workspace, path, caption string) (tools.MultimodalResult, error) {
 	}, nil
 }
 
-// photoFormats are the image types a chat platform will accept through its
-// photo endpoint. Membership is by exact media type rather than an
-// "image/" prefix: image/svg+xml and image/tiff are images that a photo
-// endpoint rejects outright, so treating the whole prefix as photo-safe
-// turned a deliverable file into a failed send. As documents they arrive.
+// photoFormats are the image types photo endpoints accept.
 var photoFormats = map[string]bool{
 	"image/jpeg": true,
 	"image/png":  true,
@@ -168,12 +134,8 @@ var photoFormats = map[string]bool{
 	"image/webp": true,
 }
 
-// MediaType maps a filename onto the four-value media vocabulary
-// gateway.MediaAttachment.Type uses.
-//
-// Anything unrecognised is a document, which is the only kind that carries
-// arbitrary bytes: guessing "image" wrongly makes the platform reject the
-// send, while sending an image as a document still delivers the file.
+// MediaType maps a filename to image, video, audio or document; unknown is
+// document.
 func MediaType(path string) string {
 	mt, _, _ := strings.Cut(mime.TypeByExtension(strings.ToLower(filepath.Ext(path))), ";")
 	mt = strings.TrimSpace(mt)

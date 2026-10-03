@@ -9,11 +9,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
-// Registrar is the narrow typed host access a curator receives at
-// registration. Only the services the curator's declared shape requires are
-// ever populated in the view the registry binds (see Registry.filter); the
-// daemon itself is never part of it. Fields are typed contracts declared
-// here — this package never names who implements them.
+// Registrar is the host access a curator receives, limited to what its
+// manifest declares.
 type Registrar struct {
 	// Log is the curator-scoped diagnostic logger. It is optional so domain
 	// tests and embedders can construct a registrar without a logging sink.
@@ -32,14 +29,8 @@ type Registrar struct {
 	// Skills is the skill-maintenance capability. Bound when the curator
 	// declares Skills.
 	Skills SkillStore
-	// MemoryEngines resolves a named memory engine, for a curator that
-	// declared Manifest.MemoryEngine. Bound
-	// only when declared. Like Tools, resolution is by name at call time,
-	// not a value pre-fetched at Bind: a curator calls
-	// MemoryEngines.Get(its own Manifest().MemoryEngine), the same trust
-	// model ToolBuilder.Build(ctx, declared) already uses -- the caller is
-	// trusted to pass its own declared identifier, not handed a
-	// pre-scoped instance.
+	// MemoryEngines resolves a memory engine by name. Bound only when the
+	// manifest declares one.
 	MemoryEngines MemoryEngineSource
 	// Conversations is read-only recent conversation history, for a curator
 	// that declared Manifest.Conversations. Bound only when declared.
@@ -155,11 +146,7 @@ type SessionSummary struct {
 type ConversationMessage struct {
 	Role    string // "user" or "assistant"
 	Content string
-	// SenderID is the channel-native stable identifier of the party that
-	// sent the message (see messaging.Message.SenderID). Empty for an
-	// assistant message, and for a channel that carries no per-sender
-	// identity. A curator derives a session's participant from the
-	// user-role messages that carry one.
+	// SenderID is the sender's channel-native ID, empty for assistant messages.
 	SenderID string
 	At       time.Time
 }

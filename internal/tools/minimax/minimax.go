@@ -1,12 +1,5 @@
-// Package minimax generates video through MiniMax's video-generation API:
-// https://platform.minimax.io/docs/api-reference/video-generation-v2-create
-//
-// Generation is asynchronous on MiniMax's side (submit a job, poll for a
-// result), but archied's tool subsystem has no async-tool flow control (see
-// tools.ToolEntry.IsAsync's doc comment), so GenerateAndWait blocks the
-// calling goroutine  --  a tool call, not the model's own generating
-// goroutine  --  submitting and polling until the job reaches a terminal
-// status or MaxWait elapses.
+// Package minimax generates video with the MiniMax API. GenerateAndWait
+// submits a job and polls until it finishes or MaxWait elapses.
 package minimax
 
 import (

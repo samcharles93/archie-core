@@ -10,12 +10,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 )
 
-// taskActionCodes pairs each sentinel the daemon's action service reports
-// with the gRPC code that carries it. The dashboard picks its HTTP status by
-// matching these (404, 409, 503), and gRPC transports a code and a string,
-// not a Go error, so the class travels as the code and is restored on
-// arrival. Adding a sentinel a caller matches on without adding it here
-// silently degrades that case to a 500.
+// taskActionCodes maps task-action sentinels to the gRPC codes that carry
+// them.
 var taskActionCodes = []struct {
 	code codes.Code
 	err  error

@@ -11,11 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
-// Status is the binding lifecycle state. Mirrors telegram's
-// dangerousAction / pendingApproval shape: a binding is created
-// pending_approval, armed is the only state that evaluates against incoming
-// events, any edit drops armed back to pending_approval, and only an
-// explicit Approve call moves pending_approval -> armed.
+// Status is a binding's state. New bindings are pending_approval; only armed
+// bindings dispatch; any edit returns to pending_approval; Approve arms.
 type Status string
 
 const (
@@ -23,25 +20,13 @@ const (
 	StatusArmed           Status = "armed"
 )
 
-// Matcher decides which captured events a binding applies to. Source is
-// the only dimension today -- the path segment the sender POSTs to
-// (e.g. "sentry"). Extend with additional predicates if a use case
-// demands it; the storage column is plain TEXT so widening is
-// non-breaking.
+// Matcher selects the captures a binding applies to, by source path segment.
 type Matcher struct {
 	Source string `json:"source"`
 }
 
-// Binding is the runtime-editable entity that ties a matcher, a payload
-// mapping, and a workflow together. Bindings live in the store, not in
-// config.toml, so operators can author them from the dashboard while the
-// daemon runs. Any number of bindings may share a source: each one applies to
-// the event type its mapping belongs to.
-//
-// Version is bumped on every UpdateBinding so a later edit cannot
-// silently rewrite the historical provenance of a task that already
-// fired. Signing belongs to the source the matcher names, not to the
-// binding (internal/domain/source).
+// Binding ties a source matcher, a payload mapping and a workflow together.
+// Version increments on every update.
 type Binding struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
@@ -51,12 +36,7 @@ type Binding struct {
 	// (CompileFilter). An event it excludes is not dispatched.
 	Filter   string `json:"filter,omitempty"`
 	Workflow string `json:"workflow"`
-	// Owner and Repo pin a binding to a specific configured repo, so a
-	// multi-repo deployment can dispatch correctly. Both empty means "no
-	// pin" -- resolveBindingRepo falls back to the single-configured-repo
-	// behaviour that predates this field. Setting only one is invalid
-	// (Validate rejects it): a pin is a complete owner/repo pair or not a
-	// pin at all, never a half-guess.
+	// Owner and Repo pin the binding to a repo. Both or neither must be set.
 	Owner string `json:"owner,omitempty"`
 	Repo  string `json:"repo,omitempty"`
 	// RepoParam names the mapped parameter holding "owner/name" when the

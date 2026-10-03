@@ -1,8 +1,5 @@
-// Package kit decides whether archie can run a harness packaged as Kit v3
-// images, and what it runs with. Descriptor grammar, validation and
-// composition belong to the Kit spec package; this package owns only the
-// runtime's half of the contract: which capability types archie implements,
-// and the refusals that keep the host's guarantees intact.
+// Package kit decides whether archie can run a Kit v3 harness and with what
+// capabilities.
 package kit
 
 import (
@@ -151,12 +148,8 @@ func FromMerge(merged *spec.MergeResult) (*Plan, error) {
 	return plan, nil
 }
 
-// ValidateNeeds rejects a Plan that cannot meet what the workflow's stages
-// declared they need: a
-// gate that may retry needs the Kit's agent-sessions resume verb, because
-// archie resumes the session with the gate's output rather than starting
-// over. gateRetries is zero for a workflow with no gated stage, which no
-// Kit composition can fail to meet.
+// ValidateNeeds rejects a Plan without a resume verb when the gate may
+// retry.
 func ValidateNeeds(plan *Plan, gateRetries int) error {
 	if gateRetries > 0 && (plan.Sessions == nil || len(plan.Sessions.Resume) == 0) {
 		return fmt.Errorf("needs.gate_retries is %d, but the kit declares no %s resume verb to retry with", gateRetries, typeAgentSessions)

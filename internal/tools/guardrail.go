@@ -94,11 +94,8 @@ func (d GuardrailDecision) String() string {
 	}
 }
 
-// GuardrailEngine tracks per-session and per-turn tool call outcomes and
-// evaluates them against a [ToolCallGuardrailConfig] to decide whether to
-// allow, warn, or hard-stop.
-//
-// All methods are safe for concurrent use.
+// GuardrailEngine tracks tool call outcomes and decides allow, warn or stop.
+// Safe for concurrent use.
 type GuardrailEngine struct {
 	config ToolCallGuardrailConfig
 

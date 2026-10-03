@@ -12,14 +12,8 @@ import (
 	"strings"
 )
 
-// extractTarGz extracts a gzipped tar stream into destDir, stripping a single
-// common leading path component when every entry shares one (the wrapper
-// directory GitHub's and Gitea's repository archives both add, named after the
-// repo and ref -- e.g. "acme-widget-deadbeef/"). A.git entry is never written:
-// PRSource's isolation contract requires the pipeline to read a.git-free
-// snapshot, and a malicious PR's own tarball is exactly the input this cannot
-// trust, so an entry escaping destDir via ".." or an absolute path is refused
-// rather than silently written outside it.
+// extractTarGz extracts a .tar.gz into destDir, stripping a common top-level
+// directory. It skips .git and refuses paths escaping destDir.
 func extractTarGz(r io.Reader, destDir string) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -73,11 +67,7 @@ func planExtraction(tr *tar.Reader) (prefix string, entries []tarEntry, err erro
 		top, _, hasSlash := strings.Cut(name, "/")
 		switch {
 		case !hasSlash && hdr.Typeflag != tar.TypeDir:
-			// A bare top-level file (no directory component at all) proves
-			// there is no single wrapper directory containing everything. A
-			// bare top-level *directory* entry is not this evidence -- it is
-			// exactly the wrapper directory's own header, which real
-			// archives include alongside the files nested under it.
+			// A top-level file means there is no wrapper directory.
 			commonPrefix = ""
 			first = false
 		case first:
@@ -99,11 +89,8 @@ func planExtraction(tr *tar.Reader) (prefix string, entries []tarEntry, err erro
 	return commonPrefix, entries, nil
 }
 
-// writeEntry writes one archive entry under destDir, with prefix (if any)
-// stripped from its name. destDir is the absolute destination directory
-// resolved by extractTarGz. Directories, regular files, and nothing else
-// are written: a symlink or device entry from an untrusted PR archive is
-// skipped rather than followed.
+// writeEntry writes one directory or regular file under destDir; other
+// entry types are skipped.
 func writeEntry(destDir, prefix string, e tarEntry) error {
 	name := path.Clean(filepath.ToSlash(e.header.Name))
 	if name == "." || name == prefix {

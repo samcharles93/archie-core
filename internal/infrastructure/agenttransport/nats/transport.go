@@ -48,11 +48,7 @@ type sdkSubscription interface {
 // worker has no JetStream consumer.
 type Transport struct {
 	conn *natsio.Conn
-	// state is the long-lived State Store contract client and closeState its
-	// connection cleanup. Store() dials nothing per call; it wraps this one
-	// client with the per-call timeout each caller supplies. Connect refuses
-	// to construct a Transport without one (the legacy NATS storerpc path is
-	// deleted), so it is never nil in a real worker.
+	// state is the State Store client; closeState closes its connection.
 	state      *staterpc.Client
 	closeState func()
 
@@ -60,11 +56,7 @@ type Transport struct {
 	flush     func(time.Duration) error
 }
 
-// Connect establishes the worker's core-NATS connection and, when
-// Config.StateStoreURL is set, a long-lived gRPC connection to the State
-// Store. A non-loopback
-// StateStoreURL with no token fails closed rather than dialing an
-// unauthenticated remote store.
+// Connect opens the worker's NATS connection and its State Store connection.
 func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -132,23 +124,13 @@ type RemoteTrees interface {
 	Push(ctx context.Context) error
 }
 
-// The top-level forgerpc and worktreerpc packages remain legacy infrastructure
-// with an open final destination. This adapter is their single worker
-// composition point until that broader migration is approved. The State Store
-// is the exception: it is a gRPC contract (staterpc), and this adapter's
-// Store() returns that client directly.
-
 // Forger constructs the identity-scoped forge RPC client.
 func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forger {
 	return &forgerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity}
 }
 
-// Store constructs the workflow store RPC client over the long-lived State
-// Store client. Each call is bounded
-// by timeout when the caller's context carries no deadline of its own. The
-// legacy NATS storerpc path is deleted; a transport without a
-// State Store client cannot reach Store() because Connect refused to build
-// one.
+// Store returns the State Store client, bounding each call by timeout when
+// ctx has no deadline.
 func (t *Transport) Store(timeout time.Duration) workflow.Store {
 	return deadlineStore{Store: t.state, timeout: timeout}
 }

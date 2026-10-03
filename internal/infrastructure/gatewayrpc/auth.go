@@ -17,13 +17,8 @@ import (
 // token lifecycle.
 const tokenMetadataKey = "gateway-token"
 
-// TargetIsLoopback reports whether addr's host is a loopback address. Both
-// literal loopback IPs (127.0.0.1, ::1) and the "localhost" hostname count;
-// everything else (including the wildcard 0.0.0.0 and DNS names) is treated
-// as network-reachable and therefore non-loopback. It applies to a listen
-// address and a dial target alike -- the same host decides both. It mirrors
-// staterpc.TargetIsLoopback; the two transports keep their own copy so
-// neither adapter imports the other.
+// TargetIsLoopback reports whether addr's host is a loopback IP or
+// "localhost".
 func TargetIsLoopback(addr string) (bool, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {

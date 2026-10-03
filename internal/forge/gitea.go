@@ -268,22 +268,8 @@ func (c *GiteaClient) ReplyToReview(ctx context.Context, owner, repo string, num
 	return nil
 }
 
-// CreateReviewComments posts the line-anchored comments as one COMMENT-state
-// review, anchored to the pull request's head revision.
-//
-// Gitea has no standalone inline-comment call: inline comments are carried by a
-// submitted review, so a single review is both the native shape and the fewest
-// round trips. It is also all-or-nothing -- one comment Gitea refuses fails the
-// whole request, and the review carries nothing -- where GitHub's loop keeps the
-// comments it could post. The PR-body findings list is the fallback in either
-// case.
-//
-// The head SHA is read here rather than taken from the caller: it is what Gitea
-// anchors the review to, and the caller that produced the line numbers (a
-// workflow stage running in archie-agent) holds no forge credentials to read it
-// with. reviewedHeadSHA is the revision those line numbers were measured on, and
-// the review is refused outright if the head has moved past it -- see
-// reviewHeadDrift.
+// CreateReviewComments posts the comments as one COMMENT review on the PR's
+// head, refused if the head moved past reviewedHeadSHA.
 func (c *GiteaClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error {
 	pr, err := c.GetPullRequest(ctx, owner, repo, number)
 	if err != nil {

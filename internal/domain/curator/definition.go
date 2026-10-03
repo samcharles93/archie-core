@@ -1,10 +1,6 @@
 package curator
 
-// Definition is a curator definition as data: the declared Manifest plus
-// the identity, lifecycle flag, and free-form instructions the manifest
-// cannot express. One generic engine (DefinitionEngine) interprets any
-// definition -- there is deliberately no catalogue of curator "types" and
-// no second authority beside the existing registry.
+// Definition is a curator defined as data, run by DefinitionEngine.
 type Definition struct {
 	// Name is the registry key.
 	Name string

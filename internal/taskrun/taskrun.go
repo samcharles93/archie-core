@@ -1,9 +1,5 @@
-// Package taskrun defines the wire format for handing an entire task off
-// from archied to archie-agent in one NATS round trip.
-// archie-agent runs workflow.Route and workflow.Run itself; archied's role
-// shrinks to worktree prepare, container acquire/release, and answering
-// the forgerpc/worktreerpc calls archie-agent proxies back. Agent store
-// calls go over gRPC to the State Store, not through this NATS handoff.
+// Package taskrun defines the request and response for handing a whole task
+// from archied to archie-agent over NATS.
 package taskrun
 
 import (
@@ -15,11 +11,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
-// Request carries everything archie-agent needs to run a task's entire
-// workflow itself: the task row (already claimed by archied), the repo's
-// gate/ecosystem config, a non-secret config snapshot, and LLM provider
-// config (API keys are injected into the container's environment
-// separately  --  Providers only carries class/env-var-name/base-URL).
+// Request is everything archie-agent needs to run a task's workflow. API
+// keys reach the container as environment variables, not here.
 type Request struct {
 	Task      *workflow.Task                `json:"task"`
 	Repo      config.Repo                   `json:"repo"`
@@ -29,12 +22,8 @@ type Request struct {
 	// transports, discover tools, and register them locally. Absent/empty
 	// means no MCP servers (backward compatible).
 	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
-	// KindWorkflows and LabelWorkflows carry the resolved kind/label ->
-	// workflow-name bindings the daemon loaded from WorkflowRoutingFile,
-	// WorkflowLabelsFile and PlaybookDirs. workflow.Route runs in the
-	// archie-agent process, not the daemon, so these resolved values must
-	// cross the process boundary here; nil means use the built-in defaults
-	// (backward compatible).
+	// KindWorkflows and LabelWorkflows are the daemon's loaded routing bindings.
+	// Nil means defaults.
 	KindWorkflows  workflow.KindWorkflows  `json:"kind_workflows,omitempty"`
 	LabelWorkflows workflow.LabelWorkflows `json:"label_workflows,omitempty"`
 	// WorktreeGrant is an opaque, per-dispatch capability authorizing the
@@ -76,13 +65,8 @@ type Response struct {
 	Task   *workflow.Task `json:"task"`
 	Status string         `json:"status"`
 	Error  string         `json:"error,omitempty"`
-	// AgentVersion and AgentInstallType report the build of archie-agent
-	// that actually ran this task -- self-reported by the worker, not the
-	// version archied's release pipeline expected to be running. Every
-	// archie-agent process is task-scoped and ephemeral, so this response
-	// is the only channel the daemon has to observe what is really in
-	// service; see daemon.AgentStatus. Empty AgentVersion means an
-	// unstamped build ("dev") or a worker older than this field.
+	// AgentVersion and AgentInstallType are the build of archie-agent that ran
+	// the task. Empty AgentVersion means an unstamped build.
 	AgentVersion     string `json:"agent_version,omitempty"`
 	AgentInstallType string `json:"agent_install_type,omitempty"`
 }

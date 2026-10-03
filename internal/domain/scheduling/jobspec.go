@@ -5,16 +5,8 @@ import (
 	"time"
 )
 
-// Kind values for JobSpec.Kind: the discriminator that decides which delivery
-// runner handles a job.
-//
-// They live beside the field that carries them because they are part of the
-// schedules vocabulary an operator writes into the schedules document, a strict
-// decoder reads back, and a build that never heard of a kind must reject loudly
-// rather than deliver the wrong way. Which runner serves a kind is not this
-// package's business: the router in internal/infrastructure/crondelivery owns
-// that mapping, which is why an unrecognised kind is stored verbatim rather
-// than refused at write time.
+// Job kinds, selecting the delivery runner. Unknown kinds are stored as-is
+// and refused by the router.
 const (
 	// KindChat delivers the job's Payload.Text as a chat message through the
 	// deployment's channel. It is the default: an empty Kind means KindChat,
@@ -44,12 +36,7 @@ type JobSpec struct {
 	// Detail is a human-readable label rendered on events.
 	Detail string `json:"detail,omitempty"`
 
-	// Kind selects which delivery runner handles this job. Empty means
-	// KindChat, so a job written before this field existed keeps
-	// delivering as a chat message. This package does not interpret the
-	// value: an unrecognised kind is stored verbatim and refused by the
-	// delivery router, which is the one place the mapping from kind to
-	// runner lives.
+	// Kind selects the delivery runner. Empty means KindChat.
 	Kind string `json:"kind,omitempty"`
 
 	// Schedule decides when this job is due. See schedule.go for the

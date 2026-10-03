@@ -1,10 +1,5 @@
-// Package drain is the infrastructure implementation of drain-request
-// detection. It reads the external marker file from disk and the OS identity
-// facts that make up the current instantiation epoch, then hands the verdict
-// to the domain's Decide function.
-//
-// It only reads. Deciding (and any shutdown consequence) belongs to the caller,
-// so the daemon never drains itself from this package.
+// Package drain reads the drain marker file and the current epoch and asks
+// domain drain.Decide for a verdict.
 package drain
 
 import (
@@ -62,11 +57,8 @@ func readPid1Start() (int64, error) {
 	return parseProcStat(string(data))
 }
 
-// parseProcStat extracts PID 1's start time (field 22, starttime) from the
-// textual /proc/[pid]/stat record. The comm field (field 2) is wrapped in
-// parentheses and may itself contain spaces or parentheses, so the record is
-// split after the last closing parenthesis and field 22 is the 20th token
-// there (post-paren token 0 is field 3, the state).
+// parseProcStat returns field 22 (starttime) of a /proc/[pid]/stat record,
+// parsing after the last ')'.
 func parseProcStat(stat string) (int64, error) {
 	paren := strings.LastIndexByte(stat, ')')
 	if paren < 0 {
@@ -107,14 +99,8 @@ func New(markerPath string, epoch func() (drain.Epoch, error)) *Reader {
 	return &Reader{path: markerPath, epoch: epoch}
 }
 
-// Check returns the drain decision for the marker at the reader's path against
-// the current epoch.
-//
-// A missing marker returns DecisionNone. The returned error is informational --
-// it exists so a caller can log why a request was not honoured -- but the
-// decision is authoritative and always fails closed on an unrecoverable read
-// (permission error, malformed JSON, unreadable epoch) so a broken marker can
-// never drain the daemon.
+// Check returns the drain decision for the marker. A missing marker is
+// DecisionNone; any read failure is reported and never drains.
 func (r *Reader) Check() (drain.Decision, error) {
 	data, err := os.ReadFile(r.path)
 	if errors.Is(err, os.ErrNotExist) {

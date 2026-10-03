@@ -1,18 +1,5 @@
-// Package taskstate owns the task lifecycle vocabulary and the rules for
-// operator-initiated actions on a task.
-//
-// It exists because those rules had two implementations. The dashboard and
-// chat both offer approve and reject, and they had drifted: rejecting from
-// the dashboard left a task ClosedWontDo, cancelling the same task from chat
-// left it Rejected. Two operators looking at the same queue saw different
-// states for the same decision, and Rejected -- which the PR reconciler uses
-// for "the pull request was closed without merging" -- no longer meant one
-// thing.
-//
-// internal/gateway deliberately does not import the task store, so it kept a
-// hand-synced copy of the status strings with a comment asking future editors
-// to keep them aligned. That is the same defect one level down. This package
-// has no dependencies, so both can import it and the copy can go.
+// Package taskstate defines task statuses and which operator actions each
+// allows. It has no dependencies.
 package taskstate
 
 import (
@@ -75,13 +62,8 @@ func Terminal(status string) bool {
 	}
 }
 
-// Actions returns the ordered controls valid for status. Callers receive a
-// fresh slice so presentation code cannot mutate the lifecycle table.
-//
-// Reject is deliberately present in every non-terminal state: an operator can
-// refuse work no matter where it currently sits, and the refusal always lands
-// in the terminal Declined state. Terminal states are already resolved, so
-// they only expose archive.
+// Actions returns the actions valid for status, as a new slice. Reject is
+// available in every non-terminal state; terminal states offer archive.
 func Actions(status string) []Action {
 	var actions []Action
 	switch status {
@@ -124,11 +106,7 @@ func CheckAction(status string, action Action) error {
 	return fmt.Errorf("action %q is not available while task is %s", action, status)
 }
 
-// CheckApprove reports whether a task in this status can be approved.
-//
-// Approval releases work that is waiting on a human decision, so it is only
-// meaningful from WaitingHuman. Approving anything else would either restart
-// finished work or race a task that is already running.
+// CheckApprove allows approval only from WaitingHuman.
 func CheckApprove(status string) error {
 	if status != WaitingHuman {
 		return fmt.Errorf("task is %s, not awaiting approval", status)
@@ -136,11 +114,7 @@ func CheckApprove(status string) error {
 	return nil
 }
 
-// CheckRetry reports whether a task in this status can be retried.
-//
-// Only a parked task can be retried: parking is how archie says "this failed
-// in a way a human might fix". A dead task has spent its retries and needs
-// the cap raised or the work re-filed, not another attempt.
+// CheckRetry allows retry only from Parked.
 func CheckRetry(status string) error {
 	if status != Parked {
 		return fmt.Errorf("task is %s, not parked", status)
@@ -148,12 +122,8 @@ func CheckRetry(status string) error {
 	return nil
 }
 
-// RetryMode is the operator's worktree choice for the next dispatch of a
-// retried task. It is a dispatch directive: the daemon resolves it to the
-// commit the worktree is prepared at, never infers it from the workflow.
-//
-// The values are persisted on the task row (tasks.retry_mode) and cross the
-// wire, so they are part of the on-disk format: renaming one is a migration.
+// RetryMode is the worktree mode for a retried task's next dispatch. Stored
+// on the task row.
 type RetryMode string
 
 const (
@@ -178,11 +148,8 @@ func NormalizeRetryMode(mode string) RetryMode {
 	return RetryRefreshOntoBase
 }
 
-// ResolveRetryMode validates a retry mode arriving from a caller. Unlike
-// stored data, a wire value that names no mode is rejected rather than
-// defaulted: silently reading a typo as "refresh onto base" would reset a task
-// the operator asked to continue. The empty string is accepted and means the
-// explicit default, RetryRefreshOntoBase.
+// ResolveRetryMode validates a retry mode; "" means RetryRefreshOntoBase and
+// unknown values are rejected.
 func ResolveRetryMode(mode string) (RetryMode, bool) {
 	switch RetryMode(mode) {
 	case "", RetryRefreshOntoBase:
@@ -216,12 +183,7 @@ func RetryModes() []RetryModeMeta {
 	}
 }
 
-// CheckDecline reports whether a task in this status can be declined.
-//
-// The legacy chat command expresses cancel, stop, reject and abandon as one
-// operation. Because Reject is now offered in every non-terminal state, that
-// command is available everywhere a task is still live; unknown and terminal
-// states fail closed instead of permitting an arbitrary transition.
+// CheckDecline allows declining any non-terminal task.
 func CheckDecline(status string) error {
 	for _, action := range Actions(status) {
 		switch action {

@@ -31,11 +31,8 @@ type engineStatus struct {
 	startErr error
 }
 
-// Registry is the memory family owner: it controls registration and
-// discovery, lifecycle (start/health/stop), shutdown ordering, and failure
-// isolation. An engine failure — a rejected registration, a failing Start, a
-// blocking Stop, even a panicking Bind — affects only that engine and is
-// reported, never fatal to the daemon or to other engines.
+// Registry owns memory engine registration and lifecycle. An engine's
+// failure affects only that engine.
 type Registry struct {
 	mu      sync.Mutex
 	host    Registrar
@@ -183,11 +180,8 @@ func healthSafely(ctx context.Context, e MemoryEngine) (h Health) {
 	return e.Health(ctx)
 }
 
-// Stop stops every started engine in reverse registration order. Engines
-// whose Start failed are skipped; the call is bounded by ctx — an engine
-// that ignores cancellation cannot hang the daemon's shutdown beyond the
-// caller's deadline, and its error is joined into the result. Stopping a
-// registry that never started is a no-op.
+// Stop stops started engines in reverse order, bounded by ctx, and joins
+// their errors.
 func (r *Registry) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	if r.state == stateIdle || r.state == stateStopped {

@@ -21,14 +21,8 @@ type Adapter struct {
 	agentID string
 }
 
-// NewAdapter builds an Adapter that reports agentID as the agent owning
-// every session it returns, so the curator addresses agent-user memory to
-// the same agent a chat turn reads it back from (the composition's
-// configured bot user, the value gateway.TurnRunnerConfig.BotUser carries).
-// A session record's own Source.BotUser is deliberately not used for this:
-// it is the router's session-resolution match key, and empty in a
-// single-identity deployment. Roles come from the canonical records the
-// store returns, so no bot identity is needed to derive them.
+// NewAdapter returns an Adapter that reports agentID as every session's
+// agent.
 func NewAdapter(store gateway.SessionStore, agentID string) *Adapter {
 	return &Adapter{store: store, agentID: agentID}
 }

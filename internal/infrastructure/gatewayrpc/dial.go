@@ -8,15 +8,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Dial returns a chat contract client for target, the standalone
-// archie-gateway process, applying the transport security boundary: a
-// loopback target dials insecure with no credential, while a non-loopback
-// target requires a Bearer [REDACTED] and fails closed without one. The returned
-// cleanup closes the connection.
-//
-// The rule lives here rather than in a composition root so the server side
-// (which decides whether to install the token interceptors) and every client
-// that dials it share one implementation. It mirrors staterpc.Dial.
+// Dial returns a Gateway chat client for target. A loopback target dials
+// insecure; any other target requires a token. The cleanup closes the
+// connection.
 func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), error) {
 	target = strings.TrimSpace(target)
 	if target == "" {

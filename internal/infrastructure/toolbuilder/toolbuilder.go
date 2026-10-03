@@ -1,8 +1,5 @@
-// Package toolbuilder resolves a curator's declared tool names from the
-// daemon's process-wide tool registry (internal/tools.Registry). It is the
-// implementation of curator.ToolBuilder: resolution returns exactly the
-// declared set, never a broader registry, and a declared name with no
-// implementation fails the build rather than silently returning fewer tools.
+// Package toolbuilder resolves a curator's declared tools from the tool
+// registry. An unknown name is an error.
 package toolbuilder
 
 import (

@@ -160,12 +160,7 @@ func bridgeCallHandler(reg *Registry) Handler {
 	}
 }
 
-// BridgeTools returns the three bridge tool entries for progressive
-// disclosure: tool_search, tool_describe, and tool_call. The returned
-// entries are pre-configured with handlers wired to the given registry.
-//
-// These tools are classified as idempotent (read-only) since they do
-// not directly modify state.
+// BridgeTools returns tool_search, tool_describe and tool_call over reg.
 func BridgeTools(reg *Registry) []ToolEntry {
 	return []ToolEntry{
 		{
@@ -228,13 +223,8 @@ func BridgeTools(reg *Registry) []ToolEntry {
 	}
 }
 
-// ComposeForTurn builds a per-turn Registry that combines the base registry's
-// tools, the per-turn extra tools, and the three bridge tools. The returned
-// registry is detached from the process-wide registry: extra tools are
-// per-gateway identity-bound (see agentexec.BuildToolSetFrom) and must never be
-// registered globally, so composing them into a turn-local registry is the only
-// way the bridge handlers (which enumerate reg.All) can discover and invoke
-// them.
+// ComposeForTurn returns a new registry with reg's tools, extra and the
+// bridge tools.
 func ComposeForTurn(reg *Registry, extra []ToolEntry) (*Registry, error) {
 	composed := NewRegistry()
 	if reg != nil {

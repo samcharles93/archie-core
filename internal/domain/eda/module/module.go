@@ -1,15 +1,5 @@
-// Package module is the Module position of the EDA playbook engine: operator-
-// installed, in-process, daemon-privileged action implementations, interpreted
-// via Yaegi (same trust tier as PluginDir and SecretEngineDir -- NOT
-// repository-supplied task code).
-//
-// Each module kind has a fixed signature and generated symbol table: load the
-// installed source, resolve its typed entrypoint, then call it through the
-// panic-safe interpreter boundary.
-//
-// Each action kind is its own tiny package with its own generated contract
-// (internal/domain/eda/module/<kind>), and the registry's internal storage is
-// the only place type erasure appears.
+// Package module loads and invokes EDA module actions, Yaegi-interpreted Go
+// files with a fixed entrypoint per kind.
 package module
 
 import (
@@ -90,12 +80,7 @@ func (r *ModuleRegistry) Len() int {
 	return len(r.kinds)
 }
 
-// KindSchema reports the hand-written Args and Result struct types for a
-// known kind. A kind is known when it has a registered contract in this
-// package's built-in registry (the log kind is the shipped kind), independent
-// of whether a module instance is currently loaded from a module directory.
-// It is the narrow schema source the playbook loader consumes to type-check
-// an action playbook's args and result references at load.
+// KindSchema returns a known kind's Args and Result types.
 func (r *ModuleRegistry) KindSchema(kind string) (reflect.Type, reflect.Type, bool) {
 	k, ok := registry[kind]
 	if !ok {
@@ -104,11 +89,7 @@ func (r *ModuleRegistry) KindSchema(kind string) (reflect.Type, reflect.Type, bo
 	return k.argsType, k.resultType, true
 }
 
-// Register discovers <dir>/<kind>.go, interprets it against the kind's
-// generated symbols, resolves its fixed export, and stores the invoker.
-// A missing file, an unreadable file, a resolve failure, or an unknown kind
-// is a reported error -- the daemon aborts startup on a broken module
-// directory per the established routing-file pattern.
+// Register loads <dir>/<kind>.go and resolves its entrypoint.
 func (r *ModuleRegistry) Register(kind, dir string) error {
 	k, ok := registry[kind]
 	if !ok {
@@ -211,11 +192,7 @@ func decodeLogArgs(rawArgs map[string]any) (log.Args, error) {
 	return args, nil
 }
 
-// Invoke calls the registered kind with rawArgs and returns the marshaled
-// result. An unregistered kind is a reported error. Invoke is deliberately
-// schema-agnostic: it returns the flat map[string]any the kind produces and
-// does not re-apply the Result schema. DecodeResult is the single conversion
-// site that re-applies it for the typed CEL environment.
+// Invoke calls kind with rawArgs and returns its result map.
 func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[string]any) (map[string]any, error) {
 	inv, ok := r.kinds[kind]
 	if !ok {
@@ -228,14 +205,8 @@ func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[st
 	return res, nil
 }
 
-// DecodeResult converts Invoke's flat result map into the kind's registered
-// Result struct. Invoke stays schema-agnostic and returns map[string]any; this
-// method is the one place the Result schema is re-applied so the value a later
-// CEL expression reads is the same Go struct the expression environment typed
-// (`actions.<id>.result.<field>`). The map is keyed by the lower-cased Go
-// field name, the same spelling expr registers as the CEL field name. An
-// unknown field, an absent declared field, or a value that is not already the
-// field's type is a reported error.
+// DecodeResult converts Invoke's result map into the kind's Result struct.
+// Unknown, missing or mistyped fields are errors.
 func (r *ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, error) {
 	k, ok := registry[kind]
 	if !ok {
@@ -244,13 +215,8 @@ func (r *ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, err
 	return decodeResultStruct(kind, k.resultType, raw)
 }
 
-// decodeResultStruct marshals raw into a new value of the kind's Result
-// struct type, keyed by the lower-cased Go field name -- the same spelling
-// expr registers as the CEL field name. Every declared field must be present
-// and every value must already carry that field's type: a missing field would
-// read as the zero value, and a conversion would change the value's
-// representation, so both are reported rather than becoming a quietly wrong
-// value in a later expression.
+// decodeResultStruct builds a Result value from raw. Every field must be
+// present with the exact type.
 func decodeResultStruct(kind string, t reflect.Type, raw map[string]any) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("module %s: result schema is not set", kind)

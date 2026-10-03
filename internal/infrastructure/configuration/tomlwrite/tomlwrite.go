@@ -1,33 +1,7 @@
-// Package tomlwrite patches specific keys in a TOML document without
-// disturbing anything else in it -- including comments, blank lines, and
-// key order.
-//
-// # Why not decode/re-marshal
-//
-// BurntSushi/toml does not round-trip comments: a Decode followed by an Encode
-// reproduces the data but discards every comment. config.example.toml carries
-// substantial documentation as inline comments that operators are meant to read
-// and hand-edit, and archied setup must be able to write into that same file --
-// and be re-run later to change one value -- without deleting it. A full
-// re-marshal was rejected for that reason.
-//
-// # The chosen strategy
-//
-// Apply treats the document as text and edits only the lines a caller
-// names. For each requested key it looks, in order, for: an active
-// "key = value" line in the target table (replace the value, keep any
-// trailing inline comment); a commented-out "# key = value" line in the
-// target table (uncomment the table header and the line, then replace the
-// value); or, failing both, a place to add the key (the end of the
-// table's existing content, or a brand new table appended at the end of
-// the document). Every line Apply was not asked to touch is copied through
-// unchanged, byte for byte.
-//
-// It only understands single-line scalar and inline-table values (strings,
-// numbers, booleans, `{ engine = "...", key = "..." }` secret refs), which
-// covers everything archied setup writes. Multi-line arrays and
-// [[array-of-tables]] entries are not targets for Apply; other code paths (e.g.
-// adding a [[repos]] entry) must not use it.
+// Package tomlwrite edits keys in a TOML document as text, leaving comments,
+// blank lines and order untouched. Apply replaces an active key, uncomments
+// a commented one, or appends it to its table. Only single-line values are
+// supported.
 package tomlwrite
 
 import (
@@ -38,13 +12,8 @@ import (
 	"strings"
 )
 
-// Edit is one key = value change to make within a TOML document.
-//
-// Table is the dotted path to the table the key lives in ("" for the
-// document root, "forge", "providers.openai", "chat.telegram", ...). Value
-// is the exact TOML literal to write -- callers are responsible for
-// quoting it themselves; see [String] and [Ref] for the two shapes archied
-// setup needs.
+// Edit sets one key in a TOML table. Table is a dotted path ("" for the
+// root). Value is a literal TOML value; see String and Ref.
 type Edit struct {
 	Table string
 	Key   string
@@ -71,11 +40,7 @@ var (
 	commentedKeyRe    = regexp.MustCompile(`^(\s*)#\s?([A-Za-z0-9_.]+)(\s*=\s*)(.*)$`)
 )
 
-// Generate applies edits to template and returns the result: a config a
-// human can read and hand-edit afterwards, since it is the documented
-// template with only the requested values filled in. archied setup calls
-// this on first run, with configtemplate.Example as template, and calls
-// Apply directly against the existing file on every later run.
+// Generate applies edits to template.
 func Generate(template []byte, edits []Edit) ([]byte, error) {
 	return Apply(template, edits)
 }

@@ -1,10 +1,3 @@
-// Adapted from /work/apps/tau/internal/providers/snapshot/gen/main.go at
-// b41dda42ef869cc919044ff4f23d7b568531c3f5.
-//
-// Deliberate mutations:
-//   - runtime startup fetch and disk fallback replace build-time generation;
-//   - every models.dev provider is eligible rather than a Tau-owned allowlist;
-//   - usable providers are derived from live environment and Archie overrides.
 package modelcatalog
 
 import (

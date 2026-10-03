@@ -14,13 +14,8 @@ import (
 // it can tell a credential is wired without ever holding it.
 const Sentinel = "archie-proxy-managed"
 
-// CredentialKind is how one run carries a credential service. The org's
-// binding decides it, never the Kit's declaration: the sandbox kit spec lets
-// one credential@1 declare apiKey and oauth together, meaning "whichever the
-// host has bound" (docker/claude-code-kit declares both for anthropic, codex
-// for openai). A service absent from a session's bound kinds is not carried
-// at all, which is what refuses a required credential and skips an optional
-// one.
+// CredentialKind is how a run carries a credential service, decided by the
+// org's binding. An absent service is not carried.
 type CredentialKind string
 
 const (

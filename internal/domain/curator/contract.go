@@ -1,13 +1,5 @@
-// Package curator is the curator engine family: long-running agent loops
-// that reason over memory and perform small maintenance tasks, rather than
-// one hardcoded background job..
-//
-// A curator is defined by a declared shape (check-in interval, tool set,
-// attached memory engine), runs persistently while there is input, and backs
-// off to a cooldown when idle. The family follows the strict plugin engine
-// rule: a typed contract (CuratorEngine), an owning registry (Registry) with
-// start/health/stop and shutdown ordering, and narrow typed host access
-// (Registrar) — a curator never receives the daemon or an untyped hook map.
+// Package curator runs curators: long-running agent loops that maintain
+// memory, each with a declared interval, tool set and memory engine.
 package curator
 
 import (

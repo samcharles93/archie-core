@@ -1,21 +1,5 @@
-// Package expr is the CEL expression environment for the EDA playbook engine:
-// one mechanism for both an action's `when` condition and its `args` values,
-// per eda-playbook-engine.md's resolved open question 1 (CEL decision).
-//
-// The environment declares two context roots -- `event` (the triggering
-// event's decoded payload, kept dyn by J4) and `actions` (prior actions'
-// results keyed by the action's declared id) -- and applies a cost limit to
-// every program. `actions` is not a global map: its shape depends on the ids
-// one playbook declares and the kind each id runs, so NewEnv takes the
-// declared ids and their Go Result struct types and builds a per-playbook
-// object type (multi-action-playbooks.md, D3). The playbook loader compiles
-// every `when` and `args` value here, so load-time rejection and runtime
-// evaluation cannot disagree; the standalone lint command covers the flat
-// kind/label binding files, not rich EDA playbook documents.
-//
-// CEL is non-Turing-complete, side-effect-free, and panic-free by design.
-// Anything the schema does not accept is a returned error here -- the
-// reject-at-load philosophy of the parent design doc.
+// Package expr is the CEL environment for EDA playbook `when` and `args`
+// expressions, with an `event` root and a per-playbook typed `actions` root.
 package expr
 
 import (
@@ -33,12 +17,8 @@ import (
 // resolved doc: tunable, start here; linter and daemon share the same value).
 const DefaultCostLimit = 100_000
 
-// DeclaredResult is one prior action's result the environment exposes to a
-// later expression. ID is the action's declared id, read as
-// `actions.<ID>.result.<field>`; Type is the reflect.Type of that action
-// kind's Go Result struct. `module.ModuleRegistry.DecodeResult` is the site
-// that converts Invoke's flat result map back into this struct before a later
-// expression reads it.
+// DeclaredResult is a prior action's id and Result type, read as
+// actions.<ID>.result.<field>.
 type DeclaredResult struct {
 	ID   string
 	Type reflect.Type
@@ -49,14 +29,7 @@ type DeclaredResult struct {
 // its fields are never read.
 type probeResult struct{}
 
-// IsCELFieldName reports whether id can be written as `actions.<id>` in a CEL
-// expression. It is the authoritative check the playbook loader uses for a
-// module action id, replacing a regex approximation of CEL's token rules: it
-// compiles a probe expression against a one-field environment declaring the
-// id, so the CEL parser and checker decide. CEL keywords (`in`, `true`,
-// `false`, `null`) and any other spelling with no field-selection form return
-// false; a valid CEL identifier such as `Build` returns true (the loader adds
-// its own lowercase policy on top).
+// IsCELFieldName reports whether id can be written as actions.<id> in CEL.
 func IsCELFieldName(id string) bool {
 	if id == "" {
 		return false
@@ -76,17 +49,9 @@ type Env struct {
 // Context is what an expression may read at dispatch time. Both roots are
 // read-only from the expression's perspective; CEL enforces this.
 type Context struct {
-	// Event is the triggering event's decoded payload (webhook body, forge
-	// issue, schedule tick). Declared dyn because its shape is unknown by
-	// design (schema-by-example); field-level typing is follow-up work once
-	// multi-action playbooks exist (per-kind generated Result structs
-	// declared as CEL types).
+	// Event is the triggering event's payload, typed dyn.
 	Event map[string]any
-	// Actions holds prior actions' results keyed by the action's id as
-	// declared in the playbook. Each id maps to the per-id wrapper
-	// `{"result": <KindResult struct>}` built by
-	// `module.ModuleRegistry.DecodeResult`, so a later expression reads
-	// `actions.<id>.result.<field>`.
+	// Actions holds prior actions' results by id as {"result": <Result>}.
 	Actions map[string]map[string]any
 }
 
@@ -118,11 +83,8 @@ func NewEnv(declared ...DeclaredResult) *Env {
 	return &Env{celEnv: celEnv, costLimit: DefaultCostLimit}
 }
 
-// newResultRegistry registers every declared Result reflect.Type with CEL's
-// native type system, using lower-cased Go field names so `Written` is read
-// as `written`. The registry is both the provider (for the Result struct
-// fields) and the adapter (so a Go Result struct value inside the eval map
-// adapts to those same fields).
+// newResultRegistry registers the declared Result types with lower-cased
+// field names.
 func newResultRegistry(declared []DeclaredResult) (*types.Registry, error) {
 	items := make([]any, 0, len(declared)+1)
 	items = append(items, types.ParseStructField(lowerFieldName))
@@ -138,11 +100,7 @@ func lowerFieldName(f reflect.StructField) string {
 	return strings.ToLower(f.Name)
 }
 
-// nativeResultTypeName is the CEL type name cel-go's native type system
-// assigns to a reflect.Type (simple package alias + struct name), e.g.
-// `log.Result`. It must match the name the native registry registers, because
-// the per-id wrapper's `result` field is typed by that name and its fields
-// are resolved through the native registry.
+// nativeResultTypeName returns the CEL name for a Go type, e.g. log.Result.
 func nativeResultTypeName(t reflect.Type) string {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -154,11 +112,7 @@ func nativeResultTypeName(t reflect.Type) string {
 	return pkg + "." + t.Name()
 }
 
-// The `actions` root object type name and the per-id wrapper type namespace.
-// Per-id names must live in a reserved namespace (eda.action.<id>): naming a
-// wrapper `actions.<id>` makes the checker parse `actions.<id>` as a type
-// reference rather than a field selection, which then fails with "type ...
-// does not support field selection".
+// Type names for the actions root and per-id wrappers.
 const (
 	actionsTypeName  = "actions"
 	actionTypePrefix = "eda.action."
@@ -261,11 +215,8 @@ func (p *actionResultProvider) NewValue(structType string, fields map[string]ref
 	return p.base.NewValue(structType, fields)
 }
 
-// Compile parses and type-checks a playbook expression string against the
-// declared context. A syntax error, an unknown root (anything other than
-// event/actions), a dynamic `actions` read, or a field typo on a declared
-// result is a returned error -- never a panic. The returned Program is safe
-// to evaluate concurrently (CEL programs are stateless once compiled).
+// Compile parses and type-checks an expression. Programs are safe for
+// concurrent use.
 func (e *Env) Compile(src string) (*Program, error) {
 	ast, issues := e.celEnv.Compile(src)
 	if issues != nil && issues.Err() != nil {
@@ -279,21 +230,8 @@ func (e *Env) Compile(src string) (*Program, error) {
 	return &Program{prg: prg, actionIDs: ids, resolvable: resolvable, outType: ast.OutputType()}, nil
 }
 
-// actionReferences walks the checked AST once and classifies every read of
-// the `actions` context root as either a statically-resolvable action id or
-// not. A root read is an identifier the checker typed as the `actions`
-// object: matching on type rather than name keeps a comprehension variable
-// that happens to be called `actions` out of the count. Each root read
-// consumes exactly one such identifier, so
-//
-//	resolvable = (identCount == staticCount)
-//
-// where staticCount is the root reads that are a field selection. The
-// checker already rejects every other non-static read (a dynamic index,
-// `in`, `size`, an undeclared id); the spelling it accepts is a bare
-// `actions` value, which compiles but cannot be pinned to an action id at
-// load. This walk exists to reject that spelling; the ids return is
-// informational. The ids are sorted and de-duplicated.
+// actionReferences returns the sorted action ids the expression reads and
+// whether every read of `actions` is a field selection.
 func actionReferences(ast *cel.Ast) ([]string, bool) {
 	if ast == nil || ast.NativeRep() == nil {
 		return nil, true
@@ -368,15 +306,8 @@ func celScalar(t reflect.Type) (*cel.Type, bool) {
 	}
 }
 
-// ActionReferences reports the action ids the expression reads from the
-// `actions` context root (sorted, de-duplicated) and whether every `actions`
-// read could be statically resolved to one of those ids. ids is empty when
-// the expression reads no prior-action result; resolvable is false when the
-// expression reads `actions` in any form that cannot be pinned to a prior
-// action id at load. Under the per-playbook object type the checker already
-// rejects every dynamic `actions` read, so the only form that still reaches
-// here unresolved is a bare `actions` value read; the playbook loader rejects
-// that rather than evaluating it as a runtime miss.
+// ActionReferences returns the action ids the expression reads and whether
+// each `actions` read resolves to an id.
 func (p *Program) ActionReferences() (ids []string, resolvable bool) {
 	if p == nil {
 		return nil, true
@@ -384,12 +315,7 @@ func (p *Program) ActionReferences() (ids []string, resolvable bool) {
 	return p.actionIDs, p.resolvable
 }
 
-// Eval evaluates the program against a dispatch-time context. A missing
-// field, a wrong type against a dyn value, or an exceeded cost limit is a
-// returned error. CEL's own evaluation recovers panics internally (verified
-// in cel-go's program.go: Eval wraps evaluation in recover), and its
-// returned values implement ref.Val -- unwrapped here to the native Go value
-// the caller expects.
+// Eval evaluates the program and returns the native Go value.
 func (e *Env) Eval(prg *Program, ctx Context) (any, error) {
 	data := map[string]any{
 		"event":   ctx.Event,

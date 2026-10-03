@@ -7,12 +7,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
-// Every control-plane request acts in one org's copy of a resource. The org
-// travels on the request context (org.WithOrg), attached once by whatever
-// established the caller's principal, and these constructors are the one place
-// it is read back: a call site cannot send the wrong org, and a new call site
-// cannot forget it. org.OrgFromContext yields the default org when the context
-// carries none, so a process with no principal still acts where it always did.
+// Requests carry the org from the context (org.WithOrg), defaulting to the
+// default org.
 
 // QueryRequest builds a resource query for the caller's org.
 func QueryRequest(ctx context.Context, kind string) *pb.QueryRequest {

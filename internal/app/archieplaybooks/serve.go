@@ -17,11 +17,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Serve runs the language server over rwc until the client disconnects or
-// ctx ends. It publishes diagnostics when a playbook file is opened or saved,
-// by linting the file's saved directory with the loader the daemon runs for
-// it: the whole directory, because a collision is a cross-file finding.
-// Unsaved edits are not validated.
+// Serve runs the language server over rwc until the client disconnects or ctx
+// ends, publishing diagnostics for the saved directory when a playbook is
+// opened or saved.
 func Serve(ctx context.Context, rwc io.ReadWriteCloser) error {
 	s := &server{exited: make(chan struct{})}
 	_, conn, client := protocol.NewServer(ctx, s, jsonrpc2.NewStream(rwc))

@@ -54,11 +54,8 @@ type userLimit struct {
 	LastRequestAt time.Time `json:"last_request_at"`
 	Failures      int       `json:"failures"`
 	LockedUntil   time.Time `json:"locked_until"`
-	// LockoutCount is how many times in a row this user has been locked
-	// out without an intervening successful VerifyCode. It escalates
-	// the lockout duration on repeat offenses and resets to 0 on
-	// success, so a one-time mistake isn't punished as hard as a
-	// sustained brute-force attempt.
+	// LockoutCount counts consecutive lockouts, escalating the lockout duration;
+	// reset on success.
 	LockoutCount int `json:"lockout_count"`
 }
 
@@ -79,12 +76,8 @@ func lockoutDuration(lockoutCount int) time.Duration {
 	return d
 }
 
-// Store is a file-backed pairing authorization store, scoped to a single
-// platform (create one Store per platform, each pointed at its own
-// directory  --  see New). It tracks outstanding pairing codes, approved
-// users, and per-user rate-limit/lockout state, persisting all three to
-// pending.json, approved.json, and rate_limits.json under its directory
-// after every mutation.
+// Store is a file-backed pairing store for one platform: pending codes,
+// approved users and rate limits.
 type Store struct {
 	dir string
 	now func() time.Time
@@ -122,11 +115,8 @@ func New(dir string) (*Store, error) {
 	return s, nil
 }
 
-// RequestCode generates and stores a new pairing code for userID,
-// returning the plaintext code (the only time it is ever available in
-// plaintext  --  only its salted hash is persisted). Fails with
-// ErrLockedOut, ErrRateLimited, or ErrQuotaExceeded per the package's
-// tuning constants.
+// RequestCode creates and returns a pairing code for userID; only its hash
+// is stored.
 func (s *Store) RequestCode(userID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,11 +156,8 @@ func (s *Store) RequestCode(userID string) (string, error) {
 	return code, nil
 }
 
-// VerifyCode checks code against userID's pending pairing code. On
-// success, userID moves to the approved set, its pending code is
-// consumed (cannot be reused), and its failure count resets. On a wrong
-// code, the failure count increments and, at MaxFailures, the user is
-// locked out for LockoutDuration.
+// VerifyCode checks code for userID. Success approves the user and consumes
+// the code; a failure counts toward lockout.
 func (s *Store) VerifyCode(userID, code string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

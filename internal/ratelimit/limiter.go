@@ -1,11 +1,5 @@
-// Package ratelimit provides a sliding-window request limiter, keyed by
-// platform and user, for gating inbound gateway traffic per identity
-// rather than globally.
-//
-// A limiter's per-key map is unbounded until something calls EvictStale:
-// long-lived instances should have it driven on a ticker so entries whose
-// hits have all aged out of the window are removed instead of accumulating
-// for the life of the process.
+// Package ratelimit is a sliding-window limiter keyed by platform and user.
+// Call EvictStale periodically.
 package ratelimit
 
 import (
@@ -73,19 +67,8 @@ func (l *Limiter) Allow(platform, userID string) bool {
 	return true
 }
 
-// EvictStale removes per-key entries whose hits have all aged out of the
-// sliding window — an entry with no hit strictly within the last window is
-// deleted, and entries that hold no hits at all (possible when maxRequests
-// is zero) are always removed. It reports how many entries were removed.
-//
-// Eviction is behaviour-preserving by construction: the cutoff is Allow's
-// own pruning cutoff (now - window), so a removed key would have
-// contributed zero hits to its next Allow, which would lazily recreate it
-// — sweeping can never grant fresh budget.
-//
-// The limiter runs no background sweeper; a long-lived limiter should have
-// EvictStale driven on a ticker (e.g. once per window), as the daemon
-// drives storage expiry.
+// EvictStale removes keys with no hits in the current window and returns
+// how many it removed.
 func (l *Limiter) EvictStale() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

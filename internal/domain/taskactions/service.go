@@ -68,14 +68,8 @@ type ActionPayload struct {
 	RetryMode taskstate.RetryMode
 }
 
-// Actor is the identity that performed an action, and the principal whose
-// authority permitted it.
-//
-// The two are separate fields because an agent acting under a person's standing
-// approval is not the same fact as a person acting: a record that collapsed
-// them would answer "who approved this" with the wrong identity. An empty
-// Principal means UNATTRIBUTED -- no authority was recorded, which is a
-// different fact from the actor authorising itself.
+// Actor is who performed an action and the principal whose authority allowed
+// it. An empty Principal means unattributed.
 type Actor struct {
 	Identity  identity.IdentityID
 	Kind      identity.Kind
@@ -183,12 +177,8 @@ type Store interface {
 	RespondReviewGate(context.Context, int64, string, string, bool, int) error
 	ArchiveTask(context.Context, int64, string, events.Event) (int64, error)
 	InsertEvent(context.Context, events.Event) (int64, error)
-	// CancelExecution is the one cancel path:
-	// the store
-	// records the cancellation -- every non-terminal step of the current
-	// attempt plus the execution's own move to `to` -- in one transaction.
-	// The service then cancels the in-memory context that was delivering the
-	// run; a worker's next step write fails ErrStaleTransition and stops.
+	// CancelExecution cancels the execution and its open steps in one
+	// transaction.
 	CancelExecution(context.Context, int64, string, string) ([]int64, error)
 }
 
@@ -206,18 +196,9 @@ type Service struct {
 	Warn           func(string, ...any)
 }
 
-// Apply scopes chat requests to an identity. A nil scope denotes a caller
-// authenticated across identities, which is the dashboard's own credential;
-// scope limits which task a chat identity may act on, and never says who acted.
-//
-// The actor is not derived from scope: scope is which tasks a caller may touch,
-// actor is who touched one, and the two are only equal by coincidence.
-//
-// res is the per-action payload (ActionPayload): the operator's instruction
-// and finding selection for approve and rereview, the worktree mode for
-// retry, and empty for every other action and for the chat surfaces that
-// carry no such syntax. Both the dashboard and chat reach the same apply, so
-// one operator intent cannot be recorded as two different decisions.
+// Apply runs action on task id. A nil scope is a dashboard caller acting
+// across identities; otherwise scope limits which tasks may be acted on. res
+// is the action's payload.
 func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64, action taskstate.Action, res ActionPayload) error {
 	task, err := s.Store.TaskByID(ctx, id)
 	if err != nil {
@@ -288,16 +269,9 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 	}
 }
 
-// applyApprove is the one approval path, for both the review gate and the
-// human-decision waits that predate it.
-//
-// A task carrying a gate offer gets the answer recorded on that offer in the
-// guarded response write: the resumed run posts the recorded review filtered by
-// the operator's selection, which is the only way "post the findings the
-// operator selected" can mean the findings they saw. A task with no gate has no
-// review to answer, so the approval is the plain release of waiting work; it
-// requeues under the workflow the wait names -- which feasibility sets to
-// implement before it waits -- never a name this handler hardcodes.
+// applyApprove approves a waiting task. With a gate offer it records the
+// answer on the offer; otherwise it requeues under the workflow the wait
+// names.
 func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o outcome, res ActionPayload) (outcome, error) {
 	o.event.Kind, o.event.Detail = approvedKind(actor), actor.describe("approved")
 	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
@@ -318,11 +292,8 @@ func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o ou
 	return o, nil
 }
 
-// applyRereview records the operator's instructions and requeues the review
-// phases. It is refused, as a conflict, for a task with no gate offer and for
-// one at the cap: in both cases the task stays waiting and nothing is written.
-// The offer's findings are cleared, because the resumed run recomputes them;
-// the instructions are what reach the recomputation.
+// applyRereview records the operator's instructions and requeues the review.
+// It conflicts when there is no gate offer or the cap is reached.
 func (s Service) applyRereview(ctx context.Context, task *Task, actor Actor, o outcome, res ActionPayload) (outcome, error) {
 	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
 	if !ok || !gate.Offered() {

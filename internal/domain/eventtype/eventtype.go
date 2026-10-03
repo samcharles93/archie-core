@@ -1,9 +1,6 @@
-// Package eventtype owns event types: named kinds of event from one source,
-// each defined by a match rule over headers and payload. It infers a structural
-// signature per capture, groups a source's captures into proposed types,
-// evaluates rules, and refuses two types on one source whose rules can match
-// the same event. An event that matches no type is unidentified and is never
-// dispatched.
+// Package eventtype defines event types: match rules over a source's headers
+// and payload. It infers signatures, proposes types and refuses overlapping
+// types on one source.
 package eventtype
 
 import (
@@ -134,11 +131,9 @@ func payloadHolds(root any, p PayloadCondition) bool {
 	return false
 }
 
-// Overlaps reports whether some event could satisfy both rules. Two rules are
-// disjoint only when they demand different values of one header, or different
-// values at one payload path outside any array; anything else is treated as
-// overlapping, which errs towards refusing a save rather than towards an event
-// two types both claim.
+// Overlaps reports whether an event could satisfy both rules. Rules are
+// disjoint only when they require different values for one header or a
+// non-array payload path.
 func Overlaps(a, b Rule) bool {
 	for _, ha := range a.Headers {
 		for _, hb := range b.Headers {

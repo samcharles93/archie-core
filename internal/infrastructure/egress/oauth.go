@@ -153,12 +153,9 @@ func (p *Proxy) injectOAuth(ctx context.Context, s *Session, r *http.Request, ho
 	return nil
 }
 
-// interceptOAuth handles one request to a granted rule's token endpoint
-// whole. A refresh carrying the sentinel refresh token goes upstream with
-// the stored real one; a login code exchange carries none and passes as
-// sent. A successful response is captured to the store and reaches the
-// container with sentinels in place of the real tokens, so a refreshed
-// token is never returned to it.
+// interceptOAuth proxies a token endpoint request, swapping the sentinel
+// refresh token for the stored one. Successful responses are stored and
+// returned to the container with sentinels.
 func (p *Proxy) interceptOAuth(ctx context.Context, w http.ResponseWriter, r *http.Request, s *Session, rule oauthRule, scheme, target string) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxTokenExchange))
 	if err != nil {

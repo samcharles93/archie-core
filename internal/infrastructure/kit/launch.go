@@ -59,12 +59,8 @@ type LaunchParams struct {
 	Execution  string
 	ProxyToken string
 	CAPath     string
-	// Bound keys each credential service this run carries to the kind the
-	// org's binding gave it (egress.CredentialKind). A service absent from
-	// this map is unbound: its mode variable says none, it renders no
-	// credential file, and the proxy refuses (required) or skips (optional)
-	// any request needing it. The map carries kinds, never values -- the real
-	// secret stays on the host.
+	// Bound maps each credential service the run carries to its kind. Values
+	// never leave the host.
 	Bound map[string]egress.CredentialKind
 	// OAuth is the non-secret facts of each bound OAuth credential's stored
 	// token set, keyed by service, that a Kit's credentialFile renders: the
@@ -162,11 +158,8 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 	return l, nil
 }
 
-// credentialFiles renders the credential file of every OAuth-bound
-// credential whose Kit declares one: the path and structure the Kit names,
-// with the stored token set's scopes and expiry. A service bound as an API
-// key renders none -- its Kit may carry the OAuth declaration too, but this
-// run has no token set to put in the file.
+// credentialFiles renders the credential file for each OAuth-bound
+// credential that declares one.
 func credentialFiles(creds []spec.CredentialCapability, bound map[string]egress.CredentialKind, oauth map[string]OAuthFacts) ([]spec.File, error) {
 	var files []spec.File
 	for _, c := range creds {
@@ -182,11 +175,8 @@ func credentialFiles(creds []spec.CredentialCapability, bound map[string]egress.
 	return files, nil
 }
 
-// contextFiles materializes agent-context@1: the workload's profile file
-// beside the workspace, never in it, carrying an index of each Kit's body.
-// A staged body is pointed at where the image holds it; an inline one is
-// written to its own file beside the profile. The profile never inlines a
-// Kit's text, so stacking Kits does not grow what the agent always loads.
+// contextFiles writes agent-context@1: a profile file beside the workspace
+// indexing each Kit's body.
 func contextFiles(p *Plan) ([]spec.File, error) {
 	ac, err := spec.AgentContextOf(p.Capabilities)
 	if err != nil || ac == nil || ac.Filename == "" {

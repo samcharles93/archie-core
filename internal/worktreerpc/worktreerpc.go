@@ -1,12 +1,5 @@
-// Package worktreerpc lets archie-agent request publication of the task branch
-// over core NATS request/reply without holding the forge credential itself.
-// archied has already prepared the bind-mounted worktree before the container
-// starts. Publication is authorized by an opaque per-dispatch grant; sandbox
-// input never selects a host path, repository, or branch.
-//
-// CommitAll/Diff/ChangedFiles/ChangedLines are purely local git
-// operations against the already-mounted worktree and don't need the
-// credential, so they run directly inside archie-agent.
+// Package worktreerpc lets archie-agent ask archied to push the task branch
+// over NATS, authorized by a per-dispatch grant.
 package worktreerpc
 
 import (
@@ -31,12 +24,8 @@ const (
 	SubjectPush = "archie.worktree.push"
 )
 
-// SubjectFor returns the subject for base, scoped to identity when set.
-// An empty identity uses the root subject (single-identity deployments and
-// agent images that predate identity routing). The daemon registers one
-// server per identity on these scoped subjects so a container-mode task
-// owned by a non-root identity has its push/prepare calls served by that
-// identity's own worktree manager (its own credential and workdir).
+// SubjectFor returns base scoped to identity, or base when identity is
+// empty.
 func SubjectFor(identity, base string) string {
 	if identity == "" {
 		return base
@@ -117,12 +106,7 @@ type Server struct {
 	Timeout time.Duration
 }
 
-// handlerContext returns the context a single request runs under.
-//
-// NATS request/reply carries no deadline from the caller, and the work
-// now runs in-process through go-git rather than as a killable child
-// process, so the server has to impose its own bound. Without one an
-// unresponsive forge holds this handler's goroutine forever.
+// handlerContext returns a context bounded by s.Timeout.
 func (s *Server) handlerContext() (context.Context, context.CancelFunc) {
 	timeout := s.Timeout
 	if timeout <= 0 {

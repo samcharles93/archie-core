@@ -194,12 +194,7 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			return
 		}
 
-		// A rate-limited delivery was dropped before reaching the LLM, not
-		// completed: it must not be echoed back as a successful "origin" reply
-		// (chat prose, meant for a human) or 202'd as accepted (indistinguishable
-		// from a delivered event, so the source would never retry it). 429 lets
-		// the source back off and retry, the way internal/webhookguard.RateLimiter's
-		// other callers already respond.
+		// A rate-limited delivery answers 429 so the source retries.
 		if reply.RateLimited {
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return

@@ -1,33 +1,6 @@
-// Package webhook implements the GitHub forge webhook receiver: an HTTP
-// endpoint that verifies a GitHub webhook's HMAC signature, decodes the
-// "issues" event, and publishes a matched issue as a workintake.TaskEnvelope.
-//
-// It is forge intake, distinct from internal/channels/webhook (the chat
-// channel): that package routes inbound text through the gateway for LLM
-// processing; this one decodes a GitHub payload into the same TaskEnvelope
-// the poller produces and hands it to the same publish path, so a labelled or
-// assigned issue becomes work the moment it happens rather than up to
-// poll_interval later.
-//
-// GitHub's webhook must be configured with "Content type: application/json"
-// (the UI default). The alternate application/x-www-form-urlencoded delivery
-// is not decoded here and is rejected as a bad payload.
-//
-// Idempotency is not this package's job: it decodes into the same TaskEnvelope
-// and calls the same publish path the poller uses, so PublishUnique's dedup
-// (keyed on TaskEnvelope.IdempotencyKey) covers both sources for free. What
-// this package does own is making a wedged or non-delivering receiver
-// observable: a GET to the listen address (GitHub only ever POSTs) returns
-// Status, tracking authenticated deliveries and successful publishes separately
-// so an operator can tell "receiver is up but nothing is arriving" apart from
-// "repo has no issue activity."
-//
-// The GET/Status route is deliberately unauthenticated, on the same
-// internet-facing listener GitHub POSTs signed payloads to: it reveals
-// counters and timestamps only, never repo data, issue content, or the
-// webhook secret, so treating it as a public liveness probe (the same
-// tradeoff an unauthenticated /healthz makes) is an acceptable exchange for
-// not requiring a second credential just to check if the receiver is alive.
+// Package webhook receives GitHub issue and review webhooks, verifies their
+// HMAC and publishes them through the poller's publish path. Only
+// application/json payloads are accepted. A GET returns delivery Status.
 package webhook
 
 import (
@@ -54,12 +27,7 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 // (*daemon.Daemon).PublishTask, the same enqueue path the poller uses.
 type PublishFunc func(ctx context.Context, task workintake.TaskEnvelope) error
 
-// ReactionPublishFunc delivers one decoded review reaction to the reaction
-// stream (pr-review-remediation.md decision 2's webhook producer). The
-// composition root wires it to PublishUnique against the envelope's reaction
-// subject, so a webhook delivery and a poll record of the same review dedup
-// on the envelope's source-independent key. The reaction path carries no
-// dispatch predicate: eligibility is the consumer's owned-PR lookup.
+// ReactionPublishFunc publishes one review reaction.
 type ReactionPublishFunc func(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error
 
 // reactionRateLimit bounds reaction deliveries per remote source per window
@@ -118,12 +86,8 @@ func New(secret, trigger, label, botUser string, publish PublishFunc, reactionPu
 	}
 }
 
-// Status reports the receiver's delivery activity so an operator can tell a
-// wedged or non-delivering receiver apart from a repo with no issue
-// activity: Deliveries counts every authenticated,
-// parseable webhook -- proof GitHub reached this process at all -- while
-// Publishes counts only what the dispatch predicate turned into work.
-// LastReceivedAt is nil until the first authenticated delivery arrives.
+// Status counts authenticated deliveries and published tasks.
+// LastReceivedAt is nil before the first delivery.
 type Status struct {
 	StartedAt         time.Time  `json:"started_at"`
 	LastReceivedAt    *time.Time `json:"last_received_at"`

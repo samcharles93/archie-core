@@ -21,11 +21,7 @@ const skillsDir = ".agents/skills"
 // its own directory under skillsDir.
 const skillFile = "SKILL.md"
 
-// Store implements curator.SkillStore over one root directory's.
-// agents/skills/*/SKILL.md files. List and Read never parse frontmatter
-// themselves beyond a best-effort Description: a per-skill parse failure is the
-// curator's problem to report as an Action, not this store's problem to abort
-// on.
+// Store implements curator.SkillStore over root's */SKILL.md files.
 type Store struct {
 	root string
 }
@@ -43,13 +39,8 @@ func (s *Store) skillPath(name string) string {
 	return filepath.Join(s.skillsPath(), name, skillFile)
 }
 
-// List returns every skill directory under root, in directory order. A
-// directory with no SKILL.md is skipped -- consistent with internal/skill's
-// Catalog, which treats an unreadable or absent SKILL.md as "no skill here"
-// rather than an error -- and a missing
-// skills directory returns an empty list, not an error, matching
-// internal/skill's discovery convention (missing directory is not an
-// error).
+// List returns every skill directory with a SKILL.md. A missing directory
+// returns an empty list.
 func (s *Store) List(_ context.Context) ([]curator.SkillRef, error) {
 	entries, err := os.ReadDir(s.skillsPath())
 	if os.IsNotExist(err) {
@@ -73,12 +64,8 @@ func (s *Store) List(_ context.Context) ([]curator.SkillRef, error) {
 	return refs, nil
 }
 
-// Read returns the named skill's raw SKILL.md content. Description is a
-// best-effort frontmatter read: empty on a parse failure, which Read
-// does not treat as an error -- Pass is what decides a parse failure is
-// worth reporting, and it needs the raw Content to do so via its own
-// skill.Parse call regardless of whether this convenience field could be
-// populated.
+// Read returns the skill's raw SKILL.md. Description is empty when the
+// frontmatter does not parse.
 func (s *Store) Read(_ context.Context, name string) (curator.Skill, error) {
 	path := s.skillPath(name)
 	data, err := os.ReadFile(path)
@@ -92,11 +79,7 @@ func (s *Store) Read(_ context.Context, name string) (curator.Skill, error) {
 	return sk, nil
 }
 
-// Write persists s.Content to the named skill's SKILL.md. The skill's
-// directory must already exist -- Write curates an existing skill, it
-// does not create a new one, which is a bigger decision (naming,
-// directory layout, an author writing the rest of the frontmatter) that
-// this store does not make.
+// Write overwrites an existing skill's SKILL.md.
 func (s *Store) Write(_ context.Context, sk curator.Skill) error {
 	dir := filepath.Join(s.skillsPath(), sk.Name)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {

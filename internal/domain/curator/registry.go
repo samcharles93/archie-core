@@ -32,11 +32,8 @@ type curatorStatus struct {
 	startErr error
 }
 
-// Registry is the curator family owner: it controls registration and
-// discovery, lifecycle (start/health/stop), shutdown ordering, and failure
-// isolation. A curator failure — a rejected registration, a failing Start, a
-// blocking Stop, even a panicking Bind — affects only that curator and is
-// reported, never fatal to the daemon or to other curators.
+// Registry owns curator registration and lifecycle. A curator's failure
+// affects only that curator.
 type Registry struct {
 	mu       sync.Mutex
 	host     Registrar
@@ -66,11 +63,7 @@ func NewRegistry(host Registrar) *Registry {
 	}
 }
 
-// RecordActivity records one pass's outcome for the named curator so it is
-// inspectable at runtime: last run time, action count, and recent actions
-// with their reasons. Called by the runtime at the same point it emits the
-// curator_run/curator_action events (Runtime.emitRun), so the two views
-// never disagree.
+// RecordActivity records one pass's outcome for the named curator.
 func (r *Registry) RecordActivity(name string, at time.Time, actions []Action) {
 	r.activity.record(name, at, actions)
 }
@@ -81,11 +74,8 @@ func (r *Registry) Activity(name string) (Activity, bool) {
 	return r.activity.snapshot(name)
 }
 
-// Register validates the curator's declared shape against the registrar and
-// adds it, binding the curator to a host view filtered to its declared
-// capabilities. Registration fails on nil engines, invalid manifests,
-// duplicate names, a declared capability with no host service behind it, or
-// a panicking Bind — and a failure affects only that curator.
+// Register validates the curator's manifest and binds it to a filtered host
+// view. Failures affect only that curator.
 func (r *Registry) Register(c CuratorEngine) error {
 	if isNilEngine(c) {
 		return errors.New("curator: nil engine")
@@ -271,11 +261,8 @@ func healthSafely(ctx context.Context, c CuratorEngine) (h Health) {
 	return c.Health(ctx)
 }
 
-// Stop stops every started curator in reverse registration order. Curators
-// whose Start failed are skipped; the call is bounded by ctx — a curator
-// that ignores cancellation cannot hang the daemon's shutdown beyond the
-// caller's deadline, and its error is joined into the result. Stopping a
-// registry that never started is a no-op.
+// Stop stops started curators in reverse order, bounded by ctx, and joins
+// their errors.
 func (r *Registry) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	if r.state == stateIdle || r.state == stateStopped {

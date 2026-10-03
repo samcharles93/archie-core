@@ -68,11 +68,8 @@ func Propose(captures []Capture) []Proposal {
 	return out
 }
 
-// separatingRule demands the group's discriminator headers, then, for each
-// sibling those do not already rule out, the presence of the first path the
-// group has and the sibling lacks. A group whose paths are a subset of a
-// sibling's cannot be separated by presence alone; saving it as proposed is
-// then refused as an overlap, and the operator edits the rule.
+// separatingRule requires the group's discriminator headers, plus a path
+// present in the group but absent from each remaining sibling.
 func separatingRule(g Signature, siblings []Signature) Rule {
 	rule := Rule{Headers: headerConditions(g.Headers)}
 	paths := slices.Sorted(maps.Keys(g.Paths))

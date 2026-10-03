@@ -32,16 +32,8 @@ type RuntimeConfig struct {
 	MaxConcurrentPasses int
 }
 
-// Runtime runs the registered curators' loops: one goroutine per curator,
-// timing driven by the registry's clock (fake-clock testable), waking on
-// best-effort nudges (the trigger decision belongs to the curator's Check),
-// with per-pass timeouts, panic recovery, and bounded shutdown.
-//
-// Curators are peers, never dependencies: nothing a curator does — a
-// blocking pass, a panic, a burst of nudges — can block a chat turn, an
-// agent run, or the daemon. Wake events are accelerations; the trigger is a
-// deterministic state read at pass time, so a dropped
-// nudge only delays a run to the next check-in.
+// Runtime runs one loop per registered curator, with per-pass timeouts and
+// panic recovery. Wake events are best-effort.
 type Runtime struct {
 	registry *Registry
 	cfg      RuntimeConfig
@@ -127,11 +119,8 @@ func (rt *Runtime) Nudge(curator string) {
 	}
 }
 
-// Stop cancels every loop, waits for in-flight passes to unwind (bounded by
-// ctx), then stops the curators' lifecycle in reverse registration order.
-// A pass that ignores cancellation cannot hang shutdown beyond ctx: Stop
-// returns ctx.Err once the deadline passes. Stopping a runtime that never
-// started is a no-op.
+// Stop cancels every loop, waits for passes to finish within ctx, then stops
+// the curators in reverse order.
 func (rt *Runtime) Stop(ctx context.Context) error {
 	rt.mu.Lock()
 	if !rt.started {

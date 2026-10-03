@@ -1,11 +1,5 @@
-// Package archieplaybooks is the application composition for the standalone
-// playbook-validation CLI (cmd/archie-playbooks). It owns the lint mode's
-// orchestration: collect the configured directories, run the domain
-// validators, and shape the outcome for human consumption. The rules live in
-// internal/domain/workflow (routing binding files) and
-// internal/domain/eda/playbook (EDA playbooks) -- this package only calls the
-// loaders the daemon runs and formats results; there is deliberately no
-// second validation path here.
+// Package archieplaybooks implements the archie-playbooks CLI, using the
+// daemon's own playbook loaders.
 package archieplaybooks
 
 import (
@@ -24,16 +18,8 @@ type Result struct {
 	Findings []string
 }
 
-// Lint validates one or more playbook directories against the domain
-// loaders and reports every collision / malformed file / invalid binding as
-// a finding. It returns exit code 0 on a clean set, 1 when any finding is
-// reported. Directories and single-file fields share one validation source:
-//
-//	workflow.LoadPlaybookDirs
-//
-// which already applies the same rules LoadKindWorkflowsYAML and
-// LoadLabelWorkflowsYAML do, per file and across files -- so the linter can
-// never disagree with the daemon's startup validation.
+// Lint validates playbook directories with workflow.LoadPlaybookDirs and
+// reports every finding. It returns 0 when clean, 1 otherwise.
 func Lint(dirs []string, stderr io.Writer) Result {
 	var findings []string
 

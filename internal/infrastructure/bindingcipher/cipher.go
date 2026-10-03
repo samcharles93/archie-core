@@ -33,11 +33,7 @@ type Domain struct {
 }
 
 var (
-	// BindingDomain seals binding.Binding.Secret and source webhook
-	// secrets -- the original domain this package was built for. It is
-	// deliberately NOT row-bound: these are random HMAC keys, never used
-	// as lookup keys, so cross-row relocation within the domain is not a
-	// meaningful attack.
+	// BindingDomain seals binding and source webhook secrets. Not row-bound.
 	BindingDomain = Domain{marker: "arcie-binding", aad: []byte("arcie-binding-secret")}
 	// HarnessSecretDomain seals harness OAuth token sets
 	// -- its own
@@ -69,22 +65,16 @@ type BindingCipher interface {
 	DecryptDomain(d Domain, envelope string) (string, error)
 }
 
-// bindingCipher is the AES-256-GCM BindingCipher. Keys are derived as
-// SHA-256(resolved material) -- 32 bytes of high-entropy input re-shaped to a
-// 256-bit key, so no passphrase-stretching KDF (Argon2id) is required. The
-// active key seals new writes; previous keys are retained for decryption only
-// during rotation.
+// bindingCipher is AES-256-GCM with keys SHA-256(material). The active key
+// seals; previous keys only decrypt.
 type bindingCipher struct {
 	activeKey         []byte
 	activeFingerprint string
 	keys              map[string][]byte // fingerprint(hex[:16]) → 32-byte AES key
 }
 
-// NewBindingCipher builds a bindingCipher over the active key material and any
-// previous (decrypt-only) material. Key identity is intrinsic to the material
-// (the SHA-256 fingerprint), so rotation needs no manual key IDs. It is a pure
-// constructor: it never reads the secret registry, which the composition root
-// owns.
+// NewBindingCipher builds a cipher over the active and previous key
+// material. Keys are identified by fingerprint.
 func NewBindingCipher(active string, previous []string) (*bindingCipher, error) {
 	if active == "" {
 		return nil, errors.New("store: binding cipher requires a non-empty active key")
@@ -138,11 +128,8 @@ func (c *bindingCipher) EncryptDomain(d Domain, plaintext string) (string, error
 		c.activeFingerprint, base64.RawURLEncoding.EncodeToString(payload)), nil
 }
 
-// DecryptDomain parses an envelope sealed under d, looks up the key by its
-// embedded fingerprint, and returns the plaintext. A fingerprint not present
-// in the keyring (an old key dropped from config), or an envelope sealed
-// under a different domain's marker/AAD, fails rather than returning
-// garbage.
+// DecryptDomain decrypts an envelope sealed under d. An unknown key or wrong
+// domain is an error.
 func (c *bindingCipher) DecryptDomain(d Domain, envelope string) (string, error) {
 	parts := strings.SplitN(envelope, ":", 4)
 	if len(parts) != 4 || parts[0] != d.marker || parts[1] != bindingEnvelopeVersion {

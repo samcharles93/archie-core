@@ -1,15 +1,5 @@
-// Package captureintake is the HTTP receiver for inbound webhooks archie has
-// no binding for yet: it persists what arrives so an operator can inspect it
-// and build one.
-//
-// It belongs to the process that owns work intake, not to the dashboard that
-// displays captures. It served from the dashboard's listener while the two
-// shared a process; the split gives the read to the dashboard, over the State
-// Store, and keeps the write here. From the cutover
-// change in the same bead it is a persistence shim over the State Store
-// contract mounted by the UI process -- the only dashboard listener left --
-// while the daemon's binding-dispatch loop consumes captures from the same
-// store: the HTTP front door moved without moving work intake.
+// Package captureintake receives and stores inbound webhooks for inspection
+// and binding dispatch.
 package captureintake
 
 import (
@@ -70,12 +60,9 @@ func (rc *Receiver) Register(mux *http.ServeMux) {
 	mux.HandleFunc(Path, rc.ServeHTTP)
 }
 
-// ServeHTTP accepts an inbound webhook POST and persists it. On a signed
-// source only a valid HMAC under the source's secret marks the event
-// authenticated; on an approved unsigned source every event is marked
-// unsigned. Anything else is still captured and visible in the inspector,
-// but is neither, so the dispatch loop's check (binding.Matcher.Matches over
-// CapturedEvent.Dispatchable) never starts a task from it.
+// ServeHTTP stores an inbound webhook. A valid HMAC on a signed source marks
+// it authenticated; an approved unsigned source marks it unsigned; other
+// events are stored but never dispatch.
 func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rc.Captures == nil {
 		http.Error(w, "capture not configured", http.StatusServiceUnavailable)
@@ -83,14 +70,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	path := r.PathValue("source")
 
-	// webhookguard.RateLimiter's bucket map assumes a bounded, operator-
-	// registered key space (see its doc comment) -- it is never evicted, and
-	// a fresh key starts with a full burst allowance. source is an
-	// unregistered, attacker-chosen URL segment by design (this endpoint
-	// exists to capture senders archie has no registration for yet), so
-	// keying on it would let a single attacker rotate a new "source" on
-	// every request to bypass the limit entirely and grow the bucket map
-	// without bound. Remote address is the bounded identity available here.
+	// Rate limit by remote address; the source segment is attacker-chosen.
 	if rc.Limiter != nil && !rc.Limiter.Allow(remoteAddrHost(r)) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
@@ -169,11 +149,9 @@ func (rc *Receiver) resolveSource(r *http.Request, path string) *source.Source {
 	return src
 }
 
-// verify decides how an event on src may dispatch. An approved unsigned
-// source marks it unsigned. Otherwise a valid HMAC under the source's secret
-// authenticates it: X-Hub-Signature-256 first, X-Signature-256 as fallback.
-// A source with no secret yet authenticates nothing, since an empty key is
-// one anybody can sign with.
+// verify reports how an event on src may dispatch: unsigned for an approved
+// unsigned source, else authenticated by a valid X-Hub-Signature-256 or
+// X-Signature-256. A source with no secret authenticates nothing.
 func verify(src *source.Source, h http.Header, body []byte) (authenticated, unsigned bool) {
 	switch {
 	case src == nil:

@@ -1,9 +1,5 @@
-// Package natsrpc holds the request/reply plumbing shared by
-// archie-core's core-NATS RPC surfaces (worktreerpc, forgerpc,
-// taskactions): a timeout-bounded client call, multi-subject server
-// registration with rollback on partial failure, and a JSON error
-// envelope so handlers don't each reimplement "marshal error, log
-// encode/respond failures."
+// Package natsrpc is shared core NATS request/reply plumbing: client calls,
+// server registration and a JSON error envelope.
 package natsrpc
 
 import (
@@ -89,15 +85,8 @@ type Registration struct {
 	Handler nats.MsgHandler
 }
 
-// RegisterAll subscribes every registration on nc and waits for the server
-// to acknowledge them. If any step fails, every subscription made so far is
-// unsubscribed before returning the error -- a server never ends up
-// half-registered. The returned func unsubscribes all of them.
-//
-// The flush is what makes a successful return meaningful. Subscribe only
-// queues the SUB frame on the client, so without it a caller that registers
-// and immediately requests can beat its own subscription to the server and
-// get nats.ErrNoResponders from a responder that is, by then, listening.
+// RegisterAll subscribes every registration and flushes, unsubscribing all
+// of them on any failure. The returned func unsubscribes all.
 func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err error) {
 	subs := make([]*nats.Subscription, 0, len(regs))
 	unsubscribeAll := func() {
@@ -123,11 +112,7 @@ func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err er
 	return unsubscribeAll, nil
 }
 
-// Respond marshals v and replies to msg, logging (rather than
-// returning) any encode or transport failure  --  a handler has no
-// meaningful way to retry or propagate a respond failure to its caller.
-// pkg prefixes the log message (e.g. "forgerpc") to identify the
-// surface a failure came from.
+// Respond marshals v and replies to msg, logging any failure.
 func Respond(msg *nats.Msg, log *slog.Logger, pkg string, v any) {
 	data, err := json.Marshal(v)
 	if err != nil {

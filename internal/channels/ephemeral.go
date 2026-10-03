@@ -20,12 +20,8 @@ const defaultEphemeralDeleteTimeout = 30 * time.Second
 // of that message is then skipped rather than attempted blindly.
 type SendFunc func(ctx context.Context, event messaging.MessageEvent) (messaging.MessageEvent, error)
 
-// EphemeralSender delivers EphemeralReplies and retracts them after their TTL.
-//
-// The retraction runs on its own goroutine, so a TTL that has not elapsed
-// never holds the turn that sent the reply. after is injected so the TTL
-// fires in tests without sleeping; nil selects time.After, which is the
-// production shape.
+// EphemeralSender sends EphemeralReplies and deletes them after their TTL.
+// after defaults to time.After.
 type EphemeralSender struct {
 	after   func(time.Duration) <-chan time.Time
 	timeout time.Duration
@@ -48,15 +44,9 @@ func NewEphemeralSender(log *slog.Logger, after func(time.Duration) <-chan time.
 	}
 }
 
-// Send delivers reply.Event through send. When sender reports the Delete
-// capability, the delivered message is retracted once reply.TTL elapses;
-// otherwise the reply is left in place and the fact is logged once, at debug
-// level. A platform that cannot delete must never fail the turn, so the
-// degrade returns the send's outcome rather than an error.
-//
-// A send error is returned unchanged and no retraction is scheduled: there
-// is no message to remove. A non-positive TTL or a send that reported no
-// message identifier also schedules nothing.
+// Send delivers reply.Event and schedules its deletion after reply.TTL when
+// sender supports Delete. A send error is returned; nothing is scheduled
+// without a message ID or a positive TTL.
 func (e *EphemeralSender) Send(ctx context.Context, sender any, reply messaging.EphemeralReply, send SendFunc) (messaging.MessageEvent, error) {
 	sent, err := send(ctx, reply.Event)
 	if err != nil {

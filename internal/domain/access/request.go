@@ -1,8 +1,3 @@
-// The entities a decision is made about. The domain owns their shape and the
-// Cedar vocabulary they are built from (the schema); the engine in
-// internal/infrastructure/access turns them into engine entities. This file
-// carries no Cedar dependency: the vocabulary is plain constants so the
-// domain never links the engine.
 package access
 
 import (

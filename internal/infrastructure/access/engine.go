@@ -1,14 +1,6 @@
-// Package access implements internal/domain/access's Authorizer with
-// github.com/cedar-policy/cedar-go. The engine owns policy parsing and
-// validation against the shipped Cedar schema, and the chain evaluation:
-// instance ▶ org ▶ workspace ▶ object, where a level with policies must
-// permit, a forbid at any level wins, and with no permit the request is
-// denied.
-//
-// The cross-org forbid is enforced here, structurally, before any Cedar
-// runs: a principal never reaches a resource outside its org. It is not a
-// stored policy, so it cannot be edited away or removed by
-// `archied access reset`.
+// Package access implements the Authorizer with cedar-go. Levels are
+// evaluated instance, org, workspace, object: a level with policies must
+// permit and any forbid wins. Cross-org access is always denied.
 package access
 
 import (
@@ -24,12 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
-// schemaText is the Cedar schema the engine validates every policy against.
-// It names the entity vocabulary internal/domain/access defines: an
-// Identity principal carrying its org and effective role, the org and
-// workspace parents, one Object entity per record, and one Action per
-// action. Context carries the event's signature result, the address it came
-// from, and the run and step of an agent's request.
+// schemaText is the Cedar schema policies are validated against.
 const schemaText = `namespace Archie {
   entity Identity in [Org] = {"org": String, "role": String};
   entity Org;
@@ -98,11 +85,9 @@ var (
 	_ access.Validator  = (*Engine)(nil)
 )
 
-// New builds an engine over one snapshot of the stored policies. An invalid
-// instance policy is a boot failure: it returns (nil, err) and archie stops
-// serving until the policy is fixed. An invalid org, workspace or object
-// policy becomes a Problem and makes its level deny everything -- the other
-// levels still serve, and the health surface reports the problem by name.
+// New builds an engine from the stored policies. An invalid instance policy
+// is an error; an invalid policy at another level makes that level deny
+// everything.
 func New(policies []access.Policy) (*Engine, error) {
 	e := &Engine{
 		orgs:    map[org.OrgID]*levelSet{},

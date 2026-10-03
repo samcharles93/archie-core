@@ -1,20 +1,9 @@
-// Package access owns the policy schema, the action vocabulary, how
-// principals and resources are turned into policy entities, and the
-// Authorizer contract.
+// Package access defines the policy schema, the action vocabulary, policy
+// entities and the Authorizer contract. The chain is
 //
-// The policy chain is
+//	instance ─▶ org ─▶ workspace ─▶ object
 //
-//	instance ─▶ org ─▶ workspace ─▶ identity + workflow ─▶ object
-//
-// and the Cedar implementation lives in internal/infrastructure/access;
-// internal/app wires it. Exactly two places call the Authorizer: the
-// dashboard and API request path, and dispatch. Every other service verifies
-// a credential and never evaluates policy.
-//
-// The chain's "identity + workflow" level is expressed with object policies:
-// an identity or a workflow is one of the objects a policy can attach to
-// (event source, secret, identity, binding, workflow), so the stored levels
-// are instance, org, workspace and object.
+// The Cedar engine is in internal/infrastructure/access.
 package access
 
 import (
@@ -109,12 +98,9 @@ const (
 	KindEventIngest ResourceKind = "event"
 )
 
-// Policy is one stored policy document. Its Text is Cedar policy language
-// (one policy: an effect, a principal/action/resource scope and conditions).
-//
-// The scope fields say where the policy attaches. LevelInstance policies
-// carry none; LevelOrg carries OrgID; LevelWorkspace adds WorkspaceID;
-// LevelObject adds ObjectKind and ObjectID.
+// Policy is one stored Cedar policy. LevelInstance has no scope; LevelOrg sets
+// OrgID; LevelWorkspace adds WorkspaceID; LevelObject adds ObjectKind and
+// ObjectID.
 type Policy struct {
 	ID    string `json:"id"`
 	Level Level  `json:"level"`

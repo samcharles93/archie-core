@@ -1,33 +1,6 @@
-// Package sdnotify implements systemd's sd_notify(3) protocol: one READY=1 when
-// a process starts serving, and a WATCHDOG=1 heartbeat while the loop it stands
-// for is demonstrably still making progress.
-//
-// The protocol is three environment variables and one datagram per state, so
-// this package speaks it directly instead of taking a module dependency: the
-// whole client is net.DialUnix plus a Write. Nothing here is fatal -- a process
-// with no NOTIFY_SOCKET (a plain terminal, Docker, a user unit without
-// WatchdogSec) sends nothing and serves exactly as before, and a socket that
-// cannot be written to is logged and ignored.
-//
-// It lives outside a composition package because a process that must announce
-// itself cannot import another process's composition -- archied and
-// archie-messaging are two processes that announce, and only one of them can
-// own archied's boot
-//
-// What stays with the caller is everything that is the caller's: which marker
-// counts as progress, how long its loop may go without a pass, and the point
-// at which it considers itself serving.
-//
-// The heartbeat is deliberately not a bare ticker. A ticker fires whether or
-// not the loop it stands for is alive, so it would keep systemd satisfied while
-// the event loop was wedged -- the exact failure the watchdog exists to catch.
-// The sampler instead reads the caller's own progress marker through Progress
-// and withholds the heartbeat once that marker is older than the cadence
-// Cadence reports. While passes keep beginning, beats flow at half of
-// WatchdogSec; a loop blocked inside a pass stops being reported as alive.
-//
-// Consuming the states is the unit's business: READY=1 needs Type=notify, and
-// the heartbeat needs WatchdogSec.
+// Package sdnotify sends systemd sd_notify READY=1 and WATCHDOG=1 messages.
+// Heartbeats stop when the caller's progress marker goes stale. Without
+// NOTIFY_SOCKET nothing is sent.
 package sdnotify
 
 import (
@@ -91,11 +64,8 @@ func (n Notifier) Send(state string) {
 	}
 }
 
-// sendNotify writes one state datagram to a unixgram socket. sd_notify(3) is
-// one datagram per state, so each send dials afresh: a manager restart recreates
-// its socket, and a connection cached across one would fail every send after it.
-// A leading '@' names the Linux abstract namespace, which user managers use;
-// net.UnixAddr takes that syntax verbatim.
+// sendNotify sends one datagram to the notify socket; '@' means the
+// abstract namespace.
 func sendNotify(addr, state string) error {
 	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: addr, Net: "unixgram"})
 	if err != nil {
@@ -108,22 +78,13 @@ func sendNotify(addr, state string) error {
 	return nil
 }
 
-// Ready sends READY=1 to the socket named in the process environment. It is
-// the one call a composing package needs to declare itself serving, and it
-// belongs at the moment the process already says so: the daemon's run loop
-// (next to its own health surface), and the serve steps of archie-gateway,
-// archie-state-store and archie-messaging, which have readiness of their own
-// and would otherwise hang a Type=notify unit until TimeoutStartSec while
-// perfectly healthy.
+// Ready sends READY=1.
 func Ready(log *slog.Logger) {
 	New(os.Getenv, log).Send(ReadyState)
 }
 
-// Heartbeat reads systemd's watchdog contract and returns the heartbeat
-// cadence, which is half of WatchdogSec. ok is false when systemd asked for no
-// watchdog, and also when it asked for one from a different process:
-// WATCHDOG_PID names the process whose beats count, so a unit watching another
-// process must not have this one beating on its behalf.
+// Heartbeat returns half of WatchdogSec. ok is false when no watchdog is
+// requested or WATCHDOG_PID is another process.
 func Heartbeat(getenv func(string) string, pid int, log *slog.Logger) (time.Duration, bool) {
 	raw := getenv(WatchdogUsecEnv)
 	if raw == "" {

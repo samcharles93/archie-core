@@ -149,12 +149,7 @@ type Review struct {
 // inline comments are flat under a review, so it is 0 there.
 type ReviewComment struct {
 	ID int64
-	// ReviewID is the review this comment belongs to. It is what lets a
-	// comment be collected into its review's remediation unit instead of
-	// starting one of its own (pr-review-remediation.md decision 5); a
-	// standalone comment carries 0. GitHub carries it on the comment;
-	// Gitea's flat comment list is walked per review, so the mapping comes
-	// from the walk.
+	// ReviewID is the review this comment belongs to; 0 for a standalone comment.
 	ReviewID  int64
 	Author    string
 	Body      string
@@ -164,13 +159,7 @@ type ReviewComment struct {
 	CreatedAt time.Time
 }
 
-// PullRequestReviewReader reads review activity on an existing PR. Forge
-// implementations that cannot read reviews (the noop forge) do not implement
-// it; callers type-assert and refuse when the capability is absent.
-//
-// sinceID is the dedup cursor: only entries with ID > sinceID are returned,
-// so a poller and a webhook delivery of the same comment collapse on the same
-// ID (the TaskEnvelope.IdempotencyKey pattern applied to reviews).
+// PullRequestReviewReader reads review activity on a PR newer than sinceID.
 type PullRequestReviewReader interface {
 	ListReviews(ctx context.Context, owner, repo string, number int, sinceID int64) ([]Review, error)
 	ListReviewComments(ctx context.Context, owner, repo string, number int, sinceID int64) ([]ReviewComment, error)
@@ -189,34 +178,15 @@ type InlineReviewComment struct {
 	Body string
 }
 
-// ReviewCommentWriter posts line-anchored review comments on an open pull
-// request. Forge implementations that cannot (the noop forge) do not implement
-// it; callers type-assert and degrade to the PR-body list rather than faking it.
-//
-// The set travels in one call because that is Gitea's native shape (a single
-// COMMENT-state review carrying many comments); GitHub loops internally. Each
-// implementation reads the pull request's current head itself and anchors the
-// comments to it, but only after checking it against reviewedHeadSHA -- the
-// revision the caller's line numbers were measured on. A line number that
-// outlives its revision does not fail loudly at the forge: it attaches to
-// whatever is on that line now, so the set is refused once the head has moved.
-// An empty reviewedHeadSHA means the caller could not measure one, and posts
-// unanchored by revision rather than dropping every finding.
+// ReviewCommentWriter posts line-anchored review comments on a PR, refusing
+// when the head has moved past reviewedHeadSHA. Empty reviewedHeadSHA skips
+// the check.
 type ReviewCommentWriter interface {
 	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error
 }
 
-// reviewHeadDrift is the rule ReviewCommentWriter's implementations share: a
-// line-anchored comment set may be posted only while the pull request's head is
-// still the revision those line numbers were measured on. It returns nil when
-// there is nothing to refuse, including when the caller could not measure a
-// revision at all (reviewedHeadSHA == "") -- posting unverified is the
-// pre-existing behaviour, and is strictly better than dropping every finding.
-//
-// The check lives here rather than in each implementation because the danger is
-// identical on both: GitHub and Gitea accept a line number against the current
-// head and anchor it to whatever now occupies that line, so a stale anchor does
-// not fail loudly -- it misinforms.
+// reviewHeadDrift returns an error when head is no longer reviewedHeadSHA.
+// Empty reviewedHeadSHA returns nil.
 func reviewHeadDrift(owner, repo string, number int, head, reviewedHeadSHA string) error {
 	if reviewedHeadSHA == "" || strings.EqualFold(head, reviewedHeadSHA) {
 		return nil

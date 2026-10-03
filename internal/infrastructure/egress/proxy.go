@@ -80,12 +80,9 @@ type SessionOptions struct {
 	Run     string
 	Org     string
 	Network *spec.PhasedNetwork
-	// Credentials is what the Kit's descriptor declares; Bound is how the run
-	// actually carries them, each service the run credential names mapped to
-	// the kind the org's binding gave it. Declared and bound are two separate
-	// facts, and neither widens the other: a rule may only fire for a service
-	// the run carries as that same kind, and a service the run carries not at
-	// all resolves as unbound whichever rule asks.
+	// Credentials are what the Kit declares; Bound maps each service the run
+	// carries to its kind. A rule fires only for a service bound with the same
+	// kind.
 	Credentials []spec.CredentialCapability
 	Bound       map[string]CredentialKind
 }

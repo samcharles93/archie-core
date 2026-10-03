@@ -11,14 +11,7 @@ import (
 // ToolName is the registry name of the video-generation tool.
 const ToolName = "generate_video"
 
-// Tool builds the registry entry for cfg, or nil when disabled  --  the
-// same "withdraw entirely rather than advertise a broken capability"
-// reasoning webfetch.Tool documents.
-//
-// Classified ClassMutating, not RequiresApproval: it creates a hosted
-// resource and spends real API credits, which is a mutating action, but
-// gating every call behind human approval would make the tool unusable
-// for its purpose. Revisit if usage shows this needs a spend guard.
+// Tool returns the generate_video tool, or nil when disabled.
 func Tool(cfg Config) *tools.ToolEntry {
 	if !cfg.Enabled {
 		return nil

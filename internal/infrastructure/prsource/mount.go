@@ -17,21 +17,12 @@ import (
 // package's reader cannot drift into two different paths.
 const PrefetchDirName = ".archie-pr-review"
 
-// MountSource implements workflow.PRSource by reading data the daemon
-// already fetched and wrote to disk before the container started, instead of
-// calling the forge itself. This is how the sandboxed pipeline gets pull
-// request data with no forge credential ever entering the container: the
-// daemon (which holds the credential) runs Source (this package's
-// HTTP-backed implementation) against baseDir before handing the container
-// off, and the pipeline's Stage.Run bodies read the result through
-// MountSource instead.
-//
-// baseDir holds three artifacts, all written by prefetchTo (the daemon-side
-// counterpart, in internal/daemon):
+// MountSource implements workflow.PRSource from data the daemon prefetched
+// into baseDir:
 //
 //	metadata.json  -- {"title", "body", "head_sha"}
-//	diff.patch     -- the raw unified diff
-//	snapshot/      -- the extracted repository tree at head_sha
+//	diff.patch     -- the unified diff
+//	snapshot/      -- the repository tree at head_sha
 type MountSource struct {
 	baseDir string
 }
@@ -81,11 +72,8 @@ func (s *MountSource) Diff(_ context.Context, _, _ string, _ int) (string, error
 	return string(data), nil
 }
 
-// Snapshot copies the prefetched snapshot tree into destDir and returns the
-// head SHA it was measured against. This is a local filesystem copy inside
-// the same container -- no network call, no credential -- since the daemon
-// already extracted the archive into baseDir/snapshot before the container
-// started.
+// Snapshot copies the prefetched snapshot into destDir and returns its head
+// SHA.
 func (s *MountSource) Snapshot(_ context.Context, _, _ string, _ int, destDir string) (string, error) {
 	m, err := s.readMetadata()
 	if err != nil {

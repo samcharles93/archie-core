@@ -6,17 +6,7 @@ import (
 	"slices"
 )
 
-// StepStatus is the lifecycle of a StepExecution -- one stage run, or one agent
-// call a stage makes, inside a WorkflowExecution.
-// It is part of the on-disk
-// format, like the execution statuses above.
-//
-// It is a distinct type from those statuses even though the two vocabularies
-// share the word "running": an execution status says what the task is doing,
-// a step status says what one stage is doing, and the two move through
-// different tables. One shared string type would let either status be passed
-// where the other belongs, which is the mistake the separate tables exist to
-// catch.
+// StepStatus is a step execution's status. Stored.
 type StepStatus string
 
 const (
@@ -28,14 +18,8 @@ const (
 	StepInterrupted StepStatus = "interrupted"
 )
 
-// executionTransitions is the WorkflowExecution table: the complete set of
-// legal status moves, held as data so no writer carries its own conditional
-// copy of the rules.
-//
-// Terminal statuses appear as empty rows rather than being absent, so the
-// table is total over the vocabulary: a status that is missing here is
-// unroutable, and the difference between "goes nowhere" and "nobody wrote a
-// row" stays visible.
+// executionTransitions lists every legal execution status move. Terminal
+// statuses have empty rows.
 var executionTransitions = map[string][]string{
 	Queued:       {Running, Declined},
 	Running:      {Queued, WaitingHuman, PROpen, Completed, Parked, Declined},
@@ -86,13 +70,8 @@ func StepTerminal(status StepStatus) bool {
 	}
 }
 
-// CheckStepStart reports whether a StepExecution may enter StepRunning under
-// the execution it belongs to.
-//
-// A step only runs while its execution is running, and never under a parent
-// that has already finished: work a terminal parent had going was cancelled or
-// interrupted when it finished, so a step starting afterwards would be recorded
-// against a decision that has already been taken.
+// CheckStepStart allows a step to start only while its execution is running
+// and its parent has not finished.
 func CheckStepStart(executionStatus string, parentTerminal bool) error {
 	if executionStatus != Running {
 		return fmt.Errorf("step cannot start while its execution is %s", executionStatus)

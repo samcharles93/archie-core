@@ -11,14 +11,8 @@ import (
 
 var _ messaging.SessionStore = (*StoreClient)(nil)
 
-// StoreClient implements messaging.SessionStore over the chat service's
-// session-store RPCs. It is separate from Client (the ChatContract view)
-// because the two contracts serve different reads over the same messages.
-//
-// Role does not cross the wire (the proto is unchanged by the messaging
-// migration). Both sides derive it from the owning session instead -- the
-// server on write, this client on read -- so they agree without a proto
-// change.
+// StoreClient implements messaging.SessionStore over the Gateway's session
+// RPCs. Role is derived from the session.
 type StoreClient struct{ client pb.ChatServiceClient }
 
 func NewStoreClient(conn grpc.ClientConnInterface) *StoreClient {

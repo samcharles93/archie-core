@@ -1,8 +1,5 @@
-// Package harnesssecret is the OAuth token set a credential binding's service
-// holds for one org. The setup terminal writes the first capture; the egress
-// proxy overwrites it on every token refresh. It is never a Kit-declared value
-// and never resolved through the config secret registry the way an API-key
-// binding's SecretRef is -- it is state archie itself captures and mutates.
+// Package harnesssecret defines a credential binding's OAuth token set for
+// one org.
 package harnesssecret
 
 import (

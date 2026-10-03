@@ -47,12 +47,6 @@ type DefaultScanner struct{}
 // Compile-time check: DefaultScanner implements Scanner.
 var _ Scanner = (*DefaultScanner)(nil)
 
-// ── Patterns ────────────────────────────────────────────────────────────
-//
-// These patterns are compiled once at init time. They are intentionally
-// broad to catch common variants without being so broad that they
-// produce false positives on normal memory content.
-
 var (
 	promptInjectionPatterns = []*regexp.Regexp{
 		// Override / ignore previous instructions

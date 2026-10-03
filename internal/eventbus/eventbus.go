@@ -45,13 +45,8 @@ type Publisher interface {
 	// Publish sends payload to subject.
 	Publish(ctx context.Context, subject string, payload []byte) error
 
-	// PublishUnique sends payload to subject carrying an idempotency key.
-	// Republishing the same key within the implementation's deduplication
-	// window is suppressed.
-	//
-	// This is a required semantic rather than a broker detail: work intake
-	// rediscovers the same issue on every poll, so at-least-once delivery
-	// without deduplication would enqueue it repeatedly.
+	// PublishUnique publishes payload with an idempotency key; repeats within
+	// the dedup window are dropped.
 	PublishUnique(ctx context.Context, subject, idempotencyKey string, payload []byte) error
 }
 

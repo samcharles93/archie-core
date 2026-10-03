@@ -23,11 +23,9 @@ func (s InputSource) validate(name string) error {
 	return nil
 }
 
-// CheckWorkflow checks the binding against the workflow it targets and the
-// mapping it reads, as the binding is saved: every assigned input is declared,
-// every required input is assigned, a parameter exists and its type feeds the
-// input's, a constant has the input's type, and the repository agrees with the
-// workflow's repository mode.
+// CheckWorkflow validates the binding against its workflow and mapping:
+// inputs declared and assigned with matching types, and a compatible
+// repository.
 func (b Binding) CheckWorkflow(w task.WorkflowInterface, fields []mapping.Field) error {
 	byName := make(map[string]mapping.Field, len(fields))
 	for _, f := range fields {

@@ -9,11 +9,7 @@ import (
 	"time"
 )
 
-// Candidate is one item eligible for sampling. It is deliberately narrow:
-// an opaque identifier, the timestamp the timestamp-based strategies score
-// against, and an open Metadata bag for whatever a future strategy needs
-// (e.g. the embedding-backed surprisal strategy's vector) without widening
-// this struct for every strategy that comes after wave 1.
+// Candidate is an item eligible for sampling.
 type Candidate struct {
 	ID       string
 	At       time.Time
@@ -29,11 +25,8 @@ type Request struct {
 	Seed int64
 }
 
-// Sampler selects a subset of candidates to spend a curator pass's agentic
-// budget on. Every implementation -- the four in this package and the
-// future embedding-backed surprisal strategy -- must be
-// deterministic given the same candidates and Request: same inputs, same
-// output, every time. That is what makes a pass reproducible and testable.
+// Sampler selects candidates for a curator pass. Implementations must be
+// deterministic.
 type Sampler interface {
 	// Name identifies the strategy for logging/attribution (e.g.
 	// "recency", "random", "all", "staleness", later "surprisal").

@@ -1,24 +1,9 @@
-// Package drain owns the decision logic for external drain requests.
-//
-// A drain is an operator-initiated request for the daemon to stop accepting
-// new work and shut itself down gracefully. It arrives out-of-band through a
-// marker file (an external trigger such as a maintenance window or a rolling
-// deploy writes it) rather than a signal, because a marker survives the phase
-// in which the process is between restarts and can be validated against the
-// *current* instantiation.
-//
-// The single source of confusion this package rules out is the stale marker: a
-// drain request written before the daemon last restarted must never drain the
-// daemon that came up afterwards. That is handled by pairing each marker with
-// an instantiation epoch (the OS boot id plus PID 1's start time) and only
-// honouring a marker whose epoch matches the current one.
+// Package drain decides whether a drain marker file applies to the running
+// daemon. A marker is honoured only when its epoch matches the current one.
 package drain
 
-// Epoch identifies one instantiation of the daemon's process tree. It
-// combines the OS boot id with PID 1's start time (in clock ticks since
-// boot). Two Epochs are equal only when both parts match, so a marker written
-// before a reboot or before a PID 1 restart within the same boot is never
-// mistaken for one written against the current instantiation.
+// Epoch identifies one boot of the process tree: the OS boot id and PID 1's
+// start time.
 type Epoch struct {
 	// BootID is the content of /proc/sys/kernel/random/boot_id, a UUID that
 	// changes on every boot.
@@ -83,13 +68,8 @@ func (d Decision) String() string {
 	}
 }
 
-// Decide returns the drain decision for marker against current.
-//
-// A nil marker means no request (DecisionNone). An empty current epoch means
-// the OS identity facts could not be established, so the request is treated as
-// stale -- a daemon that cannot prove the marker is live must not shut itself
-// down on it. Only a marker whose epoch exactly matches a non-empty current
-// epoch is honoured.
+// Decide returns the decision for marker. Nil means none; an empty current
+// epoch or a mismatched marker is stale.
 func Decide(current Epoch, marker *Marker) Decision {
 	if marker == nil {
 		return DecisionNone

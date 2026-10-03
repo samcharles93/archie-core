@@ -2,11 +2,7 @@ package sampling
 
 import "context"
 
-// stalenessSampler is the "staleness proxy" strategy: prefers content that
-// hasn't been touched/reviewed in the longest time, i.e. the smallest
-// Candidate.At first. It is a cheap proxy only -- callers decide what
-// timestamp At holds (created, updated, or last-reviewed); this is never
-// the embedding-based surprisal calculation.
+// stalenessSampler prefers the oldest Candidate.At.
 type stalenessSampler struct{}
 
 // NewStaleness builds the "staleness" strategy.

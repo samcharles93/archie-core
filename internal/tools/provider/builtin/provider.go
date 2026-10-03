@@ -1,11 +1,5 @@
-// Package builtin adapts the lifted tau file and shell tools to the typed
-// tool-provider family.
-//
-// The tools themselves live in internal/tools/builtin, copied from tau with
-// provenance headers. This package is the seam: it translates tau's tool
-// shape (a JSON-schema struct plus an Executor taking raw JSON and a UI
-// bridge) into archie's tools.ToolEntry, so the ai-sdk runtime's existing
-// tool loop can call them without either side knowing about the other.
+// Package builtin exposes the internal/tools/builtin file and shell tools as
+// a tool provider.
 package builtin
 
 import (
@@ -37,12 +31,8 @@ type Provider struct {
 	registry *toolsbuiltin.Registry
 }
 
-// New creates a provider rooted at workspace. An empty workspace is a
-// configuration error, reported by Start rather than silently defaulting to
-// the daemon's own working directory.
-//
-// unrestricted lets the file tools reach absolute paths outside workspace;
-// relative paths still resolve against it either way.
+// New returns a provider rooted at workspace. unrestricted lets file tools
+// reach absolute paths outside it.
 func New(workspace string, unrestricted bool) *Provider {
 	return &Provider{workspace: workspace, unrestricted: unrestricted}
 }
@@ -125,13 +115,8 @@ func toEntry(tool toolsbuiltin.Tool) (tools.ToolEntry, error) {
 	}, nil
 }
 
-// handlerFor adapts a tau Executor to an archie Handler.
-//
-// Two shape differences are bridged here. Archie hands the handler decoded
-// arguments while tau's executor takes raw JSON, and tau's executor reports
-// a tool-level failure in Result.IsError rather than as an error. The
-// latter is surfaced as a real error so the runtime's own failure handling
-// and the guardrail engine both see it.
+// handlerFor adapts a builtin tool to a Handler, returning tool failures as
+// errors.
 func handlerFor(tool toolsbuiltin.Tool) tools.Handler {
 	return func(ctx context.Context, input map[string]any) (any, error) {
 		if err := screen(tool.Schema.Name, input); err != nil {
@@ -164,13 +149,7 @@ func handlerFor(tool toolsbuiltin.Tool) tools.Handler {
 	}
 }
 
-// screen applies the always-on command rules before a tool runs.
-//
-// This lives in the adapter rather than in the lifted shell tool so that
-// the copied files stay diffable against tau, and so the rules are archie's
-// to change. It is a floor, not a sandbox: anything with a shell has ways
-// around a rule list, and the point is only that the failures with no
-// recovery are not reachable by an ordinary mistake.
+// screen applies command.Hardline to shell commands.
 func screen(name string, input map[string]any) error {
 	if name != "shell" {
 		return nil
@@ -182,12 +161,7 @@ func screen(name string, input map[string]any) error {
 	return nil
 }
 
-// classify tags each tool so the guardrail engine and result-limit enforcement
-// can reason about it. This is categorisation, not a jail: it describes
-// what a tool does and does not gate whether it may run.
-//
-// shell is classified mutating because it can be, not because it always
-// is -- the classification cannot inspect the command.
+// classify returns a tool's classification.
 func classify(name string) tools.ToolClassification {
 	switch name {
 	case "read", "grep", "find":

@@ -1,13 +1,5 @@
-// Package webfetch retrieves a URL on the model's behalf and returns readable
-// text.
-//
-// The interesting part is not the fetch, it is the refusals. archied runs on a
-// host where the Docker API, NATS and its own dashboard answer on private
-// addresses, and the URL it is asked to fetch arrives in chat -- an untrusted
-// path, since a forge issue body or an inbound email can end up quoted into a
-// turn. So the address is vetted at dial time rather than by inspecting the
-// URL: a name that looks public can resolve to a private address, and only the
-// resolved address tells the truth.
+// Package webfetch fetches a URL for the model and returns readable text,
+// refusing private and local addresses at dial time.
 package webfetch
 
 import (
@@ -213,12 +205,8 @@ func unwrapFetchError(err error) error {
 	return err
 }
 
-// dialContext resolves the host and refuses addresses the daemon must not be
-// talked into reaching, then dials a vetted address directly.
-//
-// Vetting here rather than on the URL is the whole point: between a pre-flight
-// check and the connection, a name can resolve to something else. Dialing the
-// address that was actually approved closes that window.
+// dialContext resolves host, refuses forbidden addresses and dials the vetted
+// address.
 func (c *Client) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {

@@ -1,15 +1,5 @@
-// Package installtype identifies how the running binary was distributed, so
-// code that must never guess at deployment shape -- most notably the
-// self-update dispatcher -- can fail closed instead of assuming.
-//
-// The install type is decided once, at release-build time, and baked into
-// the binary. It is deliberately never detected at runtime by probing the
-// environment (checking for a container marker file, a systemd env var,
-// and so on): those signals are guessable and can be present for reasons
-// that have nothing to do with how the binary would actually be updated. A
-// binary that was never stamped by the release pipeline (a local
-// `go build`, for instance) reports Unknown, and callers that would
-// otherwise silently guess must instead refuse.
+// Package installtype reports how the binary was distributed, stamped at
+// build time. Unstamped builds report Unknown.
 package installtype
 
 // Unknown is what Type reports when a build was never stamped.

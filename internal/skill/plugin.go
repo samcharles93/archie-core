@@ -37,14 +37,9 @@ func (p *Plugin) Run(input string) (string, error) {
 	return fn(input), nil
 }
 
-// LoadPlugins loads plugins.
-//
-// When allowed is non-empty, only the listed filenames are loaded in
-// declared order  --  the plugins/ prefix is stripped before matching.
-// A listed file that does not exist on disk is an error.
-//
-// When allowed is nil or empty, all *.go files in the plugins/ directory
-// are globbed alphabetically (backward-compatible fallback).
+// LoadPlugins loads a skill's plugins: the allowed files in order, or every
+// *.go file in plugins/ alphabetically when allowed is empty. A listed file
+// that is missing is an error.
 func LoadPlugins(dir, skillName string, allowed []string) ([]Plugin, error) {
 	pluginsDir := filepath.Join(dir, skillsDir, skillName, "plugins")
 	entries, err := os.ReadDir(pluginsDir)

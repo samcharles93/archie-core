@@ -1,25 +1,5 @@
-// Package forgerpc lets archie-agent call the forge methods workflow stages
-// invoke mid-run  --  CloseIssue, CreatePR, LinkBranch, CreateReviewComments,
-// Comment and ReplyToReview, the workflow.Forger set  --  over core NATS
-// request/reply, instead of the agent
-// container holding a live forge API token. archied remains the sole holder of
-// forge credentials and the sole caller of forge.Forge.
-//
-// The rest of forge.Forge (issue polling, invitations, reactions, PR-state
-// reconciliation) is used exclusively by the daemon's own poll/reconcile
-// loops, never from inside a workflow stage, so there is nothing for
-// archie-agent to call.
-//
-// The server also still answers Comment and SetStateLabel. No current agent
-// calls them; the handlers exist so an older archie-agent image keeps working
-// against a newer daemon. The compatibility is one-directional: a NEW agent
-// against an OLD daemon has no LinkBranch handler to reach, and the request
-// times out, so an image skew that way parks tasks. Note it in release notes
-// rather than assuming either side can lag.
-//
-// CreateReviewComments is the one method whose absence does NOT park a task: the
-// stage that calls it is best-effort by design, so the same new-agent/old-daemon
-// skew costs the inline comments and leaves the PR-body findings list intact.
+// Package forgerpc lets archie-agent call the workflow.Forger methods over
+// NATS request/reply, so only archied holds forge credentials.
 package forgerpc
 
 import (
@@ -48,12 +28,8 @@ const (
 	SubjectReplyToReview       = "archie.forge.reply_to_review"
 )
 
-// SubjectFor returns the subject for base, scoped to identity when set.
-// An empty identity uses the root subject, which is how single-identity
-// deployments and agent images that predate identity routing behave. The
-// daemon registers one server per identity on these scoped subjects so a
-// container-mode task owned by a non-root identity has its RPC calls
-// served by that identity's own forge client, not the root's.
+// SubjectFor returns base scoped to identity, or base when identity is
+// empty.
 func SubjectFor(identity, base string) string {
 	if identity == "" {
 		return base
@@ -100,21 +76,11 @@ type SetStateLabelRequest struct {
 	KnownLabels []string
 }
 
-// CreateReviewCommentsRequest carries one review's worth of line-anchored
-// comments. The payload mirrors workflow.ReviewComment rather than reusing it:
-// the wire shape is a contract between two processes that can be at different
-// versions, so it is stated here instead of inherited from a type that may be
-// renamed or reshaped for reasons that never crossed the wire.
+// CreateReviewCommentsRequest is one review's line-anchored comments.
 type CreateReviewCommentsRequest struct {
 	Owner, Repo string
 	Number      int
-	// ReviewedHeadSHA is the revision the comments' line numbers were measured
-	// on, which the worker records when it opens the pull request. It is
-	// additive on the wire: a worker that predates it omits the field and the
-	// server posts unverified (the pre-existing behaviour) rather than refusing
-	// every set, and a server that predates it ignores the field. Neither
-	// direction breaks, and neither silently mints a revision that was never
-	// measured.
+	// ReviewedHeadSHA is the revision the line numbers were measured on.
 	ReviewedHeadSHA string
 	Comments        []InlineReviewCommentPayload
 }
@@ -270,11 +236,6 @@ func (c *Client) rpc() *natsrpc.Client { return &natsrpc.Client{Conn: c.Conn, Ti
 
 func (c *Client) subject(base string) string { return SubjectFor(c.Identity, base) }
 
-// Comment and SetStateLabel are not in workflow.Forger, so no current agent
-// calls them. They stay as the client half of handlers kept for image skew
-// (see the package doc) -- and as the only way to exercise those handlers
-// end to end, which is why removing them would leave the compatibility path
-// untested rather than merely unused.
 func (c *Client) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	req := CommentRequest{Owner: owner, Repo: repo, Number: number, Body: body}
 	resp, err := natsrpc.Call[CommentResponse](ctx, c.rpc(), c.subject(SubjectComment), req)
@@ -324,13 +285,8 @@ func (c *Client) SetStateLabel(ctx context.Context, owner, repo string, number i
 	_, _ = natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectSetStateLabel), req)
 }
 
-// CreateReviewComments posts the review's line-anchored findings on the pull
-// request. It is the one proxied method a workflow stage treats as best-effort,
-// which is why it is also the one whose failure cannot park a task.
-//
-// reviewedHeadSHA travels with the call so the daemon -- the only side holding
-// forge credentials, and so the only side that can read a pull request's head --
-// can refuse a set whose line numbers describe a revision the PR has left.
+// CreateReviewComments posts line-anchored comments on the PR through the
+// daemon.
 func (c *Client) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error {
 	payload := make([]InlineReviewCommentPayload, 0, len(comments))
 	for _, cm := range comments {

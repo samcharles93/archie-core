@@ -42,12 +42,8 @@ type Options struct {
 	Timeout time.Duration
 }
 
-// New builds a transcription client from models[Role] and the matching
-// providers entry. It reports (nil, false) rather than an error when the
-// capability is not usable right now -- no role configured, an unknown
-// provider, an unsupported provider class, or a missing/blank credential --
-// per the credential-missing-degrades-not-fatal rule (AGENTS.md): callers
-// keep the media note, never fail the turn or daemon startup, over this.
+// New builds a transcription client from models[Role] and its provider, or
+// returns (nil, false) when unavailable.
 func New(models map[string]string, providers map[string]config.Provider, opts Options) (messaging.Transcriber, bool) {
 	getenv := opts.Getenv
 	if getenv == nil {
@@ -77,11 +73,8 @@ func New(models map[string]string, providers map[string]config.Provider, opts Op
 	return &client{client: sdktranscribe.NewClient(sdkProvider), model: modelID}, true
 }
 
-// resolveCredential returns the provider's key and whether the provider may
-// be used. A provider that names neither an env var nor a secret reference is
-// permitted with an empty key: a self-hosted OpenAI-compatible backend is
-// unauthenticated, and the provider constructor rejects an empty key for the
-// hosted classes that require one.
+// resolveCredential returns the provider's key and whether it may be used.
+// A provider with no credential is allowed with an empty key.
 func resolveCredential(provider config.Provider, getenv func(string) string, resolveSecret func(config.SecretRef) (string, error)) (string, bool) {
 	switch {
 	case provider.APIKeyEnv != "":

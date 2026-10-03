@@ -1,14 +1,5 @@
-// Package prsource implements workflow.PRSource: fetching an arbitrary
-// external pull request's metadata, diff and a read-only snapshot of its
-// head, for the pr-review pipeline. It is
-// the PR-under-review counterpart to worktree.Manager's use as the task's
-// own Trees: that path only ever reaches the task's own worktree, never a
-// third-party PR being reviewed.
-//
-// Every call goes over the forge's HTTP API -- never a git-shell checkout. The
-// pipeline's Stage.Run bodies execute inside the sandboxed archie-agent
-// process, which holds no forge credential and no git-level credential either;
-// a git clone would need one.
+// Package prsource fetches a pull request's metadata, diff and head snapshot
+// over the forge HTTP API.
 package prsource
 
 import (
@@ -19,11 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
-// PullRequest is the pull request fields Metadata, Diff and Snapshot need:
-// title, body, and the head commit SHA the diff's line numbers and the
-// snapshot are both measured against. It mirrors forge.PullRequest's shape
-// so callers can pass that type directly without this package importing
-// internal/forge.
+// PullRequest is the PR's title, body and head SHA.
 type PullRequest struct {
 	Title   string
 	Body    string

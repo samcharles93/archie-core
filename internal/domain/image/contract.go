@@ -1,13 +1,4 @@
-// Package image is the image generation capability family: a provider-neutral
-// boundary for hosted (gpt-image-2-class) and local GPU backends, so /image
-// routing can target either without depending on provider-specific types.
-//
-// Unlike curator and memory (internal/domain/curator,
-// internal/domain/memory), a Provider has no Lifecycle: it is call-scoped,
-// not long-running. There is nothing to Start, and "is this usable right
-// now" is exactly what Generate/Edit returning ErrUnavailable already
-// communicates — a separate Health poll would duplicate that. This package
-// defines the contract only; no provider implementation lives here.
+// Package image defines the image generation provider contract.
 package image
 
 import (

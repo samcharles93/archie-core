@@ -1,21 +1,5 @@
-// Package memory is the memory engine family: the authoritative store for
-// durable observations, addressed by typed scope.
-//
-// One engine, four scopes. A caller names the scopes it may read or write
-// (Scope, Subject) and the engine applies no policy of its own: an engine
-// that enforced access would need to know about channels, sessions and
-// bindings, and every backend would reimplement it. Isolation then falls out
-// mechanically, because ScopeAgent{a} and ScopeAgent{b} are different
-// storage keys.
-//
-// The family follows the strict plugin engine rule: a typed contract
-// (MemoryEngine) with real domain operations (create, read, update, delete,
-// revisions — not just Name/Version), an owning registry (Registry) with
-// start/health/stop and shutdown ordering, and narrow typed host access
-// (Registrar) — an engine never receives the daemon or an untyped hook map.
-//
-// This package owns the contract and the family's policy that is independent of
-// any backend (the content scanner).
+// Package memory defines the memory engine contract: durable records in
+// typed scopes, plus the content scanner. Engines apply no access policy.
 package memory
 
 import (
@@ -82,11 +66,7 @@ const (
 	ScopeAgentUser ScopeKind = "agent-user"
 )
 
-// AgentID and IdentityID are opaque. This package never resolves them,
-// canonicalises them, or invents one from a channel: resolution happens
-// where the channel's native identity is in hand (the gateway turn path),
-// because a channel's sender id is not necessarily a person -- treating one
-// as a person would give a URL an identity.
+// AgentID and IdentityID are opaque.
 type (
 	AgentID    string
 	IdentityID string
@@ -133,14 +113,8 @@ func (s Scope) Validate() error {
 	return nil
 }
 
-// Key returns the scope's canonical storage key. Each component is
-// length-prefixed, so two different scopes can never share a key even when
-// an id embeds the separator byte — which matters because AgentID and
-// IdentityID are opaque and come from channels this package does not
-// control.
-//
-// An invalid scope returns "", which a storage key can never legitimately
-// be: callers must Validate first. Every engine path does.
+// Key returns the scope's length-prefixed storage key, or "" for an invalid
+// scope.
 func (s Scope) Key() string {
 	switch s.Kind {
 	case ScopeGlobal:
@@ -179,12 +153,8 @@ type Subject struct {
 	UserID IdentityID
 }
 
-// Scopes returns the scopes a read for this subject names, narrowest first:
-// agent-user, agent, user, then global last, because global is the only
-// scope every subject shares.
-//
-// The read path hands exactly this set to the engine and the engine unions
-// nothing beyond it.
+// Scopes returns the subject's readable scopes, narrowest first: agent-user,
+// agent, user, global.
 func (s Subject) Scopes() []Scope {
 	return append(s.WritableScopes(), Scope{Kind: ScopeGlobal})
 }
@@ -206,13 +176,8 @@ func (s Subject) WritableScopes() []Scope {
 	return scopes
 }
 
-// Store is the real domain operations every memory backend implements.
-// Split out from MemoryEngine so the two concerns (storage vs.
-// identity/lifecycle) stay separately named and independently testable.
-//
-// Every method that touches one record takes the record's Scope: a record id
-// alone does not locate a scope, and an engine that had to search for one
-// would be reimplementing the caller's addressing.
+// Store is a memory backend's record operations. Each takes the record's
+// Scope.
 type Store interface {
 	// Create records one new memory and returns the stored Record,
 	// including the identifier Get/Update/Forget/Revisions later need.

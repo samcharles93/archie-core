@@ -1,8 +1,4 @@
-// Package email implements gateway.Gateway for inbound email via SMTP.
-// A lightweight SMTP server receives emails on a configurable port
-// (intended for localhost use behind a mail relay like Postfix).
-// Inbound messages are routed through the gateway for LLM processing;
-// replies are sent via SMTP relay to the original sender.
+// Package email receives email over SMTP and replies through an SMTP relay.
 package email
 
 import (

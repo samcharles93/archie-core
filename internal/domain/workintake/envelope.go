@@ -1,14 +1,5 @@
-// Package workintake owns the promotion of a discovered external issue into
-// durable, workflow-backed work.
-//
-// It owns the vocabulary of that promotion -- the task envelope, its routing
-// kind, and the subjects it is addressed to -- because the domain that defines
-// a message's meaning owns its schema. These previously lived in the NATS
-// package, which made the transport responsible for knowing what a unit of work
-// was
-//
-// This package names no broker. It produces and consumes bytes; carrying
-// them is internal/eventbus's job.
+// Package workintake turns discovered issues into task envelopes and defines
+// their routing kinds and subjects.
 package workintake
 
 import (
@@ -107,12 +98,8 @@ func (t TaskEnvelope) Ref() string {
 	return t.Owner + "/" + t.Repo + "#" + strconv.Itoa(t.Number)
 }
 
-// IdempotencyKey identifies this issue for delivery deduplication, so
-// rediscovering it on a later poll does not enqueue the same work twice. The
-// key is org/identity/owner/repo/number: the poller and the webhook receiver
-// resolve the org and identity before publishing, so the same issue delivered
-// both ways still gives one key, and the State Store's task uniqueness uses the
-// same fields. This method is the one place that shape is produced.
+// IdempotencyKey identifies this issue for dedup:
+// org/identity/owner/repo/number.
 func (t TaskEnvelope) IdempotencyKey() string {
 	return dedupKeyPrefix + string(t.org()) + "/" + t.Identity + "/" +
 		t.Owner + "/" + t.Repo + "/" + strconv.Itoa(t.Number)

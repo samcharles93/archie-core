@@ -55,14 +55,8 @@ type Reporter struct {
 	applied map[string]storecontract.ApplyStatus
 }
 
-// New returns a Reporter for one process, or nil when there is no store to
-// report to or the composition is a process that applies nothing, such as the
-// State Store itself.
-//
-// A name Processes() does not list is refused rather than reported: the reader
-// renders the names it knows, so an invented one would vanish from the page
-// exactly as a process that never started does. Failing here makes a new
-// process declare itself in one place.
+// New returns a Reporter for process, or nil when there is no store or the
+// process applies nothing. Unknown process names are refused.
 func New(process string, store storecontract.ApplyStatusStore, log *slog.Logger) *Reporter {
 	if store == nil || process == "" {
 		return nil
@@ -80,12 +74,8 @@ func New(process string, store storecontract.ApplyStatusStore, log *slog.Logger)
 	}
 }
 
-// Report records that this process applied version of kind, or failed to.
-// A failure leaves the recorded version alone: an edit this process rejected
-// does not change which version is live in it.
-//
-// Best-effort by construction. The configuration a report describes has
-// already been applied, so a failed report is logged and never returned.
+// Report records that this process applied version of kind, or failed to. A
+// failure keeps the previous version. Errors are logged.
 func (r *Reporter) Report(ctx context.Context, kind string, version int64, applyErr error) {
 	if r == nil {
 		return
@@ -107,11 +97,7 @@ func (r *Reporter) Report(ctx context.Context, kind string, version int64, apply
 	r.write(ctx, status)
 }
 
-// AppliedVersion returns the version last recorded for kind, or 0 when this
-// process has reported none. A caller that reports an outcome rather than an
-// application -- the plugin directory reconciliation, which reports against
-// the plugin-settings version the process is already running -- reads it so a
-// clean pass does not reset the version to zero.
+// AppliedVersion returns the last version recorded for kind, or 0.
 func (r *Reporter) AppliedVersion(kind string) int64 {
 	if r == nil {
 		return 0

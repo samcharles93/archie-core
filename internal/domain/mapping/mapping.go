@@ -150,12 +150,8 @@ func Resolve(fields []Field, payload []byte) (values map[string]any, failures []
 	return values, failures
 }
 
-// pathSegment is a map key (Key set, Index == -1), an array index
-// (Index >= 0, Key empty), or Invalid -- a bracket segment whose contents
-// were not a plain non-negative integer (e.g. "items[abc]"). walk always
-// fails an Invalid segment rather than silently dropping it and matching a
-// shorter, unintended path -- a malformed path must read as ReasonMissing,
-// never as a different path succeeding by accident.
+// pathSegment is a map key, an array index, or Invalid. walk always fails on
+// Invalid.
 type pathSegment struct {
 	Key     string
 	Index   int

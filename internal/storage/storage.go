@@ -1,32 +1,14 @@
-// Package storage defines the pluggable storage backend interface for agent
-// container execution. The Docker backend (DockerBackend) is the MVP
-// implementation  --  no NFS/SMB/S3 yet, just Docker volumes + bind mounts.
-//
-// /data/ volume layout (implemented):
+// Package storage provides the mounts for agent containers.
 //
 //	/data/
-//	  worktree/           --  bind mount of host worktree
-//	    .git/task.json    --  boot-time brief (WriteTaskJSON). Under .git so
-//	                        the agent's own commit cannot sweep it onto the
-//	                        task branch: go-git's Add ignores .gitignore.
-//	  repo/               --  per-repo persistent volume (optional, on request)
-//	    session.jsonl     --  agent session transcript, appended per stage
-//	    memory.jsonl      --  cross-session project memory
-//	    plugins/          --  daemon-staged bundled plugins
+//	  worktree/           bind mount of the host worktree
+//	    .git/task.json    task brief
+//	  repo/               optional per-repo persistent volume
 //	  cache/
-//	    go/               --  GOMODCACHE (shared across all tasks)
-//	    node/             --  npm cache (shared)
-//	    pnpm/             --  pnpm store (shared)
-//	    deno/             --  Deno module cache (shared)
-//	    bun/              --  Bun package cache (shared)
-//	    pip/              --  pip cache (shared)
-//	    cargo/            --  Rust cargo cache (shared)
-//	    mcp-npm/          --  npm cache for npx-launched per-task MCP
-//	                        servers (shared, mounted regardless of the
-//	                        task repo's ecosystem  --  see MCPNPMCacheMountDir)
+//	    go/ node/ pnpm/ deno/ bun/ pip/ cargo/   shared ecosystem caches
+//	    mcp-npm/          npm cache for npx MCP servers, always mounted
 //
-// Cache volumes are named Docker volumes created once and shared across all
-// tasks. They are never deleted  --  the daemon operator manages them.
+// Cache volumes are shared across tasks and never deleted.
 package storage
 
 import (
@@ -95,15 +77,8 @@ func AppendJSONLine(path string, value any) error {
 	return nil
 }
 
-// ReadJSONLines decodes each line of the JSONL file at path as a T, calling
-// fn for each. A path that does not exist yet is not an error -- no log
-// written and an empty log mean the same thing to a caller -- so fn is
-// simply never called. A malformed line, or an error fn itself returns,
-// stops the scan and is returned wrapped.
-//
-// This is AppendJSONLine's read-side counterpart, kept in the package that
-// owns the format: see organisation.md's "a package owns its own format end
-// to end."
+// ReadJSONLines calls fn for each JSON line in path. A missing file is not
+// an error; a bad line or an fn error stops the scan.
 func ReadJSONLines[T any](path string, fn func(T) error) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -174,13 +149,8 @@ const (
 	PluginsDir         = PersistentMountDir + "/plugins"
 )
 
-// MCPNPMCacheMountDir is the fixed container path where the npm package
-// cache for npx-launched per-task MCP servers is mounted. Unlike the
-// ecosystem caches below, this is mounted on every task container
-// regardless of the task repo's language: per-task MCP servers come from
-// daemon-wide config (config.MCPServer), not from anything specific to the
-// checked-out repo, so an npx-based server needs the cache warm whether the
-// task is a Go repo, a Python repo, or anything else.
+// MCPNPMCacheMountDir is where the npm cache for npx MCP servers is mounted
+// on every task container.
 const MCPNPMCacheMountDir = "/data/cache/mcp-npm"
 
 // Backend prepares container storage. Each container runtime backend
@@ -204,12 +174,7 @@ type cacheVolume struct {
 	MountPath string // container destination path
 }
 
-// alwaysOnCacheVolumes are shared cache volumes mounted on every task
-// container regardless of the task repo's ecosystem, because what they
-// cache isn't tied to the repo being worked on. The npx package cache for
-// per-task MCP servers is the only current instance: MCP servers are
-// daemon-wide config, not per-repo, so an npx-based one needs a warm cache
-// no matter which repo the task happens to be against.
+// alwaysOnCacheVolumes are mounted on every task container.
 var alwaysOnCacheVolumes = []cacheVolume{
 	{Name: "archie-cache-mcp-npm", MountPath: MCPNPMCacheMountDir},
 }
@@ -242,11 +207,8 @@ var cacheVolumesByEcosystem = map[string][]cacheVolume{
 	},
 }
 
-// cacheMounts returns the cache mount specs for an ecosystem -- the
-// always-on volumes plus any matched by ecosystem -- sorted by destination
-// path for deterministic container configuration. Ecosystem is
-// case-insensitive  --  "Python" and "python" are equivalent. An unknown or
-// empty ecosystem still returns the always-on volumes.
+// cacheMounts returns the always-on mounts plus the ecosystem's, sorted by
+// destination. Ecosystem is case-insensitive.
 func cacheMounts(ecosystem string) []Mount {
 	vols := append([]cacheVolume(nil), alwaysOnCacheVolumes...)
 	vols = append(vols, cacheVolumesByEcosystem[strings.ToLower(ecosystem)]...)
@@ -298,14 +260,8 @@ func NewDockerBackend(cli *client.Client) *DockerBackend {
 	return &DockerBackend{cli: cli}
 }
 
-// ensureVolume creates a Docker volume if it doesn't already exist.
-// It is idempotent: concurrent callers racing to create the same volume
-// will not see an error  --  "already exists" is treated as success.
-//
-// When d.cli is nil (unit tests), ensureVolume returns nil without
-// creating a volume. The returned mounts will fail at container create
-// time if Docker cannot find the volume. Production code always sets
-// cli via NewDockerBackend.
+// ensureVolume creates a Docker volume unless it exists. A nil client does
+// nothing.
 func (d *DockerBackend) ensureVolume(ctx context.Context, name string, labels map[string]string) error {
 	if d.cli == nil {
 		return nil // nil client for testing  --  volumes must be pre-created
@@ -338,11 +294,8 @@ func repoVolumeName(owner, repo string) string {
 	return fmt.Sprintf("archie-repo-%s-%s", owner, repo)
 }
 
-// Setup returns the mount list for a task container. Mounts are ordered:
-//  1. /data/worktree bind mount (always first)
-//  2. /data/repo volume mount (only when PersistentStorage is true)
-//  3. cache volume mounts: the always-on volumes plus /data/cache/<ecosystem>
-//     (sorted together by destination)
+// Setup returns a task container's mounts: the worktree, the repo volume
+// when PersistentStorage is set, then the caches.
 func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error) {
 	mounts := []Mount{
 		{

@@ -77,13 +77,8 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (identity.Creden
 	}, nil
 }
 
-// subjectFor derives the caller a token asserts.
-//
-// A person's token carries sub, the provider's stable identifier for that person.
-// A machine's token carries no sub at all and identifies its caller by client_id,
-// so a machine identity is keyed on the client and one identity exists per client
-// registration. A token asserting neither identifies nobody and is refused rather
-// than being accepted as an anonymous caller.
+// subjectFor returns the token's subject: sub for a person, client_id for a
+// machine. A token with neither is refused.
 func subjectFor(issuer, subject, clientID string) (identity.Subject, error) {
 	switch {
 	case strings.TrimSpace(subject) != "":

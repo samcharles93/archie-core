@@ -1,15 +1,5 @@
-// Package command inspects shell command lines before they are executed.
-//
-// It exists because a substring search over a command line is wrong in both
-// directions. `git commit -m "revert the rm -rf change"` is harmless and
-// would be blocked; `echo x; rm -rf /` is not and, with a naive anchor on
-// the start of the line, would be allowed. Deciding either way requires
-// knowing where a command actually begins, which means parsing quoting and
-// separators rather than pattern-matching the raw text.
-//
-// Tool execution owns command constraints.
-// When internal/policy's evaluation API lands, [Hardline] becomes an
-// evaluator registered there; the rules themselves stay here.
+// Package command parses shell command lines into individual commands and
+// checks them with Hardline.
 package command
 
 import "strings"
@@ -34,13 +24,8 @@ type Segment struct {
 	ElevationArgs []string
 }
 
-// Split breaks a command line into the individual commands within it.
-//
-// Separators are only honoured outside quotes, which is what keeps a
-// quoted argument from being read as a new command: in
-// `echo "a; rm -rf /"` the semicolon is data, so the whole line is one
-// segment whose command is echo. Command substitutions and subshells do
-// start new commands, so `$(rm -rf /)` and `(rm -rf /)` are seen.
+// Split returns the commands in line. Separators count only outside quotes;
+// command substitutions and subshells start new commands.
 func Split(line string) []Segment {
 	var (
 		segments []Segment

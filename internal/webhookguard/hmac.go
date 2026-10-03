@@ -7,13 +7,8 @@ import (
 	"strings"
 )
 
-// VerifyHMAC checks a SHA-256 HMAC signature against body using secret,
-// accepting a signature with or without the "sha256=" prefix GitHub and
-// similar senders use. The digest is hex, which is case-insensitive by
-// convention and by sender taste, so an uppercase signature verifies rather
-// than masquerading as a wrong secret. An empty signature is never valid, even
-// against an empty secret -- the absence of a signature must never be mistaken
-// for one that happens to match.
+// VerifyHMAC checks a hex SHA-256 HMAC of body, with or without a "sha256="
+// prefix, case-insensitively. An empty signature never verifies.
 func VerifyHMAC(body []byte, signature, secret string) bool {
 	if signature == "" {
 		return false

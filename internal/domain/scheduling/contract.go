@@ -1,15 +1,5 @@
-// Package scheduling is the ticker engine: the timing half of archied's
-// cron/scheduling capability.
-// It owns one job and one job only — deciding *when* a scheduled job runs,
-// and with what concurrency — and nothing about where jobs are stored, how
-// they are authored, or how their output is delivered.
-//
-// The split is deliberate. A job store (file-backed, cross-process locked)
-// and a delivery router are separate issues in that epic; this package
-// declares the two contracts it needs from them (JobSource, Runner) and
-// names no implementation. That is what lets the timing behaviour — pool
-// semantics, overlap suppression, per-run timeouts, bounded shutdown — be
-// tested against a fake clock with no store, no NATS and no model.
+// Package scheduling decides when scheduled jobs run and with what
+// concurrency. Storage and delivery are behind JobSource and Runner.
 package scheduling
 
 import (
@@ -78,11 +68,7 @@ func (j Job) Validate() error {
 	return j.Pool.Validate()
 }
 
-// JobSource yields the jobs eligible to run at a given instant. The engine
-// calls Due once per tick and treats it as authoritative: it applies no
-// schedule arithmetic of its own, so a source is free to implement cron
-// expressions, fixed intervals or catch-up windows without the engine
-// changing.
+// JobSource returns the jobs due at an instant.
 type JobSource interface {
 	Due(ctx context.Context, now time.Time) ([]Job, error)
 }

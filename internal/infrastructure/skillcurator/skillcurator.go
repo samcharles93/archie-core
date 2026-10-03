@@ -88,12 +88,8 @@ func (c *Curator) Pass(ctx context.Context, in curator.PassInput) (curator.PassR
 	return curator.PassResult{Actions: actions}, nil
 }
 
-// reviewOne classifies a single skill and, for a normalizable one,
-// writes the cleaned content back. It never returns more than one
-// Action: a parse failure and a missing field can't both be reported for
-// the same skill in the same pass (a Frontmatter that failed to parse
-// has no fields to check), and a normalization is reported once even
-// though it may have fixed multiple lines.
+// reviewOne classifies one skill and writes back a normalized version when
+// possible. It returns at most one Action.
 func (c *Curator) reviewOne(ctx context.Context, name string) ([]curator.Action, error) {
 	sk, err := c.host.Skills.Read(ctx, name)
 	if err != nil {

@@ -51,11 +51,8 @@ func (r *Registry) RunningIDs() []string {
 	return ids
 }
 
-// Add starts one provider while the family is running, indexing its tools as
-// one batch. The provider is isolated: a failed start unregisters it again and
-// leaves every other provider running, the plugin engine rule for a provider
-// pulled in at runtime. On a registry that has not started, Add registers the
-// provider and Start picks it up with the rest.
+// Add starts a provider while the registry runs. A failed start removes it.
+// Before Start, it only registers.
 func (r *Registry) Add(ctx context.Context, engine Engine) error {
 	r.opMu.Lock()
 	defer r.opMu.Unlock()
@@ -153,12 +150,9 @@ func (r *Registry) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
-// Replace swaps the provider whose manifest id matches for a new engine while
-// the family is running. The old provider is stopped and the new one started;
-// when the new start fails the old one is restarted, so a refused replacement
-// leaves the running set as it was. A provider registered but not yet running
-// is started. On a registry that has not started, Replace swaps the
-// registration only and Start picks the replacement up with the rest.
+// Replace swaps the running provider with the same id for engine, restoring
+// the old one if the new one fails. Before Start, it only swaps the
+// registration.
 func (r *Registry) Replace(ctx context.Context, engine Engine) error {
 	r.opMu.Lock()
 	defer r.opMu.Unlock()

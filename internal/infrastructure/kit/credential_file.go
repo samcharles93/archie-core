@@ -9,11 +9,7 @@ import (
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 )
 
-// Credential-file placeholders, the vocabulary the Kit spec's
-// credentialFile.structure declares. A leaf may reference the token
-// sentinels as a whole value or inside a larger string; ExpiresAt (a number)
-// and Scopes (an array) may only be the whole value, and PrimaryApiKey's
-// enclosing key is dropped rather than substituted.
+// Credential-file placeholders.
 const (
 	accessPlaceholder  = "{{.AccessToken}}"
 	refreshPlaceholder = "{{.RefreshToken}}"
@@ -28,11 +24,8 @@ const (
 	credentialFileMode = "0600"
 )
 
-// renderCredentialFile renders c's oauth.credentialFile: the declared structure
-// with the Kit's sentinels substituted for the token placeholders, the stored
-// token set's scopes for {{.Scopes}} and its expiry for {{.ExpiresAt}}, encoded
-// in the declared format. facts is the only thing the renderer receives about
-// the stored token set, so a real token cannot reach the file.
+// renderCredentialFile renders c's oauth credential file with sentinels for
+// tokens and the stored scopes and expiry.
 func renderCredentialFile(c spec.CredentialCapability, facts OAuthFacts) (string, error) {
 	cf := c.OAuth.CredentialFile
 	var sentinels spec.Sentinels
@@ -64,11 +57,7 @@ func substitutePlaceholders(v any, sentinels spec.Sentinels, scopes []string, ex
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, e := range t {
-			// {{.PrimaryApiKey}}'s spec case is that its ENCLOSING KEY is omitted
-			// when no key is captured. archie resolves a service key only to fill
-			// the egress grant and the container holds egress.Sentinel, so there
-			// is never a key to render here: drop the key, never empty it (absent
-			// and empty are different bugs). Do not "fix" this into a value.
+			// No key is ever captured, so drop the enclosing key.
 			if s, ok := e.(string); ok && s == primaryKeyPlaceholder {
 				continue
 			}

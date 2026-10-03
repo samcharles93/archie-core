@@ -18,12 +18,7 @@ const (
 	SubjectTaskWildcard = "archie.task.>"
 )
 
-// SubjectReactionWildcard matches every reaction subject under archie.reaction.
-// Reactions are producer-only fan-out events
-// delivered on a separate
-// LimitsPolicy stream, so every registered consumer sees every matching event
-// -- unlike the work-queue ARCHIE_TASKS stream, where one consumer claims each
-// message.
+// SubjectReactionWildcard matches every reaction subject.
 const SubjectReactionWildcard = "archie.reaction.>"
 
 // ErrUnknownKind reports a kind with no subject. Routing it to the default
@@ -31,12 +26,6 @@ const SubjectReactionWildcard = "archie.reaction.>"
 var ErrUnknownKind = errors.New("workintake: unknown task kind")
 
 // Kind is the routing category an issue's labels select.
-//
-// It is the single axis both the workflow registry and the task subjects
-// route on. The label table was once written twice -- a switch in
-// workflow.Route and a subject lookup in the NATS package -- so adding a
-// label meant remembering both, and the transport had to know what a forge
-// label was.
 type Kind string
 
 const (
@@ -95,11 +84,7 @@ func KindForLabels(labels []string) Kind {
 	return KindDefault
 }
 
-// KindsForLabels returns every recognised kind in label order.
-//
-// Workflow routing needs the full ordered set rather than just the first:
-// when a task is labelled "bug,feature" and no "tdd" workflow is registered,
-// it must still fall through to "feasibility" rather than to the default.
+// KindsForLabels returns every recognised kind, in label order.
 func KindsForLabels(labels []string) []Kind {
 	var kinds []Kind
 	for _, label := range labels {
@@ -110,18 +95,7 @@ func KindsForLabels(labels []string) []Kind {
 	return kinds
 }
 
-// labelValue reduces a forge label to the value labelKinds is keyed on.
-//
-// Forges namespace labels by convention ("type::feature", "priority::medium")
-// and the namespace is the issue tracker's own taxonomy, not part of the
-// routing vocabulary, so the value after the last "::" is what identifies a
-// kind. Matching the bare string alone meant a repo that namespaces its
-// labels -- which this one does -- never matched any kind, and every task
-// fell through kind routing to the content-aware fallback in Route.
-//
-// The namespace itself is deliberately not checked: a closed three-value
-// vocabulary (bug, feature, bootstrap) is specific enough that a label ending
-// in one of them means that kind whatever the tracker files it under.
+// labelValue returns the part of a label after its last "::".
 func labelValue(label string) string {
 	trimmed := strings.TrimSpace(label)
 	if i := strings.LastIndex(trimmed, "::"); i >= 0 {

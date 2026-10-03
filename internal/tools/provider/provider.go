@@ -116,13 +116,8 @@ func prepareRegistration(engine Engine, optional bool) (registration, error) {
 	return registration{engine: engine, manifest: cloneManifest(manifest), optional: optional}, nil
 }
 
-// RegisterOptional adds an engine the daemon can run without.
-//
-// An optional provider that fails to start or discover is logged, excluded
-// from the running set, and does not roll the family back or stop the daemon.
-// Required/optional is a deployment decision, not a property of the code, so
-// it is stated by the registrar rather than declared in the engine's own
-// manifest.
+// RegisterOptional adds a provider whose failure is logged and excluded
+// rather than fatal.
 func (r *Registry) RegisterOptional(engine Engine) error {
 	return r.register(engine, true)
 }
@@ -328,12 +323,8 @@ func (r *Registry) setFailed(running []runningProvider) {
 	r.mu.Unlock()
 }
 
-// startProvider starts, discovers, and indexes one provider.
-//
-// A required provider's failure rolls back previously-started providers and
-// returns a joined error. An optional provider's failure stops only itself
-// and returns the cause, leaving the family running -- Start decides which,
-// since only the registrar knows whether the daemon needs this provider.
+// startProvider starts and indexes one provider. A required failure rolls
+// back the started providers; an optional one stops only itself.
 func (r *Registry) startProvider(ctx context.Context, reg registration, started []runningProvider) (runningProvider, error) {
 	id := reg.manifest.ID
 
