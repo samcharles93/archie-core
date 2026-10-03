@@ -22,10 +22,11 @@ type Announcer struct {
 }
 
 type Component struct {
-	ID            string
-	Label         string
-	Version       string
-	ChangelogPath string
+	ID      string
+	Label   string
+	Version string
+	// Changelog is the CHANGELOG.md text the component's notes are read from.
+	Changelog string
 }
 
 func (a Announcer) Announce(ctx context.Context, recipients []int64, send Sender) error {
@@ -158,7 +159,7 @@ func (a Announcer) componentMessage(changed map[string]bool) (string, error) {
 			fmt.Fprintf(&message, "No %s changes as part of this release.", component.ID)
 			continue
 		}
-		notes, err := changelogSection(component.ChangelogPath, component.Version)
+		notes, err := changelogSection(component.Changelog, component.Version)
 		if err != nil {
 			return "", fmt.Errorf("%s changelog: %w", component.ID, err)
 		}
@@ -170,10 +171,8 @@ func (a Announcer) componentMessage(changed map[string]bool) (string, error) {
 type releaseVersion [3]uint64
 
 func parseReleaseVersion(value string) (releaseVersion, bool) {
-	if len(value) < len("v0.0.0") || value[0] != 'v' {
-		return releaseVersion{}, false
-	}
-	parts := strings.Split(value[1:], ".")
+	// Release builds are stamped with or without the tag's "v".
+	parts := strings.Split(strings.TrimPrefix(value, "v"), ".")
 	if len(parts) != 3 {
 		return releaseVersion{}, false
 	}
@@ -203,16 +202,11 @@ func compareVersions(left, right releaseVersion) int {
 	return 0
 }
 
-func changelogSection(path, version string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("open changelog: %w", err)
-	}
-
-	headerPrefix := "## [" + version + "]"
+func changelogSection(changelog, version string) (string, error) {
+	headerPrefix := "## [" + strings.TrimPrefix(version, "v") + "]"
 	var lines []string
 	found := false
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(strings.NewReader(changelog))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !found {
@@ -225,11 +219,7 @@ func changelogSection(path, version string) (string, error) {
 		lines = append(lines, line)
 	}
 	if err := scanner.Err(); err != nil {
-		_ = file.Close()
 		return "", fmt.Errorf("read changelog: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("close changelog: %w", err)
 	}
 	notes := strings.TrimSpace(strings.Join(lines, "\n"))
 	if !found || notes == "" {

@@ -8,35 +8,66 @@ import (
 	"path/filepath"
 	"time"
 
+	configtemplate "github.com/samcharles93/archie-core"
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/installtype"
+	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // configureTelegram wires the operator seams telegram.Gateway leaves to its
-// composition root. RunningVersions is supplied here from this process's own
-// build stamp; see messagingRunningVersions.
-func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedConfig, chat messaging.ChatContract, secrets *secret.Registry, log *slog.Logger) {
-	g.Version = gatewayVersionReporter(ctx, chat, cfg.Options.DependencyTimeout)
+// composition root.
+func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedConfig, d deps) {
+	g.Version = gatewayVersionReporter(ctx, d.Chat, cfg.Options.DependencyTimeout)
 	g.SetShowToolCalls(cfg.ShowToolCalls)
-	g.Reload = telegramReloader(cfg.Options, secrets, log)
-	g.RunningVersions = messagingRunningVersions
+	g.Reload = telegramReloader(cfg.Options, d.Secrets, d.Log)
+	g.RunningVersions = runningVersions(ctx, d.Presence, cfg.Options.DependencyTimeout)
 
 	if updates := updateService(cfg); updates != nil {
 		g.Updates = updates
 	}
 	if cfg.WorkDir != "" {
 		g.UpdateReportPath = identityStatePath(cfg.WorkDir, "update-report", cfg.BotUser)
+		g.ReleaseAnnouncements = &releaseannounce.Announcer{
+			StatePath: identityStatePath(cfg.WorkDir, "release-announcements", cfg.BotUser),
+			Components: []releaseannounce.Component{
+				{ID: "archie", Label: "ARCHIE", Version: buildinfo.Version, Changelog: configtemplate.Changelog},
+			},
+		}
 	}
 }
 
-// messagingRunningVersions reports this process's own build version for
-// update verification.
-func messagingRunningVersions() map[string]string {
-	return map[string]string{releaseupdate.ComponentDaemon: buildinfo.Version}
+// runningVersions reports the daemon version archied's own presence record
+// carries, so an update report is checked against what archied compiled in
+// rather than this process's build. A down or unreachable daemon, or a
+// missing store, leaves the daemon unverified. The agent stays unverified:
+// only archied observes it.
+func runningVersions(ctx context.Context, store storecontract.PresenceStore, timeout time.Duration) func() map[string]string {
+	return func() map[string]string {
+		if store == nil {
+			return nil
+		}
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		records, err := store.ListPresence(callCtx)
+		if err != nil {
+			return nil
+		}
+		for _, service := range presence.Mesh(records, time.Now()) {
+			if service.Service == presence.Daemon && service.State != presence.StateDown {
+				return map[string]string{releaseupdate.ComponentDaemon: service.Version}
+			}
+		}
+		return nil
+	}
 }
 
 // gatewayVersionReporter renders /version from the Gateway's build info,

@@ -40,6 +40,7 @@ func Run(ctx context.Context, o Options) error {
 	// channelStatusStore is the same client, held where compose can reach it: the
 	// channel report is published to the store this process already dials.
 	var channelStatusStore storecontract.ChannelStatusStore
+	var presenceStore storecontract.PresenceStore
 	// settingsSource and applyReporter are the live channel-settings path: the
 	// control-plane client to re-read the resource, and the record of what this
 	// process applied. Both stay nil without a State Store, which leaves the
@@ -78,7 +79,7 @@ func Run(ctx context.Context, o Options) error {
 			return fmt.Errorf("resolve database webhook secret: %w", settingsErr)
 		}
 		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
-		channelStatusStore = stateStore
+		channelStatusStore, presenceStore = stateStore, stateStore
 		settingsSource, applyReporter, appliedVersion = controlPlaneClient, reporter, channelVersion
 	}
 
@@ -90,6 +91,7 @@ func Run(ctx context.Context, o Options) error {
 	srv, err := compose(ctx, deps{
 		Secrets:        secrets,
 		ChannelStatus:  channelStatusStore,
+		Presence:       presenceStore,
 		Config:         cfg,
 		Log:            log,
 		Chat:           chat,

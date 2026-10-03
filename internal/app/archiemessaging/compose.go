@@ -28,6 +28,9 @@ type deps struct {
 	// ChannelStatus is where the service publishes channel lifecycle for the
 	// dashboard. Optional: nil leaves the report in-process only.
 	ChannelStatus storecontract.ChannelStatusStore
+	// Presence reads which version each service reports for itself, to verify
+	// update reports. Nil leaves them unverified.
+	Presence storecontract.PresenceStore
 	Config        ResolvedConfig
 	Log           *slog.Logger
 	Chat          messaging.ChatContract
@@ -180,7 +183,7 @@ func composeTelegram(ctx context.Context, d deps) (*channelInstance, error) {
 		}
 		tg := telegram.New(cfg.TelegramToken, cfg.Telegram.AllowedUserIDs, d.Log)
 		tg.Settings = d.Settings
-		configureTelegram(ctx, tg, cfg, d.Chat, d.Secrets, d.Log)
+		configureTelegram(ctx, tg, cfg, d)
 		if err := tg.ValidateConfig(telegramValidateConfigMap(cfg.Telegram)); err != nil {
 			return nil, fmt.Errorf("chat.telegram config invalid: %w", err)
 		}
