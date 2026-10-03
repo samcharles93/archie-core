@@ -16,11 +16,6 @@ BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 export PATH="/usr/local/go/bin:$PATH"
 
-# The worker image is daemon configuration, not an updater-specific setting.
-# Honour an explicit environment override for nonstandard deployers; otherwise
-# read the [containers] image from the same config archied starts with.  This
-# deliberately understands only that one scalar, rather than trying to parse
-# general TOML in shell. The daemon remains the authority for validation.
 configured_agent_image() {
   local image
   image="$(awk '
@@ -72,19 +67,6 @@ configured_state_store_target() {
 
 STATE_STORE_TARGET="${ARCHIE_UPDATE_STATE_STORE_TARGET:-$(configured_state_store_target)}"
 
-# The archied release is a set of processes, not one binary. Listed in start
-# order: the State Store owns archie.db and every other process dials it, the
-# Gateway serves the chat contract archied, the UI and the Messaging Service
-# dial, and each comes up before its consumers. deployments/systemd-user-service.md is
-# the reference deployment; installing archied alone leaves the rest on the
-# previous release, which is why a 1.23.0 update failed its health check
-# (archie-core-hbqk).
-#
-# archie-messaging is a service, not a CLI: it owns the Telegram, email and
-# webhook channels since the v1.30.0 extraction, so a host that updates without
-# it keeps running with dead channels and no error anywhere
-# (archie-core-1c01). TestDistZipShipsEveryHostCommand fails if this
-# list and GATEWAY_BINARIES stop covering the commands the release zip ships.
 GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui archie-messaging"
 GATEWAY_BINARIES="$GATEWAY_SERVICES"
 
@@ -108,12 +90,6 @@ if [ -n "$RT_TARGET" ] && [ "$RT_TARGET" != "$PREV_RT" ]; then
   components="${components:+$components,}agent"
 fi
 
-# Per-binary skew is a different question from the unit set, and the one the
-# updater could not answer (archie-core-k94o): it is component-driven, so a host
-# whose individual binaries disagree -- a hand-installed outlier beside an
-# otherwise current install -- looks healthy, because "no approved component
-# changes" short-circuits before any binary is read. Ask every installed binary
-# what it is and refuse, named, rather than reporting the install current.
 verify_installed_versions() {
   reference="$1"
   problems=""
@@ -161,19 +137,10 @@ source_dir="$tmp/source"
 trap 'rm -rf "$tmp"' EXIT
 
 echo "==> fetching approved component releases"
-# Updates are independent of the agent/operator checkout. Fetch into an
-# invocation-scoped clone, resolve the approved tags there, and build the
-# installed binary from that isolated source tree.
+
 git clone --quiet --filter=blob:none --no-checkout "$SOURCE_URL" "$source_dir"
 git -C "$source_dir" fetch --quiet --tags origin
 
-# Build from the exact approved release commit, not the moving branch tip.
-# Resolve each changed component's tag commit independently: components are
-# independently versioned (RELEASING.md), so the daemon and agent tags usually
-# sit on different commits -- most releases are gateway-only. The first
-# checkout is the daemon release when one is being installed, because the
-# adapter refresh below reads the scripts of the release being installed; the
-# agent image is rebuilt from its own tag's commit further down.
 gw_commit=""
 rt_commit=""
 if [[ ",$components," == *,daemon,* ]]; then
@@ -187,10 +154,6 @@ build_commit="$gw_commit"
 git -C "$source_dir" checkout --quiet --detach "$build_commit"
 cd "$source_dir"
 
-# Refuse before touching anything if the release runs processes this host has
-# no unit for. Installing the binaries anyway would leave archied dialling a
-# State Store that nothing starts: it fails its health check and rolls back,
-# which reads as a broken release rather than an incomplete deployment.
 if [[ ",$components," == *,daemon,* ]]; then
   missing_units=""
   for svc in $GATEWAY_SERVICES; do
@@ -205,13 +168,6 @@ if [[ ",$components," == *,daemon,* ]]; then
     exit 1
   fi
 
-  # The other direction, and the one archie-core-1faq actually was: a unit this
-  # host runs that GATEWAY_SERVICES does not name is never backed up, built,
-  # installed or restarted, so it keeps running the previous release while
-  # everything else moves. The installed updater is refreshed only after an
-  # update proceeds, so a stale list cannot repair itself -- refuse and name
-  # what it left out rather than completing a partial update and reporting
-  # success.
   unmanaged_units=""
   for dir in "$source_dir"/cmd/*/; do
     [ -d "$dir" ] || continue
@@ -230,14 +186,6 @@ if [[ ",$components," == *,daemon,* ]]; then
   fi
 fi
 
-# The pre-migration snapshot of the PostgreSQL database: the whole database,
-# since every service shares it. The new State Store migrates on start and a
-# migration is never undone automatically (goose Down drops tables), so this
-# snapshot is the only way back, restored by an operator with every service
-# stopped. The recovery subcommand resolves database_url from the same config
-# the services boot with, so the connection string never passes through this
-# script. No snapshot, no update: this pre-flight runs before any write to the
-# host, so a refusal changes nothing at all.
 if [[ ",$components," == *,daemon,* ]]; then
   echo "==> snapshotting the database before the update migrates it"
   mkdir -p "$(dirname "$DB_SNAPSHOT")"
@@ -247,19 +195,13 @@ if [[ ",$components," == *,daemon,* ]]; then
   fi
 fi
 
-# Refresh adapters from the approved release source. The running shell
-# continues with this copy; subsequent updates use the current contract.
 install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
 install -m755 "$source_dir/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
 install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
 
-# built accumulates only the binaries this release actually ships, so an
-# update to a release predating one of these processes stays buildable.
 built=""
 if [[ ",$components," == *,daemon,* ]]; then
   ldflags="-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
-  # The updater is a build site too: without this stamp its own outputs would
-  # report "dev" and fail the skew check it just installed.
   ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Version=$GW"
   ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=$RT"
   for cmd in $GATEWAY_BINARIES; do
@@ -274,8 +216,6 @@ if [[ ",$components," == *,daemon,* ]]; then
     if [ -f "$BIN_DIR/$cmd" ]; then
       cp -f "$BIN_DIR/$cmd" "$BIN_DIR/$cmd.prev"
     else
-      # New in this release: record that there was nothing here, so a
-      # rollback removes it instead of leaving a stray binary behind.
       rm -f "$BIN_DIR/$cmd.prev"
     fi
   done
@@ -284,21 +224,14 @@ if [[ ",$components," == *,daemon,* ]]; then
     install -m755 "$tmp/$cmd" "$BIN_DIR/$cmd"
   done
 
-  # Every installed binary must now report the release just installed; a binary
-  # this release did not rebuild is skew, not success.
   if ! verify_installed_versions "$GW"; then
     exit 1
   fi
 fi
 if [[ ",$components," == *,agent,* ]]; then
-  # Independent versioning: the agent tag usually points at a different
-  # commit than the daemon's, so switch back to it for the image build (a
-  # no-op checkout for an agent-only update, which never left this commit).
   git checkout --quiet --detach "$rt_commit"
   echo "==> saving managed worker image $AGENT_IMAGE for rollback"
   docker image save --output "$AGENT_IMAGE_BACKUP" "$AGENT_IMAGE"
-  # Save explicit sidecar state, including the first-install (absent) case,
-  # before changing it. The watchdog restores this alongside the image.
   if [ -f "$AGENT_VERSION_FILE" ]; then
     cp -f "$AGENT_VERSION_FILE" "$AGENT_VERSION_BACKUP"
     AGENT_VERSION_PREVIOUS_EXISTS=1
@@ -308,8 +241,6 @@ if [[ ",$components," == *,agent,* ]]; then
   fi
   echo "==> rebuilding managed worker image $AGENT_IMAGE for runtime $RT"
   docker build --build-arg "RUNTIME_VERSION=$RT" --tag "$AGENT_IMAGE" .
-  # Only record a version after the image build succeeds. Write beside the
-  # state atomically so the check never observes a partial version.
   version_tmp="$(mktemp "$AGENT_VERSION_FILE.tmp.XXXXXX")"
   printf '%s\n' "$RT" > "$version_tmp"
   chmod 600 "$version_tmp"
