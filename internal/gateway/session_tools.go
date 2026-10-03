@@ -69,22 +69,9 @@ type SessionDeleteResult struct {
 	Message   string `json:"message"`
 }
 
-// SessionTools builds the chat tools that let Archie manage its own sessions.
-// Until these existed, /resume, /title and /delete were slash commands only a
-// human could type, so "switch back to that conversation" had no tool path at
-// all.
-//
-// The tools are scoped to the current platform + channel: session_list returns
-// only this channel's sessions (not every session the daemon knows), and
-// session_resume/session_delete resolve references against that same scoped
-// list. A model in chat A cannot list or manipulate chat B's history.
-//
-// msg is captured so the handlers act on the chat they were built for; the
-// model never supplies a channel or thread.
-//
-// A nil store omits every tool rather than registering ones that always fail,
-// so a daemon without session support advertises nothing. A nil tracker omits
-// the two tools that need it (session_resume and session_delete).
+// SessionTools builds the session management tools, scoped to msg's platform
+// and channel. A nil store returns none; a nil tracker omits session_resume
+// and session_delete.
 func SessionTools(store SessionStore, tracker *sessionTracker, platform string, msg messaging.Message) []tools.ToolEntry {
 	if store == nil {
 		return nil
@@ -317,12 +304,7 @@ func sessionDeleteTool(store SessionStore, tracker *sessionTracker, platform, ch
 	}
 }
 
-// sessionListLimit resolves the requested limit, falling back to the default
-// for anything absent or non-positive and clamping the rest, exactly like the
-// task list limit.
-//
-// JSON numbers decode as float64, but a model that emits an integer through a
-// different provider path can arrive as int, so both are accepted.
+// sessionListLimit returns the requested limit, defaulted and clamped.
 func sessionListLimit(input map[string]any) int {
 	return tools.ListLimit(input, defaultSessionListLimit, maxSessionListLimit)
 }

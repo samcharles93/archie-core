@@ -6,52 +6,23 @@ import (
 	"time"
 )
 
-// The deduplicator's delivery window and memory bound. A redelivery
-// (webhook retry, Telegram long-poll re-fetch after a slow ack, forge
-// redelivery) reaches the gateway within seconds to a few minutes of the
-// first delivery, so five minutes clears the fast-path gate without ever
-// colliding with the durable prior-reply replay in turn.go, which remains
-// the backstop for a duplicate answered long before or long after the
-// window. Each entry is one key and a timestamp, so 1024 entries stay
-// comfortably under a megabyte.
+// Dedup window and capacity.
 const (
 	defaultDedupTTL      = 5 * time.Minute
 	defaultDedupCapacity = 1024
 )
 
-// dedupKey identifies one platform message delivery: the channel that
-// carried it, the conversation it addressed, and its channel-native
-// message ID -- the same tuple a repeat delivery is keyed on. Two
-// components are not enough: Telegram message IDs are only unique per
-// chat, and different platforms reuse the same numeric ID ranges.
+// dedupKey identifies one delivery: platform, conversation and
+// channel-native message ID.
 type dedupKey struct {
 	Platform     string
 	Conversation string
 	SourceID     string
 }
 
-// MessageDeduplicator rejects a second delivery of the same platform
-// message within a TTL window, so at-least-once hand-off (webhook
-// retries, Telegram long-poll re-fetch, forge redelivery) does not
-// process one message twice -- a duplicate still inside the window never
-// reaches the turn pipeline at all.
-//
-// Memory is bounded by design, not by chance: at most capacity entries
-// are held. An insert brings the cache back under the bound by evicting
-// expired entries first (oldest recorded delivery first, exactly the
-// entries a TTL sweep would drop), then the oldest still-live delivery
-// once expired entries alone no longer make room. A rejected repeat
-// never extends the window: expiry is judged from the first delivery.
-//
-// One Router may be reached from several channel goroutines at once, so
-// every method holds a mutex; Admit's test-and-record is one atomic
-// step, which is what makes a concurrent duplicate see the race and
-// lose it.
-//
-// Admit runs before the turn, so a message whose first processing fails
-// stays inside the window until it expires; redeliveries of failed work
-// wait out the TTL, and turn.go's prior-reply path covers anything
-// that was actually completed in the meantime.
+// MessageDeduplicator rejects a repeat delivery of the same platform message
+// within a TTL of the first. It holds at most capacity entries, evicting
+// expired entries first and then the oldest. Safe for concurrent use.
 type MessageDeduplicator struct {
 	mu sync.Mutex
 	// ttl is the delivery window; cap is the live-entry bound.
@@ -89,12 +60,8 @@ func NewMessageDeduplicator(ttl time.Duration, capacity int, now func() time.Tim
 	}
 }
 
-// Admit records this delivery and reports whether the message may be
-// processed: true for the first delivery inside the window (or the first
-// after an earlier one expired), false for a repeat that is already
-// inside the window. A message with no channel-native ID (its SourceID
-// is empty -- gateway-local commands, most dashboard turns) has no key to
-// deduplicate against and is always admitted.
+// Admit records the delivery and reports whether it may be processed. A
+// message with no SourceID is always admitted.
 func (d *MessageDeduplicator) Admit(in Inbound) bool {
 	if in.Message.SourceID == "" {
 		return true

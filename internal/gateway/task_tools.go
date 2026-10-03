@@ -73,12 +73,8 @@ type TaskSpawnResult struct {
 // supplies an adapter over the store and runtime, so this package keeps its
 // independence from the task store.
 type ChatTaskActor interface {
-	// ApplyChatTaskAction executes action on taskID, scoped to identity's own
-	// tasks. A nil identity is an authenticated dashboard operator, who acts
-	// across identities -- the distinction internal/domain/taskactions draws,
-	// and not the same as an empty name, which is a real identity in a
-	// single-identity deployment. res is the review gate answer payload; this
-	// tool has no instruction or selection syntax, so it is the zero value.
+	// ApplyChatTaskAction runs action on taskID within identity's tasks. A nil
+	// identity is a dashboard operator acting across identities.
 	ApplyChatTaskAction(ctx context.Context, identity *string, actor taskactions.Actor, taskID int64, action taskstate.Action, res taskactions.ActionPayload) (TaskActionResult, error)
 }
 
@@ -127,17 +123,10 @@ type ChatTaskLogResult struct {
 	// Truncated reports that older matching entries exist beyond what this
 	// page examined (the on-disk scan hit its size cap before EOF).
 	Truncated bool `json:"truncated"`
-	// Cursor is the opaque byte offset to pass back as AfterID to read the
-	// next page. It is the file offset just past the last line this page
-	// returned, so a non-zero value after a full page means "resume here";
-	// when MoreAvailable is false the caller is done regardless of the
-	// value. Zero means the log was missing or empty, not "exhausted".
+	// Cursor is the offset to pass as AfterID for the next page. Zero means the
+	// log was missing or empty.
 	Cursor int64 `json:"cursor"`
-	// MoreAvailable is true when the scan saw more matching entries that
-	// did not fit in this page. Combine with Truncated: a result can be
-	// MoreAvailable=false while still Truncated=true when the scan ended
-	// at the size cap, or MoreAvailable=true while Truncated=false when
-	// more matches remain within the same scan window.
+	// MoreAvailable reports that matching entries did not fit in this page.
 	MoreAvailable bool `json:"more_available"`
 }
 
@@ -151,16 +140,8 @@ type ChatTaskLogReader interface {
 	ReadChatTaskLogs(ctx context.Context, identity string, taskID int64, attempt int, q ChatTaskLogQuery) (ChatTaskLogResult, error)
 }
 
-// TaskTools builds the chat tools that let Archie see, add to, and manage its own work
-// queue. Until these existed, /spawn and the task list were slash commands only
-// a human could type, so "what are you working on?" had no tool path at all.
-//
-// All tools are bound to identity at construction. The model never supplies
-// it: a model that could name an identity could read, mutate or file work
-// belonging to another instance on the same host.
-//
-// A nil backend omits its tool rather than registering one that always fails,
-// so a daemon without chat task support advertises nothing.
+// TaskTools builds the task tools, bound to identity. A nil backend omits its
+// tool.
 func TaskTools(lister ChatTaskLister, creator TaskCreator, logs ChatTaskLogReader, actor ChatTaskActor, identity string) []tools.ToolEntry {
 	var entries []tools.ToolEntry
 	if lister != nil {
@@ -326,11 +307,7 @@ func taskActionTool(actor ChatTaskActor, identity string) tools.ToolEntry {
 				return nil, fmt.Errorf("task_action: action is required")
 			}
 
-			// The bound identity, never input["identity"]. Passed by
-			// address: chat is always scoped, never an operator. The
-			// actor is that same bound identity, because a bot acting on
-			// its own channel's task is exactly what happened -- and it is
-			// recorded as an agent's action, not a person's.
+			// Always the bound identity, recorded as the agent's action.
 			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), taskID, taskstate.Action(actionStr), taskactions.ActionPayload{})
 			if err != nil {
 				return nil, fmt.Errorf("task_action: %w", err)
@@ -477,14 +454,8 @@ func asStringSlice(v any) []string {
 	return nil
 }
 
-// asRFC3339 parses an RFC3339 timestamp string, treating the zero value
-// as "no bound" (returns time.Time{} without error). An obviously
-// malformed value is rejected so a model that emits nonsense does not
-// silently get every entry. The parser accepts RFC3339Nano (with
-// fractional seconds) as well as bare RFC3339 -- the schema advertises
-// "RFC3339 timestamp" and per Go's time package the two layouts both
-// match when no fractional component is present, but RFC3339 alone
-// rejects the fractional case. RFC3339Nano is a strict superset.
+// asRFC3339 parses an RFC3339 timestamp, with optional fractional seconds.
+// Empty returns the zero time.
 func asRFC3339(v any) (time.Time, error) {
 	s, ok := v.(string)
 	if !ok || strings.TrimSpace(s) == "" {
@@ -513,11 +484,7 @@ func asInt64(v any) (int64, bool) {
 	}
 }
 
-// taskListLimit resolves the requested limit, falling back to the default for
-// anything absent or non-positive and clamping the rest.
-//
-// JSON numbers decode as float64, but a model that emits an integer through a
-// different provider path can arrive as int, so both are accepted.
+// taskListLimit returns the requested limit, defaulted and clamped.
 func taskListLimit(input map[string]any) int {
 	return tools.ListLimit(input, defaultTaskListLimit, maxTaskListLimit)
 }

@@ -1,11 +1,5 @@
-// Package gateway defines the persistent-connection layer between archie
-// and its users. Each gateway implementation (Telegram, web UI, Discord,
-// etc.) owns its connection lifecycle and delegates message dispatch to a
-// shared CommandRouter.
-//
-// The router distinguishes gateway-local commands  --  handled directly
-// without the LLM (model changes, status queries, restart)  --  from
-// general messages that need LLM processing.
+// Package gateway routes chat messages from channel adapters to local
+// commands or the LLM.
 package gateway
 
 import (
@@ -50,16 +44,9 @@ type StatusReader interface {
 // router did not handle directly.
 type LLMResponder func(ctx context.Context, in Inbound) (string, error)
 
-// LLMStreamResponder is the streaming counterpart of LLMResponder. It
-// reports the turn's progress  --  text fragments and completed tool calls
-// --  to stream as it is generated, and returns the complete reply when the
-// turn finishes.
-//
-// It is optional: a gateway that cannot render partial output, or a
-// deployment whose provider does not stream, simply leaves it nil and the
-// Router falls back to the blocking LLMResponder. stream is called from the
-// generating goroutine and must not block for long  --  adapters should
-// throttle their own network writes rather than stall the stream.
+// LLMStreamResponder is the streaming form of LLMResponder: it reports text
+// fragments and tool calls to stream and returns the full reply. Optional;
+// stream must not block for long.
 type LLMStreamResponder func(ctx context.Context, in Inbound, stream TurnStream) (string, error)
 
 // ModelManager provides access to available models and allows switching the
@@ -111,12 +98,7 @@ type UpdateService interface {
 	CanInstall() bool
 }
 
-// TaskController approves or cancels a chat-originated task. Both
-// methods must enforce authorization (identity must own the task) and
-// valid state transitions; see gateway.tasks.go's StoreTaskController
-// for the reference implementation. When nil on a Router, /approve and
-// /cancel return "not configured".
-// AgentInfo is a lightweight agent summary for /agents.
+// AgentInfo is an agent summary for /agents.
 type AgentInfo struct {
 	ID       int64
 	Title    string
@@ -134,12 +116,8 @@ type TaskController interface {
 	// error (surfaced to the user, not the LLM) if the task doesn't
 	// exist, isn't owned by identity, or isn't in waiting_human.
 	Approve(ctx context.Context, taskID int64, identity string) error
-	// Cancel moves an active task to a terminal state through the one
-	// cancel path: the store
-	// records the cancellation first, and the runtime delivers it by
-	// cancelling the run's in-memory context where this process owns one.
-	// Returns an error if the task doesn't exist, isn't owned by identity,
-	// or is already terminal.
+	// Cancel cancels an active task owned by identity. It errors if the task is
+	// missing, not owned or already terminal.
 	Cancel(ctx context.Context, taskID int64, identity string) error
 }
 
@@ -171,11 +149,8 @@ type Router struct {
 	// chat adapter (internal/gateway/chat_local.go) shows the reply as it
 	// generates; when nil, everything falls back to LLM.
 	LLMStream LLMStreamResponder
-	// Identity is the archie identity this router belongs to (empty in
-	// single-identity deployments). Propagated into SpawnRequest and
-	// used to scope /approve and /cancel authorization  --  a task
-	// spawned under one identity cannot be controlled from another's
-	// chat session.
+	// Identity is this router's archie identity; it scopes spawned tasks and task
+	// control. Empty in single-identity deployments.
 	Identity string
 	// Version is shown by the shared /version command when supplied by the
 	// composition root. Empty means version information is unavailable.
@@ -200,31 +175,14 @@ type Router struct {
 	// path. Nil drops those diagnostics silently; nothing on this path is
 	// important enough to fail the turn over.
 	Log *slog.Logger
-	// Limiter enforces a per-(gateway, source) inbound budget when set.
-	// Nil disables rate limiting entirely. A message is charged against
-	// Inbound.BudgetKey when the channel set one (a webhook route, which
-	// has a stable source but no person), else against Message.SenderID.
-	// A message with neither is never limited: there is no key to charge
-	// it against.
+	// Limiter enforces a per-(gateway, source) inbound budget, keyed by
+	// inboundBudgetKey. Nil disables it.
 	Limiter *ratelimit.Limiter
-	// Dedup declines a redelivered platform message (same platform,
-	// conversation and channel-native ID, delivered again inside the TTL
-	// window from internal/gateway/message_dedup.go) before it re-enters
-	// the turn pipeline. NewRouter wires the package default, so a
-	// production router is always guarded; set a differently configured
-	// gate to tune it, or nil to disable dedup entirely (test setups).
-	// The window is deliberately not a config knob here: the durable
-	// prior-reply replay in turn.go is the backstop for duplicates that
-	// outlive it, and no composition choice between them needs exposing.
+	// Dedup declines a redelivered platform message inside its TTL. Nil disables
+	// it.
 	Dedup *MessageDeduplicator
-	// Batches coalesces rapid-fire plain-text fragments from one sender into
-	// a single turn (internal/gateway/text_batch.go), so a chat client that
-	// splits one thought across several messages costs one agent turn, not
-	// one per fragment. It sits after the per-message gates (dedup, rate
-	// limit) and before the responder: each fragment passes the gates as
-	// the message it is, and the batch's single turn is the only dispatch.
-	// NewRouter wires the package default, so a production router batches;
-	// nil disables coalescing (test setups).
+	// Batches coalesces rapid text fragments from one sender into one turn,
+	// after the per-message gates. Nil disables it.
 	Batches *TextBatchAggregator
 	// SlashAccess gates slash commands by sender role. Nil leaves every
 	// command available, which is the pre-policy behaviour; a composition
@@ -282,12 +240,7 @@ func (r *Router) checkRateLimit(in Inbound) (blocked bool) {
 	return !r.Limiter.Allow(r.gatewayName, key)
 }
 
-// inboundBudgetKey returns the key this message's inbound budget is charged
-// against: the channel's own transport budget key when it set one, else the
-// per-person SenderID. The two are deliberately distinct -- SenderID means
-// "who sent this", and a channel whose SenderID is not a person (a webhook
-// route path) must not put it there, because several consumers read that
-// field as a user identity.
+// inboundBudgetKey returns the channel's BudgetKey when set, else SenderID.
 func inboundBudgetKey(in Inbound) string {
 	if in.BudgetKey != "" {
 		return in.BudgetKey
@@ -302,12 +255,7 @@ func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
 	return reply, err
 }
 
-// RouteResult is Route, plus whether the sender was blocked by its inbound
-// rate limit. A caller with a human reading the reply (chat channels) can
-// ignore the flag and treat the reply text as usual; a caller with no human
-// there (a webhook) needs it to answer with a proper rejection instead of
-// echoing the rate-limit prose as a successful delivery, or accepting an
-// event that was actually dropped.
+// RouteResult is Route plus whether the sender hit its inbound rate limit.
 func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rateLimited bool, err error) {
 	if r.duplicateDelivery(in) {
 		return dedupReply, false, nil
@@ -330,22 +278,15 @@ func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rat
 	return reply, false, err
 }
 
-// duplicateDelivery reports whether in is a repeat delivery inside the
-// dedup window, and records the delivery so later repeats see this one.
-// The check runs before the rate limit: a repeated delivery is the
-// channel's doing, not the sender's, so it must not spend the sender's
-// inbound budget. A nil Dedup (disabled) never blocks.
+// duplicateDelivery reports whether in repeats a delivery inside the dedup
+// window and records it. It runs before the rate limit. Nil Dedup never
+// blocks.
 func (r *Router) duplicateDelivery(in Inbound) bool {
 	return r.Dedup != nil && !r.Dedup.Admit(in)
 }
 
 // CollectTurn hands a gated inbound to the text batcher and returns the
-// payload this call is responsible for dispatching. Every gate has already
-// run by the time it is called -- a gate reply like the dedup prose is
-// computed for the message it is and never waits on a batch window, and
-// then the batch's single turn dispatches without running the gates again
-// (their answer is already recorded). A nil Batches passes through, as do
-// messages that are no fragment (internal/gateway/text_batch.go).
+// payload this call must dispatch. Nil Batches passes through.
 func (r *Router) CollectTurn(ctx context.Context, in Inbound) (Inbound, bool, error) {
 	if r.Batches == nil {
 		return in, true, nil
@@ -519,14 +460,8 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Messa
 	return "", false, nil
 }
 
-// streamTurn dispatches one streamed turn for an inbound the streamed chat
-// adapter has already prepared: the per-message gates (dedup, rate limit)
-// ran per fragment in the adapter's prelude, and the text batcher has
-// settled the turn's payload -- prelude's dispatcher carries the joined
-// payload for its whole batch here, so the gates answer no second time for
-// messages they already saw, and in particular the combined payload's
-// first-fragment source ID, which the dedup gate already recorded, does
-// not read back as a redelivery.
+// streamTurn dispatches one streamed turn whose gates and batching already
+// ran in the adapter's prelude.
 func (r *Router) streamTurn(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
 	if r.LLMStream == nil || stream == nil {
 		return r.route(ctx, in)
@@ -731,11 +666,7 @@ func (r *Router) handleTasks(ctx context.Context) (string, error) {
 	return formatTasks(tasks, time.Now()), nil
 }
 
-// reportLineBreak ends a line of a line-oriented report. A chat report is a
-// list of facts, not prose, so every one of its newlines is a real break;
-// plain "\n" is CommonMark's soft wrap, which a Markdown-rendering channel
-// joins into one run-on paragraph (see the Telegram renderer's
-// markdownBlockParser).
+// reportLineBreak is a Markdown hard line break.
 const reportLineBreak = "  \n"
 
 // parkReasonMaxRunes bounds the park reason shown per task. A reason carries
@@ -763,11 +694,8 @@ func summarizeParkReason(reason string) string {
 	return strings.TrimSpace(string(runes[:parkReasonMaxRunes])) + "..."
 }
 
-// formatTasks renders each task with enough identity and state to act on
-// it: id, title, status, workflow/stage, and age since its last
-// transition -- so a task that is running but stuck (old UpdatedAt) reads
-// differently from one making progress (recent UpdatedAt), which a bare
-// status count could never distinguish.
+// formatTasks renders each task's id, title, status, workflow/stage and age
+// since its last transition.
 func formatTasks(tasks []ChatTaskSummary, now time.Time) string {
 	var b strings.Builder
 	b.WriteString("🗂 Archie tasks\n\n")
@@ -833,11 +761,8 @@ var statusOrder = []string{
 	taskstate.Dead,
 }
 
-// sortTasksByPriority orders tasks so the ones an operator would look for
-// first -- running, then waiting on them, then parked -- lead the list,
-// with terminal states (merged, rejected, dead, ...) trailing. It is
-// stable, so within one status group the lister's own recency order
-// survives.
+// sortTasksByPriority stably orders running, then waiting, then parked
+// tasks, with terminal tasks last.
 func sortTasksByPriority(tasks []ChatTaskSummary) {
 	orderMap := make(map[string]int, len(statusOrder))
 	for i, s := range statusOrder {
@@ -939,14 +864,8 @@ func formatRuntimeSection(b *strings.Builder, provider, model string) {
 	fmt.Fprintf(b, "Provider: %s%sModel: %s", provider, reportLineBreak, model)
 }
 
-// formatStatus formats daemon health into a clean, mobile-friendly summary:
-// the aggregate queue line, then the health section (broker, worker pool,
-// channels, chat model, last poll) from whatever the process could truthfully
-// report, then the runtime block.
-//
-// It deliberately does not itemize tasks -- that is /tasks' job -- so it
-// reduces the task counts to one aggregate health signal (is work backing
-// up) rather than duplicating /tasks' per-task list.
+// formatStatus renders the queue summary, the health sections the process
+// can report, and the runtime block.
 func formatStatus(counts map[string]int, report HealthReport, models ModelManager, now time.Time) string {
 	var b strings.Builder
 	b.WriteString("📊 Archie status\n\n")
@@ -1057,21 +976,11 @@ func renderSessionList(sessions []SessionContext, active string, now time.Time) 
 	return strings.TrimSpace(b.String())
 }
 
-// shortSessionIDLen is how much of a session ID the chat surfaces show. It
-// is also the shorthand /resume and /delete are given back, so every
-// listing must truncate to the same width.
-// UUIDv7 stores its timestamp at the front, so no fixed shorter prefix is
-// guaranteed to distinguish sessions. UUID session references therefore use
-// all 36 characters. The limit only abbreviates longer legacy/non-UUID keys.
+// shortSessionIDLen is how much of a session ID listings show. UUIDs are
+// shown in full; only longer keys are abbreviated.
 const shortSessionIDLen = 36
 
-// shortSessionID renders the abbreviated form of a session ID used
-// wherever a session is listed.
-//
-// Truncation is on a rune boundary: slicing bytes could split a
-// multi-byte channel-ID-derived session key mid-rune and emit invalid
-// UTF-8. UUID keys are ASCII, so this only differs for the exotic cases --
-// where it must stay well-formed.
+// shortSessionID abbreviates a session ID on a rune boundary.
 func shortSessionID(id string) string {
 	if r := []rune(id); len(r) > shortSessionIDLen {
 		return string(r[:shortSessionIDLen])
@@ -1079,14 +988,8 @@ func shortSessionID(id string) string {
 	return id
 }
 
-// resolveSessionRef resolves an operator-supplied session reference
-// against a session list, the way /resume and /delete both accept one.
-//
-// An exact ID wins outright -- a full ID names one session unambiguously
-// even when it is also the prefix of a longer one -- otherwise the
-// reference must be a prefix of exactly one session. It returns (nil,
-// false) when nothing matches and (nil, true) when more than one session
-// shares the prefix.
+// resolveSessionRef finds the session an exact ID or unique prefix names. It
+// returns (nil, false) for no match and (nil, true) for an ambiguous prefix.
 func resolveSessionRef(sessions []SessionContext, ref string) (match *SessionContext, ambiguous bool) {
 	for i, s := range sessions {
 		if s.SessionID == ref {

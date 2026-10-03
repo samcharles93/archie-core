@@ -8,15 +8,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// TitleGenerator proposes a display title for an untitled session.
-//
-// The gateway invokes it asynchronously after a successful turn on a
-// session that still has no title, and persists the result itself: the
-// generator is a pure proposal and must not write to the session store.
-// Returning an empty title declines; returning an error leaves the
-// session untitled and is logged by the implementation. The gateway
-// bounds the call with a timeout, so implementations need no deadline of
-// their own, but must stop promptly when ctx is cancelled.
+// TitleGenerator proposes a title for an untitled session. It must not write
+// to the store. An empty title declines; errors leave the session untitled.
 type TitleGenerator interface {
 	GenerateTitle(ctx context.Context, sessionID, firstMessage string) (string, error)
 }
@@ -42,16 +35,8 @@ const maxTitleRunes = 60
 // a stuck model call must not pin a goroutine forever.
 const titleGenerationTimeout = 30 * time.Second
 
-// maybeAutoTitle proposes a title for an untitled session after a
-// successful turn, without delaying the reply. It runs in the
-// background: the title is not worth blocking the turn on, and a failed
-// or slow proposal must never fail the conversation.
-//
-// The triggering message becomes the title source -- the first user
-// message the session successfully answered while it still had no
-// title. For a fresh session that is its first message; for an older
-// session that predates automatic titles, it is the first message
-// observed after this code is deployed, i.e. the current topic.
+// maybeAutoTitle proposes a title in the background after a successful turn
+// on an untitled session, using the triggering message.
 func (r *Router) maybeAutoTitle(ctx context.Context, msg messaging.Message) {
 	if r.Titles == nil || r.sessionTracker == nil {
 		return
@@ -103,12 +88,7 @@ func (r *Router) generateTitle(ctx context.Context, sessionID, firstMessage stri
 	if title == "" {
 		return
 	}
-	// Re-check before writing: a manual /title that lands while the
-	// proposal is in flight must win over the generated one. The re-read
-	// closes the multi-second generation window; the residual gap between
-	// this read and the Save below is a few microseconds and is left open
-	// deliberately -- closing it would need a store-level compare-and-set
-	// that a cosmetic path does not justify.
+	// Re-read so a manual /title made meanwhile wins.
 	sc, err = r.sessionTracker.sessions.Get(gctx, sessionID)
 	if err != nil {
 		r.debugTitle(sessionID, "session title skipped: re-read failed", err)
@@ -123,11 +103,8 @@ func (r *Router) generateTitle(ctx context.Context, sessionID, firstMessage stri
 	}
 }
 
-// debugTitle reports a best-effort background failure through the
-// router's optional logger. Without a logger these are dropped, exactly
-// like the session tracker's best-effort touch; with one they are debug
-// noise rather than alerts, because a missing title is never a turn
-// failure.
+// debugTitle logs a background title failure at debug level, if a logger is
+// set.
 func (r *Router) debugTitle(sessionID, msg string, err error) {
 	if r.Log != nil {
 		r.Log.Debug(msg, "session", sessionID, "err", err)
@@ -159,11 +136,8 @@ func (r *Router) releaseTitleInFlight(sessionID string) {
 	delete(r.titling, sessionID)
 }
 
-// cleanGeneratedTitle normalises a model-proposed title for display. The
-// model is told to reply with a bare title, but it may wrap it in
-// quotes, trail a period, or include stray whitespace; this turns
-// whatever came back into a single trimmed line, and drops anything
-// unusable.
+// cleanGeneratedTitle trims a generated title to one line without quotes or a
+// trailing period, or returns "" if unusable.
 func cleanGeneratedTitle(text string) string {
 	s := strings.Join(strings.Fields(text), " ")
 	s = strings.TrimSpace(s)

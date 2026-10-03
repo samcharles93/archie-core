@@ -15,11 +15,8 @@ import (
 // records before the byte cap below trims further.
 const memoryRecordsPerScope = 20
 
-// memoryBlockByteCap bounds the rendered <memory> block's size. This is a
-// size guard, not a timeout: the read is local and synchronous, and nothing
-// here waits on the network. A record that would push the block over the cap
-// is dropped (not truncated mid-record) and the drop is logged, so the block
-// stays valid content rather than silently corrupted output.
+// memoryBlockByteCap bounds the <memory> block; a record that would exceed it
+// is dropped and logged.
 const memoryBlockByteCap = 8192
 
 // MemoryStore is the read surface prepareTurn needs from a memory engine: a
@@ -47,12 +44,7 @@ func renderMemory(ctx context.Context, store MemoryStore, subject domainmemory.S
 		}
 	}()
 
-	// One Query per scope, each capped at memoryRecordsPerScope: BuiltinEngine.
-	// Query bounds q.Limit across the whole result, not per scope it is given,
-	// so a single call across all of subject.Scopes() would let an early scope
-	// (agent-user is queried first) exhaust the entire budget and starve the
-	// later, wider scopes. Scopes() is already ordered most-specific-first, so
-	// appending each scope's results in order preserves that ordering.
+	// Query each scope separately so each gets its own limit.
 	var records []domainmemory.Record
 	for _, scope := range subject.Scopes() {
 		heads, err := store.Query(ctx, domainmemory.Query{
@@ -70,19 +62,8 @@ func renderMemory(ctx context.Context, store MemoryStore, subject domainmemory.S
 	return renderMemoryRecords(records, log)
 }
 
-// renderMemoryRecords formats records as one line each, addressed by the
-// record's own id -- the same id the write path (slice 4) will take a
-// memory_edit call by, so the read and write directions share one source of
-// truth for addressing. A record whose line would push the block past
-// memoryBlockByteCap is dropped and logged rather than truncated mid-line,
-// so a partial block is never mistaken for a complete or a corrupted one.
-//
-// The cap is measured against each line's *escaped* size -- what
-// BuildSystemPrompt's `{{xml .Memory}}` will expand it to -- not its raw
-// size, because escapeXML can grow a byte fivefold ("&" -> "&amp;") and an
-// unescaped-size cap would let the rendered prompt exceed it by that factor.
-// The block itself still accumulates the raw (unescaped) lines: the template
-// escapes once on render, so escaping here too would double-escape it.
+// renderMemoryRecords formats one line per record, dropping any that would
+// push the escaped block past memoryBlockByteCap.
 func renderMemoryRecords(records []domainmemory.Record, log *slog.Logger) string {
 	var b strings.Builder
 	escapedLen := 0
@@ -104,14 +85,8 @@ func renderMemoryRecords(records []domainmemory.Record, log *slog.Logger) string
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// resolveSubject builds a turn's memory Subject from the runner's agent
-// identity (BotUser, the closest thing to an Agent id the tree records today
-// -- see sessioncurator.Adapter) and the session's UserIdentity resolver. A
-// nil resolver, or one that returns false, yields UserID "" -- Subject.Scopes
-// then names only agent and global, never a wider fallback
-//
-// It takes the whole inbound rather than its message because the resolver needs
-// the platform the message arrived on.
+// resolveSubject builds the turn's memory Subject from BotUser and the
+// UserIdentity resolver.
 func (r *TurnRunner) resolveSubject(in Inbound) domainmemory.Subject {
 	subject := domainmemory.Subject{AgentID: domainmemory.AgentID(r.BotUser)}
 	if r.UserIdentity == nil {

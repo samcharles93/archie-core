@@ -15,11 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
-// TurnPrepareContext carries the per-turn inputs the model seam needs to build
-// a generation plan: the active model, the per-turn extra (identity-bound)
-// tools, the model's context window used for progressive tool disclosure, and
-// whether the catalog marks the model reasoning-class, which the provider seam
-// needs to choose the output-token parameter.
+// TurnPrepareContext carries what the model seam needs to plan a turn.
 type TurnPrepareContext struct {
 	Model         string
 	Extra         []tools.ToolEntry
@@ -93,14 +89,8 @@ type TurnRunnerConfig struct {
 	Models   ModelManager
 	Personas PersonaPromptSource
 	Model    TurnModel
-	// Transcriber turns an inbound speech attachment (messaging.MediaTypeVoice)
-	// into text before the turn's inbound message is recorded, so stored
-	// history reads what was said rather than the frontend's note. The
-	// composition root builds it from the process's own [models]/[providers],
-	// which only the model-owning side of the Messaging boundary reads; a
-	// channel frontend carries the attachment bytes across the inbound wire
-	// but never holds the provider credential. Nil keeps the note (the
-	// capability is optional and degrades).
+	// Transcriber replaces an inbound voice attachment's note with its
+	// transcript. Nil keeps the note.
 	Transcriber        messaging.Transcriber
 	Ledger             TurnLedger
 	OwnerID            string
@@ -130,16 +120,8 @@ type TurnRunnerConfig struct {
 	// Nil omits those tools entirely (MemoryTools treats a nil store the
 	// same as a subject with no writable scope: no tools registered).
 	MemoryWriter MemoryWriteStore
-	// UserIdentity resolves the initiating user's identity for one inbound
-	// message, per platform. It reads the platform off the inbound rather than
-	// closing over one, because a single Router serves every channel: a resolver
-	// bound to a channel name received "web" for a Telegram turn, which left
-	// Subject.UserID always empty in production.
-	//
-	// False (or a nil UserIdentity) means the platform carries no per-person
-	// identity -- the dashboard's one bearer token, or a webhook route path,
-	// which must never be treated as a person -- and the turn's memory Subject
-	// gets no UserID, so its read is agent and global scope only
+	// UserIdentity resolves the sending user's identity for an inbound message.
+	// False or nil means no per-user memory scope.
 	UserIdentity func(in Inbound) (memory.IdentityID, bool)
 }
 
@@ -183,26 +165,8 @@ func (r *TurnRunner) RespondStream(ctx context.Context, in Inbound, stream TurnS
 	return r.Run(ctx, in, stream)
 }
 
-// Run executes one turn, reporting progress to stream. A completed duplicate
-// source message replays its durable response without invoking the model
-// again; the replay reaches stream as the turn's recorded tool-call events,
-// in the order they originally ran, followed by one whole-text fragment for
-// the answer, since there is no generation left to watch. Replaying the tool
-// events first is what keeps a redelivered or restart-recovered duplicate
-// from disagreeing with the original about what ran.
-//
-// The prior-reply fallback below (matching an already-answered source
-// message by conversation history rather than by turn ID) is deliberately
-// text-only: it exists for the narrow race where a process crashed after
-// saving the assistant message but before the turn record was marked
-// completed, so the original turn's structured tool record -- saved in the
-// same call as ResponseText -- never made it to durable storage either. It
-// has nothing to replay, so it must not synthesize a tool block it cannot
-// verify.
-//
-// stream may be nil, which means the caller renders only the returned reply.
-// checkConfigured returns an error naming the first unconfigured
-// dependency Run requires.
+// checkConfigured returns an error naming the first unconfigured dependency
+// Run requires.
 func (r *TurnRunner) checkConfigured() error {
 	switch {
 	case r.Router == nil:
@@ -413,17 +377,9 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	return preparedTurn{prepared: prepared, modelName: modelName, modelDetails: modelDetails, view: view, media: in.Media}, nil
 }
 
-// compressSessionAtBudget compresses the session's stored history when it has
-// crossed the model-derived budget, through the same replacement path the
-// /compress command uses. It returns the history this turn should build its
-// request from: re-read from the store after a compression was written, and
-// the caller's slice untouched otherwise.
-//
-// It refuses to guess a budget. Without a resolved context window there is
-// nothing to compare the session against, and the compatibility window the
-// compressor falls back to would either summarise a conversation that fits
-// its model or leave a longer one to overflow -- so an unresolved model
-// leaves the session alone.
+// compressSessionAtBudget compresses stored history once it passes the
+// model's budget and returns the history to use. With no known context
+// window it does nothing.
 func (r *TurnRunner) compressSessionAtBudget(
 	ctx context.Context,
 	sessionID string,
@@ -516,12 +472,8 @@ func (r *TurnRunner) Run(ctx context.Context, in Inbound, stream TurnStream) (st
 	return r.generateAndComplete(ctx, turn, sessionID, prep, stream)
 }
 
-// transcribeSpeech replaces an inbound speech attachment's placeholder note
-// with the transcript before the turn's message is recorded, so the store --
-// and every later turn reading its history -- keeps the words rather than a
-// note whose audio is gone. It degrades: a nil Transcriber, a failed call, or
-// an empty transcript leaves the frontend's note in place. A turn must never
-// fail because transcription was unavailable.
+// transcribeSpeech replaces a voice attachment's note with its transcript,
+// keeping the note on any failure.
 func (r *TurnRunner) transcribeSpeech(ctx context.Context, in Inbound) messaging.Message {
 	msg := in.Message
 	if r.Transcriber == nil {

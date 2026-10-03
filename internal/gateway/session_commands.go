@@ -69,11 +69,7 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 		return "", fmt.Errorf("resolve session: %w", err)
 	}
 
-	// Find the most recent session matching this thread and bot.
-	//
-	// Pick by LastActiveAt rather than trusting storage order so a restart,
-	// which always re-resolves because the cache is in-memory, cannot drop the
-	// operator back into a session they had left with /new.
+	// Pick the most recently active session for this thread and bot.
 	var best *SessionContext
 	for i, s := range sessions {
 		if s.Source.BotUser != botUser || s.Source.ThreadID != threadID {
@@ -89,15 +85,7 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 		return resolved, nil
 	}
 
-	// Create a new session with a deterministic key so it matches the
-	// sessionKey format used by the LLM responder.
-	//
-	// Claim the cache slot before writing to the store, not after. Saving
-	// first and asking the cache who won afterwards meant the loser of a race
-	// had already persisted a session that nothing pointed at -- unreachable,
-	// but still listed by /topic and /sessions as "(untitled)", and
-	// resurrectable by a later restart now that resolution goes by recency.
-	// Whoever holds the slot is the only one that writes.
+	// Claim the cache slot before saving, so only the winner of a race writes.
 	id = sessionKeyFromFields(channelID, threadID)
 	if winner, won := t.claimActive(key, id); !won {
 		return winner, nil
@@ -124,16 +112,7 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 	return id, nil
 }
 
-// touch records that a session is in use now.
-//
-// Nothing called Touch before, so LastActiveAt only ever held the creation
-// time and "resolve the most recently active session" really meant the most
-// recently created one -- an operator who switched to an older session with
-// /topic and worked there was dropped back into the newer, abandoned one on
-// the next restart.
-//
-// Best-effort: a failed timestamp update must not fail the turn, and the
-// worst case is the ordering this restores being stale again.
+// touch records that a session is in use now. Best-effort.
 func (t *sessionTracker) touch(ctx context.Context, sessionID string) {
 	if sessionID == "" {
 		return
@@ -141,11 +120,8 @@ func (t *sessionTracker) touch(ctx context.Context, sessionID string) {
 	_ = t.sessions.Touch(ctx, sessionID)
 }
 
-// claimActive reserves key for sessionID unless another caller already holds
-// it. It returns the winning session ID and whether this caller won.
-//
-// This is the same double-check cacheActive performs, moved ahead of the
-// store write so only the winner writes.
+// claimActive reserves key for sessionID unless another caller holds it, and
+// returns the winning session ID and whether this caller won.
 func (t *sessionTracker) claimActive(key, sessionID string) (string, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -190,11 +166,7 @@ func sessionKeyFromFields(channelID, threadID string) string {
 // setActive sets the current session for a channel+thread, overriding any
 // previously resolved session (used by /new, /branch and /topic).
 func (t *sessionTracker) setActive(channelID, threadID, sessionID string) {
-	// An empty session ID is never meaningful, and caching one is actively
-	// destructive: resolve treats map presence as authoritative, so a "" here
-	// makes every later message in this chat persist under session "" with no
-	// way to recover. Rejecting it at the setter means no caller can poison
-	// the map, whatever it computes.
+	// Never cache an empty session ID.
 	if sessionID == "" {
 		return
 	}
@@ -203,12 +175,8 @@ func (t *sessionTracker) setActive(channelID, threadID, sessionID string) {
 	t.active[sessionTrackerKey(channelID, threadID)] = sessionID
 }
 
-// flattenTopic points a channel's flat key at whatever session its thread is
-// currently using, in one critical section.
-//
-// Doing this as setActive(get(...)) was two separate critical sections, so a
-// /resume or /branch landing between them was silently clobbered by the value
-// read before the switch.
+// flattenTopic points a channel's flat key at its thread's current session,
+// in one critical section.
 func (t *sessionTracker) flattenTopic(channelID, threadID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -221,17 +189,7 @@ func (t *sessionTracker) flattenTopic(channelID, threadID string) {
 	t.active[sessionTrackerKey(channelID, "")] = current
 }
 
-// forget drops every channel+thread whose active session is sessionID.
-//
-// It is the counterpart to deleting a session from the store. resolve
-// treats a cached entry as authoritative and never checks that the session
-// still exists, so a pointer left behind here would make every later
-// message in that chat persist under an ID the store no longer knows --
-// history written to a session nothing can list, resume or delete.
-//
-// One session can be active under more than one key (a flat chat and a
-// thread that /resume'd the same session), so every entry is swept, not
-// just the one the command was typed in.
+// forget drops every cached key whose active session is sessionID.
 func (t *sessionTracker) forget(sessionID string) {
 	// An empty ID is a prefix of nothing and a value of everything a
 	// poisoned map would hold; sweeping on it would clear unrelated chats.
@@ -266,12 +224,8 @@ func sessionTrackerKey(channelID, threadID string) string {
 	return channelID + ":" + threadID
 }
 
-// sessionPlatform is the platform a session for this inbound belongs to: the
-// channel that carried the message when the frontend named itself, else the
-// Gateway's own name. Naming it is what makes SessionSource.Platform truthful --
-// one Router serves every channel, so its own name is "web" even for a Telegram
-// turn, which made the platform a constant and left the per-user identity policy
-// unreachable with a real channel name.
+// sessionPlatform returns the channel that carried the message, else the
+// gateway's own name.
 func (r *Router) sessionPlatform(in Inbound) string {
 	if in.Platform != "" {
 		return in.Platform
@@ -432,12 +386,7 @@ func (r *Router) handleRetry(ctx context.Context, msg messaging.Message) (string
 	if r.LLM == nil {
 		return "LLM is not configured. The last response has been removed; send another message to continue.", nil
 	}
-	// Replay the stored record, but route it with the live message's
-	// addressing. Stored history is read back with the conversation
-	// address of the session that holds it, which for a replay must be
-	// the chat the /retry was typed in. A replay carries no page: the
-	// operator's route is transport context of the message they sent,
-	// and this message is not one they just sent.
+	// Replay the stored record with the live message's addressing and no page.
 	replay := msgs[0]
 	replay.ConversationID = msg.ConversationID
 	reply, err := r.LLM(ctx, Inbound{Message: replay})
@@ -531,11 +480,7 @@ func (r *Router) handleBranch(ctx context.Context, msg messaging.Message, platfo
 	threadID := msg.ConversationID.ThreadID
 	parentID := r.sessionTracker.getActive(channelID, threadID)
 	if parentID == "" {
-		// Nothing to branch from. Telegram never reaches this -- submitTurn
-		// resolves first -- but the email and webhook channels call Route
-		// directly, and slicing an empty parent ID for the default title
-		// panicked. The email path runs in a goroutine with no recover, so
-		// that took the daemon down over a single message.
+		// Channels that call Route directly can reach this with no session.
 		return "No active session to branch from. Send a message first.", nil
 	}
 
@@ -581,13 +526,7 @@ func (r *Router) handleBranch(ctx context.Context, msg messaging.Message, platfo
 		return "", fmt.Errorf("inherit history: %w", err)
 	}
 	if len(msgs) > 0 {
-		// Clear the canonical ID so the child derives its own. The store
-		// honours an incoming MessageID -- which is what lets a
-		// read-modify-write keep identities -- so copying the parent's
-		// messages verbatim made two sessions claim one identity, leaving
-		// branch-point correlation ambiguous. It also broke dedup in the
-		// child: an inherited message carried an ID derived from the
-		// parent's session, so redelivering it appended.
+		// Clear MessageID so the child's copies get their own IDs.
 		inherited := make([]messaging.Message, 0, len(msgs))
 		for _, m := range msgs {
 			m.ID = ""
@@ -697,21 +636,9 @@ func (r *Router) compressPreview(ctx context.Context, sessionID string) (string,
 	), nil
 }
 
-// compressedHistory builds the message list that replaces a session's
-// history after compression.
-//
-// Protected messages are carried over as the ORIGINAL records, not rebuilt
-// from the compressed view. A rebuilt message is a different message: it gets
-// a fresh canonical MessageID, loses the upstream SourceID and has its
-// timestamp reset, so every message surviving a compression stops being
-// recognisable on redelivery and the session doubles the next time a channel
-// replays its queue. Only the summary is a new record.
-//
-// The summary is attributed to the bot. CompressHistory emits it with role
-// "system", which has no representation in the store -- the summary is
-// recorded as an assistant message instead -- and attributing a description
-// of the conversation to the user makes the model replay it as something
-// the human said.
+// compressedHistory builds a session's history after compression: protected
+// messages are the original records, and the summary is a new assistant
+// message.
 func compressedHistory(original []messaging.Message, view CompressedView, identity string) []messaging.Message {
 	summaryAt := view.SummaryIndex()
 	if summaryAt < 0 {
@@ -723,13 +650,8 @@ func compressedHistory(original []messaging.Message, view CompressedView, identi
 	head := min(view.ProtectedFirst, len(original))
 	tail := min(view.ProtectedLast, len(original)-head)
 
-	// The summary stands in for the span it replaced, so it takes a
-	// timestamp inside that span. Ordering is by timestamp, not by the order
-	// the caller writes: the retained messages keep their original times --
-	// that is what preserves their identity -- so a summary stamped with now
-	// would sort after the tail it is supposed to precede, and the model
-	// would read the recent conversation before being told earlier context
-	// was summarised.
+	// Timestamp the summary inside the span it replaced so it sorts before the
+	// retained tail.
 	if summaryAt >= len(view.Messages) {
 		// A view whose summary index is outside its own messages cannot be
 		// reconstructed; leaving history untouched is the safe answer.
@@ -796,14 +718,9 @@ func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg Compre
 	), nil
 }
 
-// compressSessionHistory loads a session's whole stored history, compresses it
-// with cfg and, when that removes anything, persists the replacement. It is
-// the one compression implementation: the /compress command and the automatic
-// trigger on the inbound turn path both call it, so what an operator asks for
-// and what a session does unattended cannot diverge.
-//
-// loaded is the number of stored messages read, which is what the caller's
-// reply describes when nothing was compressed.
+// compressSessionHistory compresses a session's stored history with cfg and
+// persists the result when anything was removed. loaded is the number of
+// messages read. Both /compress and the automatic trigger use it.
 func (r *Router) compressSessionHistory(ctx context.Context, sessionID string, cfg CompressionConfig) (view CompressedView, loaded int, err error) {
 	// Read the whole history: the replacement below becomes the session's
 	// entire history, so summarising only a recent window would silently

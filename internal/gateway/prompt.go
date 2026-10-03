@@ -17,11 +17,7 @@ type ToolSummary struct {
 	Description string
 }
 
-// RepoEnv is the runtime-metadata summary of one repository under
-// management, rendered into the chat prompt's <env> block so the agent knows
-// which checkouts it is responsible for without probing the filesystem. It is
-// built only from live configuration; it never names a repository the daemon
-// cannot confirm.
+// RepoEnv describes one managed repository for the chat prompt's <env> block.
 type RepoEnv struct {
 	// FullName is the configured owner/name.
 	FullName string
@@ -43,11 +39,8 @@ type SystemPromptConfig struct {
 	Channel   string
 	Model     string
 	SessionID string
-	// Page is the dashboard route the operator is on right now (e.g.
-	// "/tasks"). It is supplied per message by the web channel; empty for
-	// non-web channels, which have no page context. Rendered in the <env>
-	// runtime-metadata block so the agent knows where the operator is
-	// looking and can point them somewhere relevant.
+	// Page is the dashboard route the operator is on; empty outside the web
+	// channel.
 	Page string
 	// Now stamps the prompt's date.
 	Now time.Time
@@ -64,12 +57,7 @@ type SystemPromptConfig struct {
 	// (chat.operator). Rendered so the agent knows the identity context it
 	// serves under; empty means unconfigured and must be said explicitly.
 	Operator string
-	// Memory is the pre-rendered <memory> block body: the durable records the
-	// read path recalled for this turn's resolved subject, already bounded by
-	// the per-scope record limit and the render byte cap. Empty when there is
-	// nothing to recall, or when the read degraded (engine failure, panic,
-	// unresolved identity beyond global/agent scope) -- the template omits
-	// the block entirely in that case, exactly like Tools.
+	// Memory is the rendered <memory> block body; empty omits the block.
 	Memory string
 }
 

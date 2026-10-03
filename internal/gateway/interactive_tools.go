@@ -12,11 +12,8 @@ import (
 // askUserToolName is the model-facing tool that asks the human a question.
 const askUserToolName = "ask_user"
 
-// InteractiveTools builds the model-facing tool that lets a turn ask its human
-// a question, but only when the channel adapter for this turn can carry one.
-// The carrier is read from ctx (WithInteractive), the way the approval gate
-// reads WithApprovalRequester: a channel that cannot carry an interaction
-// registers no tool rather than one that always fails.
+// InteractiveTools returns the ask-the-user tool when the turn's channel can
+// carry an interaction, and nothing otherwise.
 func InteractiveTools(ctx context.Context) []tools.ToolEntry {
 	if !InteractiveFromContext(ctx).Carries() {
 		return nil
@@ -72,11 +69,8 @@ func askUserHandler(ctx context.Context, args map[string]any) (any, error) {
 	return map[string]any{"answer": answer}, nil
 }
 
-// askUserChoice carries a single-choice question. A channel with a Picker gets
-// the native request; one with only Clarify still carries the choice, rendered
-// as numbered text and matched from the typed reply through the same domain
-// fallback the adapters use, so the degrade is one implementation rather than
-// two.
+// askUserChoice asks a single-choice question with the channel's Picker, or
+// as numbered text through Clarify.
 func askUserChoice(ctx context.Context, interactive Interactive, question string, options []string) (any, error) {
 	req := PickerRequest{Prompt: question, Options: interactiveChoices(options)}
 	if interactive.Picker != nil {

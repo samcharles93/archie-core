@@ -8,11 +8,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// StoreTaskCreator implements TaskCreator backed by a store interface.
-// Chat-spawned tasks use a timestamp-based synthetic issue number to
-// avoid colliding with Gitea-issued tasks; the created row is native
-// (Source "chat", no backing forge issue). The configured default repo
-// is used when a spawn request doesn't specify one explicitly.
+// StoreTaskCreator creates chat-spawned tasks with a synthetic issue number,
+// using the default repo when none is given.
 type StoreTaskCreator struct {
 	store        chatTaskWriter
 	defaultOwner string
@@ -40,22 +37,13 @@ type taskProfile struct {
 	allowed      map[string]bool
 }
 
-// chatTaskWriter is the write surface StoreTaskCreator needs. It
-// returns the created task's real database ID, not a *workflow.Task  --
-// gateway deliberately has no dependency on the task store or
-// internal/domain/workflow; the daemon supplies an adapter closure over
-// the store.TaskStore method of the same name.
+// chatTaskWriter creates a chat task and returns its database ID.
 type chatTaskWriter interface {
 	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, inputs map[string]any) (taskID int64, err error)
 }
 
-// NewStoreTaskCreator returns a TaskCreator that enqueues chat-spawned
-// tasks via the daemon's store. defaultOwner/defaultRepo are used when
-// a spawn request doesn't specify repo=owner/name explicitly. repos
-// lists every "owner/name" pair the identity is configured for (the
-// default included); an explicit repo= selection outside this set is
-// rejected. When defaultOwner/defaultRepo are empty, /spawn without an
-// explicit repo= returns a configuration error.
+// NewStoreTaskCreator returns a TaskCreator. repos lists the allowed
+// "owner/name" pairs; without a default repo, a spawn must name one.
 func NewStoreTaskCreator(sw chatTaskWriter, defaultOwner, defaultRepo string, repos []string) *StoreTaskCreator {
 	allowed := make(map[string]bool, len(repos))
 	for _, r := range repos {
@@ -116,12 +104,6 @@ func splitOwnerRepo(s string) (owner, repo string, ok bool) {
 	return "", "", false
 }
 
-// Task lifecycle statuses come from internal/taskstate, a leaf package with
-// no dependencies, so gateway stays decoupled from the task store without
-// keeping a hand-synced copy of the strings. The copy that used to live here
-// is how the dashboard and chat ended up recording different states for the
-// same operator decision.
-
 // ChatTaskStatus is the minimal task state StoreTaskController needs to
 // authorize and validate /approve and /cancel.
 type ChatTaskStatus struct {
@@ -136,13 +118,8 @@ type chatTaskController interface {
 	// ChatTaskStatus returns the task's status and owning identity, and
 	// false if no task with that ID exists.
 	ChatTaskStatus(ctx context.Context, taskID int64) (ChatTaskStatus, bool, error)
-	// ApproveChatTask releases a waiting_human task through the daemon's one
-	// task-action service, so chat and the dashboard cannot record different
-	// decisions for one operator intent. The caller has already validated the
-	// current status is waiting_human; the actor is the chat-bound identity,
-	// never an operator acting across identities. There is no review-gate
-	// payload: the chat surface has no instruction or selection syntax, so an
-	// approve posts every offered finding.
+	// ApproveChatTask approves a waiting_human task through the task-action
+	// service, posting every offered finding.
 	ApproveChatTask(ctx context.Context, taskID int64, actor taskactions.Actor) error
 	// CancelChatTask transitions an active task to a rejected/terminal
 	// state. Callers must have already validated the current status is

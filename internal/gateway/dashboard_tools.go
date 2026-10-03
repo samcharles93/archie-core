@@ -21,11 +21,8 @@ type DashboardPage struct {
 	Description string
 }
 
-// dashboardPages is the single source of truth for what the dashboard exposes.
-// It is deliberately a package-level registry rather than a per-router field:
-// the same pages are shown regardless of identity, and the prompt's current
-// page line and the dashboard_navigate tool both draw from it, so the agent
-// never points at a page it was not told about.
+// dashboardPages lists the dashboard pages the prompt and the
+// dashboard_navigate tool can name.
 var dashboardPages = []DashboardPage{
 	{Path: "/", Label: "Dashboard", Description: "What Archie is working on, what needs you, and token spend."},
 	{Path: "/tasks", Label: "Tasks", Description: "Issues Archie has picked up, and where each one stands."},

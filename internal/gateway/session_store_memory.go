@@ -12,12 +12,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// memorySessionStore is the in-process SessionStore for tests and embedders
-// that need no durability. It follows the PostgreSQL store's contract including
-// the optional TurnLedger, TurnHistory and TurnReplayStore capabilities:
-// millisecond timestamps, the strictly-increasing append clamp, redelivery
-// dedup on canonical IDs, and a search that ANDs lowercase word terms over
-// sender and text.
+// memorySessionStore is an in-memory SessionStore with the same contract as
+// the PostgreSQL store.
 type memorySessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]SessionContext

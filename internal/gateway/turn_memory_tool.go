@@ -45,21 +45,9 @@ func recordSummary(r domainmemory.Record) MemoryRecordSummary {
 	}
 }
 
-// MemoryTools builds the chat tools that let the model manage its own
-// durable memory, scoped to one turn's resolved Subject
-//
-// Built per turn, not registered once at boot, because the writable scope
-// set is a function of the turn's Subject: two different users talking to
-// the same agent get two different sets of tools, each only able to
-// address that user's own scopes.
-//
-// The model chooses the scope KIND (an enum built from
-// subject.WritableScopes(), which never includes global); it never chooses
-// the agent or user id a scope resolves to -- there is no schema field for
-// either, so even a model that tries to emit another user's id has nowhere
-// to write it. A nil store, or a subject with no writable scope at all
-// (no resolvable agent and no resolvable user), omits every tool rather
-// than registering ones that always fail.
+// MemoryTools builds the memory tools for one turn's Subject. The model
+// picks a writable scope kind, never an id. Returns none without a store or
+// writable scope.
 func MemoryTools(store MemoryWriteStore, subject domainmemory.Subject) []tools.ToolEntry {
 	if store == nil {
 		return nil

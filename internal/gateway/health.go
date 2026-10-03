@@ -6,18 +6,8 @@ import (
 	"time"
 )
 
-// This file is /status' health contract: the facts the daemon reports about
-// its own well-being, and the rules for rendering them. It is deliberately
-// separate from the work surface (/tasks, and the identity/stage/age those
-// summaries carry): /status answers "is archie well", /tasks answers "what is
-// archie doing", and neither repeats the other.
-//
-// Every section below is optional, and a nil section means "this process has
-// no truthful source for that fact". The renderer omits it. It must never
-// print a zero, a dash or a probe result in its place: an operator cannot
-// tell an invented "0 running" from a measured one, and a probe reports
-// whether a fresh connection works rather than whether the daemon's own
-// connections are alive.
+// Health facts for /status. A nil section means the process has no source for
+// it and is omitted, never shown as zero.
 
 // BrokerHealth is the state of this process's own task-broker connection.
 type BrokerHealth struct {
@@ -152,13 +142,7 @@ func formatChannels(channels []ChannelHealth) string {
 	return strings.Join(parts, " · ")
 }
 
-// channelDetail collapses an adapter's error detail onto one line, so a
-// multi-line error cannot break the chat reply's layout, and bounds its
-// length. A failed adapter is the case where an operator most needs the
-// reason, so this trims rather than drops it.
-// boundedDetail flattens and caps a detail so one line of /status stays one
-// line. A provider error carries whatever the provider sent back, which for an
-// HTML error page or a echoed request body is neither short nor single-line.
+// boundedDetail flattens a detail to one line and caps its length.
 func boundedDetail(detail string) string {
 	flattened := strings.Join(strings.Fields(detail), " ")
 	runes := []rune(flattened)

@@ -1,9 +1,3 @@
-// Wire-contract aliases. The chat contract types moved to
-// internal/domain/messaging so the webui and
-// archie-ui processes can hold the contract without linking the gateway
-// runtime (and, transitively, its SQLite session store). internal/gateway
-// keeps these aliases so daemon-side callers and channel adapters are
-// unaffected.
 package gateway
 
 import "github.com/samcharles93/archie-core/internal/domain/messaging"

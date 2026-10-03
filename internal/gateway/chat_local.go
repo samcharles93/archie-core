@@ -169,12 +169,8 @@ func (a *LocalChatAdapter) stream(ctx context.Context, in Inbound, id string, ev
 	a.runStreamedTurn(ctx, in, id, events)
 }
 
-// runStreamedTurn dispatches one turn whose payload the prelude produced and
-// pumps its events to the caller. The turn runs on its session lane -- the
-// lane key is the session, so /stop reaches the turn the sender is actually
-// watching -- while the pump stays on the caller's goroutine, so a
-// caller-cancelled stream stops the lane it is serving. The terminal event
-// lands after every mid-turn event that was already queued.
+// runStreamedTurn runs one prepared turn on its session lane and pumps its
+// events to the caller. The terminal event comes after every queued event.
 func (a *LocalChatAdapter) runStreamedTurn(ctx context.Context, in Inbound, id string, events chan ChatEvent) {
 	pending := make(chan ChatEvent, 32)
 	stream := localChatStream{done: ctx.Done(), events: pending, sessionID: id}
@@ -250,18 +246,7 @@ type streamPrelude struct {
 }
 
 // prelude runs the per-message gates and the text batcher for one streamed
-// fragment, on this call's own goroutine and before the session lane, and
-// returns what this caller's stream does next.
-//
-// The gates run here rather than inside the session lane: a redelivered
-// fragment is a declined delivery to the gate it always reached and never
-// joins the batch it repeats; the rate budget is charged per fragment the
-// way it always was; and since the reply a gate returns renders today, the
-// prose is the done event of this very stream rather than a turn output.
-// Rapid-fire text fragments of one thought coalesce before the session lane
-// exists for the same reason: waiting inside a lane would make every
-// fragment queue behind the first fragment's batch window instead of
-// joining it.
+// fragment, before the session lane, and returns what this stream does next.
 func (a *LocalChatAdapter) prelude(ctx context.Context, in Inbound, id string) streamPrelude {
 	if a.Router.duplicateDelivery(in) {
 		return streamPrelude{event: &ChatEvent{Kind: "done", Text: dedupReply, SessionID: id}}

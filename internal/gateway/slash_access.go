@@ -43,11 +43,7 @@ type SlashDenialRecorder interface {
 	RecordSlashDenial(ctx context.Context, denial SlashDenial) error
 }
 
-// slashAdminOnly names the commands that reconfigure the installation or the
-// model it runs, and therefore require an admin. Every other command in
-// messaging.LocalCommands is an ordinary user command; task control
-// (/approve, /cancel) is deliberately ordinary here because it is scoped by
-// task ownership at its own layer.
+// slashAdminOnly names the commands that require an admin.
 var slashAdminOnly = map[string]bool{
 	"/model":       true,
 	"/personality": true,
@@ -56,21 +52,10 @@ var slashAdminOnly = map[string]bool{
 	"/restart":     true,
 }
 
-// SlashAccessPolicy decides which slash commands a chat sender may run. It
-// is deny-by-default: a sender named by neither list may run nothing, so the
-// zero value refuses every command.
-//
-// AllowAdminFrom names the senders with full access. UserAllowedCommands
-// names the non-admin senders and, for each, the admin commands delegated to
-// it (the ordinary commands are always available to a named user).
-//
-// The Router consults the policy before dispatching any local command, so a
-// refusal executes none of the handler and is visible to the sender and to the
-// daemon log; a wired SlashDenials sink records it for audit. The policy is
-// keyed on the channel-native sender, not on an org principal: a chat message
-// carries no identity the access chain can evaluate, so this is the layer that
-// can decide at the point the command is typed. A composition with no policy
-// leaves every command available, which is the pre-policy behaviour.
+// SlashAccessPolicy decides which slash commands a sender may run. Deny by
+// default: AllowAdminFrom has full access, UserAllowedCommands names users and
+// their delegated admin commands. Refusals are logged and recorded through
+// SlashDenials. A nil policy allows everything.
 type SlashAccessPolicy struct {
 	AllowAdminFrom      []string
 	UserAllowedCommands map[string][]string

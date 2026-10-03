@@ -79,11 +79,8 @@ func CompressionConfigForModel(details ModelDetails, promptReserve int) (Compres
 	return cfg, nil
 }
 
-// tokenEstimate returns a rough estimate of the token count for a string.
-// ASCII text keeps the common four-characters-per-token approximation. Every
-// non-ASCII rune reserves one token because byte/rune averaging substantially
-// undercounts CJK text and emoji, which providers commonly tokenize more
-// densely than English text.
+// tokenEstimate estimates a string's tokens: four ASCII characters per token,
+// one token per non-ASCII rune.
 func tokenEstimate(s string) int {
 	ascii, nonASCII := 0, 0
 	for _, r := range s {
@@ -117,11 +114,8 @@ type CompressedView struct {
 	// TokensAfter is the estimated token count after compression.
 	TokensAfter int
 
-	// ProtectedFirst and ProtectedLast index the input messages passed through
-	// untouched, and are only meaningful when WasCompressed is true. A caller
-	// persisting the result writes back the original records for those
-	// positions, keeping their MessageID, SourceID and timestamp for redelivery
-	// deduplication.
+	// ProtectedFirst and ProtectedLast index the input messages kept unchanged;
+	// meaningful only when WasCompressed is true.
 	ProtectedFirst int
 	ProtectedLast  int
 }
@@ -132,13 +126,8 @@ type CompressedMessage struct {
 	Content string
 }
 
-// CompressHistory applies context compression to a list of messages. When
-// the estimated token count is below the threshold, messages are returned
-// unchanged. When compression triggers, messages between ProtectFirst
-// and ProtectLast are replaced with a summary marker.
-//
-// The caller supplies messages as role/content pairs (e.g. from
-// session store history) and gets back a compressed view.
+// CompressHistory replaces the messages between ProtectFirst and ProtectLast
+// with a summary marker once the estimated token count reaches the threshold.
 func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) CompressedView {
 	if !cfg.Enabled || cfg.ContextWindow <= 0 {
 		return CompressedView{

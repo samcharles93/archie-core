@@ -8,21 +8,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// minDeleteRefLen is the shortest prefix /delete will act on.
-//
-// /resume resolves a session on any unique prefix, because resuming the
-// wrong conversation is undone by resuming the right one. Deleting one is
-// not undoable, so a reference short enough to be a typo is refused even
-// when it happens to match exactly one session today -- the same keystroke
-// would hit a different session tomorrow. A full ID always works: the
-// guard applies to prefix matching, not to naming a session outright.
+// minDeleteRefLen is the shortest prefix /delete accepts. A full ID always
+// works.
 const minDeleteRefLen = 4
 
 // handleDelete permanently removes a session and its history.
-//
-// It is the only way to retire a conversation from chat: /new starts a
-// fresh one and leaves the old session listed by /sessions forever, so
-// without this the list only ever grows.
 func (r *Router) handleDelete(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	ref := strings.TrimSpace(rest)
 	if ref == "" {

@@ -17,23 +17,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 )
 
-// ── PostgreSQL implementation ───────────────────────────────────────────────
-//
-// postgresSessionStore is the PostgreSQL-backed SessionStore. It shares the
-// SQLite store's wire contract (messaging.SessionStore plus the optional
-// TurnLedger, TurnHistory and TurnReplayStore capability interfaces) and its
-// on-disk representation: timestamps remain bigint milliseconds so the
-// monotonic clamp (MAX(ts) + 1) keeps the same unit, and full-text search
-// moves from FTS5 to a tsvector + GIN generated column over (sender, text).
-//
-// Unlike the SQLite store it carries no in-process mutex. Two semantics make
-// that safe:
-//   - The strictly-increasing message timestamp is assigned inside
-//     InsertMessageClamped, and appends to one session are serialised by a
-//     transaction-scoped advisory lock (LockSessionMessages), so two
-//     concurrent appends cannot both read the same MAX(ts).
-//   - ClaimTurn is insert-first: InsertTurn's ON CONFLICT DO NOTHING makes the
-//     claim winner/loser decision atomically in the database.
+// postgresSessionStore is the PostgreSQL SessionStore. Appends to one session
+// are serialised by an advisory lock, so message timestamps stay strictly
+// increasing; ClaimTurn is decided by INSERT ... ON CONFLICT DO NOTHING.
 type postgresSessionStore struct {
 	pool *pgxpool.Pool
 }
@@ -416,11 +402,7 @@ func recentMessagesFromRows(rows []postgresdb.RecentMessagesRow) []messaging.Mes
 	return out
 }
 
-// stripMediaBytes returns the attachment list with in-process bytes
-// removed -- the shared persist-boundary rule both stores apply. Data is a
-// turn-scoped in-process value: a transcript that quietly retained
-// megabytes of base64 would corrupt the context-budget model the message
-// text assumes. Metadata survives; bytes do not.
+// stripMediaBytes returns attachments without their in-memory bytes.
 func stripMediaBytes(media []messaging.MediaAttachment) []messaging.MediaAttachment {
 	if len(media) == 0 {
 		return nil
@@ -471,20 +453,8 @@ func rowMessage(base messaging.Message, mediaRaw string) messaging.Message {
 	return base
 }
 
-// SearchMessages runs a tsvector search over the session's entire message
-// history, matching message text and sender only. The generated search column
-// indexes exactly (sender, text), so ts, source_id and the other metadata are
-// not part of the indexed content -- a query like "2026" cannot match every
-// message via its timestamp.
-//
-// plainto_tsquery is the tsvector analog of the SQLite store's ftsMatchQuery:
-// it parses the query as plain text, never as query syntax, and ANDs the
-// surviving terms. Punctuation in the input is therefore treated as text to
-// tokenize, not as a Boolean operator or column filter, which is the
-// quote-escaping behaviour ftsMatchQuery provided for FTS5.
-//
-// Like SQLite, the full result set is counted exactly, so MessagePage.Truncated
-// is always false.
+// SearchMessages full-text searches a session's message text and sender with
+// plainto_tsquery. Truncated is always false.
 func (s *postgresSessionStore) SearchMessages(ctx context.Context, sessionID string, q MessageQuery) (MessagePage, error) {
 	query := strings.TrimSpace(q.Query)
 	if query == "" {

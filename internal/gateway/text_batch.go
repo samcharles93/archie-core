@@ -10,19 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// The batcher's quiet window, its per-batch bounds, and its open-batch cap.
-// Chat clients -- Telegram in particular -- split one thought across several
-// messages sent within a second or two of each other, so a quiet window of
-// 1.5s since the last fragment catches that habit; a lone message is delayed
-// by exactly the window, which is the price a coalescer can never avoid
-// (every inbound message is bounded away from dispatch by at most the
-// window). A batch is also bounded up front: at most defaultBatchFragments
-// fragments or defaultBatchMaxRunes of combined text close it before the
-// window runs out, and at most defaultBatchOpenCap batches may be open at
-// once -- the oldest is settled early, never dropped, when a later one
-// opens. The cap bounds memory the way the deduplicator's cache does: one
-// open batch is a handful of Inbound values, and settling is bounded by the
-// same window.
+// Batching window and bounds.
 const (
 	defaultBatchWindow    = 1500 * time.Millisecond
 	defaultBatchFragments = 8
@@ -30,36 +18,10 @@ const (
 	defaultBatchOpenCap   = 256
 )
 
-// TextBatchAggregator coalesces rapid-fire text fragments from one sender
-// into a single turn instead of running the agent loop once per fragment.
-//
-// Collect is the whole contract. A message that is not a fragment (media, a
-// command, anything without a per-person SenderID, anything without text)
-// passes through at once: those are not parts of one thought, and a /stop
-// must never wait on a window. A fragment is registered under the batch key
-// (platform, conversation, sender) and the call blocks until the batch
-// closes -- on a quiet window since the last fragment (reset by every join),
-// or on one of the size bounds. The first still-waiting fragment is the
-// dispatcher: it receives the combined payload and runs the one turn, and
-// every other fragment is released with mine=false, because the batch's
-// single dispatch covers it. Fragments arrive in order and are joined in
-// that order; the payload carries the first fragment's identity, so the
-// session records one message with one channel-native source ID.
-//
-// The release -- not the dispatch -- happens inside Collect: a covered
-// fragment's caller is free the moment its batch settles and renders
-// nothing on its own behalf, while the dispatcher's caller carries the turn
-// through the ordinary session machinery, which is where per-session
-// ordering stays enforced. The gate order upstream is unchanged: dedup and
-// the rate limit run per fragment before Collect, so a redelivered fragment
-// is a declined delivery as always and never joins the batch whose original
-// it repeats, and each fragment is charged its own budget.
-//
-// Cancellation is per call: a fragment whose context ends before the batch
-// settles leaves with its own error and takes no dispatch duty; if it was
-// the dispatcher, the first still-waiting fragment inherits the slot, so
-// the batch never loses its one turn to a caller that gave up. A batch
-// whose every caller left settles with no dispatcher at all.
+// TextBatchAggregator coalesces rapid text fragments from one sender into
+// one turn. A batch closes after a quiet window or a size bound; its first
+// still-waiting caller dispatches the joined payload and the others return
+// mine=false. A cancelled caller leaves the batch alone.
 type TextBatchAggregator struct {
 	window       time.Duration
 	maxFragments int
@@ -87,12 +49,8 @@ type batchKey struct {
 	SenderID     string
 }
 
-// coalescableText reports whether in is a fragment a batch may hold. A
-// fragment is plain text from a sender with a stable per-person ID: no
-// media (a photo is a turn of its own), no command (an operator's /stop is
-// never delayed into a window), and text to join. An empty sender means no
-// per-person stream exists to fragment -- a webhook route is an automated
-// source, not someone splitting a thought.
+// coalescableText reports whether in is plain text from a sender with an ID,
+// with no media and no command.
 func coalescableText(in Inbound) bool {
 	text := strings.TrimSpace(in.Message.Text)
 	if text == "" || strings.HasPrefix(text, "/") {
@@ -104,11 +62,8 @@ func coalescableText(in Inbound) bool {
 	return in.Message.ToolCall == nil && in.Message.ToolResult == nil
 }
 
-// textBatch is one open batch: the fragments in arrival order, the quiet
-// deadline the latest join set, and the release every waiting call reads
-// once the batch settles. The payload and the chosen dispatcher are written
-// under the aggregator's mutex before release closes, so a released caller
-// reads them safely.
+// textBatch is one open batch. payload and dispatcher are written before
+// release closes.
 type textBatch struct {
 	key       batchKey
 	fragments []Inbound
@@ -153,14 +108,9 @@ func NewTextBatchAggregator(window time.Duration, maxFragments, maxRunes int, no
 	}
 }
 
-// Collect registers a plain-text fragment in the batch for its key and
-// blocks until that batch settles. It reports the payload this call is
-// responsible for and whether this call must dispatch it: true for the
-// batch's dispatcher (whose payload equals its own message when no fragment
-// ever joined, and carries the joined text when one did), false for a
-// covered fragment that must render nothing of its own. A message that is
-// no fragment returns at once with its own payload. A call's own context
-// cancellation takes only itself out of the batch.
+// Collect adds a fragment to its batch and blocks until the batch settles. It
+// returns the payload and whether this call must dispatch it. Non-fragments
+// return at once.
 func (b *TextBatchAggregator) Collect(ctx context.Context, in Inbound) (Inbound, bool, error) {
 	if !coalescableText(in) {
 		return in, true, nil
