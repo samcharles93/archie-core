@@ -32,15 +32,8 @@ const (
 	// not deliver an attachment inline, so the user still gets the asset.
 	fallbackMediaLinePrefix = "📎 "
 
-	// liveBodyMaxRunes bounds one mid-turn frame. Telegram rejects a
-	// message over its character limit outright, so an unbounded frame
-	// means every edit past that point fails and the live message freezes
-	// at the last frame that fit  --  for the rest of the turn, since the
-	// buffer only grows. The bound is in runes rather than bytes because
-	// the limit Telegram applies is a character count, not a byte count.
-	//
-	// Only the live frame is bounded. finalize sends the whole reply,
-	// split across as many messages as it needs.
+	// liveBodyMaxRunes bounds one mid-turn frame below Telegram's message limit.
+	// finalize sends the full reply.
 	liveBodyMaxRunes = 3900
 
 	// Keep tool activity to a minority of a live frame so the answer remains
@@ -49,32 +42,8 @@ const (
 	liveToolMaxRunes = (liveBodyMaxRunes - 2) / 3
 )
 
-// liveReply renders one chat turn into a single Telegram message as it is
-// generated, so the user watches the answer being written instead of waiting
-// on a silent "typing…" indicator.
-//
-// It keeps one canonical buffer and sends the whole of it on every update:
-// the first update creates the message, every later one edits that same
-// message. Editing has replace semantics, which is what makes a partial frame
-// impossible to append to the last one. (It previously streamed through
-// sendMessageDraft, whose drafts are ephemeral 30-second previews  --  a tool
-// call longer than that outlived the preview, and successive frames were
-// observed concatenated, cursors and all.)
-//
-// Rendering is deliberately best-effort: it never blocks the generating
-// goroutine and never surfaces an error. The authoritative reply is the one
-// finalize writes when the turn completes  --  if every live update failed,
-// the user simply sees the finished message appear the way it did before
-// streaming existed.
-//
-// A known, accepted trade-off of editing rather than sending: Telegram does
-// not change a message's date on edit, so the finished reply carries the
-// timestamp of the first streamed frame, not of finalize. A turn with a long
-// tool phase can therefore produce an answer timestamped before a user
-// message sent later, during that phase, and sort before the conversation
-// that produced it. Delete-and-resend on finalize would fix the ordering but
-// reintroduce the flicker/reorder streaming was built to avoid, so this is
-// left as-is rather than "fixed."
+// liveReply streams one chat turn into a single Telegram message, editing it
+// on each update. Rendering is best-effort; finalize writes the final reply.
 type liveReply struct {
 	g               *Gateway
 	b               *bot.Bot
@@ -85,10 +54,6 @@ type liveReply struct {
 	interval time.Duration
 
 	// newMediaSender builds the MediaSender Media delivers through.
-	// Defaults to g.NewMediaSender; tests override it to inject a sender
-	// with fixed Capabilities(), which the real Telegram one can't
-	// express (it always reports Media: true) but a future channel or a
-	// capability-limited deployment might.
 	newMediaSender func(b *bot.Bot, chatID int64, threadID int) messaging.MediaSender
 
 	cancelRender   context.CancelFunc
@@ -96,12 +61,7 @@ type liveReply struct {
 	renderDone     chan struct{}
 
 	mu sync.Mutex
-	// answerBuf is the assistant text streamed so far, in the order the
-	// model produced it. Tool activity is not appended here: it is tracked
-	// separately in toolLines so it can be kept whole and in front of the
-	// answer at every rendering stage (mid-turn frame, abandon, finalize)
-	// instead of scrolling out of the frame once the answer grows past the
-	// live clamp.
+	// answerBuf is the streamed answer text; tool activity is kept in toolLines.
 	answerBuf strings.Builder
 	// toolLines holds the tool activity for this turn, in call order, so
 	// every rendering stage can lead with it rather than have it buried
@@ -116,27 +76,11 @@ type liveReply struct {
 	rendered  string
 	messageID int
 	last      time.Time
-	// finalized is set once stopRendering returns, the single point every
-	// finalize/abandon path funnels through to retire the renderer
-	// goroutine. After that point requestRender is a silent no-op (a
-	// non-blocking send into a channel nothing reads any more), so any
-	// caller still trying to append to the live message after this point
-	// -- Media's fire-and-forget delivery has its own 30s budget, far
-	// longer than the turn's text usually takes -- must send its own
-	// follow-up message instead of writing into a buffer nothing renders.
+	// finalized is set once rendering stops; later writers must send their own
+	// message.
 	finalized bool
 
-	// terminal guards finalize and abandon so exactly one of them actually
-	// runs its body. Without this, a turn finishing naturally (finalize)
-	// and a concurrent Gateway.Stop (abandon, via abandonRestarted) can
-	// both reach their own Telegram edit for the same message: both edits
-	// go through, and whichever HTTP response Telegram processes last
-	// decides what the user sees, nondeterministically -- including a
-	// completed real answer getting silently overwritten by a restart
-	// marker. The loser's call blocks until the winner's body returns
-	// (sync.Once's own guarantee), then does nothing, so cleanup that must
-	// happen exactly once (stopRendering, forgetLive) is never skipped or
-	// duplicated regardless of which side wins.
+	// terminal ensures only one of finalize and abandon runs.
 	terminal sync.Once
 }
 
@@ -163,22 +107,15 @@ func (g *Gateway) newLiveReply(ctx context.Context, b *bot.Bot, chatID int64, me
 	return live
 }
 
-// resetLiveRegistry clears the previous launch's stopped mark. Called once
-// per launch, alongside rebuilding turns: a /restart's Stop marks the
-// registry stopped so nothing straggling from the outgoing bot instance
-// gets silently registered into it, but the incoming instance needs a live
-// registry of its own.
+// resetLiveRegistry clears the stopped mark at the start of a launch.
 func (g *Gateway) resetLiveRegistry() {
 	g.liveMu.Lock()
 	g.liveStopped = false
 	g.liveMu.Unlock()
 }
 
-// registerLive adds l to the set Stop drains on shutdown or restart. If a
-// drain already claimed the registry for this launch, l is abandoned
-// immediately instead of being registered: it arrived in the narrow window
-// between that claim and this call, and without this it would sit in no
-// registry, with nothing left to ever drain it.
+// registerLive adds l to the set Stop drains, or abandons it at once if the
+// registry is already stopped.
 func (g *Gateway) registerLive(ctx context.Context, l *liveReply) {
 	g.liveMu.Lock()
 	if g.liveStopped {
@@ -193,36 +130,18 @@ func (g *Gateway) registerLive(ctx context.Context, l *liveReply) {
 	g.liveMu.Unlock()
 }
 
-// forgetLive removes l from the registry. Called at the top of doFinalize
-// and doAbandon -- reached through l.terminal, so by the time this runs the
-// caller has already exclusively won the right to decide this reply's
-// outcome (see the terminal field doc) -- so a reply that completed on its
-// own is never picked up a second time by a later Stop, and a reply Stop
-// has already claimed is never double-processed.
+// forgetLive removes l from the registry.
 func (g *Gateway) forgetLive(l *liveReply) {
 	g.liveMu.Lock()
 	defer g.liveMu.Unlock()
 	delete(g.liveReplies, l)
 }
 
-// abandonAllLiveTimeout bounds how long Stop waits for in-flight replies to
-// be marked before giving up and returning anyway. A single stalled
-// Telegram API call must not hang gateway (and therefore daemon) shutdown
-// indefinitely; entries still in flight past this deadline keep running in
-// the background and finish (or die with the process) on their own.
+// abandonAllLiveTimeout bounds how long Stop waits for in-flight replies.
 const abandonAllLiveTimeout = 5 * time.Second
 
-// abandonAllLive drops the cursor, marked as interrupted, on every turn
-// still streaming when the gateway stops or restarts. It exists because
-// nothing else guarantees this happens: cancelling turnCtx does not
-// guarantee the goroutine that owns a liveReply ever runs again to notice
-// and clean up after itself, and a full daemon process exit gives it no
-// chance to run at all, so this must not wait on that goroutine and must not
-// skip a reply just because its owning turn is still technically running.
-//
-// Marking liveStopped and draining the registry happen together, under the
-// same lock, so registerLive can never observe "stopped" without also
-// observing an empty-of-this-entry registry, or vice versa.
+// abandonAllLive marks every still-streaming reply as interrupted on stop or
+// restart, and stops the registry under the same lock.
 func (g *Gateway) abandonAllLive(ctx context.Context) {
 	g.liveMu.Lock()
 	g.liveStopped = true
@@ -319,18 +238,7 @@ func (l *liveReply) Delta(text string) {
 	l.requestRender()
 }
 
-// ToolCall appends one tool-activity line. It satisfies gateway.TurnStream.
-//
-// Tool activity is opt-in per deployment: without it the user cannot tell a
-// hallucinated action from a real one, but it also narrates every internal
-// step, which is noise in a conversation that is going fine.
-//
-// The name, parameters and summary all come from tool execution, not the
-// model's prose, and can carry raw Markdown metacharacters (a grep hit with
-// '*', a JSON parameter with '_' or backticks). They are escaped before
-// joining the line because the tool line and the model's reply share one
-// Markdown body (finalText): an unbalanced marker in the tool line breaks
-// parsing for the whole message, including the reply's own formatting.
+// ToolCall appends one escaped tool-activity line, when tool display is on.
 func (l *liveReply) ToolCall(event messaging.ToolCallEvent) {
 	if !l.showToolCalls || event.Name == "" {
 		return
@@ -360,16 +268,7 @@ func (l *liveReply) ToolCall(event messaging.ToolCallEvent) {
 	l.requestRender()
 }
 
-// countedToolLine marks a collapsed entry with how many calls it stands for.
-// The count belongs to the status, not to the preview, so it is inserted
-// before the preview separator rather than appended: "grep — done ×14 · 2
-// matches" counts calls, while "· 2 matches ×14" reads as counting matches.
-// toolLineSeparator joins tool lines. It ends each one with CommonMark's
-// hard-break marker rather than a blank line: a bare "\n" is a soft break,
-// which the block parser space-joins into one run-on paragraph, while a blank
-// line would insert a spacer block between every pair. A hard break gives
-// each line its own block AND suppresses the spacer, so a turn's activity
-// reads as consecutive lines instead of a double-spaced list.
+// toolLineSeparator ends each tool line with a Markdown hard break.
 const toolLineSeparator = "  \n"
 
 func countedToolLine(line string, count int) string {
@@ -383,26 +282,11 @@ func countedToolLine(line string, count int) string {
 	return line + marker
 }
 
-// mediaSendTimeout bounds one Media delivery. It is independent of the
-// render loop's own lifecycle (unlike answerBuf/toolLines, which a
-// /restart abandons via abandonAllLive): an upload in flight when the live
-// reply finalizes should still be allowed to land, since the asset is worth
-// delivering on its own even after the surrounding turn is done narrating.
+// mediaSendTimeout bounds one Media delivery, independent of the turn.
 const mediaSendTimeout = 30 * time.Second
 
-// Media delivers the attachment through the media-specific Bot API, off the
-// generating goroutine: unlike Delta/ToolCall, this is a real network
-// upload, and TurnStream implementations must not block generation on one.
-// It satisfies gateway.TurnStream.
-//
-// An attachment carrying neither a URL to fetch nor a local Path to
-// upload is silently skipped: SendMedia would reject it as
-// invalid_message, there is nothing to fall back to, and Media has no
-// error return to report it through.
-//
-// This used to skip on a missing URL alone, which dropped every local
-// file before it reached the sender -- the guard, not just the sender,
-// was part of making a local path undeliverable.
+// Media uploads the attachment in the background. An attachment with no URL
+// or Path is skipped.
 func (l *liveReply) Media(ctx context.Context, event messaging.MediaEvent) {
 	if event.Attachment.URL == "" && event.Attachment.Path == "" {
 		return
@@ -502,23 +386,9 @@ func (l *liveReply) markRendered(body string) {
 	l.mu.Unlock()
 }
 
-// finalize replaces the live message with the turn's authoritative reply,
-// led by the tool activity that produced it, and drops the cursor. When
-// nothing was ever streamed  --  a non-streaming provider, or a reply served
-// from the turn ledger  --  it sends the reply as a new message instead.
-//
-// ctx is stripped of cancellation before anything is sent: the reply is
-// already decided and persisted by the time finalize runs, so a /stop
-// landing mid-finalize must not abort delivery the way it aborts the turn
-// itself  --  that would strand the live message on a frame with the cursor
-// still attached, forever. Doing this inside finalize rather than trusting
-// each caller to pass a live context is what keeps this fix from silently
-// regressing the next time a caller is added.
-//
-// The actual work runs inside l.terminal so a concurrent abandon (a gateway
-// shutdown abandoning every in-flight reply while this turn is finishing
-// naturally, see Gateway.abandonAllLive) cannot send its own conflicting
-// edit for the same message  --  see the terminal field doc.
+// finalize replaces the live message with the tool activity and the final
+// reply, or sends a new message if nothing streamed. It ignores ctx
+// cancellation and runs at most once.
 func (l *liveReply) finalize(ctx context.Context, reply string) {
 	ctx = context.WithoutCancel(ctx)
 	l.terminal.Do(func() { l.doFinalize(ctx, reply) })
@@ -546,11 +416,8 @@ func (l *liveReply) doFinalize(ctx context.Context, reply string) {
 		return
 	}
 
-	// The live message is one message, so an oversized reply keeps it as
-	// the first part and sends the remainder after it. If the edit cannot
-	// be delivered in either rich or plain form, send the complete reply
-	// through the normal split path rather than losing the authoritative
-	// answer behind a stale live frame.
+	// Edit the first part into the live message and send the rest; if the edit
+	// fails, send the whole reply.
 	parts := splitBlocks(markdownToBlocks(content), messageMaxLen)
 	if len(parts) == 0 {
 		l.abandonStopped(ctx)
@@ -572,17 +439,8 @@ func (l *liveReply) doFinalize(ctx context.Context, reply string) {
 // immutable, so nothing can correct that impression after the fact.
 const abandonMarker = "\n\n❌ _turn failed before finishing_"
 
-// abandon leaves a stopped turn readable: the partial text stays, but the
-// cursor goes, so the message does not claim to still be writing. A /stop is
-// a deliberate, acknowledged interruption, not a fault, so the partial is
-// left clean rather than marked as a failure.
-//
-// Like finalize, it strips ctx of cancellation before sending: abandon runs
-// precisely when a /stop has cancelled turnCtx, so honouring that
-// cancellation in the very edit meant to drop the cursor would leave the
-// cursor blinking on a message nothing will ever finish. And like finalize,
-// the actual work runs inside l.terminal -- see the terminal field doc and
-// finalize's.
+// abandon leaves a stopped turn's partial text without the cursor. It ignores
+// ctx cancellation and runs at most once.
 func (l *liveReply) abandon(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
 	l.terminal.Do(func() { l.doAbandon(ctx) })
@@ -605,18 +463,10 @@ func (l *liveReply) abandonFailed(ctx context.Context) {
 	l.abandon(ctx)
 }
 
-// restartMarker distinguishes a gateway-restart abandon from both a clean
-// /stop (abandon) and a provider failure (abandonFailed): the turn was cut
-// off by an operational event rather than a fault in it or a deliberate
-// stop, and unlike either of those the user's message is still worth
-// resending once the gateway is back.
+// restartMarker marks a turn cut off by a gateway restart.
 const restartMarker = "\n\n⚠️ _archie restarted before finishing  --  send your message again_"
 
-// abandonRestarted leaves a turn interrupted by gateway shutdown or restart
-// readable and marked, for the same reason abandonFailed marks a provider
-// error: nothing will ever resume this turn, and an unmarked partial reads
-// as a finished answer either way. Called by Gateway.abandonAllLive, never
-// by the turn's own goroutine.
+// abandonRestarted marks a turn interrupted by a gateway stop or restart.
 func (l *liveReply) abandonRestarted(ctx context.Context) {
 	l.mu.Lock()
 	l.answerBuf.WriteString(restartMarker)
@@ -676,27 +526,14 @@ func (l *liveReply) framedText(answer string) string {
 	return block + "\n\n" + l.clampAnswer(answer, budget)
 }
 
-// clampAnswer cuts the answer to its budget, retaining the newest text and
-// marking the cut with a leading ellipsis.
-//
-// The marker matters on every frame, including the opening one. A turn that
-// streams a large first chunk, or that never opens a reply at all (so
-// messageID stays 0), would otherwise render text that appears to begin
-// mid-sentence with nothing to say a cut was made -- and Telegram messages are
-// immutable, so it can never be corrected afterwards.
+// clampAnswer keeps the newest budget runes of answer, prefixed with an
+// ellipsis when cut.
 func (l *liveReply) clampAnswer(answer string, budget int) string {
 	return clampToRunes(answer, budget)
 }
 
-// toolBlock returns the most recent activity that fits its deliberately
-// smaller frame budget, prefixed with a count of what was left out.
-//
-// The search runs from the newest line backwards, widening the window while
-// the result still fits, so EVERY line that fits is kept: returning as soon as
-// the newest line alone fits would discard history that was never over budget
-// and report a "+N earlier" that is simply untrue.
-//
-// The caller holds the lock.
+// toolBlock returns the newest tool lines that fit the budget, prefixed with
+// a count of the rest. The caller holds the lock.
 func (l *liveReply) toolBlock() string {
 	if len(l.toolLines) == 0 {
 		return ""
@@ -748,19 +585,8 @@ func clampToRunes(s string, maxRunes int) string {
 	return "…" + string(runes[len(runes)-(maxRunes-1):])
 }
 
-// finalText composes the finished message: the tool activity in the order it
-// happened, then the authoritative reply. The caller holds the lock.
-//
-// The reply is used rather than the streamed buffer because it is what the
-// turn actually returned and what was persisted to the conversation  --  a
-// dropped or throttled frame cannot leave the visible message disagreeing
-// with the stored one.
-//
-// A turn that ran tools but produced no reply text still needs to say so:
-// the tool block alone reads as a completed answer that said nothing, and
-// Telegram messages are immutable, so nothing can correct it after the
-// fact. An empty reply with no tool activity either is left to the
-// content == "" path in finalize, which abandons instead of sending.
+// finalText returns the tool activity followed by reply, noting when tools
+// ran without a reply. The caller holds the lock.
 func (l *liveReply) finalText(reply string) string {
 	reply = strings.TrimSpace(reply)
 	if len(l.toolLines) == 0 {
@@ -802,12 +628,8 @@ func (l *liveReply) open(ctx context.Context, blocks []models.InputRichBlock) {
 	l.mu.Unlock()
 }
 
-// edit replaces the live message's content.
-//
-// Rich messages are a recent Bot API addition, and text is only optional on
-// an edit that carries one, so a server that rejects the rich body rejects
-// the whole edit. As with send, that is treated as "unsupported" rather than
-// fatal: retry unformatted so the user still gets the reply.
+// edit replaces the live message's content, retrying as plain text if the
+// rich body is rejected.
 func (l *liveReply) edit(ctx context.Context, messageID int, blocks []models.InputRichBlock) error {
 	_, richErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      l.chatID,

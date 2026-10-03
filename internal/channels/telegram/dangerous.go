@@ -274,11 +274,8 @@ func (g *Gateway) hasPermanentApproval(recipient int64, command string) bool {
 	return found
 }
 
-// hasPermanentApprovalExact is the exact-match variant used by the tool
-// approval path. Prefix matching is appropriate for slash commands
-// (/rollback covers /rollback 3); it is not for tool-approval keys
-// composed of action + resource, where "delete session abc" must not
-// grant on "delete session abc2".
+// hasPermanentApprovalExact is the exact-match approval check for tool
+// approvals.
 func (g *Gateway) hasPermanentApprovalExact(recipient int64, pattern string) bool {
 	g.dangerousMu.Lock()
 	defer g.dangerousMu.Unlock()
@@ -411,13 +408,8 @@ func rollbackApprovalText(num int) string {
 
 // ── /stop handler ──────────────────────────────────────────────
 
-// stopCurrentTurn cancels whatever this conversation is currently doing.
-//
-// Cancellation propagates through the turn's context, so it reaches the
-// model stream and any tool running underneath it -- a shell command built
-// with exec.CommandContext is killed with the turn, which is the case that
-// matters. Whatever the reply had already streamed stays on screen: it is
-// the record of what Archie did before being stopped.
+// stopCurrentTurn cancels the conversation's running turn and any tool under
+// it. Streamed text stays.
 func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.Message, client messaging.ChatContract) {
 	var cancelled bool
 	var dropped int
@@ -440,11 +432,7 @@ func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.M
 		stopReport(cancelled, dropped, nil))
 }
 
-// stopReport describes what a /stop actually stopped.
-//
-// It names the parts rather than saying "stopped" unconditionally.
-// Claiming success when nothing was running teaches the operator to
-// distrust the command at exactly the moment they need to believe it.
+// stopReport describes what a /stop stopped.
 func stopReport(cancelled bool, dropped int, tasks []int64) string {
 	var parts []string
 	if cancelled {
@@ -479,15 +467,8 @@ func joinWithAnd(parts []string) string {
 	}
 }
 
-// stopHandler serves /stop.
-//
-// Bare /stop is the emergency brake: it cancels the conversation's running
-// turn immediately, with no approval step. Approval exists to protect
-// against destructive commands, and stopping is the opposite -- gating it
-// behind a confirmation round-trip would defeat the entire point.
-//
-// /stop <process-name> keeps the original behaviour of terminating a named
-// background process, which is destructive and still requires approval.
+// stopHandler serves /stop. Bare /stop cancels the running turn immediately;
+// /stop <process-name> terminates a background process after approval.
 func (g *Gateway) stopHandler(client messaging.ChatContract) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
@@ -580,11 +561,8 @@ func parseDangerousCallback(data string) (decision, token string) {
 
 // ── /approve and /deny handlers ─────────────────────────────────
 
-// approveHandler serves /approve: list any pending dangerous commands,
-// or approve a specific one by token. When a pending command exists, the
-// user interacts via inline buttons rather than typing /approve directly;
-// this handler is for the edge case where a user types /approve without
-// a pending command context.
+// approveHandler serves /approve: lists pending dangerous commands or
+// approves one by token.
 func (g *Gateway) approveHandler() bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)

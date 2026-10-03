@@ -10,14 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// telegramMessageDeleter removes messages the launch that built it sent,
-// through the Bot API's deleteMessage method.
-//
-// It captures the *bot.Bot at construction rather than reading a Gateway
-// field, matching telegramMediaSender and telegramApprover: a deleter belongs
-// to the launch that built it, so a /restart abandons in-flight retractions
-// with the outgoing bot instance instead of silently directing them through
-// the new one.
+// telegramMessageDeleter deletes messages through the bot it was built with.
 type telegramMessageDeleter struct {
 	bot    *bot.Bot
 	chatID int64

@@ -9,11 +9,8 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// Telegram's rich-message renderer has no ATX heading support and its
-// MarkdownV2 dialect needs escaping, so rather than translating Markdown into a
-// format it only partially implements we emit structured blocks the renderer
-// supports natively. Inline emphasis/code/links are reduced to plain text so no
-// Markdown marker can survive into the rendered message.
+// Markdown is rendered as Telegram rich blocks, with inline formatting
+// reduced to plain text.
 
 var (
 	inlineLinkHTML = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
@@ -114,11 +111,8 @@ func stripInlineMarkdown(s string) string {
 	return codeBlockMark.ReplaceAllString(s, "$1")
 }
 
-// stripEmphasis removes paired emphasis delimiters and keeps their content.
-// Pairing follows CommonMark's flanking rules, so a delimiter that cannot open
-// or close is ordinary text and stays put.
-// *sql.Tx all used to lose characters to a non-greedy `_(.+?)_` that paired
-// any two markers on a line.
+// stripEmphasis removes paired emphasis delimiters, keeping their content,
+// using CommonMark's flanking rules.
 func stripEmphasis(s, marker string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -181,13 +175,8 @@ func flanksOf(s string, i, j int) delimiterFlanks {
 }
 
 // flanking reports whether the delimiter run s[i:j] may open or close
-// emphasis. The rules are CommonMark's, including the one that an underscore
-// may do neither inside a word.
-//
-// Single "*" carries one deliberate deviation: it may not open on
-// punctuation. CommonMark reads "*.go files in cmd/*" as emphasis, which in a
-// relay carrying shell globs and pointer types corrupts far more text than a
-// stray marker would. Emphasis opening on a word still works.
+// emphasis, per CommonMark, except that a single "*" may not open on
+// punctuation.
 func flanking(s string, i, j int, marker string) (canOpen, canClose bool) {
 	f := flanksOf(s, i, j)
 	switch marker {
@@ -286,19 +275,8 @@ func (p *markdownBlockParser) handleLine(line string) {
 	case trimmed == "":
 		p.flush()
 	default:
-		// A normal line ends a list or quote block and continues a
-		// paragraph. Joined with a space, not "\n": this is a CommonMark
-		// soft line break, and Telegram's rich-block paragraph text does
-		// not render an embedded "\n" as a break at all -- it renders
-		// nothing, jamming the two lines together with no separator
-		// whatsoever. A space is the correct soft-break rendering anyway
-		// and survives regardless of how the client treats a literal "\n".
-		//
-		// A line that ended in a hard break is the exception: the producer
-		// said it is a line, so it closes its own block and the next one
-		// hugs it. Line-oriented reports (/status, /tasks) depend on this;
-		// without it every one of their lines soft-joined into one run-on
-		// paragraph.
+		// A normal line ends a list or quote and continues the paragraph with a
+		// space. A line ending in a hard break closes its own block.
 		p.flushList()
 		p.flushQuote()
 		switch {
@@ -412,14 +390,8 @@ func (p *markdownBlockParser) flush() {
 	p.flushParagraph()
 }
 
-// appendBlock adds block to the output. Telegram's rich-block renderer adds
-// no vertical gap between adjacent blocks on its own -- only a heading
-// carries its own margin -- so two blocks from source lines with no blank
-// line between them (an intro line immediately followed by a list, two
-// back-to-back paragraphs) render glued together with no visible break at
-// all. An empty paragraph spacer before any non-heading-following block
-// makes that gap explicit instead of relying on client-side spacing that
-// doesn't exist.
+// appendBlock adds block, preceded by an empty paragraph as a spacer unless
+// it follows a heading.
 func (p *markdownBlockParser) appendBlock(block models.InputRichBlock) {
 	tight := p.tightNext
 	p.tightNext = false

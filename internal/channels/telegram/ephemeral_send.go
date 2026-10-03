@@ -15,12 +15,8 @@ import (
 // history next to the conversation it reported on.
 const statusNoticeTTL = 8 * time.Second
 
-// sendEphemeral delivers text and retracts it after statusNoticeTTL.
-//
-// The retraction is best-effort by contract: a platform that cannot delete
-// leaves the notice in place (channels.EphemeralSender logs the degrade), and
-// a failed send is logged rather than returned, because a status notice must
-// never take the operation it narrates down with it.
+// sendEphemeral sends text and deletes it after statusNoticeTTL. Failures are
+// logged.
 func (g *Gateway) sendEphemeral(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
 	sender := g.newEphemeralSender()
 	_, err := sender.Send(ctx, g.NewMessageDeleter(b, chatID), messaging.EphemeralReply{
@@ -45,11 +41,8 @@ func (g *Gateway) sendEphemeral(ctx context.Context, b *bot.Bot, chatID int64, m
 	}
 }
 
-// sendTextMessage delivers one message and returns its Bot API message ID.
-//
-// It returns 0 for text that must be split across messages: a retraction
-// addresses exactly one message, so a reply that does not fit in one is left
-// intact rather than half-deleted.
+// sendTextMessage sends one message and returns its ID, or 0 when the text
+// had to be split.
 func (g *Gateway) sendTextMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) int {
 	blocks := markdownToBlocks(text)
 	if blockTextLen(blocks) > messageMaxLen {

@@ -17,14 +17,8 @@ import (
 // from dangerousCmdPrefix so the two approval systems never collide.
 const approvalCallbackPrefix = "approval:"
 
-// telegramApprover implements gateway.ApprovalRequester by rendering an
-// inline-button prompt in the chat it was built for and blocking until the
-// human decides, the context is cancelled, or the approval window elapses.
-//
-// It generalises the dangerous-command approval machinery: instead of
-// carrying an onApprove callback that executes a fixed command, a tool
-// approval carries a result channel that the callback handler signals, and
-// the blocked RequestApproval caller observes the decision.
+// telegramApprover implements gateway.ApprovalRequester with an inline-button
+// prompt, blocking until the human decides, ctx ends or the window elapses.
 type telegramApprover struct {
 	gw        *Gateway
 	bot       *bot.Bot
@@ -59,11 +53,7 @@ var (
 	_ messaging.CapabilityReporter = (*telegramApprover)(nil)
 )
 
-// Capabilities reports that this approver renders a native approval prompt.
-// It claims Approval only: clarify and picker have no native Telegram UI
-// wired yet, so claiming them would advertise an interaction this type
-// cannot carry. A caller that sees Clarify/Picker false uses the shared text
-// fallback instead of silently dropping the question.
+// Capabilities reports native approval only.
 func (a *telegramApprover) Capabilities() messaging.AdapterCapabilities {
 	return messaging.AdapterCapabilities{Approval: true}
 }
@@ -82,13 +72,8 @@ func (g *Gateway) NewApprover(b *bot.Bot, chatID int64, threadID int, recipient 
 	}
 }
 
-// RequestApproval asks the recipient to approve or deny action.
-//
-// A current permanent approval for the action short-circuits the prompt and
-// returns ApprovalPermanentlyApproved. Otherwise the recipient is shown the
-// three-button inline keyboard and the call blocks until the human decides,
-// the context is cancelled, or the 2-minute approval window
-// (messaging.ToolApprovalTimeout) elapses.
+// RequestApproval asks the recipient to approve action. A current permanent
+// approval returns ApprovalPermanentlyApproved without prompting.
 func (a *telegramApprover) RequestApproval(ctx context.Context, action, description string) (messaging.ApprovalDecision, error) {
 	// Compose the lookup key so a permanent approval is scoped to
 	// the specific resource: "Approve Permanently" on "delete session

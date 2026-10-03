@@ -13,26 +13,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// telegramMediaSender delivers a MessageEvent's attachment through the
-// media-specific Bot API methods (sendVideo, sendPhoto, ...) rather than
-// sendMessage, which cannot carry a file at all.
-//
-// It captures the *bot.Bot at construction rather than reading the
-// Gateway's shared field, matching telegramApprover: a sender belongs to
-// the launch that built it, so a /restart abandons in-flight sends with
-// the outgoing bot instance instead of silently redirecting them through
-// the new one. That is the same lifetime rule the per-launch turns
-// registry documents.
-//
-// An attachment is delivered one of two ways, chosen by what it carries:
-// a URL is handed to Telegram to FETCH, while a Path is UPLOADED from this
-// host. Delivery used to be URL-only, which meant a locally produced file
-// was passed off as a URL Telegram could not fetch and the send did
-// nothing useful while reporting success.
-//
-// A MediaAttachment.FileID is still not accepted: it identifies a file on
-// the platform it was uploaded from and is meaningless as an outbound
-// handle here.
+// telegramMediaSender sends attachments through the media Bot API methods,
+// using the bot it was built with. A URL is fetched by Telegram; a Path is
+// uploaded. FileIDs are not accepted.
 type telegramMediaSender struct {
 	bot      *bot.Bot
 	chatID   int64
@@ -118,19 +101,8 @@ var (
 	errTooLarge             = errors.New("file exceeds the Telegram upload limit")
 )
 
-// source builds the Bot API file value for att, and a function to release
-// whatever it holds open.
-//
-// A URL becomes an InputFileString, which tells Telegram to fetch it. A
-// local path becomes an InputFileUpload carrying an open *os.File, which
-// the library streams as multipart form data  --  the only way bytes that
-// exist solely on this host can reach a chat.
-//
-// The size check happens here rather than being left to Telegram: over the
-// limit the API answers a bad request whose text nobody reads, and the
-// operator sees an attachment that never arrived. The returned error is
-// classified invalid_message by the caller, so it is not retried  --  a
-// file does not get smaller on a second attempt.
+// source returns the Bot API file for att and a release function. It refuses
+// a local file over the size limit.
 func (s *telegramMediaSender) source(att messaging.MediaAttachment) (models.InputFile, func(), error) {
 	noop := func() {}
 	if att.Path == "" {
@@ -222,15 +194,8 @@ func invalidMedia(err error) (messaging.SendResult, error) {
 	}, err
 }
 
-// classifySendError maps a Bot API failure onto SendResult's error
-// vocabulary so a caller can decide on retry without inspecting
-// Telegram-specific errors.
-//
-// The library reports API failures as sentinel errors (bot.ErrorBadRequest
-// and friends), not as typed values, so these are errors.Is checks. A
-// failure matching no sentinel is a transport error or a 5xx, both of
-// which may yet succeed  --  hence retryable, rather than defaulting to
-// permanent and silently dropping a deliverable asset.
+// classifySendError maps a Bot API error to a SendResult. Unrecognised errors
+// are retryable.
 func classifySendError(err error) messaging.SendResult {
 	res := messaging.SendResult{Success: false, Error: err}
 

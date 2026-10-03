@@ -111,11 +111,7 @@ func nilIfZero(v int64) *int64 {
 	return &v
 }
 
-// maxInboundDownloadBytes is the Bot API download ceiling: bots cannot
-// fetch files larger than 20 MB through getFile, so a larger attachment
-// must be refused with a clear notice rather than met with a Bot API 400
-// nobody reads. It is the messaging contract's inbound attachment ceiling,
-// so the value the Gateway must be able to receive stays in one place.
+// maxInboundDownloadBytes is the Bot API download limit.
 var maxInboundDownloadBytes int64 = messaging.MaxInboundAttachmentBytes
 
 var errInboundMediaTooLarge = errors.New("file exceeds the bot download limit")
@@ -157,11 +153,8 @@ func (g *Gateway) downloadMedia(ctx context.Context, b *bot.Bot, att messaging.M
 	return data, nil
 }
 
-// turnMessageText renders the text an inbound message's turn is built
-// from: plain text as received, or the attachment note plus caption when
-// the message carries a file. The note is what later turns read from
-// history, so a captioned photo whose caption alone would read as the
-// whole message ("what is this?") still names its attachment.
+// turnMessageText returns the message text, or the attachment note plus
+// caption for a message with a file.
 func turnMessageText(msg *models.Message, media inboundMedia, hasMedia bool) string {
 	if !hasMedia {
 		return msg.Text
@@ -172,11 +165,8 @@ func turnMessageText(msg *models.Message, media inboundMedia, hasMedia bool) str
 	return media.note + "\n" + msg.Caption
 }
 
-// unsupportedMediaNotice returns the refusal for content kinds Archie
-// cannot read, and "" for update content that is not a message to answer
-// at all -- a group member change or pin must stay silent, while a
-// sticker the sender meant Archie to react to must not disappear into the
-// void.
+// unsupportedMediaNotice returns the refusal for unreadable content, or ""
+// for updates that need no reply.
 func unsupportedMediaNotice(msg *models.Message) string {
 	switch {
 	case msg.Sticker != nil:

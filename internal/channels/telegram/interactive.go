@@ -40,12 +40,8 @@ type replyResult struct {
 	err  error
 }
 
-// telegramInteractor carries clarify and picker interactions for one chat on
-// the channel's shared text fallback. Telegram renders no generic question or
-// single-choice widget in the agent-turn path, so both interactions appear as
-// text the human answers by replying; reporting the Clarify and Picker
-// capabilities is therefore honest, because the adapter can carry the
-// interaction even though it costs a typed answer.
+// telegramInteractor carries clarify and picker questions as plain text the
+// human replies to.
 type telegramInteractor struct {
 	gw        *Gateway
 	bot       *bot.Bot
@@ -62,11 +58,7 @@ var (
 	_ messaging.CapabilityReporter = (*telegramInteractor)(nil)
 )
 
-// Capabilities reports that this adapter can carry a clarify question and a
-// single-choice picker. Both go through the shared text fallback rather than a
-// native widget, and the capability is about carrying the interaction, not
-// about the widget, so claiming them is what keeps a question from being
-// silently dropped.
+// Capabilities reports clarify and picker support.
 func (i *telegramInteractor) Capabilities() messaging.AdapterCapabilities {
 	return messaging.AdapterCapabilities{Clarify: true, Picker: true}
 }

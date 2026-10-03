@@ -28,11 +28,8 @@ import (
 // Gateway is a Telegram gateway.Gateway backed by go-telegram/bot.
 type Gateway struct {
 	Token string
-	// AllowedUserIDs lists the Telegram user IDs allowed to use the bot,
-	// matched against the sender rather than the chat so the bot cannot be
-	// reached by adding it to a group. Empty denies everyone: a bot handle
-	// is public, and chat tools run with the daemon's authority, so failing
-	// open would expose those tools to any stranger who finds the bot.
+	// AllowedUserIDs lists the sender IDs allowed to use the bot. Empty denies
+	// everyone.
 	AllowedUserIDs []int64
 	// Reload re-reads configuration during /restart and applies it to g.
 	// Supplied by the composition root, which owns config paths. Nil
@@ -54,22 +51,12 @@ type Gateway struct {
 	// identity. Nil deliberately permits reads but makes writes fail closed.
 	ResolveActor func(int64) (string, bool)
 
-	// UpdateReportPath is where the update watchdog (see
-	// scripts/archie-update-watchdog) leaves the phase-2 outcome of an
-	// update -- whether the restarted daemon came up healthy or was rolled
-	// back. Checked and relayed on every gateway launch (process boot and
-	// /restart alike), same as ReleaseAnnouncements. Empty disables it.
+	// UpdateReportPath is where the update watchdog leaves an update's outcome,
+	// relayed on each launch. Empty disables it.
 	UpdateReportPath string
 
-	// RunningVersions reports, per component ID (see
-	// releaseupdate.ComponentDaemon), the version that component reports for
-	// itself rather than the version an installer claimed to install. It is
-	// what turns a pending update report from a self-reported claim into a
-	// checked one: the daemon's own compiled-in build version cannot be
-	// talked out of being what is actually running. Only components that can
-	// genuinely self-report belong here -- a guess would re-introduce
-	// exactly the false success this check exists to catch. Nil leaves every
-	// claim unverified.
+	// RunningVersions reports the version each component reports for itself, to
+	// verify update reports. Nil leaves claims unverified.
 	RunningVersions func() map[string]string
 
 	// Dangerous is the sandbox/process authority for /rollback and /stop.
@@ -121,24 +108,14 @@ type Gateway struct {
 
 	// liveMu guards liveReplies and liveStopped.
 	liveMu sync.Mutex
-	// liveReplies tracks every liveReply currently mid-turn. Cancelling
-	// turnCtx (a /restart, a daemon shutdown) does not guarantee the
-	// goroutine that owns a liveReply ever runs again to notice and clean
-	// up after itself -- a full process exit gives it no chance at all --
-	// so Stop drains this registry directly rather than waiting on that
-	// goroutine. See abandonAllLive. The map itself survives a /restart
-	// (only turns above is rebuilt per launch); liveStopped is what scopes
-	// draining to one launch's lifecycle.
+	// liveReplies tracks in-flight live replies so Stop can abandon them.
 	liveReplies map[*liveReply]struct{}
 	// liveDrainTimeout bounds abandonAllLive's wait for in-flight replies to
 	// be marked. Zero uses abandonAllLiveTimeout; tests shrink it so a
 	// deliberately-hung reply doesn't make the suite slow.
 	liveDrainTimeout time.Duration
-	// liveStopped is set the instant abandonAllLive claims the registry, so
-	// a newLiveReply that arrives in the narrow window between that claim
-	// and its caller actually registering is abandoned immediately instead
-	// of being added to a registry nothing will ever drain again. Reset to
-	// false at the start of the next launch.
+	// liveStopped is set when abandonAllLive claims the registry, and reset at
+	// the next launch.
 	liveStopped bool
 
 	log     *slog.Logger
@@ -218,12 +195,7 @@ func (g *Gateway) RequestRestart() error {
 	}
 }
 
-// Start supervises the bot: it launches an instance and relaunches it
-// whenever a restart is requested, blocking until ctx is cancelled.
-//
-// Restarts are scoped to this gateway. The daemon keeps running, so
-// in-flight agent tasks are untouched  --  the whole point of the escape
-// hatch is to recover chat without disturbing work in progress.
+// Start runs the bot and relaunches it on restart requests until ctx ends.
 func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, lifecycle channels.Lifecycle) error {
 	if g.Token == "" {
 		return fmt.Errorf("telegram bot token is required")
@@ -238,11 +210,7 @@ func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, life
 			cancel()
 			return err
 		}
-		// Confirm to whoever asked, now that the new instance can send.
-		// It is a status notice, not a record: it retracts itself after a
-		// short TTL so it does not sit in the chat as a stale "reloaded"
-		// line. The pre-restart "Reloading…" message from the outgoing
-		// instance stays as the durable acknowledgement.
+		// Confirm the restart with a self-deleting notice.
 		if req := g.pendingRestart; req != nil && req.chatID != 0 {
 			g.sendEphemeral(runCtx, b, req.chatID, req.threadID, "✅ Archie reloaded.")
 		}
@@ -612,19 +580,8 @@ func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models
 	}
 }
 
-// submitTurn hands the message to its session's turn lane and returns at
-// once, leaving the bot's single update worker free.
-//
-// The turn must not run on the caller's goroutine. go-telegram/bot serves
-// updates from one worker that invokes handlers synchronously, so a turn
-// running here would block delivery of every later update -- including the
-// /stop meant to cancel it, which would sit unread until the turn it was
-// aimed at had already finished.
-// turnInbound renders a Telegram message as the channel-neutral inbound a
-// chat turn is built from, with media attachments attached. ok is false
-// for messages with neither text nor media, which are not turns at all.
-// media/hasMedia are the caller's already-extracted attachment, so the
-// caller keeps the voice-note flag it needs without extracting twice.
+// turnInbound converts a Telegram message into an inbound turn. ok is false
+// for messages with no text or media.
 func turnInbound(msg *models.Message, media inboundMedia, hasMedia bool) (messaging.Inbound, bool) {
 	if !hasMedia && msg.Text == "" {
 		return messaging.Inbound{}, false
@@ -632,11 +589,7 @@ func turnInbound(msg *models.Message, media inboundMedia, hasMedia bool) (messag
 	gm := messaging.Inbound{
 		Platform: "telegram",
 		Message: messaging.Message{
-			// Telegram's message ID makes persistence idempotent: the store
-			// derives a canonical ID from it, so a redelivered update is a
-			// no-op rather than appending a duplicate or overwriting the
-			// stored record, which must stay immutable. Date is the sender's
-			// clock reading and is what history should be ordered by.
+			// The message ID makes redelivery idempotent.
 			SourceID:       fmt.Sprintf("%d", msg.ID),
 			ConversationID: conversationID(msg),
 			Sender:         msg.From.Username,
@@ -704,26 +657,9 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 	})
 }
 
-// drainTurnEvents consumes a streamed turn, rendering deltas, tool calls
-// and media as they arrive, and returns the final reply.
-//
-// A cancelled turn is a /stop, not a fault. The stop handler has already
-// acknowledged it, and turnCtx is dead, so there is
-// nothing useful left to send from here  --  but whatever was
-// already streamed stays, minus the cursor that would otherwise
-// claim the answer is still being written. abandon strips turnCtx's
-// own cancellation before it edits, so the cursor-drop is not itself
-// aborted by the /stop that triggered it.
-//
-// errors.Is(err, context.Canceled) reliably separates a /stop from a
-// fault; either way turnCtx is dead by the time we get here. A
-// genuine fault is marked as failed rather than left as a clean
-// partial: /stop is an acknowledged interruption, a provider error
-// is not, and an unmarked partial reads as a finished answer either
-// way.
-//
-// aborted means the turn was abandoned (as a stop or a failure) and its
-// reply must not be finalized.
+// drainTurnEvents renders a streamed turn's events and returns the final
+// reply. A cancelled turn is abandoned cleanly; a failed one is marked
+// failed. aborted means the reply must not be finalized.
 func (g *Gateway) drainTurnEvents(
 	turnCtx context.Context, session string,
 	live *liveReply, stopTyping func(), events <-chan messaging.ChatEvent,
@@ -759,13 +695,8 @@ func (g *Gateway) drainTurnEvents(
 	return reply, false
 }
 
-// fetchTurnMedia downloads the turn's inbound attachment onto the lane,
-// where waiting for the Telegram API belongs: the update worker stays free
-// to serve other messages and a /stop while this download progresses. A
-// failed download is reported as a failed attachment without starting the
-// turn, so the answer does not pretend the media was read -- a later
-// turn's history only knows the note, not the picture, and the model must
-// not reason from what it never saw.
+// fetchTurnMedia downloads the turn's attachment. A failed download is
+// reported and the turn does not start.
 func (g *Gateway) fetchTurnMedia(ctx context.Context, b *bot.Bot, gm *messaging.Inbound, chatID int64, threadID int) bool {
 	if len(gm.Media) == 0 || gm.Media[0].Data != nil {
 		return true
@@ -893,14 +824,8 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 	}
 }
 
-// sendBlocks delivers one message as a Telegram rich message built from
-// structured blocks and returns the Bot API message ID, or 0 when nothing was
-// delivered. The ID is what an EphemeralReply's retraction addresses; callers
-// that only send ignore it.
-//
-// Rich messages are a recent Bot API addition, so a rejection here is treated
-// as "unsupported" rather than fatal: fall back to sending the blocks as plain
-// text so the user still receives the reply, unformatted, instead of silence.
+// sendBlocks sends one rich message and returns its ID, or 0. A rejected rich
+// message is resent as plain text.
 func (g *Gateway) sendBlocks(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, blocks []models.InputRichBlock, errMsg string) int {
 	rich := &bot.SendRichMessageParams{
 		ChatID:      chatID,
@@ -1040,24 +965,8 @@ func (g *Gateway) ValidateConfig(cfg map[string]any) error {
 // Compile-time guard.
 var _ channels.Channel = (*Gateway)(nil)
 
-// dropPendingUpdates clears Telegram's queue of undelivered updates before
-// long polling starts.
-//
-// Telegram holds updates for 24h and replays them on the first getUpdates,
-// so without this a daemon that was down overnight boots and answers every
-// message sent while it was gone -- one LLM turn each, in a burst. The
-// webhook path already passes DropPendingUpdates when it registers; polling
-// has no equivalent, so it has to be asked for explicitly. deleteWebhook is
-// the call that carries the flag, and it doubles as a guard against a stale
-// webhook registration, which would make getUpdates fail with 409.
-//
-// This also runs on /restart, so a message sent during the restart window is
-// discarded rather than answered late. That matches the webhook branch, which
-// passes the same flag on every launch.
-//
-// Best-effort: a failure here is logged, not fatal. Chat availability matters
-// more than a clean queue, and the deadline keeps an unreachable Telegram
-// from holding up gateway startup.
+// dropPendingUpdates discards queued updates before long polling starts,
+// via deleteWebhook. Best-effort.
 func (g *Gateway) dropPendingUpdates(ctx context.Context, b *bot.Bot) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

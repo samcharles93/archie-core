@@ -28,11 +28,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "settings", Description: "Inspect or change runtime settings", Usage: "/settings [list|get <kind>|set <kind> <field>=<value> ...]"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
-	// /approve and /deny are Telegram's own dangerous-command approval surface:
-	// dangerous.go lists the pending commands and the inline buttons decide.
-	// The shared command specs use /approve for task approval instead, and
-	// Telegram's exact-match handler shadows that path, so /help must describe
-	// the Telegram meaning.
+	// On Telegram, /approve and /deny decide pending dangerous commands.
 	{Command: "approve", Description: "Show pending dangerous commands to approve", Usage: "/approve"},
 	{Command: "deny", Description: "Show pending dangerous commands to deny", Usage: "/deny"},
 	{Command: "start", Description: "Confirm that Archie is running", Usage: "/start"},
@@ -80,15 +76,8 @@ func gatewayHelpText() string {
 	return strings.TrimSpace(help.String())
 }
 
-// commandScopes are the scopes the menu is published to.
-//
-// Telegram resolves a chat's menu by scope specificity, not recency: a
-// list set on all_private_chats wins over the default scope in every DM.
-// Publishing only to the default scope therefore leaves the bot showing
-// whatever a previous owner of the token registered against the narrower
-// scopes  --  state that lives on Telegram's side and survives redeploys,
-// rewrites and migrations. Writing every scope we care about overwrites
-// those leftovers instead of being shadowed by them.
+// commandScopes are the scopes the command menu is published to. Publishing
+// to every scope overwrites menus left on narrower scopes.
 var commandScopes = []models.BotCommandScope{
 	&models.BotCommandScopeDefault{},
 	&models.BotCommandScopeAllPrivateChats{},

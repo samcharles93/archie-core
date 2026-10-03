@@ -147,12 +147,7 @@ func (g *Gateway) dispatchUpdateAction(ctx context.Context, b *bot.Bot, query *m
 		}
 		g.answerModelCallback(ctx, b, query.ID, "Starting update…", false)
 		g.editUpdateMessage(ctx, b, query, "Update approved. Starting now…")
-		// The callback context belongs to Telegram's short-lived update
-		// handler and is cancelled as soon as this handler returns. The
-		// installer may build an image for several minutes, so detach only
-		// the install operation from that request lifetime. Progress and
-		// final-message edits still use ctx and may harmlessly fail when the
-		// callback request is gone.
+		// Install outside the callback's short-lived context.
 		go g.installUpdate(ctx, b, query, fresh)
 	default:
 		g.answerModelCallback(ctx, b, query.ID, "That update action is no longer valid.", true)
@@ -169,14 +164,8 @@ func (g *Gateway) beginUpdate() bool {
 	return true
 }
 
-// installUpdate runs the synchronous phase of an update (build/install) and
-// reports it live. It deliberately never claims the update itself
-// succeeded: the reference installer queues the daemon restart through a
-// detached unit precisely so restarting archied.service doesn't kill this
-// call before it can report a clean exit, which means the restart -- and
-// whether the new version actually comes up healthy -- happens after this
-// function returns. That outcome is reported separately, by whichever
-// archied process boots next, via SendPendingReport.
+// installUpdate runs and reports an update's install phase. The restart
+// outcome is reported by the next boot via SendPendingReport.
 func (g *Gateway) installUpdate(ctx context.Context, b *bot.Bot, query *models.CallbackQuery, snapshot releaseupdate.Snapshot) {
 	defer func() {
 		g.updateMu.Lock()
@@ -270,22 +259,8 @@ func formatVersionChanges(result releaseupdate.Result) string {
 	return strings.Join(parts, ", ")
 }
 
-// formatPendingReport describes the phase-2 outcome. There are five distinct
-// cases, not two: the daemon came back up and confirms it is running what was
-// installed; it came back up but reports running something else; it came back
-// up and nothing could be checked either way; it didn't come up, and was
-// rolled back; or it didn't, and there was no backup to roll back to.
-//
-// Two of those are easy to collapse into a neighbour and must not be. A
-// no-backup failure worded like a rollback tells the operator to stand down
-// while the daemon may still be running the broken version, or not running
-// at all. An unverified success worded like a confirmed one re-asserts
-// exactly the claim that went unchecked in the incident this verification
-// was added for.
-//
-// running maps component ID to the version that component reports for
-// itself; see Report.Verify for why a passed health check is not on its own
-// evidence that the install took effect.
+// formatPendingReport describes an update's outcome: confirmed, version
+// drift, unverified, rolled back, or failed with no backup.
 func formatPendingReport(report releaseupdate.Report, running map[string]string) string {
 	if !report.RolledBack && report.HealthCheck == "passed" {
 		return formatHealthyReport(report, report.Verify(running))
@@ -318,11 +293,7 @@ func formatHealthyReport(report releaseupdate.Report, verification releaseupdate
 	}
 	changes := formatVersionChanges(releaseupdate.Result{Previous: report.Previous, Installed: report.Installed})
 	if len(verification.Confirmed) == 0 {
-		// Nothing self-reported a version we could check the claim against,
-		// so a passed health probe is all we have -- and it only ever
-		// proved that *something* answered. Calling this "Update complete"
-		// would assert the exact thing that went unverified in the incident
-		// this check was added for.
+		// No version could be checked.
 		text := "Update install finished"
 		if changes != "" {
 			text += " (" + changes + ")"
@@ -335,30 +306,14 @@ func formatHealthyReport(report releaseupdate.Report, verification releaseupdate
 	}
 	text += ". Health check passed — archie-core is healthy on the new version."
 	if len(verification.Unverified) > 0 {
-		// Something WAS confirmed, so the headline is earned -- but the
-		// version change printed above covers every component the
-		// installer claimed, including ones nothing checked. Naming them
-		// keeps the confirmed part from silently vouching for the rest.
-		// This is the ordinary case, not an edge one: only the daemon can
-		// self-report today, so the agent lands here on every successful
-		// update.
+		// Name the components that were not checked.
 		text += " Not independently checked: " + strings.Join(verification.Unverified, ", ") + "."
 	}
 	return text
 }
 
-// formatVersionDrift words the case where the installer reported success and
-// the health check passed, but a component reports it is running something
-// other than what was installed.
-//
-// "still the version this update meant to replace" is attached PER COMPONENT
-// rather than stated once for the whole message, because a single sentence
-// cannot be true of a mixed set: one component can be sitting on the version
-// the update meant to replace while another is on some third version the
-// report never mentions. Asserting one cause for both would invent a fact
-// about at least one of them -- the same defect as the false success this
-// whole check exists to catch. The trailing sentence is therefore worded to
-// hold either way, and says only what a passed probe actually establishes.
+// formatVersionDrift lists components running a version other than the one
+// installed.
 func formatVersionDrift(drift []releaseupdate.VersionDrift) string {
 	parts := make([]string, 0, len(drift))
 	for _, d := range drift {
@@ -375,15 +330,8 @@ func formatVersionDrift(drift []releaseupdate.VersionDrift) string {
 		"Investigate before retrying — otherwise /update will report success again."
 }
 
-// reportPendingUpdate checks for a phase-2 outcome left by the update
-// watchdog and relays it, exactly like announceRelease -- called on every
-// gateway launch so it fires whether this is a fresh process boot (the
-// common case after an update restart) or a later /restart. A report is
-// cleared as soon as it's handled -- relayed, or found unreadable -- so a
-// later launch never retries it. An unreadable report is discarded rather
-// than left in place: without clearing it, every future launch would fail
-// the same decode and the chat that approved the update would never learn
-// any outcome at all.
+// reportPendingUpdate relays and clears a pending update report on launch.
+// An unreadable report is discarded.
 func (g *Gateway) reportPendingUpdate(ctx context.Context, b *bot.Bot) {
 	g.updateReportMu.Lock()
 	defer g.updateReportMu.Unlock()
@@ -407,23 +355,12 @@ func (g *Gateway) reportPendingUpdate(ctx context.Context, b *bot.Bot) {
 	}
 }
 
-// SendPendingReport relays the phase-2 outcome of an update -- whether the
-// restarted daemon came up healthy, or was rolled back -- to the chat that
-// originally approved it. Called once, on startup, by whichever archied
-// process finds a pending report left by the previous boot's install; see
-// releaseupdate.ReadPendingReport.
+// SendPendingReport relays an update's outcome to the chat that approved it.
 func (g *Gateway) SendPendingReport(ctx context.Context, b *bot.Bot, report releaseupdate.Report) {
 	g.sendMessage(ctx, b, report.ChatID, report.ThreadID, formatPendingReport(report, g.runningVersions()))
 }
 
-// runningVersions returns the versions components report for themselves, or
-// nil when the composition root wired none.
-//
-// Nil is not a no-op: with nothing to check against, every claim is
-// Unverified, so the relayed message says the versions could not be
-// confirmed rather than repeating the pre-verification "healthy on the new
-// version". That is deliberate -- an unwired gateway should read as
-// unchecked, not as verified.
+// runningVersions returns self-reported component versions, or nil.
 func (g *Gateway) runningVersions() map[string]string {
 	if g.RunningVersions == nil {
 		return nil

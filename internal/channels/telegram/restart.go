@@ -14,13 +14,8 @@ type restartRequest struct {
 	threadID int
 }
 
-// restartHandler serves /restart: an operator escape hatch for reloading
-// config (notably the sender allowlist) or recovering a wedged adapter
-// without shell access to the host.
-//
-// Authorisation is inherited: authorizedMessage rejects anyone outside
-// AllowedUserIDs before this runs, so reaching it already implies an
-// allowlisted sender.
+// restartHandler serves /restart, relaunching the bot to reload config. Only
+// allowlisted senders reach it.
 func (g *Gateway) restartHandler() bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
@@ -28,11 +23,7 @@ func (g *Gateway) restartHandler() bot.HandlerFunc {
 			return
 		}
 
-		// Restarting tears down this process, and the update installer runs
-		// as its child -- a restart mid-install kills the install outright
-		// (signal: terminated) rather than letting it finish or fail
-		// cleanly, leaving the daemon on its old binary with no clear error
-		// surfaced to the operator.
+		// Refuse to restart while an update is installing.
 		g.updateMu.Lock()
 		updating := g.updateInProgress
 		g.updateMu.Unlock()
