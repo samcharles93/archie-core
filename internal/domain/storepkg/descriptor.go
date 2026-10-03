@@ -203,7 +203,7 @@ func validateFile(file File, extension bool) error {
 func isHostCodePath(file string) bool {
 	ext := strings.ToLower(path.Ext(file))
 	switch ext {
-	case ".go", ".yaegi", ".sh", ".bash", ".zsh", ".fish", ".ksh", ".csh",
+	case ".go", ".sh", ".bash", ".zsh", ".fish", ".ksh", ".csh",
 		".py", ".pyw", ".rb", ".pl", ".pm", ".php", ".lua", ".tcl", ".r",
 		".js", ".mjs", ".cjs", ".ts", ".bat", ".cmd", ".ps1":
 		return true

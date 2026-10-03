@@ -100,8 +100,8 @@ func (r *Registry) Add(ctx context.Context, engine Engine) error {
 }
 
 // Remove stops one running provider and unregisters it, removing the tools it
-// indexed. Unlike a Yaegi plugin, an MCP server is a child process with a
-// Stop, so a removal really unloads. On a registry that has not started,
+// indexed. An MCP server is a child process with a Stop, so a removal really
+// unloads. On a registry that has not started,
 // Remove only unregisters.
 func (r *Registry) Remove(ctx context.Context, id string) error {
 	r.opMu.Lock()

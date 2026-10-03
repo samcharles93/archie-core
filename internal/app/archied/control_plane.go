@@ -242,8 +242,7 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // re-reads it. ToolSettingsKind is on it because applyRuntimeResourceUpdate
 // reconciles the MCP provider set and rebuilds the two config-derived tool
 // entries (boot.reconcileToolSettings, its consumer); a removed MCP server
-// really disconnects, because it is a child process with a Stop, not a Yaegi
-// interpreter. ContainerRuntimePoliciesKind is on it because both consumers
+// really disconnects, because it is a child process with a Stop. ContainerRuntimePoliciesKind is on it because both consumers
 // re-read the published config: the container pool takes its image, pull
 // policy, network, max-uptime and concurrency cap per acquire, and the daemon's
 // dispatcher is resized after the publish (applyRuntimeResourceUpdate below).

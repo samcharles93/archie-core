@@ -205,35 +205,6 @@ func StageDiffCap() Stage {
 	}}
 }
 
-// StageRepoStages rejects obsolete repository-authored Go stages.
-func StageRepoStages() Stage {
-	return Stage{Name: "repo-stages", Run: func(_ context.Context, tc *TaskContext) error {
-		stages, err := filepath.Glob(filepath.Join(tc.Dir, ".archie", "stages", "*.go"))
-		if err != nil {
-			return fmt.Errorf("inspect legacy repository stages: %w", err)
-		}
-		if len(stages) > 0 {
-			return fmt.Errorf("legacy .archie/stages/*.go is unsupported; migrate repository behavior to database-backed YAML workflow steps (the %s step type runs operator argv in the task worktree)", CommandRunStepName)
-		}
-		return nil
-	}}
-}
-
-// StageYaegiGate rejects the obsolete interpreted gate rather than silently
-// omitting behavior that cannot be represented by the typed registry.
-func StageYaegiGate() Stage {
-	return Stage{Name: "custom-gate", Run: func(_ context.Context, tc *TaskContext) error {
-		_, err := os.Stat(filepath.Join(tc.Dir, ".archie", "gate.go"))
-		if err == nil {
-			return fmt.Errorf("legacy .archie/gate.go is unsupported; migrate its behavior to a registered YAML workflow step")
-		}
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("inspect legacy .archie/gate.go: %w", err)
-		}
-		return nil
-	}}
-}
-
 // OpenPR opens the task's pull request, records its number, and sets
 // the terminal pr_open outcome. Stages that need to act after the PR
 // exists (e.g. posting evidence comments) call this and then do so in

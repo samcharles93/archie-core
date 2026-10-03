@@ -132,7 +132,6 @@ func Implement() Workflow {
 		Name: "implement",
 		Stages: []Stage{
 			StagePrepareWorktree(),
-			StageRepoStages(),
 			StageBaselineGate(),
 
 			AgentStage{
@@ -192,7 +191,6 @@ func Implement() Workflow {
 				return fmt.Sprintf("%s (archie)", tc.Task.Title) +
 					commitIssueReference("Implements", tc.Task)
 			}),
-			StageYaegiGate(),
 			StageDiffCap(),
 			StagePRReviewAndOpenPR(implementPRBody),
 		},

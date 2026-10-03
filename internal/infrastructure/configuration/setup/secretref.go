@@ -9,9 +9,8 @@ import (
 )
 
 // engineNameRe is the shape a secret engine name must have. Engine names are
-// identifiers -- "env", "bws", "builtin" -- and for operator-supplied engines
-// they are also Yaegi plugin filenames, so this is deliberately no tighter than
-// an identifier.
+// identifiers -- "env", "bws", "vault" -- and an installed extension's package
+// name, so this is deliberately no tighter than an identifier.
 var engineNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // ParseSecretRef parses an "engine:key" secret reference.

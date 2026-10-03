@@ -19,7 +19,6 @@ func TDD() Workflow {
 		Name: "tdd",
 		Stages: []Stage{
 			StagePrepareWorktree(),
-			StageRepoStages(),
 			StageBaselineGate(),
 			tddAnalyseStage(),
 			tddReproTestsStage(),
@@ -32,7 +31,6 @@ func TDD() Workflow {
 				return fmt.Sprintf("fix: %s (archie)", tc.Task.Title) +
 					commitIssueReference("Fixes", tc.Task)
 			}),
-			StageYaegiGate(),
 			StageDiffCap(),
 			tddOpenPRStage(),
 		},

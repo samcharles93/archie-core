@@ -123,7 +123,6 @@ require (
 	github.com/samcharles93/ai-sdk v0.1.40
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
-	github.com/traefik/yaegi v0.16.1
 	go.lsp.dev/jsonrpc2 v1.0.1
 	go.lsp.dev/protocol v1.0.1
 	go.lsp.dev/uri v1.0.1

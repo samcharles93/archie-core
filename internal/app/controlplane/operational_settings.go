@@ -42,10 +42,8 @@ func operationalDefinitions() []Definition {
 		// Live: changed MCP servers are reconnected, rolling back to the old engine
 		// if the new one fails to start.
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "live", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
-		// ApplyMode is live for additions: a stored directory change re-layers live
-		// and the daemon's reconciliation loads new and changed files without a
-		// restart. A removal cannot unload Yaegi's interpreter, so it stays an
-		// outstanding apply-status problem rather than a restart of the whole kind
+		// The one field, skills_dir, is read at boot: a stored value that differs
+		// from the running one is refused until restart (refuseSkillsDirChange).
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.SkillsDir}
 		}, Validate: validatePluginSettings},

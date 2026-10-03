@@ -96,9 +96,6 @@ type TaskContext struct {
 	prReview *prReviewState
 	Bus      *events.Bus // nil-safe via Emit
 	Log      *slog.Logger
-	// CustomStages is retained for source compatibility only. Repository Go
-	// stages are no longer executed; StageRepoStages rejects their presence.
-	CustomStages func(dir string) ([]Stage, error)
 	// SkillBody is the Markdown body of the loaded SKILL.md for this
 	// workflow's matching skill, injected into agent context. Empty
 	// when no skill is found (backward compatible).
