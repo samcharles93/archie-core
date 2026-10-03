@@ -29,7 +29,6 @@ type schedulingPolicy struct {
 }
 
 type pluginSettings struct {
-	ModuleDir string `json:"module_dir"`
 	SkillsDir string `json:"skills_dir"`
 }
 
@@ -48,7 +47,7 @@ func operationalDefinitions() []Definition {
 		// restart. A removal cannot unload Yaegi's interpreter, so it stays an
 		// outstanding apply-status problem rather than a restart of the whole kind
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
-			return pluginSettings{cfg.ModuleDir, cfg.SkillsDir}
+			return pluginSettings{cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
 		// Live: each process that supervises extensions re-reads this on its sync
 		// tick, then starts, restarts or stops what changed.

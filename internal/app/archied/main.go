@@ -191,9 +191,6 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.loadWorkflows(); err != nil {
 		return 1
 	}
-	// Every directory loader has run by here, so the reconciliation seeds the
-	// running set and from its first tick loads only what appears or changes.
-	b.startPluginReconcile(ctx)
 
 	if err := b.registerNATSRPC(); err != nil {
 		return 1

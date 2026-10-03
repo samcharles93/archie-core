@@ -1,87 +1,49 @@
-// Package module loads and invokes EDA module actions, Yaegi-interpreted Go
-// files with a fixed entrypoint per kind.
+// Package module is the registry of EDA playbook action kinds. Each kind is
+// built in and has one typed contract: Args and Result struct types the
+// playbook loader declares to CEL, so a typo in an arg key or result field is a
+// load failure rather than a dispatch failure.
 package module
 
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/traefik/yaegi/interp"
-
 	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
-	"github.com/samcharles93/archie-core/internal/domain/eda/module/log/logextract"
-	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
-// Kind is a resolved module implementation: how to load a Yaegi file against
-// this kind's generated contract, and how to invoke it.
+// invoker decodes raw args, runs the kind, and marshals its typed result.
+type invoker func(ctx context.Context, rawArgs map[string]any) (map[string]any, error)
+
+// Kind is one built-in action kind: its schema and how to run it.
 type Kind struct {
-	// loadSymbols returns the kind's generated Yaegi symbol table.
-	loadSymbols func() map[string]map[string]reflect.Value
-	// exportPath is the fixed exported function name the interpreted file
-	// must define (e.g. "main.Run").
-	exportPath string
-	// argsType and resultType are the kind's hand-written Args and Result
-	// struct types. They are the schema the playbook loader declares to CEL
-	// so an arg key or result field typo is a load failure rather than a
-	// dispatch failure (multi-action-playbooks.md, D4).
 	argsType   reflect.Type
 	resultType reflect.Type
+	invoke     invoker
 }
 
-// registry maps kind name to its one typed contract. Adding a new kind is a
-// new entry here plus its own schema package -- no generic interface grows.
+// registry maps kind name to its one typed contract. Adding a kind is a new
+// entry here plus its own schema package.
 var registry = map[string]Kind{
 	"log": {
-		loadSymbols: func() map[string]map[string]reflect.Value { return logextract.Symbols },
-		exportPath:  "main.Run",
-		argsType:    reflect.TypeFor[log.Args](),
-		resultType:  reflect.TypeFor[log.Result](),
+		argsType:   reflect.TypeFor[log.Args](),
+		resultType: reflect.TypeFor[log.Result](),
+		invoke:     runLog,
 	},
 }
 
-// ModuleRegistry maps kind names to their resolved, type-erased invokers.
-// It is not a service locator: it owns one capability family (Module action
-// kinds) and exposes Register/Invoke only.
-type ModuleRegistry struct {
-	// kinds holds the resolved invoker per kind. Erasure is internal-only:
-	// the kind's interpreted contract remains fully typed.
-	kinds map[string]invoker
-}
+// ModuleRegistry answers the playbook engine's questions about action kinds.
+// It holds no state: every kind is built in.
+type ModuleRegistry struct{}
 
-// invoker is the type-erased callable the registry stores: it decodes raw
-// args, invokes the interpreted function, and marshals the typed result.
-type invoker func(ctx context.Context, rawArgs map[string]any) (map[string]any, error)
-
-// New returns an empty registry.
-func New() *ModuleRegistry {
-	return &ModuleRegistry{kinds: make(map[string]invoker)}
-}
-
-// Kinds returns the known action-kind names, sorted for determinism. Only kinds
-// with a registered contract can be loaded; the log kind is the shipped
-// proof-of-concept.
-func Kinds() []string {
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-// Len returns how many kinds were successfully registered (loaded).
-func (r *ModuleRegistry) Len() int {
-	return len(r.kinds)
-}
+// New returns the registry.
+func New() *ModuleRegistry { return &ModuleRegistry{} }
 
 // KindSchema returns a known kind's Args and Result types.
-func (r *ModuleRegistry) KindSchema(kind string) (reflect.Type, reflect.Type, bool) {
+func (*ModuleRegistry) KindSchema(kind string) (reflect.Type, reflect.Type, bool) {
 	k, ok := registry[kind]
 	if !ok {
 		return nil, nil, false
@@ -89,77 +51,35 @@ func (r *ModuleRegistry) KindSchema(kind string) (reflect.Type, reflect.Type, bo
 	return k.argsType, k.resultType, true
 }
 
-// Register loads <dir>/<kind>.go and resolves its entrypoint.
-func (r *ModuleRegistry) Register(kind, dir string) error {
-	k, ok := registry[kind]
-	if !ok {
-		return fmt.Errorf("module: unknown kind %q", kind)
-	}
-	path := filepath.Join(dir, kind+".go")
-	src, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("module: read %s: %w", path, err)
-	}
-
-	inv, err := resolveInvoker(kind, path, string(src), k)
-	if err != nil {
-		return err
-	}
-	r.kinds[kind] = inv
-	return nil
-}
-
-// resolveInvoker builds the type-erased invoker for one kind from its
-// interpreted source. Each kind has its own typed decode/invoke path below;
-// this switch is the only place the per-kind types are named.
-func resolveInvoker(kind, label, src string, k Kind) (invoker, error) {
-	switch kind {
-	case "log":
-		return logInvoker(label, src, k)
-	default:
-		return nil, fmt.Errorf("module: no invoker for kind %q", kind)
-	}
-}
-
-// logInvoker resolves a log kind's main.Run func(log.Args) log.Result,
-// decoding rawArgs strictly into log.Args first (a shape mismatch is a
-// reported failure, never a silent zero-value fill).
-func logInvoker(label, src string, k Kind) (invoker, error) {
-	inv, err := yaegiutil.Safe(label, func() (invoker, error) {
-		i, err := yaegiutil.New(interp.Options{}, k.loadSymbols())
-		if err != nil {
-			return nil, err
-		}
-		run, err := yaegiutil.Resolve[func(log.Args) log.Result](i, src, k.exportPath)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", label, err)
-		}
-		return func(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-			return runLog(ctx, label, run, rawArgs)
-		}, nil
-	})
-	return inv, err
-}
-
-// runLog decodes rawArgs into log.Args, invokes the interpreted Run, and
-// marshals the typed Result back to map[string]any. ctx is accepted for
-// interface symmetry with future kinds that need cancellation; the log kind
-// is side-effect-free and does not use it.
-func runLog(_ context.Context, label string, run func(log.Args) log.Result, rawArgs map[string]any) (map[string]any, error) {
+// runLog writes the message to the daemon's log at the requested level
+// (default info) and reports what it wrote.
+func runLog(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	args, err := decodeLogArgs(rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	res, err := yaegiutil.Safe(label, func() (log.Result, error) {
-		return run(args), nil
-	})
+	level, name, err := logLevel(args.Level)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"written": res.Written,
-		"level":   res.Level,
-	}, nil
+	if args.Message != "" {
+		slog.Default().Log(ctx, level, args.Message)
+	}
+	return map[string]any{"written": args.Message != "", "level": name}, nil
+}
+
+func logLevel(name string) (slog.Level, string, error) {
+	switch strings.ToLower(name) {
+	case "", "info":
+		return slog.LevelInfo, "info", nil
+	case "debug":
+		return slog.LevelDebug, "debug", nil
+	case "warn":
+		return slog.LevelWarn, "warn", nil
+	case "error":
+		return slog.LevelError, "error", nil
+	}
+	return 0, "", fmt.Errorf("module log: unknown level %q", name)
 }
 
 // decodeLogArgs strictly decodes rawArgs into log.Args: a wrong-typed field
@@ -193,12 +113,12 @@ func decodeLogArgs(rawArgs map[string]any) (log.Args, error) {
 }
 
 // Invoke calls kind with rawArgs and returns its result map.
-func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[string]any) (map[string]any, error) {
-	inv, ok := r.kinds[kind]
+func (*ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[string]any) (map[string]any, error) {
+	k, ok := registry[kind]
 	if !ok {
-		return nil, fmt.Errorf("module: kind %q is not registered", kind)
+		return nil, fmt.Errorf("module: unknown kind %q", kind)
 	}
-	res, err := inv(ctx, rawArgs)
+	res, err := k.invoke(ctx, rawArgs)
 	if err != nil {
 		return nil, fmt.Errorf("module %s: %w", kind, err)
 	}
@@ -207,7 +127,7 @@ func (r *ModuleRegistry) Invoke(ctx context.Context, kind string, rawArgs map[st
 
 // DecodeResult converts Invoke's result map into the kind's Result struct.
 // Unknown, missing or mistyped fields are errors.
-func (r *ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, error) {
+func (*ModuleRegistry) DecodeResult(kind string, raw map[string]any) (any, error) {
 	k, ok := registry[kind]
 	if !ok {
 		return nil, fmt.Errorf("module: unknown kind %q", kind)

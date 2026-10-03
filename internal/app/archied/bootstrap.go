@@ -174,17 +174,11 @@ type boot struct {
 	chatTasks           gateway.TaskCreator
 	defaultChatIdentity string
 
-	startGateways []func()
-	// pluginReconciler loads plugin and module files dropped into
-	// the running config's directories without a restart. Nil before boot's
-	// startPluginReconcile, and in processes that load no directory (the
-	// Gateway), where a stored plugin-settings change still layers but loads
-	// nothing.
-	pluginReconciler *pluginReconciler
-	trees            *worktree.Manager
-	worktreeGrants   *worktreerpc.Grants
-	identityRunners  []*daemon.IdentityRunner
-	d                *daemon.Daemon
+	startGateways   []func()
+	trees           *worktree.Manager
+	worktreeGrants  *worktreerpc.Grants
+	identityRunners []*daemon.IdentityRunner
+	d               *daemon.Daemon
 	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
 	// Nil when no chat task creator is configured, in which case startServices
 	// leaves it unstarted rather than running with no reachable job kind.
@@ -492,9 +486,7 @@ func (b *boot) loadWorkflows() error {
 	if err := b.loadWorkflowRouting(cfg, log); err != nil {
 		return err
 	}
-	if err := b.loadModules(cfg, log); err != nil {
-		return err
-	}
+	b.modules = module.New()
 	if err := b.loadEDAPlaybooks(cfg, log); err != nil {
 		return err
 	}
@@ -536,36 +528,6 @@ func (b *boot) loadWorkflowRouting(cfg config.Config, log *slog.Logger) error {
 	workflow.SetLabelWorkflows(labelWorkflows)
 	b.kindWorkflows = kindWorkflows
 	b.labelWorkflows = labelWorkflows
-	return nil
-}
-
-// loadModules builds the daemon's Module registry: operator-trusted,
-// in-process, Yaegi-interpreted. A broken module is a startup failure -- the
-// daemon does not start with a partial module set, matching the routing-file
-// load pattern (not the degrade-and-skip plugin pattern). Kinds whose file is
-// not present in the directory are simply not loaded. Split out of
-// loadWorkflows; pure extraction, same log messages and error-return order as
-// before.
-func (b *boot) loadModules(cfg config.Config, log *slog.Logger) error {
-	b.modules = module.New()
-	if cfg.ModuleDir == "" {
-		return nil
-	}
-	for _, kind := range module.Kinds() {
-		path := filepath.Join(cfg.ModuleDir, kind+".go")
-		if _, err := os.Stat(path); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue // kind not installed in this module dir
-			}
-			log.Error("module stat failed", "kind", kind, "path", path, "err", err)
-			return err
-		}
-		if err := b.modules.Register(kind, cfg.ModuleDir); err != nil {
-			log.Error("module load failed", "kind", kind, "dir", cfg.ModuleDir, "err", err)
-			return err
-		}
-	}
-	log.Info("module registry built", "dir", cfg.ModuleDir, "kinds", b.modules.Len())
 	return nil
 }
 

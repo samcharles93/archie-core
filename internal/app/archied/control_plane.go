@@ -9,7 +9,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
@@ -340,13 +339,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	}
 	b.publishConfig(ctx, cfg)
 	b.log.Info("runtime settings applied", "kind", kind, "version", update.Version)
-	switch kind {
-	case controlplane.PluginSettingsKind:
-		// The document's directories are live now; load what they hold and
-		// report the reconciliation's own outcome, which is the one that knows
-		// whether a removal is outstanding.
-		b.reconcileRuntimePlugins(ctx)
-	case controlplane.ContainerRuntimePoliciesKind:
+	if kind == controlplane.ContainerRuntimePoliciesKind {
 		// The pool reads the republished config itself; the dispatcher holds
 		// its limit, so a raise must be woken to admit queued work now and a
 		// lower must be honoured as running tasks finish.
@@ -363,42 +356,6 @@ func (b *boot) resizeTaskDispatcher(maxConcurrency int) {
 	if b.d != nil {
 		b.d.ResizeTaskDispatcher(maxConcurrency)
 	}
-}
-
-// startPluginReconcile establishes the plugin and module directory
-// reconciliation on the apply-status restamp interval. Boot calls it
-// after loadPlugins and loadWorkflows have loaded
-// the directories, so the seed records what is already running and the first
-// tick loads only what appears or changes afterwards.
-func (b *boot) startPluginReconcile(ctx context.Context) {
-	r := newPluginReconciler(b.log, pluginReconcileTargets{
-		modules: b.modules,
-		dirs:    func() config.Config { return b.cfgHolder.Get() },
-		relayer: func(ctx context.Context) error {
-			cfg, _, err := b.runtimeConfig(ctx, b.cfgHolder.Get())
-			if err != nil {
-				return err
-			}
-			b.publishConfig(ctx, cfg)
-			return nil
-		},
-		report: func(ctx context.Context, err error) {
-			b.applyStatus.Report(ctx, controlplane.PluginSettingsKind, b.applyStatus.AppliedVersion(controlplane.PluginSettingsKind), err)
-		},
-	})
-	b.pluginReconciler = r
-	r.seed()
-	go r.run(ctx, applystatus.RestampInterval)
-}
-
-// reconcileRuntimePlugins runs one directory reconciliation after a stored
-// plugin-settings change, so a new directory loads on the tick the document
-// lands rather than waiting for the poller.
-func (b *boot) reconcileRuntimePlugins(ctx context.Context) {
-	if b.pluginReconciler == nil {
-		return
-	}
-	_ = b.pluginReconciler.reconcile(ctx)
 }
 
 // refuseSkillsDirChange refuses a stored plugin-settings document whose

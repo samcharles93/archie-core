@@ -13,7 +13,6 @@ import HistoryLink from "./HistoryLink.vue";
 const KIND = "plugin-settings";
 
 interface PluginSettings {
-  module_dir: string;
   skills_dir: string;
 }
 
@@ -35,12 +34,6 @@ const error = computed(() => store.stateFor(KIND).error);
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>
 
     <template v-if="dirs">
-      <SettingRow label="Module directory" for="pl-modules">
-        <div class="flex flex-wrap items-center gap-3">
-          <Input id="pl-modules" v-model="dirs.module_dir" class="max-w-md font-mono" />
-          <DraftHint :kind="KIND" path="module_dir" />
-        </div>
-      </SettingRow>
       <SettingRow label="Skills directory" for="pl-skills" hint="Empty: work directory.">
         <div class="flex flex-wrap items-center gap-3">
           <Input id="pl-skills" v-model="dirs.skills_dir" class="max-w-md font-mono" />
