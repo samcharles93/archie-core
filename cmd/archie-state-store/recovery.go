@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/app/statestore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
@@ -51,9 +51,9 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	command := args[0]
-	options := archied.StateStoreRecoveryOptions{Operation: command}
+	options := statestore.RecoveryOptions{Operation: command}
 	switch command {
-	case archied.RecoveryBackup, archied.RecoveryRestore, archied.RecoveryValidate, archied.RecoveryRollback:
+	case statestore.RecoveryBackup, statestore.RecoveryRestore, statestore.RecoveryValidate, statestore.RecoveryRollback:
 	default:
 		fmt.Fprintf(stderr, "archie-state-store: unknown command %q\n\n", command)
 		fmt.Fprint(stderr, recoveryUsage)
@@ -84,7 +84,7 @@ func runRecovery(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	summary, err := archied.RunStateStoreRecovery(context.Background(), options)
+	summary, err := statestore.RunRecovery(context.Background(), options)
 	if err != nil {
 		fmt.Fprintf(stderr, "archie-state-store %s: %v\n", command, err)
 		return 1

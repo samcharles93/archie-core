@@ -118,7 +118,7 @@ type Deps struct {
 	Principals access.PrincipalSource
 	// Policies is the stored policy chain.
 	// Optional: nil answers the access RPCs with codes.Unavailable. The reset
-	// surface is deliberately not an RPC: `archied access reset` runs on the
+	// surface is deliberately not an RPC: `archie-state-store access reset` runs on the
 	// State Store host, never over the network.
 	Policies access.PolicyStore
 	// Denials records and lists denial records. Optional: nil disables the

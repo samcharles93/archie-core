@@ -1,9 +1,9 @@
 // state_store.go composes the standalone archie-state-store process. It mirrors
 // gateway.go / cmd/archie-gateway: the binary is a thin main that passes
-// process inputs into RunStateStore, which serves the task and event-capture
+// process inputs into Run, which serves the task and event-capture
 // stores from Postgres, registers every StateStore gRPC handler (the same service .4.2 serves
 // in-process on the daemon), and shuts down cleanly on ctx cancellation.
-package archied
+package statestore
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
@@ -29,26 +30,12 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	registry "github.com/samcharles93/archie-core/internal/infrastructure/storepkg"
+	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
-func configuredIdentityNames(cfg config.Config) []string {
-	if len(cfg.Identities) == 0 {
-		name := cfg.BotUser
-		if name == "" {
-			name = "archie"
-		}
-		return []string{name}
-	}
-	names := make([]string, 0, len(cfg.Identities))
-	for _, value := range cfg.Identities {
-		names = append(names, value.Name)
-	}
-	return names
-}
-
-// StateStoreOptions contains process inputs for the standalone State Store.
-type StateStoreOptions struct {
+// Options contains process inputs for the standalone State Store.
+type Options struct {
 	Config  string
 	Overlay string
 	// Listen is the gRPC listen address. Loopback binds (127.0.0.1, ::1,
@@ -64,18 +51,18 @@ type StateStoreOptions struct {
 	ReadyAddr string
 }
 
-// RunStateStore serves the task and event-capture stores from Postgres,
+// Run serves the task and event-capture stores from Postgres,
 // registers every StateStore gRPC handler, and serves until ctx is cancelled.
 // The conversation store belongs to the separate archie-gateway process. The
 // store service owns its own DB lifecycle, so
 // b.cleanup() is the sole owner closing b.st here (in-process owner).
-func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nolint:cyclop // the composition root's setup sequence is deliberately flat and sequential
-	b := newBootstrap()
+func Run(ctx context.Context, options Options) error { //nolint:cyclop // the composition root's setup sequence is deliberately flat and sequential
+	b := newServer()
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
 		return err
 	}
-	listen, err := resolveServiceListen("state", options.Listen, b.cfg.Services.Get(config.ServiceNameState).Listen)
+	listen, err := servicekit.ResolveListen("state", options.Listen, b.cfg.Services.Get(config.ServiceNameState).Listen)
 	if err != nil {
 		return err
 	}
@@ -89,7 +76,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nol
 	if !ok {
 		return fmt.Errorf("state store does not support identity bootstrap")
 	}
-	legacyNames := configuredIdentityNames(b.cfg)
+	legacyNames := servicekit.IdentityNames(b.cfg)
 	if err := identityStore.BootstrapIdentities(ctx, legacyNames); err != nil {
 		return fmt.Errorf("bootstrap identities: %w", err)
 	}
@@ -164,7 +151,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nol
 // engines the consumers build; an invalid instance policy fails this boot --
 // the store stops serving until it is fixed. A store without the access
 // surfaces degrades: there is no chain to seed.
-func (b *boot) seedAndValidatePolicies(ctx context.Context) error {
+func (b *server) seedAndValidatePolicies(ctx context.Context) error {
 	policies, ok := b.st.(access.PolicyStore)
 	if !ok {
 		return nil
@@ -214,10 +201,10 @@ func (b *boot) seedAndValidatePolicies(ctx context.Context) error {
 // with one it cannot run. The seed is retried on this process's next start, so
 // a corrected config.toml takes effect when archie-state-store restarts.
 //
-// It is a method rather than a loop in RunStateStore because the boot sequence
+// It is a method rather than a loop in Run because the boot sequence
 // is at its complexity budget: the branch belongs to the report's own policy,
 // not to the sequence that triggers it.
-func (b *boot) reportUnseededResources(skipped []controlplane.SeedSkip) {
+func (b *server) reportUnseededResources(skipped []controlplane.SeedSkip) {
 	for _, skip := range skipped {
 		b.log.Error("control-plane resource not seeded; the kind stays absent and the file's value is the one in effect",
 			"kind", skip.Kind, "err", skip.Err)
@@ -232,7 +219,7 @@ func (b *boot) reportUnseededResources(skipped []controlplane.SeedSkip) {
 // server admits is compilable there; a skewed deploy is only fixed by a
 // matching deploy.
 func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlplane.Server, error) {
-	steps, err := stepVocabulary()
+	steps, err := workflowsteps.NewManager()
 	if err != nil {
 		return nil, fmt.Errorf("register workflow step vocabulary: %w", err)
 	}
@@ -249,7 +236,7 @@ func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlp
 // from it.
 // It does NOT open gateway chat sessions -- those live in the separate
 // archie-gateway process on their own store and are out of state-store scope.
-func (b *boot) openStateStore(ctx context.Context) error {
+func (b *server) openStateStore(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	// The State Store serves the installed packages extension engines come from,
 	// so it resolves its own references through the env engine only.
@@ -275,7 +262,7 @@ func (b *boot) openStateStore(ctx context.Context) error {
 // the capture/mapping/binding surfaces, so each is asserted here (the same
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.
-func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
+func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
 	if b.pg != nil {
 		packages := storepkg.Service{
@@ -363,7 +350,7 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 // executionDeps wires the execution-tree surfaces (workflow calls, step
 // recording/reading, cancellation) from the same store, degrading each one
 // independently the store lacks it rather than failing the boot.
-func (b *boot) executionDeps(deps *staterpc.Deps) {
+func (b *server) executionDeps(deps *staterpc.Deps) {
 	if wc, ok := b.st.(storecontract.WorkflowCaller); ok {
 		deps.WorkflowCalls = wc
 	}
@@ -382,7 +369,7 @@ func (b *boot) executionDeps(deps *staterpc.Deps) {
 // store. A store without them -- one that owns
 // no tenant boundary yet -- degrades the access RPCs rather than failing the
 // boot, the same pattern the other optional surfaces use.
-func (b *boot) accessDeps(deps *staterpc.Deps) {
+func (b *server) accessDeps(deps *staterpc.Deps) {
 	if ps, ok := b.st.(access.PrincipalSource); ok {
 		deps.Principals = ps
 	}
@@ -418,7 +405,7 @@ func serveStateStore(ctx context.Context, listener net.Listener, deps staterpc.D
 // process is up), while GET /health/detailed runs the state_db readiness probe
 // and answers 503 when the store is degraded. It is the standalone process's
 // counterpart to the daemon's /healthz + /health/detailed (internal/webui).
-func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) error {
+func (b *server) startStateStoreReadiness(ctx context.Context, readyAddr string) error {
 	registry := health.NewRegistry(readiness.NewStoreProbe(b.st))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -443,11 +430,11 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 // startOptionalSurfaces starts the HTTP surfaces this process serves beside
 // the gRPC contract, each enabled only by its own flag.
 //
-// They are gathered here rather than branched inline because RunStateStore is
+// They are gathered here rather than branched inline because Run is
 // at its complexity budget: a surface that is off by default belongs to its
 // own decision, not to the boot sequence that triggers it -- the same reason
 // reportUnseededResources is a method.
-func (b *boot) startOptionalSurfaces(ctx context.Context, options StateStoreOptions) error {
+func (b *server) startOptionalSurfaces(ctx context.Context, options Options) error {
 	if options.ReadyAddr != "" {
 		if err := b.startStateStoreReadiness(ctx, options.ReadyAddr); err != nil {
 			return err
@@ -501,7 +488,7 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 // dashboard edits with, so a definition the projector admits is compilable
 // where it dispatches (openStateStoreControlPlane for the pairing).
 func newPackageProjections(pool *pgxpool.Pool) (map[string]storepkg.FamilyProjector, error) {
-	steps, err := stepVocabulary()
+	steps, err := workflowsteps.NewManager()
 	if err != nil {
 		return nil, fmt.Errorf("register workflow step vocabulary: %w", err)
 	}

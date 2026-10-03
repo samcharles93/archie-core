@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/app/statestore"
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
@@ -23,10 +23,13 @@ func run() int {
 	// including no arguments at all, serves the State Store contract. An
 	// unrecognised word is refused rather than ignored, so a mistyped recovery
 	// command never leaves an operator watching a server start instead.
+	if args := os.Args[1:]; statestore.IsAccessResetArgs(args) {
+		return statestore.RunAccessReset(context.Background(), args[2:], os.Stderr)
+	}
 	if args := os.Args[1:]; len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		return runRecovery(args, os.Stdout, os.Stderr)
 	}
-	var options archied.StateStoreOptions
+	var options statestore.Options
 	showVersion := buildinfo.RegisterVersionFlag("archie-state-store")
 	flag.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
@@ -34,14 +37,14 @@ func run() int {
 	flag.StringVar(&options.Token, "token", "", "bearer token required for a non-loopback listener (defaults to [services.state].target_token)")
 	flag.StringVar(&options.ReadyAddr, "ready-addr", "", "optional readiness HTTP listen address (e.g. 127.0.0.1:9091)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: archie-state-store [flags]   # serve the State Store gRPC contract\n\noffline recovery: archie-state-store <backup|restore|validate|rollback|import> -h\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: archie-state-store [flags]   # serve the State Store gRPC contract\n\noffline recovery: archie-state-store <backup|restore|validate|rollback> -h | access reset -h\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 	showVersion()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := archied.RunStateStore(ctx, options); err != nil {
+	if err := statestore.Run(ctx, options); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

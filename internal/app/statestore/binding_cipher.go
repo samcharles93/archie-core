@@ -1,4 +1,4 @@
-package archied
+package statestore
 
 import (
 	"fmt"

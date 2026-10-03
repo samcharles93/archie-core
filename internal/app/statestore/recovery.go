@@ -16,7 +16,7 @@
 // the offline checks resolve the same workflow step vocabulary as the process
 // whose verdict they predict, and a constructor error is a refusal here rather
 // than a server that would validate against a different vocabulary.
-package archied
+package statestore
 
 import (
 	"context"
@@ -49,9 +49,9 @@ const (
 	RecoveryRollback = "rollback"
 )
 
-// StateStoreRecoveryOptions are the process inputs for one offline recovery
+// RecoveryOptions are the process inputs for one offline recovery
 // operation.
-type StateStoreRecoveryOptions struct {
+type RecoveryOptions struct {
 	// Operation is one of backup, restore, validate, rollback.
 	Operation string
 	// Out is the snapshot backup writes.
@@ -71,16 +71,16 @@ type StateStoreRecoveryOptions struct {
 	Revision int64
 }
 
-// RunStateStoreRecovery performs one offline operation on the task database and
+// RunRecovery performs one offline operation on the task database and
 // returns the line the command reports on stdout.
-func RunStateStoreRecovery(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
+func RunRecovery(ctx context.Context, options RecoveryOptions) (string, error) {
 	return runPostgresRecovery(ctx, options)
 }
 
 // checkBootGate runs the writer's per-resource validation over what is stored,
 // then boot's gate over the file config with the stored resources layered on,
 // and returns how many stored resources validated.
-func checkBootGate(ctx context.Context, server *controlplane.Server, stored bool, options StateStoreRecoveryOptions) (int, error) {
+func checkBootGate(ctx context.Context, server *controlplane.Server, stored bool, options RecoveryOptions) (int, error) {
 	checked := 0
 	if stored {
 		var err error
@@ -115,8 +115,8 @@ func checkBootGate(ctx context.Context, server *controlplane.Server, stored bool
 // It reads that config with the daemon's stderr logger: resolving it is a
 // diagnosis, and a diagnosis that opened, appended to or rotated cfg.Log.File
 // would edit the deployment it is inspecting.
-func bootConfig(ctx context.Context, options StateStoreRecoveryOptions) (config.Config, error) {
-	b := newBootstrap()
+func bootConfig(ctx context.Context, options RecoveryOptions) (config.Config, error) {
+	b := newServer()
 	b.stderrLog = true
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
@@ -127,7 +127,7 @@ func bootConfig(ctx context.Context, options StateStoreRecoveryOptions) (config.
 
 // replayRevision puts back the revision options names through the control
 // plane's ordinary replace. The caller holds the store's ownership claim.
-func replayRevision(ctx context.Context, resources controlplane.ResourceStore, options StateStoreRecoveryOptions) (string, error) {
+func replayRevision(ctx context.Context, resources controlplane.ResourceStore, options RecoveryOptions) (string, error) {
 	server, err := openStateStoreControlPlane(resources)
 	if err != nil {
 		return "", err

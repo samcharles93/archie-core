@@ -1,11 +1,9 @@
-package archied
+package statestore
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 )
 
@@ -17,8 +15,8 @@ import (
 //
 // The pool is stored on boot.pg and closed at shutdown; nothing opens a second
 // pool per subsystem.
-func (b *boot) openStateStorePool(ctx context.Context) error {
-	pool, err := openServicePool(ctx, b.cfg.DatabaseURL, "the State Store")
+func (b *server) openStateStorePool(ctx context.Context) error {
+	pool, err := servicekit.OpenPool(ctx, b.cfg.DatabaseURL, "the State Store")
 	if err != nil {
 		b.log.Error("open state store postgres pool", "err", err)
 		return err
@@ -36,21 +34,4 @@ func (b *boot) openStateStorePool(ctx context.Context) error {
 	releaseCtx := context.WithoutCancel(ctx)
 	b.addCleanup(func() { _ = ownership.Release(releaseCtx) })
 	return nil
-}
-
-// openServicePool opens and migrates a serving process's pool. service names
-// the process in the error an operator reads.
-func openServicePool(ctx context.Context, url, service string) (*pgxpool.Pool, error) {
-	if url == "" {
-		return nil, fmt.Errorf("database_url is required: %s is Postgres-only", service)
-	}
-	pool, err := postgres.Open(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	if err := postgres.Migrate(ctx, pool, postgres.Migrations()); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	return pool, nil
 }

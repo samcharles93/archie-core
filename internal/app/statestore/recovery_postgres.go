@@ -1,4 +1,4 @@
-package archied
+package statestore
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // database the configuration names. There is no automatic schema rollback:
 // goose Down drops tables, so the way back from a migration is restoring the
 // snapshot taken before it, which loses every write made after that snapshot.
-func runPostgresRecovery(ctx context.Context, options StateStoreRecoveryOptions) (string, error) {
+func runPostgresRecovery(ctx context.Context, options RecoveryOptions) (string, error) {
 	cfg, err := bootConfig(ctx, options)
 	if err != nil {
 		return "", err
@@ -74,7 +74,7 @@ func openRecoveryPool(ctx context.Context, url string) (*pgxpool.Pool, int64, er
 // the stored resources pass the writer's validation and boot's gate. An
 // unmigrated database holds nothing to check; the State Store migrates and
 // seeds it on its next start, so only boot's config gate applies.
-func validatePostgres(ctx context.Context, url string, options StateStoreRecoveryOptions) (string, error) {
+func validatePostgres(ctx context.Context, url string, options RecoveryOptions) (string, error) {
 	pool, version, err := openRecoveryPool(ctx, url)
 	if err != nil {
 		return "", err
@@ -94,7 +94,7 @@ func validatePostgres(ctx context.Context, url string, options StateStoreRecover
 // rollbackPostgres replays an earlier revision holding the State Store's
 // ownership claim, so it refuses while a State Store serves and none can
 // start until it finishes.
-func rollbackPostgres(ctx context.Context, url string, options StateStoreRecoveryOptions) (string, error) {
+func rollbackPostgres(ctx context.Context, url string, options RecoveryOptions) (string, error) {
 	pool, _, err := openRecoveryPool(ctx, url)
 	if err != nil {
 		return "", err

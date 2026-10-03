@@ -3,11 +3,10 @@ package archied
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net"
 	"net/http"
 	"sync/atomic"
-	"time"
+
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 
 	"github.com/samcharles93/archie-core/internal/domain/health"
 )
@@ -89,26 +88,11 @@ func (b *boot) startHealth(ctx context.Context) error {
 	return nil
 }
 
-// serveHealth runs mux on addr until shutdown, registering its own cleanup.
-// Shared by the daemon and the standalone State Store, which serve the same
-// three routes over different probes. label names the surface in the log and
-// error text, which operators and the State Store's own process test read.
 func (b *boot) serveHealth(ctx context.Context, addr string, mux http.Handler, label string) error {
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
+	stop, err := servicekit.ServeHealth(ctx, addr, mux, label, b.log)
 	if err != nil {
-		return fmt.Errorf("listen for %s: %w", label, err)
+		return err
 	}
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			b.log.Error(label+" server stopped", "err", err)
-		}
-	}()
-	b.addCleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
-	b.log.Info(label+" listening", "addr", "http://"+listener.Addr().String())
+	b.addCleanup(stop)
 	return nil
 }

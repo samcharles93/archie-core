@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
+
 	natsio "github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 
@@ -38,7 +40,7 @@ type GatewayOptions struct {
 // inventing a value -- resolveServiceListen explains why an empty address is an
 // error rather than a default.
 func gatewayListenAndToken(b *boot, options GatewayOptions) (listen, token string, err error) {
-	listen, err = resolveServiceListen("gateway", options.Listen, b.cfg.Services.Get(config.ServiceNameGateway).Listen)
+	listen, err = servicekit.ResolveListen("gateway", options.Listen, b.cfg.Services.Get(config.ServiceNameGateway).Listen)
 	if err != nil {
 		return "", "", err
 	}

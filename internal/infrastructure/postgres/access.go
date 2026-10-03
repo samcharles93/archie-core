@@ -169,7 +169,7 @@ func (s *Store) EnsureShippedOrgPolicies(ctx context.Context, orgID org.OrgID) e
 
 // ResetOrgPolicies restores the shipped role policies for one org and
 // removes its other org-level policies. It is the store-side half of
-// `archied access reset --org`, which runs on this host and records the
+// `archie-state-store access reset --org`, which runs on this host and records the
 // reset as an audit event.
 func (s *Store) ResetOrgPolicies(ctx context.Context, orgID org.OrgID) error {
 	if orgID == "" {

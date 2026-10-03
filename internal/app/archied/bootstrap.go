@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
@@ -113,21 +115,11 @@ type boot struct {
 
 	playbooks *playbook.Store
 
-	st  storecontract.TaskStore
-	eda eventCaptureStore
-	// pg is the State Store process's process-scoped PostgreSQL pool, opened
-	// and migrated by openStateStorePool. It is the one connection the
-	// standalone archie-state-store binary holds: do not open a second pool
-	// per subsystem. Nil for every other process: the daemon and Gateway reach
-	// the State Store over gRPC and hold only the conversation store's pool.
-	pg *pgxpool.Pool
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
 	// dialed to the standalone archie-state-store gRPC service at
 	// [services.state].target. It is set by openStateStoreAdapter, which
-	// requires [services.state].target to be set. The b.st field remains solely
-	// for the standalone archie-state-store binary, which serves the task store
-	// from Postgres.
+	// requires [services.state].target to be set.
 	stateStore storecontract.TaskStore
 	// accessChain is the daemon's policy engine, built once from the stored
 	// policies (openAccessChain); accessProblems is what the readiness
@@ -354,55 +346,29 @@ func (b *boot) cleanup() {
 	}
 }
 
-// loadConfig resolves the file config. A Resolve failure is reported on
-// stderr because the file log destination is itself configuration that has
-// not been read yet.
 func (b *boot) loadConfig(_ context.Context, cfgPath, overlayPath string) error {
-	loader := configuration.New(b.log)
-	b.loader = loader
-	doc, err := loader.Resolve(cfgPath, overlayPath)
+	loader, doc, err := servicekit.Resolve(b.log, cfgPath, overlayPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
-	b.doc = doc
-	// A stray/misspelled key parses and validates cleanly (unknown TOML keys
-	// are otherwise silently discarded), so it must be visible somewhere rather
-	// than just quietly doing nothing.
-	if len(doc.UnknownKeys) > 0 {
-		b.log.Warn("config file has unrecognised keys; check for typos", "keys", doc.UnknownKeys)
-	}
+	b.loader, b.doc = loader, doc
 	b.cfg = b.doc.Config
 	b.cfgHolder = config.NewHolder(b.cfg)
 	b.currentProvenance.Store(&b.doc.Provenance)
-	return b.setupLogging()
+	b.setupLogging()
+	return nil
 }
 
-func (b *boot) setupLogging() error {
-	cfg := b.cfg
+// setupLogging stays on stderr for an offline command (stderrLog): creating,
+// appending to or rotating the deployment's log is a side effect a diagnosis
+// must not have.
+func (b *boot) setupLogging() {
 	if b.stderrLog {
-		return nil
+		return
 	}
-	logFeed := logging.NewFeed(1000)
-	b.logFeed = logFeed
-	taskLogs := logging.NewTaskRegistry(filepath.Join(cfg.StateDir, "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
-	b.taskLogs = taskLogs
-	fileLog, logCloser, logErr := logging.New(logging.Options{
-		File:      cfg.Log.File,
-		MaxSizeMB: cfg.Log.MaxSizeMB,
-		Keep:      cfg.Log.Keep,
-		Level:     cfg.Log.Level,
-		Stderr:    !cfg.Log.Quiet,
-		Feed:      logFeed,
-	})
-	b.log = fileLog.With("component", "daemon")
-	b.addCleanup(func() { _ = logCloser.Close() })
-	if logErr != nil {
-		b.log.Error("file logging disabled", "err", logErr)
-	} else if cfg.Log.File != "" {
-		b.log.Info("logging to file", "path", cfg.Log.File)
-	}
-	return nil
+	logs := servicekit.Logging(b.cfg, "daemon")
+	b.log, b.logFeed, b.taskLogs = logs.Log, logs.Feed, logs.TaskLogs
+	b.addCleanup(func() { _ = logs.Closer.Close() })
 }
 
 // openStores wires the secret registry and the conversation store. The
@@ -474,7 +440,7 @@ func (b *boot) openAccessChain(ctx context.Context) error {
 }
 
 func (b *boot) openChatSessions(ctx context.Context) error {
-	pool, err := openServicePool(ctx, b.cfg.DatabaseURL, "the conversation store")
+	pool, err := servicekit.OpenPool(ctx, b.cfg.DatabaseURL, "the conversation store")
 	if err != nil {
 		return fmt.Errorf("open conversation store: %w", err)
 	}
@@ -1256,7 +1222,7 @@ func (b *boot) buildDaemon() {
 		ContainerPool:       b.containerPool,
 		KitLauncher:         b.kitLauncher,
 		Identities:          b.identityRunners,
-		RootIdentityID:      identity.StableID(configuredIdentityNames(b.cfg)[0]),
+		RootIdentityID:      identity.StableID(servicekit.IdentityNames(b.cfg)[0]),
 		TaskLogs:            b.taskLogs,
 		AgentStatus:         b.agentStatus,
 		KindWorkflows:       b.kindWorkflows,

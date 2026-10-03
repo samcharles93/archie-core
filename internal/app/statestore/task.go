@@ -1,4 +1,4 @@
-package archied
+package statestore
 
 import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
@@ -8,6 +8,6 @@ import (
 // Serve ownership is the pool's claim (openStateStorePool), so a second State
 // Store on the same database already failed before this runs, and the pool's
 // cleanup closes what this store reads through.
-func (b *boot) openTaskStore() {
+func (b *server) openTaskStore() {
 	b.st = postgres.New(b.pg)
 }

@@ -1,4 +1,4 @@
-// The `archied access reset` command: the locked-out-org and broken-instance
+// The `archie-state-store access reset` command: the locked-out-org and broken-instance
 // recovery surface. It restores the shipped role policies for one org and
 // removes its other org-level policies, or removes the stored instance
 // policies; the cross-org forbid is engine-enforced and survives any reset.
@@ -7,7 +7,7 @@
 // recorded as an audit event. It claims the same store ownership the State
 // Store holds, so a running store refuses it: stop the store, reset, start
 // the store.
-package archied
+package statestore
 
 import (
 	"context"
@@ -54,7 +54,7 @@ func RunAccessReset(ctx context.Context, args []string, stderr io.Writer) int {
 		return 2
 	}
 
-	b := newBootstrap()
+	b := newServer()
 	defer b.cleanup()
 	if err := b.loadConfig(ctx, *cfgPath, *overlayPath); err != nil {
 		return 1
@@ -65,6 +65,7 @@ func RunAccessReset(ctx context.Context, args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "reset: open the State Store database (stop archie-state-store first)")
 		return 1
 	}
+	b.openTaskStore()
 	resetter, ok := b.st.(access.Resetter)
 	if !ok {
 		fmt.Fprintln(stderr, "reset: the State Store does not support the access reset surface")

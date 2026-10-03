@@ -54,7 +54,7 @@ const orgOwnerPolicy = `permit(principal, action, resource) when {
 };`
 
 // ShippedOrgPolicies returns the four shipped role policies for one org, as
-// the store seeds them and `archied access reset --org` restores them.
+// the store seeds them and `archie-state-store access reset --org` restores them.
 func ShippedOrgPolicies(orgID org.OrgID) []Policy {
 	return []Policy{
 		{ID: PolicyOrgRead, Level: LevelOrg, OrgID: orgID, Text: orgReadPolicy},
@@ -66,7 +66,7 @@ func ShippedOrgPolicies(orgID org.OrgID) []Policy {
 
 // CrossOrgForbidID is the ID the shipped cross-org forbid is known by in
 // denial records. The forbid is engine-enforced, never stored, so it cannot
-// be edited away or removed by `archied access reset --instance`.
+// be edited away or removed by `archie-state-store access reset --instance`.
 const CrossOrgForbidID = PolicyCrossOrgID
 
 // The cross-org forbid's semantics, carried as text for the policy surface
