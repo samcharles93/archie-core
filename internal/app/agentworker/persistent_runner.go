@@ -6,12 +6,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/storage"
 )
 
 type persistentRunner struct {
-	agentexec.Runner
+	agentrun.Runner
 	enabled     bool
 	sessionPath string
 	memoryPath  string
@@ -46,7 +47,7 @@ func readProjectMemory(path string) (string, error) {
 	return "Project memory from earlier sessions:\n" + strings.Join(entries, "\n"), nil
 }
 
-func (r persistentRunner) Run(ctx context.Context, workspace string, request agentexec.Request, report agentexec.ToolCallReporter) (agentexec.Result, error) {
+func (r persistentRunner) Run(ctx context.Context, workspace string, request agentrun.Request, report agentrun.ToolCallReporter) (agentrun.Result, error) {
 	if !r.enabled {
 		return r.Runner.Run(ctx, workspace, request, report)
 	}
@@ -64,11 +65,11 @@ func (r persistentRunner) Run(ctx context.Context, workspace string, request age
 		plugin := &request.Plugins[i]
 		filename := plugin.Name + ".go"
 		if err := storage.StagePlugin(pluginsDir, filename, []byte(plugin.Src)); err != nil {
-			return agentexec.Result{}, fmt.Errorf("stage plugin %s: %w", plugin.Name, err)
+			return agentrun.Result{}, fmt.Errorf("stage plugin %s: %w", plugin.Name, err)
 		}
 		source, err := os.ReadFile(pluginsDir + "/" + filename)
 		if err != nil {
-			return agentexec.Result{}, fmt.Errorf("read staged plugin %s: %w", plugin.Name, err)
+			return agentrun.Result{}, fmt.Errorf("read staged plugin %s: %w", plugin.Name, err)
 		}
 		plugin.Src = string(source)
 	}

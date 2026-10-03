@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -99,7 +101,7 @@ func (b *server) rebuildChatModelRuntime(cfg config.Config) {
 // sessionKey builds a deterministic session identifier from a gateway
 // message's routing fields. Platform + channel + thread uniquely identify
 // a conversation for session persistence and history retrieval.
-func executionProviders(cfg config.Config) map[string]agentexec.Provider {
+func executionProviders(cfg config.Config) map[string]agentrun.Provider {
 	return agentexec.ProvidersFromConfig(cfg.Providers)
 }
 

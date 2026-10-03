@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // triageWorkflowNames is the set of workflows triage may hand a task to.
@@ -30,7 +30,7 @@ func Triage() Workflow {
 				ReadOnly:     true,
 				CaptureTools: triageDecideCaptureTools,
 				Mission:      triageMission,
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
+				OnResult: func(tc *TaskContext, res agentrun.Result) error {
 					calls := res.Captures["decide"]
 					if len(calls) != 1 {
 						return fmt.Errorf("triage classify stage called the decide tool %d times (want exactly once)", len(calls))
@@ -78,7 +78,7 @@ func Triage() Workflow {
 
 // triageDecideCaptureTools gives the classify agent a structured verdict
 // tool, mirroring feasibility.go's decideCaptureTools.
-func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
+func triageDecideCaptureTools(*TaskContext) []agentrun.CaptureTool {
 	params := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -88,7 +88,7 @@ func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 		},
 		"required": ["needs_code_change", "reasons"]
 	}`)
-	return []agentexec.CaptureTool{{
+	return []agentrun.CaptureTool{{
 		Name: "decide", Description: "Record the triage verdict. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"needs_code_change", "reasons"},
 		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"needs_code_change"},

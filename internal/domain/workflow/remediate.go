@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // ErrNoReviewPayload is returned when a remediate run starts on a task that
@@ -170,13 +170,13 @@ func remediateBuildStage() Stage {
 	return AgentStage{
 		Name: "remediate-build",
 		Role: "builder",
-		Gate: func(tc *TaskContext) agentexec.Gate {
+		Gate: func(tc *TaskContext) agentrun.Gate {
 			return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 		},
 		Mission: remediateMission,
-		OnResult: func(tc *TaskContext, res agentexec.Result) error {
+		OnResult: func(tc *TaskContext, res agentrun.Result) error {
 			tc.BuildSummary = res.Summary
-			if res.Status == agentexec.StatusPassed && len(res.Changes) == 0 {
+			if res.Status == agentrun.StatusPassed && len(res.Changes) == 0 {
 				tc.BuildNoChanges = true
 			}
 			return nil

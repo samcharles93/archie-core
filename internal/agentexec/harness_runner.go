@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -43,9 +45,9 @@ const (
 // knows its CLI's stream format; it reports tool calls as they complete and
 // the session to resume.
 type HarnessOutput interface {
-	Line(line []byte, report ToolCallReporter)
+	Line(line []byte, report agentrun.ToolCallReporter)
 	SessionID() string
-	Usage() Usage
+	Usage() agentrun.Usage
 }
 
 // HarnessRunner runs a stage on an external coding-agent CLI. Archie's
@@ -65,16 +67,16 @@ func NewHarnessRunner(newOutput func() HarnessOutput) *HarnessRunner {
 	return &HarnessRunner{newOutput: newOutput}
 }
 
-func (r *HarnessRunner) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
+func (r *HarnessRunner) Run(ctx context.Context, workspace string, req agentrun.Request, report agentrun.ToolCallReporter) (agentrun.Result, error) {
 	if err := validateHarness(req); err != nil {
-		return Result{}, err
+		return agentrun.Result{}, err
 	}
 	if err := ownTreeForHarness(req.Harness.User, workspace); err != nil {
-		return Result{}, fmt.Errorf("give the worktree to the harness user: %w", err)
+		return agentrun.Result{}, fmt.Errorf("give the worktree to the harness user: %w", err)
 	}
 	mcpConfig, capturesPath, cleanup, err := r.prepareCaptures(req)
 	if err != nil {
-		return Result{}, err
+		return agentrun.Result{}, err
 	}
 	defer cleanup()
 	res, err := r.run(ctx, workspace, req, mcpConfig, report)
@@ -88,11 +90,11 @@ func (r *HarnessRunner) Run(ctx context.Context, workspace string, req Request, 
 	return res, err
 }
 
-func (r *HarnessRunner) run(ctx context.Context, workspace string, req Request, mcpConfig string, report ToolCallReporter) (Result, error) {
-	res := Result{Version: ProtocolVersion, TaskID: req.TaskID, Attempt: req.Attempt, Stage: req.Stage}
+func (r *HarnessRunner) run(ctx context.Context, workspace string, req agentrun.Request, mcpConfig string, report agentrun.ToolCallReporter) (agentrun.Result, error) {
+	res := agentrun.Result{Version: agentrun.ProtocolVersion, TaskID: req.TaskID, Attempt: req.Attempt, Stage: req.Stage}
 	before, err := snapshotRepo(workspace)
 	if err != nil {
-		return Result{}, fmt.Errorf("snapshot workspace before harness: %w", err)
+		return agentrun.Result{}, fmt.Errorf("snapshot workspace before harness: %w", err)
 	}
 	runCtx := ctx
 	if req.Budget.WallClock > 0 {
@@ -128,7 +130,7 @@ func (r *HarnessRunner) run(ctx context.Context, workspace string, req Request, 
 
 		gateOutput, gateErr := runHarnessGate(runCtx, req.Gate.Commands, workspace)
 		if gateErr == nil {
-			res.Status = StatusPassed
+			res.Status = agentrun.StatusPassed
 			return res, nil
 		}
 		if runCtx.Err() != nil {
@@ -144,7 +146,7 @@ func (r *HarnessRunner) run(ctx context.Context, workspace string, req Request, 
 // settle checks one finished invocation. Guarantees come first: a policy
 // violation parks the step even when the invocation also timed out or
 // failed, because what the harness did matters more than how it ended.
-func settle(runCtx context.Context, workspace string, before repoState, req Request, res Result, exitErr error) (Result, bool, error) {
+func settle(runCtx context.Context, workspace string, before repoState, req agentrun.Request, res agentrun.Result, exitErr error) (agentrun.Result, bool, error) {
 	after, err := snapshotRepo(workspace)
 	if err != nil {
 		return res, true, fmt.Errorf("snapshot workspace after harness: %w", err)
@@ -173,7 +175,7 @@ func (r *HarnessRunner) output(adapter string) HarnessOutput {
 	return silentOutput{}
 }
 
-func validateHarness(req Request) error {
+func validateHarness(req agentrun.Request) error {
 	if err := req.Validate(); err != nil {
 		return err
 	}
@@ -202,7 +204,7 @@ func validateHarness(req Request) error {
 // harnessArgv is the launch command, then the verb, then the prompt verb
 // when the verb is a resume or continue, with placeholders substituted as
 // raw values rather than shell text.
-func harnessArgv(h *HarnessSpec, verb []string, prompt, session, mcpConfig string) []string {
+func harnessArgv(h *agentrun.HarnessSpec, verb []string, prompt, session, mcpConfig string) []string {
 	argv := slices.Clone(h.Launch)
 	tails := [][]string{verb}
 	if !slices.Equal(verb, h.Prompt) {
@@ -224,7 +226,7 @@ func harnessArgv(h *HarnessSpec, verb []string, prompt, session, mcpConfig strin
 
 // resumeVerb continues the session the last invocation reported, falling
 // back to the most recent session when the CLI reported none.
-func resumeVerb(h *HarnessSpec, sessionID string) []string {
+func resumeVerb(h *agentrun.HarnessSpec, sessionID string) []string {
 	if len(h.Resume) > 0 && sessionID != "" {
 		return slices.Clone(h.Resume)
 	}
@@ -237,7 +239,7 @@ func resumeVerb(h *HarnessSpec, sessionID string) []string {
 // invoke runs one harness invocation in its own process group, feeding
 // stdout to out line by line. Cancelling ctx kills the whole group, so a
 // CLI's children cannot outlive the step.
-func invoke(ctx context.Context, workspace string, h *HarnessSpec, argv []string, out HarnessOutput, report ToolCallReporter) error {
+func invoke(ctx context.Context, workspace string, h *agentrun.HarnessSpec, argv []string, out HarnessOutput, report agentrun.ToolCallReporter) error {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
 	cmd.WaitDelay = killGrace
@@ -271,7 +273,7 @@ func invoke(ctx context.Context, workspace string, h *HarnessSpec, argv []string
 	return nil
 }
 
-func harnessPrompt(workspace string, req Request) string {
+func harnessPrompt(workspace string, req agentrun.Request) string {
 	var b strings.Builder
 	b.WriteString(req.Mission)
 	b.WriteString("\n\n## Rules\n\n")
@@ -295,7 +297,7 @@ func harnessPrompt(workspace string, req Request) string {
 	return b.String()
 }
 
-func runHarnessGate(ctx context.Context, commands []Command, workspace string) (string, error) {
+func runHarnessGate(ctx context.Context, commands []agentrun.Command, workspace string) (string, error) {
 	for _, c := range commands {
 		if len(c.Argv) == 0 {
 			continue
@@ -323,13 +325,13 @@ func clipGate(out []byte) string {
 	return s[:limit/2] + "\n...[truncated]...\n" + s[len(s)-limit/2:]
 }
 
-func park(res Result, stop, detail string) Result {
+func park(res agentrun.Result, stop, detail string) agentrun.Result {
 	res.Status, res.StopReason, res.Detail = StatusParked, stop, detail
 	return res
 }
 
-func addUsage(a, b Usage) Usage {
-	return Usage{
+func addUsage(a, b agentrun.Usage) agentrun.Usage {
+	return agentrun.Usage{
 		PromptTokens:        a.PromptTokens + b.PromptTokens,
 		CompletionTokens:    a.CompletionTokens + b.CompletionTokens,
 		TotalTokens:         a.TotalTokens + b.TotalTokens,
@@ -425,7 +427,7 @@ func mergeKeys(a, b map[string]string) map[string]struct{} {
 	return keys
 }
 
-func policyViolation(before, after repoState, changes []string, req Request) string {
+func policyViolation(before, after repoState, changes []string, req agentrun.Request) string {
 	if !maps.Equal(before.refs, after.refs) {
 		var moved []string
 		for name := range mergeKeys(before.refs, after.refs) {
@@ -458,9 +460,9 @@ func policyViolation(before, after repoState, changes []string, req Request) str
 
 type silentOutput struct{}
 
-func (silentOutput) Line([]byte, ToolCallReporter) {}
-func (silentOutput) SessionID() string             { return "" }
-func (silentOutput) Usage() Usage                  { return Usage{} }
+func (silentOutput) Line([]byte, agentrun.ToolCallReporter) {}
+func (silentOutput) SessionID() string                      { return "" }
+func (silentOutput) Usage() agentrun.Usage                  { return agentrun.Usage{} }
 
 // tailBuffer keeps the last stderrTailBytes written to it.
 type tailBuffer struct{ buf bytes.Buffer }
@@ -479,7 +481,7 @@ func (t *tailBuffer) String() string { return t.buf.String() }
 // the CLI at archie's MCP server, and creates the captures file the server
 // appends to. The directory belongs to the harness user, whose MCP server
 // writes into it.
-func (r *HarnessRunner) prepareCaptures(req Request) (config, captures string, cleanup func(), err error) {
+func (r *HarnessRunner) prepareCaptures(req agentrun.Request) (config, captures string, cleanup func(), err error) {
 	cleanup = func() {}
 	if len(req.CaptureTools) == 0 {
 		return "", "", cleanup, nil

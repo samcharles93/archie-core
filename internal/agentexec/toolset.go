@@ -8,6 +8,8 @@ import (
 	"os"
 	"slices"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	aicore "github.com/samcharles93/ai-sdk/core"
 
 	"github.com/samcharles93/archie-core/internal/tools"
@@ -71,22 +73,8 @@ type ToolSetOptions struct {
 	// OnToolCall, when non-nil, is notified once per completed tool call.
 	// LoopRunner populates it so a workflow stage can surface tool activity on
 	// the task timeline. Nil means no one is listening.
-	OnToolCall ToolCallReporter
+	OnToolCall agentrun.ToolCallReporter
 }
-
-// ToolCallReport is one completed tool invocation, reported through a
-// ToolCallReporter.
-type ToolCallReport struct {
-	Tool string
-	// Detail is a clipped one-line summary: the tool's result, or
-	// "error: <message>" if it failed.
-	Detail string
-	Failed bool
-}
-
-// ToolCallReporter receives one ToolCallReport per completed tool call. A nil
-// reporter is valid and reports nothing.
-type ToolCallReporter func(ToolCallReport)
 
 // toolCallDetailBytes caps the summary ToolCallReport.Detail carries. This
 // rides on every task's observability event stream, so one large file read
@@ -112,7 +100,7 @@ func reportToolCallCompletion(opts ToolSetOptions, entry tools.ToolEntry, result
 	if err != nil {
 		outcome = "error: " + err.Error()
 	}
-	opts.OnToolCall(ToolCallReport{Tool: entry.Name, Detail: clipToolCallDetail(outcome), Failed: err != nil})
+	opts.OnToolCall(agentrun.ToolCallReport{Tool: entry.Name, Detail: clipToolCallDetail(outcome), Failed: err != nil})
 }
 
 // resultLimit returns the cap that applies to one entry.

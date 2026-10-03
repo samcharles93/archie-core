@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
@@ -14,10 +15,10 @@ import (
 // Request is everything archie-agent needs to run a task's workflow. API
 // keys reach the container as environment variables, not here.
 type Request struct {
-	Task      *workflow.Task                `json:"task"`
-	Repo      config.Repo                   `json:"repo"`
-	Cfg       config.TaskConfig             `json:"cfg"`
-	Providers map[string]agentexec.Provider `json:"providers"`
+	Task      *workflow.Task               `json:"task"`
+	Repo      config.Repo                  `json:"repo"`
+	Cfg       config.TaskConfig            `json:"cfg"`
+	Providers map[string]agentrun.Provider `json:"providers"`
 	// MCPServers carries MCP server definitions so the agent can construct
 	// transports, discover tools, and register them locally. Absent/empty
 	// means no MCP servers (backward compatible).
@@ -36,7 +37,7 @@ type Request struct {
 	Tools []string `json:"tools,omitempty"`
 	// Harness, set for a Kit profile, runs every agent stage on the Kit's
 	// CLI instead of the built-in loop.
-	Harness *agentexec.HarnessSpec `json:"harness,omitempty"`
+	Harness *agentrun.HarnessSpec `json:"harness,omitempty"`
 }
 
 // Validate rejects a full-task request that cannot be correlated to a real

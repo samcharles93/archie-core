@@ -1,7 +1,6 @@
-// Package agentexec defines worker-local workflow-stage execution. archie-agent
-// owns workflow orchestration; authority-bearing forge, store, and push effects
-// remain daemon-owned behind scoped RPC boundaries.
-package agentexec
+// Package agentrun is the contract between the daemon and an agent stage: the
+// request a stage runs, the result it returns, and the runner that executes it.
+package agentrun
 
 import (
 	"encoding/json"

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -152,15 +154,15 @@ type taskDependencies struct {
 	guardrails *tools.GuardrailEngine
 }
 
-type runnerFactory func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner
+type runnerFactory func(map[string]agentrun.Provider, *slog.Logger) agentrun.Runner
 
-func newTaskRunner(providers map[string]agentexec.Provider, log *slog.Logger) agentexec.Runner {
+func newTaskRunner(providers map[string]agentrun.Provider, log *slog.Logger) agentrun.Runner {
 	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
 }
 
 // applyToolLimits sets the task's tool policy and allowlist on a
 // *LoopRunner. Other runners are untouched.
-func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []string) {
+func applyToolLimits(agent agentrun.Runner, policy config.ToolPolicy, allow []string) {
 	runner, ok := agent.(*agentexec.LoopRunner)
 	if !ok {
 		return
@@ -175,12 +177,12 @@ func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy, allow []s
 // stageRunners builds the runner every agent stage uses. llm is the task's
 // shared model runtime (the one its MCP providers answer sampling from); the
 // registry path reuses it rather than building a second one.
-func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, llm *runtime.Runtime, log *slog.Logger) (agentexec.Runner, error) {
+func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerFactory, llm *runtime.Runtime, log *slog.Logger) (agentrun.Runner, error) {
 	if req.Harness != nil {
 		// The built-in loop has no route to a model from a Kit container.
 		return agentexec.HarnessStages{Runner: agentexec.NewHarnessRunner(nil), Spec: *req.Harness}, nil
 	}
-	var agent agentexec.Runner
+	var agent agentrun.Runner
 	if mcpSet != nil && mcpSet.registry != nil {
 		agent = agentexec.NewLoopRunner(llm, log, mcpSet.registry)
 	} else {

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/docker/sandbox-kit-spec/v3/fetch"
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
@@ -100,7 +102,7 @@ type Request struct {
 // Run is a started Kit task.
 type Run struct {
 	Container *container.Container
-	Harness   agentexec.HarnessSpec
+	Harness   agentrun.HarnessSpec
 	// Volumes outlive the run; remove them with RemoveVolumes once the
 	// execution has ended.
 	Volumes   []kit.Volume

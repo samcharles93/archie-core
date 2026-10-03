@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // claudeCodeHarnessOutput reads Claude Code's newline-delimited stream-json
@@ -13,10 +15,10 @@ type claudeCodeHarnessOutput struct {
 	sessionID string
 	pending   map[string]string
 
-	messageUsage Usage
+	messageUsage agentrun.Usage
 	seenMessages map[string]struct{}
 	hasResult    bool
-	resultUsage  Usage
+	resultUsage  agentrun.Usage
 }
 
 func newClaudeCodeHarnessOutput() *claudeCodeHarnessOutput {
@@ -26,7 +28,7 @@ func newClaudeCodeHarnessOutput() *claudeCodeHarnessOutput {
 	}
 }
 
-func (o *claudeCodeHarnessOutput) Line(line []byte, report ToolCallReporter) {
+func (o *claudeCodeHarnessOutput) Line(line []byte, report agentrun.ToolCallReporter) {
 	var event struct {
 		Type      string          `json:"type"`
 		SessionID string          `json:"session_id"`
@@ -53,7 +55,7 @@ func (o *claudeCodeHarnessOutput) Line(line []byte, report ToolCallReporter) {
 	}
 }
 
-func (o *claudeCodeHarnessOutput) assistant(raw json.RawMessage, _ ToolCallReporter) {
+func (o *claudeCodeHarnessOutput) assistant(raw json.RawMessage, _ agentrun.ToolCallReporter) {
 	var message struct {
 		ID      string          `json:"id"`
 		Usage   json.RawMessage `json:"usage"`
@@ -77,7 +79,7 @@ func (o *claudeCodeHarnessOutput) assistant(raw json.RawMessage, _ ToolCallRepor
 	}
 }
 
-func (o *claudeCodeHarnessOutput) user(raw json.RawMessage, report ToolCallReporter) {
+func (o *claudeCodeHarnessOutput) user(raw json.RawMessage, report agentrun.ToolCallReporter) {
 	var message struct {
 		Content []struct {
 			Type      string          `json:"type"`
@@ -99,7 +101,7 @@ func (o *claudeCodeHarnessOutput) user(raw json.RawMessage, report ToolCallRepor
 		}
 		delete(o.pending, block.ToolUseID)
 		if report != nil {
-			report(ToolCallReport{
+			report(agentrun.ToolCallReport{
 				Tool: tool, Detail: clipToolCallDetail(claudeResultContent(block.Content)),
 				Failed: block.IsError,
 			})
@@ -117,14 +119,14 @@ func (o *claudeCodeHarnessOutput) markMessage(id string) bool {
 
 func (o *claudeCodeHarnessOutput) SessionID() string { return o.sessionID }
 
-func (o *claudeCodeHarnessOutput) Usage() Usage {
+func (o *claudeCodeHarnessOutput) Usage() agentrun.Usage {
 	if o.hasResult {
 		return o.resultUsage
 	}
 	return o.messageUsage
 }
 
-func decodeClaudeUsage(raw json.RawMessage) (Usage, bool) {
+func decodeClaudeUsage(raw json.RawMessage) (agentrun.Usage, bool) {
 	var fields struct {
 		InputTokens              int `json:"input_tokens"`
 		OutputTokens             int `json:"output_tokens"`
@@ -132,7 +134,7 @@ func decodeClaudeUsage(raw json.RawMessage) (Usage, bool) {
 		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	}
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &fields) != nil {
-		return Usage{}, false
+		return agentrun.Usage{}, false
 	}
 	return usageFromFields(fields.InputTokens, fields.OutputTokens, fields.CacheReadInputTokens, fields.CacheCreationInputTokens), true
 }
@@ -141,9 +143,9 @@ func decodeClaudeUsage(raw json.RawMessage) (Usage, bool) {
 // built-in loop's Anthropic provider does: Claude's input_tokens excludes
 // them, and budgets must count a harness run the way they count a built-in
 // one.
-func usageFromFields(input, output, cacheRead, cacheCreation int) Usage {
+func usageFromFields(input, output, cacheRead, cacheCreation int) agentrun.Usage {
 	prompt := input + cacheRead + cacheCreation
-	return Usage{
+	return agentrun.Usage{
 		PromptTokens: prompt, CompletionTokens: output, TotalTokens: prompt + output,
 		CachedTokens: cacheRead, CacheCreationTokens: cacheCreation,
 	}

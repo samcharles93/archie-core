@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -48,7 +50,7 @@ func newBenchmarkReviewer(opts Options, cfg config.Config, rt *runtime.Runtime) 
 
 type liveReviewer struct {
 	cfg    config.Config
-	agent  agentexec.Runner
+	agent  agentrun.Runner
 	source workflow.PRSource
 	nextID atomic.Int64
 }

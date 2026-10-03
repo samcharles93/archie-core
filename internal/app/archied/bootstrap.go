@@ -67,7 +67,7 @@ import (
 // reverse at shutdown, matching the LIFO ordering of the deferred calls
 // they replace.
 type boot struct {
-	catalog *servicekit.Catalog
+	catalog *modelcatalog.Catalog
 	cfg     config.Config
 	log     *slog.Logger
 
@@ -235,7 +235,7 @@ func (b *boot) loadConfig(_ context.Context, cfgPath, overlayPath string) error 
 		return err
 	}
 	b.loader, b.doc = loader, doc
-	b.catalog = servicekit.NewCatalog(cfgPath)
+	b.catalog = modelcatalog.NewCatalog(cfgPath)
 	b.cfg = b.doc.Config
 	b.cfgHolder = config.NewHolder(b.cfg)
 	b.currentProvenance.Store(&b.doc.Provenance)
@@ -981,7 +981,7 @@ func (b *boot) loadCatalog(ctx context.Context) {
 		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
 		return
 	}
-	models := servicekit.ApplyModelCatalog(&b.cfg, snapshot)
+	models := modelcatalog.Apply(&b.cfg, snapshot)
 	b.cfgHolder.Set(b.cfg.Clone())
 	b.catalog.Set(snapshot, models)
 	b.log.Info("model catalog loaded", "providers", len(snapshot.Providers), "models", len(models))
@@ -993,7 +993,7 @@ func (b *boot) refreshModelCatalog(ctx context.Context) error {
 		return err
 	}
 	base := b.cfgHolder.Get().Clone()
-	models := servicekit.ApplyModelCatalog(&base, snapshot)
+	models := modelcatalog.Apply(&base, snapshot)
 	cfg, _, err := b.runtimeConfig(ctx, base)
 	if err != nil {
 		return err
@@ -1005,7 +1005,7 @@ func (b *boot) refreshModelCatalog(ctx context.Context) error {
 }
 
 func (b *boot) startModelCatalogRefresh(ctx context.Context) {
-	servicekit.Every(ctx, servicekit.CatalogRefreshInterval, func() {
+	modelcatalog.Every(ctx, modelcatalog.RefreshInterval, func() {
 		if err := b.refreshModelCatalog(ctx); err != nil {
 			b.log.Warn("model catalog refresh failed; keeping the loaded catalog", "err", err)
 		}

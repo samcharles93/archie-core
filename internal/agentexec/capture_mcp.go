@@ -11,6 +11,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -26,7 +28,7 @@ type captureRecord struct {
 // acceptCapture decides whether one capture call is kept. Both the built-in
 // loop and the harness path use it, and the harness path applies it twice:
 // in the MCP server, and again when the worker reads the captures back.
-func acceptCapture(spec CaptureTool, accepted int, value json.RawMessage) (string, bool) {
+func acceptCapture(spec agentrun.CaptureTool, accepted int, value json.RawMessage) (string, bool) {
 	if spec.MaxCalls > 0 && accepted >= spec.MaxCalls {
 		return fmt.Sprintf("%s rejected: maximum call count is %d", spec.Name, spec.MaxCalls), false
 	}
@@ -42,7 +44,7 @@ func acceptCapture(spec CaptureTool, accepted int, value json.RawMessage) (strin
 // ServeCaptureMCP serves a stage's capture tools over MCP and appends each
 // accepted call to sink as one JSON line. A rejected call is answered with
 // its rejection, so the agent can correct it, and is not recorded.
-func ServeCaptureMCP(ctx context.Context, specs []CaptureTool, sink io.Writer, t mcp.Transport) error {
+func ServeCaptureMCP(ctx context.Context, specs []agentrun.CaptureTool, sink io.Writer, t mcp.Transport) error {
 	server := mcp.NewServer(&mcp.Implementation{Name: "archie", Version: "1"}, nil)
 	var mu sync.Mutex
 	accepted := map[string]int{}
@@ -77,7 +79,7 @@ func ServeCaptureMCP(ctx context.Context, specs []CaptureTool, sink io.Writer, t
 // is writable by the harness user, so nothing in it is trusted: every record
 // is checked again, and anything that is not an accepted call of a declared
 // tool is dropped.
-func readCaptures(path string, specs []CaptureTool) (map[string][]json.RawMessage, error) {
+func readCaptures(path string, specs []agentrun.CaptureTool) (map[string][]json.RawMessage, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -85,7 +87,7 @@ func readCaptures(path string, specs []CaptureTool) (map[string][]json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	byName := make(map[string]CaptureTool, len(specs))
+	byName := make(map[string]agentrun.CaptureTool, len(specs))
 	for _, s := range specs {
 		byName[s.Name] = s
 	}
@@ -119,7 +121,7 @@ func ServeCaptureFiles(ctx context.Context, specPath, capturesPath string, t mcp
 	if err != nil {
 		return err
 	}
-	var specs []CaptureTool
+	var specs []agentrun.CaptureTool
 	if err := json.Unmarshal(raw, &specs); err != nil {
 		return fmt.Errorf("capture tool spec: %w", err)
 	}

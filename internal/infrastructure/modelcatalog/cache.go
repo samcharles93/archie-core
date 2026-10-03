@@ -1,4 +1,4 @@
-package servicekit
+package modelcatalog
 
 import (
 	"context"
@@ -9,19 +9,18 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
-// CatalogRefreshInterval is how often a running service re-reads the catalog.
-const CatalogRefreshInterval = time.Hour
+// RefreshInterval is how often a running service re-reads the catalog.
+const RefreshInterval = time.Hour
 
 // Catalog holds the last model catalog a service loaded.
 type Catalog struct {
 	cachePath string
 
 	mu       sync.RWMutex
-	snapshot modelcatalog.Snapshot
+	snapshot Snapshot
 	models   []string
 }
 
@@ -31,22 +30,22 @@ func NewCatalog(cfgPath string) *Catalog {
 }
 
 // State returns the loaded snapshot and its model references.
-func (c *Catalog) State() (modelcatalog.Snapshot, []string) {
+func (c *Catalog) State() (Snapshot, []string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.snapshot, c.models
 }
 
 // Set records a loaded snapshot and its model references.
-func (c *Catalog) Set(snapshot modelcatalog.Snapshot, models []string) {
+func (c *Catalog) Set(snapshot Snapshot, models []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.snapshot, c.models = snapshot, models
 }
 
 // Fetch reads the catalog, resolving provider keys through getenv.
-func (c *Catalog) Fetch(ctx context.Context, getenv func(string) string, configured map[string]config.Provider) (modelcatalog.Snapshot, error) {
-	return modelcatalog.Load(ctx, modelcatalog.Options{CachePath: c.cachePath, Getenv: getenv, Configured: configured})
+func (c *Catalog) Fetch(ctx context.Context, getenv func(string) string, configured map[string]config.Provider) (Snapshot, error) {
+	return Load(ctx, Options{CachePath: c.cachePath, Getenv: getenv, Configured: configured})
 }
 
 // Every runs fn every interval until ctx ends.
@@ -65,9 +64,9 @@ func Every(ctx context.Context, interval time.Duration, fn func()) {
 	}()
 }
 
-// ApplyModelCatalog layers the catalog's providers and model limits under cfg's
+// Apply layers the catalog's providers and model limits under cfg's
 // own and returns the catalog's model references, sorted.
-func ApplyModelCatalog(cfg *config.Config, snapshot modelcatalog.Snapshot) []string {
+func Apply(cfg *config.Config, snapshot Snapshot) []string {
 	discovered := make(map[string]config.Provider, len(snapshot.Providers))
 	limits := make(map[string]config.ModelLimits)
 	var models []string

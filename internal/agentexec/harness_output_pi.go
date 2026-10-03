@@ -3,6 +3,8 @@ package agentexec
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // piHarnessOutput reads `--mode json` from Pi and OMP, which share the
@@ -10,10 +12,10 @@ import (
 // interrupted run still reports what it spent.
 type piHarnessOutput struct {
 	sessionID string
-	usage     Usage
+	usage     agentrun.Usage
 }
 
-func (o *piHarnessOutput) Line(line []byte, report ToolCallReporter) {
+func (o *piHarnessOutput) Line(line []byte, report agentrun.ToolCallReporter) {
 	var event struct {
 		Type     string `json:"type"`
 		ID       string `json:"id"`
@@ -56,9 +58,9 @@ func (o *piHarnessOutput) Line(line []byte, report ToolCallReporter) {
 				texts = append(texts, block.Text)
 			}
 		}
-		report(ToolCallReport{Tool: event.ToolName, Detail: clipToolCallDetail(strings.Join(texts, "\n")), Failed: event.IsError})
+		report(agentrun.ToolCallReport{Tool: event.ToolName, Detail: clipToolCallDetail(strings.Join(texts, "\n")), Failed: event.IsError})
 	}
 }
 
-func (o *piHarnessOutput) SessionID() string { return o.sessionID }
-func (o *piHarnessOutput) Usage() Usage      { return o.usage }
+func (o *piHarnessOutput) SessionID() string     { return o.sessionID }
+func (o *piHarnessOutput) Usage() agentrun.Usage { return o.usage }

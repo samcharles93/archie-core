@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 
@@ -85,7 +86,7 @@ type Volume struct {
 
 // Launch is everything archie needs to run a composed Kit for one run.
 type Launch struct {
-	Harness agentexec.HarnessSpec
+	Harness agentrun.HarnessSpec
 	Install []Hook
 	Startup []Hook
 	Files   []spec.File
@@ -119,7 +120,7 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 		runtimeVars[credentialModeVar(c.Service)] = credentialMode(params.Bound[c.Service])
 	}
 
-	l := Launch{Harness: agentexec.HarnessSpec{
+	l := Launch{Harness: agentrun.HarnessSpec{
 		User:   harnessUser(img.User),
 		Launch: slices.Concat(img.Entrypoint, img.Cmd),
 		Env:    slices.Concat(img.Env, []string{"WORKSPACE_DIR=" + WorkspaceDir}, proxyEnv, egress.SentinelEnv(creds)),

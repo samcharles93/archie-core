@@ -1,6 +1,10 @@
 package agentexec
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+)
 
 // copilotHarnessOutput reads GitHub Copilot CLI's `--output-format json`.
 // The stream carries no token counts, so a Copilot run reports no usage and
@@ -14,7 +18,7 @@ func newCopilotHarnessOutput() *copilotHarnessOutput {
 	return &copilotHarnessOutput{pending: make(map[string]string)}
 }
 
-func (o *copilotHarnessOutput) Line(line []byte, report ToolCallReporter) {
+func (o *copilotHarnessOutput) Line(line []byte, report agentrun.ToolCallReporter) {
 	var event struct {
 		Type      string `json:"type"`
 		SessionID string `json:"sessionId"`
@@ -49,10 +53,10 @@ func (o *copilotHarnessOutput) Line(line []byte, report ToolCallReporter) {
 		}
 		delete(o.pending, event.Data.ToolCallID)
 		if report != nil {
-			report(ToolCallReport{Tool: tool, Detail: clipToolCallDetail(event.Data.Result.Content), Failed: !event.Data.Success})
+			report(agentrun.ToolCallReport{Tool: tool, Detail: clipToolCallDetail(event.Data.Result.Content), Failed: !event.Data.Success})
 		}
 	}
 }
 
-func (o *copilotHarnessOutput) SessionID() string { return o.sessionID }
-func (o *copilotHarnessOutput) Usage() Usage      { return Usage{} }
+func (o *copilotHarnessOutput) SessionID() string     { return o.sessionID }
+func (o *copilotHarnessOutput) Usage() agentrun.Usage { return agentrun.Usage{} }

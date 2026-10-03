@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/samcharles93/archie-core/internal/contracts/secretengine/v1"
+	secretenginev1 "github.com/samcharles93/archie-core/internal/contracts/secretengine/v1"
 	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
 )
 

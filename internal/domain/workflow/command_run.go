@@ -6,9 +6,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"gopkg.in/yaml.v3"
 )
 
 // CommandRunStepName is the step type that runs operator-authored argv in the
@@ -31,7 +31,7 @@ type commandRunSettings struct {
 }
 
 // commandRunCommand is one command in a command.run step's settings. It is
-// the YAML shape of agentexec.Command.
+// the YAML shape of agentrun.Command.
 type commandRunCommand struct {
 	Name          string   `yaml:"name"`
 	Argv          []string `yaml:"argv"`
@@ -40,8 +40,8 @@ type commandRunCommand struct {
 
 // command converts the settings shape into the type the execution path takes,
 // so command.run and the repository gate share one command meaning.
-func (c commandRunCommand) command() agentexec.Command {
-	return agentexec.Command{Name: c.Name, Argv: c.Argv, ExpectFailure: c.ExpectFailure}
+func (c commandRunCommand) command() agentrun.Command {
+	return agentrun.Command{Name: c.Name, Argv: c.Argv, ExpectFailure: c.ExpectFailure}
 }
 
 // CommandRunStepType contributes the command.run step type.
@@ -65,7 +65,7 @@ func newCommandRunStage(settings yaml.Node) (Stage, error) {
 	if len(s.Run) == 0 {
 		return Stage{}, fmt.Errorf("%s: settings.run needs at least one command", CommandRunStepName)
 	}
-	commands := make([]agentexec.Command, 0, len(s.Run))
+	commands := make([]agentrun.Command, 0, len(s.Run))
 	for i := range s.Run {
 		if len(s.Run[i].Argv) == 0 {
 			return Stage{}, fmt.Errorf("%s: settings.run[%d].argv is required", CommandRunStepName, i)
@@ -110,7 +110,7 @@ func newCommandRunStage(settings yaml.Node) (Stage, error) {
 // runCommands executes argv commands in dir, in order, without a shell, and
 // returns the first failure's clipped output. ExpectFailure inverts a
 // command's result.
-func runCommands(ctx context.Context, commands []agentexec.Command, dir string) (string, error) {
+func runCommands(ctx context.Context, commands []agentrun.Command, dir string) (string, error) {
 	for _, c := range commands {
 		cmd := exec.CommandContext(ctx, c.Argv[0], c.Argv[1:]...)
 		cmd.Dir = dir

@@ -3,10 +3,11 @@
 package logextract
 
 import (
-	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
 	"go/constant"
 	"go/token"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
 )
 
 func init() {

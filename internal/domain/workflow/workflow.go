@@ -10,7 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -81,7 +82,7 @@ type TaskContext struct {
 	Forge Forger
 	Store Store
 	Trees Trees
-	Agent agentexec.Runner
+	Agent agentrun.Runner
 	// Calls starts workflow.call callees and reads them back while a
 	// wait:true caller waits. Nil is only safe for a workflow with no
 	// workflow.call step: such a step in a runner with no capability
@@ -157,7 +158,7 @@ type TaskContext struct {
 
 	// RunUsage accumulates this run's token breakdown for PR bodies. Not
 	// persisted; Task.TokensUsed is the total.
-	RunUsage agentexec.Usage
+	RunUsage agentrun.Usage
 }
 
 // Emit publishes an observability event stamped with the task and its
@@ -203,11 +204,11 @@ func (tc *TaskContext) EmitDurable(ctx context.Context, kind, stage, detail stri
 	return nil
 }
 
-// toolCallReporter builds the agentexec.ToolCallReporter an agent stage passes
+// toolCallReporter builds the agentrun.ToolCallReporter an agent stage passes
 // to tc.Agent.Run, so every completed tool call during that run surfaces as a
 // tool_call event on the task timeline. Safe to call on a nil Bus: Emit no-ops.
-func (tc *TaskContext) toolCallReporter(stage string) agentexec.ToolCallReporter {
-	return func(report agentexec.ToolCallReport) {
+func (tc *TaskContext) toolCallReporter(stage string) agentrun.ToolCallReporter {
+	return func(report agentrun.ToolCallReport) {
 		tc.Emit(events.KindToolCall, stage, report.Detail, map[string]any{
 			"tool":   report.Tool,
 			"failed": report.Failed,
@@ -450,7 +451,7 @@ func clipTail(s string, n int) string {
 
 // formatTokenUsage renders a token total split into cached and fresh tokens,
 // or the plain total when no breakdown exists.
-func formatTokenUsage(total int, usage agentexec.Usage) string {
+func formatTokenUsage(total int, usage agentrun.Usage) string {
 	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CachedTokens == 0 {
 		return fmt.Sprintf("%d tokens", total)
 	}
@@ -486,10 +487,10 @@ var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)
 
 // RunAgentChild records one agent call as a child step of the current stage.
 // A failed write parks the execution. Outside a recorded run it just runs.
-func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func() (agentexec.Result, error)) (agentexec.Result, error) {
+func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func() (agentrun.Result, error)) (agentrun.Result, error) {
 	stepID, _, err := tc.startChildStep(ctx, task.StepKindAgent, name)
 	if err != nil {
-		return agentexec.Result{}, err
+		return agentrun.Result{}, err
 	}
 	res, runErr := run()
 	to, detail := taskstate.StepSucceeded, res.Summary

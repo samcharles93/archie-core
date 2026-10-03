@@ -6,7 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -74,8 +75,8 @@ func runBaselineFix(ctx context.Context, tc *TaskContext, argv []string, out []b
 	)
 
 	modelRef := tc.Cfg.Models["builder"]
-	req := agentexec.Request{
-		Version:       agentexec.ProtocolVersion,
+	req := agentrun.Request{
+		Version:       agentrun.ProtocolVersion,
 		TaskID:        tc.Task.ID,
 		Attempt:       tc.Task.Attempt,
 		Stage:         "baseline-fix",
@@ -83,15 +84,15 @@ func runBaselineFix(ctx context.Context, tc *TaskContext, argv []string, out []b
 		Model:         modelRef,
 		ContextWindow: modelContextBudget(tc.Cfg, modelRef),
 		Mission:       mission,
-		Budget: agentexec.Budget{
+		Budget: agentrun.Budget{
 			MaxSteps:  tc.Cfg.Budgets.MaxSteps,
 			WallClock: tc.Cfg.Budgets.WallClock.Std(),
 		},
 		Gate:       GateFromRepo(tc.Repo, tc.Cfg.Budgets),
-		Protection: agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
+		Protection: agentrun.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
 	}
 
-	res, agentErr := tc.RunAgentChild(ctx, "baseline-fix", func() (agentexec.Result, error) {
+	res, agentErr := tc.RunAgentChild(ctx, "baseline-fix", func() (agentrun.Result, error) {
 		return tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter("baseline-fix"))
 	})
 	if agentErr != nil && res.Version == 0 {
@@ -106,7 +107,7 @@ func runBaselineFix(ctx context.Context, tc *TaskContext, argv []string, out []b
 	if agentErr != nil {
 		return baselineFixFailedError(argv, string(out), fmt.Sprintf("the builder could not run: %v", agentErr))
 	}
-	if res.Status != agentexec.StatusPassed {
+	if res.Status != agentrun.StatusPassed {
 		return baselineFixFailedError(argv, string(out), "builder status "+res.Status)
 	}
 
@@ -154,7 +155,7 @@ func Implement() Workflow {
 						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
+				OnResult: func(tc *TaskContext, res agentrun.Result) error {
 					tc.Task.Plan = res.Summary
 					return nil
 				},
@@ -163,7 +164,7 @@ func Implement() Workflow {
 			AgentStage{
 				Name: "build",
 				Role: "builder",
-				Gate: func(tc *TaskContext) agentexec.Gate {
+				Gate: func(tc *TaskContext) agentrun.Gate {
 					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 				},
 				ExtraRules: "Files matching the repository's protected suffixes (e.g. generated code) are " +
@@ -179,9 +180,9 @@ func Implement() Workflow {
 						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
+				OnResult: func(tc *TaskContext, res agentrun.Result) error {
 					tc.BuildSummary = res.Summary
-					if res.Status == agentexec.StatusPassed && len(res.Changes) == 0 && !tc.BaselineFixed {
+					if res.Status == agentrun.StatusPassed && len(res.Changes) == 0 && !tc.BaselineFixed {
 						tc.BuildNoChanges = true
 					}
 					return nil

@@ -4,10 +4,11 @@ package pluginextract
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/plugin"
 	"go/constant"
 	"go/token"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/plugin"
 )
 
 func init() {

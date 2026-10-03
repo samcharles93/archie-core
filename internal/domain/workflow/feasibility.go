@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // The operator answers in chat or on the dashboard -- the decision surfaces --
@@ -36,7 +36,7 @@ func Feasibility() Workflow {
 						tc.Repo.FullName(), taskPromptBlock(tc.Task),
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
+				OnResult: func(tc *TaskContext, res agentrun.Result) error {
 					calls := res.Captures["decide"]
 					if len(calls) != 1 {
 						return fmt.Errorf("assess stage called the decide tool %d times (want exactly once)", len(calls))
@@ -82,7 +82,7 @@ func Feasibility() Workflow {
 						tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.decision.Reasons,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
+				OnResult: func(tc *TaskContext, res agentrun.Result) error {
 					tc.Task.Plan = res.Summary
 					return nil
 				},
@@ -111,7 +111,7 @@ type decision struct {
 
 // decideCaptureTools gives the assess agent a structured verdict tool. Its
 // arguments cross the execution boundary as data and are applied by OnResult.
-func decideCaptureTools(*TaskContext) []agentexec.CaptureTool {
+func decideCaptureTools(*TaskContext) []agentrun.CaptureTool {
 	params := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -120,7 +120,7 @@ func decideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 		},
 		"required": ["fit", "reasons"]
 	}`)
-	return []agentexec.CaptureTool{{
+	return []agentrun.CaptureTool{{
 		Name: "decide", Description: "Record the feasibility verdict. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"fit", "reasons"},
 		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"fit"}, MaxCalls: 1,

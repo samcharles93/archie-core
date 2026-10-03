@@ -11,7 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -242,7 +243,7 @@ func scoreAIGenerated(ctx context.Context, tc *TaskContext, meta PRMetadata) (fl
 			"with status \"passed\".",
 		meta.Title, meta.Body, strings.Join(meta.Commits, "\n"),
 	)
-	res, err := runPRReviewAgent(ctx, tc, scratch, "intake-ai-score", "classification", mission, 6, []agentexec.CaptureTool{{
+	res, err := runPRReviewAgent(ctx, tc, scratch, "intake-ai-score", "classification", mission, 6, []agentrun.CaptureTool{{
 		Name: "score_ai_generated", Description: "Record the machine-written confidence. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"confidence"}, MaxCalls: 1,
 	}})
@@ -411,7 +412,7 @@ func runLens(ctx context.Context, tc *TaskContext, name, angle string) ([]prrevi
 		name, angle, tc.prReview.metadata.Title, tc.prReview.metadata.Body, clip(tc.prReview.diff, 60000),
 		operatorInstructionsBlock(tc),
 	)
-	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "lens-"+name, "review", mission, 15, []agentexec.CaptureTool{{
+	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "lens-"+name, "review", mission, 15, []agentrun.CaptureTool{{
 		Name: "propose_dimensions", Description: "Record this lens's proposed review dimensions. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"dimensions"}, MaxCalls: 1,
 	}})
@@ -480,8 +481,8 @@ func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) [
 		dim.Prompt, strings.Join(dim.TargetFiles, ", "), operatorInstructionsBlock(tc),
 	)
 	name := "reviewer-" + dim.Name
-	res, runErr := runReviewerAgent(ctx, tc, name, mission, []agentexec.CaptureTool{reportFindingsTool})
-	if runErr != nil || res.Status != agentexec.StatusPassed {
+	res, runErr := runReviewerAgent(ctx, tc, name, mission, []agentrun.CaptureTool{reportFindingsTool})
+	if runErr != nil || res.Status != agentrun.StatusPassed {
 		tc.prReview.reviewerFailures.Add(1)
 		return nil
 	}
@@ -521,7 +522,7 @@ var reportFindingsSchema = json.RawMessage(`{
 
 // reportFindingsTool is the capture tool every findings-reporting call
 // registers, at the shape reportFindingsSchema names.
-var reportFindingsTool = agentexec.CaptureTool{
+var reportFindingsTool = agentrun.CaptureTool{
 	Name: "report_findings", Description: "Record findings. Call exactly once, before finish.",
 	Parameters: reportFindingsSchema, RequiredFields: []string{"findings"}, MaxCalls: 1,
 }
@@ -573,23 +574,23 @@ const prReviewMaxSteps = 25
 // runReviewerAgent runs one reviewer call and records its step as failed when
 // it stopped before its terminal tool call, succeeded otherwise.
 func runReviewerAgent(
-	ctx context.Context, tc *TaskContext, name, mission string, captureTools []agentexec.CaptureTool,
-) (agentexec.Result, error) {
+	ctx context.Context, tc *TaskContext, name, mission string, captureTools []agentrun.CaptureTool,
+) (agentrun.Result, error) {
 	modelRef := tc.Cfg.Models["review"]
 	if modelRef == "" {
-		return agentexec.Result{}, fmt.Errorf("no model configured for role %q (set [models] in config)", "review")
+		return agentrun.Result{}, fmt.Errorf("no model configured for role %q (set [models] in config)", "review")
 	}
-	req := agentexec.Request{
-		Version: agentexec.ProtocolVersion, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt,
+	req := agentrun.Request{
+		Version: agentrun.ProtocolVersion, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt,
 		Stage: name, Workflow: tc.Task.Workflow, Model: modelRef,
 		ContextWindow: modelContextBudget(tc.Cfg, modelRef),
 		Mission:       mission, ReadOnly: true,
-		Budget:       agentexec.Budget{MaxSteps: prReviewMaxSteps, WallClock: tc.Cfg.Budgets.WallClock.Std()},
+		Budget:       agentrun.Budget{MaxSteps: prReviewMaxSteps, WallClock: tc.Cfg.Budgets.WallClock.Std()},
 		CaptureTools: captureTools,
 	}
 	stepID, _, err := tc.startChildStep(ctx, task.StepKindAgent, name)
 	if err != nil {
-		return agentexec.Result{}, err
+		return agentrun.Result{}, err
 	}
 	res, runErr := tc.Agent.Run(ctx, tc.prReview.snapshotDir, req, tc.toolCallReporter(name))
 	tc.prReview.tokensSpent.Add(int64(res.TokensUsed))
@@ -597,7 +598,7 @@ func runReviewerAgent(
 	switch {
 	case runErr != nil:
 		to, detail = taskstate.StepFailed, runErr.Error()
-	case res.Status != agentexec.StatusPassed:
+	case res.Status != agentrun.StatusPassed:
 		to, detail = taskstate.StepFailed, fmt.Sprintf("reviewer did not complete (%s: %s)", res.Status, res.StopReason)
 	}
 	if ferr := tc.finishChildStep(ctx, stepID, to, detail, int64(res.TokensUsed)); ferr != nil {
@@ -674,7 +675,7 @@ func polishFinding(ctx context.Context, tc *TaskContext, f prreview.ScoredFindin
 			"call finish with status \"passed\".",
 		f.Title, f.Body,
 	)
-	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "polish", "classification", mission, 4, []agentexec.CaptureTool{{
+	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "polish", "classification", mission, 4, []agentrun.CaptureTool{{
 		Name: "polish", Description: "Record the tightened comment body. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"body"}, MaxCalls: 1,
 	}})
@@ -740,13 +741,13 @@ func postPRReview(ctx context.Context, tc *TaskContext) error {
 // runPRReviewAgent runs one read-only agent call in workspace and returns an
 // error for any result that did not pass.
 func runPRReviewAgent(
-	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentexec.CaptureTool,
-) (agentexec.Result, error) {
+	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentrun.CaptureTool,
+) (agentrun.Result, error) {
 	res, err := runPRReviewAgentRecorded(ctx, tc, workspace, name, role, mission, maxSteps, captureTools)
 	if err != nil {
 		return res, err
 	}
-	if res.Status != agentexec.StatusPassed {
+	if res.Status != agentrun.StatusPassed {
 		detail := res.Detail
 		if detail == "" {
 			detail = res.Summary
@@ -759,21 +760,21 @@ func runPRReviewAgent(
 // runPRReviewAgentRecorded builds the request for a pr-review agent call,
 // records its step, and returns the runtime's result unchanged.
 func runPRReviewAgentRecorded(
-	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentexec.CaptureTool,
-) (agentexec.Result, error) {
+	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentrun.CaptureTool,
+) (agentrun.Result, error) {
 	modelRef := tc.Cfg.Models[role]
 	if modelRef == "" {
-		return agentexec.Result{}, fmt.Errorf("no model configured for role %q (set [models] in config)", role)
+		return agentrun.Result{}, fmt.Errorf("no model configured for role %q (set [models] in config)", role)
 	}
-	req := agentexec.Request{
-		Version: agentexec.ProtocolVersion, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt,
+	req := agentrun.Request{
+		Version: agentrun.ProtocolVersion, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt,
 		Stage: name, Workflow: tc.Task.Workflow, Model: modelRef,
 		ContextWindow: modelContextBudget(tc.Cfg, modelRef),
 		Mission:       mission, ReadOnly: true,
-		Budget:       agentexec.Budget{MaxSteps: maxSteps, WallClock: tc.Cfg.Budgets.WallClock.Std()},
+		Budget:       agentrun.Budget{MaxSteps: maxSteps, WallClock: tc.Cfg.Budgets.WallClock.Std()},
 		CaptureTools: captureTools,
 	}
-	res, err := tc.RunAgentChild(ctx, name, func() (agentexec.Result, error) {
+	res, err := tc.RunAgentChild(ctx, name, func() (agentrun.Result, error) {
 		return tc.Agent.Run(ctx, workspace, req, tc.toolCallReporter(name))
 	})
 	tc.prReview.tokensSpent.Add(int64(res.TokensUsed))

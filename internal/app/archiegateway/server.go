@@ -64,7 +64,7 @@ type server struct {
 	controlPlane     *controlplane.Client
 	applyStatus      *applystatus.Reporter
 	runtimeVersions  map[string]int64
-	catalog          *servicekit.Catalog
+	catalog          *modelcatalog.Catalog
 	chatPool         *pgxpool.Pool
 	chatSessionStore gateway.SessionStore
 	taskActionsConn  *natsio.Conn
@@ -151,7 +151,7 @@ func (b *server) loadConfig(cfgPath, overlayPath string) error {
 		return err
 	}
 	b.cfg = doc.Config
-	b.catalog = servicekit.NewCatalog(cfgPath)
+	b.catalog = modelcatalog.NewCatalog(cfgPath)
 	b.cfgHolder = config.NewHolder(b.cfg)
 	logs := servicekit.Logging(b.cfg, "gateway")
 	b.log, b.taskLogs = logs.Log, logs.TaskLogs
@@ -245,20 +245,20 @@ func (b *server) loadCatalog(ctx context.Context) {
 		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
 		return
 	}
-	models := servicekit.ApplyModelCatalog(&b.cfg, snapshot)
+	models := modelcatalog.Apply(&b.cfg, snapshot)
 	b.cfgHolder.Set(b.cfg.Clone())
 	b.catalog.Set(snapshot, models)
 }
 
 func (b *server) startModelCatalogRefresh(ctx context.Context) {
-	servicekit.Every(ctx, servicekit.CatalogRefreshInterval, func() {
+	modelcatalog.Every(ctx, modelcatalog.RefreshInterval, func() {
 		snapshot, err := b.catalog.Fetch(ctx, b.secrets.Getenv, b.cfgHolder.Get().Providers)
 		if err != nil {
 			b.log.Warn("model catalog refresh failed; keeping the loaded catalog", "err", err)
 			return
 		}
 		base := b.cfgHolder.Get().Clone()
-		models := servicekit.ApplyModelCatalog(&base, snapshot)
+		models := modelcatalog.Apply(&base, snapshot)
 		b.catalog.Set(snapshot, models)
 		b.relayer(ctx, base, "")
 	})
@@ -291,7 +291,7 @@ func (b *server) startRuntimeWatches(ctx context.Context) error {
 				}
 				base := b.cfgHolder.Get()
 				catalog, _ := b.catalogState()
-				servicekit.ApplyModelCatalog(&base, catalog)
+				modelcatalog.Apply(&base, catalog)
 				b.relayer(ctx, base, kind)
 			})
 	}

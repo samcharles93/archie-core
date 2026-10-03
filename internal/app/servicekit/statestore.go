@@ -4,7 +4,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"google.golang.org/grpc"
 )
 
 // StateStoreClient dials the State Store gRPC service the daemon's own
@@ -18,10 +17,5 @@ func StateStoreClient(services config.Services, secrets *secret.Registry) (*stat
 	if err != nil {
 		return nil, nil, err
 	}
-	return staterpc.Dial(target, services.ResolvedToken(config.ServiceNameState, secrets.Getenv), WaitForPeer)
+	return staterpc.Dial(target, services.ResolvedToken(config.ServiceNameState, secrets.Getenv), staterpc.WaitForPeer)
 }
-
-// WaitForPeer makes a service's calls to another service wait for it to come
-// up instead of failing while it is down or restarting. A call that must not
-// wait carries its own deadline.
-var WaitForPeer = grpc.WithDefaultCallOptions(grpc.WaitForReady(true))

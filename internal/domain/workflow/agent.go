@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"
@@ -25,7 +26,7 @@ type AgentStage struct {
 	Mission func(*TaskContext) string
 	// Gate returns the stage's quality gate; nil means ungated (e.g.
 	// read-only analysis stages).
-	Gate func(*TaskContext) agentexec.Gate
+	Gate func(*TaskContext) agentrun.Gate
 	// ExtraRules is appended to the system prompt.
 	ExtraRules string
 	// MaxSteps overrides the configured step budget when > 0 (planner
@@ -36,15 +37,15 @@ type AgentStage struct {
 	ProtectGlobs func(*TaskContext) []string
 	// CaptureTools adds structured-output tools whose calls are returned
 	// as data rather than receiving callbacks into daemon state.
-	CaptureTools func(*TaskContext) []agentexec.CaptureTool
+	CaptureTools func(*TaskContext) []agentrun.CaptureTool
 	// OnResult consumes a successful (passed) result. Parked and idle
 	// results park the workflow before OnResult is called.
-	OnResult func(*TaskContext, agentexec.Result) error
+	OnResult func(*TaskContext, agentrun.Result) error
 	// ReviewResult gates agent output before OnResult forwards it to human
 	// channels. The daemon calls this hook to review stage output (issue
 	// comments, PR bodies) before human delivery. Return an error to block the
 	// stage. Nil means pass-through -- no review.
-	ReviewResult func(*TaskContext, agentexec.Result) error
+	ReviewResult func(*TaskContext, agentrun.Result) error
 }
 
 // Stage adapts the AgentStage to the engine.
@@ -69,7 +70,7 @@ func (a AgentStage) Stage() Stage {
 		}
 		// The agent call is a child of the stage's recorded step: the store
 		// says what the stage's runtime did, not just what the stage did.
-		res, runErr := tc.RunAgentChild(ctx, a.Name, func() (agentexec.Result, error) {
+		res, runErr := tc.RunAgentChild(ctx, a.Name, func() (agentrun.Result, error) {
 			return tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter(a.Name))
 		})
 		return a.handleResult(ctx, tc, req, res, runErr, modelRef)
@@ -89,9 +90,9 @@ func (a AgentStage) resolveModel(tc *TaskContext) (string, error) {
 	return modelRef, nil
 }
 
-// buildRequest assembles the agentexec.Request for this stage's run.
-func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) (agentexec.Request, error) {
-	budget := agentexec.Budget{
+// buildRequest assembles the agentrun.Request for this stage's run.
+func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) (agentrun.Request, error) {
+	budget := agentrun.Budget{
 		MaxSteps:  tc.Cfg.Budgets.MaxSteps,
 		WallClock: tc.Cfg.Budgets.WallClock.Std(),
 	}
@@ -99,37 +100,37 @@ func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) (agentexec.Re
 		budget.MaxSteps = a.MaxSteps
 	}
 
-	var gate agentexec.Gate
+	var gate agentrun.Gate
 	if a.Gate != nil {
 		gate = a.Gate(tc)
 	}
-	var captureTools []agentexec.CaptureTool
+	var captureTools []agentrun.CaptureTool
 	if a.CaptureTools != nil {
 		captureTools = a.CaptureTools(tc)
 	}
 	captureTools, err := tc.appendOutputTools(captureTools)
 	if err != nil {
-		return agentexec.Request{}, err
+		return agentrun.Request{}, err
 	}
 
-	protection := agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)}
+	protection := agentrun.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)}
 	if a.ProtectGlobs != nil {
 		protection.Globs = a.ProtectGlobs(tc)
 	}
 	if a.ReadOnly {
-		protection = agentexec.Protection{}
+		protection = agentrun.Protection{}
 	}
 
-	var preflight []agentexec.Command
+	var preflight []agentrun.Command
 	for _, argv := range tc.Repo.ResolvedPreflight() {
 		if len(argv) == 0 {
 			continue
 		}
-		preflight = append(preflight, agentexec.Command{Name: argv[0], Argv: argv})
+		preflight = append(preflight, agentrun.Command{Name: argv[0], Argv: argv})
 	}
 
-	return agentexec.Request{
-		Version:       agentexec.ProtocolVersion,
+	return agentrun.Request{
+		Version:       agentrun.ProtocolVersion,
 		TaskID:        tc.Task.ID,
 		Attempt:       tc.Task.Attempt,
 		Stage:         a.Name,
@@ -168,7 +169,7 @@ func (a AgentStage) buildExtraRules(tc *TaskContext) string {
 // handleResult records guardrail state, validates and persists the agent
 // result, then dispatches to ReviewResult/OnResult on success.
 func (a AgentStage) handleResult(
-	ctx context.Context, tc *TaskContext, req agentexec.Request, res agentexec.Result, runErr error, modelRef string,
+	ctx context.Context, tc *TaskContext, req agentrun.Request, res agentrun.Result, runErr error, modelRef string,
 ) error {
 	a.recordGuardrails(tc, res, runErr)
 
@@ -196,11 +197,11 @@ func (a AgentStage) handleResult(
 // recordGuardrails feeds this run's outcome to the guardrail engine: on
 // success it checks no-progress thresholds, on failure it records the
 // error pattern.
-func (a AgentStage) recordGuardrails(tc *TaskContext, res agentexec.Result, runErr error) {
+func (a AgentStage) recordGuardrails(tc *TaskContext, res agentrun.Result, runErr error) {
 	if tc.Guardrails == nil {
 		return
 	}
-	if runErr == nil && res.Status == agentexec.StatusPassed {
+	if runErr == nil && res.Status == agentrun.StatusPassed {
 		tc.Guardrails.RecordSuccess("agent:" + a.Name)
 	} else if runErr != nil {
 		tc.Guardrails.RecordFailure("agent:"+a.Name, runErr)
@@ -208,7 +209,7 @@ func (a AgentStage) recordGuardrails(tc *TaskContext, res agentexec.Result, runE
 }
 
 // persistAppendedNotes saves any notes the agent appended during the run.
-func persistAppendedNotes(ctx context.Context, tc *TaskContext, res agentexec.Result) error {
+func persistAppendedNotes(ctx context.Context, tc *TaskContext, res agentrun.Result) error {
 	if len(res.AppendedNotes) == 0 {
 		return nil
 	}
@@ -222,8 +223,8 @@ func persistAppendedNotes(ctx context.Context, tc *TaskContext, res agentexec.Re
 }
 
 // deliverResult checks the run passed, then runs ReviewResult and OnResult.
-func (a AgentStage) deliverResult(tc *TaskContext, res agentexec.Result) error {
-	if res.Status != agentexec.StatusPassed {
+func (a AgentStage) deliverResult(tc *TaskContext, res agentrun.Result) error {
+	if res.Status != agentrun.StatusPassed {
 		detail := res.Detail
 		if detail == "" {
 			detail = res.Summary
@@ -256,7 +257,7 @@ func modelContextBudget(cfg config.Config, modelRef string) int {
 // accumulateUsage adds a single agent run's token breakdown onto a
 // workflow-run running total. Extracted so every accumulation site (agent.go
 // and implement.go's baseline-fix repair loop) stays in sync.
-func accumulateUsage(total *agentexec.Usage, delta agentexec.Usage) {
+func accumulateUsage(total *agentrun.Usage, delta agentrun.Usage) {
 	total.PromptTokens += delta.PromptTokens
 	total.CompletionTokens += delta.CompletionTokens
 	total.TotalTokens += delta.TotalTokens
@@ -264,7 +265,7 @@ func accumulateUsage(total *agentexec.Usage, delta agentexec.Usage) {
 	total.CacheCreationTokens += delta.CacheCreationTokens
 }
 
-func agentFinishData(res agentexec.Result, modelRef string) map[string]any {
+func agentFinishData(res agentrun.Result, modelRef string) map[string]any {
 	return map[string]any{
 		"status": res.Status, "stop_reason": res.StopReason,
 		"tokens": res.TokensUsed, "iterations": res.Iterations, "model": modelRef,
@@ -275,25 +276,25 @@ func agentFinishData(res agentexec.Result, modelRef string) map[string]any {
 
 // GateFromRepo converts the repo's configured command lists into an
 // agent execution gate.
-func GateFromRepo(repo config.Repo, budgets config.Budgets) agentexec.Gate {
-	cmds := make([]agentexec.Command, 0, len(repo.Gate))
+func GateFromRepo(repo config.Repo, budgets config.Budgets) agentrun.Gate {
+	cmds := make([]agentrun.Command, 0, len(repo.Gate))
 	for _, argv := range repo.Gate {
 		if len(argv) == 0 {
 			continue
 		}
-		cmds = append(cmds, agentexec.Command{Name: argv[0], Argv: argv})
+		cmds = append(cmds, agentrun.Command{Name: argv[0], Argv: argv})
 	}
-	return agentexec.Gate{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
+	return agentrun.Gate{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
 }
 
-// pluginSpecs converts skill.Plugin to agentexec.PluginSpec for transport.
-func pluginSpecs(plugins []skill.Plugin) []agentexec.PluginSpec {
+// pluginSpecs converts skill.Plugin to agentrun.PluginSpec for transport.
+func pluginSpecs(plugins []skill.Plugin) []agentrun.PluginSpec {
 	if len(plugins) == 0 {
 		return nil
 	}
-	out := make([]agentexec.PluginSpec, len(plugins))
+	out := make([]agentrun.PluginSpec, len(plugins))
 	for i, p := range plugins {
-		out[i] = agentexec.PluginSpec{Name: p.Name, Src: p.Src}
+		out[i] = agentrun.PluginSpec{Name: p.Name, Src: p.Src}
 	}
 	return out
 }

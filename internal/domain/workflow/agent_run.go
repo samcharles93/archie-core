@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"gopkg.in/yaml.v3"
 )
 
 // AgentRunStepName is the step type that runs one agent mission and finishes
@@ -52,7 +52,7 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 		Role:     role,
 		ReadOnly: s.ReadOnly,
 		Mission:  func(*TaskContext) string { return s.Mission },
-		OnResult: func(tc *TaskContext, res agentexec.Result) error {
+		OnResult: func(tc *TaskContext, res agentrun.Result) error {
 			tc.Outcome = Outcome{Status: StatusCompleted, Detail: res.Summary}
 			return nil
 		},

@@ -7,7 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
@@ -57,7 +58,7 @@ func tddAnalyseStage() Stage {
 				taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
 			)
 		},
-		OnResult: func(tc *TaskContext, res agentexec.Result) error {
+		OnResult: func(tc *TaskContext, res agentrun.Result) error {
 			tc.Task.Plan = res.Summary
 			return nil
 		},
@@ -71,7 +72,7 @@ func tddReproTestsStage() Stage {
 	return AgentStage{
 		Name: "repro-tests",
 		Role: "builder",
-		Gate: func(tc *TaskContext) agentexec.Gate {
+		Gate: func(tc *TaskContext) agentrun.Gate {
 			return tddReproGate(tc.Repo, tc.Cfg.Budgets)
 		},
 		Mission: func(tc *TaskContext) string {
@@ -114,7 +115,7 @@ func tddFixStage() Stage {
 	return AgentStage{
 		Name: "fix",
 		Role: "builder",
-		Gate: func(tc *TaskContext) agentexec.Gate {
+		Gate: func(tc *TaskContext) agentrun.Gate {
 			return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 		},
 		ProtectGlobs: func(tc *TaskContext) []string {
@@ -136,7 +137,7 @@ func tddFixStage() Stage {
 				tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan,
 			)
 		},
-		OnResult: func(tc *TaskContext, res agentexec.Result) error {
+		OnResult: func(tc *TaskContext, res agentrun.Result) error {
 			tc.BuildSummary = res.Summary
 			return nil
 		},
@@ -157,22 +158,22 @@ func tddOpenPRStage() Stage {
 // every command from repo.Gate runs normally except the last one (the
 // test runner, by convention), which gets ExpectFailure  --  the repro
 // must fail the tests to prove the bug exists.
-func tddReproGate(repo config.Repo, budgets config.Budgets) agentexec.Gate {
+func tddReproGate(repo config.Repo, budgets config.Budgets) agentrun.Gate {
 	if len(repo.Gate) == 0 {
-		return agentexec.Gate{}
+		return agentrun.Gate{}
 	}
-	cmds := make([]agentexec.Command, 0, len(repo.Gate))
+	cmds := make([]agentrun.Command, 0, len(repo.Gate))
 	for _, argv := range repo.Gate {
 		if len(argv) == 0 {
 			continue
 		}
-		gc := agentexec.Command{Name: argv[0], Argv: argv}
+		gc := agentrun.Command{Name: argv[0], Argv: argv}
 		cmds = append(cmds, gc)
 	}
 	if len(cmds) > 0 {
 		cmds[len(cmds)-1].ExpectFailure = true
 	}
-	return agentexec.Gate{
+	return agentrun.Gate{
 		Commands:               cmds,
 		MaxConsecutiveFailures: budgets.GateMaxFailures,
 	}

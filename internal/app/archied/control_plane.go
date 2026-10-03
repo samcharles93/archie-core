@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 )
 
 // runtimeConfig layers every database-owned setting over a file config and
@@ -53,7 +54,7 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	// unchanged. Re-apply the same merge (idempotent: a catalog that
 	// failed to load merges to identity).
 	catalog, _ := b.catalogState()
-	servicekit.ApplyModelCatalog(&doc.Config, catalog)
+	modelcatalog.Apply(&doc.Config, catalog)
 	// Bounded: this runs on the signal loop, which handles nothing else
 	// while it waits, and a State Store that has stopped answering must
 	// surface as a failed reload rather than a SIGHUP that never returns.
@@ -329,7 +330,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	// providers. The merge is idempotent, and reloadConfig re-applies it
 	// before layering for the same reason.
 	catalog, _ := b.catalogState()
-	servicekit.ApplyModelCatalog(&base, catalog)
+	modelcatalog.Apply(&base, catalog)
 	cfg, _, err := b.runtimeConfig(ctx, base)
 	if err != nil {
 		// runtimeConfig reported the refusal through apply status for every

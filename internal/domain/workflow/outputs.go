@@ -7,7 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
@@ -64,7 +65,7 @@ func (tc *TaskContext) WriteOutput(name string, value any) error {
 // as: named after the output, whose arguments are {"value": ...}, with the
 // declared type as the value's schema. The schema guides the agent; the
 // run-time re-check is what enforces.
-func outputCaptureTool(name string, spec task.OutputSpec) agentexec.CaptureTool {
+func outputCaptureTool(name string, spec task.OutputSpec) agentrun.CaptureTool {
 	value := map[string]any{"description": fmt.Sprintf("The value of the %q output.", name)}
 	if typ := jsonSchemaType(spec.Type); typ != "" {
 		value["type"] = typ
@@ -79,7 +80,7 @@ func outputCaptureTool(name string, spec task.OutputSpec) agentexec.CaptureTool 
 		// through RequiredFields alone if it ever did.
 		params = []byte(`{"type":"object"}`)
 	}
-	return agentexec.CaptureTool{
+	return agentrun.CaptureTool{
 		Name:        name,
 		Description: fmt.Sprintf("Write the workflow output %q. Call exactly once, with the value as the value argument.", name),
 		Parameters:  params,
@@ -107,7 +108,7 @@ func jsonSchemaType(vocab string) string {
 // appendOutputTools offers the declared outputs the run has not written yet
 // to this stage as capture tools, refusing a stage capture tool that shares a
 // declared output's name: the value would otherwise be ambiguous.
-func (tc *TaskContext) appendOutputTools(tools []agentexec.CaptureTool) ([]agentexec.CaptureTool, error) {
+func (tc *TaskContext) appendOutputTools(tools []agentrun.CaptureTool) ([]agentrun.CaptureTool, error) {
 	iface := tc.workflowInterface()
 	for _, tool := range tools {
 		if _, clash := iface.Outputs[tool.Name]; clash {
@@ -128,7 +129,7 @@ func (tc *TaskContext) appendOutputTools(tools []agentexec.CaptureTool) ([]agent
 // agent result carries: the accepted call's value member is the output's
 // value, re-validated against the declared type the way readCaptures
 // re-checks every record, before it enters the run's set.
-func (tc *TaskContext) applyOutputCaptures(res agentexec.Result) error {
+func (tc *TaskContext) applyOutputCaptures(res agentrun.Result) error {
 	iface := tc.workflowInterface()
 	for name, calls := range res.Captures {
 		spec, ok := iface.Outputs[name]

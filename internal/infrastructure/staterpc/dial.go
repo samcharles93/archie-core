@@ -103,3 +103,8 @@ func TargetIsLoopback(addr string) (bool, error) {
 	}
 	return ip.IsLoopback(), nil
 }
+
+// WaitForPeer makes calls to the State Store wait for it to come up
+// instead of failing while it is down or restarting. A call that must not
+// wait carries its own deadline.
+var WaitForPeer = grpc.WithDefaultCallOptions(grpc.WaitForReady(true))

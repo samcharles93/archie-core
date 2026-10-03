@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
@@ -1642,7 +1644,7 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 // runViaAgent hands a task to archie-agent and waits for its result. It parks
 // the task only when the agent never answered or failed before recording an
 // outcome.
-func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentexec.HarnessSpec) {
+func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentrun.HarnessSpec) {
 	grant, revoke, ok := d.publicationGrant(ctx, task)
 	if !ok {
 		return

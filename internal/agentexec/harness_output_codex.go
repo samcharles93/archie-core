@@ -3,6 +3,8 @@ package agentexec
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // codexHarnessOutput reads `codex exec --json`. Each tool item is reported
@@ -10,10 +12,10 @@ import (
 // a run killed mid-turn reports none.
 type codexHarnessOutput struct {
 	threadID string
-	usage    Usage
+	usage    agentrun.Usage
 }
 
-func (o *codexHarnessOutput) Line(line []byte, report ToolCallReporter) {
+func (o *codexHarnessOutput) Line(line []byte, report agentrun.ToolCallReporter) {
 	var event struct {
 		Type     string `json:"type"`
 		ThreadID string `json:"thread_id"`
@@ -34,7 +36,7 @@ func (o *codexHarnessOutput) Line(line []byte, report ToolCallReporter) {
 	case "turn.completed":
 		if u := event.Usage; u != nil {
 			// Codex follows OpenAI: input_tokens already includes cached input.
-			o.usage = addUsage(o.usage, Usage{
+			o.usage = addUsage(o.usage, agentrun.Usage{
 				PromptTokens: u.InputTokens, CompletionTokens: u.OutputTokens,
 				TotalTokens:  u.InputTokens + u.OutputTokens,
 				CachedTokens: u.CachedInputTokens, CacheCreationTokens: u.CacheWriteTokens,
@@ -67,8 +69,8 @@ type codexItem struct {
 	Query string `json:"query"`
 }
 
-func (item codexItem) report() (ToolCallReport, bool) {
-	call := ToolCallReport{Tool: item.Type, Failed: item.Status == "failed"}
+func (item codexItem) report() (agentrun.ToolCallReport, bool) {
+	call := agentrun.ToolCallReport{Tool: item.Type, Failed: item.Status == "failed"}
 	switch item.Type {
 	case "command_execution":
 		call.Detail = item.AggregatedOutput
@@ -95,11 +97,11 @@ func (item codexItem) report() (ToolCallReport, bool) {
 	case "web_search":
 		call.Detail = item.Query
 	default:
-		return ToolCallReport{}, false
+		return agentrun.ToolCallReport{}, false
 	}
 	call.Detail = clipToolCallDetail(call.Detail)
 	return call, true
 }
 
-func (o *codexHarnessOutput) SessionID() string { return o.threadID }
-func (o *codexHarnessOutput) Usage() Usage      { return o.usage }
+func (o *codexHarnessOutput) SessionID() string     { return o.threadID }
+func (o *codexHarnessOutput) Usage() agentrun.Usage { return o.usage }

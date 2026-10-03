@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
@@ -19,12 +21,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/skillscript"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
-
-// Runner executes one autonomous stage against an already prepared workspace.
-type Runner interface {
-	// report, when non-nil, is notified once per completed tool call.
-	Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error)
-}
 
 type loopFunc func(context.Context, agentloop.Config) (agentloop.Result, error)
 
@@ -62,15 +58,15 @@ func NewLoopRunner(
 // work on the chat workspace and bypass ReadOnly and ProtectPaths.
 const workspaceToolset = "workspace"
 
-func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
+func (r *LoopRunner) Run(ctx context.Context, workspace string, req agentrun.Request, report agentrun.ToolCallReporter) (agentrun.Result, error) {
 	if err := req.Validate(); err != nil {
-		return Result{}, err
+		return agentrun.Result{}, err
 	}
 	if r.runtime == nil {
-		return Result{}, fmt.Errorf("agent runtime is not configured")
+		return agentrun.Result{}, fmt.Errorf("agent runtime is not configured")
 	}
 	if r.run == nil {
-		return Result{}, fmt.Errorf("agent loop is not configured")
+		return agentrun.Result{}, fmt.Errorf("agent loop is not configured")
 	}
 
 	notes := &memoryNotes{initial: req.Notes}
@@ -79,13 +75,13 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, rep
 	toolOpts.OnToolCall = report
 	centralTools, err := BuildToolSet(r.tools, toolOpts)
 	if err != nil {
-		return Result{}, fmt.Errorf("build central tool set: %w", err)
+		return agentrun.Result{}, fmt.Errorf("build central tool set: %w", err)
 	}
 	captureTools := captureToolSet(req.CaptureTools, captures)
 	scriptTools := scriptToolSet(workspace)
 	pluginTools, err := pluginToolSet(req, workspace, centralTools, captureTools, scriptTools)
 	if err != nil {
-		return Result{}, err
+		return agentrun.Result{}, err
 	}
 	res, err := r.run(ctx, agentloop.Config{
 		Runtime:    r.runtime,
@@ -124,9 +120,9 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, rep
 	return result, err
 }
 
-func resultFromRun(req Request, res agentloop.Result, appended []string, captures map[string][]json.RawMessage) Result {
-	result := Result{
-		Version:    ProtocolVersion,
+func resultFromRun(req agentrun.Request, res agentloop.Result, appended []string, captures map[string][]json.RawMessage) agentrun.Result {
+	result := agentrun.Result{
+		Version:    agentrun.ProtocolVersion,
 		TaskID:     req.TaskID,
 		Attempt:    req.Attempt,
 		Stage:      req.Stage,
@@ -135,7 +131,7 @@ func resultFromRun(req Request, res agentloop.Result, appended []string, capture
 		Changes:    res.Changes,
 		Iterations: res.Iterations,
 		TokensUsed: res.TokensUsed,
-		Usage: Usage{
+		Usage: agentrun.Usage{
 			PromptTokens:        res.Usage.PromptTokens,
 			CompletionTokens:    res.Usage.CompletionTokens,
 			TotalTokens:         res.Usage.TotalTokens,
@@ -165,7 +161,7 @@ func projectScopedRules(workspace, extra string) string {
 	return rule + "\n" + extra
 }
 
-func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (core.ToolSet, error) {
+func pluginToolSet(req agentrun.Request, workspace string, occupied ...core.ToolSet) (core.ToolSet, error) {
 	if req.ReadOnly || len(req.Protection.Suffixes)+len(req.Protection.Globs) > 0 || len(req.Gate.Commands) > 0 {
 		return nil, nil
 	}
@@ -202,21 +198,21 @@ func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (cor
 	return set, nil
 }
 
-func (r *LoopRunner) logger(req Request) *slog.Logger {
+func (r *LoopRunner) logger(req agentrun.Request) *slog.Logger {
 	if r.log == nil {
 		return slog.New(slog.DiscardHandler)
 	}
 	return r.log.With("task", req.TaskID, "attempt", req.Attempt, "stage", req.Stage, "model", req.Model)
 }
 
-func toAgentGate(g Gate) agentloop.GateConfig {
+func toAgentGate(g agentrun.Gate) agentloop.GateConfig {
 	return agentloop.GateConfig{
 		Commands:               toAgentCommands(g.Commands),
 		MaxConsecutiveFailures: g.MaxConsecutiveFailures,
 	}
 }
 
-func toAgentCommands(commands []Command) []agentloop.GateCommand {
+func toAgentCommands(commands []agentrun.Command) []agentloop.GateCommand {
 	out := make([]agentloop.GateCommand, 0, len(commands))
 	for _, command := range commands {
 		out = append(out, agentloop.GateCommand{
@@ -226,7 +222,7 @@ func toAgentCommands(commands []Command) []agentloop.GateCommand {
 	return out
 }
 
-func protectionMatcher(p Protection, readOnly bool) func(string) bool {
+func protectionMatcher(p agentrun.Protection, readOnly bool) func(string) bool {
 	if readOnly || len(p.Suffixes)+len(p.Globs) == 0 {
 		return nil
 	}
@@ -249,7 +245,7 @@ func protectionMatcher(p Protection, readOnly bool) func(string) bool {
 	}
 }
 
-func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) core.ToolSet {
+func captureToolSet(specs []agentrun.CaptureTool, captures map[string][]json.RawMessage) core.ToolSet {
 	tools := make(core.ToolSet, len(specs))
 	for _, spec := range specs {
 		tools[spec.Name] = core.NewTool(spec.Name, spec.Description, spec.Parameters,
@@ -260,7 +256,7 @@ func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) 
 
 // makeCaptureHandler builds a tool handler that validates and records
 // capture-tool invocations.
-func makeCaptureHandler(spec CaptureTool, captures map[string][]json.RawMessage) func(context.Context, string) (string, error) {
+func makeCaptureHandler(spec agentrun.CaptureTool, captures map[string][]json.RawMessage) func(context.Context, string) (string, error) {
 	return func(_ context.Context, input string) (string, error) {
 		value := json.RawMessage(input)
 		reply, ok := acceptCapture(spec, len(captures[spec.Name]), value)
@@ -275,12 +271,12 @@ func makeCaptureHandler(spec CaptureTool, captures map[string][]json.RawMessage)
 // constraints. Returns a rejection message and false on failure, or "" and
 // true on success. Each constraint is its own check so adding one does not
 // grow a single branching function.
-func validateCaptureArgs(spec CaptureTool, value json.RawMessage) (string, bool) {
+func validateCaptureArgs(spec agentrun.CaptureTool, value json.RawMessage) (string, bool) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(value, &object); err != nil {
 		return spec.Name + " rejected: arguments must be a JSON object", false //nolint:nilerr // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
 	}
-	for _, check := range []func(CaptureTool, map[string]json.RawMessage) (string, bool){
+	for _, check := range []func(agentrun.CaptureTool, map[string]json.RawMessage) (string, bool){
 		checkRequiredFields,
 		checkNonEmptyStrings,
 		checkBooleanFields,
@@ -293,7 +289,7 @@ func validateCaptureArgs(spec CaptureTool, value json.RawMessage) (string, bool)
 	return "", true
 }
 
-func checkRequiredFields(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
+func checkRequiredFields(spec agentrun.CaptureTool, object map[string]json.RawMessage) (string, bool) {
 	for _, field := range spec.RequiredFields {
 		if _, ok := object[field]; !ok {
 			return fmt.Sprintf("%s rejected: %s is required", spec.Name, field), false
@@ -302,7 +298,7 @@ func checkRequiredFields(spec CaptureTool, object map[string]json.RawMessage) (s
 	return "", true
 }
 
-func checkNonEmptyStrings(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
+func checkNonEmptyStrings(spec agentrun.CaptureTool, object map[string]json.RawMessage) (string, bool) {
 	for _, field := range spec.NonEmptyStrings {
 		if !isNonEmptyString(object, field) {
 			return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), false
@@ -311,7 +307,7 @@ func checkNonEmptyStrings(spec CaptureTool, object map[string]json.RawMessage) (
 	return "", true
 }
 
-func checkBooleanFields(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
+func checkBooleanFields(spec agentrun.CaptureTool, object map[string]json.RawMessage) (string, bool) {
 	for _, field := range spec.BooleanFields {
 		var val bool
 		if raw, ok := object[field]; !ok || json.Unmarshal(raw, &val) != nil {
@@ -324,7 +320,7 @@ func checkBooleanFields(spec CaptureTool, object map[string]json.RawMessage) (st
 // checkRequiredWhenTrue enforces the conditional requirements. Triggers are
 // visited in sorted order so a call violating two of them names the same one
 // every run, rather than a different one on each retry.
-func checkRequiredWhenTrue(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
+func checkRequiredWhenTrue(spec agentrun.CaptureTool, object map[string]json.RawMessage) (string, bool) {
 	for _, trigger := range slices.Sorted(maps.Keys(spec.RequiredWhenTrue)) {
 		var on bool
 		if raw, ok := object[trigger]; !ok || json.Unmarshal(raw, &on) != nil || !on {

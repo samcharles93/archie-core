@@ -1,6 +1,10 @@
 package agentexec
 
-import "context"
+import (
+	"context"
+
+	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+)
 
 // AdapterClaudeCode names the Claude Code stream-json output adapter.
 const AdapterClaudeCode = "claude-code"
@@ -47,11 +51,11 @@ func LookupHarnessAdapter(name string) (HarnessAdapter, bool) {
 // HarnessStages runs every stage of a task on one harness: a Kit task's
 // container is built from its harness, so no stage in it runs anywhere else.
 type HarnessStages struct {
-	Runner Runner
-	Spec   HarnessSpec
+	Runner agentrun.Runner
+	Spec   agentrun.HarnessSpec
 }
 
-func (r HarnessStages) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
+func (r HarnessStages) Run(ctx context.Context, workspace string, req agentrun.Request, report agentrun.ToolCallReporter) (agentrun.Result, error) {
 	spec := r.Spec
 	req.Harness = &spec
 	return r.Runner.Run(ctx, workspace, req, report)
