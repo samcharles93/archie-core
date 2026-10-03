@@ -19,11 +19,6 @@ import (
 // definition registers no vocabulary and cannot be failed by one, which is why
 // the gateway root and internal/app/archiemessaging are not here.
 //
-// It is a named function so that step_vocabulary_test.go can fail if a root
-// stops resolving the shipped stages, or hands a constructor a manager other
-// than the one this returns; the roots themselves open a database and dial
-// gRPC, so the test asserts their wiring by parsing their bodies.
-//
 // Agreement is within one build: the State Store and archie-agent are
 // separately deployed binaries, so a State Store built from newer source than
 // the agent it dispatches to can still disagree, and only a matching deploy
@@ -66,7 +61,7 @@ func (b *boot) openDaemonWorkflowDefinitions() error {
 // two calls owe each other is a property of the pair, not of that sequence: the
 // definitions client wraps the control-plane transport the adapter dials, so it
 // cannot be built first, and buildDaemon captures the client, so it cannot be
-// built later. step_vocabulary_test.go pins exactly that order here.
+// built later.
 //
 // The gateway root calls openStateStoreAdapter directly and stops there; the
 // daemon-only half stays out of that function for the reason above it.

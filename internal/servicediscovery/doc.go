@@ -2,16 +2,10 @@
 //
 // It defines only the shape archie-core needs to discover and watch the
 // services of its decomposed fleet: a way to resolve a named service to its
-// live endpoints, and a way to watch that membership change over time. It
-// names no registry. A NATS JetStream KV implementation lives in
-// internal/infrastructure/servicediscovery/nats; the Kubernetes-native
-// primary (Service/EndpointSlice + CoreDNS, per
-// docs/inspiration/service-discovery-research-2026-09-05.md) is the sibling
-// that serves the same contract.
-//
-// Per docs/architecture/dependencies-and-contracts.md, consumers depend on
-// this package and never on an infrastructure implementation; only
-// application composition chooses a concrete registry.
+// live endpoints, and a way to watch that membership change over time. It names
+// no registry. A NATS JetStream KV implementation lives in
+// internal/infrastructure/servicediscovery/nats; the Kubernetes-native primary
+// is the sibling that serves the same contract.
 //
 // # NotInstalled is not Down
 //

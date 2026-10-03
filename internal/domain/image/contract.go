@@ -1,8 +1,6 @@
-// Package image is the image generation capability family: a
-// provider-neutral boundary for hosted (gpt-image-2-class) and local GPU
-// backends, so /image routing can target either without depending on
-// provider-specific types. See docs/prds/image-capability-contract.md for
-// the design and epic archie-core-1786748942120-1-6636e629.
+// Package image is the image generation capability family: a provider-neutral
+// boundary for hosted (gpt-image-2-class) and local GPU backends, so /image
+// routing can target either without depending on provider-specific types.
 //
 // Unlike curator and memory (internal/domain/curator,
 // internal/domain/memory), a Provider has no Lifecycle: it is call-scoped,

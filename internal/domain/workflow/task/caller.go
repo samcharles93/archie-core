@@ -6,7 +6,7 @@ import "context"
 // back while waiting. It is the consumer-owned contract the workflow engine
 // holds (the same shape as Store), satisfied by *staterpc.Client for an
 // agent-container run: the callee is a first-class task the State Store
-// derives from the caller's row (docs/prds/workflow-calls.md).
+// derives from the caller's row.
 type Caller interface {
 	// StartCall enqueues the callee task for callerTaskID's workflow.call
 	// step: org, workspace, identity, owner, repo and issue number are
@@ -14,11 +14,9 @@ type Caller interface {
 	// and the callee's depth is the caller's + 1. The store refuses a
 	// caller that is not running and a call past the depth limit.
 	StartCall(ctx context.Context, callerTaskID int64, workflow string, inputs map[string]any) (*Task, error)
-	// CallStatus reads one call's callee: its status, latest transition
-	// detail and written outputs (decoded from the callee's row;
-	// docs/prds/workflow-call-outputs.md, "Storage and wire" — the callee
-	// writes them and the caller only receives them). A store only answers
-	// for a task whose call_parent_task_id is callerTaskID, so a caller
-	// reads only its own callees.
+	// CallStatus reads one call's callee: its status, latest transition detail
+	// and written outputs. A store only answers for a task whose
+	// call_parent_task_id is callerTaskID, so a caller reads only its own
+	// callees.
 	CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (status, detail string, outputs map[string]any, err error)
 }

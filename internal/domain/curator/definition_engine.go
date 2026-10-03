@@ -13,10 +13,7 @@ import (
 // registry's activity surface and events.
 const ActionToolCalled = "tool.called"
 
-// defaultDefinitionMaxSteps bounds the model/tool loop of one definition
-// pass. It is not a definition value and is deliberately not configurable
-// yet: the PRD's no-live-path-constants rule covers interval, cooldown,
-// tools, model, and memory engine, not loop length.
+// defaultDefinitionMaxSteps bounds the model/tool loop of one definition pass.
 const defaultDefinitionMaxSteps = 10
 
 // DefinitionEngine interprets a Definition: one generic engine serving

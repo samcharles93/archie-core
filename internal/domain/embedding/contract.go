@@ -1,7 +1,6 @@
-// Package embedding is the embedding capability: a narrow typed boundary
-// for turning text into vectors, so consumers (curators first, per bead
-// archie-core-1786637500752-415-434e5bb9 / GitHub #436) never depend on a
-// specific provider SDK.
+// Package embedding is the embedding capability: a narrow typed boundary for
+// turning text into vectors, so consumers never depend on a specific provider
+// SDK.
 //
 // Unlike curator and memory (internal/domain/curator, internal/domain/
 // memory), a Client has no Lifecycle: it is call-scoped, not long-running,

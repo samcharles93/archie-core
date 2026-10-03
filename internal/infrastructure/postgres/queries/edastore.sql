@@ -11,9 +11,6 @@ ORDER BY received_at DESC
 LIMIT $1;
 
 -- name: ListUndispatchedCaptures :many
--- A capture is undispatched while some armed binding on its source, whose
--- mapping belongs to the capture's event type, has not dispatched it. An
--- unidentified capture has no event type, so it is never listed.
 SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id
 FROM captures c
 WHERE c.source = ANY(@sources::text[])

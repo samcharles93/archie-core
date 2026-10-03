@@ -359,10 +359,6 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 
-	// The state-store adapter, its daemon-side surfaces and the policy chain
-	// dispatch evaluates: one ordered stage of the composition sequence
-	// (openStateStage; docs/prds/state-store-contract.md §12 step 7 and
-	// docs/prds/orgs-and-access.md).
 	if err := b.openStateStage(ctx); err != nil {
 		return 1
 	}
@@ -406,7 +402,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 
-	if err := b.loadWorkflows(ctx); err != nil {
+	if err := b.loadWorkflows(); err != nil {
 		return 1
 	}
 	if err := b.loadPlugins(); err != nil {
@@ -425,7 +421,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 
-	if err := b.registerTools(ctx); err != nil {
+	if err := b.registerTools(); err != nil {
 		return 1
 	}
 	b.registerStandaloneTools()
@@ -441,7 +437,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 // wireConfigSurfaces attaches the dashboard's configuration read path and
 // the reload plumbing behind it. The write handlers (PATCH /api/config, the
 // per-repository field update, per-row reset) are descoped for the UI
-// process (archie-core-ymut): the daemon still owns the validate-persist-
+// process: the daemon still owns the validate-persist-
 // publish policy, but no HTTP route reaches it -- editing is config.toml
 // plus reload -- so only the snapshot publication and the override list the
 // renderer needs stay wired.
@@ -453,11 +449,10 @@ func (b *boot) wireConfigSurfaces(ctx context.Context, cfgPath, overlayPath stri
 	b.publishConfigSnapshot(ctx)
 }
 
-// persistEvents drains the bus until it closes, giving each event an ID
-// from the store. The store is the only fan-out point (docs/architecture/
-// migration-decisions.md, "Dashboard live event delivery"): the UI process
-// reads the same table through its event pump, so the daemon's job is
-// persistence, not delivery.
+// persistEvents drains the bus until it closes, giving each event an ID from
+// the store. The store is the only fan-out point: the UI process reads the same
+// table through its event pump, so the daemon's job is persistence, not
+// delivery.
 //
 // The insert deliberately outlives ctx: this loop ends when the bus closes,
 // which is part of shutdown, and the last events of a run are exactly the
@@ -614,7 +609,7 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 	// An operator declining work lands in the same state whichever surface
 	// they used, through the one cancel path: the store records the
 	// cancellation -- every non-terminal step of the current attempt plus the
-	// execution's own move (docs/prds/execution-tree-state-machine.md) -- and
+	// execution's own move -- and
 	// this write is what a late worker's next step write fails against. This
 	// used to record StatusRejected while the dashboard recorded
 	// StatusClosedWontDo, so the same decision showed up as two different
@@ -653,7 +648,7 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 	// tasks, and tasks with no identity (forge-sourced) are not
 	// readable through a chat tool at all — they belong to the daemon,
 	// not a particular identity. "The empty string MUST NOT retain
-	// special meaning" (docs/architecture/identity.md).
+	// special meaning".
 	if task.Identity != identity {
 		return gateway.ChatTaskLogResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
 	}
@@ -856,12 +851,11 @@ func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (u
 	}, nil
 }
 
-// registerTaskRPCServers subscribes the forgerpc/worktreerpc handlers on nc
-// so an archie-agent container (which holds no forge token, or push
-// credential) can proxy those operations back to archied. The returned func
-// unsubscribes all of them. The agent's store calls are NOT proxied here: they
-// go over gRPC to the State Store (docs/prds/state-store-contract.md §12 step
-// 4), so the legacy NATS storerpc registration is deleted.
+// registerTaskRPCServers subscribes the forgerpc/worktreerpc handlers on nc so
+// an archie-agent container (which holds no forge token, or push credential)
+// can proxy those operations back to archied. The returned func unsubscribes
+// all of them. The agent's store calls are NOT proxied here: they go over gRPC
+// to the State Store, so the legacy NATS storerpc registration is deleted.
 //
 // Forge and worktree are identity-scoped: the root servers answer the root
 // (identity-less) subjects for single-identity deployments and root-owned
@@ -941,10 +935,9 @@ func configuredNATSToken(cfg config.NATSConfig, getenv func(string) string) (str
 	return token, nil
 }
 
-// updateReportPath is where the update watchdog leaves the phase-2 outcome
-// of an update for this identity to relay on its next launch. The identity is
-// hashed so multiple identities sharing one daemon (see
-// docs/architecture/identity.md) never collide.
+// updateReportPath is where the update watchdog leaves the phase-2 outcome of
+// an update for this identity to relay on its next launch. The identity is
+// hashed so multiple identities sharing one daemon never collide.
 func updateReportPath(workDir, identity string) string {
 	identityHash := sha256.Sum256([]byte(identity))
 	return filepath.Join(

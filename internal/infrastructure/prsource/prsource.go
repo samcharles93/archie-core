@@ -1,18 +1,14 @@
 // Package prsource implements workflow.PRSource: fetching an arbitrary
 // external pull request's metadata, diff and a read-only snapshot of its
-// head, for the pr-review pipeline (docs/prds/pr-review-agent.md). It is
+// head, for the pr-review pipeline. It is
 // the PR-under-review counterpart to worktree.Manager's use as the task's
 // own Trees: that path only ever reaches the task's own worktree, never a
 // third-party PR being reviewed.
 //
-// Every call goes over the forge's HTTP API -- never a git-shell checkout.
-// The pipeline's Stage.Run bodies execute inside the sandboxed archie-agent
-// process, which holds no forge credential and no git-level credential
-// either; a git clone would need one. An HTTP call carries only whatever
-// bearer token the forge client was constructed with, matching the PRD's
-// Isolation rule ("no pipeline agent holds a forge credential") for the
-// pipeline's own agent calls, while this package's construction site is the
-// one place a forge-reading token is actually held.
+// Every call goes over the forge's HTTP API -- never a git-shell checkout. The
+// pipeline's Stage.Run bodies execute inside the sandboxed archie-agent
+// process, which holds no forge credential and no git-level credential either;
+// a git clone would need one.
 package prsource
 
 import (
@@ -59,10 +55,10 @@ func New(forge Forge) *Source {
 	return &Source{forge: forge}
 }
 
-// Metadata returns the pull request's title and body. Commit messages are
-// left empty: no existing Forge capability returns them, and they are only
-// ever one of three inputs to the hallucination-check heuristic (docs/prds/
-// pr-review-agent.md, phase 1), not load-bearing on their own.
+// Metadata returns the pull request's title and body. Commit messages are left
+// empty: no existing Forge capability returns them, and they are only ever one
+// of three inputs to the hallucination-check heuristic, not load-bearing on
+// their own.
 func (s *Source) Metadata(ctx context.Context, owner, repo string, number int) (workflow.PRMetadata, error) {
 	pr, err := s.forge.GetPullRequest(ctx, owner, repo, number)
 	if err != nil {

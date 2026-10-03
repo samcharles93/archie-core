@@ -7,10 +7,9 @@
 // installed source, resolve its typed entrypoint, then call it through the
 // panic-safe interpreter boundary.
 //
-// Per docs/prds/module-position.md, there is deliberately no generic Module
-// interface with an any payload. Each action kind is its own tiny package
-// with its own generated contract (internal/domain/eda/module/<kind>), and
-// the registry's internal storage is the only place type erasure appears.
+// Each action kind is its own tiny package with its own generated contract
+// (internal/domain/eda/module/<kind>), and the registry's internal storage is
+// the only place type erasure appears.
 package module
 
 import (
@@ -74,9 +73,9 @@ func New() *ModuleRegistry {
 	return &ModuleRegistry{kinds: make(map[string]invoker)}
 }
 
-// Kinds returns the known action-kind names, sorted for determinism. Only
-// kinds with a registered contract can be loaded; the log kind is the
-// shipped proof-of-concept (t2db.13).
+// Kinds returns the known action-kind names, sorted for determinism. Only kinds
+// with a registered contract can be loaded; the log kind is the shipped
+// proof-of-concept.
 func Kinds() []string {
 	names := make([]string, 0, len(registry))
 	for name := range registry {

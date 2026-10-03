@@ -24,8 +24,7 @@ type ResolvedConfig struct {
 	// WorkDir, BotUser and HealthURL are not channel transport settings. They
 	// locate this identity's release-announcement and update-report state
 	// files, and give the update installer the daemon health endpoint to poll
-	// after it applies one (docs/architecture/migration-decisions.md, "Telegram
-	// operator surface after extraction").
+	// after it applies one.
 	WorkDir       string
 	BotUser       string
 	HealthURL     string

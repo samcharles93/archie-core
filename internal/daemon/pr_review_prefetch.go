@@ -14,14 +14,12 @@ import (
 )
 
 // prefetchPRReview fetches a pull request's metadata, diff and head snapshot
-// over f (the daemon's own forge client, which holds the real credential)
-// and writes them under workDir/prReviewPrefetchDir, before the task's
-// container is acquired. This is how pr-review gets its data into the
-// sandbox with no forge credential ever entering the container: the daemon
-// does the real HTTP fetch here, unsandboxed, and the container-side
-// prsource.MountSource only ever reads the result off the bind-mounted disk
-// (docs/development/agent.md, "Giving the agent something new": "the
-// daemon's own administrative token never enters a container").
+// over f (the daemon's own forge client, which holds the real credential) and
+// writes them under workDir/prReviewPrefetchDir, before the task's container is
+// acquired. This is how pr-review gets its data into the sandbox with no forge
+// credential ever entering the container: the daemon does the real HTTP fetch
+// here, unsandboxed, and the container-side prsource.MountSource only ever
+// reads the result off the bind-mounted disk.
 func prefetchPRReview(ctx context.Context, f any, owner, repo string, number int, workDir string) error {
 	prReader, ok := f.(forge.PullRequestReader)
 	if !ok {

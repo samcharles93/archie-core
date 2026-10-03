@@ -30,10 +30,7 @@ const (
 	ActionNormalized = "skill.normalized"
 )
 
-// Curator implements domain/curator.CuratorEngine. See
-// docs/prds/skill-curator.md for what a pass does and why: mechanical
-// validation and safe whitespace normalization only -- no LLM-authored
-// rewrites, no deletion.
+// Curator implements domain/curator.CuratorEngine.
 type Curator struct {
 	interval time.Duration
 	host     curator.Registrar
@@ -71,11 +68,9 @@ func (c *Curator) Check(ctx context.Context) (bool, error) {
 	return len(refs) > 0, nil
 }
 
-// Pass reviews every skill currently on disk. There is no per-skill
-// "already reviewed" state: each pass re-checks everything, which is
-// cheap (file reads, no model calls) and errs toward catching a
-// regression over missing one. See docs/prds/skill-curator.md for the
-// exact classification rules.
+// Pass reviews every skill currently on disk. There is no per-skill "already
+// reviewed" state: each pass re-checks everything, which is cheap (file reads,
+// no model calls) and errs toward catching a regression over missing one.
 func (c *Curator) Pass(ctx context.Context, in curator.PassInput) (curator.PassResult, error) {
 	refs, err := c.host.Skills.List(ctx)
 	if err != nil {
@@ -107,11 +102,10 @@ func (c *Curator) reviewOne(ctx context.Context, name string) ([]curator.Action,
 
 	fm, _, fail := skill.Parse([]byte(sk.Content))
 	if fail != nil {
-		// A parse failure is a per-skill finding to report, not an
-		// execution error to propagate: Pass()'s loop aborts the whole
-		// batch on a non-nil error, which would stop reviewing every
-		// other skill over one bad file (see skillcurator_test.go's
-		// "must not abort review of the others").
+		// A parse failure is a per-skill finding to report, not an execution
+		// error to propagate: Pass()'s loop aborts the whole batch on a non-nil
+		// error, which would stop reviewing every other skill over one bad
+		// file.
 		return invalidFinding(name, fail)
 	}
 

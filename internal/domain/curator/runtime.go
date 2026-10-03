@@ -40,7 +40,7 @@ type RuntimeConfig struct {
 // Curators are peers, never dependencies: nothing a curator does — a
 // blocking pass, a panic, a burst of nudges — can block a chat turn, an
 // agent run, or the daemon. Wake events are accelerations; the trigger is a
-// deterministic state read at pass time (archie-core-035), so a dropped
+// deterministic state read at pass time, so a dropped
 // nudge only delays a run to the next check-in.
 type Runtime struct {
 	registry *Registry
@@ -312,7 +312,7 @@ func (rt *Runtime) fail(name, phase string, err error) {
 }
 
 // emitRun publishes one run summary plus one event per action, so what ran,
-// when, what it changed, and why all stay attributable (archie-core-114).
+// when, what it changed, and why all stay attributable.
 func (rt *Runtime) emitRun(name string, at time.Time, result PassResult) {
 	rt.registry.RecordActivity(name, at, result.Actions)
 

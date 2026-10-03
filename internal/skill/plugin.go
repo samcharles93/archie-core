@@ -37,7 +37,7 @@ func (p *Plugin) Run(input string) (string, error) {
 	return fn(input), nil
 }
 
-// LoadPlugins loads plugins from dir/.agents/skills/<skillName>/plugins/.
+// LoadPlugins loads plugins.
 //
 // When allowed is non-empty, only the listed filenames are loaded in
 // declared order  --  the plugins/ prefix is stripped before matching.

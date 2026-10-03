@@ -8,10 +8,7 @@
 // The forge API token is deliberately not part of the file: it comes from a
 // configurable env var.
 //
-// Per docs/architecture/configuration.md this package is scheduled for
-// dissolution: its types and methods are to be reassigned to the domains
-// whose behaviour they describe. Do not add new fields here that a single
-// domain could own.
+// Do not add new fields here that a single domain could own.
 package config
 
 import (
@@ -130,8 +127,6 @@ func (r Repo) ResolvedPreflight() [][]string {
 }
 
 // ResolvedTestGlob returns the test-file glob pattern for this repo.
-// Explicit TestGlob wins; otherwise the ecosystem default; empty
-// for unknown ecosystems and "custom" (protection no-ops).
 func (r Repo) ResolvedTestGlob() string {
 	if r.TestGlob != "" {
 		return r.TestGlob
@@ -203,15 +198,12 @@ type Forge struct {
 	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
 }
 
-// Review configures the pr-review workflow (docs/prds/pr-review-agent.md).
+// Review configures the pr-review workflow.
 // Both fields are off by default: the pipeline is recall-first, and posts
 // automatically, unless an operator opts into either dial.
 type Review struct {
-	// PrecisionGate runs a post-worthiness pass after phase 4 (review) and
-	// before phase 5 (verification): it keeps every concrete, evidenced
-	// defect, drops nitpicks, style and unverifiable claims, and keeps a
-	// finding when unsure. It trades recall for precision and cuts
-	// verification cost by filtering early.
+	// It trades recall for precision and cuts verification cost by filtering
+	// early.
 	PrecisionGate bool `toml:"precision_gate" yaml:"precision_gate"`
 	// ApproveBeforePost ends the pipeline in waiting_human right after
 	// synthesis, before the merge gate runs, so an operator can choose which
@@ -395,36 +387,29 @@ type Config struct {
 	Services Services `toml:"services" yaml:"services"`
 	WorkDir  string   `toml:"work_dir" yaml:"work_dir"`
 	// SkillsDir is an optional path to a shared skills directory
-	// containing .agents/skills/*/SKILL.md files. When set, the
+	// containing */SKILL.md files. When set, the
 	// daemon builds its workflow registry from the skill catalog
 	// (plugin-defined workflows override built-ins). When empty,
 	// only built-in workflows are available. Its skills are also the
 	// store a Kit's agent-skills@1 mounts, read-only, into the harness.
 	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
-	// WorkflowRoutingFile is an optional path to a YAML file rebinding
-	// which registered workflow an intake Kind (bug/feature/bootstrap)
-	// prefers -- see docs/prds/eda-playbook-engine.md. When empty, the
-	// built-in bindings (bug->tdd, feature->feasibility,
-	// bootstrap->bootstrap) are used unchanged.
+	// WorkflowRoutingFile is an optional path to a YAML file rebinding which
+	// registered workflow an intake Kind (bug/feature/bootstrap) prefers.
 	WorkflowRoutingFile string `toml:"workflow_routing_file" yaml:"workflow_routing_file"`
-	// WorkflowLabelsFile is an optional path to a YAML file binding forge
-	// issue labels outside the closed bug/feature/bootstrap kind set to
-	// registered workflows (e.g. "security" -> "security-review") -- the
-	// second slice of docs/prds/eda-playbook-engine.md. When empty, only
-	// the kind layer routes by label. A label already owned by the kind
-	// set, or a duplicate binding, is a load failure per the design doc's
-	// collision rule.
+	// WorkflowLabelsFile is an optional path to a YAML file binding forge issue
+	// labels outside the closed bug/feature/bootstrap kind set to registered
+	// workflows (e.g. A label already owned by the kind set, or a duplicate
+	// binding, is a load failure per the design doc's collision rule.
 	WorkflowLabelsFile string `toml:"workflow_labels_file" yaml:"workflow_labels_file"`
-	// PlaybookDirs is an optional list of directories of *.yaml/*.yml
-	// binding files loaded at startup (the third slice of
-	// docs/prds/eda-playbook-engine.md). Each file binds kinds and/or
-	// arbitrary labels to workflow names; the directories are an
-	// additional input to WorkflowRoutingFile and WorkflowLabelsFile,
-	// which remain supported unchanged. A binding key declared by more
-	// than one source -- two files, or two directories -- is a reported
-	// load failure (a collision), not a silent pick-one. When empty, no
-	// playbook directories are loaded. Repo-scoping of playbook dirs is a
-	// separate, later decision and is not attempted here.
+	// PlaybookDirs is an optional list of directories of *.yaml/*.yml binding
+	// files loaded at startup. Each file binds kinds and/or arbitrary labels to
+	// workflow names; the directories are an additional input to
+	// WorkflowRoutingFile and WorkflowLabelsFile, which remain supported
+	// unchanged. A binding key declared by more than one source -- two files,
+	// or two directories -- is a reported load failure (a collision), not a
+	// silent pick-one. When empty, no playbook directories are loaded.
+	// Repo-scoping of playbook dirs is a separate, later decision and is not
+	// attempted here.
 	PlaybookDirs []string `toml:"playbook_dirs" yaml:"playbook_dirs"`
 	// EDAPlaybookDir is an optional path to a directory of rich EDA playbook
 	// documents (*.yaml/*.yml: trigger + ordered actions with CEL `when`
@@ -469,19 +454,17 @@ type Config struct {
 	// Label marks issues archie should pick up.
 	Label   string `toml:"label" yaml:"label"`
 	BotUser string `toml:"bot_user" yaml:"bot_user"`
-	// Org is this identity's org (docs/prds/orgs-and-access.md). Empty means
+	// Org is this identity's org. Empty means
 	// "default": the org a single-operator install's one identity belongs to.
 	// A credential binding whose Org does not match a run's identity never
 	// resolves for it, regardless of what the identity is granted.
 	Org string `toml:"org" yaml:"org"`
-	// GrantedCredentials names the credential@1 services this identity may
-	// use, by CredentialBinding.Service (docs/prds/external-agent-harness.md,
-	// Organisations: "a harness run ... acts as the workflow's identity").
-	// Empty grants none -- a binding existing is not a grant, the same
-	// fail-closed default the proxy itself already applies to an unbound
-	// required credential. Declared (what a Kit's descriptor asks for) and
-	// granted (this list) are two separate facts; only their intersection
-	// resolves, and neither widens the other.
+	// GrantedCredentials names the credential@1 services this identity may use,
+	// by CredentialBinding.Service. Empty grants none -- a binding existing is
+	// not a grant, the same fail-closed default the proxy itself already
+	// applies to an unbound required credential. Declared (what a Kit's
+	// descriptor asks for) and granted (this list) are two separate facts; only
+	// their intersection resolves, and neither widens the other.
 	GrantedCredentials []string `toml:"granted_credentials" yaml:"granted_credentials"`
 	// BotEmail is the git author email; defaults to the GitHub noreply
 	// address for BotUser.
@@ -816,7 +799,7 @@ const (
 //
 // An empty Mode resolves from URL: URL set means "external", URL empty means
 // "embedded". Autonomous workflow handoff always uses NATS; there is no
-// broker-off execution mode (docs/prds/embedded-nats.md).
+// broker-off execution mode.
 type NATSConfig struct {
 	// Mode selects embedded or external. Empty resolves from URL.
 	Mode string `toml:"mode" yaml:"mode"`
@@ -828,8 +811,8 @@ type NATSConfig struct {
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
-// CaptureConfig configures the unbound webhook capture endpoint
-// (docs/prds/event-capture-storage.md). All fields have defaults; an empty
+// CaptureConfig configures the unbound webhook capture endpoint.
+// All fields have defaults; an empty
 // [capture] section is valid and produces them -- capture is on by default.
 type CaptureConfig struct {
 	// Retention is how long a captured event is kept before prune-on-write
@@ -844,12 +827,11 @@ type CaptureConfig struct {
 	// MaxBodyBytes rejects (413) any single POST body larger than this
 	// before it is read into memory. Zero means the 256 KiB default.
 	MaxBodyBytes int `toml:"max_body_bytes" yaml:"max_body_bytes"`
-	// RatePerSecond and RateBurst configure the per-remote-address token
-	// bucket (webhookguard.RateLimiter) applied before a request's body is
-	// read. Keyed by remote address, not the source path segment, since
-	// that segment is unregistered and attacker-chosen by design -- see
-	// docs/prds/event-capture-storage.md's disk-bound mechanics. Zero means
-	// the defaults (1 req/s, burst 5).
+	// RatePerSecond and RateBurst configure the per-remote-address token bucket
+	// (webhookguard.RateLimiter) applied before a request's body is read. Keyed
+	// by remote address, not the source path segment, since that segment is
+	// unregistered and attacker-chosen by design. Zero means the defaults (1
+	// req/s, burst 5).
 	RatePerSecond float64 `toml:"rate_per_second" yaml:"rate_per_second"`
 	RateBurst     int     `toml:"rate_burst" yaml:"rate_burst"`
 }
@@ -857,7 +839,6 @@ type CaptureConfig struct {
 // BindingsConfig configures the playbook-binding store (t2db). When
 // EncryptionKey is unset, binding secrets are persisted as plaintext
 // (legacy behaviour); when set, they are AES-256-GCM encrypted at rest
-// (see docs/prds/binding-secret-encryption.md).
 type BindingsConfig struct {
 	// EncryptionKey is the active key that seals new binding secrets.
 	// Resolved through the secret registry (engine + key) at startup; the
@@ -899,8 +880,8 @@ type ContainerConfig struct {
 	// AgentProfileKind, seeded from this field but validated and stored
 	// (and reloaded live) separately -- see internal/app/controlplane.
 	Profiles map[string]AgentProfile `toml:"profiles" yaml:"profiles" json:"-"`
-	// Credentials binds a Kit's credential@1 service names to org secrets
-	// (docs/prds/external-agent-harness.md, Credentials). A binding names
+	// Credentials binds a Kit's credential@1 service names to org secrets.
+	// A binding names
 	// where the value comes from; it is not itself a grant -- an identity
 	// resolves a bound service only when its own Org matches and the service
 	// is in its GrantedCredentials.
@@ -926,18 +907,13 @@ type ContainerConfig struct {
 }
 
 // CredentialBinding maps one Kit credential@1 service name to an org secret.
-// It carries no secret value itself, only where to resolve one from: the
-// existing secret registry (env/file), not yet the encrypted org-secret
-// store docs/prds/binding-secret-encryption.md describes -- that store is
-// separate, still-open work this does not attempt.
 type CredentialBinding struct {
 	// Service names the credential@1 service a Kit's descriptor declares
 	// (docker/sandbox-kit-spec spec.CredentialCapability.Service).
 	Service string `toml:"service" yaml:"service"`
-	// Org is the org this binding belongs to. Empty means the default org.
-	// A run whose identity's Org does not match never resolves this binding,
-	// however it is granted (docs/prds/orgs-and-access.md: "No record is
-	// shared between orgs").
+	// Org is the org this binding belongs to. Empty means the default org. A
+	// run whose identity's Org does not match never resolves this binding,
+	// however it is granted.
 	Org string `toml:"org" yaml:"org"`
 	// Secret is where an API key's real value is resolved from. A service
 	// the Kit declares OAuth-managed leaves it empty: its tokens are the
@@ -991,8 +967,8 @@ func (c ContainerConfig) ValidateCredentialBindings() error {
 }
 
 // AgentProfile is a named execution environment for an agent. Secrets and
-// forge or network access are granted to identities, not profiles
-// (docs/prds/orgs-and-access.md). A workflow's profile name is not checked
+// forge or network access are granted to identities, not profiles.
+// A workflow's profile name is not checked
 // when the workflow is saved: a name with no profile here parks the task for
 // an operator when it is dispatched (daemon pinTaskProfile).
 type AgentProfile struct {
@@ -1089,9 +1065,8 @@ type Log struct {
 	Quiet bool `toml:"quiet" yaml:"quiet"`
 }
 
-// ChatConfig configures conversational front-ends (multi-agent
-// collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
-// Empty (Telegram.Token.Key == "") disables chat entirely.
+// ChatConfig configures conversational front-ends. Empty (Telegram.Token.Key ==
+// "") disables chat entirely.
 type ChatConfig struct {
 	// Operator is the display name of the person this deployment assists,
 	// shown to the chat agent as runtime metadata. Empty tells it nothing.
@@ -1184,9 +1159,8 @@ type ChatConfig struct {
 // A sender is identified per channel: Telegram by numeric user ID, email by the
 // SMTP from address, webhook by the configured route path -- which is a source,
 // not a person, so it reaches the limiter through the transport-only
-// Inbound.BudgetKey rather than through SenderID (see
-// docs/prds/memory-engine-unification.md §3). Disabled unless both fields are
-// set to a positive value.
+// Inbound.BudgetKey rather than through SenderID. Disabled unless both fields
+// are set to a positive value.
 type RateLimitConfig struct {
 	// Window is the rolling interval MaxRequests is budgeted over.
 	Window time.Duration `toml:"window" yaml:"window"`
@@ -1254,17 +1228,12 @@ type WebhookRoute struct {
 
 // Notify configures outbound notifications (n8n webhook → email etc.).
 type Notify struct {
-	// Webhook receives JSON POSTs for events that need a human (e.g.
-	// feasibility PRDs awaiting go/no-go). Empty disables.
+	// Webhook receives JSON POSTs for events that need a human. Empty disables.
 	Webhook string `toml:"webhook" json:"webhook" yaml:"webhook"`
 }
 
-// Web configures the observability dashboard.
-// Health is archied's own liveness surface, always on. It is separate from
-// the dashboard's /healthz because the process whose restart is being
-// verified has to be the one answering: the dashboard can be switched off,
-// and it becomes its own process in Phase 3, at which point probing it would
-// report health for something the update watchdog never restarted.
+// Web configures the observability dashboard. Health is archied's own liveness
+// surface, always on.
 type Health struct {
 	// Listen is the address the daemon serves /healthz, /health and
 	// /health/detailed on. Defaulted, never empty in a loaded config.

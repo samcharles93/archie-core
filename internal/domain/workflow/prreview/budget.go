@@ -2,11 +2,9 @@ package prreview
 
 import "time"
 
-// Budget bounds a pr-review run's total cost (tokens, the only spend the
-// agent runtime accounts for) and wall-clock, split evenly across every
-// budget-tracked phase (docs/prds/pr-review-agent.md, Budget: "A run has a
-// cost cap and a wall-clock cap, split into per-phase shares"). Zero
-// disables that dimension.
+// Budget bounds a pr-review run's total cost (tokens, the only spend the agent
+// runtime accounts for) and wall-clock, split evenly across every
+// budget-tracked phase. Zero disables that dimension.
 type Budget struct {
 	MaxTokens int
 	WallClock time.Duration

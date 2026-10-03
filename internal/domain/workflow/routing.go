@@ -40,11 +40,7 @@ var defaultKindWorkflows = KindWorkflows{
 var activeKindWorkflows KindWorkflows
 
 // SetKindWorkflows overrides the kind-to-workflow-name bindings Route()
-// consults, e.g. from a file loaded by LoadKindWorkflowsYAML. Passing nil
-// restores the built-in defaults -- the first slice of
-// docs/prds/eda-playbook-engine.md: which workflow a Kind prefers is data,
-// not a Go literal, without touching labelKinds or the closed NATS-subject
-// set that Kind itself still governs.
+// consults, e.g. from a file loaded by LoadKindWorkflowsYAML.
 func SetKindWorkflows(kw KindWorkflows) {
 	activeKindWorkflows = kw
 }
@@ -81,25 +77,12 @@ func LoadKindWorkflowsYAML(path string) (KindWorkflows, error) {
 	return kw, nil
 }
 
-// LoadPlaybookDirs reads every *.yaml / *.yml file across the configured
-// directories, treats each as a binding file (kind keys or arbitrary label
-// keys), and merges them into a single kind map and a single label map.
-// This is the third slice of docs/prds/eda-playbook-engine.md (t2db.11):
-// a list of directories is an additional, independent input to the two
-// single-file fields, which remain supported unchanged -- it is not a
-// replacement.
-//
-// Collision rule (the load-bearing case this slice exists to exercise): a
-// binding key (kind or label) declared by more than one source -- two
-// files in one directory, or two configured directories -- is a reported
-// load failure. Nothing is silently arbitrated by source order or version;
-// the colliding definitions are dropped and the error returned to the
-// caller. Source order is deterministic (configured dir order, then sorted
-// filenames) so a reported error is reproducible.
-//
-// An empty list, or directories that do not exist, returns (nil, nil):
-// "no playbook dir configured" means "no bindings", matching the
-// single-file fields' empty-means-defaults convention.
+// LoadPlaybookDirs reads every *.yaml / *.yml file in the configured
+// directories as a binding file and merges them into one kind map and one
+// label map. A key declared by more than one file is a load failure: the
+// colliding definitions are dropped and the error returned. Sources are read in
+// configured directory order, then filename order. An empty list or missing
+// directories return (nil, nil).
 func LoadPlaybookDirs(dirs []string) (KindWorkflows, LabelWorkflows, error) {
 	kw := make(KindWorkflows)
 	lw := make(LabelWorkflows)
@@ -201,13 +184,12 @@ func bindPlaybookKey(pos, key, value string, kw KindWorkflows, lw LabelWorkflows
 	return nil
 }
 
-// MergeKindWorkflows merges extra into base, failing on a key bound by
-// both. The single-file field and the playbook directory are independent
-// sources; a key each claims is a collision, not a precedence question
-// (t2db.11). Nil arguments are treated as empty. A nil nil result is
-// returned only when both inputs are nil/empty, so Set* can keep its
-// nil-means-defaults convention. This is a domain-package naming helper
-// the composition layer calls.
+// MergeKindWorkflows merges extra into base, failing on a key bound by both.
+// The single-file field and the playbook directory are independent sources; a
+// key each claims is a collision, not a precedence question. Nil arguments are
+// treated as empty. A nil nil result is returned only when both inputs are
+// nil/empty, so Set* can keep its nil-means-defaults convention. This is a
+// domain-package naming helper the composition layer calls.
 func MergeKindWorkflows(base, extra KindWorkflows) (KindWorkflows, error) {
 	merged := make(KindWorkflows, len(base)+len(extra))
 	maps.Copy(merged, base)
@@ -308,12 +290,10 @@ func ResolveWorkflowID(t *Task, available map[string]struct{}, kinds KindWorkflo
 	return "", fmt.Errorf("no routable workflow definition")
 }
 
-// LabelWorkflows maps a forge issue label to the registered workflow name
-// it prefers. This is the second slice of docs/prds/eda-playbook-engine.md:
-// the label vocabulary itself -- not just the closed bug/feature/bootstrap
-// kind set -- becomes playbook data. The closed Kind/NATS-subject set
-// (workintake) is deliberately untouched; this map only extends binding
-// authority for labels the kind layer does not own.
+// LabelWorkflows maps a forge issue label to the registered workflow name it
+// prefers. The closed Kind/NATS-subject set (workintake) is deliberately
+// untouched; this map only extends binding authority for labels the kind layer
+// does not own.
 type LabelWorkflows map[string]string
 
 // activeLabelWorkflows is what workflowForLabels consults for arbitrary

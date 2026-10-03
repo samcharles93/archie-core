@@ -4,14 +4,12 @@
 //
 // # Why not decode/re-marshal
 //
-// BurntSushi/toml (this project's TOML library, and every other Go TOML
-// encoder evaluated for archie-core-rs9) does not round-trip comments: a
-// Decode followed by an Encode reproduces the data but discards every
-// comment. config.example.toml carries substantial documentation as inline
-// comments that operators are meant to read and hand-edit, and archied
-// setup must be able to write into that same file -- and be re-run later
-// to change one value -- without deleting it. A full re-marshal was
-// rejected for that reason (archie-core-rs9).
+// BurntSushi/toml does not round-trip comments: a Decode followed by an Encode
+// reproduces the data but discards every comment. config.example.toml carries
+// substantial documentation as inline comments that operators are meant to read
+// and hand-edit, and archied setup must be able to write into that same file --
+// and be re-run later to change one value -- without deleting it. A full
+// re-marshal was rejected for that reason.
 //
 // # The chosen strategy
 //
@@ -25,14 +23,11 @@
 // the document). Every line Apply was not asked to touch is copied through
 // unchanged, byte for byte.
 //
-// This trades generality for the property archie-core-rs9 requires: a
-// second setup run that changes one value leaves every other line --
-// comments included -- identical to the first run's output. It only
-// understands single-line scalar and inline-table values (strings,
+// It only understands single-line scalar and inline-table values (strings,
 // numbers, booleans, `{ engine = "...", key = "..." }` secret refs), which
 // covers everything archied setup writes. Multi-line arrays and
-// [[array-of-tables]] entries are not targets for Apply; other code paths
-// (e.g. adding a [[repos]] entry) must not use it.
+// [[array-of-tables]] entries are not targets for Apply; other code paths (e.g.
+// adding a [[repos]] entry) must not use it.
 package tomlwrite
 
 import (

@@ -27,10 +27,8 @@ type ReviewUnitComment struct {
 
 // ReviewUnit is the remediate workflow's input contract: one review (or one
 // standalone comment with no parent review) and every actionable comment
-// grouped under it, per docs/prds/pr-review-remediation.md decision 5 ("a
-// review is the unit of remediation, never an individual comment"). The
-// daemon's reaction consumer builds and JSON-encodes this into
-// Task.ReviewPayload before dispatch; this package only decodes and acts
+// grouped under it. The daemon's reaction consumer builds and JSON-encodes this
+// into Task.ReviewPayload before dispatch; this package only decodes and acts
 // on it.
 type ReviewUnit struct {
 	ReviewID int64  `json:"review_id,omitempty"`
@@ -117,8 +115,8 @@ const remediationRoundCapBytes = 2000
 
 // retiredResumeStep is the remediate workflow's old in-container resume stage,
 // kept as an inert word in the step vocabulary. The resume it used to perform
-// now happens in daemon.prepareWorkspace before the container starts
-// (archie-core-866m): the daemon holds the forge credential that fetches the
+// now happens in daemon.prepareWorkspace before the container starts:
+// the daemon holds the forge credential that fetches the
 // branch and positions the worktree onto origin/<branch>, so by the time a
 // container-side stage could run there is nothing left to do. It is
 // deliberately not a stage of Remediate() any more -- a new definition never
@@ -268,8 +266,8 @@ func StageRemediationReply() Stage {
 }
 
 // Remediate runs one remediation round against an archie-owned, still-open
-// pull request in response to a forge review reaction
-// (docs/prds/pr-review-remediation.md decision 4). It reuses the task's
+// pull request in response to a forge review reaction.
+// It reuses the task's
 // existing worktree and branch rather than opening a new PR. The daemon
 // positions the worktree onto the PR branch before the container starts
 // (prepareWorkspace), and StagePrepareWorktreeOnBranch then binds that

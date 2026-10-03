@@ -24,7 +24,7 @@ const projectWriteAttempts = 3
 
 // WorkflowProjector carries an installed package's workflow contributions
 // into the org's workflow-definitions resource, the same document an operator
-// edits on the dashboard (docs/prds/store.md, "Packages"). The readers the
+// edits on the dashboard. The readers the
 // daemon holds read that resource per dispatch, so a projected workflow is
 // usable at the next dispatch and a withdrawn one stops dispatching, without
 // restarting processes.

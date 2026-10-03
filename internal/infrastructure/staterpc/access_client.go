@@ -1,5 +1,5 @@
-// Access: the client half of the policy-chain and denial-record RPCs
-// (docs/prds/orgs-and-access.md). The reset surface is deliberately absent:
+// Access: the client half of the policy-chain and denial-record RPCs.
+// The reset surface is deliberately absent:
 // `archied access reset` runs on the State Store host, never over the wire.
 package staterpc
 

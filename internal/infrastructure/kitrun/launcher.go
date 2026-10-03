@@ -42,7 +42,6 @@ type Grants interface {
 // Kit's credential file can render that set's expiry. It is the store's read
 // half only: kitrun never writes a token set, and nothing but the expiry
 // leaves oauthExpiries, so a real token cannot reach the credential file
-// (docs/prds/external-agent-harness.md, "Verification").
 type OAuthSecrets interface {
 	GetHarnessSecret(ctx context.Context, org, service string) (harnesssecret.Secret, error)
 }
@@ -66,11 +65,9 @@ type Launcher struct {
 	// construction: credential bindings are their own live control-plane
 	// resource (controlplane.CredentialBindingsKind), so a binding added or
 	// changed after this daemon started must take effect on the very next
-	// dispatch, the same way an agent profile already does
-	// (docs/prds/external-agent-harness.md, "Selection": applies without a
-	// restart). A nil Secrets or Grants degrades every credential to unbound
-	// rather than panicking: a daemon with no Kit profile configured wires
-	// neither.
+	// dispatch, the same way an agent profile already does. A nil Secrets or
+	// Grants degrades every credential to unbound rather than panicking: a
+	// daemon with no Kit profile configured wires neither.
 	Config  *config.Holder
 	Secrets SecretResolver
 	Grants  Grants
@@ -100,13 +97,10 @@ type Request struct {
 	// a positive one, and Launch refuses it rather than starting a
 	// container no gate failure could ever resume.
 	GateRetries int
-	// Org and GrantedServices are the dispatching identity's own facts
-	// (config.Config.Org, config.Config.GrantedCredentials), carried here
-	// because kitrun holds no store or config of its own. Launch resolves a
-	// Kit credential only where these agree with a configured
-	// CredentialBinding and the Kit's own declared service -- the
-	// declared-and-granted intersection docs/prds/external-agent-harness.md
-	// and orgs-and-access.md both require; neither side widens the other.
+	// Org and GrantedServices are the dispatching identity's own facts. A Kit
+	// credential resolves only where these agree with a configured
+	// CredentialBinding and the Kit's declared service; neither side widens the
+	// other.
 	Org             string
 	GrantedServices []string
 }

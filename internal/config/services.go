@@ -74,6 +74,6 @@ type ServiceConnection struct {
 	// when dialing a non-loopback service target, and the standalone
 	// archie-state-store server validates. Empty means no token, which is
 	// the loopback-only, daemon-only listener topology permitted without
-	// auth (docs/prds/state-store-contract.md §9).
+	// auth.
 	TargetToken string `toml:"target_token" yaml:"target_token"`
 }

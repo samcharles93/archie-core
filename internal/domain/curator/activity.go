@@ -8,7 +8,7 @@ import (
 
 // maxRecentActions bounds how much per-curator history activityTracker
 // keeps in memory. Curator activity is inspectable, not archival -- there is
-// deliberately no persistence layer here (archie-core-1786637489932-6),
+// deliberately no persistence layer here,
 // so this is a ring buffer, not a log.
 const maxRecentActions = 20
 

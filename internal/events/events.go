@@ -22,11 +22,9 @@ const (
 	// on events persisted before it was carried across the agent boundary, so
 	// consumers must treat each field as optional rather than zero.
 	KindAgentFinish = "agent_finish" // data: status, stop_reason, tokens, iterations, model, prompt_tokens, completion_tokens, cached_tokens, cache_creation_tokens
-	// KindToolCall marks one completed tool invocation during an agent
-	// stage run (archie-core-467's task-transcript counterpart -- the
-	// interactive chat gateway surfaces its own tool calls separately via
-	// gateway.ToolCallEvent). Only emitted for runners that execute in the
-	// same process as their tools; see agentexec.ToolCallReporter.
+	// KindToolCall marks one completed tool invocation during an agent stage
+	// run. Only emitted for runners that execute in the same process as their
+	// tools; see agentexec.ToolCallReporter.
 	KindToolCall   = "tool_call" // data: tool, failed
 	KindParked     = "parked"    // data: reason
 	KindOutcome    = "outcome"   // data: status, detail
@@ -93,9 +91,9 @@ const (
 	// construction and by test).
 	KindConfigCaptured = "config_captured"
 
-	// Curator family activity (epic archie-core-yp9). Curator runs ride
+	// Curator family activity. Curator runs ride
 	// the same bus so background agents mutating memory stay observable:
-	// what ran, when, what changed, and why (archie-core-114).
+	// what ran, when, what changed, and why.
 	KindCuratorRun    = "curator_run"    // data: curator, actions, at
 	KindCuratorAction = "curator_action" // data: curator, type, detail, reason
 	KindCuratorError  = "curator_error"  // data: curator, phase, err
@@ -108,8 +106,8 @@ const (
 	KindJobRun   = "job_run"
 	KindJobError = "job_error"
 
-	// KindTurnCompleted marks one completed primary chat turn
-	// (archie-core-035). Input-driven curators wake on it. Curator output
+	// KindTurnCompleted marks one completed primary chat turn.
+	// Input-driven curators wake on it. Curator output
 	// never produces this kind, so derived work cannot feed its own
 	// trigger. data: session, channel.
 	KindTurnCompleted = "turn_completed"
@@ -129,7 +127,7 @@ const (
 	KindUnsignedEvent = "unsigned_event"
 
 	// KindWorkflowCallStarted marks the moment a workflow.call step
-	// started its callee run (docs/prds/workflow-calls.md). data:
+	// started its callee run. data:
 	// callee_task_id, workflow, wait.
 	KindWorkflowCallStarted = "workflow_call_started"
 	// KindWorkflowCallFinished carries the terminal state of a waited-on
@@ -141,7 +139,7 @@ const (
 	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
 	// update -- whether the restarted daemon came back up healthy and on
 	// the version it claimed, relayed once on the boot that finds the
-	// pending report left by the update watchdog (archie-core-nln7).
+	// pending report left by the update watchdog.
 	// data: health_check, rolled_back, confirmed, drift, unverified.
 	KindUpdateReport = "update_report"
 )

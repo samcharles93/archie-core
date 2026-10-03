@@ -40,8 +40,8 @@ func (s *Store) queries() *postgresdb.Queries {
 // guardTransition locks the task's row and checks the status write the caller
 // is about to perform: a row whose status is not the expected from is stale
 // (ErrStaleTransition), a from->to pair outside the shared transition table is
-// refused with ErrIllegalTransition
-// (docs/prds/execution-tree-state-machine.md). Staleness is decided first, so
+// refused with ErrIllegalTransition.
+// Staleness is decided first, so
 // a caller that is wrong about the row's state gets the stale sentinel even
 // when its pair is also unroutable. The row stays locked for the caller's
 // transaction, so the checks cannot race the guarded write that follows.
@@ -78,7 +78,7 @@ const syntheticIssueNumberBase = 1_000_000_000_000_000
 // structured payload (review_payload today, task outputs now). A value that
 // would exceed it is refused for outputs -- clipped JSON does not parse, and a
 // caller must receive an object or nothing -- where the legacy review payload
-// is still clipped (docs/prds/workflow-call-outputs.md, "Storage and wire").
+// is still clipped.
 const structuredPayloadBytes = 4000
 
 // taskFromRow maps the generated task row to the workflow.Task the daemon and
@@ -295,7 +295,7 @@ func (s *Store) ParkTask(ctx context.Context, taskID int64, from, detail, class 
 
 // Update persists mutable task fields written by workflows.
 func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
-	// The row write is where a run's outputs land (docs/prds/workflow-call-outputs.md).
+	// The row write is where a run's outputs land.
 	// An encoded set past the bound the store applies to a structured payload
 	// is refused rather than clipped: clipped JSON does not parse, and a caller
 	// would receive a broken object as a value. The engine turns the refusal
@@ -414,8 +414,8 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, ret
 	})
 }
 
-// RespondReviewGate is the review gate response write
-// (docs/prds/pr-review-operator-response.md, Decision 2): one guarded
+// RespondReviewGate is the review gate response write:
+// one guarded
 // requeue that records the operator's answer, increments rereview_rounds for
 // a re-review only, and writes one audit row -- all in one transaction. The
 // cap is checked under the row lock the transition guard takes, so two
@@ -522,13 +522,9 @@ func (s *Store) ArchiveTask(ctx context.Context, taskID int64, fromStatus string
 
 // RecoverStale re-queues tasks left running by a crashed or replaced daemon
 // and, in the same transaction, moves the steps those executions left running
-// to the step transition table's interrupted outcome
-// (docs/prds/execution-tree-state-machine.md, "Crash recovery"): one event row
-// per step transition and the execution's audit row land in the same write.
-// Both edges are pinned in SQL (the execution's running->queued, the step's
-// running->interrupted) and pinned to the tables by
-// TestSQLPinnedTransitionsAreTableLegal. The next attempt starts with fresh
-// steps; earlier attempts are never rewritten.
+// to the step transition table's interrupted outcome: one event row per step
+// transition and the execution's audit row land in the same write. The next
+// attempt starts with fresh steps; earlier attempts are never rewritten.
 func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -675,8 +671,8 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 	return taskFromRow(t), nil
 }
 
-// StartCall enqueues the callee of callerTaskID's workflow.call step
-// (docs/prds/workflow-calls.md). The store owns the table, so it re-checks
+// StartCall enqueues the callee of callerTaskID's workflow.call step.
+// The store owns the table, so it re-checks
 // both runtime invariants the engine checks: the caller must be running and
 // the call must not pass workflow.MaxCallDepth. The callee inherits the
 // caller's org, workspace, identity, owner and repo, and takes a fresh
@@ -741,8 +737,8 @@ func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) 
 	if callee.CallParentTaskID != callerTaskID {
 		return "", "", nil, storecontract.ErrCallNotYours
 	}
-	// The row is the callee's own; its outputs travel beside status and detail
-	// (docs/prds/workflow-call-outputs.md, "Storage and wire"). The caller
+	// The row is the callee's own; its outputs travel beside status and detail.
+	// The caller
 	// decides whether to use them -- only a successful terminal state's values
 	// reach it.
 	outputs, _ := task.DecodeOutputs(callee.Outputs)

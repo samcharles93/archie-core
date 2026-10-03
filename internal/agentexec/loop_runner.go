@@ -358,7 +358,7 @@ func isNonEmptyString(object map[string]json.RawMessage, field string) bool {
 }
 
 // scriptToolSet exposes run_go_script: interpreting a Yaegi Go script
-// bundled with a skill (.agents/skills/<skill>/scripts/*.go) or living
+// bundled with a skill or living
 // anywhere else in the workspace, and returning what it printed. This is
 // how an agent following a skill's instructions ("run scripts/gitleaks.go
 // to scan for secrets") actually executes a .go helper without a Go

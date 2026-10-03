@@ -1,20 +1,18 @@
-// Package playbook is the EDA playbook document type and its event
-// coordinator: the rich trigger+actions YAML shape (docs/prds/
-// eda-playbook-engine.md) with CEL `when` conditions and `args` values
-// (open question 1, resolved to CEL). A playbook is one of two shapes
+// Package playbook is the EDA playbook document type and its event coordinator:
+// the rich trigger+actions YAML shape with CEL `when` conditions and `args`
+// values (open question 1, resolved to CEL). A playbook is one of two shapes
 // (multi-action-playbooks.md, D2):
 //
 //   - a workflow playbook is exactly one `workflow` action, unchanged from
 //     the original boundary, and is routed by the daemon's definition pin;
 //   - an action playbook is one or more `module` actions in order, each with
 //     a registered `kind`, `args`, and an optional `when`/`id`. Store.Run
-//     executes it (docs/prds/action-playbook-run.md).
+//     executes it.
 //
 // The two shapes never mix in one playbook. This is an ADDITIONAL routing
-// source alongside the flat kind/label binding files (t2db.9/.10/.11): the
-// daemon consults a matching workflow playbook before those bindings when it
-// pins a task's workflow definition (t2db.23). The binding loaders themselves
-// are untouched.
+// source alongside the flat kind/label binding files: the daemon consults a
+// matching workflow playbook before those bindings when it pins a task's
+// workflow definition. The binding loaders themselves are untouched.
 package playbook
 
 import (
@@ -661,7 +659,6 @@ func (pb *Playbook) Match(input DispatchInput) bool {
 // that chose it. Version pins the decision to the exact file content active
 // when it fired, and both fields are the first two components of the
 // per-action idempotency key the resolved gap-2 scheme derives
-// (docs/prds/eda-playbook-engine.md, "Idempotency at execution time").
 type Decision struct {
 	PlaybookID string
 	Version    string
@@ -671,9 +668,8 @@ type Decision struct {
 	// dispatch ledger) read this action under.
 	ActionID string
 	// ActionPosition is the 1-based index of the dispatched action in the
-	// playbook's actions list. It is the idempotency-key fallback when
-	// ActionID is empty (docs/prds/eda-playbook-engine.md, "Idempotency at
-	// execution time").
+	// playbook's actions list. It is the idempotency-key fallback when ActionID
+	// is empty.
 	ActionPosition int
 }
 
@@ -736,7 +732,6 @@ func evalContext(input DispatchInput) expr.Context {
 // Asymmetry with `when`: `when` is a predicate, so an evaluation error is
 // false (J3: skip + log); `args` is data, so an evaluation error has no
 // meaningful substitute and is returned to the caller to abort the playbook run
-// (J6, docs/prds/playbook-expression-syntax.md).
 func (s *Store) EvalArgs(a Action, input DispatchInput) (map[string]any, error) {
 	if s == nil {
 		return map[string]any{}, nil

@@ -26,8 +26,8 @@ type Server struct {
 	Store storecontract.TaskStore
 	Log   *slog.Logger
 
-	// Steps lists one execution's recorded StepExecutions
-	// (docs/prds/execution-tree-state-machine.md): the run detail's
+	// Steps lists one execution's recorded StepExecutions:
+	// the run detail's
 	// authoritative source, GET /api/tasks/{id}/attempts. Nil degrades the
 	// route to reporting no steps rather than folding stage_start/
 	// stage_finish events, which tasks.stage used to back and no longer
@@ -50,8 +50,8 @@ type Server struct {
 	// process whichever implementation it can use: the daemon (whose state
 	// directory holds the files) its own *logging.TaskRegistry, and the
 	// dashboard process, which owns no such directory, the State Store client
-	// -- the read crosses a contract rather than opening a file
-	// (docs/prds/ui-service-boundary.md). Nil means this process has no
+	// -- the read crosses a contract rather than opening a file.
+	// Nil means this process has no
 	// task-log capability at all, which the handlers report as disabled rather
 	// than as "the attempt has no log": those are different claims and only one
 	// of them is about configuration.
@@ -71,9 +71,9 @@ type Server struct {
 	// /api/skills to an empty page.
 	Skills SkillCatalog
 
-	// Curators is the daemon's live curator registry (epic archie-core-yp9).
+	// Curators is the daemon's live curator registry.
 	// Backs GET /api/curators: registered names, per-curator health, and
-	// recent activity (archie-core-1786637489932-6). Optional: nil reports
+	// recent activity. Optional: nil reports
 	// an empty curator list rather than failing the dashboard.
 	Curators CuratorStatus
 
@@ -94,7 +94,7 @@ type Server struct {
 
 	// ApplyStatus reports which control-plane resource version each process
 	// is running. Optional: nil renders an empty page rather than failing the
-	// dashboard (docs/prds/control-plane-apply-status.md).
+	// dashboard.
 	ApplyStatus storecontract.ApplyStatusStore
 	// now is the clock applyState reads staleness against. Nil means
 	// time.Now; tests set it to pin a record's age.
@@ -118,8 +118,8 @@ type Server struct {
 	// through a browser -- an agent does exactly that.
 	Login identity.LoginFlow
 
-	// Access evaluates the policy chain for each request
-	// (docs/prds/orgs-and-access.md). Optional: nil keeps the credential
+	// Access evaluates the policy chain for each request.
+	// Optional: nil keeps the credential
 	// check as the whole gate -- the documented behaviour of an install that
 	// has not built the chain. Principals assembles the request principal
 	// from the acting identity; Denials records refusals. All three are
@@ -134,8 +134,8 @@ type Server struct {
 	Events EventPublisher
 
 	// Captures backs the dashboard's read of captured events: the
-	// GET /api/captures list and the mapping preview's by-ID scan
-	// (docs/prds/event-capture-storage.md). Optional: nil makes the list
+	// GET /api/captures list and the mapping preview's by-ID scan.
+	// Optional: nil makes the list
 	// answer {"enabled": false} rather than the dashboard failing to start.
 	Captures storecontract.CaptureStore
 	// CaptureMaxEvents is the operator's configured [capture] max_events,
@@ -147,46 +147,45 @@ type Server struct {
 	// senders, so it cannot sit behind requireToken. The handler is owned
 	// by internal/infrastructure/captureintake.Receiver; this package only
 	// mounts the route and reads the rows back. The UI process composes
-	// it from the cutover change (archie-core-8cda.5.4) -- it is the only
+	// it from the cutover change -- it is the only
 	// dashboard listener left, and a capture POST answered by the
 	// token-gated mux would leave intake with no owner. Nil removes the
 	// route, which is what a store without the capture contract gets:
 	// two listeners with the same intake authority is what the boundary
-	// forbids (docs/prds/ui-service-boundary.md:30-33).
+	// forbids.
 	CaptureIntake http.Handler
 
-	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
+	// Mappings persists payload field mappings.
 	// Optional: nil makes every /api/mappings route answer 503 rather than
 	// the dashboard failing to start.
 	Mappings storecontract.MappingStore
 
-	// EventTypes persists event types (docs/prds/event-automation.md). Optional:
+	// EventTypes persists event types. Optional:
 	// nil reports the inspector's event types as disabled.
 	EventTypes storecontract.EventTypeStore
 
 	// Bindings persists playbook bindings: matcher + mapping + workflow
-	// triples that turn a captured webhook into an archie task
-	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
+	// triples that turn a captured webhook into an archie task.
+	// Optional: nil makes every
 	// /api/bindings route answer 503 rather than the dashboard failing to start.
 	Bindings storecontract.BindingStore
 
-	// Sources persists capture sources and their signing setting
-	// (docs/prds/event-automation.md "Sources"). Optional: nil makes every
+	// Sources persists capture sources and their signing setting.
+	// Optional: nil makes every
 	// /api/sources route answer 503 and marks no binding unsigned.
 	Sources storecontract.SourceStore
 
 	// HarnessSecrets reads each credential binding's captured OAuth token
 	// set, so the harness page can report whether a binding is configured,
-	// when it expires and which scopes it carries
-	// (docs/prds/external-agent-harness.md, Credentials). The token values
+	// when it expires and which scopes it carries.
+	// The token values
 	// themselves never reach the browser. Optional: nil answers
 	// /api/harness/bindings 503 rather than claiming the org has none.
 	HarnessSecrets storecontract.HarnessSecretStore
 
 	// HarnessTerminal opens the setup terminal, a duplex PTY session in an
-	// ephemeral Kit container (docs/prds/external-agent-harness.md, "Setup
-	// terminal"). Optional: nil answers /api/harness/terminal 503. The
-	// implementation belongs to a process that owns containers; the
+	// ephemeral Kit container. Optional: nil answers /api/harness/terminal 503.
+	// The implementation belongs to a process that owns containers; the
 	// dashboard consumes it over a contract and never links one.
 	HarnessTerminal HarnessTerminal
 
@@ -203,7 +202,7 @@ type Server struct {
 	// its next boot -- the webui counterpart of
 	// channels/telegram.Gateway.UpdateReportPath. Empty (the default unless
 	// composition wires it) means dashboard-initiated updates get no
-	// phase-2 report (archie-core-nln7): the operator only sees the
+	// phase-2 report: the operator only sees the
 	// synchronous install result, never restart/health/version outcome.
 	UpdateReportPath string
 
@@ -376,7 +375,6 @@ func (s *Server) Handler() http.Handler {
 	}
 	// The chain runs after the credential check and before any handler: the
 	// principal exists only once the credential resolved
-	// (docs/prds/orgs-and-access.md, "Where it lives").
 	top.Handle("/", s.requireToken(s.authorize(mux)))
 	return top
 }

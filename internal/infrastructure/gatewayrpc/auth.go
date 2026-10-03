@@ -14,7 +14,7 @@ import (
 
 // tokenMetadataKey is the gRPC metadata key the Gateway Bearer [REDACTED]
 // travels in. Metadata, never a URL, mirroring the State Store's
-// token lifecycle (docs/prds/state-store-contract.md §9).
+// token lifecycle.
 const tokenMetadataKey = "gateway-token"
 
 // TargetIsLoopback reports whether addr's host is a loopback address. Both

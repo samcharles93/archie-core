@@ -1,7 +1,7 @@
 // Package task is the task-execution vocabulary of the workflow domain:
 // the Task record, its lifecycle statuses, and the narrow Store contract
 // workflow stages call mid-run. It split out of package workflow
-// (archie-core-8cda.5.6) so the UI process can hold the vocabulary without
+// so the UI process can hold the vocabulary without
 // linking the pipeline engine there -- which drags in agentexec, skill and
 // tools. package workflow keeps aliases, so daemon-side callers are
 // unaffected.
@@ -96,14 +96,14 @@ type Task struct {
 	// one identity cannot control another's chat-spawned tasks.
 	Identity string `json:"identity"`
 	// Org is the org the task belongs to. The State Store derives it from
-	// the task's identity when the row is written
-	// (docs/prds/orgs-and-access.md, "Events and task identity"); a task
+	// the task's identity when the row is written;
+	// a task
 	// of a single-operator install belongs to the default org.
 	Org org.OrgID `json:"org,omitempty"`
-	// BindingID and BindingVersion are stamped when a task was created
-	// from a playbook binding dispatch (t2db.4 Phase B). They record
-	// provenance: which binding fired this task and at what version, so
-	// later edits to the binding cannot silently rewrite history.
+	// BindingID and BindingVersion are stamped when a task was created from a
+	// playbook binding dispatch. They record provenance: which binding fired
+	// this task and at what version, so later edits to the binding cannot
+	// silently rewrite history.
 	BindingID      string `json:"binding_id"`
 	BindingVersion int    `json:"binding_version"`
 	// Inputs are the workflow inputs the binding assigned, checked against
@@ -111,18 +111,17 @@ type Task struct {
 	// structured data, never as body text.
 	Inputs map[string]any `json:"inputs,omitempty"`
 	// Outputs are the structured results this run wrote to the workflow's
-	// declared outputs (docs/prds/workflow-call-outputs.md). The set is
+	// declared outputs. The set is
 	// attempt-scoped: a claim starts the next attempt with an empty set and
 	// the finish write replaces the row's set wholesale. Callers read these
 	// only from a successful terminal state, through WorkflowCallStatus.
 	Outputs map[string]any `json:"outputs,omitempty"`
 	// ReviewPayload is the JSON-encoded review unit (the forge review's
-	// actionable comments) the remediate workflow's current run must
-	// address. The daemon's reaction consumer injects it before queuing a
-	// remediation run, so the run is recoverable from the task record
-	// itself rather than only from a prompt (docs/prds/pr-review-remediation.md
-	// decision 4). Empty outside a remediation run. RetryCount doubles as
-	// the remediation round counter for this same task, bounded by the
+	// actionable comments) the remediate workflow's current run must address.
+	// The daemon's reaction consumer injects it before queuing a remediation
+	// run, so the run is recoverable from the task record itself rather than
+	// only from a prompt. Empty outside a remediation run. RetryCount doubles
+	// as the remediation round counter for this same task, bounded by the
 	// repo's existing max_retries (decision 5's round cap).
 	ReviewPayload string `json:"review_payload"`
 	// ParkClass is the producer-recorded answer to "what kind of
@@ -136,21 +135,20 @@ type Task struct {
 	// budget: one shared counter made N operator retries eat the
 	// review-remediation budget and vice versa.
 	RemediationRounds int `json:"remediation_rounds"`
-	// ReviewGate is the operator-approval gate's whole conversation with
-	// the operator, persisted as one JSON document (prreview.EncodeReviewGate):
-	// the offer the gate writes before it waits for an operator -- the scored
+	// ReviewGate is the operator-approval gate's whole conversation with the
+	// operator, persisted as one JSON document (prreview.EncodeReviewGate): the
+	// offer the gate writes before it waits for an operator -- the scored
 	// findings, the head SHA, the pull request's identity and the workflow the
 	// wait resumes -- and the answer the response path fills in -- the outcome,
 	// the selected findings' keys for an approve and the instructions for a
 	// re-review. Without it, "post the selected findings" cannot mean the
 	// findings the operator saw: the resumed run recomputes them with agent
-	// calls (docs/prds/pr-review-operator-response.md, "The review the operator
-	// answers"). Empty for a task that never reached the gate.
+	// calls. Empty for a task that never reached the gate.
 	ReviewGate string `json:"review_gate"`
 	// RereviewRounds counts how many operator re-reviews the pr-review gate
 	// granted, incremented in the same guarded write that requeues the
-	// re-review and capped at prreview.MaxRereviewRounds
-	// (docs/prds/pr-review-operator-response.md, Decision 2). Deliberately
+	// re-review and capped at prreview.MaxRereviewRounds.
+	// Deliberately
 	// separate from both RetryCount and RemediationRounds -- one shared
 	// counter made unrelated retries draw another phase's budget down.
 	RereviewRounds int `json:"rereview_rounds"`
@@ -220,8 +218,8 @@ type Store interface {
 	Update(ctx context.Context, t *Task) error
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
 	InsertEvent(ctx context.Context, e events.Event) (int64, error)
-	// StartStep records a StepExecution entering running
-	// (docs/prds/execution-tree-state-machine.md): the store creates the row,
+	// StartStep records a StepExecution entering running:
+	// the store creates the row,
 	// enforces the step transition table and the execution's own status, and
 	// writes the transition's stage_start event in the same transaction. It
 	// returns the step's id and the persisted event, which the caller publishes

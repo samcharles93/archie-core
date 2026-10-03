@@ -19,8 +19,8 @@ type CuratorActionView struct {
 // registry: the names, point-in-time health, and recent activity the
 // dashboard's curator view renders. It is deliberately narrower than the
 // registry itself -- whose engine contract drags in the agent toolchain --
-// so the UI process holds the view without linking it
-// (archie-core-8cda.5.6). Whoever owns the registry supplies an adapter at
+// so the UI process holds the view without linking it.
+// Whoever owns the registry supplies an adapter at
 // bootstrap.
 type CuratorStatus interface {
 	Names() []string
@@ -60,7 +60,7 @@ type CuratorHealthView struct {
 
 // handleCurators reports which curators are registered, their point-in-time
 // health, and their recent activity -- which curators exist, when each last
-// ran, what it changed, and why (archie-core-1786637489932-6). The registry
+// ran, what it changed, and why. The registry
 // is the sole source of truth; this handler is transport only.
 func (s *Server) handleCurators(w http.ResponseWriter, r *http.Request) {
 	if s.Curators == nil {

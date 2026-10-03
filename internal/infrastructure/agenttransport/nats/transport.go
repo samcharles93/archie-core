@@ -23,11 +23,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
-// Config contains the broker endpoint and credential for the worker
-// transport, plus the State Store gRPC target (docs/prds/
-// state-store-contract.md §6). StateStoreURL is required: the agent is fully
-// on gRPC for its store calls, and the legacy NATS storerpc path is deleted
-// (docs/prds/state-store-contract.md §12 step 4).
+// Config contains the broker endpoint and credential for the worker transport,
+// plus the State Store gRPC target. StateStoreURL is required: the agent is
+// fully on gRPC for its store calls, and the legacy NATS storerpc path is
+// deleted
 type Config struct {
 	URL   string
 	Token string
@@ -63,7 +62,7 @@ type Transport struct {
 
 // Connect establishes the worker's core-NATS connection and, when
 // Config.StateStoreURL is set, a long-lived gRPC connection to the State
-// Store (docs/prds/state-store-contract.md §6, §9). A non-loopback
+// Store. A non-loopback
 // StateStoreURL with no token fails closed rather than dialing an
 // unauthenticated remote store.
 func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, error) {
@@ -87,10 +86,9 @@ func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, 
 	}
 	log.Info("worker transport connected", "url", conn.ConnectedUrl())
 
-	// The agent is fully on gRPC for its store calls; the legacy NATS
-	// storerpc path is deleted (docs/prds/state-store-contract.md §12 step
-	// 4). A missing StateStoreURL fails fast rather than letting Store()
-	// hand back a client over a nil connection.
+	// The agent is fully on gRPC for its store calls; the legacy NATS storerpc
+	// path is deleted. A missing StateStoreURL fails fast rather than letting
+	// Store() hand back a client over a nil connection.
 	if config.StateStoreURL == "" {
 		conn.Close()
 		return nil, fmt.Errorf("state store target is required: archie-agent no longer supports the legacy NATS storerpc path (docs/prds/state-store-contract.md §12 step 4)")
@@ -146,9 +144,9 @@ func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forg
 }
 
 // Store constructs the workflow store RPC client over the long-lived State
-// Store client (docs/prds/state-store-contract.md §6). Each call is bounded
+// Store client. Each call is bounded
 // by timeout when the caller's context carries no deadline of its own. The
-// legacy NATS storerpc path is deleted (§12 step 4); a transport without a
+// legacy NATS storerpc path is deleted; a transport without a
 // State Store client cannot reach Store() because Connect refused to build
 // one.
 func (t *Transport) Store(timeout time.Duration) workflow.Store {
@@ -156,7 +154,7 @@ func (t *Transport) Store(timeout time.Duration) workflow.Store {
 }
 
 // Calls constructs the workflow.call RPC client over the same long-lived
-// State Store client (docs/prds/workflow-calls.md), bounded by timeout the
+// State Store client, bounded by timeout the
 // same way Store() is.
 func (t *Transport) Calls(timeout time.Duration) task.Caller {
 	return deadlineCaller{Caller: t.state, timeout: timeout}

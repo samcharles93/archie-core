@@ -84,9 +84,9 @@ type Request struct {
 	Protection    Protection    `json:"protection"`
 	Notes         string        `json:"notes,omitempty"`
 	CaptureTools  []CaptureTool `json:"capture_tools,omitempty"`
-	// Plugins are bundled Yaegi plugins from the skill's plugins/
-	// directory. Each entry carries the name and source so the agent
-	// can register them as tools. PRD section 5 Layer 1.
+	// Plugins are bundled Yaegi plugins from the skill's plugins/ directory.
+	// Each entry carries the name and source so the agent can register them as
+	// tools.
 	Plugins []PluginSpec `json:"plugins,omitempty"`
 	// Harness, when set, runs the stage on an external coding-agent CLI
 	// instead of the built-in loop. The worker in a Kit container is the

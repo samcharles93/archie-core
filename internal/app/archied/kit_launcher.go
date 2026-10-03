@@ -61,7 +61,6 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 	}
 	// grants is the production Resolver: Launch/Release Grant/RevokeGrant it
 	// per run with exactly the declared-and-granted intersection
-	// (docs/prds/external-agent-harness.md, Credentials; archie-core-egkf.11).
 	grants := egress.NewGrantResolver()
 	// Without a harness secret store, Register refuses a Kit with a
 	// required OAuth credential.

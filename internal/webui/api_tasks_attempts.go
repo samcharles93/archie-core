@@ -70,8 +70,8 @@ type taskStageView struct {
 // stages it recorded. Attempt bounds, event counts and which attempt numbers
 // exist still come from the task's events (an attempt can carry events with
 // no step, e.g. agent calls, so events remain the complete attempt index);
-// the stages themselves are step_executions, the authoritative record
-// (docs/prds/execution-tree-state-machine.md), not a fold over
+// the stages themselves are step_executions, the authoritative record,
+// not a fold over
 // stage_start/stage_finish events.
 func (s *Server) handleTaskAttempts(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.taskByPathID(w, r)
@@ -243,8 +243,8 @@ func attemptBounds(evs []events.Event) (first, last time.Time) {
 }
 
 // stageViewsFromSteps builds an attempt's ordered stage occurrences directly
-// from its recorded StepExecutions -- the authoritative record
-// (docs/prds/execution-tree-state-machine.md), not a fold over
+// from its recorded StepExecutions -- the authoritative record,
+// not a fold over
 // stage_start/stage_finish events. Only kind "stage" steps are shown: agent
 // and call steps are the tree's own detail, not this rail's.
 func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageView {

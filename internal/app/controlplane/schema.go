@@ -11,7 +11,6 @@ import (
 // bareObjectSchema is what a descriptor advertises when its definition names no
 // document. It is the fallback, not the norm: a descriptor with no properties is
 // what left the Web UI with nothing to label, describe or format a field with
-// (archie-core-2xs6).
 const bareObjectSchema = `{"type":"object"}`
 
 var timeType = reflect.TypeFor[time.Time]()

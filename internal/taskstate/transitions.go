@@ -7,8 +7,8 @@ import (
 )
 
 // StepStatus is the lifecycle of a StepExecution -- one stage run, or one agent
-// call a stage makes, inside a WorkflowExecution
-// (docs/prds/execution-tree-state-machine.md). It is part of the on-disk
+// call a stage makes, inside a WorkflowExecution.
+// It is part of the on-disk
 // format, like the execution statuses above.
 //
 // It is a distinct type from those statuses even though the two vocabularies

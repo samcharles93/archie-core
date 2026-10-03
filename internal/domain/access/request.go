@@ -141,7 +141,7 @@ type PrincipalSource interface {
 }
 
 // Denial is one recorded refusal: who was refused, doing what, to what, by
-// which level and which policies (docs/prds/orgs-and-access.md, "Denials").
+// which level and which policies.
 type Denial struct {
 	Principal  identity.IdentityID `json:"principal"`
 	Org        org.OrgID           `json:"org"`

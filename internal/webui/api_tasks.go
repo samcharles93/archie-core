@@ -190,9 +190,8 @@ func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
 type taskActionRequest struct {
 	Action string `json:"action"`
 	// Instructions is the re-review's focus, required by the rereview action
-	// and ignored by every other one (docs/prds/pr-review-operator-
-	// response.md, Decision 1). The dashboard is the authoritative surface
-	// that carries operators' instructions; chat is a shortcut with no
+	// and ignored by every other one. The dashboard is the authoritative
+	// surface that carries operators' instructions; chat is a shortcut with no
 	// instruction syntax.
 	Instructions string `json:"instructions"`
 	// Findings are the keys of the offered findings an approve posts; an
@@ -358,7 +357,7 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 
 // applyOperatorTaskAction sends the action to whoever owns task execution.
 // The dashboard operator is authenticated and acts across identities, which
-// the Gateway contract carries as its own method (archie-core-8cda.5.4).
+// the Gateway contract carries as its own method.
 //
 // The UI process cannot run this itself: retry limits come from the daemon's
 // configuration, closing the forge issue needs its forge client, the

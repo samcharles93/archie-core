@@ -33,7 +33,7 @@ func channelDescriptors(instances []*channelInstance) []status.Descriptor {
 // reloadable reports whether this channel can re-read its configuration. It is
 // the single source for both the capability a descriptor declares and the action
 // a reload performs; deriving them separately is how a dashboard ends up offering
-// a button that reports success and changes nothing (archie-core-np7l).
+// a button that reports success and changes nothing.
 func reloadable(instance *channelInstance) bool {
 	gateway, ok := instance.current().(*telegram.Gateway)
 	return ok && gateway.Reload != nil
@@ -72,8 +72,8 @@ func (s *Service) ReloadChannel(_ context.Context, id string) error {
 //
 // Before this, Start handed every channel an empty channels.Lifecycle{}, so
 // nothing recorded starting, running or failed anywhere and
-// internal/channels/status.Manager had no production writer at all
-// (archie-core-8cda.6.8). The channels have always reported: all three call
+// internal/channels/status.Manager had no production writer at all.
+// The channels have always reported: all three call
 // ReportStarting and ReportRunning on whichever lifecycle they are handed.
 func (s *Service) lifecycleFor(id string) channels.Lifecycle {
 	return channels.Lifecycle{

@@ -2,13 +2,9 @@
 // channel and source correlation, and typed tool-call/tool-result message
 // variants.
 //
-// This package intentionally contains only the vocabulary already settled
-// in docs/architecture/migration-decisions.md section 2: the composite
-// Conversation identity, immutable MessageIDs, typed tool-call and
-// tool-result messages, and branch lineage through ParentConversationID and
-// ForkMessageID. Migrating internal/gateway/'s session, compression,
-// approval, and branch logic onto these types is deliberately out of scope
-// here — see that section for why, and bd for the tracked follow-up work.
+// Migrating internal/gateway/'s session, compression, approval, and branch
+// logic onto these types is deliberately out of scope here — see that section
+// for why, and bd for the tracked follow-up work.
 package messaging
 
 import "time"
@@ -96,7 +92,7 @@ type Message struct {
 	// when the channel has no stable per-person identity to offer -- which
 	// includes a webhook, whose configured route path is a source rather
 	// than a person and travels in the transport-only Inbound.BudgetKey
-	// instead (see docs/prds/memory-engine-unification.md §3). Used to key
+	// instead. Used to key
 	// per-identity inbound controls and to derive a memory participant, so
 	// a non-person value here becomes a user identity to every consumer
 	// that reads it.

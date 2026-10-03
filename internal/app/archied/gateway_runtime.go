@@ -75,7 +75,6 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 		// Chat's /approve reaches the daemon's one task-action service rather
 		// than its own requeue, so a chat approval and a dashboard approval
 		// cannot record different decisions for one operator intent
-		// (docs/prds/pr-review-operator-response.md, Decision 1).
 		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ActionPayload) error {
 			return b.taskActions().Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
 		},
@@ -90,9 +89,6 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 // cannot be watched at all fails the boot that asked for it rather than
 // leaving the process running personas it can no longer update; after that the
 // watch reconnects instead of ending (see keepWatch).
-//
-// Persona updates are not reported through apply status -- the personas kind
-// has no apply-status wiring, which is archie-core-aj35, not this watch.
 func (b *boot) watchPersonas(ctx context.Context, version int64) error {
 	updates, err := b.controlPlane.WatchPersonas(ctx, version)
 	if err != nil {

@@ -5,12 +5,10 @@ import (
 	"sync"
 )
 
-// GrantResolver is the production Resolver: it holds, per active run, only
-// the secrets a caller explicitly Grant-ed it -- the intersection a run
-// credential carries (docs/prds/external-agent-harness.md, Credentials;
-// docs/prds/orgs-and-access.md, "Agents: decided once, carried as a run
-// credential"). It never derives a secret from anything else, so a service
-// nobody granted, or granted to a different run, always answers ErrUnbound.
+// GrantResolver is the production Resolver: it holds, per active run, only the
+// secrets a caller explicitly Grant-ed it -- the intersection a run credential
+// carries. It never derives a secret from anything else, so a service nobody
+// granted, or granted to a different run, always answers ErrUnbound.
 type GrantResolver struct {
 	mu     sync.RWMutex
 	grants map[string]map[string]string

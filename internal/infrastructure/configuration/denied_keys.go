@@ -7,7 +7,7 @@ package configuration
 // API returns 4xx) and again in the overlay's Set, not silently dropped at
 // read time. Owned here rather than in the overlay package so the webui
 // config renderer can reference the policy without linking the overlay's
-// SQLite store (archie-core-8cda.5.6).
+// SQLite store.
 var DeniedKeys = map[string]string{
 	"database_url": "required for bootstrap; cannot be changed at runtime",
 	"state_dir":    "required for bootstrap; cannot be changed at runtime",

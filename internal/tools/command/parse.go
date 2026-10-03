@@ -7,7 +7,7 @@
 // knowing where a command actually begins, which means parsing quoting and
 // separators rather than pattern-matching the raw text.
 //
-// Tool execution owns command constraints (see docs/architecture/policy.md).
+// Tool execution owns command constraints.
 // When internal/policy's evaluation API lands, [Hardline] becomes an
 // evaluator registered there; the rules themselves stay here.
 package command

@@ -9,7 +9,7 @@ import (
 // composeStateStoreClient dials the State Store gRPC service the daemon's own
 // capture/mapping/binding consumers call. Token resolution is the daemon's
 // (it owns the config keys and the secret registry); the dial itself and the
-// fail-closed non-loopback rule (§9) belong to the transport, so they come
+// fail-closed non-loopback rule belong to the transport, so they come
 // from staterpc.Dial.
 func composeStateStoreClient(services config.Services, secrets *secret.Registry) (*staterpc.Client, func(), error) {
 	target, err := services.RequireTarget(config.ServiceNameState)

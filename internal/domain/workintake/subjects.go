@@ -20,7 +20,7 @@ const (
 
 // SubjectReactionWildcard matches every reaction subject under archie.reaction.
 // Reactions are producer-only fan-out events
-// (docs/prds/event-sources-and-reactions.md) delivered on a separate
+// delivered on a separate
 // LimitsPolicy stream, so every registered consumer sees every matching event
 // -- unlike the work-queue ARCHIE_TASKS stream, where one consumer claims each
 // message.

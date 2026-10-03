@@ -2,9 +2,8 @@
 // channel connections (Telegram, email, webhook) served against a Gateway running
 // over its gRPC contract.
 //
-// docs/prds/messaging-service-boundary.md is the authority. The Messaging Service
-// owns channel persistent connections and dispatches turns directly to Gateway's
-// ChatContract over gRPC.
+// The Messaging Service owns channel persistent connections and dispatches
+// turns directly to Gateway's ChatContract over gRPC.
 package archiemessaging
 
 import (

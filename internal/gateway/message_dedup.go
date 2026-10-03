@@ -150,5 +150,4 @@ func (d *MessageDeduplicator) evictLocked(at time.Time) {
 // the dedup window. Like the rate-limit reply it is prose addressed to a
 // human reader of the chat; a webhook caller should treat any successful,
 // non-original reply the same way it treats rate-limit prose (see
-// archie-core-1173).
 const dedupReply = "I already received this message, so I'm ignoring this repeat delivery."

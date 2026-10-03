@@ -1,5 +1,5 @@
 // Package applystatus reports which version of a control-plane resource each
-// process is running. See docs/prds/control-plane-apply-status.md.
+// process is running.
 package applystatus
 
 import (

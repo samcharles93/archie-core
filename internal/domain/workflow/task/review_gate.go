@@ -8,7 +8,6 @@ import (
 
 // ReviewGate is the operator-approval gate's whole conversation with the
 // operator, encoded on the task's review_gate column
-// (docs/prds/pr-review-operator-response.md).
 //
 // It lives with the task record it encodes, the way EncodeInputs does, for the
 // same reason: the dashboard process renders and answers a gate, and it must
@@ -48,8 +47,7 @@ type ReviewGate struct {
 	// Selection is the finding keys an approve posts. Empty means all of the
 	// offered findings.
 	Selection []string `json:"selection,omitempty"`
-	// Instructions is what the operator asked a re-review to focus on. The
-	// PRD requires it for a re-review; the lens and reviewer missions read it.
+	// Instructions is what the operator asked a re-review to focus on.
 	Instructions string `json:"instructions,omitempty"`
 }
 
@@ -71,7 +69,7 @@ const (
 )
 
 // MaxRereviewRounds bounds how many operator re-reviews one review gate
-// grants, per the PRD's Decision 2. It is a constant in the domain, not a
+// grants. It is a constant in the domain, not a
 // config knob, and the guarded store write enforces it in the row so two
 // simultaneous re-reviews cannot spend a round the cap forbids.
 const MaxRereviewRounds = 2

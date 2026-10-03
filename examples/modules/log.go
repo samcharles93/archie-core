@@ -1,8 +1,8 @@
 //go:build ignore
 
-// log module implementation for archied's EDA playbook engine (Module
-// position, t2db.13). The first action kind: side-effect-free -- it only
-// writes a line to the daemon's log, so it proves the schema -> go:generate
+// log module implementation for archied's EDA playbook engine. The first action
+// kind: side-effect-free -- it only writes a line to the daemon's log, so it
+// proves the schema -> go:generate
 // -> Yaegi load -> ModuleRegistry -> dispatch mechanism end to end without
 // needing an idempotency answer.
 //

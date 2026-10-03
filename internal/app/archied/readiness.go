@@ -27,7 +27,7 @@ import (
 //
 // The probes read the daemon's state directly rather than through a
 // webui.Server: the daemon serves /health/detailed on its own listener and
-// has served no dashboard since the UI process cutover (archie-core-ml30).
+// has served no dashboard since the UI process cutover.
 func (b *boot) setupReadinessProbes() {
 	cfg := b.cfg
 	probes := []health.Probe{
@@ -38,8 +38,7 @@ func (b *boot) setupReadinessProbes() {
 		// The daemon no longer runs a chat channel, so it cannot observe one's
 		// lifecycle; channel health is the Messaging Service's own probe. What
 		// this process depends on is the Gateway answering, so that is what it
-		// reports (docs/prds/ui-service-boundary.md, "Listen, authentication,
-		// and readiness").
+		// reports.
 		readiness.NewContractProbe("gateway", time.Duration(cfg.Health.DependencyTimeout), func(ctx context.Context) error {
 			return pingChat(ctx, b.chat)
 		}),

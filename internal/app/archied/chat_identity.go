@@ -5,10 +5,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// carriesPersonIdentity reports whether a platform's SenderID names a person,
-// per docs/prds/memory-engine-unification.md §3: resolution is supplied per
-// channel by the composition, never inferred by the engine or guessed from a
-// channel-neutral "channel:SenderID" concatenation.
+// carriesPersonIdentity reports whether a platform's SenderID names a person.
 //
 // Telegram and email carry a native per-person sender id (a Telegram numeric
 // user id, an SMTP from address). The dashboard ("web") has one bearer token,
@@ -37,7 +34,7 @@ func carriesPersonIdentity(platform string) bool {
 // It was closed over a single channel name, and one Gateway Router serves every
 // channel, so that name was "web" even for a Telegram turn: the allowlist above
 // was real code no production call site reached with a real channel name, and
-// Subject.UserID was always empty (archie-core-c1qx). Reading the platform off
+// Subject.UserID was always empty. Reading the platform off
 // the inbound is what makes the policy reachable.
 func userIdentityResolver() func(messaging.Inbound) (memory.IdentityID, bool) {
 	return func(in messaging.Inbound) (memory.IdentityID, bool) {

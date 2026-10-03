@@ -70,11 +70,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	stream.drain(r.Context(), conn, stale, logs)
 }
 
-// sseSince is the task-only cursor view retained for legacy clients/tests.
-// Native reconnects prefer Last-Event-ID; deliberate reconnects use ?since=.
-// An invalid or pre-cursor integer degrades to replay from the beginning.
-func sseSince(r *http.Request) string { return sseCursors(r).Tasks }
-
 type streamCursors struct {
 	Tasks string `json:"tasks"`
 	Logs  int64  `json:"logs"`

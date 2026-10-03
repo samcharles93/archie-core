@@ -1,9 +1,9 @@
 // Package eventtype owns event types: named kinds of event from one source,
-// each defined by a match rule over headers and payload. It infers a
-// structural signature per capture, groups a source's captures into proposed
-// types, evaluates rules, and refuses two types on one source whose rules can
-// match the same event. An event that matches no type is unidentified and is
-// never dispatched. See docs/prds/event-automation.md, "Event types".
+// each defined by a match rule over headers and payload. It infers a structural
+// signature per capture, groups a source's captures into proposed types,
+// evaluates rules, and refuses two types on one source whose rules can match
+// the same event. An event that matches no type is unidentified and is never
+// dispatched.
 package eventtype
 
 import (

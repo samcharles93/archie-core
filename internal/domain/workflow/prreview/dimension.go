@@ -5,9 +5,6 @@ import (
 	"slices"
 )
 
-// Dimension is one review dimension a lens proposed: a name, a reviewer
-// prompt written for this PR, the files the reviewer must read, and a
-// priority phase 3 ranks dimensions by when the depth's cap forces a cut.
 type Dimension struct {
 	Name         string
 	Prompt       string
@@ -50,10 +47,8 @@ func MergeDimensions(lensOutputs [][]Dimension, limit int) []Dimension {
 	return merged
 }
 
-// HallucinationDimension is the extra review dimension phase 3 adds for a PR
-// intake scores as likely machine-written: claims, citations and behaviour
-// the diff does not actually implement. Returns nil at or below
-// AIGeneratedThreshold -- a coin-flip is not evidence, so it is not added.
+// Returns nil at or below AIGeneratedThreshold -- a coin-flip is not evidence,
+// so it is not added.
 func HallucinationDimension(aiGenerated float64) *Dimension {
 	if aiGenerated <= AIGeneratedThreshold {
 		return nil

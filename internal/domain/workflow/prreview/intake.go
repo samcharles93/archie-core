@@ -1,7 +1,7 @@
 package prreview
 
 // Depth is how many review dimensions a run affords, driven by the size of
-// the change (docs/prds/pr-review-agent.md, phase 1).
+// the change.
 type Depth string
 
 const (
@@ -10,8 +10,6 @@ const (
 	DepthDeep     Depth = "deep"
 )
 
-// The line-count boundaries phase 1 classifies depth from: under 100 is
-// quick, under 500 is standard, otherwise deep.
 const (
 	quickLinesCeiling    = 100
 	standardLinesCeiling = 500
@@ -51,9 +49,7 @@ func MaxDimensionsFor(depth Depth) int {
 	}
 }
 
-// ResolveDepth applies the PRD's override rule: an operator-set depth wins
-// over the line-count classification. An empty explicit depth means no
-// override was given.
+// An empty explicit depth means no override was given.
 func ResolveDepth(changedLines int, explicit Depth) Depth {
 	if explicit != "" {
 		return explicit

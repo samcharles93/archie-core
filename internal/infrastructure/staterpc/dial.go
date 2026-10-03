@@ -12,11 +12,11 @@ import (
 )
 
 // Dial returns a State Store contract client for target, applying the
-// transport security boundary (docs/prds/state-store-contract.md §9): a
+// transport security boundary: a
 // loopback target dials insecure with no credential, while a non-loopback
 // target requires a bearer token and fails closed without one. The returned
 // cleanup closes the connection; Client.Close is a no-op because the store
-// service owns its own DB lifecycle (§11).
+// service owns its own DB lifecycle.
 //
 // The rule lives here rather than in a composition root so the server side
 // (which decides whether to install the token interceptors) and every client

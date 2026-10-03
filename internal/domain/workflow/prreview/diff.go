@@ -103,8 +103,7 @@ type DiffStats struct {
 	FilesRenamed     int
 	FilesTypeChanged int
 	TestFilesChanged int
-	// TestToCodeRatio is changed test files per changed non-test file. A
-	// change that touches no non-test file reports its own test count rather
+	// A change that touches no non-test file reports its own test count rather
 	// than dividing by zero.
 	TestToCodeRatio float64
 }

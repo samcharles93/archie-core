@@ -134,13 +134,12 @@ type TurnRunnerConfig struct {
 	// message, per platform. It reads the platform off the inbound rather than
 	// closing over one, because a single Router serves every channel: a resolver
 	// bound to a channel name received "web" for a Telegram turn, which left
-	// Subject.UserID always empty in production (archie-core-c1qx).
+	// Subject.UserID always empty in production.
 	//
 	// False (or a nil UserIdentity) means the platform carries no per-person
 	// identity -- the dashboard's one bearer token, or a webhook route path,
 	// which must never be treated as a person -- and the turn's memory Subject
 	// gets no UserID, so its read is agent and global scope only
-	// (docs/prds/memory-engine-unification.md §3, §4).
 	UserIdentity func(in Inbound) (memory.IdentityID, bool)
 }
 

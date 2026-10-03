@@ -10,10 +10,7 @@ import (
 	"time"
 )
 
-// Tuning constants. See package doc and the design note on
-// archie-core-abg.22.3 for why SHA-256 (a fast hash, not a slow KDF) is
-// an acceptable choice for HashCode: these values are the actual
-// security boundary for a leaked pending code, not the hash function.
+// Tuning constants.
 const (
 	// CodeTTL is how long a requested pairing code remains valid.
 	CodeTTL = time.Hour

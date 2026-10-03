@@ -30,16 +30,10 @@ type MemoryStore interface {
 	Query(ctx context.Context, q domainmemory.Query) ([]domainmemory.Record, error)
 }
 
-// renderMemory builds the turn's <memory> block body: a scope-only Query over
-// subject.Scopes() (most specific first, per Subject.Scopes' own doc), bounded
-// by memoryRecordsPerScope per scope and memoryBlockByteCap overall.
-//
-// This is synchronous, total, and never returns an error: docs/prds/
-// memory-engine-unification.md §4 requires the chat read path to degrade to
-// an empty block on any engine failure, including a panic, rather than fail
-// the turn -- a memory read is an enhancement to the prompt, never a
-// precondition for answering. The recover here is that contract's only
-// enforcement point; every caller below runs inside it.
+// renderMemory builds the turn's <memory> block from a scope-only Query over
+// subject.Scopes(), bounded by memoryRecordsPerScope per scope and
+// memoryBlockByteCap overall. Any engine failure, including a panic, yields an
+// empty block: memory never fails a turn.
 func renderMemory(ctx context.Context, store MemoryStore, subject domainmemory.Subject, log *slog.Logger) (block string) {
 	if store == nil {
 		return ""
@@ -115,10 +109,9 @@ func renderMemoryRecords(records []domainmemory.Record, log *slog.Logger) string
 // -- see sessioncurator.Adapter) and the session's UserIdentity resolver. A
 // nil resolver, or one that returns false, yields UserID "" -- Subject.Scopes
 // then names only agent and global, never a wider fallback
-// (docs/prds/memory-engine-unification.md §3, "fail closed").
 //
 // It takes the whole inbound rather than its message because the resolver needs
-// the platform the message arrived on (archie-core-c1qx).
+// the platform the message arrived on.
 func (r *TurnRunner) resolveSubject(in Inbound) domainmemory.Subject {
 	subject := domainmemory.Subject{AgentID: domainmemory.AgentID(r.BotUser)}
 	if r.UserIdentity == nil {

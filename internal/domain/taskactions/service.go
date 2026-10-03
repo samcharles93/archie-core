@@ -51,10 +51,9 @@ type Task struct {
 }
 
 // ActionPayload is the per-action data an operator action carries: the
-// review-gate answer for approve and rereview (docs/prds/pr-review-operator-
-// response.md, Decision 1), and the worktree mode for retry. Every field is
-// empty for the actions that do not use it, and for chat's /approve and
-// /retry, which carry no instruction, selection or mode syntax.
+// review-gate answer for approve and rereview, and the worktree mode for retry.
+// Every field is empty for the actions that do not use it, and for chat's
+// /approve and /retry, which carry no instruction, selection or mode syntax.
 type ActionPayload struct {
 	// Instructions are what a re-review must focus on. The response path
 	// requires them for ActionRereview and ignores them otherwise.
@@ -184,8 +183,8 @@ type Store interface {
 	RespondReviewGate(context.Context, int64, string, string, bool, int) error
 	ArchiveTask(context.Context, int64, string, events.Event) (int64, error)
 	InsertEvent(context.Context, events.Event) (int64, error)
-	// CancelExecution is the one cancel path
-	// (docs/prds/execution-tree-state-machine.md, "Cancellation"): the store
+	// CancelExecution is the one cancel path:
+	// the store
 	// records the cancellation -- every non-terminal step of the current
 	// attempt plus the execution's own move to `to` -- in one transaction.
 	// The service then cancels the in-memory context that was delivering the
@@ -290,16 +289,15 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 }
 
 // applyApprove is the one approval path, for both the review gate and the
-// human-decision waits that predate it (feasibility's PRD handoff).
+// human-decision waits that predate it.
 //
 // A task carrying a gate offer gets the answer recorded on that offer in the
-// guarded response write: the resumed run posts the recorded review filtered
-// by the operator's selection, which is the only way "post the findings the
-// operator selected" can mean the findings they saw. A task with no gate has
-// no review to answer, so the approval is the plain release of waiting work;
-// it requeues under the workflow the wait names -- which feasibility sets to
-// implement before it waits (docs/prds/pr-review-operator-response.md,
-// Decision 1) -- never a name this handler hardcodes.
+// guarded response write: the resumed run posts the recorded review filtered by
+// the operator's selection, which is the only way "post the findings the
+// operator selected" can mean the findings they saw. A task with no gate has no
+// review to answer, so the approval is the plain release of waiting work; it
+// requeues under the workflow the wait names -- which feasibility sets to
+// implement before it waits -- never a name this handler hardcodes.
 func (s Service) applyApprove(ctx context.Context, task *Task, actor Actor, o outcome, res ActionPayload) (outcome, error) {
 	o.event.Kind, o.event.Detail = approvedKind(actor), actor.describe("approved")
 	gate, ok := workflowtask.DecodeReviewGate(task.ReviewGate)
@@ -371,11 +369,8 @@ func selectedFindingKeys(gate workflowtask.ReviewGate, requested []string) ([]st
 	return selection, nil
 }
 
-// deliver cancels the in-memory context of a run the store has already
-// recorded as cancelled. It is the delivery mechanism, never a second store
-// write, and it follows the record -- the PRD's order, which the step rows
-// make safe: a worker that keeps writing after the record fails
-// ErrStaleTransition on its next step write.
+// deliver cancels the in-memory context of a run the store has already recorded
+// as cancelled.
 func (s Service) deliver(taskID int64) {
 	if s.CancelTask != nil {
 		s.CancelTask(taskID)

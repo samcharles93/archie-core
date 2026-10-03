@@ -57,7 +57,6 @@ func stageBaselineGateRun(ctx context.Context, tc *TaskContext) error {
 		// not have -- is not a pre-existing code defect: no repair agent in
 		// the worktree can fix it. Park with the cause and the output rather
 		// than spend a run budget on a builder that cannot succeed
-		// (archie-core-rwy6).
 		if cause := gateEnvironmentCause(string(out), err); cause != "" {
 			return baselineEnvironmentError(argv, string(out), cause)
 		}
@@ -159,8 +158,6 @@ func Implement() Workflow {
 				Mission: func(tc *TaskContext) string {
 					prd := ""
 					if tc.Task.Plan != "" {
-						// An approved feasibility PRD precedes this run;
-						// the plan refines it rather than starting cold.
 						prd = "\n<approved_prd>\n" + tc.Task.Plan + "\n</approved_prd>\n"
 					}
 					return fmt.Sprintf(
@@ -224,12 +221,7 @@ func Implement() Workflow {
 // -- most of it is typically prefix-cache hits billed at a steep discount,
 // not full price.
 //
-// This used to also append the adversarial self-review's findings section
-// (now superseded by docs/prds/pr-review-agent.md). archie-core-afbk.7
-// removed the old review stage; hooking the new pr-review pipeline in as
-// this workflow's "archie's own PRs" trigger is tracked separately (see the
-// bead's continuation comment) rather than guessed at here, since it needs
-// the same stage-loop-around-StageOpenPR investigation that bead flagged.
+// This used to also append the adversarial self-review's findings section.
 func implementPRBody(tc *TaskContext) string {
 	return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
 		tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))

@@ -5,11 +5,10 @@ import (
 	"strings"
 )
 
-// Covers reports whether accepted authority is an upper bound of the
-// requested authority: every grant the request asks for is one the accepted
-// record grants, per field, never across fields. The acceptance record and
-// the update-widening check share this predicate (docs/prds/store.md,
-// "Authority": an update whose authority is equal or narrower applies).
+// Covers reports whether accepted authority is an upper bound of the requested
+// authority: every grant the request asks for is one the accepted record
+// grants, per field, never across fields. The acceptance record and the
+// update-widening check share this predicate.
 func (a Authority) Covers(b Authority) bool {
 	return listCovers(a.CredentialServices, b.CredentialServices) &&
 		listCovers(a.EgressHosts, b.EgressHosts) &&

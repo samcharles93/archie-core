@@ -271,7 +271,7 @@ func sessionTrackerKey(channelID, threadID string) string {
 // Gateway's own name. Naming it is what makes SessionSource.Platform truthful --
 // one Router serves every channel, so its own name is "web" even for a Telegram
 // turn, which made the platform a constant and left the per-user identity policy
-// unreachable with a real channel name (archie-core-c1qx).
+// unreachable with a real channel name.
 func (r *Router) sessionPlatform(in Inbound) string {
 	if in.Platform != "" {
 		return in.Platform

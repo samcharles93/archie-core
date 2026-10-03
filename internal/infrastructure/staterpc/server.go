@@ -1,7 +1,6 @@
-// Package staterpc adapts the State Store contract (internal/domain/storecontract's
-// producer-owned surfaces plus the consumer-owned workflow.Store) to gRPC.
-// See docs/prds/state-store-contract.md for the ratified contract this
-// package implements against.
+// Package staterpc adapts the State Store contract
+// (internal/domain/storecontract's producer-owned surfaces plus the
+// consumer-owned workflow.Store) to gRPC.
 package staterpc
 
 import (
@@ -30,9 +29,8 @@ import (
 )
 
 // Unavailable-capability errors, mirroring gatewayrpc's missing-session-store
-// pattern (docs/prds/state-store-contract.md §7's "capability absent ->
-// Unavailable" row): a nil optional Deps field maps to codes.Unavailable
-// rather than a nil-pointer panic.
+// pattern: a nil optional Deps field maps to codes.Unavailable rather than a
+// nil-pointer panic.
 var (
 	errCaptureUnavailable            = status.Error(codes.Unavailable, "capture store unavailable")
 	errConfigSnapshotsUnavailable    = status.Error(codes.Unavailable, "config snapshot store unavailable")
@@ -92,38 +90,38 @@ type Deps struct {
 	Sources            storecontract.SourceStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator
-	// WorkflowCalls is the workflow.call surface (docs/prds/workflow-calls.md):
+	// WorkflowCalls is the workflow.call surface:
 	// the workflow engine's task.Caller over this contract. Optional: nil
 	// answers both RPCs with codes.Unavailable, which is the honest answer
 	// for a store that owns no task table.
 	WorkflowCalls storecontract.WorkflowCaller
-	// Steps is the step-execution write surface
-	// (docs/prds/execution-tree-state-machine.md): the guarded row writes the
+	// Steps is the step-execution write surface:
+	// the guarded row writes the
 	// workflow engine's run credential calls. Optional: nil answers both RPCs
 	// with codes.Unavailable.
 	Steps storecontract.StepRecorder
-	// Canceller is the one cancel path (docs/prds/execution-tree-state-machine.md):
+	// Canceller is the one cancel path:
 	// an operator action's guarded write over the execution and its steps.
 	// Optional: nil answers the RPC with codes.Unavailable.
 	Canceller storecontract.ExecutionCanceller
-	// StepReader lists an execution's recorded steps for the dashboard/API
-	// (docs/prds/execution-tree-state-machine.md): a plain read, never
+	// StepReader lists an execution's recorded steps for the dashboard/API:
+	// a plain read, never
 	// task-scoped-grant callable. Optional: nil answers ListSteps with
 	// codes.Unavailable.
 	StepReader storecontract.StepReader
-	// HarnessSecrets persists harness OAuth token sets
-	// (docs/prds/external-agent-harness.md, Credentials). Optional: nil
+	// HarnessSecrets persists harness OAuth token sets.
+	// Optional: nil
 	// answers both RPCs with codes.Unavailable.
 	HarnessSecrets storecontract.HarnessSecretStore
-	// PlaybookDispatcher is the side-effecting-action idempotency ledger
-	// (docs/prds/eda-playbook-engine.md gap 2). Optional: nil disables the
+	// PlaybookDispatcher is the side-effecting-action idempotency ledger.
+	// Optional: nil disables the
 	// two playbook dispatch RPCs with codes.Unavailable.
 	PlaybookDispatcher storecontract.PlaybookDispatcher
 	// Principals assembles the access principal for one identity: the org it
 	// serves and its memberships. Optional: nil answers GetPrincipal with
 	// codes.Unavailable.
 	Principals access.PrincipalSource
-	// Policies is the stored policy chain (docs/prds/orgs-and-access.md).
+	// Policies is the stored policy chain.
 	// Optional: nil answers the access RPCs with codes.Unavailable. The reset
 	// surface is deliberately not an RPC: `archied access reset` runs on the
 	// State Store host, never over the network.
@@ -148,8 +146,8 @@ type server struct {
 
 // RegisterServer registers the StateStore gRPC service against registrar,
 // backed by deps. Optionally wrap registrar's interceptor chain with
-// TokenInterceptor for the bridge-address (agent-consumed) topology; the
-// caller decides, per docs/prds/state-store-contract.md §9's listener rule.
+// TokenInterceptor for the bridge-address (agent-consumed) topology; the caller
+// decides.
 func RegisterServer(registrar grpc.ServiceRegistrar, deps Deps) {
 	if deps.Log == nil {
 		deps.Log = slog.New(slog.DiscardHandler)
@@ -223,8 +221,8 @@ func (s *server) Transition(ctx context.Context, r *pb.TransitionRequest) (*pb.T
 	return &pb.TransitionResponse{}, nil
 }
 
-// StartStep and FinishStep are the step-execution writes
-// (docs/prds/execution-tree-state-machine.md). Each is the store's own
+// StartStep and FinishStep are the step-execution writes.
+// Each is the store's own
 // transaction -- guarded row write plus the event row -- and the store's
 // response carries the persisted event back for the caller's post-commit
 // publish.
@@ -243,7 +241,7 @@ func (s *server) StartStep(ctx context.Context, r *pb.StartStepRequest) (*pb.Sta
 	return &pb.StartStepResponse{StepId: stepID, Event: eventProto(event)}, nil
 }
 
-// CancelExecution is the one cancel path (docs/prds/execution-tree-state-machine.md):
+// CancelExecution is the one cancel path:
 // the store records the cancellation and returns the steps it cancelled; the
 // caller delivers it by cancelling the run's in-memory context afterwards.
 func (s *server) CancelExecution(ctx context.Context, r *pb.CancelExecutionRequest) (*pb.CancelExecutionResponse, error) {
@@ -621,7 +619,6 @@ func (s *server) InsertCapture(ctx context.Context, r *pb.InsertCaptureRequest) 
 
 // StreamCaptures streams one capture per message: a batch of large capture
 // bodies in one unary response can exceed gRPC's 4MiB message cap
-// (docs/prds/state-store-contract.md).
 func (s *server) StreamCaptures(r *pb.StreamCapturesRequest, stream pb.StateStoreService_StreamCapturesServer) error {
 	cs, err := s.capture()
 	if err != nil {
@@ -959,7 +956,7 @@ func (s *server) EnqueueBindingTask(ctx context.Context, r *pb.EnqueueBindingTas
 }
 
 // WorkflowCaller: a workflow.call step starts its callee and reads it back
-// while waiting (docs/prds/workflow-calls.md). The grant already named the
+// while waiting. The grant already named the
 // caller; the store's own row checks are what make both calls answer only
 // for this caller's own callees.
 

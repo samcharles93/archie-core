@@ -1,5 +1,5 @@
 // Package scheduling is the ticker engine: the timing half of archied's
-// cron/scheduling capability (epic archie-core-1786637496320-249-be6d9a20).
+// cron/scheduling capability.
 // It owns one job and one job only — deciding *when* a scheduled job runs,
 // and with what concurrency — and nothing about where jobs are stored, how
 // they are authored, or how their output is delivered.

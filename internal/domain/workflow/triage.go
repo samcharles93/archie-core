@@ -16,9 +16,9 @@ var triageWorkflowNames = map[string]bool{
 	"feasibility": true,
 }
 
-// Triage is the cheap-classification workflow: one read-only agent turn
-// decides whether a task needs a code change at all and, if so, which
-// workflow suits it best. See docs/prds/dynamic-workflow-triage.md.
+// Triage is the cheap-classification workflow: one read-only agent turn decides
+// whether a task needs a code change at all and, if so, which workflow suits it
+// best.
 //
 // It exists because Route (workflow.go) previously had no content-aware
 // fallback: every task with no explicit workflow and no label match ran

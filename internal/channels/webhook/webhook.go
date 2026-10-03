@@ -178,7 +178,6 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 				// empty: consumers read it as a person
 				// (internal/app/archied/chat_identity.go, sessioncurator),
 				// and a route path must never become a user identity
-				// (docs/prds/memory-engine-unification.md criterion 7).
 				Role: messaging.RoleUser,
 				Text: text,
 			},
@@ -200,7 +199,7 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 		// (chat prose, meant for a human) or 202'd as accepted (indistinguishable
 		// from a delivered event, so the source would never retry it). 429 lets
 		// the source back off and retry, the way internal/webhookguard.RateLimiter's
-		// other callers already respond (archie-core-1173).
+		// other callers already respond.
 		if reply.RateLimited {
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return

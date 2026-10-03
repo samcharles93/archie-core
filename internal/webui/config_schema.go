@@ -1,6 +1,6 @@
 package webui
 
-// Configuration schema contract (archie-core-b6ew.1): descriptor types and
+// Configuration schema contract: descriptor types and
 // hand-authored field/section metadata for the Configuration page.
 //
 // This is deliberately NOT a reflection-based schema over config.Config.
@@ -13,12 +13,11 @@ package webui
 // attaches a label to a value that was already vetted as safe to show,
 // rather than inventing a new safety boundary.
 //
-// See docs/prds/config-schema.md for the full design.
 
 // ConfigFieldType is how the frontend's generic renderer decides what
 // control to show for a field. FieldStructured fields (repositories,
 // models, providers) opt out of the generic renderer entirely and keep
-// their dedicated editors (archie-core-b6ew.4).
+// their dedicated editors.
 type ConfigFieldType string
 
 const (
@@ -32,7 +31,7 @@ const (
 
 // ConfigField is one field's rendering contract: what it is, what it means,
 // and what changing it would require. Value is attached by the caller
-// building the schema against a live ConfigView (archie-core-b6ew.2) -- the
+// building the schema against a live ConfigView -- the
 // descriptor itself is data-independent.
 type ConfigField struct {
 	// Key is the dotted path this field is addressed by.
@@ -68,7 +67,7 @@ type ConfigSection struct {
 // configFieldDescriptors is the hand-authored catalog: one entry per field
 // ConfigView exposes today, in the section grouping settings.js already
 // renders. Values and LockedReason are attached separately
-// against a live ConfigView (archie-core-b6ew.2); this list is the
+// against a live ConfigView; this list is the
 // data-independent half of the contract -- key, label, type, and the
 // safety-relevant property (restart_required) that must be decided
 // deliberately rather than defaulted.

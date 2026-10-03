@@ -16,12 +16,8 @@ import (
 )
 
 // configureTelegram wires the operator seams telegram.Gateway leaves to its
-// composition root. Which process may satisfy each one is settled in
-// docs/architecture/migration-decisions.md ("Telegram operator surface after
-// extraction"); notably ReleaseAnnouncements and Dangerous stay nil, because
-// nothing this process can observe would make them true. RunningVersions is
-// supplied here from this process's own build stamp; see
-// messagingRunningVersions.
+// composition root. RunningVersions is supplied here from this process's own
+// build stamp; see messagingRunningVersions.
 func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedConfig, chat messaging.ChatContract, log *slog.Logger) {
 	g.Version = gatewayVersionReporter(ctx, chat, cfg.Options.DependencyTimeout)
 	g.SetShowToolCalls(cfg.ShowToolCalls)
@@ -49,7 +45,6 @@ func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedCon
 // from, which Verify reads as drift rather than false success. Reading the
 // version from the Gateway instead would report a different process's stamp,
 // which is the failure mode the check exists to catch (see
-// docs/architecture/migration-decisions.md).
 //
 // The agent is deliberately absent: every archie-agent process is task-scoped
 // and observed only through daemon.AgentStatus, which this process does not
@@ -131,10 +126,9 @@ func telegramReloader(o Options, log *slog.Logger) func(*telegram.Gateway) error
 }
 
 // identityStatePath names a per-identity state file under workDir. The identity
-// is hashed so several identities sharing one work directory (see
-// docs/architecture/identity.md) never collide. The scheme is the daemon's,
-// unchanged: a different path would replay every release announcement the
-// operator has already been shown.
+// is hashed so several identities sharing one work directory never collide. The
+// scheme is the daemon's, unchanged: a different path would replay every
+// release announcement the operator has already been shown.
 func identityStatePath(workDir, kind, identity string) string {
 	identityHash := sha256.Sum256([]byte(identity))
 	return filepath.Join(workDir, fmt.Sprintf("%s-%x.json", kind, identityHash[:8]))

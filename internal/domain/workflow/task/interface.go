@@ -34,7 +34,7 @@ type InputSpec struct {
 
 // OutputSpec declares one workflow output: the same type vocabulary an
 // input uses. A required output the run never writes parks it before any
-// terminal state (docs/prds/workflow-call-outputs.md, "Failure rules");
+// terminal state;
 // required defaults to false.
 type OutputSpec struct {
 	Type     string `yaml:"type" json:"type"`
@@ -49,7 +49,7 @@ type WorkflowInterface struct {
 	Inputs     map[string]InputSpec `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 	Repository RepositoryMode       `yaml:"repository,omitempty" json:"repository,omitempty"`
 	// Outputs declares the named, typed structured results a run writes
-	// once each (docs/prds/workflow-call-outputs.md). A wait:true caller
+	// once each. A wait:true caller
 	// reads them through WorkflowCallStatus; a call step publishes one as
 	// one of the caller's own outputs.
 	Outputs map[string]OutputSpec `yaml:"outputs,omitempty" json:"outputs,omitempty"`
@@ -64,10 +64,9 @@ type WorkflowInterface struct {
 
 // Needs reports the harness requirements the interface carries: the declared
 // needs, plus the captures a declared output forces, because an output is
-// written through a capture tool (docs/prds/workflow-call-outputs.md, "How a
-// run writes one"). Profile selection reads this rather than DeclaredNeeds,
-// so a workflow that declares outputs cannot name a Kit profile whose harness
-// serves no capture tools (docs/prds/external-agent-harness.md, "Contract").
+// written through a capture tool. Profile selection reads this rather than
+// DeclaredNeeds, so a workflow that declares outputs cannot name a Kit profile
+// whose harness serves no capture tools.
 func (w WorkflowInterface) Needs() WorkflowNeeds {
 	needs := w.DeclaredNeeds
 	if len(w.Outputs) > 0 {
@@ -163,8 +162,8 @@ func (w WorkflowInterface) CheckInputs(values map[string]any) error {
 
 // CheckOutputs rejects declared-output values that do not satisfy the
 // declared outputs: the same rules CheckInputs applies to inputs (required,
-// undeclared, wrong type), read from the other side of the interface
-// (docs/prds/workflow-call-outputs.md, "Failure rules"). A written null
+// undeclared, wrong type), read from the other side of the interface.
+// A written null
 // counts as not written, as CheckInputs treats a null input; an unwritten
 // optional output leaves its key absent rather than null.
 func (w WorkflowInterface) CheckOutputs(values map[string]any) error {
@@ -240,9 +239,8 @@ func DecodeInputs(s string) (map[string]any, error) {
 	return inputs, nil
 }
 
-// EncodeOutputs is the stored and wire form of a task's written outputs: a
-// JSON object, or empty for none (docs/prds/workflow-call-outputs.md,
-// "Storage and wire").
+// EncodeOutputs is the stored and wire form of a task's written outputs: a JSON
+// object, or empty for none.
 func EncodeOutputs(outputs map[string]any) (string, error) {
 	if len(outputs) == 0 {
 		return "", nil

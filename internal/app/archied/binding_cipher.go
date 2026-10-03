@@ -10,9 +10,9 @@ import (
 )
 
 // bindingCipherFromConfig resolves the binding at-rest encryption key from
-// config through the secret registry and returns the EDA store's cipher. An unset
-// encryption_key returns a nil cipher, keeping the legacy plaintext path (the
-// store's default). See docs/prds/binding-secret-encryption.md.
+// config through the secret registry and returns the EDA store's cipher. An
+// unset encryption_key returns a nil cipher, keeping the legacy plaintext path
+// (the store's default).
 func bindingCipherFromConfig(cfg config.Config, secrets *secret.Registry) (bindingcipher.BindingCipher, error) {
 	if cfg.Bindings.EncryptionKey == (secret.SecretRef{}) {
 		return nil, nil

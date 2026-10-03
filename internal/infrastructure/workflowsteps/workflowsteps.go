@@ -67,19 +67,9 @@ func (eventSteps) StepTypes() []workflow.StepType {
 	return []workflow.StepType{workflow.AgentRunStepType(), workflow.WorkflowCallStepType()}
 }
 
-// commandSteps is the provider for the command.run step type: the single step
-// type the maintainer's command-step trust decision allows
-// (archie-core-ndm8), and the migration target that the refusal of
-// .archie/stages/*.go now names.
-//
-// It is a contributor of exactly one step type, which is the shape
-// docs/prds/workflow-step-vocabulary.md prescribes for this case -- "a new
-// contributor of exactly one step type at a named provider" -- and it is a
-// provider of its own rather than part of repoHooks because a command step is
-// not a repository hook: repoHooks carries the replacement for .archie/gate.go,
-// whose rules the *repository* authored, while this carries the replacement for
-// .archie/stages/*.go, whose commands the *operator* authors in the stored
-// definition.
+// commandSteps provides the command.run step type: operator-authored commands
+// from the stored workflow definition. It is separate from repoHooks, which
+// carries repository-authored gate rules.
 type commandSteps struct{}
 
 func (commandSteps) Name() string { return "command" }

@@ -496,7 +496,7 @@ func reverseClone(values []string) []string {
 }
 
 // Add registers and starts a module on a host that is already running, the
-// running-state half of a live plugin load (docs/prds/plugin-settings-live.md).
+// running-state half of a live plugin load.
 // The module starts on its own -- every module registered before it is already
 // running -- and a failed start removes it again without disturbing them. On a
 // host that has not started, Add behaves like Register and the module starts

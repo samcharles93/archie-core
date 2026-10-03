@@ -65,15 +65,12 @@ var slashAdminOnly = map[string]bool{
 // it (the ordinary commands are always available to a named user).
 //
 // The Router consults the policy before dispatching any local command, so a
-// refusal executes none of the handler and is visible to the sender and to
-// the daemon log; a wired SlashDenials sink records it for audit. The policy
-// is keyed on the channel-native sender, not on an org principal: a chat
-// message carries no identity the access chain can evaluate (the
-// sender-to-identity mapping is archie-core-c1qx, still open), so this is the
-// layer that can decide at the point the command is typed. A composition with
-// no policy leaves every command available, which is the pre-policy
-// behaviour. The posture follows docs/prds/orgs-and-access.md: deny by
-// default, an explicit grant per principal.
+// refusal executes none of the handler and is visible to the sender and to the
+// daemon log; a wired SlashDenials sink records it for audit. The policy is
+// keyed on the channel-native sender, not on an org principal: a chat message
+// carries no identity the access chain can evaluate, so this is the layer that
+// can decide at the point the command is typed. A composition with no policy
+// leaves every command available, which is the pre-policy behaviour.
 type SlashAccessPolicy struct {
 	AllowAdminFrom      []string
 	UserAllowedCommands map[string][]string

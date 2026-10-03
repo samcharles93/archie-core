@@ -22,7 +22,7 @@ import (
 const maxTokenExchange = 1 << 20
 
 // OAuthStore persists one org's OAuth token set per credential binding
-// service (docs/prds/external-agent-harness.md, Credentials). It is
+// service. It is
 // storecontract.HarnessSecretStore's method set, declared narrow here.
 type OAuthStore interface {
 	GetHarnessSecret(ctx context.Context, org, service string) (harnesssecret.Secret, error)

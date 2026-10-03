@@ -62,13 +62,13 @@ type SessionContext struct {
 // SessionStore persists gateway session metadata and conversation history.
 // Each session tracks one platform, bot, and channel combination.
 //
-// Message history is stored and loaded as canonical Message records
-// (archie-core-d9dv). Session lifecycle records stay SessionContext:
+// Message history is stored and loaded as canonical Message records.
+// Session lifecycle records stay SessionContext:
 // a session's UUID key, platform/bot/title/branch metadata, and the fact
 // that several sessions share one channel/thread have no lossless home in
 // Conversation, whose composite identity is only
 // {ChannelID, ThreadID} and whose canonical Agent/user/binding ownership is
-// still open (see docs/architecture/migration-decisions.md section 2).
+// still open.
 // Conversation-keying the sessions is tracked as follow-up work once that
 // ownership settles.
 type SessionStore interface {

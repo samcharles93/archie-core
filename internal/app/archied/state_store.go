@@ -3,10 +3,6 @@
 // process inputs into RunStateStore, which serves the task and event-capture
 // stores from Postgres, registers every StateStore gRPC handler (the same service .4.2 serves
 // in-process on the daemon), and shuts down cleanly on ctx cancellation.
-//
-// See docs/prds/state-store-contract.md (rev. 2c) -- the single authoritative
-// design surface -- and in particular §5 (binary layout), §9 (transport
-// security boundary) and §11 (the store service owns its own DB lifecycle).
 package archied
 
 import (
@@ -57,7 +53,6 @@ type StateStoreOptions struct {
 	// Listen is the gRPC listen address. Loopback binds (127.0.0.1, ::1,
 	// localhost) serve insecure with no token; any non-loopback address
 	// requires a non-empty token (or TLS), else the process fails closed
-	// (state-store-contract.md §9).
 	Listen string
 	// Token is the bearer token the State Store server validates for a
 	// non-loopback listener. Empty falls back to [services.state].target_token.
@@ -99,8 +94,8 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nol
 	}
 	// The resumable default org/workspace upgrade runs before this process
 	// serves anything: the State Store refuses scoped calls until its upgrade
-	// has finished, rather than serving records with no org
-	// (docs/prds/orgs-and-access.md, "Upgrading existing installs"). A store
+	// has finished, rather than serving records with no org.
+	// A store
 	// without the upgrader is one that owns no tenant boundary yet, so the
 	// absence degrades to "no upgrade" rather than aborting boot.
 	if upgrader, ok := b.st.(org.Upgrader); ok {
@@ -150,8 +145,8 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nol
 	// Boot is over and every listener this process serves is bound: the gRPC
 	// contract below and, when -ready-addr asked for one, the readiness HTTP
 	// surface. systemd's READY=1 asserts the same fact, so the announcement
-	// goes out here rather than from a second notion of "started"
-	// (archie-core-1174). Not earlier: a readiness surface that fails to bind
+	// goes out here rather than from a second notion of "started".
+	// Not earlier: a readiness surface that fails to bind
 	// fails the boot, and READY must not precede it. Not later: Serve begins
 	// accepting the moment it is called.
 	b.announceReady()
@@ -161,14 +156,13 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error { //nol
 	return serveStateStore(ctx, listener, deps, opts)
 }
 
-// seedAndValidatePolicies seeds the shipped role policies for every org
-// that lacks them, grants the agent identities their org's shipped developer
-// role, and re-validates every stored policy this process serves
-// (docs/prds/orgs-and-access.md, "Storing and changing policies" and
-// "Roles"). An invalid org, workspace or object policy is logged here and
-// named as a problem by the engines the consumers build; an invalid instance
-// policy fails this boot -- the store stops serving until it is fixed. A
-// store without the access surfaces degrades: there is no chain to seed.
+// seedAndValidatePolicies seeds the shipped role policies for every org that
+// lacks them, grants the agent identities their org's shipped developer role,
+// and re-validates every stored policy this process serves. An invalid org,
+// workspace or object policy is logged here and named as a problem by the
+// engines the consumers build; an invalid instance policy fails this boot --
+// the store stops serving until it is fixed. A store without the access
+// surfaces degrades: there is no chain to seed.
 func (b *boot) seedAndValidatePolicies(ctx context.Context) error {
 	policies, ok := b.st.(access.PolicyStore)
 	if !ok {
@@ -210,8 +204,7 @@ func (b *boot) seedAndValidatePolicies(ctx context.Context) error {
 // reportUnseededResources logs every kind ImportConfig could not seed.
 //
 // Reported, not fatal: a stale TOML value in a setting the database owns must
-// not stop this process from starting (docs/prds/runtime-control-plane.md,
-// "Bootstrap, migration, and recovery"). The kind stays ABSENT rather than
+// not stop this process from starting. The kind stays ABSENT rather than
 // half-written, so the file document's value is the one in effect for every
 // reader -- the layering leaves a kind with no stored value alone
 // (controlplane.resourceReader) -- and the operator's fix is still the file.
@@ -237,10 +230,6 @@ func (b *boot) reportUnseededResources(skipped []controlplane.SeedSkip) {
 // registers before it compiles one, so within one build a definition this
 // server admits is compilable there; a skewed deploy is only fixed by a
 // matching deploy.
-//
-// It is separate from RunStateStore so that function stays within its
-// complexity budget, and step_vocabulary_test.go pins both the call to
-// stepVocabulary below and RunStateStore's call to this function.
 func openStateStoreControlPlane(resources controlplane.ResourceStore) (*controlplane.Server, error) {
 	steps, err := stepVocabulary()
 	if err != nil {
@@ -317,7 +306,7 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	}
 	// Task logs live in the state directory, which this process owns, and the
 	// dashboard process owns no such directory -- so this is where a task-log
-	// read is served from (docs/prds/ui-service-boundary.md). The reader is
+	// read is served from. The reader is
 	// the daemon's own registry over the configured state_dir.
 	//
 	// The nil check is on the registry, not on the interface it is assigned
@@ -342,7 +331,7 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 		deps.Sources = b.eda
 		deps.MappingMatches = b.eda
 		// HarnessSecrets rides the same encrypted-at-rest store as source
-		// webhook secrets (docs/prds/binding-secret-encryption.md), under its
+		// webhook secrets, under its
 		// own domain separator (bindingcipher.HarnessSecretDomain).
 		deps.HarnessSecrets = b.eda
 	}
@@ -391,7 +380,7 @@ func (b *boot) executionDeps(deps *staterpc.Deps) {
 }
 
 // accessDeps wires the policy chain and its denial records from the same
-// store (docs/prds/orgs-and-access.md). A store without them -- one that owns
+// store. A store without them -- one that owns
 // no tenant boundary yet -- degrades the access RPCs rather than failing the
 // boot, the same pattern the other optional surfaces use.
 func (b *boot) accessDeps(deps *staterpc.Deps) {
@@ -468,7 +457,7 @@ func (b *boot) startOptionalSurfaces(ctx context.Context, options StateStoreOpti
 	return nil
 }
 
-// stateStoreServerOpts applies the transport security boundary (§9): a
+// stateStoreServerOpts applies the transport security boundary: a
 // loopback listener is served insecure with no token; any non-loopback
 // address requires a bearer token, else the process fails closed. It cannot
 // enforce TLS/mTLS (an operator decision), so it narrows the non-loopback

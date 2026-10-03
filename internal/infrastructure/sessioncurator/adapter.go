@@ -1,7 +1,5 @@
-// Package sessioncurator implements domain/curator.CuratorEngine for
-// session memory extraction. See docs/prds/session-memory-curator.md for
-// what a pass does and why, and the scope this package deliberately does
-// not cover.
+// Package sessioncurator implements domain/curator.CuratorEngine for session
+// memory extraction.
 package sessioncurator
 
 import (
@@ -15,9 +13,9 @@ import (
 )
 
 // Adapter implements curator.ConversationSource over a real
-// gateway.SessionStore, narrowed to the two read-only operations a
-// curator needs -- never the full session CRUD/branch/search surface a
-// chat gateway exposes. See docs/prds/session-memory-curator.md.
+// gateway.SessionStore, narrowed to the two read-only operations a curator
+// needs -- never the full session CRUD/branch/search surface a chat gateway
+// exposes.
 type Adapter struct {
 	store   gateway.SessionStore
 	agentID string
@@ -38,7 +36,7 @@ func NewAdapter(store gateway.SessionStore, agentID string) *Adapter {
 // RecentSessions returns sessions active at or after since, newest first.
 // AgentID is the agent every session's memory is addressed by -- the
 // composition's configured bot user, the same value a chat turn addresses
-// its own reads with (see docs/architecture/identity.md).
+// its own reads with.
 func (a *Adapter) RecentSessions(ctx context.Context, since time.Time) ([]curator.SessionSummary, error) {
 	sessions, err := a.store.List(ctx)
 	if err != nil {

@@ -11,14 +11,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 )
 
-// Feasibility is the feature-request workflow: assess the request
-// against the project's direction, close it with reasons when it
-// doesn't fit, otherwise produce a PRD, post a one-way delivery notice
-// on the issue (plus the notify webhook when configured), and hand the
-// task to waiting_human. The operator answers in chat or on the
-// dashboard  --  the decision surfaces  --  and the approval requeues the
-// feature under the implement workflow or closes it. Routed via the
-// "feature" label.
+// The operator answers in chat or on the dashboard -- the decision surfaces --
+// and the approval requeues the feature under the implement workflow or closes
+// it. Routed via the "feature" label.
 func Feasibility() Workflow {
 	return Workflow{
 		Name: "feasibility",
@@ -93,20 +88,19 @@ func Feasibility() Workflow {
 				},
 			}.Stage(),
 
-			// Persist the PRD and block on Sam. Messaging and the Web UI are
-			// the decision surfaces, so the issue gets a one-way delivery
-			// notice (notify) rather than a reply channel: the wait is
-			// channel-neutral, and the forge issue is not a chat log.
+			// Messaging and the Web UI are the decision surfaces, so the issue
+			// gets a one-way delivery notice (notify) rather than a reply
+			// channel: the wait is channel-neutral, and the forge issue is not
+			// a chat log.
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
 				notify(ctx, tc, "feasibility_prd")
-				// The approval handoff is a workflow change, not a payload
-				// the approve handler names: an approval requeues under the
+				// The approval handoff is a workflow change, not a payload the
+				// approve handler names: an approval requeues under the
 				// workflow the wait recorded (an empty name keeps the task's),
 				// so the task must name implement before it enters the wait.
 				// Hardcoding "implement" in the handler is how a gate wait on
 				// the standalone pr-review workflow would have re-run the
-				// implement workflow (docs/prds/pr-review-operator-response.md,
-				// Decision 1).
+				// implement workflow.
 				tc.Task.Workflow = "implement"
 				tc.Outcome = Outcome{Status: StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
 				return nil
@@ -140,12 +134,9 @@ func decideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 }
 
 // notify delivers a human-facing event to the channels a default deployment
-// has. A forge-backed task gets a one-way notice on its issue  --  the channel
-// that always exists when [notify].webhook is unset  --  and the webhook is an
-// additional push (n8n turns it into an email). Both are best-effort and log
-// on failure: the PRD is persisted on the task and rendered by the Web UI, so
-// a transport error must not mask the delivery decision or re-run the agent
-// stages that produced it.
+// has. A forge-backed task gets a one-way notice on its issue -- the channel
+// that always exists when [notify].webhook is unset -- and the webhook is an
+// additional push (n8n turns it into an email).
 //
 // The issue notice is one-way. Messaging and the Web UI are the decision
 // surfaces; the issue is not a chat log, and notify records no reply cursor
@@ -191,9 +182,7 @@ func notify(ctx context.Context, tc *TaskContext, kind string) {
 }
 
 // deliveryNotice is the body of the one-way notice notify posts on a
-// forge-backed task's issue. It carries the PRD because the issue is the
-// durable record of the request, and points at the decision surfaces so the
-// notice is not read as an invitation to reply there.
+// forge-backed task's issue.
 func deliveryNotice(tc *TaskContext, kind string) string {
 	subject := "archie finished a run that needs you"
 	if kind == "feasibility_prd" {

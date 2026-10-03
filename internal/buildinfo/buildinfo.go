@@ -1,7 +1,7 @@
 // Package buildinfo carries the release version stamped into every host
 // binary. The updater asks each installed binary what it is, rather than
 // trusting one component's word for a whole install whose binaries may have
-// been replaced by hand (archie-core-k94o).
+// been replaced by hand.
 package buildinfo
 
 import (

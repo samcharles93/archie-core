@@ -16,7 +16,7 @@ import (
 // The supervisor is per channel rather than one loop over every channel
 // because a channel-settings change must restart exactly the channel whose
 // settings changed: cancelling one run context stops one channel and leaves the
-// rest serving (archie-core-zfb0.4).
+// rest serving.
 func (s *Service) runChannel(ctx context.Context, c *channelInstance) {
 	defer s.wg.Done()
 	for {
@@ -77,7 +77,6 @@ func (s *Service) runChannel(ctx context.Context, c *channelInstance) {
 // restartChannel stops the running channel id and starts a replacement built
 // from next. The replacement is built before the running channel is touched, so
 // a configuration this build cannot run leaves the running channel serving
-// (the validate-before-switch rule in docs/prds/runtime-control-plane.md).
 //
 // A channel that is not currently supervised is not restarted: it already
 // stopped on its own, and resurrecting it here would race that exit. The caller

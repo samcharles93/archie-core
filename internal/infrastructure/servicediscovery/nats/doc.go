@@ -1,11 +1,9 @@
 // Package nats is the NATS JetStream KV transport for service discovery.
 //
-// It implements the broker-neutral
-// [servicediscovery.ServiceRegistry] contract against a JetStream KeyValue
-// store, and additionally provides the registration side a service uses to
-// announce itself. It is the fallback discovery mechanism for single-host,
-// no-Kubernetes installs (Path B of
-// docs/inspiration/service-discovery-research-2026-09-05.md); the
+// It implements the broker-neutral [servicediscovery.ServiceRegistry] contract
+// against a JetStream KeyValue store, and additionally provides the
+// registration side a service uses to announce itself. It is the fallback
+// discovery mechanism for single-host, no-Kubernetes installs; the
 // Kubernetes-native primary is a sibling implementation of the same contract.
 //
 // # Two buckets: presence versus liveness

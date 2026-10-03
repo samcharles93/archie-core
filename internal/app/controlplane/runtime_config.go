@@ -34,7 +34,6 @@ import (
 //
 // It also returns the version of each kind it read, so the process that
 // layers them in can report which version it is running
-// (docs/prds/control-plane-apply-status.md).
 func (c *Client) RuntimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
 	return runtimeConfigFrom(ctx, c, base)
 }
@@ -116,8 +115,8 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	// The stored role assignments own cfg.Models once the store carries a
 	// value, the way the provider layer above owns cfg.Providers: a role
 	// removed from the store is gone from the layered document too. The
-	// runtime-resource watches re-layer over an already-layered base
-	// (archie-core-zfb0.1), so json.Unmarshal's map merge here would
+	// runtime-resource watches re-layer over an already-layered base,
+	// so json.Unmarshal's map merge here would
 	// resurrect a role the store deleted every time any watched kind changed.
 	if err := layerResource(ctx, reader, versions, ModelRoleAssignmentsKind, func(value []byte) error {
 		var roles map[string]string
@@ -163,7 +162,7 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	// review-settings owns the pr-review dials once the store carries a value.
 	// The two fields are assigned individually, not `out.Review = ...`: a field
 	// added to config.Review later keeps the file's value until the stored
-	// document carries it (docs/prds/review-settings-resource.md).
+	// document carries it.
 	if err := layerResource(ctx, reader, versions, ReviewSettingsKind, func(value []byte) error {
 		var settings reviewSettings
 		if err := json.Unmarshal(value, &settings); err != nil {

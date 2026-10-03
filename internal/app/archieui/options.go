@@ -2,17 +2,13 @@
 // HTTP surface and the compiled SPA, served against a Gateway and a State
 // Store running in other processes.
 //
-// docs/prds/ui-service-boundary.md is the authority. The two rules that shape
-// this package are that the UI owns only process-local settings ("HTTP listen
-// address and read/header/shutdown timeouts; UI asset source or build mode;
-// UI authentication mode and token reference; Gateway endpoint and credential
-// reference; State Store endpoint and credential reference; readiness
-// endpoint and dependency timeout policy"), and that it "must never implement
-// [configuration] policy by holding or mutating a shared config.Holder".
-//
-// It deliberately lives outside internal/app/archied: that package's
-// dependency graph carries the daemon, forge, container and workflow runtimes
-// that the PRD's deletion gate forbids the UI process from linking.
+// The two rules that shape this package are that the UI owns only process-local
+// settings ("HTTP listen address and read/header/shutdown timeouts; UI asset
+// source or build mode; UI authentication mode and token reference; Gateway
+// endpoint and credential reference; State Store endpoint and credential
+// reference; readiness endpoint and dependency timeout policy"), and that it
+// "must never implement [configuration] policy by holding or mutating a shared
+// config.Holder".
 package archieui
 
 import (
@@ -82,8 +78,8 @@ type Options struct {
 	TrustForwardedHeaders *bool
 
 	// Capture configures the unbound webhook capture receiver this process
-	// mounts on its bypass mux (docs/prds/event-capture-storage.md). At the
-	// cutover (archie-core-8cda.5.4) this process is the only listener
+	// mounts on its bypass mux. At the
+	// cutover this process is the only listener
 	// serving POST /webhooks/capture/{source}: the receiver persists what
 	// arrives through the State Store contract, and the daemon's
 	// binding-dispatch loop consumes captures from the same store, so the
@@ -98,11 +94,8 @@ type Options struct {
 
 	// DependencyTimeout bounds each readiness probe's call to a dependency.
 	DependencyTimeout time.Duration
-	// EventPollInterval bounds how stale the dashboard's activity feed can
-	// be. This process owns no event bus, so live activity is a poll of the
-	// State Store's event cursor; see webui.DefaultEventPollInterval and
-	// docs/architecture/migration-decisions.md, "Dashboard live event
-	// delivery".
+	// EventPollInterval bounds how stale the dashboard's activity feed can be.
+	// Live activity is a poll of the State Store's event cursor.
 	EventPollInterval time.Duration
 	// ReadHeaderTimeout and ShutdownTimeout bound the HTTP lifecycle.
 	ReadHeaderTimeout time.Duration

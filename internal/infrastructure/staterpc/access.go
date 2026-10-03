@@ -1,4 +1,4 @@
-// Access: the policy-chain and denial-record RPCs (docs/prds/orgs-and-access.md).
+// Access: the policy-chain and denial-record RPCs.
 // The policies surface is the engine's snapshot plus the administrative
 // writes; the denials surface is the two callers' write path and the
 // operator's read.

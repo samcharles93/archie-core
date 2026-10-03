@@ -84,12 +84,6 @@ type liveReply struct {
 	// interval throttles updates; zero renders every change.
 	interval time.Duration
 
-	// mediaWg lets tests (and a future bounded drain, mirroring
-	// abandonAllLive) wait for in-flight Media deliveries. Callers other
-	// than tests must not block on it: Media is fire-and-forget by
-	// contract, same as Delta and ToolCall.
-	mediaWg sync.WaitGroup
-
 	// newMediaSender builds the MediaSender Media delivers through.
 	// Defaults to g.NewMediaSender; tests override it to inject a sender
 	// with fixed Capabilities(), which the real Telegram one can't
@@ -414,7 +408,7 @@ func (l *liveReply) Media(ctx context.Context, event messaging.MediaEvent) {
 		return
 	}
 
-	l.mediaWg.Go(func() {
+	go func() {
 		sender := l.newMediaSender(l.b, l.chatID, l.messageThreadID)
 
 		// Checked before attempting delivery, not just on failure: that is
@@ -441,7 +435,7 @@ func (l *liveReply) Media(ctx context.Context, event messaging.MediaEvent) {
 		l.g.log.Warn("media delivery failed, falling back to a link",
 			"tool", event.ToolName, "type", event.Attachment.Type, "error", err)
 		l.appendFallbackLine(ctx, event.Attachment)
-	})
+	}()
 }
 
 // appendFallbackLine renders att as a visible link in the reply, for a
@@ -476,13 +470,6 @@ func (l *liveReply) appendFallbackLine(ctx context.Context, att messaging.MediaA
 	l.toolLines = append(l.toolLines, line)
 	l.mu.Unlock()
 	l.requestRender()
-}
-
-// waitMedia blocks until every Media delivery started so far has finished.
-// Tests only: production callers never wait on Media's fire-and-forget
-// goroutines.
-func (l *liveReply) waitMedia() {
-	l.mediaWg.Wait()
 }
 
 // render writes the current buffer, cursor and all, to the live message.

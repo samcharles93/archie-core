@@ -14,14 +14,11 @@ import (
 // CommandRunStepName is the step type that runs operator-authored argv in the
 // task worktree at its position in a stored workflow definition.
 //
-// It is the stage half of the deleted .archie/stages/*.go, and it exists only
-// because the maintainer accepted the command-step trust decision
-// (archie-core-ndm8): stored control-plane settings already drive argv
-// execution -- repository-policies' gate and preflight commands, and
-// tool-settings' stdio MCP servers -- so a command step adds no trust tier that
-// is not already live. Before that decision the vocabulary PRD said explicitly
-// that no command step type would be created to stand in for those files
-// (docs/prds/workflow-step-vocabulary.md).
+// It is the stage half of the deleted.archie/stages/*.go, and it exists only
+// because the maintainer accepted the command-step trust decision: stored
+// control-plane settings already drive argv execution -- repository-policies'
+// gate and preflight commands, and tool-settings' stdio MCP servers -- so a
+// command step adds no trust tier that is not already live.
 //
 // It runs where the workflow engine runs, which is the task container:
 // internal/app/agentworker is the only caller of Run

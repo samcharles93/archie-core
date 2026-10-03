@@ -2,18 +2,9 @@ package controlplane
 
 import "github.com/samcharles93/archie-core/internal/config"
 
-// AgentProfileKind is the control-plane resource for Kit and image agent
-// profiles. It exists so a Kit profile applies without a restart
-// (docs/prds/external-agent-harness.md, "Selection"): [containers].profiles
-// in config.toml is only its seed, ContainerRuntimePoliciesKind carries every
-// other container setting and none of this one (config.ContainerConfig.
-// Profiles is json:"-"), and this resource's own ApplyMode is "live".
-//
-// Its document is agentProfile (container_settings.go's snake_case wire
-// type), not config.AgentProfile directly: that internal type carries no
-// json tags, so encoding/json would fall back to its Go field names --
-// "Tools", "Image" -- exactly the defect archie-core-1171 fixed for the rest
-// of this document family.
+// AgentProfileKind is the control-plane resource holding agent profiles. Its
+// document is the snake_case agentProfile wire type, not config.AgentProfile,
+// which has no json tags.
 const AgentProfileKind = "agent-profiles"
 
 func agentProfileDefinition() Definition {

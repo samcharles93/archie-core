@@ -10,11 +10,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
-// Capture sources and their signing setting (docs/prds/event-automation.md
-// "Sources"). A secret is returned only by the two writes that generate it,
-// so the operator can copy it into the sender; every other read withholds it.
-// Turning signing off is a request plus an approval, both behind the same
-// mutation gate that arms a binding.
+// Capture sources and their signing setting. A secret is returned only by the
+// two writes that generate it, so the operator can copy it into the sender;
+// every other read withholds it. Turning signing off is a request plus an
+// approval, both behind the same mutation gate that arms a binding.
 
 func (s *Server) handleSourcesList(w http.ResponseWriter, r *http.Request) {
 	if s.Sources == nil {

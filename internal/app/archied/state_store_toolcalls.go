@@ -40,14 +40,6 @@ func newToolCallProjectingTaskStore(inner storecontract.TaskStore, toolCalls too
 	return &toolCallProjectingTaskStore{TaskStore: inner, toolCalls: toolCalls, log: log}
 }
 
-// toolCallProjectionFailures reports how many tool_call projections have been
-// dropped since this process started. Named and exported to the test surface
-// rather than buried in a log field alone: a silent swallow is the bug this
-// decorator exists not to have.
-func (s *toolCallProjectingTaskStore) toolCallProjectionFailures() int64 {
-	return s.projectionFailures.Load()
-}
-
 func (s *toolCallProjectingTaskStore) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
 	id, err := s.TaskStore.InsertEvent(ctx, e)
 	if err != nil || e.Kind != events.KindToolCall {

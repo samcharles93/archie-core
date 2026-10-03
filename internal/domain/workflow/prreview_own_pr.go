@@ -8,13 +8,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 )
 
-// localPRSource implements PRSource against the task's own worktree instead
-// of an external forge fetch: archie's own PRs trigger (docs/prds/pr-review-
-// agent.md, Triggers: "the implement workflow runs the pipeline before
-// opening its PR") reviews a change that has no PR number yet, so there is
-// nothing for a forge-backed PRSource to fetch by. Trees already holds
-// everything the pipeline's phase 1/2 need: the diff against base, and a
-// snapshot of the (as yet unopened) PR's head.
+// localPRSource implements PRSource against the task's own worktree instead of
+// an external forge fetch: archie's own PRs trigger reviews a change that has
+// no PR number yet, so there is nothing for a forge-backed PRSource to fetch
+// by.
 type localPRSource struct {
 	tc *TaskContext
 }
@@ -68,9 +65,8 @@ const parkDetailBytes = 4000
 
 // unchallengedBlockingFindings returns the scored findings the merge gate
 // marked blocking that the adversary did not challenge -- confirmed or never
-// reviewed by the adversary both count, since only an explicit challenge
-// argues the finding away (docs/prds/pr-review-agent.md, Triggers: "archie's
-// own PRs").
+// reviewed by the adversary both count, since only an explicit challenge argues
+// the finding away.
 func unchallengedBlockingFindings(scored []prreview.ScoredFinding) []prreview.ScoredFinding {
 	var out []prreview.ScoredFinding
 	for _, f := range scored {
@@ -97,7 +93,7 @@ func renderBlockingFindingsDetail(findings []prreview.ScoredFinding) string {
 // StagePRReviewAndOpenPR runs the pr-review pipeline's decision phases (1-8)
 // against the task's own uncommitted change, then opens the PR body builds
 // and posts the pipeline's advisory findings against it -- archie's own PRs
-// trigger (docs/prds/pr-review-agent.md, Triggers). An unchallenged blocking
+// trigger. An unchallenged blocking
 // finding parks the task with the findings instead of opening a PR; a
 // pipeline stage failure parks the task the same way any other stage failure
 // does. Once the PR is open, posting failure is logged and does not revert
@@ -108,7 +104,7 @@ func renderBlockingFindingsDetail(findings []prreview.ScoredFinding) string {
 // to the standalone pr-review workflow, where an operator's response
 // re-reviews a pull request that already exists to post to. This trigger
 // reviews a change with no PR and no place to post yet, so a wait here would
-// end the implement run before its PR was opened (archie-core-7nst).
+// end the implement run before its PR was opened.
 //
 // This must run every decision stage from inside one Stage.Run body rather
 // than as separate Stage entries in the workflow's list: the engine ends a

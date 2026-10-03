@@ -10,12 +10,8 @@ import (
 )
 
 // cloudProvider is one selectable cloud LLM provider: the config class it
-// writes and the env var name its secret is stored under. Both the
-// provider step (which writes providers.<name>.api_key = {engine, key})
-// and the secret sink (which is asked to store the value under exactly
-// that key) read from this single table, so the two can never name the
-// secret differently -- the exact class of bug archie-core-cbk exists to
-// close for forge tokens, applied the same way to provider keys.
+// writes and the env var its secret is stored under. The provider step and the
+// secret sink both read this table, so they always name the same secret.
 type cloudProvider struct {
 	name      string
 	class     string

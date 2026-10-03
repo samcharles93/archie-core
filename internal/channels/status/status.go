@@ -3,7 +3,7 @@
 // facts for the dashboard and readiness surfaces. It lives beside the
 // channels package rather than inside it so UI-process code can hold the
 // types without linking the plugin contract there -- which references the
-// gateway runtime (archie-core-8cda.5.6).
+// gateway runtime.
 package status
 
 import "sync"

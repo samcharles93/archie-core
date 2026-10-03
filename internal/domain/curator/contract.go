@@ -1,6 +1,6 @@
 // Package curator is the curator engine family: long-running agent loops
 // that reason over memory and perform small maintenance tasks, rather than
-// one hardcoded background job. See epic archie-core-yp9.
+// one hardcoded background job..
 //
 // A curator is defined by a declared shape (check-in interval, tool set,
 // attached memory engine), runs persistently while there is input, and backs
@@ -46,23 +46,22 @@ type Manifest struct {
 	// OnInput marks the curator as input-driven: primary input (e.g. a
 	// completed chat turn) wakes it before the next interval. Wake events
 	// are best-effort nudges; the trigger decision is a deterministic
-	// state read at pass time (archie-core-035).
+	// state read at pass time.
 	OnInput bool
 	// Tools is the declared tool set: the only tools a pass may reach.
 	// Enforcement is mechanical — the pass's tool set is built from this
 	// list, never from a broader registry.
 	Tools []string
-	// Skills declares the skill-maintenance capability (skill curator,
-	// archie-core-i7i). The registrar must carry a SkillStore for a
-	// curator that declares it.
+	// Skills declares the skill-maintenance capability. The registrar must
+	// carry a SkillStore for a curator that declares it.
 	Skills bool
 	// MemoryEngine names the attached memory engine once the memory engine
-	// family exists (archie-core-pek). Empty means the curator does not
+	// family exists. Empty means the curator does not
 	// use memory; a memory operation without a declared engine is
 	// rejected.
 	MemoryEngine string
-	// Conversations declares the conversation-history capability
-	// (session-memory curator, archie-core-1786637499114). The registrar
+	// Conversations declares the conversation-history capability.
+	// The registrar
 	// must carry a ConversationSource for a curator that declares it.
 	Conversations bool
 	// Model is the model reference ("provider/model") passes use. Empty
@@ -132,7 +131,6 @@ type PassInput struct {
 
 // PassResult reports what a pass did. Every action is attributable: the
 // registry emits them as events and they are inspectable at runtime
-// (archie-core-114).
 type PassResult struct {
 	// Actions records what this pass changed and why.
 	Actions []Action

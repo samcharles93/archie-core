@@ -9,12 +9,10 @@
 // WatchdogSec) sends nothing and serves exactly as before, and a socket that
 // cannot be written to is logged and ignored.
 //
-// It is cross-cutting per docs/architecture/organisation.md: any layer and any
-// binary may import it, and it imports nothing of ours. It lives outside a
-// composition package because a process that must announce itself cannot
-// import another process's composition -- archied and archie-messaging are two
-// processes that announce, and only one of them can own archied's boot
-// (archie-core-g5g8).
+// It lives outside a composition package because a process that must announce
+// itself cannot import another process's composition -- archied and
+// archie-messaging are two processes that announce, and only one of them can
+// own archied's boot
 //
 // What stays with the caller is everything that is the caller's: which marker
 // counts as progress, how long its loop may go without a pass, and the point
@@ -116,7 +114,7 @@ func sendNotify(addr, state string) error {
 // (next to its own health surface), and the serve steps of archie-gateway,
 // archie-state-store and archie-messaging, which have readiness of their own
 // and would otherwise hang a Type=notify unit until TimeoutStartSec while
-// perfectly healthy (archie-core-1174, archie-core-g5g8).
+// perfectly healthy.
 func Ready(log *slog.Logger) {
 	New(os.Getenv, log).Send(ReadyState)
 }

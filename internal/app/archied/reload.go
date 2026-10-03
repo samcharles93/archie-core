@@ -109,8 +109,7 @@ var reloadableFields = map[string]bool{
 	"Repos": true,
 	// Per-task snapshot: ForTask carries these into every dispatched
 	// TaskContext (config.go ForTask), built fresh from d.Cfg.Get() at
-	// dispatch. Pinned by TestReloadableFieldsCoverForTaskSnapshot so a
-	// field added to ForTask cannot silently drift out of this list.
+	// dispatch.
 	"DiffCapLines": true,
 	"Budgets":      true,
 	"Dispatch":     true,
@@ -131,17 +130,12 @@ var reloadableFields = map[string]bool{
 	"BotEmail": true,
 	// cfg.Label additionally feeds IssuesWithLabel per poll cycle
 	// (daemon.go:359,390) and cfg.BotUser feeds AssignedIssues (:364,377).
-	// Label is not carried by ForTask, so it is pinned by hand in
-	// TestReloadableFieldsCoverForTaskSnapshot.
 	"Label":   true,
 	"BotUser": true,
-	// MaxRetries has two consumers, both re-reading it: the webui
-	// maxRetriesFor handler (api_tasks.go:380,383) reads it per request, and
-	// ForTask carries it into every dispatched TaskConfig, where the
-	// container's remediation round cap reads it (StageRemediationRoundCap).
-	// The per-task half of this list is pinned mechanically by
-	// TestReloadableFieldsCoverForTaskSnapshot; the webui-only entry is pinned
-	// by TestChangedNonReloadableFields.
+	// MaxRetries has two consumers, both re-reading it: the webui maxRetriesFor
+	// handler (api_tasks.go:380,383) reads it per request, and ForTask carries
+	// it into every dispatched TaskConfig, where the container's remediation
+	// round cap reads it (StageRemediationRoundCap).
 	"MaxRetries": true,
 	// Tools.Policy (MaxResultChars/SpillDir) is carried into TaskConfig by
 	// ForTask (config.go) and applied fresh per dispatch via
@@ -149,24 +143,6 @@ var reloadableFields = map[string]bool{
 	"ToolPolicy": true,
 }
 
-// reloadableSubFields are sub-fields of structs that are otherwise
-// startup-built. VolumeTTL is re-read per cycle in cleanupExpiredStorage;
-// Profiles is resolved fresh per dispatch (daemon.configFor ->
-// Containers.Profile, called from pinTaskProfile) and is also its own
-// live-applying control-plane resource (AgentProfileKind), never captured at
-// container-pool construction -- docs/prds/external-agent-harness.md
-// "Selection": a Kit profile applies without a restart. Credentials is the
-// same shape one layer down: kitrun.Launcher reads Config.Get().Containers.
-// Credentials fresh on every Launch (CredentialBindingsKind), never a slice
-// captured once when the launcher was built. Image, MaxConcurrency, MaxUptime,
-// PullPolicy and Network are re-read per acquire by the container pool and
-// MaxConcurrency also resizes the running dispatcher on publish
-// (archie-core-zfb0.2), so a reload applies them without a restart.
-// RegistryAuth stays frozen in the startup-built pool: it is file-owned and
-// never part of the container-runtime-policies document, so a changed value
-// must warn requires-restart. Forge.Host is carried into TaskContext by ForTask
-// (display/link building only); the forge client itself is startup-built, so
-// Type/Token/TokenEnv stay requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
 	"Containers": {
 		"VolumeTTL": true, "Profiles": true, "Credentials": true,

@@ -14,7 +14,7 @@ type SkillView struct {
 // SkillCatalog is the webui-owned source of the dashboard's skill
 // catalogue. It is deliberately a view over already-discovered entries, not
 // the discovery machinery: the cataloguer (internal/skill) drags the agent
-// toolchain in, and the UI process must not link it (archie-core-8cda.5.6).
+// toolchain in, and the UI process must not link it.
 // Whoever owns the runtime -- the daemon, via its config -- supplies an
 // adapter at bootstrap; an unwired catalog degrades to an empty page.
 type SkillCatalog interface {

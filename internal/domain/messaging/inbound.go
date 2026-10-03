@@ -41,8 +41,8 @@ type Inbound struct {
 	// one Router serves all of them, so its own name is "web" even for a
 	// Telegram turn, which made SessionSource.Platform -- the first
 	// component of the session natural key -- a constant, and left the
-	// per-user identity policy unreachable with a real channel name
-	// (archie-core-c1qx). Transport-only and never persisted: the session
+	// per-user identity policy unreachable with a real channel name.
+	// Transport-only and never persisted: the session
 	// record keeps the platform. Empty means the sender did not name its
 	// channel, and the Gateway falls back to its own name.
 	Platform string

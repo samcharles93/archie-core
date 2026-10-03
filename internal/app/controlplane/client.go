@@ -26,7 +26,7 @@ import (
 // embeds the Messaging Service's client -- the generic resource read path and
 // the channel-settings projection -- and adds the resource-specific reads and
 // watches, which need the workflow and scheduling engines that such a process
-// already links (archie-core-1ng1).
+// already links.
 type Client struct {
 	*controlplanerpc.Client
 	rpc pb.ControlPlaneServiceClient
@@ -146,8 +146,8 @@ type AppliedResource struct {
 }
 
 // WatchResource streams version updates for any resource kind without
-// decoding the document. It is the shape the runtime-resource watches read
-// (archie-core-zfb0.1): keepWatch reconnects on it exactly as it does on a
+// decoding the document. It is the shape the runtime-resource watches read:
+// keepWatch reconnects on it exactly as it does on a
 // typed stream, and the resume point still moves past a document the client
 // refused to decode -- the store answered with that version, and resuming
 // before it would re-offer it on every reconnect.

@@ -2,10 +2,10 @@
 // durable, workflow-backed work.
 //
 // It owns the vocabulary of that promotion -- the task envelope, its routing
-// kind, and the subjects it is addressed to -- because the domain that
-// defines a message's meaning owns its schema. These previously lived in the
-// NATS package, which made the transport responsible for knowing what a unit
-// of work was; see docs/architecture/dependencies-and-contracts.md.
+// kind, and the subjects it is addressed to -- because the domain that defines
+// a message's meaning owns its schema. These previously lived in the NATS
+// package, which made the transport responsible for knowing what a unit of work
+// was
 //
 // This package names no broker. It produces and consumes bytes; carrying
 // them is internal/eventbus's job.
@@ -50,7 +50,7 @@ type TaskEnvelope struct {
 	Identity string `json:"identity,omitempty"`
 
 	// Org is the org the identity serves, resolved by the producer before
-	// publishing (docs/prds/orgs-and-access.md, "Events and task identity").
+	// publishing.
 	// Empty means the default org of a single-operator install.
 	Org org.OrgID `json:"org,omitempty"`
 
@@ -109,10 +109,9 @@ func (t TaskEnvelope) Ref() string {
 
 // IdempotencyKey identifies this issue for delivery deduplication, so
 // rediscovering it on a later poll does not enqueue the same work twice. The
-// key is org/identity/owner/repo/number (docs/prds/orgs-and-access.md,
-// "Events and task identity"): the poller and the webhook receiver resolve
-// the org and identity before publishing, so the same issue delivered both
-// ways still gives one key, and the State Store's task uniqueness uses the
+// key is org/identity/owner/repo/number: the poller and the webhook receiver
+// resolve the org and identity before publishing, so the same issue delivered
+// both ways still gives one key, and the State Store's task uniqueness uses the
 // same fields. This method is the one place that shape is produced.
 func (t TaskEnvelope) IdempotencyKey() string {
 	return dedupKeyPrefix + string(t.org()) + "/" + t.Identity + "/" +

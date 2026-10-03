@@ -281,11 +281,7 @@ type telegramTextHandler struct {
 }
 
 // telegramTextHandlers is the single source for the commands Telegram answers
-// locally. Registration reads it, and so does
-// TestPublishedCommandsMatchExecutableSurface, which proves the published menu
-// covers the executable surface: a handler added here without a spec in
-// gatewayCommandSpecs fails that test, so a command cannot become typeable
-// without becoming discoverable.
+// locally.
 var telegramTextHandlers = []telegramTextHandler{
 	{"/status", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.statusHandler(c) }},
 	{"/whoami", bot.MatchTypeExact, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.whoamiHandler(c) }},

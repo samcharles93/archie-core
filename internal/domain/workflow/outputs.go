@@ -12,7 +12,7 @@ import (
 )
 
 // Declared workflow outputs: how a run writes one and how a wait:true caller
-// publishes one (docs/prds/workflow-call-outputs.md). A run's only structured
+// publishes one. A run's only structured
 // results are capture calls, so declared outputs ride the capture path: each
 // is offered to the run's agent stages as a capture tool named after it, and
 // the engine applies, validates, publishes and persists the accepted values.

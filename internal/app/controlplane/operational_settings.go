@@ -48,8 +48,8 @@ func operationalDefinitions() []Definition {
 		// ApplyMode is live: the daemon diffs the stored MCP server set against
 		// the running providers -- connecting added servers, disconnecting
 		// removed ones and reconnecting changed ones while leaving unchanged
-		// servers untouched -- and rebuilds the web_fetch and minimax entries
-		// (archie-core-zfb0.3). A changed server whose new engine fails to start
+		// servers untouched -- and rebuilds the web_fetch and minimax entries.
+		// A changed server whose new engine fails to start
 		// is rolled back to the old one, so the refusal is reported rather than
 		// leaving the server down.
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "live", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
@@ -57,23 +57,20 @@ func operationalDefinitions() []Definition {
 		// and the daemon's reconciliation loads new and changed files without a
 		// restart. A removal cannot unload Yaegi's interpreter, so it stays an
 		// outstanding apply-status problem rather than a restart of the whole kind
-		// (docs/prds/plugin-settings-live.md).
 		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.PluginDir, cfg.ModuleDir, cfg.SecretEngineDir, cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
 		// ApplyMode is live: the container pool reads the published config on
 		// every acquire (image, pull policy, network, max uptime, concurrency
 		// cap) and the daemon resizes its running dispatcher after the publish,
-		// so neither a deferred container nor a queued task needs a restart
-		// (archie-core-zfb0.2). RegistryAuth is file-owned and never part of
+		// so neither a deferred container nor a queued task needs a restart.
+		// RegistryAuth is file-owned and never part of
 		// this document, so it stays a boot-resolved value.
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "live", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
 }
 
-// validatePluginSettings accepts every value, deliberately. The four directories
-// are free-form operator paths, and that is the decision recorded for
-// archie-core #1143 rather than a validator nobody has written yet.
+// validatePluginSettings accepts every value, deliberately.
 //
 // Two candidate rules were considered and are refused:
 //
@@ -134,7 +131,7 @@ func validateScheduling(input []byte) error {
 		// leaves the file's label in force, which is what legacy policies
 		// decode with), so a stored label-requiring trigger with no label was
 		// a value the store blessed and boot refused -- the two-layer
-		// disagreement the parity test refuses to allow (archie-core-7pyj).
+		// disagreement the parity test refuses to allow.
 		if workintake.RequiresLabel(policy.Dispatch.Trigger) && (policy.Label == nil || *policy.Label == "") {
 			return fmt.Errorf("label is required when dispatch.trigger is %q (an empty label matches every open issue)", policy.Dispatch.Trigger)
 		}

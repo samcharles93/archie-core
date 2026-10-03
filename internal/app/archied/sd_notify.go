@@ -5,8 +5,8 @@
 //
 // The protocol client and the heartbeat sampler live in internal/sdnotify
 // because archie-messaging, a separate process that cannot import this
-// package, is the next process that must be able to announce itself
-// (archie-core-g5g8). What stays here is what is the daemon's own: which
+// package, is the next process that must be able to announce itself.
+// What stays here is what is the daemon's own: which
 // marker counts as progress (daemon.LastPollAt) and how long the loop may go
 // without beginning a poll pass.
 //
@@ -30,7 +30,7 @@ import (
 // announceReady tells systemd the daemon has finished starting. It is called at
 // the moment a process declares itself serving: the daemon's run loop (next to
 // healthSurface.markServing), and the serve steps of archie-gateway and
-// archie-state-store (archie-core-1174), which have health surfaces of their
+// archie-state-store, which have health surfaces of their
 // own and would otherwise hang a Type=notify unit until TimeoutStartSec while
 // perfectly healthy.
 func (b *boot) announceReady() {

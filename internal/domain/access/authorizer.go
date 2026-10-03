@@ -6,7 +6,7 @@ package access
 import "context"
 
 // Authorizer evaluates the policy chain for one request. Exactly two places
-// call it (docs/prds/orgs-and-access.md, "Where it lives"): the dashboard and
+// call it: the dashboard and
 // API request path, and dispatch. The implementation is the Cedar engine in
 // internal/infrastructure/access.
 //

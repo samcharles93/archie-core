@@ -13,18 +13,16 @@
 // # Why this package exists
 //
 // Loading used to live inside internal/config, alongside the runtime types
-// every package imports. That made the shared model responsible for file
-// I/O, so a package that merely wanted a settings struct also pulled in a
-// TOML decoder, and defaulting, validation and decoding were interleaved in
-// one function. See docs/architecture/configuration.md.
+// every package imports. That made the shared model responsible for file I/O,
+// so a package that merely wanted a settings struct also pulled in a TOML
+// decoder, and defaulting, validation and decoding were interleaved in one
+// function.
 //
 // # The temporary seam
 //
-// docs/architecture/configuration.md requires a private input document that
-// is translated into per-domain settings and never returned as the
-// application's runtime model. [Document.Config] is not that yet: it is the
-// existing internal/config.Config, exposed here so this package can take
-// over loading without every consumer changing at once.
+// [Document.Config] is not that yet: it is the existing internal/config.Config,
+// exposed here so this package can take over loading without every consumer
+// changing at once.
 //
 // It is deliberately a named field rather than a bare return value so the
 // compromise is visible at each use site. It should be replaced by typed

@@ -286,10 +286,9 @@ func ActionCatalog() []ActionMeta {
 }
 
 // Park classes: the producer-side answer to "what kind of intervention does
-// this park need?" (docs/prds/pr-review-remediation.md's F2, the typed
-// classification agent-system.md:327 acknowledges the data model lacks).
-// The class is recorded at the park site, where the cause is known, and is
-// never inferred later from reason text. It is part of the on-disk format.
+// this park need?". The class is recorded at the park site, where the cause is
+// known, and is never inferred later from reason text. It is part of the
+// on-disk format.
 const (
 	// ParkNeedsHuman parks need an operator decision: gate failures,
 	// review verdicts, diff caps, remediation round caps. It is the

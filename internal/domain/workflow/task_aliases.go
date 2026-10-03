@@ -1,6 +1,6 @@
 // Task-vocabulary aliases. The Task record, its statuses, the mid-run
 // Store contract, and Definition moved to internal/domain/workflow/task
-// (archie-core-8cda.5.6) so the UI process can hold the vocabulary without
+// so the UI process can hold the vocabulary without
 // linking this package's pipeline engine (which imports agentexec, skill
 // and tools). package workflow keeps these aliases, so daemon-side callers
 // are unaffected.
@@ -15,7 +15,7 @@ type (
 	// contract that workflow stages call mid-run.
 	Store = task.Store
 	// StepStart and StepFinish are the step-execution writes the store
-	// records mid-run (docs/prds/execution-tree-state-machine.md).
+	// records mid-run.
 	StepStart  = task.StepStart
 	StepFinish = task.StepFinish
 	// Definition is the operator-safe snapshot of an executable workflow.

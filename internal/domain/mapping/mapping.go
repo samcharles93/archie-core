@@ -2,7 +2,6 @@
 // resolve/preview rule: binding named fields to JSON paths inside a
 // captured webhook payload, and deciding -- loudly -- when a path a mapping
 // depends on has drifted out from under it. See
-// docs/prds/payload-field-mapping.md.
 package mapping
 
 import (
@@ -104,9 +103,8 @@ func (m Mapping) Validate() error {
 	return nil
 }
 
-// Failure describes one field that did not resolve cleanly against a
-// payload -- named by field and path so the operator (or, once t2db.4
-// lands, the runtime failure it surfaces) knows exactly what drifted.
+// Failure describes one field that did not resolve cleanly against a payload --
+// named by field and path so the operator knows exactly what drifted.
 type Failure struct {
 	FieldName string `json:"field_name"`
 	Path      string `json:"path"`

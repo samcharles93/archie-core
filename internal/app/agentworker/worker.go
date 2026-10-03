@@ -36,11 +36,9 @@ type Settings struct {
 	NATSToken string
 	WorkDir   string
 
-	// StateStoreTarget and StateStoreToken are the daemon-injected State
-	// Store gRPC endpoint and bearer token (docs/prds/state-store-contract.md
-	// §6: STATE_STORE_URL/STATE_STORE_TOKEN, mirroring the NATS_URL/NATS_TOKEN
-	// handoff). StateStoreTarget is required: the legacy NATS storerpc path
-	// is deleted (docs/prds/state-store-contract.md §12 step 4).
+	// StateStoreTarget and StateStoreToken are the daemon-injected State Store
+	// gRPC endpoint and bearer token. StateStoreTarget is required: the legacy
+	// NATS storerpc path is deleted.
 	StateStoreTarget string
 	StateStoreToken  string
 }
@@ -72,12 +70,7 @@ type workerDependencies struct {
 	guardrails *tools.GuardrailEngine
 }
 
-// productionWorkerDependencies builds the worker's process dependencies. The
-// workflow step vocabulary is registered here, at the executing side's
-// composition root, before the first task is served:
-// internal/app/agentworker's step_vocabulary_test.go calls this function and
-// fails if it stops using the shared provider set
-// (internal/infrastructure/workflowsteps).
+// productionWorkerDependencies builds the worker's process dependencies.
 func productionWorkerDependencies() (workerDependencies, error) {
 	steps, err := workflowsteps.NewManager()
 	if err != nil {

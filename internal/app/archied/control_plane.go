@@ -18,7 +18,7 @@ import (
 // validates the result. Boot and the SIGHUP reload both go through it: the
 // reload re-resolves the file document alone, so republishing that document
 // as it stands reverts each of these layers to its file value until the
-// process restarts (archie-core-ju85).
+// process restarts.
 func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
 	cfg, versions, err := b.controlPlane.RuntimeConfig(ctx, base)
 	if err != nil {
@@ -178,9 +178,7 @@ type executionSettingsCandidate struct {
 // be published as and runs this process's own runnability check on it -- the
 // same configuration.Validate that runtimeConfig applies before publishing a
 // layered config, and that the readiness probe applies to the published one. A
-// snapshot this process cannot run is refused before it becomes the live one
-// (docs/prds/runtime-control-plane.md, "API": Archie starts and checks the new
-// one before switching).
+// snapshot this process cannot run is refused before it becomes the live one.
 //
 // The kind's schema is deliberately not re-checked here. The store validates
 // every document before it is written (Definition.Decode) and
@@ -332,7 +330,6 @@ func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[str
 // reported through apply status, which keeps the version still live on the
 // record. A refused update therefore reaches the settings page the way a
 // refused workflow-execution-settings update does
-// (docs/prds/control-plane-apply-status.md).
 func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, update controlplane.AppliedResource) {
 	if update.Err != nil {
 		// A stream failure carries no version at all (versions start at 1,
@@ -443,9 +440,7 @@ func (b *boot) reconcileRuntimePlugins(ctx context.Context) {
 // refuseSkillsDirChange refuses a stored plugin-settings document whose
 // skills_dir differs from the value in force. skills_dir is the one directory
 // with no live consumer, so a change to it stays a restart-scoped edit rather
-// than a value the daemon reports as applied. The check reads the running
-// config, so it cannot live in validatePluginSettings, which is value-agnostic
-// by the archie-core-1143 decision.
+// than a value the daemon reports as applied.
 func (b *boot) refuseSkillsDirChange(ctx context.Context) error {
 	var stored struct {
 		SkillsDir string `json:"skills_dir"`

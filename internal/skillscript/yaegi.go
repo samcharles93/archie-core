@@ -1,4 +1,4 @@
-// Package skillscript runs skill-bundled Go scripts (.agents/skills/<skill>/scripts/*.go)
+// Package skillscript runs skill-bundled Go scripts
 // via Yaegi. Unlike the gate and workflow-stage extension surfaces, these
 // scripts only need the Go standard library  --  they wrap external tools
 // (gitleaks, trivy, ...) the way a shell script would  --  so no

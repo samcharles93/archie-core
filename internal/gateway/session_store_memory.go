@@ -13,11 +13,11 @@ import (
 )
 
 // memorySessionStore is the in-process SessionStore for tests and embedders
-// that need no durability. It follows the PostgreSQL store's contract
-// (sessionstore_conformance_test.go) including the optional TurnLedger,
-// TurnHistory and TurnReplayStore capabilities: millisecond timestamps, the
-// strictly-increasing append clamp, redelivery dedup on canonical IDs, and a
-// search that ANDs lowercase word terms over sender and text.
+// that need no durability. It follows the PostgreSQL store's contract including
+// the optional TurnLedger, TurnHistory and TurnReplayStore capabilities:
+// millisecond timestamps, the strictly-increasing append clamp, redelivery
+// dedup on canonical IDs, and a search that ANDs lowercase word terms over
+// sender and text.
 type memorySessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]SessionContext

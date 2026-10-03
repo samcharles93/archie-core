@@ -10,8 +10,8 @@ import (
 
 // The channel-settings DOCUMENT lives in internal/infrastructure/controlplanerpc,
 // beside the client that projects it, so a process that only reads stored
-// settings does not link this package's store-backed server and workflow engine
-// (archie-core-1ng1). These aliases keep the store-backed side reading the same
+// settings does not link this package's store-backed server and workflow engine.
+// These aliases keep the store-backed side reading the same
 // types by the same names it always used, so there is one definition of the
 // document rather than a copy on each side of the boundary.
 type (

@@ -50,7 +50,7 @@ type Forger interface {
 	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
 	// ReplyToReview posts a threaded reply to one review comment. The
 	// remediate workflow calls it once per remediation run, summarising
-	// what changed (docs/prds/pr-review-remediation.md decision 4).
+	// what changed.
 	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
@@ -89,10 +89,9 @@ type Trees interface {
 	Diff(ctx context.Context, dir, base string) (string, error)
 	ChangedFiles(ctx context.Context, dir, base string) ([]string, error)
 	ChangedLines(ctx context.Context, dir, base string) (int, error)
-	// Snapshot exports HEAD's tracked files into destDir with no .git
-	// directory -- no commit history, branch name, or reflog. Used to
-	// build the reviewer's isolated workspace (see the isolation contract
-	// in docs/prds/pr-review-agent.md).
+	// Snapshot exports HEAD's tracked files into destDir with no.git directory
+	// -- no commit history, branch name, or reflog. Used to build the
+	// reviewer's isolated workspace.
 	Snapshot(ctx context.Context, dir, destDir string) error
 }
 
@@ -110,7 +109,7 @@ type TaskContext struct {
 	// Calls starts workflow.call callees and reads them back while a
 	// wait:true caller waits. Nil is only safe for a workflow with no
 	// workflow.call step: such a step in a runner with no capability
-	// fails the run with a named error (docs/prds/workflow-calls.md).
+	// fails the run with a named error.
 	Calls task.Caller
 	// PRSource fetches a pull request under review and its head snapshot for
 	// the pr-review workflow (see prreview_stages.go). Nil is only safe for a
@@ -139,10 +138,8 @@ type TaskContext struct {
 	// Dir/Branch are set by the prepare step.
 	Dir    string
 	Branch string
-	// Stage is the name of the stage currently running, kept here (not
-	// persisted on Task -- docs/prds/execution-tree-state-machine.md drops
-	// tasks.stage in favour of the durable StepExecution record StartStep
-	// writes) purely so park/finish can tag the event they emit with it.
+	// Stage is the name of the stage currently running, kept here purely so
+	// park/finish can tag the event they emit with it.
 	Stage string
 	// StepID is the StepExecution the engine recorded for the stage whose
 	// body is running: every agent call the stage makes records itself as
@@ -253,11 +250,9 @@ func (tc *TaskContext) EmitDurable(ctx context.Context, kind, stage, detail stri
 	return nil
 }
 
-// toolCallReporter builds the agentexec.ToolCallReporter an agent stage
-// passes to tc.Agent.Run, so every completed tool call during that run
-// surfaces as a tool_call event on the task timeline (archie-core-467's
-// task-transcript counterpart -- the interactive chat gateway has its own,
-// separate ToolCallEvent). Safe to call on a nil Bus: Emit no-ops.
+// toolCallReporter builds the agentexec.ToolCallReporter an agent stage passes
+// to tc.Agent.Run, so every completed tool call during that run surfaces as a
+// tool_call event on the task timeline. Safe to call on a nil Bus: Emit no-ops.
 func (tc *TaskContext) toolCallReporter(stage string) agentexec.ToolCallReporter {
 	return func(report agentexec.ToolCallReport) {
 		tc.Emit(events.KindToolCall, stage, report.Detail, map[string]any{
@@ -316,11 +311,10 @@ func Route(t *Task, reg Registry) Workflow {
 	if wf, ok := workflowForLabels(reg, t.Labels); ok {
 		return wf
 	}
-	// No explicit workflow, no label match: a labelled task already has a
-	// free, reliable signal and never reaches here. Everything else --
-	// overwhelmingly chat-spawned tasks, which rarely carry labels -- gets
-	// classified by triage instead of defaulting straight to the heaviest
-	// workflow. See docs/prds/dynamic-workflow-triage.md.
+	// No explicit workflow, no label match: a labelled task already has a free,
+	// reliable signal and never reaches here. Everything else -- overwhelmingly
+	// chat-spawned tasks, which rarely carry labels -- gets classified by
+	// triage instead of defaulting straight to the heaviest workflow.
 	if wf, ok := reg["triage"]; ok {
 		return wf
 	}
@@ -356,7 +350,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 			park(ctx, tc, fmt.Sprintf("persist task before stage %s: %v", stage.Name, err))
 			return
 		}
-		// Every stage is a StepExecution (docs/prds/execution-tree-state-machine.md):
+		// Every stage is a StepExecution:
 		// the store records pending -> running and writes the stage_start event
 		// in the same transaction, and refuses a start the state machine
 		// forbids. A failed recording write parks the execution -- the step
@@ -469,7 +463,6 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	// transition: an undeclared, mistyped or required-but-missing value
 	// parks the run here, so no caller observes a terminal state that
 	// breaks the workflow's own promise
-	// (docs/prds/workflow-call-outputs.md, "Failure rules").
 	if err := tc.validateFinishOutputs(); err != nil {
 		park(ctx, tc, err.Error())
 		return
@@ -587,7 +580,7 @@ func extractFailingGateOutput(s string) string {
 var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)
 
 // RunAgentChild records one agent call as a child StepExecution of the stage
-// this run is executing (docs/prds/execution-tree-state-machine.md, "Model"):
+// this run is executing:
 // kind agent, parented to the stage's own step, which the store derives depth
 // from, and finished with the call's own outcome and the tokens it
 // accounted. A child's recording write failure is the same park a stage's

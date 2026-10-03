@@ -78,9 +78,8 @@ type ToolSetOptions struct {
 	Approval tools.ApprovalRequester
 
 	// OnToolCall, when non-nil, is notified once per completed tool call.
-	// LoopRunner populates it so a workflow stage can surface tool
-	// activity on the task timeline (archie-core-467's task-transcript
-	// counterpart). Nil means no one is listening.
+	// LoopRunner populates it so a workflow stage can surface tool activity on
+	// the task timeline. Nil means no one is listening.
 	OnToolCall ToolCallReporter
 }
 

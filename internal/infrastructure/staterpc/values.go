@@ -393,7 +393,7 @@ func dayTokensValue(d *pb.DayTokens) storecontract.DayTokens {
 	return storecontract.DayTokens{Day: d.Day, Tokens: int(d.Tokens)}
 }
 
-// Canonical public phrases for sentinel errors (rev. 2c §7). These strings
+// Canonical public phrases for sentinel errors. These strings
 // are the wire contract for sentinel identity -- the client rehydrates by
 // matching (code, message), never by parsing free-form text.
 const (
@@ -431,13 +431,13 @@ const (
 // codes.Internal with a sanitised message; the caller is expected to log the
 // full error server-side before calling mapError.
 //
-// A context cancellation/deadline raised by the store (or by a caller ctx that
-// expires mid-call, §6) must retain its identity, not be folded into
-// codes.Internal: gRPC-Go surfaces context.Canceled/DeadlineExceeded to the
-// client only for those exact codes, and the agent's workflow consumer
-// depends on errors.Is(err, context.DeadlineExceeded) to distinguish an
-// interrupted stage from a failed one. So a context error maps to its own
-// gRPC code (and unmapError rehydrates it back to the sentinel).
+// A context cancellation/deadline raised by the store must retain its identity,
+// not be folded into codes.Internal: gRPC-Go surfaces
+// context.Canceled/DeadlineExceeded to the client only for those exact codes,
+// and the agent's workflow consumer depends on errors.Is(err,
+// context.DeadlineExceeded) to distinguish an interrupted stage from a failed
+// one. So a context error maps to its own gRPC code (and unmapError rehydrates
+// it back to the sentinel).
 func mapError(err error) error {
 	if err == nil {
 		return nil
@@ -461,7 +461,7 @@ func mapError(err error) error {
 // the wire. A non-status error (e.g. a transport failure) is returned
 // unchanged.
 //
-// The deadline/cancel identity must survive too (§6): the agent's
+// The deadline/cancel identity must survive too: the agent's
 // deadlineStore bounds each Store call with context.WithTimeout, and the
 // workflow consumer checks errors.Is(err, context.DeadlineExceeded) to
 // decide whether a stage was interrupted by shutdown rather than failed
@@ -497,7 +497,7 @@ func unmapError(err error) error {
 
 // sentinelForStatus maps a status to the store or logging sentinel it stands
 // for, matched on (code, exact canonical message) -- those message constants
-// are part of the wire contract (§4). A code whose message is not one this
+// are part of the wire contract. A code whose message is not one this
 // package defines returns nil, so the caller falls back to the wrapped form.
 func sentinelForStatus(st *status.Status) error {
 	return wireSentinels[wireStatus{st.Code(), st.Message()}]

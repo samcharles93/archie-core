@@ -54,15 +54,7 @@ type EnqueueCallTaskParams struct {
 	MaxDepth            int32
 }
 
-// The callee of a workflow.call step (docs/prds/workflow-calls.md). The
-// caller row is read FOR UPDATE, so two steps of the same run cannot race a
-// depth re-check, and the callee inherits the caller's org, workspace,
-// identity, owner and repo: a called workflow works the same run's context
-// under its own definition and profile. The issue number is a fresh
-// synthetic one for the inherited owner/repo, the same allocator
-// InsertChatTask uses. The insert refuses a caller that is not running and
-// a call that would pass the depth limit (the engine checks it too; the
-// store is what owns the table, so it re-checks).
+// The callee of a workflow.call step (docs/prds/workflow-calls.md)
 func (q *Queries) EnqueueCallTask(ctx context.Context, arg EnqueueCallTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, enqueueCallTask,
 		arg.ID,

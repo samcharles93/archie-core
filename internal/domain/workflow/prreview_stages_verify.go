@@ -13,12 +13,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
-// stagePRVerification is pipeline phase 5, over the review findings phase 4
-// produced: extract each finding's evidence package (code), check the
-// high-priority findings against theirs (an evidence verifier agent), have
-// an adversary confirm or challenge every finding and add anything every
-// reviewer missed, then flag within-cluster compound defects
-// (docs/prds/pr-review-agent.md, phase 5).
 func stagePRVerification() Stage {
 	return Stage{Name: "verification", Run: func(ctx context.Context, tc *TaskContext) error {
 		if len(tc.prReview.findings) == 0 {
@@ -45,13 +39,9 @@ func stagePRVerification() Stage {
 	}}
 }
 
-// stagePRPrecisionGate is the PRD's Precision dial: an optional
-// post-worthiness pass, active only when review.precision_gate is set,
-// between phase 4 (review) and phase 5 (verification). It keeps every
-// concrete, evidenced defect and drops nitpicks, style and unverifiable
-// claims, keeping a finding when unsure -- trading recall for precision and
-// cutting verification cost by filtering early. It is off by default: the
-// pipeline is recall-first.
+// stagePRPrecisionGate, when review.precision_gate is set, drops nitpicks,
+// style and unverifiable claims between review and verification, keeping a
+// finding when unsure. Off by default.
 func stagePRPrecisionGate() Stage {
 	return Stage{Name: "precision-gate", Run: func(ctx context.Context, tc *TaskContext) error {
 		if !tc.Cfg.Review.PrecisionGate || len(tc.prReview.findings) == 0 {
@@ -143,28 +133,9 @@ func runPrecisionGate(ctx context.Context, tc *TaskContext, findings []prreview.
 	return kept
 }
 
-// stagePROperatorApproval is the PRD's Operator approval gate: active only
-// when review.approve_before_post is set, it runs immediately after
-// synthesis and before the merge gate, so an operator's re-review (which
-// reruns phases 3 to 8 with instructions folded in) never has to undo a
-// merge-gate verdict computed on a since-changed finding set. A review with
-// no findings never waits, per the PRD, and continues straight to the merge
-// gate. Setting tc.Outcome here ends the workflow run at this stage --
-// docs/prds/execution-tree-state-machine.md's engine loop stops as soon as a
-// stage sets a non-empty Outcome.Status -- so the merge gate and output
-// stages never run until an operator's response requeues the task.
-//
-// Before it waits, the gate records the review it is holding on the task's
-// review_gate column: the scored findings, the head SHA, the pull request's
-// identity and the workflow the wait resumes. The recorded document is what
-// makes the operator's answer mean the review they saw -- the engine cannot
-// resume a run partway, so a resumed pipeline recomputes its findings with
-// agent calls (docs/prds/pr-review-operator-response.md, "The review the
-// operator answers").
-//
-// An approve resume is the same run re-entered: its review_gate carries the
-// answer already, so the gate must not wait a second time -- it continues to
-// the merge gate and output, where the recorded review posts.
+// stagePROperatorApproval, when review.approve_before_post is set, waits for
+// operator approval after synthesis and before the merge gate. A review with no
+// findings never waits. Setting tc.Outcome ends the run at this stage.
 func stagePROperatorApproval() Stage {
 	return Stage{Name: "operator-approval", Run: func(_ context.Context, tc *TaskContext) error {
 		if !tc.Cfg.Review.ApproveBeforePost || len(tc.prReview.scored) == 0 {
@@ -189,11 +160,9 @@ func stagePROperatorApproval() Stage {
 	}}
 }
 
-// evidencePackageFor extracts a finding's evidence package from the
-// snapshot, reusing afbk.1's ExtractEvidence. A file the snapshot no longer
-// has (a finding pointing at a path that does not exist) extracts an empty
-// package rather than failing the stage: that emptiness is itself the
-// evidence verifier's answer.
+// A file the snapshot no longer has (a finding pointing at a path that does not
+// exist) extracts an empty package rather than failing the stage: that
+// emptiness is itself the evidence verifier's answer.
 func evidencePackageFor(tc *TaskContext, f prreview.Finding) prreview.EvidencePackage {
 	pkg, err := prreview.ExtractEvidence(os.DirFS(tc.prReview.snapshotDir), prreview.EvidenceRequest{
 		File: f.File, LineStart: f.LineStart, LineEnd: f.LineEnd,
@@ -257,14 +226,11 @@ func evidenceListing(tc *TaskContext, candidates []evidenceCandidate) string {
 	return listing.String()
 }
 
-// runEvidenceVerifier runs phase 5's evidence verifier over every
-// high-priority (critical or important) finding, dropping the ones it finds
-// unsupported by their own evidence package. A finding below high priority is
-// never sent, and always kept: the verifier exists to catch a hallucinated
-// critical, not to grade a nitpick. A failed or malformed verifier call keeps
-// every finding unfiltered -- the pipeline is recall-first, so a verifier
-// that could not run is not evidence any finding is wrong; the error is
-// intentionally swallowed here, not propagated.
+// A finding below high priority is never sent, and always kept: the verifier
+// exists to catch a hallucinated critical, not to grade a nitpick. A failed or
+// malformed verifier call keeps every finding unfiltered -- the pipeline is
+// recall-first, so a verifier that could not run is not evidence any finding is
+// wrong; the error is intentionally swallowed here, not propagated.
 func runEvidenceVerifier(ctx context.Context, tc *TaskContext, findings []prreview.Finding) ([]prreview.Finding, error) {
 	candidates := highPriorityCandidates(findings)
 	if len(candidates) == 0 {
@@ -338,7 +304,7 @@ var adversaryVerdictsSchema = json.RawMessage(`{
 }`)
 
 // adversarySkepticism is the extra instruction the adversary's mission
-// carries when intake scored the PR as likely machine-written, per the PRD.
+// carries when intake scored the PR as likely machine-written.
 func adversarySkepticism(aiGenerated float64) string {
 	if prreview.IsAIGenerated(aiGenerated) {
 		return "This PR's own description reads as likely machine-written: be more sceptical " +
@@ -388,13 +354,11 @@ func applyAdversaryVerdicts(out []prreview.Finding, calls []json.RawMessage) {
 	}
 }
 
-// runAdversary runs phase 5's adversary over every surviving finding at
-// once: it confirms or challenges each by index, and may report new findings
-// no reviewer caught. It reads intake's machine-written confidence and is
-// told to be more sceptical above the threshold, per the PRD. A failed or
-// malformed call leaves every finding's Adversary verdict unset (neither
-// confirmed nor challenged) and adds nothing -- an adversary that could not
-// run has reached no verdict, which is different from confirming everything.
+// It reads intake's machine-written confidence and is told to be more sceptical
+// above the threshold. A failed or malformed call leaves every finding's
+// Adversary verdict unset (neither confirmed nor challenged) and adds nothing
+// -- an adversary that could not run has reached no verdict, which is different
+// from confirming everything.
 func runAdversary(ctx context.Context, tc *TaskContext, findings []prreview.Finding) ([]prreview.Finding, error) {
 	if len(findings) == 0 {
 		return findings, nil
@@ -430,12 +394,10 @@ func runAdversary(ctx context.Context, tc *TaskContext, findings []prreview.Find
 	return out, nil
 }
 
-// runCompoundCheck runs phase 5's compound-defect check once per cluster
-// that has more than one finding, in parallel, bounded the same as every
-// other pr-review fan-out. It flags the findings the agent names as
-// compounding (Finding.Compound = true), which is what scoring's compound
-// multiplier reads. A cluster with at most one finding cannot compound with
-// anything and is skipped without an agent call.
+// It flags the findings the agent names as compounding (Finding.Compound =
+// true), which is what scoring's compound multiplier reads. A cluster with at
+// most one finding cannot compound with anything and is skipped without an
+// agent call.
 func runCompoundCheck(ctx context.Context, tc *TaskContext, findings []prreview.Finding) ([]prreview.Finding, error) {
 	grouped := prreview.ClusterFindings(tc.prReview.clusters, findings)
 	var clusterIDs []string
@@ -524,15 +486,11 @@ func runCompoundClusterCheck(ctx context.Context, tc *TaskContext, clusterID str
 	return flagged
 }
 
-// prReviewGapRounds is phase 6's cap on gap-review rounds: at most 2, per the
-// PRD, so a coverage gap the gap reviewers cannot close does not loop forever.
 const prReviewGapRounds = 2
 
-// stagePRCoverageConsistency is pipeline phase 6: the coverage gate and
-// consistency verification run in parallel and both append to
-// tc.prReview.findings, guarded by prReviewState.findingsMu
-// (docs/prds/pr-review-agent.md, phase 6: "Coverage and consistency, in
-// parallel").
+// stagePRCoverageConsistency runs the coverage gate and consistency
+// verification in parallel; both append to tc.prReview.findings under
+// prReviewState.findingsMu.
 func stagePRCoverageConsistency() Stage {
 	return Stage{Name: "coverage-consistency", Run: func(ctx context.Context, tc *TaskContext) error {
 		var wg sync.WaitGroup
@@ -546,12 +504,6 @@ func stagePRCoverageConsistency() Stage {
 	}}
 }
 
-// runCoverageGate is phase 6's coverage gate: for up to prReviewGapRounds
-// rounds, find the clusters and high-exposure blast-radius files no finding
-// covers, run one gap reviewer per gap (reusing runReviewer, the same
-// reviewer definition phase 4 uses), and append whatever they find. It stops
-// early once nothing is uncovered, so a change that phase 4 already covered
-// fully never spends a gap-review call.
 func runCoverageGate(ctx context.Context, tc *TaskContext) {
 	for range prReviewGapRounds {
 		tc.prReview.findingsMu.Lock()
@@ -576,8 +528,7 @@ func runCoverageGate(ctx context.Context, tc *TaskContext) {
 }
 
 // gapDimensions builds one reviewer dimension per coverage gap: a cluster's
-// files together (a cluster is reviewed as one unit, the way phase 4 would
-// have if a lens had proposed it), and one per uncovered high-exposure file.
+// files together, and one per uncovered high-exposure file.
 func gapDimensions(clusters []prreview.Cluster, files []string) []prreview.Dimension {
 	dims := make([]prreview.Dimension, 0, len(clusters)+len(files))
 	for _, cluster := range clusters {
@@ -597,12 +548,8 @@ func gapDimensions(clusters []prreview.Cluster, files []string) []prreview.Dimen
 	return dims
 }
 
-// runConsistencyVerification is phase 6's consistency verification: one
-// agent call lists the cross-location obligations the changed code creates
-// and verifies each by reading both ends, reporting only the broken ones as
-// findings (the PRD's own wording -- "a broken obligation becomes a
-// finding"). It reuses report_findings, the same shape every other
-// findings-reporting call in the pipeline uses.
+// It reuses report_findings, the same shape every other findings-reporting call
+// in the pipeline uses.
 func runConsistencyVerification(ctx context.Context, tc *TaskContext) error {
 	mission := fmt.Sprintf(
 		"Read this pull request's diff and the surrounding repository. List every "+
@@ -642,11 +589,9 @@ var mergeGateSchema = json.RawMessage(`{
 	"required": ["blocking"]
 }`)
 
-// stagePRMergeGate is pipeline phase 8: one classification call per
-// surviving finding decides blocking or advisory (docs/prds/pr-review-
-// agent.md, phase 8). Blocking is narrow, and a failed or malformed call
-// leaves a finding advisory -- the same fallback every other pr-review
-// verdict call in this pipeline uses when its agent call could not run.
+// Blocking is narrow, and a failed or malformed call leaves a finding advisory
+// -- the same fallback every other pr-review verdict call in this pipeline uses
+// when its agent call could not run.
 func stagePRMergeGate() Stage {
 	return Stage{Name: "merge-gate", Run: func(ctx context.Context, tc *TaskContext) error {
 		if len(tc.prReview.scored) == 0 {
@@ -682,7 +627,7 @@ func runMergeGateCall(ctx context.Context, tc *TaskContext, f prreview.ScoredFin
 		Parameters: mergeGateSchema, RequiredFields: []string{"blocking"}, MaxCalls: 1,
 	}})
 	if err != nil || res.Status != agentexec.StatusPassed {
-		return false //nolint:nilerr // a merge-gate call that could not run leaves the finding advisory, per the PRD
+		return false //nolint:nilerr // a merge-gate call that could not run leaves the finding advisory
 	}
 	calls := res.Captures["classify_blocking"]
 	if len(calls) != 1 {

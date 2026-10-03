@@ -1,5 +1,5 @@
 // Lifted from tau internal/agent/tools/grep.go
-// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d (2026-07-27).
+// tau commit f5289ea3782c099339c2d26fe3af8ebcf42ba52d.
 //
 // Mutations from upstream:
 //   - package renamed tools -> builtin (archie-core already has an

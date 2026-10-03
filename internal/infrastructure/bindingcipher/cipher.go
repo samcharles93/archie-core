@@ -25,7 +25,7 @@ const bindingNonceLen = 12
 
 // Domain is an envelope's marker and additional-authenticated-data: the
 // separator that stops a ciphertext sealed for one column being relocated to
-// a different one and still authenticating (docs/prds/binding-secret-encryption.md).
+// a different one and still authenticating.
 // Domains share the same keyring; only the marker and AAD differ.
 type Domain struct {
 	marker string
@@ -40,7 +40,7 @@ var (
 	// meaningful attack.
 	BindingDomain = Domain{marker: "arcie-binding", aad: []byte("arcie-binding-secret")}
 	// HarnessSecretDomain seals harness OAuth token sets
-	// (docs/prds/external-agent-harness.md, Credentials) -- its own
+	// -- its own
 	// separator, so a row cannot be moved from oauth_secrets into a
 	// bindings-secret column (or back) and still authenticate.
 	HarnessSecretDomain = Domain{marker: "arcie-harness", aad: []byte("arcie-harness-secret")}

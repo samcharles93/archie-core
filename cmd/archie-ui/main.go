@@ -3,8 +3,6 @@
 // contracts. It is the .5.2 companion to archie-gateway and
 // archie-state-store: a thin main that parses process inputs and hands them
 // to archieui.Run.
-//
-// See docs/prds/ui-service-boundary.md for the ratified boundary.
 package main
 
 import (

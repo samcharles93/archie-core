@@ -16,9 +16,7 @@ import (
 type Document struct {
 	// Config is the translated settings.
 	//
-	// TEMPORARY. docs/architecture/configuration.md requires this to become
-	// typed per-domain sections that never expose a whole-application model.
-	// It stays for now so this package can own loading without every
+	// TEMPORARY. It stays for now so this package can own loading without every
 	// consumer changing at once. Delete when internal/config is dissolved.
 	Config config.Config
 	// Scheduling is the decoded [scheduling] input. Application composition
@@ -402,11 +400,7 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 	return nil
 }
 
-// decodeMain decodes the daemon-level file in whichever format it uses. An
-// overlay layer's file is FOLDED over what the base layer decoded, the same way
-// a single overlay file folds over its base -- otherwise a map-valued entry it
-// only partly addresses would clear the fields it does not name, which is the
-// archie-core-e2e2 failure on the directory form of the same flag.
+// decodeMain decodes the daemon-level file in whichever format it uses.
 func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool, layer Layer) error {
 	if layer == LayerOverlay {
 		cfgKeys, err := applyOverlayFile(path, &doc.Config)

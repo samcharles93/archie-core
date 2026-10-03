@@ -1,9 +1,7 @@
 // Package sampling is the curator sampler family: given a bounded set of
-// candidates, pick a subset to spend a curator pass's agentic budget on.
-// See docs/prds/curator-sampler-wave1.md for the design and the four
-// wave-1 strategies (recency, random, all, staleness) this package ships.
-// The embedding-backed surprisal strategy (GitHub #437) is a separate,
-// deferred consumer of this same interface -- it does not live here.
+// candidates, pick a subset to spend a curator pass's agentic budget on. The
+// embedding-backed surprisal strategy is a separate, deferred consumer of this
+// same interface -- it does not live here.
 package sampling
 
 import (
@@ -33,7 +31,7 @@ type Request struct {
 
 // Sampler selects a subset of candidates to spend a curator pass's agentic
 // budget on. Every implementation -- the four in this package and the
-// future embedding-backed surprisal strategy (GitHub #437) -- must be
+// future embedding-backed surprisal strategy -- must be
 // deterministic given the same candidates and Request: same inputs, same
 // output, every time. That is what makes a pass reproducible and testable.
 type Sampler interface {

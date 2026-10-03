@@ -18,19 +18,16 @@ import (
 )
 
 // PRSource fetches a pull request under review: its descriptive content, its
-// diff, and a read-only, .git-free snapshot of its head. It is Trees'
+// diff, and a read-only,.git-free snapshot of its head. It is Trees'
 // counterpart for the pr-review workflow -- Trees reaches the task's own
-// worktree, which the pipeline must never read (docs/prds/pr-review-agent.md,
-// Isolation); PRSource reaches the arbitrary pull request named by
-// Task.Owner/Repo/PRNumber instead, and carries no push credential.
+// worktree, which the pipeline must never read; PRSource reaches the arbitrary
+// pull request named by Task.Owner/Repo/PRNumber instead, and carries no push
+// credential.
 //
 // The real forge-backed implementation belongs to whichever bead wires
-// pr-review's triggers (archie-core-afbk.7); this bead builds and tests the
+// pr-review's triggers; this bead builds and tests the
 // Stage wiring against a fake.
 type PRSource interface {
-	// Metadata returns the pull request's title, body and commit messages --
-	// phase 1's "PR metadata" and phase 3's hallucination-check dimension's
-	// "what the PR claims".
 	Metadata(ctx context.Context, owner, repo string, number int) (PRMetadata, error)
 	// Diff returns the pull request's unified diff against its base branch.
 	Diff(ctx context.Context, owner, repo string, number int) (string, error)
@@ -58,13 +55,9 @@ type prReviewState struct {
 	depth       prreview.Depth
 	aiGenerated float64
 
-	snapshotDir string
-	headSHA     string
-	blastRadius []string
-	// clusters and highExposure are phase 6's coverage-gate inputs, computed
-	// once in anatomy alongside blastRadius: clusters groups changed files by
-	// directory, highExposure is the blastRadius files more than one changed
-	// file reaches.
+	snapshotDir  string
+	headSHA      string
+	blastRadius  []string
 	clusters     []prreview.Cluster
 	highExposure []string
 
@@ -75,48 +68,33 @@ type prReviewState struct {
 	reviewerFailures atomic.Int64
 
 	// operatorInstructions is the re-review's instructions, restored from the
-	// task's review_gate document at intake. Phase 3's lens missions and phase
-	// 4's reviewer missions append it as one labelled block
-	// (docs/prds/pr-review-operator-response.md, Decision 3); nothing else
-	// reads it, so a first run -- or any run the operator did not instruct --
-	// leaves every other mission untouched.
+	// task's review_gate document at intake.
 	operatorInstructions string
 	// approvedReview is the review the operator approved, restored from the
-	// task's review_gate document at intake. When set, this run IS the
-	// approve resume: the gate must not wait a second time, and phase 9 posts
-	// the recorded review filtered by the operator's selection rather than
-	// the review the resumed phases recomputed. The resumed pipeline has no
+	// task's review_gate document at intake. The resumed pipeline has no
 	// partway resume, so the recomputed findings are unavoidable; not posting
 	// them is what makes "the findings the operator selected" true.
 	approvedReview *task.ReviewGate
 
-	// findingsMu guards findings during phase 6, where the coverage gate and
-	// consistency verification append to it from two goroutines running in
-	// parallel (docs/prds/pr-review-agent.md, phase 6). Every other phase
-	// touches findings from a single goroutine and does not need it.
+	// Every other phase touches findings from a single goroutine and does not
+	// need it.
 	findingsMu sync.Mutex
 
-	// runStart is when phase 1 started, the origin every budget-share check
-	// measures elapsed wall-clock against.
 	runStart time.Time
 	// tokensSpent is the run's cumulative token spend so far, across every
 	// agent call any phase has made. It is an atomic because phases 3, 4 and
 	// 9 add to it from concurrent goroutines.
 	tokensSpent atomic.Int64
-	// skippedPhases names every phase a budget check skipped, in the order
-	// they were skipped, so phase 9's output can report them (docs/prds/
-	// pr-review-agent.md, Budget: "The posted review names every skipped
-	// phase, so an exhausted run never reads as a clean one"). Every phase
-	// runs sequentially in the workflow engine's stage loop, so appends here
-	// need no lock.
+	// Every phase runs sequentially in the workflow engine's stage loop, so
+	// appends here need no lock.
 	skippedPhases []string
 }
 
-// prReviewTotalBudget bounds the whole pr-review run's cost (tokens, the
-// only spend the agent runtime accounts for) and wall-clock, split evenly
-// across prReviewBudgetPhases in pipeline order (docs/prds/pr-review-agent.md,
-// Budget section). Sized generously: exhausting it is meant to catch a run
-// that is genuinely stuck or unexpectedly expensive, not a typical one.
+// prReviewTotalBudget bounds the whole pr-review run's cost (tokens, the only
+// spend the agent runtime accounts for) and wall-clock, split evenly across
+// prReviewBudgetPhases in pipeline order. Sized generously: exhausting it is
+// meant to catch a run that is genuinely stuck or unexpectedly expensive, not a
+// typical one.
 var prReviewTotalBudget = prreview.Budget{MaxTokens: 2_000_000, WallClock: 30 * time.Minute}
 
 // prReviewBudgetPhases are the budget-tracked phases, in pipeline order.
@@ -152,23 +130,13 @@ func skipPhase(tc *TaskContext, phase string) {
 }
 
 // prReviewConcurrency bounds phases 3 (lenses), 4 (reviewers) and 9 (polish),
-// all "in parallel, at most 8 at a time" per the PRD except phase 3, which
+// all "in parallel, at most 8 at a time"
 // never has more than three lenses to begin with.
 const prReviewConcurrency = 8
 
-// PRReview is the pull request reviewer: a fixed pipeline, not a single
-// agent (docs/prds/pr-review-agent.md). archie-core-afbk.3 wired phases 1, 2,
-// 3, 4, 7 and 9; archie-core-afbk.4 added 5 and 6 (verification,
-// coverage/consistency); archie-core-afbk.5 added phase 8 (the merge gate)
-// and the budget shares/skipped-phase reporting that run throughout;
-// archie-core-afbk.8 adds the precision dial (between review and
-// verification) and the operator-approval gate (between synthesis and the
-// merge gate), both off by default and each gated by its own config flag.
-//
-// The operator-approval gate is this workflow's OWN stage-list entry, not a
-// shared one (docs/prds/pr-review-operator-response.md): the implement
-// workflow splices the shared decision stages, and a gate there would end an
-// implement run before its PR exists.
+// PRReview is the pull request reviewer, a fixed pipeline of stages. The
+// precision gate and operator approval are optional, each behind its own
+// config flag.
 func PRReview() Workflow {
 	return Workflow{
 		Name: "pr-review",
@@ -188,25 +156,16 @@ func PRReview() Workflow {
 	}
 }
 
-// prReviewDecisionStages is phases 1 through 8: everything up to and
-// including the merge gate's blocking/advisory verdict, but before phase 9
-// posts anything, and WITHOUT the operator-approval gate. Split out from
-// PRReview so the implement workflow can splice it in before StageOpenPR
-// (archie-core-afbk.7's "archie's own PRs" trigger) -- and so the operator
-// gate can never ride along on that splice
-// (docs/prds/pr-review-operator-response.md, "The gate is not reachable from
-// archie's own PRs"): there the gate's question (which findings to post) has
-// no pull request to post to yet, and a park would end the implement run
-// before it opened one (archie-core-7nst).
+// Split out from PRReview so the implement workflow can splice it in before
+// StageOpenPR
+// -- and so the operator
+// gate can never ride along on that splice: there the gate's question (which
+// findings to post) has no pull request to post to yet, and a park would end
+// the implement run before it opened one.
 func prReviewDecisionStages() []Stage {
 	return append(prReviewPipelineStages(), stagePRMergeGate())
 }
 
-// prReviewStandaloneStages is the standalone pr-review workflow's full stage
-// list: the shared decision phases with the operator-approval gate inserted
-// between synthesis and the merge gate -- the gate runs before the merge
-// gate's verdict, so an operator's re-review never has to undo one computed
-// on a since-changed finding set -- followed by phase 9's posting.
 func prReviewStandaloneStages() []Stage {
 	pipeline := prReviewPipelineStages()
 	stages := make([]Stage, 0, len(pipeline)+3)
@@ -229,9 +188,6 @@ func prReviewPipelineStages() []Stage {
 	}
 }
 
-// stagePRIntake is pipeline phase 1: PR metadata and diff statistics, the
-// depth they classify, and the machine-written confidence phase 3's
-// hallucination-check dimension and phase 7's scoring both read.
 func stagePRIntake() Stage {
 	return Stage{Name: "intake", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.PRSource == nil {
@@ -292,13 +248,7 @@ func stagePRIntake() Stage {
 	}}
 }
 
-// scoreAIGenerated runs phase 1's classification-role call: how confident an
-// agent is that the PR's own description reads as machine-written, which
-// phase 3's hallucination-check dimension and phase 7's scoring both use.
 func scoreAIGenerated(ctx context.Context, tc *TaskContext, meta PRMetadata) (float64, error) {
-	// This call reads no files -- only the metadata already in its mission --
-	// so it gets its own empty scratch directory rather than the pull
-	// request's snapshot, which does not exist yet at phase 1.
 	scratch, err := os.MkdirTemp("", "pr-review-intake-*")
 	if err != nil {
 		return 0, fmt.Errorf("create intake scratch directory: %w", err)
@@ -347,7 +297,6 @@ func scoreAIGenerated(ctx context.Context, tc *TaskContext, meta PRMetadata) (fl
 // run's scratch state at intake: the instructions a re-review must carry into
 // phases 3 and 4, and the approved review an approve resume must post. Called
 // once, where the review the run works on is established
-// (docs/prds/pr-review-operator-response.md, Decision 3).
 func restoreReviewGate(tc *TaskContext) {
 	gate, ok := task.DecodeReviewGate(tc.Task.ReviewGate)
 	if !ok {
@@ -360,10 +309,8 @@ func restoreReviewGate(tc *TaskContext) {
 	}
 }
 
-// operatorInstructionsBlock renders the re-review's operator instructions as
-// the labelled block phase 3's and phase 4's missions carry. It is empty --
-// and therefore absent -- on a run the operator did not instruct, which is
-// what keeps "a first run's do not" true.
+// It is empty -- and therefore absent -- on a run the operator did not
+// instruct, which is what keeps "a first run's do not" true.
 func operatorInstructionsBlock(tc *TaskContext) string {
 	if tc.prReview == nil || tc.prReview.operatorInstructions == "" {
 		return ""
@@ -372,9 +319,6 @@ func operatorInstructionsBlock(tc *TaskContext) string {
 		"previous findings. Address them in your work:\n" + tc.prReview.operatorInstructions + "\n\n"
 }
 
-// stagePRAnatomy is pipeline phase 2: the read-only snapshot every later
-// phase reads from, the deterministic clustering and blast radius, and one
-// agent's narrative of the change.
 func stagePRAnatomy() Stage {
 	return Stage{Name: "anatomy", Run: func(ctx context.Context, tc *TaskContext) error {
 		dir, err := os.MkdirTemp("", fmt.Sprintf("pr-review-snapshot-task%d-*", tc.Task.ID))
@@ -426,8 +370,8 @@ func stagePRAnatomy() Stage {
 	}}
 }
 
-// prReviewLenses are phase 3's three fixed lenses. Each proposes review
-// dimensions from a different angle; code merges, dedups and caps the result.
+// Each proposes review dimensions from a different angle; code merges, dedups
+// and caps the result.
 var prReviewLenses = []struct {
 	name   string
 	prompt string
@@ -437,11 +381,8 @@ var prReviewLenses = []struct {
 	{name: "fit", prompt: "patterns, complexity, abstraction, test adequacy, documentation that no longer matches, dependencies, migration completeness"},
 }
 
-// stagePRLenses is pipeline phase 3: three lens agents proposing review
-// dimensions in parallel, merged with the hallucination-check dimension (for
-// a likely machine-written PR) as one more candidate, deduplicated and
-// capped by code. The hallucination dimension competes for the same cap as
-// everything else -- "at most N dimensions" is a total, not a total plus one
+// The hallucination dimension competes for the same cap as everything else --
+// "at most N dimensions" is a total, not a total plus one
 // -- so it is added before MergeDimensions cuts the tail, never after.
 func stagePRLenses() Stage {
 	return Stage{Name: "lenses", Run: func(ctx context.Context, tc *TaskContext) error {
@@ -534,12 +475,10 @@ func runLens(ctx context.Context, tc *TaskContext, name, angle string) ([]prrevi
 	return out, nil
 }
 
-// stagePRReview is pipeline phase 4: one reviewer call per dimension, at most
-// prReviewConcurrency at a time. A reviewer that exhausts its turn cap or
-// deadline before its terminal tool call records StepFailed -- distinct from
-// StepSucceeded for a reviewer that completed and found nothing -- so
-// synthesis and the posted review can tell "unreviewed" from "reviewed-clean"
-// (docs/prds/pr-review-agent.md, phase 4).
+// A reviewer that exhausts its turn cap or deadline before its terminal tool
+// call records StepFailed -- distinct from StepSucceeded for a reviewer that
+// completed and found nothing -- so synthesis and the posted review can tell
+// "unreviewed" from "reviewed-clean"
 func stagePRReview() Stage {
 	return Stage{Name: "review", Run: func(ctx context.Context, tc *TaskContext) error {
 		if budgetExhausted(tc, "review") {
@@ -590,9 +529,6 @@ func runReviewer(ctx context.Context, tc *TaskContext, dim prreview.Dimension) [
 	return findings
 }
 
-// reportFindingsSchema is the finding shape every pr-review agent call that
-// reports findings captures them in: phase 4's reviewer, phase 6's gap
-// reviewers (which reuse runReviewer directly) and consistency verification.
 var reportFindingsSchema = json.RawMessage(`{
 	"type": "object",
 	"properties": {
@@ -674,14 +610,13 @@ func decodeReportedFindings(calls []json.RawMessage, dimension string) ([]prrevi
 const prReviewMaxSteps = 25
 
 // runReviewerAgent runs one phase-4 reviewer call and records its child step
-// with the phase-4 status distinction (docs/prds/pr-review-agent.md, phase
-// 4): StepFailed for a reviewer that exhausted its turn cap or deadline
-// before its terminal tool call, StepSucceeded for one that reached it --
-// whether or not it reported any findings. tc.RunAgentChild does not serve
-// this: it maps only the Go error, so a "parked" (turn-cap/deadline) result
-// with no Go error would record StepSucceeded exactly like a clean,
-// zero-findings run, and the two would be indistinguishable to anything
-// reading the execution tree afterwards.
+// with the phase-4 status distinction: StepFailed for a reviewer that exhausted
+// its turn cap or deadline before its terminal tool call, StepSucceeded for one
+// that reached it -- whether or not it reported any findings. tc.RunAgentChild
+// does not serve this: it maps only the Go error, so a "parked"
+// (turn-cap/deadline) result with no Go error would record StepSucceeded
+// exactly like a clean, zero-findings run, and the two would be
+// indistinguishable to anything reading the execution tree afterwards.
 func runReviewerAgent(
 	ctx context.Context, tc *TaskContext, name, mission string, captureTools []agentexec.CaptureTool,
 ) (agentexec.Result, error) {
@@ -717,11 +652,6 @@ func runReviewerAgent(
 	return res, runErr
 }
 
-// stagePRSynthesis is pipeline phase 7, code only: score, drop findings
-// under their severity's confidence floor, merge duplicates, rank, and cap
-// at the inline comment limit. Phase 8 (the merge gate) runs after this
-// stage, so every surviving finding's Blocking flag is still whatever phase
-// 5/6 left it as (false, since neither sets it) until that stage decides.
 func stagePRSynthesis() Stage {
 	return Stage{Name: "synthesis", Run: func(_ context.Context, tc *TaskContext) error {
 		scored := prreview.Score(tc.prReview.findings, prreview.ScoreInputs{
@@ -733,12 +663,9 @@ func stagePRSynthesis() Stage {
 	}}
 }
 
-// stagePROutput is pipeline phase 9: one polish call per comment, at most
-// prReviewConcurrency at a time, keeping the original wording on failure,
-// then posting the surviving inline-anchored findings as one forge review.
-// The polish pass is what a budget-exhausted run skips; posting itself
-// always runs, since it is the pipeline's only externally visible act and
-// must report what happened even when every other phase was skipped.
+// The polish pass is what a budget-exhausted run skips; posting itself always
+// runs, since it is the pipeline's only externally visible act and must report
+// what happened even when every other phase was skipped.
 //
 // Used by the standalone pr-review workflow only. Archie's own PRs trigger
 // (StagePRReviewAndOpenPR, prreview_own_pr.go) needs the same polish-then-post
@@ -755,16 +682,10 @@ func stagePROutput() Stage {
 	}}
 }
 
-// runPROutputPhase is phase 9's actual work, factored out of stagePROutput so
-// a caller that must preserve its own outcome (archie's own PRs, which has
-// already set StatusPROpen by the time findings are ready to post) can run it
-// without stagePROutput's unconditional StatusCompleted assignment.
-//
 // An approve resume posts the recorded review the operator answered, not the
 // one this run recomputed: the engine has no partway resume, so the resumed
-// phases recompute every finding, and only the recorded document is the
-// review the operator saw (docs/prds/pr-review-operator-response.md, "The
-// review the operator answers").
+// phases recompute every finding, and only the recorded document is the review
+// the operator saw.
 func runPROutputPhase(ctx context.Context, tc *TaskContext) (string, error) {
 	if approved := tc.prReview.approvedReview; approved != nil {
 		return postApprovedReview(ctx, tc, *approved)
@@ -790,7 +711,7 @@ func runPROutputPhase(ctx context.Context, tc *TaskContext) (string, error) {
 }
 
 // polishFinding runs one phase-9 polish call, tightening a finding's wording.
-// It keeps the original finding unchanged on any failure, per the PRD.
+// It keeps the original finding unchanged on any failure.
 func polishFinding(ctx context.Context, tc *TaskContext, f prreview.ScoredFinding) prreview.ScoredFinding {
 	params := json.RawMessage(`{
 		"type": "object",
@@ -842,14 +763,7 @@ func postApprovedReview(ctx context.Context, tc *TaskContext, gate task.ReviewGa
 }
 
 // reviewComments renders every line-anchored finding as one forge review
-// comment. A finding with no line (LineStart <= 0) is dropped rather than
-// posted anywhere -- docs/prds/inline-review.md's PR-body fallback list for
-// whole-file findings, and REQUEST_CHANGES vs COMMENT event submission
-// (workflow.Forger.CreateReviewComments always posts a COMMENT-state
-// review; GitHub's implementation does not submit a review object at all,
-// only per-comment calls, so REQUEST_CHANGES needs a Forger/forge change,
-// not just a caller change here) are both real gaps this bead does not
-// close; see the follow-up bead this bead's commit files.
+// comment. Findings with no line are dropped.
 func reviewComments(findings []prreview.ScoredFinding) []ReviewComment {
 	comments := make([]ReviewComment, 0, len(findings))
 	for _, f := range findings {
@@ -926,11 +840,8 @@ func runPRReviewAgentRecorded(
 	return res, err
 }
 
-// forEachBounded runs fn(0), fn(1), ..., fn(n-1), at most limit at a time,
-// and waits for all of them. It is phase 3, 4 and 9's shared concurrency
-// bound: tc.RunAgentChild already supports concurrent fan-out from inside
-// one stage body (each call independently records a StepExecution child), so
-// this needs only a semaphore, not an engine change.
+// forEachBounded runs fn(0) through fn(n-1), at most limit at a time, and waits
+// for all of them.
 func forEachBounded(limit, n int, fn func(i int)) {
 	if n == 0 {
 		return

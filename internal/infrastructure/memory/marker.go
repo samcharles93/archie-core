@@ -8,14 +8,9 @@ import (
 	"time"
 )
 
-// The engine writes each record as one blank-line-delimited markdown block
-// whose first line is a marker comment followed by the record's content, so
-// a block stays readable and editable by hand. The marker began life as a
-// bare id (`<!--mem:<ulid>-->`, the incumbent format); it is JSON now
-// because the retained provenance -- revision, kind, author, originating
-// user, source and both timestamps -- has nowhere else to live, which is
-// exactly what the PRD's Settles table records the bare form could not
-// carry.
+// Each record is one blank-line-delimited markdown block whose first line is a
+// JSON marker comment carrying the record's provenance, followed by its
+// content, so a block stays editable by hand.
 const (
 	markerPrefix = "<!--mem:"
 	markerSuffix = "-->"

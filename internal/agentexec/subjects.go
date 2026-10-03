@@ -9,9 +9,7 @@ import (
 //
 // These belong to this package because it defines what an agent request and
 // response mean. They previously sat in the NATS package, which made the
-// transport the owner of Archie's agent protocol; see
-// docs/architecture/dependencies-and-contracts.md -- message schemas and the
-// subjects addressing them stay with the domain that defines them.
+// transport the owner of Archie's agent protocol.
 const (
 	// SubjectSystemWildcard matches every task's system subject, for a
 	// daemon subscribing to all of them at once with a single core NATS

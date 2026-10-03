@@ -138,12 +138,11 @@ type chatTaskController interface {
 	ChatTaskStatus(ctx context.Context, taskID int64) (ChatTaskStatus, bool, error)
 	// ApproveChatTask releases a waiting_human task through the daemon's one
 	// task-action service, so chat and the dashboard cannot record different
-	// decisions for one operator intent (docs/prds/pr-review-operator-
-	// response.md, Decision 1). The caller has already validated the current
-	// status is waiting_human; the actor is the chat-bound identity, never an
-	// operator acting across identities. There is no review-gate payload: the
-	// chat surface has no instruction or selection syntax, so an approve posts
-	// every offered finding.
+	// decisions for one operator intent. The caller has already validated the
+	// current status is waiting_human; the actor is the chat-bound identity,
+	// never an operator acting across identities. There is no review-gate
+	// payload: the chat surface has no instruction or selection syntax, so an
+	// approve posts every offered finding.
 	ApproveChatTask(ctx context.Context, taskID int64, actor taskactions.Actor) error
 	// CancelChatTask transitions an active task to a rejected/terminal
 	// state. Callers must have already validated the current status is
@@ -203,12 +202,9 @@ func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity
 		return err
 	}
 	// The store records the cancellation first -- the one cancel path -- and
-	// the context cancel delivers it. The order is the PRD's: a worker that
-	// keeps writing after the record fails ErrStaleTransition on its next
-	// step write, so it cannot win the race the old interrupt-first ordering
-	// guarded against. A task the store says is running but nothing is
-	// executing for (a crashed or migrated daemon) is unstuck by the record
-	// alone, which is why the delivery is reported, not required.
+	// the context cancel delivers it. A task the store says is running but
+	// nothing is executing for (a crashed or migrated daemon) is unstuck by the
+	// record alone, which is why the delivery is reported, not required.
 	if err := c.store.CancelChatTask(ctx, taskID, "declined by "+identity); err != nil {
 		return err
 	}

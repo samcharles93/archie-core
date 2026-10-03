@@ -3,7 +3,6 @@
 // fails closed: a stored setting that will not validate stops archied
 // starting, and the in-band remedy -- replaying an earlier revision while the
 // State Store is up -- is unavailable in exactly the case that needs it
-// (docs/architecture/safe-change-and-recovery.md).
 //
 // Every operation but import works on the PostgreSQL database database_url
 // names (state_store_recovery_postgres.go). The ones that write refuse while a

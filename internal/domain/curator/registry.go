@@ -45,8 +45,8 @@ type Registry struct {
 	order    []string
 	state    registryState
 
-	// activity tracks recent per-curator run history for observability
-	// (archie-core-1786637489932-6). It has its own mutex and is safe to
+	// activity tracks recent per-curator run history for observability.
+	// It has its own mutex and is safe to
 	// use independently of r.mu.
 	activity *activityTracker
 }

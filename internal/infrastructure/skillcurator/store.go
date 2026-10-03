@@ -1,6 +1,5 @@
 // Package skillcurator implements domain/curator.CuratorEngine for skill
-// maintenance. See docs/prds/skill-curator.md for what a pass does and
-// why, and the scope this package deliberately does not cover.
+// maintenance.
 package skillcurator
 
 import (
@@ -14,7 +13,7 @@ import (
 )
 
 // skillsDir mirrors internal/skill's own unexported constant of the same
-// name and value -- the discovery convention (.agents/skills/) is fixed
+// name and value -- the discovery convention is fixed
 // across both packages, not configurable per caller.
 const skillsDir = ".agents/skills"
 
@@ -22,16 +21,16 @@ const skillsDir = ".agents/skills"
 // its own directory under skillsDir.
 const skillFile = "SKILL.md"
 
-// Store implements curator.SkillStore over one root directory's
-// .agents/skills/*/SKILL.md files. List and Read never parse frontmatter
-// themselves beyond a best-effort Description: a per-skill parse failure is
-// the curator's problem to report as an Action, not this store's problem to
-// abort on. See docs/prds/skill-curator.md.
+// Store implements curator.SkillStore over one root directory's.
+// agents/skills/*/SKILL.md files. List and Read never parse frontmatter
+// themselves beyond a best-effort Description: a per-skill parse failure is the
+// curator's problem to report as an Action, not this store's problem to abort
+// on.
 type Store struct {
 	root string
 }
 
-// NewStore builds a Store rooted at root (root/.agents/skills/...).
+// NewStore builds a Store rooted at root.
 func NewStore(root string) *Store {
 	return &Store{root: root}
 }

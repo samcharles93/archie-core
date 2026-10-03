@@ -29,11 +29,11 @@ type Registrar struct {
 	// declared set, never a broader registry. Bound when tools are
 	// declared.
 	Tools ToolBuilder
-	// Skills is the skill-maintenance capability (skill curator,
-	// archie-core-i7i). Bound when the curator declares Skills.
+	// Skills is the skill-maintenance capability. Bound when the curator
+	// declares Skills.
 	Skills SkillStore
 	// MemoryEngines resolves a named memory engine, for a curator that
-	// declared Manifest.MemoryEngine (archie-core-1786637499636). Bound
+	// declared Manifest.MemoryEngine. Bound
 	// only when declared. Like Tools, resolution is by name at call time,
 	// not a value pre-fetched at Bind: a curator calls
 	// MemoryEngines.Get(its own Manifest().MemoryEngine), the same trust
@@ -41,9 +41,8 @@ type Registrar struct {
 	// trusted to pass its own declared identifier, not handed a
 	// pre-scoped instance.
 	MemoryEngines MemoryEngineSource
-	// Conversations is read-only recent conversation history, for a
-	// curator that declared Manifest.Conversations (session-memory
-	// curator, archie-core-1786637499114). Bound only when declared.
+	// Conversations is read-only recent conversation history, for a curator
+	// that declared Manifest.Conversations. Bound only when declared.
 	Conversations ConversationSource
 	// Events publishes curator activity. Implementations must be
 	// non-blocking and bounded (drop on overflow), so a curator can never
@@ -99,7 +98,7 @@ type ToolBuilder interface {
 }
 
 // SkillStore is the skill-maintenance capability. The implementation owns
-// the on-disk format and catalog reload rules (archie-core-i7i).
+// the on-disk format and catalog reload rules.
 type SkillStore interface {
 	List(ctx context.Context) ([]SkillRef, error)
 	Read(ctx context.Context, name string) (Skill, error)

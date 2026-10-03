@@ -28,8 +28,8 @@ type PolicyStore interface {
 	EnsureShippedOrgPolicies(ctx context.Context, orgID org.OrgID) error
 }
 
-// Resetter restores access for a locked-out org or a broken instance policy
-// (docs/prds/orgs-and-access.md, "Recovering from a locked-out org"). It
+// Resetter restores access for a locked-out org or a broken instance policy.
+// It
 // runs only on the State Store host, never over the network, and the reset
 // command records it as an audit event.
 type Resetter interface {

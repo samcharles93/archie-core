@@ -138,7 +138,7 @@ type (
 // ValidateDefinitionCollection rejects malformed, duplicate, or mismatched
 // definitions, and every workflow.call step a definition carries: the callee
 // must exist, its inputs must be satisfiable, and the call graph must be
-// acyclic (docs/prds/workflow-calls.md).
+// acyclic.
 func ValidateDefinitionCollection(collection WorkflowDefinitionCollection, registry StepRegistry) error {
 	seen := make(map[string]struct{}, len(collection.Definitions))
 	parsed := make(map[string]YAMLDefinition, len(collection.Definitions))
@@ -198,7 +198,7 @@ func noSettingsFactory(stage Stage) StepFactory {
 // parses and compiles.
 var retiredSteps = map[string]Stage{
 	// The remediate workflow's in-container resume stage moved to daemon
-	// preparation (archie-core-866m); see retiredResumeStep.
+	// preparation; see retiredResumeStep.
 	"remediate.resume": retiredResumeStep(),
 }
 

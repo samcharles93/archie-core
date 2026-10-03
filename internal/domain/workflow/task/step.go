@@ -6,10 +6,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// The step-execution vocabulary of docs/prds/execution-tree-state-machine.md:
-// one stage run, or one agent or workflow.call step an execution's tree
-// records, started and finished through the State Store under the run's own
-// credential.
+// Step records: one stage run, agent call or workflow.call, started and
+// finished through the State Store under the run's own credential.
 
 // Step kinds. `stage` is what workflow.Run records for every stage it runs;
 // `agent` is what the agent runtime records for one agent call; `call` is the
@@ -69,9 +67,7 @@ type StepFinish struct {
 }
 
 // StepExecution is one recorded step: ListSteps' read, the dashboard run
-// detail's authoritative source (docs/prds/execution-tree-state-machine.md;
-// replaces folding stage_start/stage_finish events, which tasks.stage used to
-// back). ParentID is 0 for a stage at the tree's root.
+// detail's authoritative source. ParentID is 0 for a stage at the tree's root.
 type StepExecution struct {
 	ID          int64
 	ExecutionID int64

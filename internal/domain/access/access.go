@@ -1,6 +1,6 @@
 // Package access owns the policy schema, the action vocabulary, how
 // principals and resources are turned into policy entities, and the
-// Authorizer contract (docs/prds/orgs-and-access.md).
+// Authorizer contract.
 //
 // The policy chain is
 //

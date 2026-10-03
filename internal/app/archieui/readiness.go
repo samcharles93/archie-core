@@ -14,7 +14,6 @@ import (
 // UI is ready when both of its mandatory remote contracts answer within the
 // dependency timeout; each probe consumes the dependency's own result over
 // the wire and never inspects its manager, registry or database
-// (docs/prds/ui-service-boundary.md:126-132).
 //
 // The component names match the daemon dashboard's, so the readiness view
 // reads the same whichever process serves it.

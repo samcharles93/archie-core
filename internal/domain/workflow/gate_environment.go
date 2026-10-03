@@ -20,7 +20,7 @@ import (
 //   - the combined output names host infrastructure the gate needs and does
 //     not have, such as a Docker daemon the test harness spawns containers on.
 //     These are the phrasings the tools themselves emit when their dependency
-//     is absent (archie-core-71mq), not an inference drawn from the exit
+//     is absent, not an inference drawn from the exit
 //     status.
 //
 // The second signal is deliberately a closed, literal set: a marker is added
@@ -80,7 +80,7 @@ func baselineEnvironmentError(argv []string, out, cause string) error {
 // baselineFixFailedError is the park reason for every failure after the
 // baseline repair agent was dispatched. A failure that names only the agent --
 // a provider 402, say -- and drops the gate output leaves the operator with no
-// way to see why the gate was red in the first place (archie-core-rwy6).
+// way to see why the gate was red in the first place.
 func baselineFixFailedError(argv []string, out, cause string) error {
 	return fmt.Errorf("baseline red  --  %s fails and the baseline-fix builder did not repair it: %s\n\ngate output:\n%s",
 		strings.Join(argv, " "), cause, clipTail(out, baselineParkOutputBytes))

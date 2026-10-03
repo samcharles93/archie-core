@@ -33,7 +33,7 @@ type LogPublisher interface {
 // decode() moves it into Fields itself. Handing decode() this payload
 // instead of json.Unmarshal would nest everything one level too deep, under
 // a literal "fields" key, and silently lose every real field name. A future
-// consumer of this subject (see GitHub issue #454) must unmarshal directly
+// consumer of this subject must unmarshal directly
 // into logging.Entry, not call decode() on these bytes.
 //
 // Publishing is fire-and-forget. A core NATS Publish call is already

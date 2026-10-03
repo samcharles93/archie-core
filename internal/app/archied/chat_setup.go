@@ -48,7 +48,7 @@ type chatSetup struct {
 	ChatTaskLogs        gateway.ChatTaskLogReader
 	ChatTaskActor       gateway.ChatTaskActor
 	DefaultChatIdentity string
-	// Bus carries primary-input events (archie-core-035): a completed
+	// Bus carries primary-input events: a completed
 	// chat turn is published here so input-driven curators can wake. Nil
 	// disables turn events (tests, minimal setups).
 	Bus *events.Bus
@@ -61,9 +61,8 @@ type chatSetup struct {
 	// engine, resolved by cfg.Memory.Engine). Nil disables the chat <memory>
 	// block for every turn runner built from this setup.
 	MemoryEngine gateway.MemoryStore
-	// MemoryWriter is the same active engine's write surface, used to build
-	// the per-turn memory_create/update/delete/list tools (docs/prds/
-	// memory-engine-unification.md §5). Nil omits those tools.
+	// MemoryWriter is the same active engine's write surface, used to build the
+	// per-turn memory_create/update/delete/list tools. Nil omits those tools.
 	MemoryWriter gateway.MemoryWriteStore
 	// ProviderOutcomes records the outcome of every chat-model call this
 	// process makes, which the /status health source reads back. Nil disables

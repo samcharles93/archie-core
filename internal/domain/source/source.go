@@ -1,5 +1,5 @@
-// Package source owns the capture source: the endpoint one sender posts to,
-// and its signing setting. See docs/prds/event-automation.md "Sources".
+// Package source owns the capture source: the endpoint one sender posts to, and
+// its signing setting.
 package source
 
 import (

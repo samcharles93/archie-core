@@ -19,13 +19,11 @@ import (
 //
 // The projection is an allowlist of the values this process needs --
 // [services.gateway].{target,target_token}, [services.state].{target,
-// target_token}, [web].{listen,trust_forwarded_headers} and [capture] (the
-// receiver this process mounts; archie-core-8cda.5.4). The UI reads the
-// same file the daemon does because operators already keep the service
-// endpoints there, but Options has no field for anything else in it: the
-// daemon's forge credentials, model catalog, workflow routing, NATS settings,
-// filesystem jail and agent/container settings have nowhere to land
-// (docs/prds/ui-service-boundary.md:87-89).
+// target_token}, [web].{listen,trust_forwarded_headers} and [capture]. The UI
+// reads the same file the daemon does because operators already keep the
+// service endpoints there, but Options has no field for anything else in it:
+// the daemon's forge credentials, model catalog, workflow routing, NATS
+// settings, filesystem jail and agent/container settings have nowhere to land
 func Resolve(o Options, log *slog.Logger) (Options, error) {
 	if o.Config != "" {
 		cfg, found, err := readProjection(o.Config, o.Overlay, log)
@@ -194,11 +192,9 @@ func resolveToken(o Options) (string, error) {
 	return webui.LoadOrCreateToken(o.TokenFile)
 }
 
-// validate holds the PRD's security posture (lines 116-118): a loopback
-// listener may omit the dashboard token, a non-loopback listener requires one
-// and fails closed without it. Unlike the daemon, which mints a token
-// silently, this process refuses to start -- an operator who exposed the
-// dashboard by accident learns about it here rather than from the log.
+// Unlike the daemon, which mints a token silently, this process refuses to
+// start -- an operator who exposed the dashboard by accident learns about it
+// here rather than from the log.
 func (o Options) validate() error {
 	if o.Gateway.Target == "" {
 		return fmt.Errorf("gateway target is required (-gateway-target or [services.gateway].target)")

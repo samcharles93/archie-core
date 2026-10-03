@@ -19,9 +19,6 @@ type CountShippedOrgPoliciesParams struct {
 	Column2 []string
 }
 
-// How many of an org's shipped role policies are stored. The seeding runs
-// only when the org carries none of them, so a restart never overwrites an
-// edited role policy (the shipped IDs are reserved for the shipped text).
 func (q *Queries) CountShippedOrgPolicies(ctx context.Context, arg CountShippedOrgPoliciesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countShippedOrgPolicies, arg.OrgID, arg.Column2)
 	var count int64
@@ -72,7 +69,6 @@ type DeleteAccessPolicyVersionParams struct {
 	WorkspaceID string
 }
 
-// Tidy a level-scope with no policies left: its version row has no reader.
 func (q *Queries) DeleteAccessPolicyVersion(ctx context.Context, arg DeleteAccessPolicyVersionParams) error {
 	_, err := q.db.Exec(ctx, deleteAccessPolicyVersion, arg.Level, arg.OrgID, arg.WorkspaceID)
 	return err
@@ -88,8 +84,6 @@ type DeleteOrgPoliciesNotShippedParams struct {
 	Column2 []string
 }
 
-// The org reset's removal half: every org-level policy except the shipped
-// role set.
 func (q *Queries) DeleteOrgPoliciesNotShipped(ctx context.Context, arg DeleteOrgPoliciesNotShippedParams) error {
 	_, err := q.db.Exec(ctx, deleteOrgPoliciesNotShipped, arg.OrgID, arg.Column2)
 	return err
@@ -139,8 +133,6 @@ type InsertAccessPolicyAuditParams struct {
 	RequestID     string
 }
 
-// One audit row per policy change: the policy's old and new text
-// (docs/prds/orgs-and-access.md, "Storing and changing policies").
 func (q *Queries) InsertAccessPolicyAudit(ctx context.Context, arg InsertAccessPolicyAuditParams) error {
 	_, err := q.db.Exec(ctx, insertAccessPolicyAudit,
 		arg.RecordKey,
@@ -159,9 +151,6 @@ INSERT INTO sys_audit (at, table_name, record_key, field, record_version, actor,
 VALUES (now(), 'access_policies', $1, 'reset', 1, 'archied access reset', 'archied', '')
 `
 
-// The one audit row a reset is recorded as; the reset's policy changes
-// carry their own rows (docs/prds/orgs-and-access.md, "Recovering from a
-// locked-out org").
 func (q *Queries) InsertAccessResetAudit(ctx context.Context, recordKey string) error {
 	_, err := q.db.Exec(ctx, insertAccessResetAudit, recordKey)
 	return err
@@ -173,9 +162,7 @@ SELECT level, org_id, workspace_id, object_kind, object_id, policy_id, text, upd
 FROM access_policies ORDER BY level, org_id, workspace_id, object_kind, object_id, policy_id
 `
 
-// Access policies and denial records (internal/domain/access): the durable
-// half of the policy-chain contract. Versioning is per level-scope; every
-// policy change writes one sys_audit row naming who made it.
+// Access policies and denial records (internal/domain/access)
 func (q *Queries) ListAccessPolicies(ctx context.Context) ([]AccessPolicy, error) {
 	rows, err := q.db.Query(ctx, listAccessPolicies)
 	if err != nil {
@@ -266,8 +253,6 @@ type RecordDenialParams struct {
 }
 
 // One row per (principal, action, resource, level, policies, minute);
-// a repeat inside the minute bumps the count (docs/prds/orgs-and-access.md,
-// "Audit retention").
 func (q *Queries) RecordDenial(ctx context.Context, arg RecordDenialParams) error {
 	_, err := q.db.Exec(ctx, recordDenial,
 		arg.OrgID,

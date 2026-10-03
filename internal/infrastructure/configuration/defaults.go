@@ -38,9 +38,7 @@ const (
 	// small enough that a large download cannot occupy the daemon.
 	defaultWebFetchMaxBytes = 2_000_000
 
-	// Capture defaults, per docs/prds/event-capture-storage.md's disk-bound
-	// mechanics: retention + row cap + per-request size cap + per-source
-	// rate limit, composed.
+	// Capture defaults.
 	defaultCaptureRetention     = 7 * 24 * time.Hour
 	defaultCaptureMaxEvents     = 5000
 	defaultCaptureMaxBodyBytes  = 256 * 1024
@@ -121,8 +119,8 @@ func applyMemoryDefaults(cfg *config.Config) {
 	}
 }
 
-// DefaultCapture returns the webhook capture endpoint's default settings
-// (docs/prds/event-capture-storage.md). applyCaptureDefaults fills a decoded
+// DefaultCapture returns the webhook capture endpoint's default settings.
+// applyCaptureDefaults fills a decoded
 // config with them; the UI process composes the same capture receiver and
 // must produce the same effective values when it is driven by flags alone
 // and no configuration file projected [capture] to it.

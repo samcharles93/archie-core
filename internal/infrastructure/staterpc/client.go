@@ -25,14 +25,14 @@ import (
 // Client is the single remote adapter wrapping one StateStoreServiceClient,
 // asserted against whichever narrow Go interfaces its caller needs -- exactly
 // as gatewayrpc.Client asserts both messaging.ChatContract and
-// messaging.SessionStore. See docs/prds/state-store-contract.md §2.
+// messaging.SessionStore.
 type Client struct {
 	client       pb.StateStoreServiceClient
 	controlPlane controlpb.ControlPlaneServiceClient
 }
 
 // NewClient wraps conn's generated client. Close is a no-op: the store
-// service owns its own DB lifecycle (§11).
+// service owns its own DB lifecycle.
 func NewClient(conn grpc.ClientConnInterface) *Client {
 	return &Client{client: pb.NewStateStoreServiceClient(conn), controlPlane: controlpb.NewControlPlaneServiceClient(conn)}
 }
@@ -115,7 +115,7 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 }
 
 // StartStep and FinishStep record the run's step executions
-// (docs/prds/execution-tree-state-machine.md) under the run credential, which
+// under the run credential, which
 // the State Store's grant interceptor scopes to the execution the requests
 // name. Each returns the transition's persisted event for the caller's
 // post-commit publish.
@@ -135,7 +135,7 @@ func (c *Client) StartStep(ctx context.Context, s task.StepStart) (int64, events
 	return r.StepId, event, nil
 }
 
-// CancelExecution is the one cancel path (docs/prds/execution-tree-state-machine.md):
+// CancelExecution is the one cancel path:
 // the State Store records the cancellation -- every non-terminal step of the
 // current attempt plus the execution's own move -- and returns the steps it
 // cancelled; the caller cancels the run's in-memory context afterwards.
@@ -641,11 +641,10 @@ func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, bod
 	return taskValue(r.Task), nil
 }
 
-// WorkflowCaller: the workflow.call step's two RPCs (docs/prds/
-// workflow-calls.md). StartCall encodes the call's inputs in the same form
-// every other wire crossing uses; CallStatus rehydrates the sentinels the
-// server maps, so a caller's errors.Is(err, storecontract.ErrCallNotYours)
-// works across the wire.
+// WorkflowCaller: the workflow.call step's two RPCs. StartCall encodes the
+// call's inputs in the same form every other wire crossing uses; CallStatus
+// rehydrates the sentinels the server maps, so a caller's errors.Is(err,
+// storecontract.ErrCallNotYours) works across the wire.
 
 func (c *Client) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*task.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)

@@ -2,7 +2,7 @@
 // contract: the generic resource client, the channel-settings document it
 // projects, and the wire sentinels both sides match on. It exists so a service
 // that only reads stored settings does not link the store-backed server, the
-// workflow engine or the SQLite driver (archie-core-1ng1).
+// workflow engine or the SQLite driver.
 package controlplanerpc
 
 import (

@@ -42,12 +42,12 @@ type hybridTrees struct {
 	localDir string
 	branch   string
 	// worktreeUID and worktreeGID are the daemon's own host UID/GID
-	// (WORKTREE_UID/WORKTREE_GID, set by containerEnv), or -1 when unset.
-	// The agent runs as root inside the container, so a commit it writes
-	// to the bind-mounted worktree lands owned by UID 0 on the host; Push
-	// reconciles ownership back to the daemon's UID before handing off,
-	// since the daemon -- running as its own non-root host user -- is the
-	// one that reads those objects to actually push (archie-core#520).
+	// (WORKTREE_UID/WORKTREE_GID, set by containerEnv), or -1 when unset. The
+	// agent runs as root inside the container, so a commit it writes to the
+	// bind-mounted worktree lands owned by UID 0 on the host; Push reconciles
+	// ownership back to the daemon's UID before handing off, since the daemon
+	// -- running as its own non-root host user -- is the one that reads those
+	// objects to actually push.
 	worktreeUID, worktreeGID int
 }
 
@@ -185,7 +185,7 @@ type taskDependencies struct {
 	// steps is the workflow step vocabulary pinned definitions are compiled
 	// against, registered at the composition root and injected: this is the
 	// executing half of the contract whose validating half is the control
-	// plane's (archie-core-fwmp).
+	// plane's.
 	steps *workflow.Manager
 	// guardrails is the guardrail engine agent stages record tool outcomes
 	// against. It is built by this process's composition root (the workflow
@@ -270,13 +270,12 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}
 	// The agent process runs as root inside the container, so everything this
 	// run writes into the bind-mounted worktree is owned by UID 0 on the host;
-	// CommitAll and Push hand it back on the success path (archie-core#520).
-	// Doing the same here covers every OTHER way a run can end -- a gate
-	// failure that parks the task, a stage error, an early return -- because
-	// the daemon is the one that later cleans and resets this directory, as its
-	// own non-root host user, and it cannot even unlink a root-owned directory.
-	// Without this, a parked attempt left a worktree the next attempt could not
-	// start from.
+	// CommitAll and Push hand it back on the success path. Doing the same here
+	// covers every OTHER way a run can end -- a gate failure that parks the
+	// task, a stage error, an early return -- because the daemon is the one
+	// that later cleans and resets this directory, as its own non-root host
+	// user, and it cannot even unlink a root-owned directory. Without this, a
+	// parked attempt left a worktree the next attempt could not start from.
 	defer restoreWorktreeOwnership(trees, workDir, log)()
 
 	// The MCP providers a task hosts share the same model runtime its agent
@@ -305,7 +304,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// processes connected only by NATS. Without this bridge, tc.Emit is a
 	// silent no-op for every stage/outcome/park event this run produces,
 	// which is why the dashboard timeline showed nothing for any task
-	// executed through the container/NATS path (archie-core-518). Nil
+	// executed through the container/NATS path. Nil
 	// dependencies.events (a caller with no NATS connection, e.g. tests
 	// that construct taskDependencies directly) leaves bus nil, and
 	// TaskContext.Emit is already nil-safe.
@@ -335,7 +334,6 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// prefetchPRReview, writing under workDir/.archie-pr-review -- the same
 	// host directory Docker bind-mounts at storage.WorktreeMountDir) -- never
 	// over the network, and never with a forge credential in this process.
-	// See docs/development/agent.md, "Giving the agent something new".
 	if req.Task.Workflow == "pr-review" {
 		tc.PRSource = prsource.NewFromMount(filepath.Join(workDir, prsource.PrefetchDirName))
 	}
@@ -362,9 +360,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 
 // CompilePinnedWorkflow resolves and compiles the immutable definition the task
 // request carries, against this process's step vocabulary. Production execution
-// and the workflow step-vocabulary contract test
-// (internal/app/controlplane/step_vocabulary_agreement_test.go) both enter
-// through it.
+// and the workflow step-vocabulary contract test both enter through it.
 //
 // A request that carries no definition is routed and pinned from the shipped
 // definitions, which writes the resolved workflow name, YAML, and digest back

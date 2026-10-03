@@ -16,7 +16,7 @@ import (
 //
 // The daemon embeds one of these for single-process deployments so reaction
 // delivery and task distribution share the same transport whether NATS runs
-// as a separate server or in-process (docs/prds/embedded-nats.md). The daemon
+// as a separate server or in-process. The daemon
 // owns the lifecycle: StartEmbedded before dialing the client, Shutdown after
 // the client closes.
 type EmbeddedServer struct {

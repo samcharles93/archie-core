@@ -23,8 +23,8 @@ type ChatFrontEnd struct {
 // two answers drifted: the daemon's channel status manager counted the inbound
 // mail gateway, and the dashboard projection published for the extracted UI
 // process did not, so an email-only deployment read as configured on
-// /api/channels and unconfigured on the setup checklist at the same time
-// (GitHub #821). Front-ends are enumerated once here so a front-end added to
+// /api/channels and unconfigured on the setup checklist at the same time.
+// Front-ends are enumerated once here so a front-end added to
 // [chat] cannot be counted by one surface and missed by the other.
 //
 // A whitespace-only value is not configured on any front-end: an env var name

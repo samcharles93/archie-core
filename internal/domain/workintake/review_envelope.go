@@ -40,7 +40,7 @@ type ReviewCommentEnvelope struct {
 
 	// Org is the org the reaction's repo belongs to, resolved by the producer
 	// before publishing; empty means the default org of a single-operator
-	// install (docs/prds/orgs-and-access.md, "Events and task identity").
+	// install.
 	Org org.OrgID `json:"org,omitempty"`
 }
 
@@ -95,8 +95,8 @@ func (e ReviewCommentEnvelope) Ref() string {
 }
 
 // IdempotencyKey identifies one forge review record independently of delivery
-// source. The key follows the task key's org/identity rule
-// (docs/prds/orgs-and-access.md, "Events and task identity"), scoped to one
+// source. The key follows the task key's org/identity rule,
+// scoped to one
 // review record.
 func (e ReviewCommentEnvelope) IdempotencyKey() string {
 	id := e.ReviewID

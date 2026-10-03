@@ -2,7 +2,6 @@
 // real defects are known: each problem's golden comments. A reviewer produces
 // findings, the deterministic core turns them into the comments a review would
 // post, and an independent judge decides which golden each comment catches.
-// See docs/prds/pr-review-agent.md, Verification.
 package bench
 
 import (

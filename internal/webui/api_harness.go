@@ -48,16 +48,14 @@ type harnessProfileDoc struct {
 
 // HarnessTerminal opens an ephemeral setup session for one Kit profile: a
 // duplex byte stream to the container's PTY, on the same egress path a Kit
-// task runs on (docs/prds/external-agent-harness.md, "Setup terminal").
+// task runs on.
 //
-// It is a seam, not an implementation. The container, the sandbox network
-// and the egress session belong to the daemon, and the dashboard process is
-// forbidden from linking them (cmd/archie-ui/architecture_test.go bans
-// internal/container, internal/app/archied and internal/agentexec). A
-// composition wires whichever transport carries the session; nil answers the
-// route 503 rather than pretending a terminal exists. The interface's
-// method types are stdlib only, so a future transport that implements it
-// cannot drag a banned package into the UI binary.
+// It is a seam, not an implementation. The container, the sandbox network and
+// the egress session belong to the daemon, and the dashboard process is
+// forbidden from linking them. A composition wires whichever transport carries
+// the session; nil answers the route 503 rather than pretending a terminal
+// exists. The interface's method types are stdlib only, so a future transport
+// that implements it cannot drag a banned package into the UI binary.
 type HarnessTerminal interface {
 	Open(ctx context.Context, orgID, profile string) (io.ReadWriteCloser, error)
 }

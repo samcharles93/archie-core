@@ -12,7 +12,7 @@ import (
 )
 
 // Run executes every action playbook whose trigger matches input, in load
-// order (docs/prds/action-playbook-run.md). Each action goes through
+// order. Each action goes through
 // InvokeOnce, so it fires at most once per (playbook, version, event,
 // action). A failure stops only its own playbook; the rest still run, and
 // the failures are returned joined, each naming its playbook and action.

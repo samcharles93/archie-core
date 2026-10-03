@@ -135,7 +135,7 @@ type TaskController interface {
 	// exist, isn't owned by identity, or isn't in waiting_human.
 	Approve(ctx context.Context, taskID int64, identity string) error
 	// Cancel moves an active task to a terminal state through the one
-	// cancel path (docs/prds/execution-tree-state-machine.md): the store
+	// cancel path: the store
 	// records the cancellation first, and the runtime delivers it by
 	// cancelling the run's in-memory context where this process owns one.
 	// Returns an error if the task doesn't exist, isn't owned by identity,
@@ -287,7 +287,7 @@ func (r *Router) checkRateLimit(in Inbound) (blocked bool) {
 // per-person SenderID. The two are deliberately distinct -- SenderID means
 // "who sent this", and a channel whose SenderID is not a person (a webhook
 // route path) must not put it there, because several consumers read that
-// field as a user identity (docs/prds/memory-engine-unification.md §3).
+// field as a user identity.
 func inboundBudgetKey(in Inbound) string {
 	if in.BudgetKey != "" {
 		return in.BudgetKey
@@ -307,7 +307,7 @@ func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
 // ignore the flag and treat the reply text as usual; a caller with no human
 // there (a webhook) needs it to answer with a proper rejection instead of
 // echoing the rate-limit prose as a successful delivery, or accepting an
-// event that was actually dropped (archie-core-1173).
+// event that was actually dropped.
 func (r *Router) RouteResult(ctx context.Context, in Inbound) (reply string, rateLimited bool, err error) {
 	if r.duplicateDelivery(in) {
 		return dedupReply, false, nil

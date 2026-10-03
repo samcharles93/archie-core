@@ -1,7 +1,6 @@
 // Orgs, workspaces, memberships and agent assignments: the Postgres
 // implementation of internal/domain/org's contracts, plus the resumable
 // default org/workspace upgrade the State Store runs at boot
-// (docs/prds/orgs-and-access.md, "Upgrading existing installs").
 //
 // The upgrade refuses nothing itself; the refusal to serve scoped calls
 // until it has finished is enforced by the boot order -- the State Store

@@ -16,13 +16,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// The step-execution writes of docs/prds/execution-tree-state-machine.md.
-// Each is one transaction: the guarded row write, and the domain event row
-// the step transition produces, so the events table records exactly the
-// transitions the step row does. The events land in the table; the caller
-// publishes the returned event to its bus after the write commits, and the
-// daemon's event sink skips already-persisted rows by their assigned ID --
-// the EmitDurable convention.
+// The events land in the table; the caller publishes the returned event to its
+// bus after the write commits, and the daemon's event sink skips
+// already-persisted rows by their assigned ID -- the EmitDurable convention.
 
 // StartStep records a StepExecution entering running: the row is created
 // pending, guarded into running under the shared step transition table, and
@@ -251,7 +247,7 @@ func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map
 
 // ListSteps reads one execution's recorded steps, every attempt oldest first
 // when attempt is 0, or just the one it names. It is the dashboard run
-// detail's authoritative source (docs/prds/execution-tree-state-machine.md),
+// detail's authoritative source,
 // replacing the fold over stage_start/stage_finish events tasks.stage used to
 // back -- unlike StartStep/FinishStep, this is a plain read with no
 // transition to guard, so it takes no transaction.
@@ -291,14 +287,14 @@ func stepParentID(parentID int64) pgtype.Int8 {
 	return pgtype.Int8{Int64: parentID, Valid: parentID != 0}
 }
 
-// CancelExecution is the one cancel path (docs/prds/execution-tree-state-machine.md,
-// "Cancellation"): one transaction moves every non-terminal StepExecution of
-// the execution's current attempt to cancelled -- one event row each -- and
-// the execution itself to the status the operator action names, under the
-// shared execution transition table. Staleness is decided before legality, as
-// guardTransition decides it, and the audit row lands in the same write. The
-// caller cancels the in-memory context after this commits; the worker's next
-// step write then fails ErrStaleTransition and stops.
+// CancelExecution is the one cancel path: one transaction moves every
+// non-terminal StepExecution of the execution's current attempt to cancelled --
+// one event row each -- and the execution itself to the status the operator
+// action names, under the shared execution transition table. Staleness is
+// decided before legality, as guardTransition decides it, and the audit row
+// lands in the same write. The caller cancels the in-memory context after this
+// commits; the worker's next step write then fails ErrStaleTransition and
+// stops.
 func (s *Store) CancelExecution(ctx context.Context, taskID int64, reason, to string) ([]int64, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

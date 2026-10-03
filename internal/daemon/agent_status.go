@@ -2,12 +2,11 @@ package daemon
 
 import "sync"
 
-// AgentStatus tracks the most recent version and install type an
-// archie-agent worker reported about itself. It is observed passively, off
-// ordinary taskrun.Response traffic in runViaAgent -- there is no dedicated
-// poll, since every archie-agent process is task-scoped and ephemeral (see
-// docs/architecture and internal/app/agentworker), not a long-lived process
-// the daemon could query on demand the way it can Telegram's gateway.
+// AgentStatus tracks the most recent version and install type an archie-agent
+// worker reported about itself. It is observed passively, off ordinary
+// taskrun.Response traffic in runViaAgent -- there is no dedicated poll, since
+// every archie-agent process is task-scoped and ephemeral, not a long-lived
+// process the daemon could query on demand the way it can Telegram's gateway.
 //
 // Before the first task completes, nothing is known: Snapshot's ok return
 // reports that honestly rather than a caller guessing a value.

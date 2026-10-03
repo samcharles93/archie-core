@@ -12,7 +12,7 @@ import (
 // The readings an operator acts on. A process is current when it is running
 // what it last reported, failed when it rejected what the store holds, and
 // unknown when it has stopped re-stamping: a record that outlived its process
-// must never read as current (docs/prds/control-plane-apply-status.md).
+// must never read as current.
 const (
 	applyStateCurrent = "current"
 	applyStateFailed  = "failed"

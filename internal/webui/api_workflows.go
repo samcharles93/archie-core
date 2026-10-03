@@ -54,7 +54,6 @@ type workRequest struct {
 	// pr_number, for instance. The handler checks the assignment against the
 	// declaration before the task is admitted, so a request that could only
 	// fail at the workflow's first stage is refused here instead
-	// (archie-core-06nq).
 	Inputs map[string]any `json:"inputs"`
 }
 

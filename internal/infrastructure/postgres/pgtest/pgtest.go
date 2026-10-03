@@ -1,8 +1,6 @@
 // Package pgtest runs a throwaway PostgreSQL 18 container for one test binary
 // and gives each test its own database on it.
 //
-// A package using it calls Main from TestMain:
-//
 //	func TestMain(m *testing.M) { os.Exit(pgtest.Main(m)) }
 //
 // It needs a running Docker daemon.

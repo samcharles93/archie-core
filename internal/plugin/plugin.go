@@ -1,7 +1,7 @@
 // Package plugin defines the core plugin interface for extending archie-core's
-// daemon at startup. Plugins are Yaegi-interpreted .go files loaded from
+// daemon at startup. Plugins are Yaegi-interpreted.go files loaded from
 // ~/.config/archie/plugins/ that register themselves with the daemon's
-// extension registry. PRD section 5 Layer 2.
+// extension registry.
 package plugin
 
 import (
@@ -31,7 +31,7 @@ type Plugin interface {
 // LoadDir discovers and evaluates .go files in the given directory.
 // Each file must export a variable named "Plugin" that implements the
 // Plugin interface. Failed plugins are logged and skipped  --  the daemon
-// starts with the remaining plugins (PRD section 5).
+// starts with the remaining plugins.
 //
 // extraSymbols are additional Yaegi symbol tables made available to
 // interpreted code. Callers should pass pluginextract.Symbols so that

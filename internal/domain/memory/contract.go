@@ -1,7 +1,5 @@
 // Package memory is the memory engine family: the authoritative store for
-// durable observations, addressed by typed scope. See
-// docs/prds/memory-engine-unification.md for the decision this contract
-// implements.
+// durable observations, addressed by typed scope.
 //
 // One engine, four scopes. A caller names the scopes it may read or write
 // (Scope, Subject) and the engine applies no policy of its own: an engine
@@ -16,10 +14,8 @@
 // start/health/stop and shutdown ordering, and narrow typed host access
 // (Registrar) — an engine never receives the daemon or an untyped hook map.
 //
-// This package owns the contract and the family's policy that is independent
-// of any backend (the content scanner). internal/memory's MemoryProvider and
-// Manager predate the domain migration and are the legacy runtime path,
-// deleted in slice 5 of the same PRD; nothing here depends on them.
+// This package owns the contract and the family's policy that is independent of
+// any backend (the content scanner).
 package memory
 
 import (
@@ -68,7 +64,6 @@ type Lifecycle interface {
 }
 
 // ScopeKind names one of the four durable memory scopes
-// (docs/architecture/agent-system.md, "Memory scopes").
 type ScopeKind string
 
 const (
@@ -293,9 +288,6 @@ type NewRecord struct {
 // Validate checks what every engine needs before writing: an addressable
 // scope and content. Kind's format belongs to the backend (the builtin
 // engine maps it to a section name), so it is validated there.
-//
-// Implementations must also scan Content before persisting it — see
-// ScanContent and docs/prds/memory-engine-unification.md §7.
 func (n NewRecord) Validate() error {
 	if err := n.Scope.Validate(); err != nil {
 		return err

@@ -20,8 +20,8 @@ func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error
 	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, Branch: t.Branch, RetryMode: t.RetryMode, ForgeBacked: t.IsForgeBacked(), ReviewGate: t.ReviewGate, RereviewRounds: t.RereviewRounds}, nil
 }
 
-// CancelExecution delegates to the store's one cancel path
-// (docs/prds/execution-tree-state-machine.md). Both adapters -- the
+// CancelExecution delegates to the store's one cancel path.
+// Both adapters -- the
 // PostgreSQL store and the remote gRPC client -- implement it; the type
 // assertion failing would be a composition bug, so it is named rather than
 // panicked over.

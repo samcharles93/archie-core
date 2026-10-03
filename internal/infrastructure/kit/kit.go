@@ -152,7 +152,7 @@ func FromMerge(merged *spec.MergeResult) (*Plan, error) {
 }
 
 // ValidateNeeds rejects a Plan that cannot meet what the workflow's stages
-// declared they need (docs/prds/external-agent-harness.md, "Contract"): a
+// declared they need: a
 // gate that may retry needs the Kit's agent-sessions resume verb, because
 // archie resumes the session with the gate's output rather than starting
 // over. gateRetries is zero for a workflow with no gated stage, which no

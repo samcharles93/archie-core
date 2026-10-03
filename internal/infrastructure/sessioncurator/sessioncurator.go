@@ -33,9 +33,9 @@ const ActionSkipped = "memory.skipped"
 const DefaultInterval = time.Hour
 
 const (
-	// messageTailSize bounds how much of a session's history one pass
-	// reads, deliberately generous against the model's context rather
-	// than tuned tightly. See docs/prds/session-memory-curator.md.
+	// messageTailSize bounds how much of a session's history one pass reads,
+	// deliberately generous against the model's context rather than tuned
+	// tightly.
 	messageTailSize = 40
 	// maxObservationsPerSession caps how many facts one pass writes for
 	// one session -- a prompt-precision problem to fix, not a limit to
@@ -46,10 +46,7 @@ const (
 	defaultLookback = 24 * time.Hour
 )
 
-// Curator implements domain/curator.CuratorEngine. See
-// docs/prds/session-memory-curator.md for what a pass does and why:
-// session-scoped extraction only, written through the bound memory
-// engine, no cross-session consolidation, no forgetting.
+// Curator implements domain/curator.CuratorEngine.
 type Curator struct {
 	interval   time.Duration
 	engineName string
@@ -94,10 +91,9 @@ func (c *Curator) Check(ctx context.Context) (bool, error) {
 	return len(sessions) > 0, nil
 }
 
-// Pass extracts durable observations from every session active since the
-// last pass (or defaultLookback on the first pass) and writes them
-// through the bound memory engine. See docs/prds/session-memory-curator.md
-// for the exact extraction and classification rules.
+// Pass extracts durable observations from every session active since the last
+// pass (or defaultLookback on the first pass) and writes them through the bound
+// memory engine.
 func (c *Curator) Pass(ctx context.Context, in curator.PassInput) (curator.PassResult, error) {
 	engine, ok := c.host.MemoryEngines.Get(c.engineName)
 	if !ok {

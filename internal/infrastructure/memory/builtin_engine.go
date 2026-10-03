@@ -1,8 +1,7 @@
-// Package memory implements domain/memory.MemoryEngine over concrete
-// backends. The builtin engine persists each scope's records as markdown
-// under its root -- human-readable and hand-editable -- with a per-scope
-// HISTORY.md retaining the states that are no longer live. See
-// docs/prds/memory-engine-unification.md for the decision this implements.
+// Package memory implements domain/memory.MemoryEngine over concrete backends.
+// The builtin engine persists each scope's records as markdown under its root
+// -- human-readable and hand-editable -- with a per-scope HISTORY.md retaining
+// the states that are no longer live.
 package memory
 
 import (
@@ -45,7 +44,6 @@ const defaultQueryLimit = 100
 // contentScanner is the family's content scanner, applied in Create and
 // Update. Those two are the one choke point every producer crosses, so the
 // curator's model-extracted content is covered as well as the chat tool's
-// (docs/prds/memory-engine-unification.md §7).
 var contentScanner domainmemory.Scanner = &domainmemory.DefaultScanner{}
 
 // scopeStores is one scope's on-disk pair: the heads, and the states that
@@ -403,13 +401,13 @@ func (e *BuiltinEngine) Update(_ context.Context, in domainmemory.RecordUpdate) 
 	}
 
 	// Read the document as it is on disk before anything is decided from it.
-	// This engine caches the scope's document and rewrites it whole (the PRD
-	// leaves "two processes, one scope file" undecided), so the copy it holds
-	// can be a whole write out of date -- the Expected check below would
-	// compare against a revision that is already superseded, and the rewrite
-	// that follows it would write the stale copy back over the current one.
-	// What this does not fix: the rewrite is still last-writer-wins for this
-	// record and every other one, between the reload and the write.
+	// This engine caches the scope's document and rewrites it whole, so the
+	// copy it holds can be a whole write out of date -- the Expected check
+	// below would compare against a revision that is already superseded, and
+	// the rewrite that follows it would write the stale copy back over the
+	// current one. What this does not fix: the rewrite is still
+	// last-writer-wins for this record and every other one, between the reload
+	// and the write.
 	if err := stores.live.Reload(); err != nil {
 		return domainmemory.Record{}, err
 	}
@@ -436,7 +434,6 @@ func (e *BuiltinEngine) Update(_ context.Context, in domainmemory.RecordUpdate) 
 	// Crash safety, in this order: the superseded state is durable in
 	// HISTORY.md before the live block is touched. A crash between the two
 	// leaves an extra history entry and an unchanged record -- recoverable,
-	// per §2 -- and never a record whose previous state is gone.
 	if err := appendHistory(stores.history, current.marker, current.content(), now, false); err != nil {
 		return domainmemory.Record{}, err
 	}

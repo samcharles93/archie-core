@@ -1,6 +1,5 @@
 // The `archied access reset` command: the locked-out-org and broken-instance
-// recovery surface (docs/prds/orgs-and-access.md, "Recovering from a
-// locked-out org"). It restores the shipped role policies for one org and
+// recovery surface. It restores the shipped role policies for one org and
 // removes its other org-level policies, or removes the stored instance
 // policies; the cross-org forbid is engine-enforced and survives any reset.
 //

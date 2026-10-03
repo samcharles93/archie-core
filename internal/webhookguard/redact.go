@@ -36,14 +36,12 @@ var jwtTokenRe = regexp.MustCompile(`^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z
 // inbound webhook body before persisting it.
 //
 // This intentionally does NOT reuse internal/gateway/stream.go's
-// SummarizeToolParameters shape unchanged: that function replaces every
-// string value regardless of key, which produces a bounded one-line summary
-// for a chat transcript. A captured webhook payload exists to be inspected
-// and mapped field-by-field (see docs/prds/event-sources-and-reactions.md
-// and t2db.3's schema-by-example mapping) -- redacting every string would
-// make that impossible. Only a value whose key matches the marker list, or
-// whose value is an unambiguous secret shape, is touched; everything else is
-// returned exactly as decoded.
+// SummarizeToolParameters shape unchanged: that function replaces every string
+// value regardless of key, which produces a bounded one-line summary for a chat
+// transcript. A captured webhook payload exists to be inspected and mapped
+// field-by-field -- redacting every string would make that impossible. Only a
+// value whose key matches the marker list, or whose value is an unambiguous
+// secret shape, is touched; everything else is returned exactly as decoded.
 //
 // A key match redacts its entire value, including a nested object or array
 // -- "credentials": {"host": ..., "user": ...} is wholesale replaced, not

@@ -46,11 +46,10 @@ type AgentStage struct {
 	// OnResult consumes a successful (passed) result. Parked and idle
 	// results park the workflow before OnResult is called.
 	OnResult func(*TaskContext, agentexec.Result) error
-	// ReviewResult gates agent output before OnResult forwards it to
-	// human channels. The daemon calls this hook to review stage output
-	// (issue comments, PR bodies) before human delivery. Return an
-	// error to block the stage. Nil means pass-through  --  no review.
-	// PRD §1: daemon reviews agent responses before forwarding.
+	// ReviewResult gates agent output before OnResult forwards it to human
+	// channels. The daemon calls this hook to review stage output (issue
+	// comments, PR bodies) before human delivery. Return an error to block the
+	// stage. Nil means pass-through -- no review.
 	ReviewResult func(*TaskContext, agentexec.Result) error
 }
 
@@ -315,7 +314,7 @@ func missionWithSkill(tc *TaskContext, mission string) string {
 }
 
 // loadSkillBody loads the SKILL.md body and plugins for the current
-// workflow from the worktree's .agents/skills/ directory. Skills declare
+// workflow. Skills declare
 // their workflow in metadata.archie.workflow  --  no hardcoded mapping.
 // When metadata.archie.plugins is non-empty, only the listed plugin files
 // are loaded in declared order; otherwise all *.go files are globbed.

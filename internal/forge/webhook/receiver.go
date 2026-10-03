@@ -7,20 +7,19 @@
 // processing; this one decodes a GitHub payload into the same TaskEnvelope
 // the poller produces and hands it to the same publish path, so a labelled or
 // assigned issue becomes work the moment it happens rather than up to
-// poll_interval later (see docs/prds/event-sources-and-reactions.md).
+// poll_interval later.
 //
 // GitHub's webhook must be configured with "Content type: application/json"
 // (the UI default). The alternate application/x-www-form-urlencoded delivery
 // is not decoded here and is rejected as a bad payload.
 //
-// Idempotency is not this package's job: it decodes into the same
-// TaskEnvelope and calls the same publish path the poller uses, so
-// PublishUnique's dedup (keyed on TaskEnvelope.IdempotencyKey) covers both
-// sources for free -- see archie-core-7d5u.5. What this package does own is
-// making a wedged or non-delivering receiver observable: a GET to the
-// listen address (GitHub only ever POSTs) returns Status, tracking
-// authenticated deliveries and successful publishes separately so an
-// operator can tell "receiver is up but nothing is arriving" apart from
+// Idempotency is not this package's job: it decodes into the same TaskEnvelope
+// and calls the same publish path the poller uses, so PublishUnique's dedup
+// (keyed on TaskEnvelope.IdempotencyKey) covers both sources for free. What
+// this package does own is making a wedged or non-delivering receiver
+// observable: a GET to the listen address (GitHub only ever POSTs) returns
+// Status, tracking authenticated deliveries and successful publishes separately
+// so an operator can tell "receiver is up but nothing is arriving" apart from
 // "repo has no issue activity."
 //
 // The GET/Status route is deliberately unauthenticated, on the same
@@ -121,7 +120,7 @@ func New(secret, trigger, label, botUser string, publish PublishFunc, reactionPu
 
 // Status reports the receiver's delivery activity so an operator can tell a
 // wedged or non-delivering receiver apart from a repo with no issue
-// activity (archie-core-7d5u.5): Deliveries counts every authenticated,
+// activity: Deliveries counts every authenticated,
 // parseable webhook -- proof GitHub reached this process at all -- while
 // Publishes counts only what the dispatch predicate turned into work.
 // LastReceivedAt is nil until the first authenticated delivery arrives.

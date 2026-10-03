@@ -11,7 +11,6 @@ import (
 // historyFileName is the second document in each scope's directory: every
 // state the scope's records no longer live in -- superseded by an Update, or
 // removed by a Forget -- so a record's provenance outlives its content
-// (docs/prds/memory-engine-unification.md §2).
 const historyFileName = "HISTORY.md"
 
 // historySectionName is the single section every retained state is appended
@@ -23,14 +22,10 @@ const historySectionName = "history"
 // the live document's bound (builtin's 100KB default, which is what
 // production passes: bootstrap builds the engine with a 0 maxFileBytes).
 //
-// It has its own bound because history grows on every Update and every
-// Forget while the live document does not. Inheriting the live document's
-// bound would make a scope start refusing updates after a handful of
-// revisions of one large record -- trading the PRD's open "unbounded
-// history" question ("Not determined", no compaction policy) for a new
-// failure mode at the point of write. That question stays open; this bound
-// only makes reaching it a deliberate, enormous amount of history rather
-// than an accident.
+// It has its own bound because history grows on every Update and every Forget
+// while the live document does not. That question stays open; this bound only
+// makes reaching it a deliberate, enormous amount of history rather than an
+// accident.
 const historyMaxFileBytes = 4 * 1024 * 1024
 
 // appendHistory appends one retained state -- the record as it was while
@@ -54,7 +49,7 @@ func appendHistory(h *builtin.Store, m markerData, content string, at time.Time,
 // oldest first. Document order is append order, and a retained state is
 // appended exactly when it stops being live, so no sort is needed -- or
 // wanted: a crash between a history append and the live write leaves two
-// entries for one revision (§2, recoverable), and sorting would not make
+// entries for one revision, and sorting would not make
 // that less true.
 func revisionsOf(h *builtin.Store, scope domainmemory.Scope, id domainmemory.RecordID) []domainmemory.Revision {
 	var revisions []domainmemory.Revision

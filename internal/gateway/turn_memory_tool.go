@@ -9,12 +9,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
-// MemoryWriteStore is the write surface the per-turn memory tool needs:
-// Create/Update/Forget/List, the four operations docs/prds/
-// memory-engine-unification.md §5 maps the tool's create/update/delete/list
-// actions onto. Narrowed from domainmemory.Store (which also carries Get,
-// Query and Revisions) so this package's write path cannot accidentally
-// reach for read operations the tool does not expose.
+// MemoryWriteStore is the write surface the per-turn memory tool needs, narrowed
+// from domainmemory.Store so the tool cannot reach operations it does not
+// expose.
 type MemoryWriteStore interface {
 	Create(ctx context.Context, in domainmemory.NewRecord) (domainmemory.Record, error)
 	Update(ctx context.Context, in domainmemory.RecordUpdate) (domainmemory.Record, error)
@@ -50,7 +47,6 @@ func recordSummary(r domainmemory.Record) MemoryRecordSummary {
 
 // MemoryTools builds the chat tools that let the model manage its own
 // durable memory, scoped to one turn's resolved Subject
-// (docs/prds/memory-engine-unification.md §5).
 //
 // Built per turn, not registered once at boot, because the writable scope
 // set is a function of the turn's Subject: two different users talking to

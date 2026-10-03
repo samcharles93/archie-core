@@ -81,8 +81,6 @@ type InsertResourceAuditParams struct {
 	Value           []byte
 }
 
-// Records the fields one resource write changed, against the version it
-// replaced. Runs in the write's own transaction.
 func (q *Queries) InsertResourceAudit(ctx context.Context, arg InsertResourceAuditParams) error {
 	_, err := q.db.Exec(ctx, insertResourceAudit,
 		arg.At,

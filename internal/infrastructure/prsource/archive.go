@@ -12,14 +12,13 @@ import (
 	"strings"
 )
 
-// extractTarGz extracts a gzipped tar stream into destDir, stripping a
-// single common leading path component when every entry shares one (the
-// wrapper directory GitHub's and Gitea's repository archives both add,
-// named after the repo and ref -- e.g. "acme-widget-deadbeef/"). A .git
-// entry is never written: PRSource's isolation contract (docs/prds/
-// pr-review-agent.md) requires the pipeline to read a .git-free snapshot,
-// and a malicious PR's own tarball is exactly the input this cannot trust,
-// so an entry escaping destDir via ".." or an absolute path is refused
+// extractTarGz extracts a gzipped tar stream into destDir, stripping a single
+// common leading path component when every entry shares one (the wrapper
+// directory GitHub's and Gitea's repository archives both add, named after the
+// repo and ref -- e.g. "acme-widget-deadbeef/"). A.git entry is never written:
+// PRSource's isolation contract requires the pipeline to read a.git-free
+// snapshot, and a malicious PR's own tarball is exactly the input this cannot
+// trust, so an entry escaping destDir via ".." or an absolute path is refused
 // rather than silently written outside it.
 func extractTarGz(r io.Reader, destDir string) error {
 	gz, err := gzip.NewReader(r)

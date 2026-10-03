@@ -187,7 +187,7 @@ func (s *Server) handleMappingDelete(w http.ResponseWriter, r *http.Request) {
 
 // mappingPreviewRequest lets an operator resolve a candidate set of fields
 // against a real captured event before saving anything -- Fields is loose
-// input, not a saved mapping ID, per docs/prds/payload-field-mapping.md.
+// input, not a saved mapping ID
 type mappingPreviewRequest struct {
 	CaptureID string          `json:"capture_id"`
 	Fields    []mapping.Field `json:"fields"`
@@ -225,10 +225,8 @@ func (s *Server) handleMappingPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // captureByID finds one captured event by ID. CaptureStore exposes only
-// ListCaptures (see docs/prds/event-capture-storage.md -- capture has
-// exactly one reader, the dashboard list view, so a by-ID lookup was never
-// needed until preview), so this scans the newest window rather than
-// adding a new store method for a single low-volume caller.
+// ListCaptures, so this scans the newest window rather than adding a new store
+// method for a single low-volume caller.
 func (s *Server) captureByID(ctx context.Context, id string) (*storecontract.CapturedEvent, error) {
 	captures, err := s.Captures.ListCaptures(ctx, mappingCaptureScanWindow(s.CaptureMaxEvents))
 	if err != nil {

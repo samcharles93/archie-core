@@ -116,8 +116,8 @@ func StagePrepareWorktree() Stage {
 
 // StagePrepareWorktreeOnBranch binds the task's worktree on the branch its
 // already-open pull request lives on -- the resume target -- for a workflow
-// that continues pushed work rather than starting fresh
-// (docs/prds/pr-review-remediation.md decision 4). The branch is the task's
+// that continues pushed work rather than starting fresh.
+// The branch is the task's
 // persisted branch, never recomputed from the title: the PR was opened from
 // that branch, and a retitled issue would otherwise name one that does not
 // exist. It resolves the same directory the daemon's mode-aware prepare

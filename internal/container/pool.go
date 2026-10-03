@@ -37,7 +37,7 @@ type Container struct {
 func (c *Container) Exited() <-chan struct{} { return c.exited }
 
 // TaskPayload is the boot-time brief written to /data/worktree/.git/task.json
-// before the container starts, per PRD section 3.
+// before the container starts.
 type TaskPayload struct {
 	ID       int64    `json:"id"`
 	Owner    string   `json:"owner"`
@@ -138,11 +138,11 @@ type Config struct {
 	Image          string
 	MaxConcurrency int
 	// MaxUptime is the total container lifetime cap from creation. When
-	// exceeded, the container is killed regardless of task state. PRD §4.
+	// exceeded, the container is killed regardless of task state.
 	MaxUptime time.Duration
-	// GracePeriod is the idle time after task completion before the
-	// container is killed. The agent stays alive to handle follow-ups
-	// (gate re-runs, human replies) during this window. PRD §1.
+	// GracePeriod is the idle time after task completion before the container
+	// is killed. The agent stays alive to handle follow-ups (gate re-runs,
+	// human replies) during this window.
 	GracePeriod time.Duration
 	PullPolicy  string
 	// RegistryAuth is the resolved value of [containers].registry_auth: either
@@ -516,10 +516,10 @@ func releaseDecision(ctx context.Context, grace time.Duration) (honorGrace bool,
 	return grace > 0, nil
 }
 
-// Release stops and removes a container after a task completes. If
-// GracePeriod is configured, the container stays alive for that duration
-// before being killed  --  the agent can handle follow-ups (gate re-runs,
-// human replies) during this window. PRD section 1.
+// Release stops and removes a container after a task completes. If GracePeriod
+// is configured, the container stays alive for that duration before being
+// killed -- the agent can handle follow-ups (gate re-runs, human replies)
+// during this window.
 func (p *Pool) Release(ctx context.Context, c *Container) {
 	if c == nil {
 		return

@@ -8,13 +8,12 @@ import (
 )
 
 // tokenMetadataKey is the gRPC metadata key the bearer token travels in.
-// Metadata, never a URL, per docs/prds/state-store-contract.md §9's token
-// lifecycle note.
+// Metadata, never a URL.
 const tokenMetadataKey = "state-store-token"
 
 // UnaryClientTokenInterceptor attaches token to every outgoing call's
 // metadata under tokenMetadataKey. One token covers a task's container
-// lifetime (§9's per-incumbence lifecycle) so it does not need to be
+// lifetime so it does not need to be
 // refreshed mid-connection. Used by the agent's long-lived client
 // connection to the State Store's bridge-address listener.
 func UnaryClientTokenInterceptor(token string) grpc.UnaryClientInterceptor {

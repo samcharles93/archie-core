@@ -9,7 +9,6 @@
 // Callers receive [Message], not jetstream.Msg, and publish [TaskEnvelope] or
 // [Request], not *nats.Msg. That keeps the broker replaceable and stops SDK
 // types leaking into domain packages, per
-// docs/architecture/dependencies-and-contracts.md.
 //
 // Layout:
 //

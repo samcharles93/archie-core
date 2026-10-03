@@ -50,8 +50,8 @@ import (
 // It lives inside .git deliberately. The previous implementation kept it
 // in the working tree and hid it via .git/info/exclude, which worked
 // because `git add -A` honours that file -- go-git's Add does NOT, so the
-// sentinel was committed and pushed onto every task branch. Nothing under
-// .git can ever be tracked, so placing it here removes the failure mode
+// sentinel was committed and pushed onto every task branch. Nothing under.
+// git can ever be tracked, so placing it here removes the failure mode
 // rather than papering over it.
 const preparedSentinel = ".git/archie-prepared"
 
@@ -864,12 +864,11 @@ func fileChange(fp fdiff.FilePatch) task.FileChange {
 	return change
 }
 
-// Snapshot exports HEAD's tracked files into a fresh, empty destDir with no
-// .git directory: file contents only, no commit history, branch name, or
-// reflog. Used to build the reviewer's isolated workspace (the isolation
-// contract in docs/prds/pr-review-agent.md) -- stripping .git is
-// what makes the implementer's reasoning (commit messages, branch name,
-// history) structurally unreachable rather than merely undisclosed.
+// Snapshot exports HEAD's tracked files into a fresh, empty destDir with no.
+// git directory: file contents only, no commit history, branch name, or reflog.
+// Used to build the reviewer's isolated workspace -- stripping.git is what
+// makes the implementer's reasoning (commit messages, branch name, history)
+// structurally unreachable rather than merely undisclosed.
 func (m *Manager) Snapshot(ctx context.Context, dir, destDir string) error {
 	r, err := git.PlainOpen(dir)
 	if err != nil {

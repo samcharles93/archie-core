@@ -1,6 +1,4 @@
 -- name: InsertResourceAudit :exec
--- Records the fields one resource write changed, against the version it
--- replaced. Runs in the write's own transaction.
 INSERT INTO sys_audit (at, table_name, record_key, field, old_value, new_value, record_version, actor, source, request_id)
 SELECT sqlc.arg(at)::timestamptz, 'resources', sqlc.arg(record_key)::text, d.field, d.old_value, d.new_value,
        sqlc.arg(version)::bigint, sqlc.arg(actor)::text, sqlc.arg(source)::text, sqlc.arg(request_id)::text

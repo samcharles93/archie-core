@@ -1,5 +1,5 @@
-// Package skill parses agentskills.io SKILL.md files and discovers skills
-// from the .agents/skills/ directory convention. It follows the same discovery
+// Package skill parses agentskills.io SKILL.md files and discovers skills.
+// It follows the same discovery
 // pattern as internal/workflow/wfeval (missing directory is not an error).
 package skill
 
@@ -37,13 +37,12 @@ type CatalogEntry struct {
 	Description string
 	Workflow    string // from metadata.archie.workflow  --  which workflow this skill handles
 	Dir         string // skill directory name
-	Root        string // catalog root containing .agents/skills
+	Root        string // catalog root containing.agents/skills
 }
 
-// Catalog scans dir/.agents/skills/*/SKILL.md and returns catalog entries
-// (Tier 1: name + description + workflow only). Only the frontmatter is
-// parsed  --  full bodies are not loaded. Missing directory or a file at the
-// skills path returns nil (no error)  --  the caller treats this as "no skills."
+// Only the frontmatter is parsed -- full bodies are not loaded. Missing
+// directory or a file at the skills path returns nil (no error) -- the caller
+// treats this as "no skills."
 func Catalog(dir string) ([]CatalogEntry, error) {
 	skillsPath := filepath.Join(dir, skillsDir)
 	entries, err := os.ReadDir(skillsPath)
@@ -51,7 +50,6 @@ func Catalog(dir string) ([]CatalogEntry, error) {
 		return nil, nil
 	}
 	if err != nil {
-		// A file at .agents/skills (ENOTDIR) is not fatal  --  treat as no skills.
 		// Same for permission errors and other non-fatal ReadDir failures.
 		return nil, nil //nolint:nilerr // documented above: a non-directory or unreadable skills path means no skills, not a fatal error
 	}

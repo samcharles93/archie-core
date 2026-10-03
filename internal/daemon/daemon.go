@@ -80,9 +80,9 @@ type NATSEndpoint struct {
 // StateStoreEndpoint is the State Store gRPC target (and the bearer token the
 // daemon presents, when one is configured) that containerEnv injects as
 // STATE_STORE_URL / STATE_STORE_TOKEN so archie-agent authenticates to the
-// same remote archie-state-store service the daemon dials
-// (docs/prds/state-store-contract.md §6, §9, §10). After the in-process
-// serving path is deleted (docs/prds/state-store-contract.md §12 step 7) this
+// same remote archie-state-store service the daemon dials.
+// After the in-process
+// serving path is deleted this
 // is always the configured [services.state].target, never a daemon-owned
 // listener.
 type StateStoreEndpoint struct {
@@ -107,12 +107,12 @@ type Daemon struct {
 	// [services.state].target after the in-process serving path is deleted.
 	ConnectedStateStore StateStoreEndpoint
 	Store               storecontract.TaskStore
-	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
+	// Mappings persists payload field mappings.
 	// Used by the binding dispatch loop to resolve capture bodies against
 	// the mapping a binding names. Optional: nil disables the binding
 	// dispatch loop (legacy behaviour).
 	Mappings storecontract.MappingStore
-	// Bindings persists playbook bindings (docs/prds/playbook-binding.md).
+	// Bindings persists playbook bindings.
 	// Optional: nil disables the binding dispatch loop (legacy behaviour).
 	Bindings storecontract.BindingStore
 	// BindingDispatcher is the dispatch-time helper surface for bindings:
@@ -130,9 +130,8 @@ type Daemon struct {
 	// Optional: nil disables the dispatch loop.
 	BindingTaskCreator storecontract.BindingTaskCreator
 	// Access evaluates the policy chain at dispatch, the second of the two
-	// Authorizer call sites (docs/prds/orgs-and-access.md, "Where it
-	// lives"): the workflow's identity may `run` the workflow in its
-	// workspace. Optional: nil dispatches without the chain, which is the
+	// Authorizer call sites: the workflow's identity may `run` the workflow in
+	// its workspace. Optional: nil dispatches without the chain, which is the
 	// behaviour of an install that has not built it.
 	Access access.Authorizer
 	// Principals assembles the dispatch principal for the workflow's
@@ -156,8 +155,8 @@ type Daemon struct {
 	// reactionPublisher is built lazily by scanPRReviews; an indirection
 	// only so tests can swap the delivery without the bus.
 	reactionPublisher ReactionPublisher
-	// Reactions pulls the review-reaction fan-out stream
-	// (docs/prds/pr-review-remediation.md). Each cycle it is drained into
+	// Reactions pulls the review-reaction fan-out stream.
+	// Each cycle it is drained into
 	// queued remediate runs before the task drain, so a reaction can be
 	// claimed in the same pass that carried it. Optional: nil disables the
 	// reaction consumer (tests, or a deployment without the reaction
@@ -743,9 +742,8 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 		return
 	}
 	// The chain decides dispatch: the workflow's identity may `run` this
-	// workflow in its workspace, and the event's signature result and
-	// address travel with the request (docs/prds/orgs-and-access.md,
-	// "Access decisions"). A denial is recorded and the dispatch is not
+	// workflow in its workspace, and the event's signature result and address
+	// travel with the request. A denial is recorded and the dispatch is not
 	// claimed: the capture stays listed for the next cycle.
 	if !d.authorizeDispatch(ctx, b, c, target) {
 		return
@@ -755,7 +753,7 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 
 // claimAndEnqueue claims the dispatch in the at-most-once ledger and enqueues
 // the task. A failed enqueue after the claim loses that dispatch, which is
-// the at-most-once side of the trade (docs/prds/playbook-binding.md).
+// the at-most-once side of the trade.
 func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, target bindingTarget, values map[string]any) {
 	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0); err != nil {
 		if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
@@ -1171,8 +1169,7 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, cfg config.Config
 // issue on a later poll does not enqueue the work twice. It is the single
 // enqueue path shared by the poller and the forge webhook intake, so neither
 // can drift in how a discovered issue becomes a task -- including the org the
-// key is built from (docs/prds/orgs-and-access.md, "Events and task
-// identity").
+// key is built from.
 func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) error {
 	if d.Tasks == nil {
 		return fmt.Errorf("publish task %s: no task bus configured", task.Ref())
@@ -1675,11 +1672,10 @@ func (d *Daemon) acquireTaskContainer(
 	}
 
 	// pr-review needs an external pull request's metadata, diff and head
-	// snapshot inside the container, but the container must never hold a
-	// forge credential (docs/development/agent.md, "Giving the agent
-	// something new"). The daemon fetches it here, before the container
-	// exists, using its own credentialed forge client, and writes the result
-	// into workDir -- the same host directory Docker bind-mounts at
+	// snapshot inside the container, but the container must never hold a forge
+	// credential. The daemon fetches it here, before the container exists,
+	// using its own credentialed forge client, and writes the result into
+	// workDir -- the same host directory Docker bind-mounts at
 	// storage.WorktreeMountDir -- so the sandboxed pipeline can read it back
 	// with prsource.MountSource and no network call of its own.
 	if task.Workflow == "pr-review" {
@@ -1943,12 +1939,12 @@ func (d *Daemon) pinTaskProfile(ctx context.Context, task *workflow.Task) (confi
 }
 
 // validateProfileMeetsNeeds rejects a Kit profile whose harness cannot meet
-// what the workflow declares it needs (docs/prds/external-agent-harness.md,
-// "Contract"): a workflow needing captures but naming a profile whose Kit CLI
-// serves none (no adapter, or one with no MCP config to register archie-agent
-// mcp against -- e.g. Codex, Pi, OMP per agentexec.harnessAdapters). An image
-// profile is never checked: the built-in agent loop always supports both
-// captures and gate retries, so Needs constrains only the harness path.
+// what the workflow declares it needs: a workflow needing captures but naming a
+// profile whose Kit CLI serves none (no adapter, or one with no MCP config to
+// register archie-agent mcp against -- e.g. Codex, Pi, OMP per
+// agentexec.harnessAdapters). An image profile is never checked: the built-in
+// agent loop always supports both captures and gate retries, so Needs
+// constrains only the harness path.
 func validateProfileMeetsNeeds(profile config.AgentProfile, needs workflowtask.WorkflowNeeds) error {
 	if !profile.IsKit() || !needs.Captures {
 		return nil
@@ -2067,7 +2063,7 @@ func pinnedDefinitionID(task *workflow.Task) (string, bool, error) {
 }
 
 // runActionPlaybooks runs the action playbooks matching a task that is about
-// to be pinned, which happens once per task (docs/prds/action-playbook-run.md).
+// to be pinned, which happens once per task.
 // A run never affects routing and its failure never fails the task. A task
 // that already names a workflow is the approval requeue and is skipped, as
 // it is for workflow playbooks.
@@ -2223,7 +2219,7 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 		env = append(env, "NATS_TOKEN="+token)
 	}
 	// The State Store gRPC target follows the same seam as NATS_URL/
-	// NATS_TOKEN above (docs/prds/state-store-contract.md §6). It is always
+	// NATS_TOKEN above. It is always
 	// the configured [services.state].target after the in-process serving
 	// path is deleted. stateStoreToken is this task's own scoped credential
 	// (see stateStoreGrantToken) -- never d.ConnectedStateStore.Token, which
@@ -2235,13 +2231,9 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 			env = append(env, "STATE_STORE_TOKEN="+stateStoreToken)
 		}
 	}
-	// The agent process runs as root inside the container (no USER in the
-	// Dockerfile, no userns-remap), so a commit it writes to the bind-mounted
-	// worktree lands owned by UID 0 on the host. The daemon then reads those
-	// same loose objects to push, running as its own non-root host user --
-	// archie-core#520's "permission denied" on .git/objects. Passing the
-	// daemon's own UID/GID lets the agent chown the worktree back to it
-	// before pushing.
+	// The agent runs as root in the container, so its commits land owned by
+	// UID 0 on the host. The daemon's UID/GID let the agent hand the worktree
+	// back before the daemon reads it to push.
 	env = append(env, fmt.Sprintf("WORKTREE_UID=%d", os.Getuid()))
 	env = append(env, fmt.Sprintf("WORKTREE_GID=%d", os.Getgid()))
 	for _, p := range d.configFor(task).Providers {

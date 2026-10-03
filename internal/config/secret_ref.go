@@ -17,7 +17,6 @@ package config
 //
 // It lives here rather than in internal/secret so the archie-ui process can
 // render config projections without linking the secret runtime
-// (archie-core-8cda.5.6).
 type SecretRef struct {
 	Engine string `toml:"engine" yaml:"engine" json:"engine"`
 	Key    string `toml:"key" yaml:"key" json:"key"`

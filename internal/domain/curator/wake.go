@@ -8,7 +8,7 @@ import (
 )
 
 // WakeOnPrimaryInput forwards primary-input events from the in-process bus
-// to the runtime as best-effort nudges (archie-core-035). Only the kinds in
+// to the runtime as best-effort nudges. Only the kinds in
 // inputKinds wake curators — the trigger-accounting invariant: curator-
 // produced activity (curator_run, curator_action, curator_error, and any
 // future derived-write kind) never appears on this path, so a curator's own

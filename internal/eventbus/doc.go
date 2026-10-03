@@ -6,10 +6,6 @@
 // mechanics, reconnection and serialization live in
 // internal/infrastructure/eventbus/nats, which implements these interfaces.
 //
-// Per docs/architecture/dependencies-and-contracts.md, domains depend on this
-// package and never on an infrastructure implementation; only application
-// composition chooses a concrete broker.
-//
 // # The bus does not own message meaning
 //
 // This package deliberately transports opaque payloads. Message schemas

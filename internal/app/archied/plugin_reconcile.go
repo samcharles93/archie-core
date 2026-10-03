@@ -35,7 +35,7 @@ const (
 // drop a file beside a running daemon and have it take effect without a
 // restart. Yaegi cannot unload an interpreter, so a removed file's code keeps
 // running and the reconciler reports it through apply status until the process
-// restarts (docs/prds/plugin-settings-live.md).
+// restarts.
 //
 // Files are content-hashed, so a tick loads only what appeared or changed: the
 // boot load's files are seeded as already loaded. A file whose load fails is
@@ -170,7 +170,6 @@ func (r *pluginReconciler) reconcile(ctx context.Context) error {
 	// it re-resolves provider credentials, so a provider disabled at boot for
 	// an unresolvable engine is re-resolved on the first tick that finds it,
 	// and a changed directory retargets the next tick without a restart
-	// (docs/prds/plugin-settings-live.md, "Triggers").
 	if r.relayer != nil {
 		if err := r.relayer(ctx); err != nil {
 			problems = append(problems, fmt.Errorf("re-resolve provider credentials: %w", err))

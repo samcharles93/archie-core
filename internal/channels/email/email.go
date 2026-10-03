@@ -142,7 +142,6 @@ func (g *Gateway) handleSMTP(ctx context.Context, conn net.Conn) {
 				write(250, "OK: message accepted")
 				return
 			}
-			// Un-dot-stuff: RFC 5321 §4.5.2
 			if strings.HasPrefix(line, "..") {
 				line = line[1:]
 			}

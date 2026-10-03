@@ -117,17 +117,11 @@ type CompressedView struct {
 	// TokensAfter is the estimated token count after compression.
 	TokensAfter int
 
-	// ProtectedFirst and ProtectedLast are how many leading and trailing
-	// input messages passed through untouched, and are only meaningful when
-	// WasCompressed is true.
-	//
-	// They exist so a caller persisting the result can write back the
-	// original records for those positions rather than rebuilding them from
-	// Role and Content. A rebuilt message is a different message: it loses
-	// its canonical MessageID, its upstream SourceID and its timestamp, which
-	// breaks redelivery deduplication permanently and contradicts the
-	// immutability requirement in docs/architecture/messaging-and-work-intake
-	// .md lines 112-114.
+	// ProtectedFirst and ProtectedLast index the input messages passed through
+	// untouched, and are only meaningful when WasCompressed is true. A caller
+	// persisting the result writes back the original records for those
+	// positions, keeping their MessageID, SourceID and timestamp for redelivery
+	// deduplication.
 	ProtectedFirst int
 	ProtectedLast  int
 }

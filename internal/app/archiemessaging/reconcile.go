@@ -25,7 +25,7 @@ type chatSettingsSource interface {
 // interval is the cadence every process already reports at, the messaging
 // process has no other control-plane watch to share a reconnect ladder with,
 // and a stored document that cannot be read must leave the running channels
-// alone (docs/prds/plugin-settings-live.md).
+// alone.
 func (s *Service) reconcileLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.reconcileInterval)
 	defer ticker.Stop()
@@ -117,8 +117,7 @@ func resolveChatSecrets(base ResolvedConfig, layered config.ChatConfig) (Resolve
 // The composed set and the listen addresses are fixed for the life of the
 // process. Enabling or disabling a channel and rebinding a listen address are
 // process bindings; the change is refused and reported for a restart instead of
-// applied (docs/prds/runtime-control-plane.md, "Some changes require a
-// restart").
+// applied.
 func (s *Service) applyChannelSettings(next ResolvedConfig) (bool, error) {
 	current := s.currentConfig()
 	effective, outstanding := pinProcessBindings(current, next)

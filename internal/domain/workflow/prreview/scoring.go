@@ -82,12 +82,9 @@ type Finding struct {
 	LineStart int
 	LineEnd   int
 	Severity  Severity
-	// Category is what the finding is about, and the third of the three things
-	// two findings have to share to be one claim: the PRD merges exact
-	// duplicates on (file, overlapping lines, category). No producer sets it
-	// yet, so an empty category is a category -- two findings that both leave
-	// it empty are duplicates of each other when they also share a file and a
-	// line.
+	// No producer sets it yet, so an empty category is a category -- two
+	// findings that both leave it empty are duplicates of each other when they
+	// also share a file and a line.
 	Category   string
 	Title      string
 	Body       string
@@ -127,11 +124,7 @@ type ScoredFinding struct {
 	Score       float64
 	Multipliers []string
 	Blocking    bool
-	// Adversary carries phase 5's verdict through synthesis, so a caller
-	// deciding whether a blocking finding was ever challenged (the pr-review
-	// PRD's archie's-own-PR trigger rule) does not have to cross-reference
-	// back into the pre-synthesis Finding slice.
-	Adversary AdversaryVerdict
+	Adversary   AdversaryVerdict
 }
 
 // ScoreInputs is the run context that moves every finding's score.
@@ -185,10 +178,7 @@ func Score(findings []Finding, inputs ScoreInputs) []ScoredFinding {
 }
 
 // mergeDuplicates collapses the findings that are one claim about one place.
-// Two findings are one claim when they name the same file and category and
-// their line ranges overlap -- the PRD's exact-duplicate rule, with the wording
-// and the severity left out of it. Overlap is transitive, so a chain 1-2, 2-3,
-// 3-4 is one claim and not two.
+// Overlap is transitive, so a chain 1-2, 2-3, 3-4 is one claim and not two.
 func mergeDuplicates(findings []ScoredFinding) []ScoredFinding {
 	ordered := slices.Clone(findings)
 	slices.SortFunc(ordered, compareIdentity)
@@ -427,10 +417,6 @@ func IsAIGenerated(confidence float64) bool {
 	return confidence > AIGeneratedThreshold
 }
 
-// IsHighPriority reports whether a finding's severity is high enough for
-// phase 5's evidence verifier to check it against its evidence package: a
-// hallucinated nitpick costs a reader little, a hallucinated critical costs
-// them a debugging session chasing a defect that was never there.
 func IsHighPriority(f Finding) bool {
 	switch normalizeSeverity(f.Severity) {
 	case SeverityCritical, SeverityImportant:

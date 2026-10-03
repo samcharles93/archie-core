@@ -8,7 +8,6 @@ import (
 // workflow's two dials: whether a post-worthiness pass runs before findings are
 // posted, and whether a human approves the draft before it posts. The file's
 // [review] section seeds it; the stored document outranks the file from then on
-// (docs/prds/review-settings-resource.md).
 const ReviewSettingsKind = "review-settings"
 
 type reviewSettings struct {

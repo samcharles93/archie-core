@@ -31,20 +31,11 @@ const (
 	eventPumpPrimeRetryMax = 30 * time.Second
 )
 
-// eventPump is the UI process's substitute for the daemon's in-process event
-// bus. The daemon hands persisted events to Server.Broadcast from its own bus
-// subscription (internal/app/archied/main.go's persistAndBroadcastEvents); a
-// process that owns no bus reads the same events back out of the State Store
-// instead, over the EventsSince cursor.
-//
-// Polling is sufficient rather than a compromise, for the reasons recorded in
-// docs/architecture/migration-decisions.md ("Dashboard live event delivery"):
-// EventsSince pages a total order over (at, id) with a fixed-width time key
-// and a deterministic id tie-break, so the cursor cannot skip or repeat;
-// sseStream.drain treats a broadcast as a wakeup and re-reads the gap from the
-// store, so nothing here changes SSE semantics; and reading the table catches
-// writers that never touch a bus, including the audit event ArchiveTask writes
-// inside its transaction.
+// eventPump stands in for the daemon's event bus in the UI process: it polls
+// persisted events from the State Store over the EventsSince cursor and
+// broadcasts them. EventsSince pages a total order over (at, id), so the cursor
+// never skips or repeats, and polling the table also catches writers that never
+// publish to a bus.
 type eventPump struct {
 	store     eventReader
 	log       func(string, ...any)

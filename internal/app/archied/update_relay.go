@@ -19,7 +19,7 @@ const updateReportPollInterval = 2 * time.Second
 // restarts archied and leaves its verdict in a file on archied's host, so
 // only archied can read it. It previously ran inside the dashboard's own
 // Run, which put a host-local file read in the process that is moving off
-// the host (archie-core-8cda.5.4). The report reaches an operator the same
+// the host. The report reaches an operator the same
 // way it always did, as an event -- persisted with every other event and
 // delivered to whichever dashboard is watching.
 //

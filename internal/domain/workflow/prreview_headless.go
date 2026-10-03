@@ -8,9 +8,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 )
 
-// ReviewPullRequest runs the same decision phases as PRReview through its
-// merge gate, without phase 9 or any forge writes. The caller supplies a fresh
-// context with operator approval disabled.
+// The caller supplies a fresh context with operator approval disabled.
 type PRReviewDecision struct {
 	Comments      []prreview.ScoredFinding
 	SkippedPhases []string

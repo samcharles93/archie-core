@@ -84,16 +84,14 @@ func validate(cfg *config.Config) error {
 // State Store. [Loader] applies this to every file source.
 //
 // It deliberately omits the settings the control plane stores, because a stale
-// TOML value in one of them must not be able to fail a process's startup
-// (docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
-// after migration, settings in TOML are ignored and cannot block State Store
-// startup). archie-state-store resolves its file config and seeds the
-// control-plane resources from that same document on a fresh database, and a
-// seed it cannot validate is skipped rather than fatal
-// (controlplane.Server.ImportConfig), so a check left here is a check that can
-// still block it. Those checks live in validateDatabaseOwned and run on the
-// effective document instead -- which is where the process that uses the value
-// refuses it, and where the operator's fix is the file again.
+// TOML value in one of them must not be able to fail a process's startup.
+// archie-state-store resolves its file config and seeds the control-plane
+// resources from that same document on a fresh database, and a seed it cannot
+// validate is skipped rather than fatal (controlplane.Server.ImportConfig), so
+// a check left here is a check that can still block it. Those checks live in
+// validateDatabaseOwned and run on the effective document instead -- which is
+// where the process that uses the value refuses it, and where the operator's
+// fix is the file again.
 func validateBootstrap(cfg *config.Config) error {
 	if err := validateForgeIntake(cfg); err != nil {
 		return err
@@ -394,7 +392,6 @@ func validateSingleIdentity(cfg *config.Config) error {
 // the only point the value being judged is the one a process will use. The
 // per-identity lists are verified there for a different reason: no resource
 // carries them, and the daemon is the only process that reads them
-// (docs/architecture/configuration.md's IdentityConfig note).
 func validateRepositoryContents(cfg *config.Config) error {
 	if len(cfg.Identities) == 0 {
 		return ValidateRepositories(cfg.Repos)

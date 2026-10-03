@@ -35,46 +35,18 @@ type deps struct {
 	// configured for it.
 	Login identity.LoginFlow
 	// Access evaluates the policy chain; Principals assembles the request
-	// principal; Denials records refusals
-	// (docs/prds/orgs-and-access.md). Wired together or not at all.
+	// principal; Denials records refusals.
+	// Wired together or not at all.
 	Access     access.Authorizer
 	Principals access.PrincipalSource
 	Denials    access.DenialStore
 }
 
-// compose builds the dashboard server for the UI process. It sets exactly the
-// fields a contract already carries plus this process's own settings, and
-// leaves every remaining field at its zero value on purpose: each one is a
-// daemon-local runtime handle with no contract behind it, and the handlers
-// already degrade to a documented 501/503/empty response rather than panicking
-// (docs/prds/ui-service-boundary.md:130-131).
-//
-// What is deliberately absent, and which bead fills it:
-//
-//   - Cfg, LastReload, UpdateConfig, ConfigOverrides, ResetConfig,
-//     UpdateRepoField: the configuration owner stays the daemon. The read
-//     crosses as the snapshot ConfigSource renders; the write routes answer
-//     503 and the page hides their controls (archie-core-ymut).
-//   - LogFeed, Events, Channels, ReloadChannel, Curators, Memory,
-//     Workflows, WorkRequests, RunningVersions, Chat.Updates,
-//     UpdateReportPath: no contract exists for these yet.
-//     Defining one amends the owning service's contract first
-//     (docs/prds/ui-service-boundary.md:205-207); the route migration is
-//     archie-core-8cda.5.3.
-//   - TaskLogs: wired below from the store client's TaskLogStore contract.
-//     Task log files live in the state directory the State Store owns, so this
-//     process reads one attempt's log over that contract rather than opening
-//     the file itself -- which would only work on a single host and is exactly
-//     what the boundary forbids (archie-core-iaqx).
-//   - Captures, CaptureIntake, CaptureMaxEvents: wired below. From the
-//     cutover change (archie-core-8cda.5.4) this process is the only
-//     listener serving POST /webhooks/capture/{source}: the receiver is a
-//     persistence shim over the State Store contract, and the daemon's
-//     binding-dispatch loop keeps consuming captures from the same store,
-//     so the HTTP front door moved here without moving the owner of work
-//     intake. Mounting it before the daemon's listener was gone would have
-//     given two listeners the same intake authority, which the PRD forbids
-//     (docs/prds/ui-service-boundary.md:30-33).
+// compose builds the dashboard server for the UI process from contract-backed
+// dependencies only. Fields left at zero are daemon-local handles; their
+// handlers answer 501/503 or empty. Config writes stay with the daemon. Task
+// logs are read through the State Store, and this process is the only listener
+// for POST /webhooks/capture/{source}.
 func compose(d deps) *webui.Server {
 	srv := &webui.Server{
 		Store:                 d.Store,
@@ -96,7 +68,6 @@ func compose(d deps) *webui.Server {
 	// Channel lifecycle follows the same split as the config view: the process
 	// hosting the channels publishes, this one reads. Withholding it left
 	// /api/channels answering with nothing while channels were running
-	// (archie-core-8cda.6.8).
 	if channels, ok := d.Store.(storecontract.ChannelStatusStore); ok {
 		srv.Channels = webui.RemoteChannelStatus(channels)
 	}
@@ -115,8 +86,8 @@ func compose(d deps) *webui.Server {
 	}
 	// Harness OAuth token sets are a ratified State Store contract, and the
 	// same client already carries them. Withholding it would leave the
-	// harness page answering 503 on a deployment that has the store
-	// (archie-core-egkf.7). The setup terminal itself is not wired here: its
+	// harness page answering 503 on a deployment that has the store.
+	// The setup terminal itself is not wired here: its
 	// implementation owns a container, which this process must not link, so
 	// the route stays a documented 503 until a daemon-side contract exists.
 	if secrets, ok := d.Store.(storecontract.HarnessSecretStore); ok {
@@ -130,11 +101,10 @@ func compose(d deps) *webui.Server {
 	}
 	// The task-log read crosses the State Store contract: the files live in
 	// the state directory that process owns, so this one asks for the log
-	// rather than opening a path (docs/prds/ui-service-boundary.md). Withholding
+	// rather than opening a path. Withholding
 	// it would degrade a page that has an owner, and would leave the dashboard
 	// claiming task logging was not enabled -- see wireTaskLogs.
 	// The policy chain: wired together or not at all
-	// (docs/prds/orgs-and-access.md, "Where it lives").
 	srv.Access = d.Access
 	srv.Principals = d.Principals
 	srv.Denials = d.Denials

@@ -757,9 +757,6 @@ type ListUndispatchedCapturesParams struct {
 	EntryLimit int32
 }
 
-// A capture is undispatched while some armed binding on its source, whose
-// mapping belongs to the capture's event type, has not dispatched it. An
-// unidentified capture has no event type, so it is never listed.
 func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispatchedCapturesParams) ([]Capture, error) {
 	rows, err := q.db.Query(ctx, listUndispatchedCaptures, arg.Sources, arg.EntryLimit)
 	if err != nil {

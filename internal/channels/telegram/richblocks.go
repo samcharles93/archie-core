@@ -115,12 +115,10 @@ func stripInlineMarkdown(s string) string {
 }
 
 // stripEmphasis removes paired emphasis delimiters and keeps their content.
-// Pairing follows CommonMark's flanking rules, so a delimiter that cannot
-// open or close is ordinary text and stays put. That is what keeps this
-// project's own vocabulary intact over the wire: snake_case config keys,
-// dotted paths like config_schema_test.go, and Go pointer types such as
+// Pairing follows CommonMark's flanking rules, so a delimiter that cannot open
+// or close is ordinary text and stays put.
 // *sql.Tx all used to lose characters to a non-greedy `_(.+?)_` that paired
-// any two markers on a line (archie-core-8x1r).
+// any two markers on a line.
 func stripEmphasis(s, marker string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -277,7 +275,7 @@ func (p *markdownBlockParser) handleLine(line string) {
 	case p.startsIndentedCode(line):
 		// CommonMark's other code form. Models emit it constantly, and
 		// without this it fell to the paragraph case below, which
-		// space-joins its lines into one run-on line (archie-core-cvu6).
+		// space-joins its lines into one run-on line.
 		p.flush()
 		p.inCode, p.indented, p.codeLang = true, true, ""
 		p.codeLines = []string{stripCodeIndent(line)}
@@ -300,7 +298,7 @@ func (p *markdownBlockParser) handleLine(line string) {
 		// said it is a line, so it closes its own block and the next one
 		// hugs it. Line-oriented reports (/status, /tasks) depend on this;
 		// without it every one of their lines soft-joined into one run-on
-		// paragraph (archie-core-8cda.6.10).
+		// paragraph.
 		p.flushList()
 		p.flushQuote()
 		switch {
@@ -488,7 +486,7 @@ func (p *markdownBlockParser) flushQuote() {
 
 // closeCode emits the open code block. The text is passed through verbatim:
 // code is not prose, and running the emphasis stripper over it turned
-// *sql.Tx into sql.Tx and ate same-line snake_case pairs (archie-core-8x1r).
+// *sql.Tx into sql.Tx and ate same-line snake_case pairs.
 func (p *markdownBlockParser) closeCode() {
 	lines := p.codeLines
 	if p.indented {

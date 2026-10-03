@@ -5,16 +5,13 @@ import (
 	"time"
 )
 
-// RateLimiter caps request volume per source using a token bucket per
-// source ID. Source IDs are assumed to come from a registered, operator-
-// controlled set (per docs/prds/webhook-intake-security.md's "a source
-// registers with a secret before its events can trigger anything"), not
-// from unbounded attacker-supplied request data -- the bucket map is not
-// itself bounded, because the key space is bounded by registration.
+// RateLimiter caps request volume per source using a token bucket per source
+// ID. Source IDs are assumed to come from a registered, operator- controlled
+// set, not from unbounded attacker-supplied request data -- the bucket map is
+// not itself bounded, because the key space is bounded by registration.
 //
-// A rejected request must be surfaced as an observable rejection by the
-// caller (HTTP 429), never silently dropped -- see
-// docs/prds/webhook-intake-security.md point 3.
+// A rejected request must be surfaced as an observable rejection by the caller
+// (HTTP 429), never silently dropped.
 type RateLimiter struct {
 	mu      sync.Mutex
 	rate    float64 // tokens added per second

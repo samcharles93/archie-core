@@ -9,7 +9,7 @@ import (
 
 // ChatContract is the conversational boundary consumed by channel frontends.
 // Results are snapshots: callers must not rely on shared object identity.
-// It moved here from internal/gateway (archie-core-8cda.5.6) so the webui
+// It moved here from internal/gateway so the webui
 // and archie-ui processes can hold the contract without linking the gateway
 // runtime (and, transitively, its SQLite session store).
 type ChatContract interface { //nolint:interfacebloat // wire contract intentionally covers the complete Gateway facade

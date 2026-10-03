@@ -3,7 +3,7 @@
 // validation against the shipped Cedar schema, and the chain evaluation:
 // instance ▶ org ▶ workspace ▶ object, where a level with policies must
 // permit, a forbid at any level wins, and with no permit the request is
-// denied (docs/prds/orgs-and-access.md).
+// denied.
 //
 // The cross-org forbid is enforced here, structurally, before any Cedar
 // runs: a principal never reaches a resource outside its org. It is not a
@@ -50,7 +50,6 @@ const schemaText = `namespace Archie {
 
 // Problem is one stored policy the engine could not validate. It is what a
 // health issue names: the policy and the error
-// (docs/prds/orgs-and-access.md, "Storing and changing policies").
 type Problem struct {
 	Policy access.Policy
 	Err    error

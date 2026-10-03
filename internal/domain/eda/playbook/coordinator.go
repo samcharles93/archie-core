@@ -13,8 +13,8 @@ import (
 // InvokeOnce runs one playbook action at most once per
 // (playbook, version, event, action) tuple, record-before-invoke: the ledger
 // row is committed before fn runs, so a redelivered action (the same
-// structural key) skips without repeating a non-revocable side effect
-// (docs/prds/eda-playbook-engine.md gap 2). The structural key is computed
+// structural key) skips without repeating a non-revocable side effect.
+// The structural key is computed
 // from Decision.PlaybookID, Decision.Version, input.TaskID (the event_id) and
 // Decision.ActionID; when the action declares no id the 1-based
 // Decision.ActionPosition is used instead -- it is never a CEL expression. A

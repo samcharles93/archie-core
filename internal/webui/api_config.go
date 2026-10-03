@@ -122,7 +122,7 @@ type ConfigView struct {
 	// Review is the layered pr-review policy: what a review may post, and
 	// whether a human decides. It is a plain projection of the effective
 	// cfg.Review, so the published snapshot tells a reader which dials are in
-	// force (docs/prds/review-settings-resource.md).
+	// force.
 	Review     ReviewView     `json:"review"`
 	Storage    StorageView    `json:"storage"`
 	Containers ContainersView `json:"containers"`
@@ -156,7 +156,7 @@ type ConfigView struct {
 	// Server.resolveForge (api_tasks.go). Empty for a single-identity
 	// deployment, whose forge is Identity above.
 	Identities []ForgeIdentityView `json:"identities,omitempty"`
-	// Schema is the field-descriptor catalog (archie-core-b6ew) attached to
+	// Schema is the field-descriptor catalog attached to
 	// this view's own values and locked reasons -- see config_schema.go. It
 	// carries the labels, sections and types a generic configuration renderer
 	// needs, instead of making each rendering process hardcode them; the flat
@@ -359,7 +359,7 @@ type CatalogProviderView struct {
 //
 // It is deliberately a function, not a method: rendering the view is not a
 // property of an HTTP server, and the process that owns configuration is not
-// the process that serves this page (archie-core-ml30).
+// the process that serves this page.
 func BuildConfigView(in ConfigViewInput) ConfigView {
 	cfg := in.Config
 	provenance := append([]ConfigOrigin(nil), in.Provenance...)
@@ -427,7 +427,7 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 //
 // The definition lives in config.ChatConfig.FrontEnds, not here: the daemon's
 // channel status manager answers the same question on /api/channels, and
-// deciding it twice is how the two answers drifted apart (GitHub #821).
+// deciding it twice is how the two answers drifted apart.
 func chatChannelConfigured(chat config.ChatConfig) bool {
 	return chat.AnyFrontEndConfigured()
 }

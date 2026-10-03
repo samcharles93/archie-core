@@ -1,6 +1,5 @@
 // Command archie-state-store hosts the State Store's gRPC contract and is the
-// only process that owns the PostgreSQL stores behind it. See
-// docs/prds/state-store-contract.md §5, §9 and §11.
+// only process that owns the PostgreSQL stores behind it.
 package main
 
 import (

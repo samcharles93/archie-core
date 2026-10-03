@@ -115,13 +115,10 @@ const (
 // the file document's value stays the one in effect (Client.RuntimeConfig
 // leaves an absent kind alone), with the fix still in the file. The seed is
 // retried on the next start of this process, so correcting config.toml re-seeds
-// it.
-// docs/prds/runtime-control-plane.md, "Bootstrap, migration, and recovery":
-// after migration, settings in TOML are ignored and cannot block State Store
-// startup -- and this import runs on the State Store's startup path. Fail closed
-// belongs to the process that uses the value: boot.runtimeConfig validates the
-// effective document and refuses to start archied with a value it cannot run
-// with, which is what keeps an invalid value from taking effect silently.
+// it. Fail closed belongs to the process that uses the value:
+// boot.runtimeConfig validates the effective document and refuses to start
+// archied with a value it cannot run with, which is what keeps an invalid value
+// from taking effect silently.
 func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[string]int64, []SeedSkip, error) {
 	versions := make(map[string]int64, len(s.ordered))
 	var skipped []SeedSkip

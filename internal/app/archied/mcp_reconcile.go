@@ -18,7 +18,6 @@ import (
 // from: the configuration it was built with and the manifest id it registered
 // under. A live tool-settings change diffs the stored server set against this
 // record, so a server that did not change is left running and untouched
-// (archie-core-zfb0.3).
 type appliedMCPServer struct {
 	server config.MCPServer
 	id     string

@@ -310,11 +310,7 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 
 	// Every configured channel has been handed its lifetime and the service
-	// blocks here serving them. systemd's READY=1 asserts the same fact this
-	// line has just established, so the announcement goes out here rather than
-	// from a second notion of "started" (the convention archie-core-1174 set
-	// for the daemon, the Gateway and the State Store; archie-core-g5g8 is this
-	// process joining them). Not earlier: a channel whose configuration is
+	// blocks here serving them. Not earlier: a channel whose configuration is
 	// invalid fails composition, above, and READY must not precede it. Not
 	// later: a unit whose TimeoutStartSec expires first would restart a healthy
 	// process. Nothing is consumed until the unit says Type=notify, so this is

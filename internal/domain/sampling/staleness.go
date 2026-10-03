@@ -6,7 +6,7 @@ import "context"
 // hasn't been touched/reviewed in the longest time, i.e. the smallest
 // Candidate.At first. It is a cheap proxy only -- callers decide what
 // timestamp At holds (created, updated, or last-reviewed); this is never
-// the embedding-based surprisal calculation (see GitHub #437).
+// the embedding-based surprisal calculation.
 type stalenessSampler struct{}
 
 // NewStaleness builds the "staleness" strategy.

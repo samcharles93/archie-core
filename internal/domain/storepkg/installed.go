@@ -14,7 +14,7 @@ var (
 	// ErrAuthorityNotDeclared: the operator asked to accept authority the
 	// package itself does not declare, which is not an acceptance of that
 	// package. Acceptance records the package's own declared grants against
-	// the pinned digest (docs/prds/store.md, "Authority").
+	// the pinned digest.
 	ErrAuthorityNotDeclared = errors.New("store package does not declare this authority")
 	// ErrContributionCollision: the package contributes an entry the org
 	// resource already holds under an id the package never projected. The

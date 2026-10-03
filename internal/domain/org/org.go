@@ -1,6 +1,5 @@
 // Package org owns the tenant boundary: orgs, the workspaces that divide them,
 // and the memberships that give an identity a role in either
-// (docs/prds/orgs-and-access.md).
 package org
 
 import (
@@ -35,9 +34,8 @@ var (
 	ErrWorkspaceExists   = errors.New("org: workspace already exists")
 	ErrMembershipExists  = errors.New("org: membership already exists")
 	// ErrUpgradeIncomplete reports that the resumable default org/workspace
-	// upgrade has not finished (docs/prds/orgs-and-access.md, "Upgrading
-	// existing installs"): the store refuses scoped calls rather than serving
-	// records with no org.
+	// upgrade has not finished: the store refuses scoped calls rather than
+	// serving records with no org.
 	ErrUpgradeIncomplete = errors.New("org: default org upgrade incomplete")
 )
 

@@ -111,9 +111,8 @@ func Run(ctx context.Context, options Options) error {
 
 	// Live activity has no in-process bus in this process: the pump reads
 	// events back out of the State Store over the same cursor SSE catch-up
-	// uses. Backgrounded so priming past a large events table cannot delay
-	// the listener (docs/architecture/migration-decisions.md, "Dashboard
-	// live event delivery").
+	// uses. Backgrounded so priming past a large events table cannot delay the
+	// listener.
 	go func() {
 		if err := srv.PumpEvents(ctx, opts.EventPollInterval); err != nil {
 			log.Error("event pump stopped; the activity feed will only show history", "err", err)
@@ -156,7 +155,7 @@ func serve(ctx context.Context, listener net.Listener, handler http.Handler, opt
 			// Shutdown returned once the drain deadline elapsed with a request
 			// still in flight. Force-close what is left so shutdown finishes
 			// and the process exits cleanly rather than carrying a deadline
-			// error to the operator as a fatal exit (archie-core-u4xu).
+			// error to the operator as a fatal exit.
 			_ = server.Close()
 		}
 		return nil

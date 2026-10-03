@@ -1,6 +1,6 @@
 // Access policies and denial records: the Postgres implementation of
-// internal/domain/access's PolicyStore, Resetter and DenialStore
-// (docs/prds/orgs-and-access.md). Policy changes are versioned per level
+// internal/domain/access's PolicyStore, Resetter and DenialStore.
+// Policy changes are versioned per level
 // scope and audited as one sys_audit row per change naming who made it.
 package postgres
 

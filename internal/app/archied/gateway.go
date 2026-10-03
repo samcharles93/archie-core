@@ -67,7 +67,7 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	}
 	// The Gateway also no longer opens archie.db directly: it consumes the
 	// same remote State Store contract the daemon does via
-	// [services.state].target (docs/prds/state-store-contract.md §12 step 7).
+	// [services.state].target.
 	if err := b.openGatewayState(ctx); err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (b *boot) serveGatewayListener(ctx context.Context, listener net.Listener, 
 	b.log.Info("archie-gateway running", "addr", listener.Addr().String(), "token_required", !loopback)
 	// Boot is over and this listener is about to accept: the same fact
 	// systemd's READY=1 asserts, so the announcement goes out here rather than
-	// from a second notion of "started" (archie-core-1174). Not later: Serve
+	// from a second notion of "started". Not later: Serve
 	// begins accepting the moment it is called, and a unit whose
 	// TimeoutStartSec expires first would restart a healthy process.
 	b.announceReady()
@@ -159,13 +159,10 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	b.capabilityHost = plugin.NewHost()
 	b.startRateLimiter(ctx, b.cfg.Chat.RateLimit)
 	// The Gateway composes the process-wide worktree manager before
-	// setupGatewayChat; nothing in this process reads it today (the old
-	// synchronous operator-review path that did was removed with the
-	// adversarial self-review system, archie-core-afbk.7 -- see that bead's
-	// continuation for the operator trigger's replacement). Kept for the
+	// setupGatewayChat; nothing in this process reads it today. Kept for the
 	// manager's other consumers; it is the only part of the daemon's tree
-	// composition the Gateway takes -- it must not own identity runners, so
-	// it does not call buildTreesAndIdentities.
+	// composition the Gateway takes -- it must not own identity runners, so it
+	// does not call buildTreesAndIdentities.
 	b.buildWorktreeManager()
 	// setupMemoryEngine must run before setupGatewayChat: setupGatewayChat
 	// constructs the turn runner, which captures b.memEngines at
@@ -177,7 +174,7 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	if err != nil {
 		return nil, err
 	}
-	if err := b.registerTools(ctx); err != nil {
+	if err := b.registerTools(); err != nil {
 		return nil, err
 	}
 	b.registerStandaloneTools()

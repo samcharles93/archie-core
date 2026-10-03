@@ -400,10 +400,9 @@ func (s chatStreamSink) ToolCall(event messaging.ToolCallEvent) {
 	})
 }
 
-// Media has no inline rendering path on the dashboard yet (see
-// archie-core-1786748942243-6-f109697e), so it degrades to a link in the
-// delta stream -- the same fallback Telegram's liveReply uses when its own
-// SendMedia call fails.
+// Media has no inline rendering path on the dashboard yet, so it degrades to a
+// link in the delta stream -- the same fallback Telegram's liveReply uses when
+// its own SendMedia call fails.
 //
 // A local file cannot be linked and this channel cannot upload one, so it
 // is REPORTED as undelivered rather than skipped. Skipping was right while

@@ -1,7 +1,6 @@
-// Package binding owns the playbook binding vocabulary: the matcher +
-// mapping + workflow + state-machine entity that turns a captured webhook
-// into an archie task. See docs/prds/webhook-intake-security.md and
-// docs/prds/payload-field-mapping.md.
+// Package binding owns the playbook binding vocabulary: the matcher + mapping +
+// workflow + state-machine entity that turns a captured webhook into an archie
+// task.
 package binding
 
 import (

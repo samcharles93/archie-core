@@ -1,12 +1,11 @@
-// The access chain at the dashboard and API request path: the second of the
-// two places that call the Authorizer (docs/prds/orgs-and-access.md, "Where
-// it lives"). A request that carries an identity is assembled into a
-// principal; the action and resource kind are derived from the route; the
-// chain decides; a denial is recorded with the level that decided it and
-// reported as forbidden without the reason.
+// The access chain at the dashboard and API request path: the second of the two
+// places that call the Authorizer. A request that carries an identity is
+// assembled into a principal; the action and resource kind are derived from the
+// route; the chain decides; a denial is recorded with the level that decided it
+// and reported as forbidden without the reason.
 //
-// The shared token is the single-operator install's owner of the default org
-// (docs/prds/orgs-and-access.md, "Credentials"): the token principal is
+// The shared token is the single-operator install's owner of the default org:
+// the token principal is
 // assembled here, not looked up, until principal credentials exist.
 package webui
 
@@ -80,7 +79,7 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 				return
 			}
 			// A denial inside the caller's org is forbidden, without the
-			// reason (docs/prds/orgs-and-access.md, "Denials").
+			// reason.
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -174,8 +173,8 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 		return access.ActionUpdate, access.KindSecret, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/harness/terminal"):
 		// Opening the setup terminal captures the binding's OAuth tokens, so
-		// it is the update action on the secret
-		// (docs/prds/external-agent-harness.md, "Setup terminal"). The shipped
+		// it is the update action on the secret.
+		// The shipped
 		// org-owner and org-admin policies grant it; the terminal is
 		// admin-only.
 		return access.ActionUpdate, access.KindSecret, "", true

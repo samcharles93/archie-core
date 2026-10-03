@@ -5,7 +5,7 @@
 // internal/domain/workflow (routing binding files) and
 // internal/domain/eda/playbook (EDA playbooks) -- this package only calls the
 // loaders the daemon runs and formats results; there is deliberately no
-// second validation path here (per docs/prds/eda-playbook-engine.md).
+// second validation path here.
 package archieplaybooks
 
 import (

@@ -15,12 +15,9 @@ import (
 // healthSurface is archied's own liveness endpoint, served on
 // [health].listen for the lifetime of the process.
 //
-// The dashboard also answers /healthz, but on the dashboard's listener: that
-// can be switched off, and in Phase 3 it belongs to a separate process
-// entirely. Either way it is the wrong thing to ask "did archied come back
-// up?" -- which is exactly what the update watchdog asks after restarting
-// the daemon, and answers with a rollback when nothing replies
-// (archie-core-1r4g, archie-core-exbz).
+// Either way it is the wrong thing to ask "did archied come back up?" -- which
+// is exactly what the update watchdog asks after restarting the daemon, and
+// answers with a rollback when nothing replies
 //
 // serving gates the liveness answer: the listener binds early in boot, so
 // the port is answering before the daemon is, and a 200 before the daemon

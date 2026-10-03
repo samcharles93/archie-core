@@ -34,12 +34,8 @@ var remediableReviewStates = map[string]bool{
 	"commented":         true,
 }
 
-// reactionConsumer turns forge review reactions on Archie-owned PRs into
-// queued remediate runs. It implements the consumer half of
-// docs/prds/pr-review-remediation.md decisions 3 and 5: resolve the PR to
-// the task that owns it (the authorization boundary), never react to
-// Archie's own comments, collect a review's comments into one unit while it
-// is pending, and rely on the guarded store transition for dedup.
+// reactionConsumer turns forge review reactions on Archie-owned PRs into queued
+// remediate runs.
 type reactionConsumer struct {
 	lookup       workintake.ReviewTaskLookup
 	remediations storecontract.RemediationStarter

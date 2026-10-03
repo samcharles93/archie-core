@@ -19,7 +19,7 @@ import (
 // WorkflowCallStepName is the step type that starts another workflow as its
 // own run. The callee is a first-class task the State Store derives from the
 // caller's row: its own pinned definition, its own agent profile, its own
-// container and its own outcome (docs/prds/workflow-calls.md).
+// container and its own outcome.
 const WorkflowCallStepName = "workflow.call"
 
 // MaxCallDepth bounds how deep one run may call callees. A cycle is refused
@@ -32,10 +32,9 @@ const MaxCallDepth = 5
 // status. A var so tests do not sleep.
 var callPollInterval = 2 * time.Second
 
-// workflowCallSettings are the workflow.call step's settings. An inputs value
-// is either a literal or a reference to the calling workflow's declared
-// input, written "inputs.<name>" -- the PRD's `inputs: { src_ip:
-// inputs.src_ip }` shape.
+// workflowCallSettings are the workflow.call step's settings. An inputs value is
+// a literal or "inputs.<name>", a reference to the calling workflow's declared
+// input.
 type workflowCallSettings struct {
 	Workflow string         `yaml:"workflow"`
 	Inputs   map[string]any `yaml:"inputs,omitempty"`
@@ -43,7 +42,6 @@ type workflowCallSettings struct {
 	// Outputs publishes a callee output as one of the caller's own: the key
 	// names the callee's declared output, the value an outputs.<name>
 	// reference naming the caller's declared output
-	// (docs/prds/workflow-call-outputs.md, "How a caller receives one").
 	Outputs map[string]string `yaml:"outputs,omitempty"`
 }
 
@@ -273,7 +271,6 @@ func callSucceeded(status string) bool {
 // validateWorkflowCalls checks every workflow.call step against the rest of
 // the collection: the callee must exist, the call's inputs must satisfy the
 // callee's declared inputs, and no workflow may reach itself through calls
-// (docs/prds/workflow-calls.md).
 func validateWorkflowCalls(parsed map[string]YAMLDefinition) error {
 	calls := make(map[string][]string, len(parsed))
 	for id, d := range parsed {
@@ -341,8 +338,8 @@ func checkCallInputs(callerID string, index int, caller task.WorkflowInterface, 
 
 // checkCallOutputs validates one call's saved outputs assignment: the key
 // must be declared by the callee, the reference must name an output the
-// caller declares, and the callee's declared type must satisfy the caller's
-// (docs/prds/workflow-call-outputs.md, "Save time"). The shape of the value
+// caller declares, and the callee's declared type must satisfy the caller's.
+// The shape of the value
 // (a well-formed outputs.<name> reference) is the factory's refusal; only
 // the declarations are the collection's to judge, exactly as for inputs.
 func checkCallOutputs(callerID string, index int, caller task.WorkflowInterface, callee YAMLDefinition, outputs map[string]string) error {

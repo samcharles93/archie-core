@@ -14,7 +14,7 @@ import (
 // recoveryUsage is the whole flag surface of the offline recovery commands.
 // They are subcommands of this binary rather than a recovery binary of their
 // own: offline database maintenance belongs to the process that owns the file
-// and its path layout (docs/architecture/organisation.md#process-boundaries).
+// and its path layout.
 const recoveryUsage = `usage: archie-state-store <command> [flags]
 
 With no command, archie-state-store serves the State Store gRPC contract.

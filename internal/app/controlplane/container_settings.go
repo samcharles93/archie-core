@@ -15,13 +15,11 @@ import (
 // directly: that struct's tags belong to the TOML file format, and when it was
 // the document, encoding/json fell back to its Go field names -- "Image",
 // "MaxConcurrency", "LegacyEnabled" -- the only Go-cased resource left in the
-// registry (archie-core-1171). The two durations are config.Duration, which
+// registry. The two durations are config.Duration, which
 // already writes the string the file accepts; the leak was the keys only.
 //
-// Profiles is deliberately not a field here: config.ContainerConfig.Profiles
-// is json:"-" (its own resource, AgentProfileKind, applies live where the
-// rest of this one is restart-required -- docs/prds/external-agent-harness.md
-// "Selection"), so this document never carries it either.
+// Profiles is deliberately not a field here: config.ContainerConfig.Profiles is
+// json:"-", so this document never carries it either.
 type containerRuntimePolicies struct {
 	Image          string          `json:"image"`
 	MaxConcurrency int             `json:"max_concurrency"`

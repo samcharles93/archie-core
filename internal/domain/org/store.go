@@ -34,8 +34,8 @@ type Repository interface {
 	OrgForIdentity(context.Context, identity.IdentityID) (OrgID, error)
 }
 
-// Upgrader performs the resumable default org/workspace upgrade
-// (docs/prds/orgs-and-access.md, "Upgrading existing installs"). It runs in
+// Upgrader performs the resumable default org/workspace upgrade.
+// It runs in
 // the State Store first, then in the event store, each phase resumable from
 // its recorded ledger row, and it must run before scoped calls are served.
 type Upgrader interface {

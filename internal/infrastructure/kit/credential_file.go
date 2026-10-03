@@ -28,13 +28,11 @@ const (
 	credentialFileMode = "0600"
 )
 
-// renderCredentialFile renders c's oauth.credentialFile: the declared
-// structure with the Kit's sentinels substituted for the token placeholders,
-// the stored token set's scopes for {{.Scopes}} and its expiry for
-// {{.ExpiresAt}}, encoded in the declared format. facts is the only thing the
-// renderer receives about the stored token set, so a real token cannot reach
-// the file (docs/prds/external-agent-harness.md, "Verification: the credential
-// file holds only sentinels").
+// renderCredentialFile renders c's oauth.credentialFile: the declared structure
+// with the Kit's sentinels substituted for the token placeholders, the stored
+// token set's scopes for {{.Scopes}} and its expiry for {{.ExpiresAt}}, encoded
+// in the declared format. facts is the only thing the renderer receives about
+// the stored token set, so a real token cannot reach the file.
 func renderCredentialFile(c spec.CredentialCapability, facts OAuthFacts) (string, error) {
 	cf := c.OAuth.CredentialFile
 	var sentinels spec.Sentinels

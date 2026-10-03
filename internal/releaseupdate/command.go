@@ -39,7 +39,7 @@ func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 // CommandInstaller runs the deployment's own install command. HealthURL is
 // the base URL its restart tooling must poll for /healthz -- only this
 // process knows which address it actually serves, so a script left to guess
-// one rolls back releases that came up healthy (archie-core-1r4g). Empty
+// one rolls back releases that came up healthy. Empty
 // leaves ARCHIE_HEALTH_URL as the environment already has it.
 type CommandInstaller struct {
 	Command   []string

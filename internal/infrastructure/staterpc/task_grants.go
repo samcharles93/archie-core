@@ -90,19 +90,11 @@ func (g *TaskGrants) taskFor(token string) int64 {
 	return 0
 }
 
-// authorizesTaskScopedCall reports whether req -- a call to one of the RPCs
-// a task grant may ever authorize -- targets taskID. Every other RPC
-// (including RegisterTaskGrant/RevokeTaskGrant themselves) falls through to
-// false: a task grant can only ever narrow, never expand.
-//
-// The two workflow.call RPCs and the two step-execution writes are the
-// sanctioned widenings: a workflow.call step must start its callee and read it
-// back, the callee being the caller's child (docs/prds/workflow-calls.md), and
-// the container records its stages and its own agent calls under the run
-// credential of docs/prds/execution-tree-state-machine.md. The step requests
-// carry the caller's own task ID, which the grant check verifies; the step's
-// membership in that execution is a handler-side row check, so this
-// interceptor never reads the database.
+// authorizesTaskScopedCall reports whether a task-scoped token may make this
+// call: only when the RPC is in taskScopedTargets and targets taskID. Every
+// other RPC, including grant registration, is refused, so a task grant only
+// narrows. workflow.call and step-execution writes carry the caller's own task
+// ID; the handler checks step membership, so this never reads the database.
 func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
 	target := taskScopedTargets[fullMethod]
 	return target != nil && target(req) == taskID

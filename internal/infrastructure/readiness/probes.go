@@ -62,9 +62,8 @@ func (p *StoreProbe) Check(ctx context.Context) health.Result {
 // ContractProbe reports whether a service this process consumes over the wire
 // answers a cheap call within a bounded timeout. It is the readiness signal
 // available to a process that depends on a service it does not own: the probe
-// consumes the dependency's own result and never inspects its manager,
-// registry or database (docs/prds/ui-service-boundary.md, "Listen,
-// authentication, and readiness").
+// consumes the dependency's own result and never inspects its manager, registry
+// or database.
 type ContractProbe struct {
 	ProbeName string
 	Timeout   time.Duration
@@ -99,7 +98,7 @@ func (p *ContractProbe) Check(ctx context.Context) health.Result {
 // PolicyProblems reports the stored access policies this process's engine
 // could not validate. The policy chain is the source; a policy that failed
 // startup re-validation denies its level and must be named here with its
-// error (docs/prds/orgs-and-access.md, "Storing and changing policies").
+// error.
 type PolicyProblems interface {
 	Problems() []access.Problem
 }

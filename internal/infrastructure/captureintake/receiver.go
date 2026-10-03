@@ -1,11 +1,11 @@
 // Package captureintake is the HTTP receiver for inbound webhooks archie has
 // no binding for yet: it persists what arrives so an operator can inspect it
-// and build one (docs/prds/event-capture-storage.md).
+// and build one.
 //
 // It belongs to the process that owns work intake, not to the dashboard that
 // displays captures. It served from the dashboard's listener while the two
 // shared a process; the split gives the read to the dashboard, over the State
-// Store, and keeps the write here (archie-core-8cda.5.4). From the cutover
+// Store, and keeps the write here. From the cutover
 // change in the same bead it is a persistence shim over the State Store
 // contract mounted by the UI process -- the only dashboard listener left --
 // while the daemon's binding-dispatch loop consumes captures from the same
@@ -117,8 +117,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A body that isn't JSON has no key-value structure for the heuristic to
 	// match against, so there is nothing to redact -- store it as received
-	// rather than dropping or mangling it. Best-effort, per
-	// docs/prds/webhook-intake-security.md point 5.
+	// rather than dropping or mangling it. Best-effort.
 	redactedBody, err := webhookguard.RedactPayload(body)
 	if err != nil {
 		redactedBody = body
@@ -141,13 +140,8 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reuses the existing activity-event pipeline rather than inventing
-	// separate push plumbing -- see docs/prds/event-capture-storage.md.
-	// Deliberately LIGHTWEIGHT: the events table this feeds has no retention
-	// or row-count prune, unlike captured_events, so embedding the full (up
-	// to MaxBodyBytes) body/headers here would duplicate the payload into an
-	// unbounded table and defeat InsertCapture's own disk-bound guarantee.
-	// The captures view treats this purely as an invalidation signal and
-	// refetches the list for the actual row data.
+	// separate push plumbing. The captures view treats this purely as an
+	// invalidation signal and refetches the list for the actual row data.
 	if rc.Publish != nil {
 		rc.Publish(r.Context(), events.Event{
 			Kind:   "capture",
@@ -204,13 +198,7 @@ func (rc *Receiver) logger() *slog.Logger {
 }
 
 // fallbackMaxBodyBytes bounds a capture body when MaxBodyBytes is left unset
-// (zero). The size cap is the only one of the three disk-bound mechanics in
-// docs/prds/event-capture-storage.md that limits a SINGLE payload rather than
-// total row count or write rate -- a table pruned to maxEvents rows still
-// holds one arbitrarily large row if nothing ever bounded that row's size, so
-// this must never be skippable by a missing wiring value the way the rate
-// limiter (best-effort, not disk-bound-load-bearing on its own) is allowed to
-// be.
+// (zero).
 const fallbackMaxBodyBytes = 256 * 1024
 
 func maxBodyBytesOrFallback(configured int64) int64 {

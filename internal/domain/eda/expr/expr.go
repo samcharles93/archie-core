@@ -13,10 +13,9 @@
 // evaluation cannot disagree; the standalone lint command covers the flat
 // kind/label binding files, not rich EDA playbook documents.
 //
-// CEL is non-Turing-complete, side-effect-free, and panic-free by design (no
-// recover() wrapper is needed; verified in the t2db.14 acceptance tests
-// against hostile data). Anything the schema does not accept is a returned
-// error here -- the reject-at-load philosophy of the parent design doc.
+// CEL is non-Turing-complete, side-effect-free, and panic-free by design.
+// Anything the schema does not accept is a returned error here -- the
+// reject-at-load philosophy of the parent design doc.
 package expr
 
 import (

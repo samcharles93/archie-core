@@ -4,7 +4,6 @@ import "github.com/samcharles93/archie-core/internal/config"
 
 // CredentialBindingsKind is the control-plane resource mapping a Kit
 // credential@1 service name to an org secret
-// (docs/prds/external-agent-harness.md, Credentials; docs/prds/orgs-and-access.md).
 // It exists so a binding applies without a restart, the same reason
 // AgentProfileKind is its own resource: [containers].credentials in
 // config.toml is only its seed, and kitrun.Launcher reads the live
