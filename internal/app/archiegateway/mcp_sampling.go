@@ -1,4 +1,4 @@
-package archied
+package archiegateway
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 )
 
 // mcpSamplingHandler answers an MCP server's sampling/createMessage request
-// from the daemon's own chat model, so a server can ask for a completion
+// from the Gateway's chat model, so a server can ask for a completion
 // without archie opening a second provider path. A missing runtime or model
 // is a refused request, never a dropped one: the client maps the returned
 // error to a JSON-RPC error response for that request alone, leaving the
 // server session intact.
-func (b *boot) mcpSamplingHandler() mcp.SamplingHandler {
+func (b *server) mcpSamplingHandler() mcp.SamplingHandler {
 	return func(ctx context.Context, req mcp.SamplingRequest) (mcp.SamplingResult, error) {
 		llm := b.chatLLM()
 		if llm == nil {

@@ -258,9 +258,7 @@ install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-
 # update to a release predating one of these processes stays buildable.
 built=""
 if [[ ",$components," == *,daemon,* ]]; then
-  ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=$GW"
-  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=$RT"
-  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+  ldflags="-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
   # The updater is a build site too: without this stamp its own outputs would
   # report "dev" and fail the skew check it just installed.
   ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Version=$GW"

@@ -1,4 +1,4 @@
-package archied
+package archiegateway
 
 import (
 	"context"
@@ -24,14 +24,10 @@ type appliedMCPServer struct {
 }
 
 // buildMCPProvider builds the tool-provider engine for one configured MCP
-// server. boot.mcpProvider overrides it in tests; production uses
-// configuredMCPProvider with the running config's work directory and the
-// daemon's sampling handler. Boot registration and the live reconciliation
+// server: configuredMCPProvider with the running config's work directory and the
+// Gateway's sampling handler. Boot registration and the live reconciliation
 // both reach the engine through here, so the two cannot build one differently.
-func (b *boot) buildMCPProvider(srv config.MCPServer) (toolprovider.Engine, error) {
-	if b.mcpProvider != nil {
-		return b.mcpProvider(srv)
-	}
+func (b *server) buildMCPProvider(srv config.MCPServer) (toolprovider.Engine, error) {
 	return configuredMCPProvider(srv, b.cfgHolder.Get().WorkDir, b.mcpSamplingHandler())
 }
 
@@ -40,9 +36,9 @@ func (b *boot) buildMCPProvider(srv config.MCPServer) (toolprovider.Engine, erro
 // server keeps running), the web_fetch and minimax tool entries (rebuilt,
 // because the entry captured the config at construction) and the tool-output
 // policy (whose spill directory is ensured here; the task snapshot reads the
-// policy fresh per dispatch and boot.toolLimits is read per call). A nil tool
+// policy fresh per dispatch and toolLimits is read per call). A nil tool
 // registry means this process built no tools, so only the config was layered.
-func (b *boot) reconcileToolSettings(ctx context.Context, cfg config.Config) error {
+func (b *server) reconcileToolSettings(ctx context.Context, cfg config.Config) error {
 	if err := toolLimits(cfg).EnsureSpillDir(); err != nil {
 		b.log.Warn("tool spill directory unavailable; large results will be truncated instead", "err", err)
 	}
@@ -74,7 +70,7 @@ func (b *boot) reconcileToolSettings(ctx context.Context, cfg config.Config) err
 // registration applies. A changed server whose new engine fails to start is
 // rolled back to the old one by the registry, so a refused change does not
 // leave the server down.
-func (b *boot) reconcileMCPServers(ctx context.Context, servers []config.MCPServer) error {
+func (b *server) reconcileMCPServers(ctx context.Context, servers []config.MCPServer) error {
 	if b.providerRegistry == nil {
 		return nil
 	}
@@ -102,7 +98,7 @@ type mcpRegistryState struct {
 	live          map[string]bool
 }
 
-func (b *boot) mcpRegistryState() mcpRegistryState {
+func (b *server) mcpRegistryState() mcpRegistryState {
 	registered := make(map[string]bool)
 	for _, id := range b.providerRegistry.RegisteredIDs() {
 		registered[id] = true
@@ -120,7 +116,7 @@ func (b *boot) mcpRegistryState() mcpRegistryState {
 
 // disconnectAbsentMCPServers removes every applied server the stored document
 // no longer names.
-func (b *boot) disconnectAbsentMCPServers(ctx context.Context, desired map[string]config.MCPServer) []error {
+func (b *server) disconnectAbsentMCPServers(ctx context.Context, desired map[string]config.MCPServer) []error {
 	var problems []error
 	for name := range b.mcpApplied {
 		if _, ok := desired[name]; ok {
@@ -138,7 +134,7 @@ func (b *boot) disconnectAbsentMCPServers(ctx context.Context, desired map[strin
 
 // applyDesiredMCPServers connects, reconnects or restarts the servers the
 // stored document names, skipping the ones already running unchanged.
-func (b *boot) applyDesiredMCPServers(ctx context.Context, desired map[string]config.MCPServer, state mcpRegistryState) []error {
+func (b *server) applyDesiredMCPServers(ctx context.Context, desired map[string]config.MCPServer, state mcpRegistryState) []error {
 	names := make([]string, 0, len(desired))
 	for name := range desired {
 		names = append(names, name)
@@ -170,7 +166,7 @@ func (b *boot) applyDesiredMCPServers(ctx context.Context, desired map[string]co
 // family runs, or still registered while it has not started; a
 // registered-but-not-running server on a running family is a refused earlier
 // start and is worth another attempt.
-func (b *boot) mcpServerCurrent(name string, srv config.MCPServer, state mcpRegistryState) bool {
+func (b *server) mcpServerCurrent(name string, srv config.MCPServer, state mcpRegistryState) bool {
 	applied, ok := b.mcpApplied[name]
 	if !ok || !reflect.DeepEqual(applied.server, srv) {
 		return false
@@ -183,7 +179,7 @@ func (b *boot) mcpServerCurrent(name string, srv config.MCPServer, state mcpRegi
 
 // applyMCPProvider replaces a registered provider and adds an absent one,
 // whichever the registry needs for that id.
-func (b *boot) applyMCPProvider(ctx context.Context, engine toolprovider.Engine, state mcpRegistryState) error {
+func (b *server) applyMCPProvider(ctx context.Context, engine toolprovider.Engine, state mcpRegistryState) error {
 	if state.registered[engine.Manifest().ID] {
 		return b.providerRegistry.Replace(ctx, engine)
 	}

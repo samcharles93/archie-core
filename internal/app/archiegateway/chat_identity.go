@@ -1,4 +1,4 @@
-package archied
+package archiegateway
 
 import (
 	"github.com/samcharles93/archie-core/internal/domain/memory"

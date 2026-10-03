@@ -17,16 +17,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/chattask"
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-	natsio "github.com/nats-io/nats.go"
-	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -36,13 +32,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
-	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
-	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -54,29 +47,14 @@ import (
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
-	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
-	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
-	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
-	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
-	"github.com/samcharles93/archie-core/internal/infrastructure/toolbuilder"
-	"github.com/samcharles93/archie-core/internal/infrastructure/transcription"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
-	"github.com/samcharles93/archie-core/internal/ratelimit"
-	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/tools"
-	"github.com/samcharles93/archie-core/internal/tools/minimax"
-	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
-	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
-	"github.com/samcharles93/archie-core/internal/tools/sendfile"
-	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -87,8 +65,9 @@ import (
 // reverse at shutdown, matching the LIFO ordering of the deferred calls
 // they replace.
 type boot struct {
-	cfg config.Config
-	log *slog.Logger
+	catalog *servicekit.Catalog
+	cfg     config.Config
+	log     *slog.Logger
 
 	// stderrLog keeps setupLogging on stderr, never touching cfg.Log.File. An
 	// offline command reads the bootstrap config but is not the daemon: creating
@@ -152,48 +131,9 @@ type boot struct {
 	// processName is which binary this composition is running as, and is the
 	// name apply-status records carry. Set by each entry point, because one
 	// boot builds both archied and archie-gateway.
-	processName      string
-	chatSessionStore gateway.SessionStore
-	// chatPool is the conversation store's pool, which the store owns and
-	// closes; the Gateway also holds its serve claim on it.
-	chatPool *pgxpool.Pool
-
-	// catalog, catalogModels and catalogMu are the model catalog the process
-	// last loaded and the model references it contributes. The refresh loop
-	// replaces both together while the config paths read them, so they are one
-	// value behind one lock rather than two fields that can disagree.
-	catalogMu     sync.RWMutex
-	catalog       modelcatalog.Snapshot
-	catalogModels []string
-	// catalogCachePath is where the catalog's last download is cached, beside
-	// the config file. Empty when boot had no file path to derive it from.
-	catalogCachePath string
-	// catalogURL overrides the catalog endpoint. Zero in production:
-	// modelcatalog defaults to models.dev. Set only by tests.
-	catalogURL string
-	// catalogRefreshInterval is how often the running daemon re-reads the
-	// catalog. The daemon's refresh loop reads it; zero means the default.
-	catalogRefreshInterval time.Duration
+	processName string
 
 	bus *events.Bus
-	// taskActionsConn is the standalone Gateway process's own NATS connection:
-	// it dials the broker directly (the Gateway does not build the
-	// consumer/stream client the daemon does) and uses it for task actions.
-	// Held so /status can report broker connectivity from the connection this
-	// process actually uses instead of dialling a fresh one. Nil in the daemon.
-	taskActionsConn *natsio.Conn
-	// providerOutcomes records the last-known outcome of every chat-model call
-	// this process makes, read back by /status (newStatusHealth). Built before
-	// the chat runtime, which carries it into each turn runner.
-	providerOutcomes *providerOutcomeRecorder
-	// statusHealth is the /status health source this process serves. It
-	// carries the broker connection and the chat-model outcomes; see
-	// newStatusHealth for the facts it deliberately leaves out.
-	statusHealth gateway.HealthSource
-	// rateLimiter is the shared per-(channel, sender) inbound budget every
-	// chat Router is given. Nil when [chat.rate_limit] is not configured,
-	// which leaves rate limiting off.
-	rateLimiter *ratelimit.Limiter
 	// cfgHolder is the daemon's one configuration Holder. Boot owns it and
 	// the daemon reads through it, so a reload swaps one snapshot and every
 	// reader sees it: there is no second holder to keep in step.
@@ -227,33 +167,13 @@ type boot struct {
 	kitLauncher  daemon.KitLauncher
 	storeBackend storage.Backend
 
-	// llm is the chat runtime's provider runtime, held in a pointer the chat
-	// surfaces read through chatLLM at each use. A live provider-settings or
-	// model-role-assignments update swaps it wholesale: ai-sdk's Runtime
-	// caches the provider instances it built, so a changed provider set needs
-	// a new Runtime rather than a mutated one.
-	llm atomic.Pointer[runtime.Runtime]
 	// runtimeVersions records the version of every control-plane kind boot's
 	// layering applied. Set once at boot before the runtime-resource watches
 	// start, which read it as their resume points.
 	runtimeVersions map[string]int64
 
-	// transcriber is the optional voice-transcription capability. It is built
-	// beside the chat runtime from this process's own [models]/[providers],
-	// which is the model-owning side of the Messaging boundary: a channel
-	// frontend carries a voice note's bytes across the inbound wire, and this
-	// process turns them into text before the turn is recorded. Nil when no
-	// role is configured or the provider credential did not resolve; a turn
-	// then keeps the frontend's media note rather than failing.
-	transcriber messaging.Transcriber
-
-	toolReg             *tools.Registry
-	chatModels          *chatModelManager
-	personas            *gateway.PersonaRegistry
 	chatTasks           gateway.TaskCreator
-	chatController      *gateway.StoreTaskController
 	defaultChatIdentity string
-	updateService       *releaseupdate.Service
 
 	startGateways  []func()
 	capabilityHost *plugin.Host
@@ -266,23 +186,7 @@ type boot struct {
 	trees            *worktree.Manager
 	worktreeGrants   *worktreerpc.Grants
 	identityRunners  []*daemon.IdentityRunner
-	memEngines       *domainmemory.Registry
-	curatorRegistry  *curator.Registry
-	curatorRuntime   *curator.Runtime
-	providerRegistry *toolprovider.Registry
-	// mcpMu guards mcpApplied, which records the MCP servers the provider
-	// registry was last built from, keyed by configured name. A live
-	// tool-settings change diffs the stored server set against it so an
-	// unchanged server is left running and untouched (mcp_reconcile.go); the
-	// mutex is held because registerTools runs at boot while the
-	// control-plane watch may already be applying an update.
-	mcpMu      sync.Mutex
-	mcpApplied map[string]appliedMCPServer
-	// mcpProvider builds the engine for one configured MCP server. Nil uses
-	// configuredMCPProvider; a test injects a fake so the live reconciliation
-	// can run without spawning a server process.
-	mcpProvider func(config.MCPServer) (toolprovider.Engine, error)
-	d           *daemon.Daemon
+	d                *daemon.Daemon
 	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
 	// Nil when no chat task creator is configured, in which case startServices
 	// leaves it unstarted rather than running with no reachable job kind.
@@ -315,20 +219,6 @@ type boot struct {
 
 func newBootstrap() *boot {
 	return &boot{log: slog.New(slog.NewJSONHandler(os.Stderr, nil)), agentStatus: &daemon.AgentStatus{}}
-}
-
-// chatLLM is the provider runtime the chat surfaces read at each use: a turn
-// resolves it when it starts, so a runtime swapped by a live model-settings
-// update is the one the turn after it runs on.
-func (b *boot) chatLLM() *runtime.Runtime { return b.llm.Load() }
-
-// setLLM replaces the chat runtime. A nil runtime is a legal state: a
-// deployment whose every provider credential was disabled by a live update
-// leaves chat turns refused until another update restores one.
-func (b *boot) setLLM(rt *runtime.Runtime) { b.llm.Store(rt) }
-
-func (b *boot) addCleanup(fn func()) {
-	b.cleanups = append(b.cleanups, fn)
 }
 
 func (b *boot) cleanup() {
@@ -368,7 +258,7 @@ func (b *boot) setupLogging() {
 // reference that may name one.
 func (b *boot) openStores(ctx context.Context) error {
 	b.secrets = secret.NewRegistry()
-	return b.openChatSessions(ctx)
+	return nil
 }
 
 // openForge builds the forge client. It runs after the runtime settings are
@@ -382,7 +272,7 @@ func (b *boot) openStateStoreAdapter(ctx context.Context) error {
 	if target == "" {
 		return fmt.Errorf("services.state.target is required: archied/archie-gateway no longer own archie.db; the standalone archie-state-store process owns it (docs/prds/state-store-contract.md §12 step 7)")
 	}
-	client, cleanup, err := composeStateStoreClient(b.cfg.Services, b.secrets)
+	client, cleanup, err := servicekit.StateStoreClient(b.cfg.Services, b.secrets)
 	if err != nil {
 		b.log.Error("state store adapter", "err", err)
 		return err
@@ -430,36 +320,6 @@ func (b *boot) openAccessChain(ctx context.Context) error {
 	return nil
 }
 
-func (b *boot) openChatSessions(ctx context.Context) error {
-	pool, err := servicekit.OpenPool(ctx, b.cfg.DatabaseURL, "the conversation store")
-	if err != nil {
-		return fmt.Errorf("open conversation store: %w", err)
-	}
-	chatSessionStore := gateway.NewPostgresSessionStore(pool)
-	b.chatPool = pool
-	b.chatSessionStore = chatSessionStore
-	b.addCleanup(func() {
-		if err := chatSessionStore.Close(); err != nil {
-			b.log.Error("close conversation store", "err", err)
-		}
-	})
-	return nil
-}
-
-func (b *boot) claimGatewayOwnership(ctx context.Context) error {
-	ownership, err := postgres.AcquireOwnership(ctx, b.chatPool, postgres.OwnerGateway)
-	if err != nil {
-		return fmt.Errorf("claim gateway ownership: %w", err)
-	}
-	releaseCtx := context.WithoutCancel(ctx)
-	b.addCleanup(func() {
-		if err := ownership.Release(releaseCtx); err != nil {
-			b.log.Error("release gateway ownership", "err", err)
-		}
-	})
-	return nil
-}
-
 // handleRequeue replays a parked/waiting task by id, then signals an
 // early success exit unless -once keeps the daemon running.
 func (b *boot) handleRequeue(ctx context.Context, requeue int64, once bool) (bool, error) {
@@ -474,38 +334,6 @@ func (b *boot) handleRequeue(ctx context.Context, requeue int64, once bool) (boo
 	return !once, nil
 }
 
-// catalogState returns the model catalog the process is running and the model
-// references it contributes. Both together, under one lock: the refresh loop
-// replaces them as a pair.
-func (b *boot) catalogState() (modelcatalog.Snapshot, []string) {
-	b.catalogMu.RLock()
-	defer b.catalogMu.RUnlock()
-	return b.catalog, b.catalogModels
-}
-
-// setCatalogState installs a loaded catalog. Called only after everything it
-// has to reach has been built, so a read that fails leaves the previous
-// snapshot running.
-func (b *boot) setCatalogState(snapshot modelcatalog.Snapshot, models []string) {
-	b.catalogMu.Lock()
-	defer b.catalogMu.Unlock()
-	b.catalog = snapshot
-	b.catalogModels = models
-}
-
-func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
-	b.catalogCachePath = filepath.Join(filepath.Dir(cfgPath), "models.json")
-	catalog, err := modelcatalog.Load(ctx, b.catalogOptions(b.catalogCachePath))
-	if err != nil {
-		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
-		return
-	}
-	models := applyModelCatalog(&b.cfg, catalog)
-	b.cfgHolder.Set(b.cfg.Clone())
-	b.setCatalogState(catalog, models)
-	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(models))
-}
-
 func (b *boot) seedSoul(cfgPath string) {
 	result, err := configuration.SeedSoul(cfgPath, agent.ShippedSoul())
 	if err != nil {
@@ -515,61 +343,6 @@ func (b *boot) seedSoul(cfgPath string) {
 	if result.Action == configuration.SoulCreated {
 		b.log.Info("soul: starter file written", "path", result.Path, "action", result.Action)
 	}
-}
-
-func (b *boot) refreshModelCatalog(ctx context.Context) error {
-	catalog, err := modelcatalog.Load(ctx, b.catalogOptions(b.catalogCachePath))
-	if err != nil {
-		return err
-	}
-	base := b.cfgHolder.Get().Clone()
-	models := applyModelCatalog(&base, catalog)
-	cfg, _, err := b.runtimeConfig(ctx, base)
-	if err != nil {
-		return err
-	}
-	b.setCatalogState(catalog, models)
-	b.publishConfig(ctx, cfg)
-	b.rebuildChatModelRuntime(cfg)
-	b.log.Info("model catalog refreshed", "providers", len(catalog.Providers), "models", len(models))
-	return nil
-}
-
-func (b *boot) catalogOptions(cachePath string) modelcatalog.Options {
-	opts := modelcatalog.Options{
-		URL:       b.catalogURL,
-		CachePath: cachePath,
-	}
-	if b.secrets != nil {
-		opts.Getenv = b.secrets.Getenv
-	}
-	if b.cfgHolder != nil {
-		opts.Configured = b.cfgHolder.Get().Providers
-	}
-	return opts
-}
-
-const modelCatalogRefreshInterval = time.Hour
-
-func (b *boot) startModelCatalogRefresh(ctx context.Context) {
-	every := b.catalogRefreshInterval
-	if every <= 0 {
-		every = modelCatalogRefreshInterval
-	}
-	go func() {
-		ticker := time.NewTicker(every)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := b.refreshModelCatalog(ctx); err != nil {
-					b.log.Warn("model catalog refresh failed; keeping the loaded catalog", "err", err)
-				}
-			}
-		}
-	}()
 }
 
 func (b *boot) setupObservability(ctx context.Context) {
@@ -593,13 +366,13 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 			return fmt.Errorf("nats.url is required when nats.mode is external")
 		}
 		var err error
-		natsToken, err = configuredNATSToken(cfg.NATS, os.Getenv)
+		natsToken, err = servicekit.NATSToken(cfg.NATS, os.Getenv)
 		if err != nil {
 			log.Error("nats credentials", "err", err)
 			return err
 		}
 	} else {
-		endpoint, readErr := readEmbeddedNATSEndpoint(cfg.StateDir)
+		endpoint, readErr := servicekit.ReadNATSEndpoint(cfg.StateDir)
 		if readErr == nil {
 			url, natsToken = endpoint.URL, endpoint.Token
 			if probe, err := nats.Connect(ctx, nats.Config{URL: url, Token: natsToken, Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, log); err == nil {
@@ -676,7 +449,7 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	}
 	b.addCleanup(func() { srv.Shutdown() })
 	log.Info("embedded nats started", "url", srv.ClientURL())
-	if err := writeEmbeddedNATSEndpoint(cfg.StateDir, srv.ClientURL(), srv.Token()); err != nil {
+	if err := servicekit.WriteNATSEndpoint(cfg.StateDir, srv.ClientURL(), srv.Token()); err != nil {
 		srv.Shutdown()
 		return "", "", err
 	}
@@ -688,18 +461,6 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 	b.containerPool = containerPool
 	b.storeBackend = storeBackend
 	return closeDocker
-}
-
-func (b *boot) setupTranscriber(cfg config.Config, log *slog.Logger) {
-	client, ok := transcription.New(cfg.Models, cfg.Providers, transcription.Options{
-		ResolveSecret: b.secrets.Resolve,
-	})
-	if ok {
-		b.transcriber = client
-		log.Info("voice transcription enabled", "role", transcription.Role)
-	} else if cfg.Models[transcription.Role] != "" {
-		log.Warn("voice transcription configured but unavailable; capability disabled", "role", transcription.Role)
-	}
 }
 
 // setupGatewayClient dials the Gateway, which owns every model call. The daemon
@@ -714,28 +475,6 @@ func (b *boot) setupGatewayClient() error {
 	b.chat = &webui.ChatService{Contract: contract}
 	b.setupReadinessProbes()
 	return nil
-}
-
-const rateLimiterEvictInterval = time.Minute
-
-func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig) {
-	if !cfg.Enabled() {
-		return
-	}
-	b.rateLimiter = ratelimit.New(cfg.Window, cfg.MaxRequests)
-	limiter := b.rateLimiter
-	go func() {
-		ticker := time.NewTicker(rateLimiterEvictInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				limiter.EvictStale()
-			}
-		}
-	}()
 }
 
 func (b *boot) loadWorkflows() error {
@@ -942,243 +681,6 @@ func (b *boot) registerNATSRPC() error {
 	}
 	b.addCleanup(unsubscribeTaskActions)
 	return nil
-}
-
-func (b *boot) setupMemoryEngine() error {
-	cfg, log := b.cfg, b.log
-	registry := domainmemory.NewRegistry(domainmemory.Registrar{Log: log})
-
-	switch cfg.Memory.Engine {
-	case infraMemory.EngineName, "":
-		root := filepath.Join(cfg.WorkDir, "memory-engine")
-		if err := registry.Register(infraMemory.NewBuiltinEngine(root, 0)); err != nil {
-			return fmt.Errorf("register memory engine %q: %w", infraMemory.EngineName, err)
-		}
-	default:
-		return fmt.Errorf("memory.engine %q has no registered implementation", cfg.Memory.Engine)
-	}
-
-	if err := registry.Start(context.Background()); err != nil {
-		return fmt.Errorf("start memory engine registry: %w", err)
-	}
-	b.memEngines = registry
-	b.addCleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := registry.Stop(shutdownCtx); err != nil {
-			log.Error("memory engine registry shutdown", "err", err)
-		}
-	})
-	log.Info("memory engine started", "engine", cfg.Memory.Engine)
-	return nil
-}
-
-func (b *boot) activeMemoryEngine() (domainmemory.MemoryEngine, bool) {
-	if b.memEngines == nil {
-		return nil, false
-	}
-	name := b.cfg.Memory.Engine
-	if name == "" {
-		name = infraMemory.EngineName
-	}
-	return b.memEngines.Get(name)
-}
-
-func (b *boot) memoryStore() gateway.MemoryStore {
-	engine, ok := b.activeMemoryEngine()
-	if !ok {
-		return nil
-	}
-	return engine
-}
-
-func (b *boot) memoryWriter() gateway.MemoryWriteStore {
-	engine, ok := b.activeMemoryEngine()
-	if !ok {
-		return nil
-	}
-	return engine
-}
-
-func (b *boot) setupCurators(ctx context.Context) {
-	log := b.log.With("component", "curator")
-	skillsRoot := b.cfg.SkillsDir
-	if skillsRoot == "" {
-		skillsRoot = b.cfg.WorkDir
-	}
-	b.curatorRegistry = curator.NewRegistry(curator.Registrar{
-		Log:           log.With("component", "curator"),
-		Events:        curatorEventSink{b.bus},
-		Tools:         toolbuilder.New(b.toolReg),
-		MemoryEngines: b.memEngines,
-		Skills:        skillcurator.NewStore(skillsRoot),
-		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
-		LLM:           curatorLLMRunner{llm: b.chatLLM, outcomes: b.providerOutcomes},
-		Model:         b.chatModels.ActiveModel(),
-	})
-
-	if err := b.curatorRegistry.Register(skillcurator.New(skillcurator.DefaultInterval)); err != nil {
-		log.Error("skill curator registration failed", "err", err)
-	}
-
-	if err := b.curatorRegistry.Register(sessioncurator.New(sessioncurator.DefaultInterval, infraMemory.EngineName)); err != nil {
-		log.Error("session-memory curator registration failed", "err", err)
-	}
-
-	for _, def := range b.cfg.Curators {
-		if !def.Enabled {
-			continue
-		}
-		engine := curator.NewDefinitionEngine(curator.Definition{
-			Name:         def.Name,
-			Enabled:      def.Enabled,
-			Instructions: def.Instructions,
-			Manifest: curator.Manifest{
-				Interval:      def.Interval.Std(),
-				Cooldown:      def.Cooldown.Std(),
-				OnInput:       def.OnInput,
-				Tools:         def.Tools,
-				Skills:        def.Skills,
-				MemoryEngine:  def.MemoryEngine,
-				Conversations: def.Conversations,
-				Model:         def.Model,
-			},
-		})
-		if err := b.curatorRegistry.Register(engine); err != nil {
-			log.Error("config curator registration failed", "curator", def.Name, "err", err)
-		}
-	}
-
-	b.curatorRuntime = curator.NewRuntime(b.curatorRegistry, curator.RuntimeConfig{})
-	curator.WakeOnPrimaryInput(ctx, b.bus, b.curatorRuntime, events.KindTurnCompleted)
-	rt := b.curatorRuntime
-	b.addCleanup(shutdownCuratorRuntime(rt, log))
-	reg := b.curatorRegistry
-	b.addCleanup(shutdownCuratorRegistry(reg, log))
-}
-
-func (b *boot) registerTools() error {
-	cfg, log := b.cfgHolder.Get(), b.log
-	b.providerRegistry = toolprovider.NewRegistry(b.toolReg)
-	b.mcpMu.Lock()
-	b.mcpApplied = make(map[string]appliedMCPServer, len(cfg.Tools.MCPServers))
-	b.mcpMu.Unlock()
-	if workspace := cfg.Chat.Workspace; workspace != "" {
-		unrestricted := cfg.Chat.UnrestrictedFilesystem
-		if err := b.providerRegistry.Register(builtintoolprovider.New(workspace, unrestricted)); err != nil {
-			log.Error("workspace tool provider registration failed", "err", err)
-			return err
-		}
-
-		log.Info("workspace tools enabled",
-			"workspace", workspace, "unrestricted_filesystem", unrestricted)
-	} else {
-		log.Info("workspace tools disabled (chat.workspace is unset)")
-	}
-	for _, srv := range cfg.Tools.MCPServers {
-		provider, err := b.buildMCPProvider(srv)
-		if err != nil {
-			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
-			continue
-		}
-
-		if err := b.providerRegistry.RegisterOptional(provider); err != nil {
-			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
-			continue
-		}
-		b.mcpMu.Lock()
-		b.mcpApplied[strings.TrimSpace(srv.Name)] = appliedMCPServer{server: srv, id: provider.Manifest().ID}
-		b.mcpMu.Unlock()
-	}
-	if err := b.capabilityHost.Register(b.providerRegistry); err != nil {
-		log.Error("tool-provider capability registration failed", "err", err)
-		return err
-	}
-	return nil
-}
-
-func (b *boot) registerStandaloneTools() {
-	cfg, log := b.cfg, b.log
-
-	if catalog, err := skill.CatalogRoots(skill.DefaultRoots(cfg.WorkDir, cfg.SkillsDir)...); err != nil {
-		log.Warn("skill catalog load failed", "err", err)
-	} else if entry := skill.ActivateTool(cfg.WorkDir, catalog); entry != nil {
-		if err := b.toolReg.Register(*entry); err != nil {
-			log.Warn("skill_activate registration failed", "err", err)
-		} else {
-			log.Info("skill catalog registered", "skills", len(catalog))
-		}
-	}
-
-	if spillDir := cfg.Tools.Policy.SpillDir; spillDir != "" {
-		if err := toolLimits(cfg).EnsureSpillDir(); err != nil {
-			log.Warn("tool spill directory unavailable; large results will be truncated instead", "err", err)
-		} else if ws := cfg.Chat.Workspace; ws != "" && !cfg.Chat.UnrestrictedFilesystem && !isWithin(ws, spillDir) {
-			log.Warn("tool spill directory is outside chat.workspace; the model cannot read back what is spilled there",
-				"spill_dir", spillDir, "workspace", ws)
-		}
-	}
-
-	b.registerWebFetchTool(cfg)
-
-	if entry := sendfile.Tool(cfg.Chat.Workspace); entry != nil {
-		if err := b.toolReg.Register(*entry); err != nil {
-			log.Warn("send_file registration failed", "err", err)
-		} else {
-			log.Info("file sending enabled", "workspace", cfg.Chat.Workspace)
-		}
-	} else {
-		log.Info("file sending disabled (chat.workspace is unset)")
-	}
-
-	b.registerMinimaxTool(cfg, log)
-}
-
-func (b *boot) registerWebFetchTool(cfg config.Config) {
-	log := b.log
-	entry := webfetch.Tool(webfetch.Config{
-		Enabled:              cfg.Tools.WebFetch.IsEnabled(),
-		Timeout:              cfg.Tools.WebFetch.Timeout.Std(),
-		MaxBytes:             cfg.Tools.WebFetch.MaxBytes,
-		AllowPrivateNetworks: cfg.Tools.WebFetch.AllowPrivateNetworks,
-	})
-	if entry == nil {
-		log.Info("web fetch disabled")
-		return
-	}
-	if err := b.toolReg.Register(*entry); err != nil {
-		log.Warn("web_fetch registration failed", "err", err)
-		return
-	}
-	log.Info("web fetch enabled",
-		"allow_private_networks", cfg.Tools.WebFetch.AllowPrivateNetworks)
-}
-
-func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
-	if !cfg.Tools.Minimax.IsEnabled() {
-		log.Info("minimax video generation disabled")
-		return
-	}
-
-	apiKey, err := b.secrets.Resolve(cfg.Tools.Minimax.APIKey)
-	if err != nil {
-		log.Warn("minimax video generation enabled but the API key failed to resolve; tool not registered", "err", err)
-		return
-	}
-	if apiKey == "" {
-		log.Warn("minimax video generation enabled but no API key is configured; tool not registered")
-		return
-	}
-
-	entry := minimax.Tool(minimax.Config{Enabled: true, APIKey: apiKey, BaseURL: cfg.Tools.Minimax.BaseURL})
-	if entry == nil {
-		return
-	}
-	if err := b.toolReg.Register(*entry); err != nil {
-		log.Warn("generate_video registration failed", "err", err)
-		return
-	}
-	log.Info("minimax video generation enabled")
 }
 
 func (b *boot) buildDaemon() {
@@ -1415,28 +917,6 @@ func (b *boot) setupBackends(ctx context.Context) error {
 	return err
 }
 
-//nolint:contextcheck // shutdown runs after the parent context is cancelled
-func shutdownCuratorRuntime(rt *curator.Runtime, log *slog.Logger) func() {
-	return func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := rt.Stop(stopCtx); err != nil {
-			log.Error("curator runtime shutdown", "err", err)
-		}
-	}
-}
-
-//nolint:contextcheck // shutdown runs after the parent context is cancelled
-func shutdownCuratorRegistry(reg *curator.Registry, log *slog.Logger) func() {
-	return func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := reg.Stop(stopCtx); err != nil {
-			log.Error("curator registry shutdown", "err", err)
-		}
-	}
-}
-
 func exitCode(err error) int {
 	if err != nil {
 		return 1
@@ -1459,4 +939,62 @@ func (b *boot) runLoop(ctx context.Context, once bool) error {
 		return err
 	}
 	return nil
+}
+
+// setupChatTasks wires the task creator scheduled workflows enqueue through.
+func (b *boot) setupChatTasks(cfg config.Config) {
+	profiles, defaultChatIdentity := chattask.Profiles(cfg)
+	if len(profiles) > 0 {
+		b.chatTasks = gateway.NewStoreTaskCreatorForProfiles(
+			chattask.Writer{Enqueue: b.stateStore.EnqueueChatTask},
+			profiles,
+		)
+	}
+	b.defaultChatIdentity = defaultChatIdentity
+}
+
+func (b *boot) addCleanup(fn func()) {
+	b.cleanups = append(b.cleanups, fn)
+}
+
+func (b *boot) catalogState() (modelcatalog.Snapshot, []string) { return b.catalog.State() }
+
+// loadCatalog layers the model catalog under the file config. A catalog that
+// cannot be read leaves the configured providers and models in effect.
+func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
+	b.catalog = servicekit.NewCatalog(cfgPath)
+	snapshot, err := b.catalog.Fetch(ctx, b.secrets.Getenv, b.cfgHolder.Get().Providers)
+	if err != nil {
+		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
+		return
+	}
+	models := servicekit.ApplyModelCatalog(&b.cfg, snapshot)
+	b.cfgHolder.Set(b.cfg.Clone())
+	b.catalog.Set(snapshot, models)
+	b.log.Info("model catalog loaded", "providers", len(snapshot.Providers), "models", len(models))
+}
+
+func (b *boot) refreshModelCatalog(ctx context.Context) error {
+	snapshot, err := b.catalog.Fetch(ctx, b.secrets.Getenv, b.cfgHolder.Get().Providers)
+	if err != nil {
+		return err
+	}
+	base := b.cfgHolder.Get().Clone()
+	models := servicekit.ApplyModelCatalog(&base, snapshot)
+	cfg, _, err := b.runtimeConfig(ctx, base)
+	if err != nil {
+		return err
+	}
+	b.catalog.Set(snapshot, models)
+	b.publishConfig(ctx, cfg)
+	b.log.Info("model catalog refreshed", "providers", len(snapshot.Providers), "models", len(models))
+	return nil
+}
+
+func (b *boot) startModelCatalogRefresh(ctx context.Context) {
+	servicekit.Every(ctx, servicekit.CatalogRefreshInterval, func() {
+		if err := b.refreshModelCatalog(ctx); err != nil {
+			b.log.Warn("model catalog refresh failed; keeping the loaded catalog", "err", err)
+		}
+	})
 }

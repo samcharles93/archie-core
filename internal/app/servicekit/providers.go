@@ -1,4 +1,4 @@
-package archied
+package servicekit
 
 import (
 	"crypto/sha256"
@@ -11,7 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
-func resolveProviderSecrets(cfg *config.Config, registry *secret.Registry, log *slog.Logger) error {
+func ResolveProviderSecrets(cfg *config.Config, registry *secret.Registry, log *slog.Logger) error {
 	if err := resolveProviderMap("root", cfg.Providers, registry, log); err != nil {
 		return err
 	}
@@ -92,5 +92,5 @@ func providerSecretEnvName(scope, providerID string) string {
 // at boot, for a tool that calls models outside the daemon. Only the env engine
 // is available there: extension engines run inside the processes that supervise them.
 func ResolveProviders(cfg *config.Config, log *slog.Logger) error {
-	return resolveProviderSecrets(cfg, secret.NewRegistry(), log)
+	return ResolveProviderSecrets(cfg, secret.NewRegistry(), log)
 }

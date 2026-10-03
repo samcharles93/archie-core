@@ -1,14 +1,16 @@
-package archied
+package archiegateway
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/app/chattask"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
-	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -19,7 +21,7 @@ import (
 // chat task creator/controller, default chat identity and the release-update
 // service. The daemon and the standalone Gateway build through this one
 // constructor so the two processes cannot diverge.
-func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
+func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor gateway.ChatTaskActor) error {
 	// ── LLM runtime ──────────────────────────────────────────────────
 	// Created before the router so the LLMResponder can be wired in for
 	// non-command message processing.
@@ -57,19 +59,16 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 	b.statusHealth = newStatusHealth(b)
 
 	b.setupChatTasks(cfg)
-	var canceller storecontract.ExecutionCanceller
-	if ec, ok := b.stateStore.(storecontract.ExecutionCanceller); ok {
-		canceller = ec
-	}
 	b.chatController = gateway.NewStoreTaskController(chatTaskControllerAdapter{
 		taskByID: b.stateStore.TaskByID,
 		// Chat's /approve reaches the daemon's one task-action service rather
 		// than its own requeue, so a chat approval and a dashboard approval
 		// cannot record different decisions for one operator intent
-		approve: func(ctx context.Context, scope *string, actor taskactions.Actor, taskID int64, res taskactions.ActionPayload) error {
-			return b.taskActions().Apply(ctx, scope, actor, taskID, taskstate.ActionApprove, res)
+		approve: func(ctx context.Context, scope *string, by taskactions.Actor, taskID int64, res taskactions.ActionPayload) error {
+			_, err := actor.ApplyChatTaskAction(ctx, scope, by, taskID, taskstate.ActionApprove, res)
+			return err
 		},
-		cancelExecution: canceller.CancelExecution,
+		cancelExecution: b.stateStore.CancelExecution,
 	})
 	b.updateService = makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
 	return nil
@@ -79,28 +78,28 @@ func (b *boot) setupChatRuntime(ctx context.Context, cfg config.Config) error {
 // process. The first stream is opened synchronously, so a control plane that
 // cannot be watched at all fails the boot that asked for it rather than
 // leaving the process running personas it can no longer update; after that the
-// watch reconnects instead of ending (see keepWatch).
+// watch reconnects instead of ending (see servicekit.KeepWatch).
 // setupChatTasks wires the task creator chat commands and scheduled workflows
 // enqueue through.
-func (b *boot) setupChatTasks(cfg config.Config) {
-	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
+func (b *server) setupChatTasks(cfg config.Config) {
+	profiles, defaultChatIdentity := chattask.Profiles(cfg)
 	if len(profiles) > 0 {
 		b.chatTasks = gateway.NewStoreTaskCreatorForProfiles(
-			chatTaskWriterAdapter{enqueue: b.stateStore.EnqueueChatTask},
+			chattask.Writer{Enqueue: b.stateStore.EnqueueChatTask},
 			profiles,
 		)
 	}
 	b.defaultChatIdentity = defaultChatIdentity
 }
 
-func (b *boot) watchPersonas(ctx context.Context, version int64) error {
+func (b *server) watchPersonas(ctx context.Context, version int64) error {
 	updates, err := b.controlPlane.WatchPersonas(ctx, version)
 	if err != nil {
 		return err
 	}
-	go keepWatch(ctx, b.log, controlplane.PersonasKind, version, updates,
+	go servicekit.KeepWatch(ctx, b.log, controlplane.PersonasKind, version, updates,
 		b.controlPlane.WatchPersonas,
-		waitFor,
+		servicekit.WaitFor,
 		func(update controlplane.AppliedPersonas) int64 { return update.Version },
 		func(update controlplane.AppliedPersonas) {
 			if update.Err != nil {
@@ -112,7 +111,7 @@ func (b *boot) watchPersonas(ctx context.Context, version int64) error {
 	return nil
 }
 
-func (b *boot) applyPersonas(collection agent.PersonaCollection, version int64) {
+func (b *server) applyPersonas(collection agent.PersonaCollection, version int64) {
 	personas := make([]gateway.Persona, 0, len(collection.Personas))
 	for _, persona := range collection.Personas {
 		personas = append(personas, gateway.Persona{Name: persona.Name, Prompt: persona.Prompt})
@@ -123,21 +122,21 @@ func (b *boot) applyPersonas(collection agent.PersonaCollection, version int64) 
 
 // setupGatewayChat is the sole production constructor of the local contract.
 // Frontends use its gRPC representation; only this service owns the router.
-func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
-	if err := b.setupChatRuntime(ctx, b.cfg); err != nil {
+func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
+	if err := b.setupChatRuntime(ctx, b.cfg, actor); err != nil {
 		return nil, err
 	}
 	cfg := b.cfg
 	router := gateway.NewRouter(b.stateStore, nil, "web")
 	router.Limiter = b.rateLimiter
-	router.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
+	router.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", buildinfo.Version, buildinfo.Runtime)
 	router.Models = b.chatModels
 	router.Personas = b.personas
 	router.Updates = b.updateService
 	router.InitSessions(b.chatSessionStore)
 	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	router.Health = b.statusHealth
-	// ToolLimits reads the live holder, not cfg: the daemon's runtime-resource
+	// ToolLimits reads the live holder, not cfg: the runtime-resource
 	// watch republishes a tool-settings change through it, so a policy edit
 	// applies to the next turn in the process that serves this runner.
 	setup := chatSetup{

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/buildinfo"
+	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
@@ -60,4 +62,33 @@ func (b *boot) relayUpdateReport(path string) {
 	if err := releaseupdate.ClearPendingReport(path); err != nil {
 		b.log.Warn("clear pending update report failed", "err", err)
 	}
+}
+
+// daemonRunningVersions reports the component versions this process can
+// vouch for, for checking a pending update report against (see
+// releaseupdate.Report.Verify).
+//
+// The daemon component is always vouched for from its own build:
+// buildinfo.Version is compiled into this binary, so if an installer claims it
+// put a version into service and this value disagrees, the installer is
+// wrong. buildinfo.Runtime is deliberately NOT used for the agent component --
+// it records the agent version archied's own release pipeline stamped, not
+// the version an agent container is actually running, and the two diverge in
+// exactly the situation this check exists to detect.
+//
+// The agent component is included only once agentStatus has actually
+// observed one running -- self-reported by an archie-agent worker in a
+// taskrun.Response (see daemon.AgentStatus), since every archie-agent
+// process is task-scoped and ephemeral, not something this process can query
+// directly. Before the first task completes, or when agentStatus is nil
+// (composition never wired one), the agent component is left out entirely
+// so it reports as unchecked rather than as confirmed.
+func daemonRunningVersions(agentStatus *daemon.AgentStatus) map[string]string {
+	versions := map[string]string{releaseupdate.ComponentDaemon: buildinfo.Version}
+	if agentStatus != nil {
+		if version, _, ok := agentStatus.Snapshot(); ok {
+			versions[releaseupdate.ComponentAgent] = version
+		}
+	}
+	return versions
 }

@@ -21,235 +21,26 @@ import (
 
 	"github.com/moby/moby/client"
 	natsio "github.com/nats-io/nats.go"
-	"github.com/samcharles93/ai-sdk/chat"
-	"github.com/samcharles93/ai-sdk/core"
-	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
-	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/tools"
-	"github.com/samcharles93/archie-core/internal/tools/mcp"
-	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
-	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
-
-const (
-	// defaultChatMaxSteps bounds the model/tool round-trips in one chat
-	// turn when [config.ChatConfig.MaxSteps] is unset.
-	defaultChatMaxSteps = 100
-)
-
-// Component versions are injected from their independent release tags.
-// Components without a release tag remain "dev" and never generate upgrade
-// notifications.
-var (
-	gatewayVersion = "dev"
-	runtimeVersion = "dev"
-)
-
-// chatGenerateOptions builds one chat turn's request.
-func chatGenerateOptions(
-	ctx context.Context,
-	messages []chat.Message,
-	registry *tools.Registry,
-	maxSteps int,
-	limits agentexec.ToolLimits,
-	extra []tools.ToolEntry,
-	contextWindow int,
-) (core.GenerateOptions, error) {
-	toolOpts := limits.Options()
-	if approval := gateway.ApprovalFromContext(ctx); approval != nil {
-		toolOpts.Approval = approval
-	}
-
-	// Progressive tool disclosure: compose the base registry with the per-turn
-	// extras into a turn-local registry (extras are identity-bound and cannot
-	// live in the process-wide registry), then let the ContextPressureGate
-	// decide whether to serve the full arsenal directly or fall back to the
-	// bridge tools. The bridge tools are never registered process-wide, so they
-	// stay inside this composed, per-turn registry.
-	composed, err := tools.ComposeForTurn(registry, extra)
-	if err != nil {
-		return core.GenerateOptions{}, err
-	}
-	gate := tools.NewContextPressureGate(contextWindow)
-	gate.Evaluate(composed.All())
-	toolSet, err := agentexec.BuildToolSetFrom(gate.FilterTools(composed), toolOpts)
-	if err != nil {
-		return core.GenerateOptions{}, err
-	}
-
-	if maxSteps <= 0 {
-		maxSteps = defaultChatMaxSteps
-	}
-	return core.GenerateOptions{
-		Messages: messages,
-		Tools:    toolSet,
-		MaxSteps: maxSteps,
-	}, nil
-}
-
-// isWithin reports whether target sits inside base.
-func isWithin(base, target string) bool {
-	absBase, err := filepath.Abs(base)
-	if err != nil {
-		return false
-	}
-	absTarget, err := filepath.Abs(target)
-	if err != nil {
-		return false
-	}
-	rel, err := filepath.Rel(absBase, absTarget)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-// toolLimits reads the configured per-turn result limits.
-func toolLimits(cfg config.Config) agentexec.ToolLimits {
-	return agentexec.ToolLimits{
-		MaxResultChars: cfg.Tools.Policy.MaxResultChars,
-		SpillDir:       cfg.Tools.Policy.SpillDir,
-	}
-}
-
-// taskListOverRead multiplies the requested limit when reading rows that are
-// filtered by identity afterwards.
-const taskListOverRead = 5
-
-// chatTaskListerAdapter gives the gateway a read view of one identity's tasks.
-// gateway deliberately does not import the task store, so the projection
-// happens here, as it does for the writer and controller adapters below.
-type chatTaskListerAdapter struct {
-	tasks func(context.Context, int) ([]workflow.Task, error)
-}
-
-func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity string, limit int) ([]gateway.ChatTaskSummary, error) {
-	// Over-read before filtering: Tasks applies its limit across the whole
-	// table, so asking for exactly `limit` would return fewer than that for
-	// this identity whenever another identity's work is more recent.
-	rows, err := a.tasks(ctx, limit*taskListOverRead)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]gateway.ChatTaskSummary, 0, limit)
-	for _, task := range rows {
-		if task.Identity != identity {
-			continue
-		}
-		if len(out) >= limit {
-			break
-		}
-		out = append(out, gateway.ChatTaskSummary{
-			ID:         task.ID,
-			Repo:       task.Owner + "/" + task.Repo,
-			Title:      task.Title,
-			Status:     task.Status,
-			Workflow:   task.Workflow,
-			PRNumber:   task.PRNumber,
-			Attempt:    task.Attempt,
-			ParkReason: task.ParkReason,
-			UpdatedAt:  task.UpdatedAt,
-		})
-	}
-	return out, nil
-}
-
-// npmCacheServerEnv returns environment variables that make an
-// npx-launched MCP server reuse a persistent package cache across daemon
-// restarts, instead of npm re-resolving and re-downloading the package
-// from the registry every time the daemon starts. Rooted under the
-// daemon's own work dir so it persists regardless of whether the daemon
-// itself runs in an ephemeral container. See mcp.NpmCacheEnv for the
-// command-matching and env var details shared with archie-agent's
-// per-task equivalent (internal/app/agentworker/mcp_providers.go), which
-// points at a mounted cache volume instead of a work-dir subdirectory.
-//
-// workDir is unconditionally defaulted before registerTools runs
-// (internal/infrastructure/configuration's applyGeneralDefaults), but
-// filepath.Join silently accepts an empty string and would then put the
-// cache in the daemon's current working directory instead of its
-// persistent data directory -- guard it explicitly rather than trust that
-// invariant here too.
-func npmCacheServerEnv(command, workDir string) []string {
-	if workDir == "" {
-		return nil
-	}
-	return mcp.NpmCacheEnv(command, filepath.Join(workDir, "mcp-npm-cache"))
-}
-
-func configuredMCPProvider(server config.MCPServer, workDir string, sampling mcp.SamplingHandler) (toolprovider.Engine, error) {
-	name := strings.TrimSpace(server.Name)
-	if name == "" {
-		return nil, fmt.Errorf("MCP server name is required")
-	}
-	transportType := strings.ToLower(strings.TrimSpace(server.Transport))
-	if transportType == "" {
-		transportType = "stdio"
-	}
-
-	samplingOption := mcptoolprovider.WithSamplingHandler(sampling)
-
-	switch transportType {
-	case "stdio":
-		command := strings.TrimSpace(server.Command)
-		if command == "" {
-			return nil, fmt.Errorf("MCP stdio server %q requires a command", name)
-		}
-		transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
-			Command: command,
-			Args:    append([]string(nil), server.Args...),
-			Dir:     server.WorkDir,
-			Env:     npmCacheServerEnv(command, workDir),
-		})
-		return mcptoolprovider.New(name, transport, server.ParallelToolCalls, samplingOption), nil
-
-	case "http", "streamablehttp":
-		url := strings.TrimSpace(server.URL)
-		if url == "" {
-			return nil, fmt.Errorf("MCP http server %q requires a url", name)
-		}
-		transport := mcp.NewHTTPTransport(mcp.HTTPTransportConfig{
-			Endpoint: url,
-			Headers:  server.Headers,
-		})
-		return mcptoolprovider.New(name, transport, server.ParallelToolCalls, samplingOption), nil
-
-	case "sse":
-		sseEndpoint := strings.TrimSpace(server.SSEEndpoint)
-		if sseEndpoint == "" {
-			return nil, fmt.Errorf("MCP sse server %q requires an sse_endpoint", name)
-		}
-		transport := mcp.NewSSETransport(mcp.SSETransportConfig{
-			SSEEndpoint:     sseEndpoint,
-			MessageEndpoint: strings.TrimSpace(server.MessageEndpoint),
-			Headers:         server.Headers,
-		})
-		return mcptoolprovider.New(name, transport, server.ParallelToolCalls, samplingOption), nil
-
-	default:
-		return nil, fmt.Errorf("MCP transport %q is not supported", transportType)
-	}
-}
 
 // resolveForge builds the forge client for one forge configuration, returning
 // the resolved token alongside it for the worktree manager.
@@ -320,7 +111,7 @@ func parseArgs() (runArgs, bool) {
 	// adapter has to answer "what is installed?" from a shell, so expose the
 	// same two values here. Machine-readable: one "name version" per line.
 	if *showVersion {
-		fmt.Printf("archied %s\narchie-agent %s\n", gatewayVersion, runtimeVersion)
+		fmt.Printf("archied %s\narchie-agent %s\n", buildinfo.Version, buildinfo.Runtime)
 		return args, true
 	}
 	return args, false
@@ -454,274 +245,6 @@ func persistEvents(ctx context.Context, sink *events.Sub, st storecontract.TaskS
 	}
 }
 
-// curatorEventSink adapts the in-process event bus to the curator family's
-// narrow emission contract. Bus publish is non-blocking with bounded,
-// dropping per-subscriber buffers, so curator activity can never
-// backpressure the daemon or a chat turn.
-type curatorEventSink struct {
-	b *events.Bus
-}
-
-func (s curatorEventSink) Emit(kind, detail string, data map[string]any) {
-	s.b.Publish(events.Event{Kind: kind, Detail: detail, Data: data})
-}
-
-// curatorLLMRunner adapts the shared ai-sdk runtime to the curator
-// family's narrow LLMRunner contract: one model reference, plain
-// messages, and the declared tool set -- no streaming. Tools are built
-// through the same agentexec path a chat turn uses, so a curator's
-// declared set is converted to a runnable core.ToolSet rather than a
-// parallel catalogue.
-type curatorLLMRunner struct {
-	// llm resolves the runtime at each call, so a live model-settings update
-	// that swaps it wholesale is the one the next curator run reads; a
-	// snapshot taken at construction would keep curators on the providers
-	// boot started with.
-	llm func() *runtime.Runtime
-	// outcomes records this call for /status alongside sendChatTurn's. A
-	// curator call is a model call this process made, and it does not pass
-	// through sendChatTurn, so without this a daemon whose only recent model
-	// traffic was curator work reports "no calls attempted yet" while the
-	// provider is demonstrably reachable -- or worse, keeps showing a much
-	// older chat outcome as current.
-	outcomes *providerOutcomeRecorder
-}
-
-func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (curator.ChatResult, error) {
-	// agentexec.NewRuntime returns nil when no provider is configured, and a
-	// nil *runtime.Runtime panics on the first method call. A curator asking
-	// for a completion on a daemon with no providers is a misconfiguration,
-	// not a reason to take the process down.
-	if r.llm == nil {
-		return curator.ChatResult{}, fmt.Errorf("curator chat: no model runtime is configured")
-	}
-	llm := r.llm()
-	if llm == nil {
-		return curator.ChatResult{}, fmt.Errorf("curator chat: no model runtime is configured")
-	}
-	msgs := make([]chat.Message, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		msgs = append(msgs, chat.Message{Role: chat.Role(m.Role), Content: m.Content})
-	}
-	toolSet, err := agentexec.BuildToolSetFrom(req.Tools, agentexec.ToolSetOptions{})
-	if err != nil {
-		r.outcomes.record(req.Model, err)
-		return curator.ChatResult{}, err
-	}
-	res, err := llm.Chat(ctx, req.Model, core.GenerateOptions{
-		Messages: msgs,
-		Tools:    toolSet,
-		MaxSteps: max(req.MaxSteps, 1),
-	})
-	r.outcomes.record(req.Model, err)
-	if err != nil {
-		return curator.ChatResult{}, err
-	}
-
-	calls := make([]curator.ToolCall, 0, len(res.ToolCalls))
-	for _, call := range res.ToolCalls {
-		calls = append(calls, curator.ToolCall{Name: call.ToolName, Input: call.Input})
-	}
-	return curator.ChatResult{Text: res.Text, ToolCalls: calls}, nil
-}
-
-type chatTaskWriterAdapter struct {
-	enqueue func(
-		ctx context.Context,
-		owner, repo, title, body, workflow, identity string,
-		inputs map[string]any,
-	) (*workflow.Task, error)
-}
-
-func (a chatTaskWriterAdapter) EnqueueChatTask(
-	ctx context.Context,
-	owner, repo, title, body, workflow, identity string,
-	inputs map[string]any,
-) (int64, error) {
-	task, err := a.enqueue(ctx, owner, repo, title, body, workflow, identity, inputs)
-	if err != nil {
-		return 0, err
-	}
-	if task == nil {
-		return 0, fmt.Errorf("enqueue chat task returned no task")
-	}
-	return task.ID, nil
-}
-
-type chatTaskControllerAdapter struct {
-	taskByID        func(context.Context, int64) (*workflow.Task, error)
-	approve         func(context.Context, *string, taskactions.Actor, int64, taskactions.ActionPayload) error
-	cancelExecution func(context.Context, int64, string, string) ([]int64, error)
-}
-
-func (a chatTaskControllerAdapter) ChatTaskStatus(ctx context.Context, taskID int64) (gateway.ChatTaskStatus, bool, error) {
-	task, err := a.taskByID(ctx, taskID)
-	if err != nil {
-		return gateway.ChatTaskStatus{}, false, err
-	}
-	if task == nil {
-		return gateway.ChatTaskStatus{}, false, nil
-	}
-	if !task.IsForgeBacked() {
-		return gateway.ChatTaskStatus{Status: task.Status, Identity: task.Identity}, true, nil
-	}
-	return gateway.ChatTaskStatus{}, false, fmt.Errorf("task %d is not chat-originated", taskID)
-}
-
-func (a chatTaskControllerAdapter) ApproveChatTask(ctx context.Context, taskID int64, actor taskactions.Actor) error {
-	if a.approve == nil {
-		return fmt.Errorf("task approval is unavailable")
-	}
-	// The chat-bound identity is both the scope the task must belong to and
-	// the actor the record names: a chat command has no cross-identity
-	// authority, and /approve carries no selection syntax, so the review gate
-	// answer posts every offered finding.
-	scope := string(actor.Identity)
-	return a.approve(ctx, &scope, actor, taskID, taskactions.ActionPayload{})
-}
-
-func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID int64, reason string) error {
-	task, err := a.taskByID(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if task == nil {
-		return fmt.Errorf("task %d not found", taskID)
-	}
-	if task.IsForgeBacked() {
-		return fmt.Errorf("task %d is not chat-originated", taskID)
-	}
-	// An operator declining work lands in the same state whichever surface
-	// they used, through the one cancel path: the store records the
-	// cancellation -- every non-terminal step of the current attempt plus the
-	// execution's own move -- and
-	// this write is what a late worker's next step write fails against. This
-	// used to record StatusRejected while the dashboard recorded
-	// StatusClosedWontDo, so the same decision showed up as two different
-	// states -- and StatusRejected, which the PR reconciler uses for "the
-	// pull request was closed without merging", stopped meaning one thing.
-	if a.cancelExecution == nil {
-		return fmt.Errorf("execution cancellation is unavailable")
-	}
-	_, err = a.cancelExecution(ctx, taskID, reason, workflow.StatusClosedWontDo)
-	return err
-}
-
-// chatTaskLogReaderAdapter gives the gateway a read view of a task's
-// persisted log history without importing internal/logging or the task store
-// into the gateway package. Each identity's reader is scoped to its own
-// tasks: the identity bound at construction is used for authorization, so a
-// model cannot read another identity's task logs by passing a different
-// identity through the tool input.
-type chatTaskLogReaderAdapter struct {
-	tasks    func(context.Context, int64) (*workflow.Task, error)
-	taskLogs *logging.TaskRegistry
-}
-
-func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
-	ctx context.Context, identity string, taskID int64, attempt int, q gateway.ChatTaskLogQuery,
-) (gateway.ChatTaskLogResult, error) {
-	task, err := a.tasks(ctx, taskID)
-	if err != nil {
-		return gateway.ChatTaskLogResult{}, err
-	}
-	if task == nil {
-		return gateway.ChatTaskLogResult{}, fmt.Errorf("task %d not found", taskID)
-	}
-	// Match the filter chatTaskListerAdapter already applies: a model
-	// bound to one identity must not read logs for another identity's
-	// tasks, and tasks with no identity (forge-sourced) are not
-	// readable through a chat tool at all — they belong to the daemon,
-	// not a particular identity. "The empty string MUST NOT retain
-	// special meaning".
-	if task.Identity != identity {
-		return gateway.ChatTaskLogResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
-	}
-
-	if attempt <= 0 {
-		attempt = task.Attempt
-	}
-	path := a.taskLogs.Path(taskID, attempt)
-	if path == "" {
-		return gateway.ChatTaskLogResult{Attempt: attempt, Entries: []gateway.ChatTaskLogEntry{}}, nil
-	}
-
-	page, err := logging.Page(path, logging.Query{
-		Component: q.Component,
-		Contains:  q.Contains,
-		Levels:    q.Levels,
-		Since:     q.Since,
-		Until:     q.Until,
-		Limit:     q.Limit,
-	}, q.AfterID)
-	if err != nil {
-		return gateway.ChatTaskLogResult{}, err
-	}
-
-	entries := make([]gateway.ChatTaskLogEntry, len(page.Entries))
-	for i, e := range page.Entries {
-		entries[i] = gateway.ChatTaskLogEntry{
-			Time:    e.Time,
-			Level:   e.Level,
-			Message: e.Message,
-			Fields:  e.Fields,
-		}
-	}
-	return gateway.ChatTaskLogResult{
-		Entries:       entries,
-		Attempt:       attempt,
-		Truncated:     page.Truncated,
-		Cursor:        page.Cursor,
-		MoreAvailable: page.MoreAvailable,
-	}, nil
-}
-
-func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {
-	if len(cfg.Identities) > 0 {
-		profiles := make([]gateway.TaskProfile, 0, len(cfg.Identities))
-		for _, identity := range cfg.Identities {
-			if len(identity.Repos) == 0 {
-				continue
-			}
-			profiles = append(profiles, newChatTaskProfile(identity.Name, identity.Repos))
-		}
-		if len(profiles) == 0 {
-			return nil, ""
-		}
-		return profiles, profiles[0].Identity
-	}
-	if len(cfg.Repos) == 0 {
-		return nil, ""
-	}
-	return []gateway.TaskProfile{newChatTaskProfile("", cfg.Repos)}, ""
-}
-
-func newChatTaskProfile(identity string, repos []config.Repo) gateway.TaskProfile {
-	allowed := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		allowed = append(allowed, repo.Owner+"/"+repo.Name)
-	}
-	return gateway.TaskProfile{
-		Identity:     identity,
-		DefaultOwner: repos[0].Owner,
-		DefaultRepo:  repos[0].Name,
-		Repos:        allowed,
-	}
-}
-
-func configureTaskCommands(
-	router *gateway.Router,
-	tasks gateway.TaskCreator,
-	controller gateway.TaskController,
-	lister gateway.ChatTaskLister,
-	identity string,
-) {
-	router.Tasks = tasks
-	router.Controller = controller
-	router.TaskLister = lister
-	router.Identity = identity
-}
-
 // parseListenAddr splits "host:port" into components, using defaults
 // when the input is empty or missing a part.
 func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
@@ -737,13 +260,6 @@ func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
 		return host, defaultPort
 	}
 	return host, port
-}
-
-// sessionKey builds a deterministic session identifier from a gateway
-// message's routing fields. Platform + channel + thread uniquely identify
-// a conversation for session persistence and history retrieval.
-func executionProviders(cfg config.Config) map[string]agentexec.Provider {
-	return agentexec.ProvidersFromConfig(cfg.Providers)
 }
 
 // subscribeSystemLogs subscribes to every task's system log subject at once.
@@ -890,17 +406,6 @@ func identitySuffix(identity string) string {
 		return ""
 	}
 	return " (" + identity + ")"
-}
-
-func configuredNATSToken(cfg config.NATSConfig, getenv func(string) string) (string, error) {
-	if cfg.TokenEnv == "" {
-		return "", nil
-	}
-	token := getenv(cfg.TokenEnv)
-	if token == "" {
-		return "", fmt.Errorf("%s is required when nats.token_env is configured", cfg.TokenEnv)
-	}
-	return token, nil
 }
 
 // updateReportPath is where the update watchdog leaves the phase-2 outcome of

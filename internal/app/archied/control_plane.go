@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -20,36 +20,11 @@ import (
 // as it stands reverts each of these layers to its file value until the
 // process restarts.
 func (b *boot) runtimeConfig(ctx context.Context, base config.Config) (config.Config, map[string]int64, error) {
-	cfg, versions, err := b.controlPlane.RuntimeConfig(ctx, base)
-	if err != nil {
-		return config.Config{}, nil, err
-	}
-	if settings := b.executionSettings.Load(); settings != nil {
-		applyExecutionBudgets(&cfg, *settings)
-	}
-	if err := configuration.Validate(&cfg); err != nil {
-		wrapped := fmt.Errorf("validate database settings: %w", err)
-		b.reportApplied(ctx, versions, wrapped)
-		return config.Config{}, nil, wrapped
-	}
-	// The State Store persists source references, while openStores resolved
-	// only the file snapshot. Layering provider-settings restores the source
-	// references, so resolve the effective map before any runtime consumes it.
-	if err := resolveProviderSecrets(&cfg, b.secrets, b.log); err != nil {
-		b.reportApplied(ctx, versions, err)
-		return config.Config{}, nil, err
-	}
-	b.reportApplied(ctx, versions, nil)
-	return cfg, versions, nil
-}
-
-// reportApplied publishes the version of each kind this process just layered
-// in. On a validation failure every kind is reported with the error, because
-// the layering is all-or-nothing: none of the versions read took effect.
-func (b *boot) reportApplied(ctx context.Context, versions map[string]int64, applyErr error) {
-	for kind, version := range versions {
-		b.applyStatus.Report(ctx, kind, version, applyErr)
-	}
+	return servicekit.RuntimeConfig(ctx, b.controlPlane, b.applyStatus, b.secrets, b.log, base, func(cfg *config.Config) {
+		if settings := b.executionSettings.Load(); settings != nil {
+			applyExecutionBudgets(cfg, *settings)
+		}
+	})
 }
 
 func (b *boot) loadRuntimeConfig(ctx context.Context) error {
@@ -78,7 +53,7 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	// unchanged. Re-apply the same merge (idempotent: a catalog that
 	// failed to load merges to identity).
 	catalog, _ := b.catalogState()
-	applyModelCatalog(&doc.Config, catalog)
+	servicekit.ApplyModelCatalog(&doc.Config, catalog)
 	// Bounded: this runs on the signal loop, which handles nothing else
 	// while it waits, and a State Store that has stopped answering must
 	// surface as a failed reload rather than a SIGHUP that never returns.
@@ -109,7 +84,7 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 // keeps the stream that delivers later ones established. The first read and
 // the first stream are synchronous, so a control plane that cannot be reached
 // fails the boot that asked for it; after that the watch does not return, it
-// reconnects (see keepWatch).
+// reconnects (see servicekit.KeepWatch).
 func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 	settings, version, err := b.controlPlane.WorkflowExecutionSettings(ctx)
 	if err != nil {
@@ -130,9 +105,9 @@ func (b *boot) startWorkflowExecutionSettings(ctx context.Context) error {
 		}
 		return updates, err
 	}
-	go keepWatch(ctx, b.log, controlplane.WorkflowExecutionSettingsKind, version, updates,
+	go servicekit.KeepWatch(ctx, b.log, controlplane.WorkflowExecutionSettingsKind, version, updates,
 		open,
-		waitFor,
+		servicekit.WaitFor,
 		func(update controlplane.AppliedSettings) int64 { return update.Version },
 		func(update controlplane.AppliedSettings) {
 			if update.Err != nil {
@@ -292,31 +267,23 @@ var runtimeResourceKinds = []string{
 	controlplane.ContainerRuntimePoliciesKind,
 }
 
-// gatewayRuntimeKinds are the kinds the Gateway applies live: the settings its
-// chat runtime and tool providers are built from.
-var gatewayRuntimeKinds = []string{
-	controlplane.ProviderSettingsKind,
-	controlplane.ModelRoleAssignmentsKind,
-	controlplane.ToolSettingsKind,
-}
-
 // startRuntimeResourceWatches keeps a watch per live kind established for the
 // life of the process. versions carries the resume point each kind starts
 // from, the versions boot's layering recorded. The first stream per kind is
 // opened synchronously, so a control plane that cannot be watched at all
 // fails the boot that asked for it; after that the watch does not return, it
-// reconnects (see keepWatch, whose backoff rules these watches ride).
+// reconnects (see servicekit.KeepWatch, whose backoff rules these watches ride).
 func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[string]int64, kinds []string) error {
 	for _, kind := range kinds {
 		updates, err := b.controlPlane.WatchResource(ctx, kind, versions[kind])
 		if err != nil {
 			return fmt.Errorf("watch %s: %w", kind, err)
 		}
-		go keepWatch(ctx, b.log, kind, versions[kind], updates,
+		go servicekit.KeepWatch(ctx, b.log, kind, versions[kind], updates,
 			func(ctx context.Context, afterVersion int64) (<-chan controlplane.AppliedResource, error) {
 				return b.controlPlane.WatchResource(ctx, kind, afterVersion)
 			},
-			waitFor,
+			servicekit.WaitFor,
 			func(update controlplane.AppliedResource) int64 { return update.Version },
 			func(update controlplane.AppliedResource) { b.applyRuntimeResourceUpdate(ctx, kind, update) })
 	}
@@ -342,7 +309,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	if update.Err != nil {
 		// A stream failure carries no version at all (versions start at 1,
 		// store.PutResource), and a process must never report an unreachable
-		// store as its own refusal; the reconnect is keepWatch's business.
+		// store as its own refusal; the reconnect is servicekit.KeepWatch's business.
 		if update.Version > 0 {
 			b.applyStatus.Report(ctx, kind, update.Version, update.Err)
 		}
@@ -362,7 +329,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	// providers. The merge is idempotent, and reloadConfig re-applies it
 	// before layering for the same reason.
 	catalog, _ := b.catalogState()
-	applyModelCatalog(&base, catalog)
+	servicekit.ApplyModelCatalog(&base, catalog)
 	cfg, _, err := b.runtimeConfig(ctx, base)
 	if err != nil {
 		// runtimeConfig reported the refusal through apply status for every
@@ -373,16 +340,6 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	b.publishConfig(ctx, cfg)
 	b.log.Info("runtime settings applied", "kind", kind, "version", update.Version)
 	switch kind {
-	case controlplane.ProviderSettingsKind, controlplane.ModelRoleAssignmentsKind:
-		b.rebuildChatModelRuntime(cfg)
-	case controlplane.ToolSettingsKind:
-		// The document's server set and tool entries are live now; reconcile
-		// them and report the reconciliation's own outcome, which is the one
-		// that knows whether a server failed to connect.
-		if err := b.reconcileToolSettings(ctx, cfg); err != nil {
-			b.applyStatus.Report(ctx, kind, update.Version, err)
-			b.log.Error("tool settings reconciled with errors; the running servers stay", "version", update.Version, "err", err)
-		}
 	case controlplane.PluginSettingsKind:
 		// The document's directories are live now; load what they hold and
 		// report the reconciliation's own outcome, which is the one that knows
@@ -465,20 +422,4 @@ func (b *boot) refuseSkillsDirChange(ctx context.Context) error {
 		return fmt.Errorf("skills_dir applies on restart: stored %q, running %q", stored.SkillsDir, running)
 	}
 	return nil
-}
-
-// rebuildChatModelRuntime re-derives the gateway chat runtime's provider set
-// after a live change to provider-settings or model-role-assignments. The
-// turn runner reads the runtime through boot.chatLLM, so the swap reaches its
-// next turn without rebuilding the runner, and the model manager re-derives
-// the references it offers from the new role assignments and the catalog.
-func (b *boot) rebuildChatModelRuntime(cfg config.Config) {
-	if b.chatModels == nil {
-		return // this process serves no chat turns
-	}
-	b.setLLM(agentexec.NewRuntime(executionProviders(cfg)))
-	b.chatModels.SetConfigured(cfg.Models)
-	catalog, models := b.catalogState()
-	b.chatModels.SetModelCatalog(catalog, models)
-	b.log.Info("chat model runtime rebuilt", "providers", len(cfg.Providers), "models", len(cfg.Models))
 }

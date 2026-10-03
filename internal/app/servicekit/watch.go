@@ -1,4 +1,4 @@
-package archied
+package servicekit
 
 import (
 	"context"
@@ -44,11 +44,11 @@ const (
 // every attempt, which is the fixed-rate loop this rule exists to charge.
 const controlPlaneWatchHealthyMultiple = 2
 
-// keepWatch delivers every update from first and, when that stream ends,
+// KeepWatch delivers every update from first and, when that stream ends,
 // re-establishes it in this same goroutine until ctx ends.
 //
 // A control-plane watch stream is not permanent. The State Store restarts, the
-// connection drops, or the server closes the stream. keepWatch reopens it in
+// connection drops, or the server closes the stream. KeepWatch reopens it in
 // place; workflow-execution-settings also reports the gap so apply status does
 // not keep re-stamping the previous successful version as current while no
 // live updates can arrive.
@@ -106,13 +106,13 @@ const controlPlaneWatchHealthyMultiple = 2
 // document reaches the settings page.
 //
 // wait is the delay between a stream ending and the reopen that follows it, and
-// production passes waitFor. It is injected so that the delay the loop hands it
+// production passes WaitFor. It is injected so that the delay the loop hands it
 // is observable as a value: the retry_in log line states the delay the loop
 // charged, and a loop that charged one delay and waited another would leave
 // that attribute agreeing with itself. What the injected wait cannot show is a
-// multiple taken inside waitFor itself, which is a timer for exactly the d it
+// multiple taken inside WaitFor itself, which is a timer for exactly the d it
 // is given.
-func keepWatch[T any](
+func KeepWatch[T any](
 	ctx context.Context,
 	log *slog.Logger,
 	kind string,
@@ -217,10 +217,10 @@ func nextUpdate[T any](ctx context.Context, stream <-chan T) (T, bool) {
 	}
 }
 
-// waitFor is the wait production injects into keepWatch. It waits for d,
+// WaitFor is the wait production injects into KeepWatch. It waits for d,
 // reporting false when ctx ended first: a watch's backoff must never delay the
 // shutdown of the process that owns it.
-func waitFor(ctx context.Context, d time.Duration) bool {
+func WaitFor(ctx context.Context, d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {

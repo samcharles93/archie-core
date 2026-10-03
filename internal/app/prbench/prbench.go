@@ -16,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview/bench"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
@@ -72,7 +72,7 @@ func Run(ctx context.Context, opts Options, w io.Writer) (bench.Summary, error) 
 	if err != nil {
 		return bench.Summary{}, err
 	}
-	if err := archied.ResolveProviders(&doc.Config, slog.Default()); err != nil {
+	if err := servicekit.ResolveProviders(&doc.Config, slog.Default()); err != nil {
 		return bench.Summary{}, err
 	}
 	rt := agentexec.NewRuntime(agentexec.ProvidersFromConfig(doc.Config.Providers))

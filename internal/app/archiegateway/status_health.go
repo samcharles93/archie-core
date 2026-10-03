@@ -7,7 +7,7 @@
 // production constructor of a Router and it runs in the Gateway, which owns
 // neither a container pool, a poll loop nor a channel manager. A producer
 // wired for one of the three would build a section no surface ever reads.
-package archied
+package archiegateway
 
 import (
 	"sync"
@@ -80,9 +80,8 @@ func (r *providerOutcomeRecorder) LastChatModelOutcome() (gateway.ChatModelOutco
 // subsystems. Every source is optional; a nil source means this process holds
 // no truthful input for that fact and the section is left out of the report.
 //
-// The broker source is a function rather than a captured value because the
-// connection is process state: the daemon's shared eventbus client in one
-// composition, the Gateway's own task-actions connection in the other.
+// The broker source is a function so /status reads the connection's state at
+// request time.
 type statusHealth struct {
 	broker    func() (connected, ok bool)
 	chatModel *providerOutcomeRecorder
@@ -112,18 +111,14 @@ func (s statusHealth) Health() gateway.HealthReport {
 // constructor of a Router; it runs in the Gateway, which holds none of the
 // three, so a producer reading them would build a section no /status reply can
 // carry.
-func newStatusHealth(b *boot) gateway.HealthSource {
+func newStatusHealth(b *server) gateway.HealthSource {
 	return statusHealth{
 		chatModel: b.providerOutcomes,
 		broker: func() (bool, bool) {
-			switch {
-			case b.natsClient != nil:
-				return b.natsClient.Connected(), true
-			case b.taskActionsConn != nil:
-				return b.taskActionsConn.IsConnected(), true
-			default:
+			if b.taskActionsConn == nil {
 				return false, false
 			}
+			return b.taskActionsConn.IsConnected(), true
 		},
 	}
 }

@@ -179,8 +179,8 @@ echo "==> Building native archie binaries..."
   # says `dev`; its traceability is the checkout it came from.
   GATEWAY_VERSION="dev"
   RUNTIME_VERSION="dev"
-  LDFLAGS="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${GATEWAY_VERSION}"
-  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION}"
+  LDFLAGS="-X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION}"
+  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION}"
   LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
   # Every host binary carries the release it was built from, so the updater can
   # ask each installed binary what it is.

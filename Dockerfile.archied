@@ -9,7 +9,7 @@ COPY . .
 ARG GATEWAY_VERSION=dev
 ARG RUNTIME_VERSION=dev
 RUN CGO_ENABLED=0 go build \
-    -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${GATEWAY_VERSION} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=container" \
+    -ldflags "-X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=container" \
     -o /usr/local/bin/archied ./cmd/archied/
 
 FROM debian:trixie-slim

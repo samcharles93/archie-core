@@ -1,4 +1,4 @@
-package archied
+package archiegateway
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -53,10 +52,6 @@ type chatSetup struct {
 	// disables turn events (tests, minimal setups).
 	Bus *events.Bus
 	Log *slog.Logger
-	// AgentStatus is the composition root's shared tracker for the most
-	// recently observed archie-agent version (see daemon.AgentStatus).
-	// Nil disables the agent component of RunningVersions.
-	AgentStatus *daemon.AgentStatus
 	// MemoryEngine is the durable-memory read surface (b.memEngines' active
 	// engine, resolved by cfg.Memory.Engine). Nil disables the chat <memory>
 	// block for every turn runner built from this setup.
@@ -76,54 +71,15 @@ type chatSetup struct {
 	Transcriber messaging.Transcriber
 }
 
-// daemonRunningVersions reports the component versions this process can
-// vouch for, for checking a pending update report against (see
-// releaseupdate.Report.Verify).
-//
-// The daemon component is always vouched for from its own build:
-// gatewayVersion is compiled into this binary, so if an installer claims it
-// put a version into service and this value disagrees, the installer is
-// wrong. runtimeVersion is deliberately NOT used for the agent component --
-// it records the agent version archied's own release pipeline stamped, not
-// the version an agent container is actually running, and the two diverge in
-// exactly the situation this check exists to detect.
-//
-// The agent component is included only once agentStatus has actually
-// observed one running -- self-reported by an archie-agent worker in a
-// taskrun.Response (see daemon.AgentStatus), since every archie-agent
-// process is task-scoped and ephemeral, not something this process can query
-// directly. Before the first task completes, or when agentStatus is nil
-// (composition never wired one), the agent component is left out entirely
-// so it reports as unchecked rather than as confirmed.
-func daemonRunningVersions(agentStatus *daemon.AgentStatus) map[string]string {
-	versions := map[string]string{releaseupdate.ComponentDaemon: gatewayVersion}
-	if agentStatus != nil {
-		if version, _, ok := agentStatus.Snapshot(); ok {
-			versions[releaseupdate.ComponentAgent] = version
-		}
-	}
-	return versions
-}
-
 // componentInstallTypeEnricher builds Service.Enrich: it knows how to
-// describe the three component kinds this daemon can say anything true
-// about. Anything else (a check command reporting a component ID this
+// describe the component kinds this process can say anything true about. Anything else (a check command reporting a component ID this
 // process has no source for) is left alone -- an empty return leaves
 // whatever the check command itself set.
-func componentInstallTypeEnricher(agentStatus *daemon.AgentStatus, nats config.NATSConfig) func(string) (string, string) {
+func componentInstallTypeEnricher(nats config.NATSConfig) func(string) (string, string) {
 	return func(componentID string) (installType, reference string) {
 		switch componentID {
 		case releaseupdate.ComponentDaemon:
 			return installtype.Type(), ""
-		case releaseupdate.ComponentAgent:
-			if agentStatus == nil {
-				return "", ""
-			}
-			_, observedInstallType, ok := agentStatus.Snapshot()
-			if !ok {
-				return "", ""
-			}
-			return observedInstallType, ""
 		case releaseupdate.ComponentNATS:
 			switch nats.Mode {
 			case config.NATSModeEmbedded:
@@ -148,7 +104,7 @@ func makeUpdateService(s chatSetup) *releaseupdate.Service {
 		Catalog:     releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
 		StatePath:   filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
 		InstallType: installtype.Type(),
-		Enrich:      componentInstallTypeEnricher(s.AgentStatus, cfg.NATS),
+		Enrich:      componentInstallTypeEnricher(cfg.NATS),
 	}
 	if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
 		updates.Installer = releaseupdate.CommandInstaller{

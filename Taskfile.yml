@@ -239,8 +239,6 @@ tasks:
       GATEWAY_VERSION: '{{.GATEWAY_VERSION | default "dev"}}'
       RUNTIME_VERSION: '{{.RUNTIME_VERSION | default "dev"}}'
       SERVICE_LDFLAGS: >-
-        -X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}}
-        -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion={{.RUNTIME_VERSION}}
         -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary
         -X github.com/samcharles93/archie-core/internal/buildinfo.Version={{.GATEWAY_VERSION}}
         -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime={{.RUNTIME_VERSION}}

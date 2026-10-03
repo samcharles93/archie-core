@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/samcharles93/archie-core/internal/app/archied"
+	"github.com/samcharles93/archie-core/internal/app/archiegateway"
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
@@ -17,7 +17,7 @@ import (
 func main() { os.Exit(run()) }
 
 func run() int {
-	var options archied.GatewayOptions
+	var options archiegateway.Options
 	showVersion := buildinfo.RegisterVersionFlag("archie-gateway")
 	flag.StringVar(&options.Config, "config", configuration.DefaultConfigPath(), "configuration file or directory")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
@@ -27,7 +27,7 @@ func run() int {
 	showVersion()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := archied.RunGateway(ctx, options); err != nil {
+	if err := archiegateway.Run(ctx, options); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
