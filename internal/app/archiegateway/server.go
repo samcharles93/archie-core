@@ -104,7 +104,7 @@ func Run(ctx context.Context, options Options) error {
 	if err := b.openState(ctx); err != nil {
 		return err
 	}
-	b.loadCatalog(ctx, options.Config)
+	b.loadCatalog(ctx)
 	nc, err := b.connectNATS(ctx)
 	if err != nil {
 		return err
@@ -151,6 +151,7 @@ func (b *server) loadConfig(cfgPath, overlayPath string) error {
 		return err
 	}
 	b.cfg = doc.Config
+	b.catalog = servicekit.NewCatalog(cfgPath)
 	b.cfgHolder = config.NewHolder(b.cfg)
 	logs := servicekit.Logging(b.cfg, "gateway")
 	b.log, b.taskLogs = logs.Log, logs.TaskLogs
@@ -212,7 +213,7 @@ func (b *server) connectNATS(ctx context.Context) (*natsio.Conn, error) {
 		}
 		url, token = endpoint.URL, endpoint.Token
 	}
-	nc, err := natsio.Connect(url, natsio.Token(token), natsio.MaxReconnects(-1))
+	nc, err := natsio.Connect(url, natsio.Token(token), natsio.MaxReconnects(-1), natsio.RetryOnFailedConnect(true))
 	if err != nil {
 		return nil, fmt.Errorf("connect gateway task actions: %w", err)
 	}
@@ -238,8 +239,7 @@ func (b *server) catalogState() (modelcatalog.Snapshot, []string) { return b.cat
 
 // loadCatalog layers the model catalog under the running config. A catalog
 // that cannot be read leaves the configured providers and models in effect.
-func (b *server) loadCatalog(ctx context.Context, cfgPath string) {
-	b.catalog = servicekit.NewCatalog(cfgPath)
+func (b *server) loadCatalog(ctx context.Context) {
 	snapshot, err := b.catalog.Fetch(ctx, b.secrets.Getenv, b.cfg.Providers)
 	if err != nil {
 		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)

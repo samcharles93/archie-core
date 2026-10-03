@@ -26,6 +26,8 @@ type EmbeddedOptions struct {
 	Host string
 	// Port is the listen port. Zero means a random port.
 	Port int
+	// Token is the client token. Empty generates one.
+	Token string
 	// StoreDir is where JetStream persists streams. Empty means a temporary
 	// directory (streams do not survive a reboot). The daemon passes a dir
 	// under its data directory so the ARCHIE_TASKS and reaction streams are
@@ -46,7 +48,10 @@ func StartEmbedded(ctx context.Context, opts EmbeddedOptions, log *slog.Logger) 
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	token := rand.Text()
+	token := opts.Token
+	if token == "" {
+		token = rand.Text()
+	}
 
 	srv, err := server.NewServer(&server.Options{
 		Host:          opts.Host,

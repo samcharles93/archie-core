@@ -28,7 +28,12 @@ import (
 func (b *boot) setupReadinessProbes() {
 	cfg := b.cfg
 	probes := []health.Probe{
-		readiness.NewStoreProbe(b.stateStore),
+		// The State Store client waits for its peer, so the probe carries its
+		// own deadline to report an outage instead of waiting it out.
+		readiness.NewContractProbe("state_db", time.Duration(cfg.Health.DependencyTimeout), func(ctx context.Context) error {
+			_, err := b.stateStore.StatusCounts(ctx)
+			return err
+		}),
 		readiness.NewConfigProbe(b.cfgHolder.Get, configuration.Validate),
 		readiness.NewDiskProbeTargets(diskProbeTargets(cfg)),
 		// The daemon no longer runs a chat channel, so it cannot observe one's

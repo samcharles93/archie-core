@@ -12,10 +12,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -233,6 +235,7 @@ func (b *boot) loadConfig(_ context.Context, cfgPath, overlayPath string) error 
 		return err
 	}
 	b.loader, b.doc = loader, doc
+	b.catalog = servicekit.NewCatalog(cfgPath)
 	b.cfg = b.doc.Config
 	b.cfgHolder = config.NewHolder(b.cfg)
 	b.currentProvenance.Store(&b.doc.Provenance)
@@ -439,10 +442,21 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	if b.containerPool != nil {
 		host = b.containerPool.HostGateway()
 	}
-	srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
-		Host:     host,
-		StoreDir: filepath.Join(cfg.StateDir, "nats"),
-	}, log)
+	// A restarted broker keeps the previous endpoint, so the Gateway and
+	// running agents reconnect to it instead of a broker that no longer exists.
+	opts := nats.EmbeddedOptions{Host: host, StoreDir: filepath.Join(cfg.StateDir, "nats")}
+	if previous, err := servicekit.ReadNATSEndpoint(cfg.StateDir); err == nil {
+		opts.Token = previous.Token
+		if u, err := url.Parse(previous.URL); err == nil {
+			opts.Port, _ = strconv.Atoi(u.Port())
+		}
+	}
+	srv, err := nats.StartEmbedded(ctx, opts, log)
+	if err != nil && opts.Port != 0 {
+		log.Warn("embedded nats: previous port unavailable; taking a new one", "port", opts.Port, "err", err)
+		opts.Port = 0
+		srv, err = nats.StartEmbedded(ctx, opts, log)
+	}
 	if err != nil {
 		log.Error("embedded nats start failed", "err", err)
 		return "", "", err
@@ -961,8 +975,7 @@ func (b *boot) catalogState() (modelcatalog.Snapshot, []string) { return b.catal
 
 // loadCatalog layers the model catalog under the file config. A catalog that
 // cannot be read leaves the configured providers and models in effect.
-func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
-	b.catalog = servicekit.NewCatalog(cfgPath)
+func (b *boot) loadCatalog(ctx context.Context) {
 	snapshot, err := b.catalog.Fetch(ctx, b.secrets.Getenv, b.cfgHolder.Get().Providers)
 	if err != nil {
 		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
