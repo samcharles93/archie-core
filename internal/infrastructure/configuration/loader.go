@@ -1,7 +1,9 @@
 package configuration
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -96,6 +98,11 @@ func (l *Loader) File(path string) (*Document, error) {
 // tooling share the exact same precedence and validation rules.
 func (l *Loader) Resolve(basePath, overlayPath string) (*Document, error) {
 	info, err := os.Stat(basePath)
+	if errors.Is(err, fs.ErrNotExist) && overlayPath != "" {
+		// An overlay alone is a complete source: a dev stack runs without the
+		// operator's config file.
+		return l.Resolve(overlayPath, "")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: config source %s: %w", ErrUnreadable, basePath, err)
 	}

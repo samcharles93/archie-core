@@ -80,7 +80,7 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 }
 
 func readProjection(path, overlay string, log *slog.Logger) (projection, bool, error) {
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) && overlay == "" {
 		return projection{}, false, nil
 	}
 	doc, err := configuration.New(log).Resolve(path, overlay)

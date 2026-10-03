@@ -41,7 +41,7 @@ func Resolve(o Options, log *slog.Logger) (Options, error) {
 // the UI process is allowed to see. An absent source is not an error (the
 // process is fully drivable by flags); an unreadable or invalid one is.
 func readProjection(path, overlay string, log *slog.Logger) (projection, bool, error) {
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) && overlay == "" {
 		return projection{}, false, nil
 	}
 	doc, err := configuration.New(log).Resolve(path, overlay)
