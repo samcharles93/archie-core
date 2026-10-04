@@ -424,6 +424,9 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	// A restarted broker keeps the previous endpoint, so the Gateway and
 	// running agents reconnect to it instead of a broker that no longer exists.
 	opts := nats.EmbeddedOptions{Host: host, StoreDir: filepath.Join(cfg.StateDir, "nats")}
+	if b.stateStoreGrants != nil {
+		opts.Tasks = taskBroker{runs: b.stateStoreGrants.Client}
+	}
 	if previous, err := servicekit.ReadNATSEndpoint(cfg.StateDir); err == nil {
 		opts.Token = previous.Token
 		if u, err := url.Parse(previous.URL); err == nil {
@@ -595,7 +598,7 @@ func (b *boot) buildDaemon() {
 	log := b.log
 	b.d = &daemon.Daemon{
 		Cfg:                 b.cfgHolder,
-		ConnectedNATS:       daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
+		ConnectedNATS:       daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken, Scoped: b.cfg.NATS.Mode != config.NATSModeExternal},
 		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.Get(config.ServiceNameState).Target), Token: b.stateStoreToken},
 		Store:               b.stateStore,
 		Bus:                 b.bus,

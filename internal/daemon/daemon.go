@@ -63,6 +63,19 @@ type RunCredentialIssuer interface {
 type NATSEndpoint struct {
 	URL   string
 	Token string
+	// Scoped is true on the embedded broker, where a container logs in with
+	// its run credential and reaches only its own task's subjects.
+	Scoped bool
+}
+
+// ContainerToken is the broker token a container is handed: none on a
+// scoped broker. An external broker cannot scope a container, so it still
+// gets the broker's token (reported as a health issue by archied).
+func (e NATSEndpoint) ContainerToken() string {
+	if e.Scoped {
+		return ""
+	}
+	return e.Token
 }
 
 // StateStoreEndpoint is the State Store target and token passed to agent
@@ -1937,7 +1950,7 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 	// the live config: a reloaded [nats] section must not point new
 	// containers at a server the daemon is not publishing on.
 	env = append(env, "NATS_URL="+d.ConnectedNATS.URL)
-	if token := d.ConnectedNATS.Token; token != "" {
+	if token := d.ConnectedNATS.ContainerToken(); token != "" {
 		env = append(env, "NATS_TOKEN="+token)
 	}
 	// Pass the State Store target with this task's scoped token, never the

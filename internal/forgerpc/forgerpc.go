@@ -29,6 +29,20 @@ const (
 	SubjectReplyToReview       = "archie.forge.reply_to_review"
 )
 
+// Subjects returns every forge RPC subject identity's server answers: the
+// set a task of that identity may publish to.
+func Subjects(identity string) []string {
+	bases := []string{
+		SubjectComment, SubjectCloseIssue, SubjectCreatePR, SubjectLinkBranch,
+		SubjectSetStateLabel, SubjectCreateReviewComment, SubjectReplyToReview,
+	}
+	out := make([]string, len(bases))
+	for i, base := range bases {
+		out[i] = SubjectFor(identity, base)
+	}
+	return out
+}
+
 // SubjectFor returns base scoped to identity, or base when identity is
 // empty.
 func SubjectFor(identity, base string) string {

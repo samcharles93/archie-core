@@ -45,7 +45,7 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 	}
 	defer revokeCredential()
 	env, err := kitrun.WorkerEnv(kitrun.Endpoints{
-		NATS: d.ConnectedNATS.URL, NATSToken: d.ConnectedNATS.Token,
+		NATS: d.ConnectedNATS.URL, NATSToken: d.ConnectedNATS.ContainerToken(),
 		StateStore: d.ConnectedStateStore.URL, StateStoreToken: credential,
 	}, os.Getuid(), os.Getgid())
 	if err != nil {

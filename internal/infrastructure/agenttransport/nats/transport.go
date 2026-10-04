@@ -18,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
+	eventbus "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -28,8 +29,12 @@ import (
 // fully on gRPC for its store calls, and the legacy NATS storerpc path is
 // deleted
 type Config struct {
-	URL   string
-	Token string
+	URL string
+	// Token is a broker-wide token, set only on an external broker. Without
+	// it the worker logs in as TaskID with StateStoreToken, its run
+	// credential, which reaches only its own task's subjects.
+	Token  string
+	TaskID int64
 
 	StateStoreURL   string
 	StateStoreToken string
@@ -65,8 +70,13 @@ func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, 
 		return nil, err
 	}
 	options := []natsio.Option{natsio.Name("archie-agent")}
-	if config.Token != "" {
+	switch {
+	case config.Token != "":
 		options = append(options, natsio.Token(config.Token))
+	case config.StateStoreToken != "":
+		options = append(options,
+			natsio.UserInfo(fmt.Sprintf("%s%d", eventbus.TaskUserPrefix, config.TaskID), config.StateStoreToken),
+			natsio.CustomInboxPrefix(eventbus.TaskInboxPrefix(config.TaskID)))
 	}
 	conn, err := natsio.Connect(config.URL, options...)
 	if err != nil {

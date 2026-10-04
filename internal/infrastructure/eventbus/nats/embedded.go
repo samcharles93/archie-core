@@ -26,8 +26,11 @@ type EmbeddedOptions struct {
 	Host string
 	// Port is the listen port. Zero means a random port.
 	Port int
-	// Token is the client token. Empty generates one.
+	// Token is the instance token: every permission. Empty generates one.
 	Token string
+	// Tasks admits task users ("task-<id>" with the run credential) to their
+	// own task's subjects. Nil admits the instance token only.
+	Tasks TaskAuthority
 	// StoreDir is where JetStream persists streams. Empty means a temporary
 	// directory (streams do not survive a reboot). The daemon passes a dir
 	// under its data directory so the ARCHIE_TASKS and reaction streams are
@@ -54,12 +57,14 @@ func StartEmbedded(ctx context.Context, opts EmbeddedOptions, log *slog.Logger) 
 	}
 
 	srv, err := server.NewServer(&server.Options{
-		Host:          opts.Host,
-		Port:          opts.Port,
-		JetStream:     true,
-		StoreDir:      opts.StoreDir,
-		Authorization: token,
-		NoSigs:        true, // the daemon owns signals, not the embedded server
+		Host:      opts.Host,
+		Port:      opts.Port,
+		JetStream: true,
+		StoreDir:  opts.StoreDir,
+		// Replaces token authorization: the instance token and task users
+		// are both checked here.
+		CustomClientAuthentication: authenticator{token: token, tasks: opts.Tasks},
+		NoSigs:                     true, // the daemon owns signals, not the embedded server
 		// NoLog leaves the server's logger nil (ConfigureLogger is only ever
 		// called on reload). A nil logger makes the server's Fatalf a no-op
 		// rather than an os.Exit, so a JetStream startup failure cannot crash

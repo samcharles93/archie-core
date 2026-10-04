@@ -47,6 +47,9 @@ func (b *boot) setupReadinessProbes() {
 	if b.accessLive != nil {
 		probes = append(probes, readiness.NewProblemProbe("access_policies", b.accessLive))
 	}
+	if cfg.NATS.Mode == config.NATSModeExternal {
+		probes = append(probes, unscopedBroker{})
+	}
 	b.healthRegistry = health.NewRegistry(probes...)
 }
 
@@ -86,4 +89,14 @@ func diskProbePath(cfg config.Config) string {
 	default:
 		return "."
 	}
+}
+
+// unscopedBroker reports that containers hold the external broker's own
+// token: only the embedded broker can limit a container to its task.
+type unscopedBroker struct{}
+
+func (unscopedBroker) Name() string { return "nats_credential_scope" }
+
+func (unscopedBroker) Check(context.Context) health.Result {
+	return health.Result{Status: health.StatusDegraded, Detail: "external NATS: agent containers receive the broker token, which reaches every subject; use the embedded broker to scope them to their task"}
 }

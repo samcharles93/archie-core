@@ -112,9 +112,17 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 
 	dependencies.markSafe(ctx, workDir, log)
 
+	// The task is known before connecting: without a broker token the
+	// worker logs in as its task, with its run credential.
+	taskID, err := dependencies.bootID(workDir)
+	if err != nil {
+		log.Error("task boot failed", "err", err)
+		return &StartupError{Operation: "task boot failed", Err: err}
+	}
 	transport, err := dependencies.connect(ctx, agentnats.Config{
 		URL:             settings.NATSURL,
 		Token:           settings.NATSToken,
+		TaskID:          taskID,
 		StateStoreURL:   settings.StateStoreTarget,
 		StateStoreToken: settings.StateStoreToken,
 	}, log)
@@ -124,12 +132,6 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 		return &StartupError{Operation: operation, Err: err}
 	}
 	defer transport.Close()
-
-	taskID, err := dependencies.bootID(workDir)
-	if err != nil {
-		log.Error("task boot failed", "err", err)
-		return &StartupError{Operation: "task boot failed", Err: err}
-	}
 	log = slog.New(agentexec.NewSystemLogHandler(log.Handler(), transport.LogPublisher(), taskID))
 	log.Info("system log publisher attached", "task", taskID)
 
