@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ArrowRight, RotateCcw, Trash2 } from "@lucide/vue";
+import { RotateCcw, Trash2 } from "@lucide/vue";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import WorkflowCanvas from "./WorkflowCanvas.vue";
 import {
   cloneControlPlaneValue,
   removeWorkflowDefinition,
@@ -105,7 +107,7 @@ async function restoreOne(): Promise<void> {
 // not served, so a save the server refuses still reports its own reason below.
 const vocabulary = computed(() => store.stepTypes());
 const parsed = computed(() => parseWorkflowYaml(yaml.value, vocabulary.value));
-const steps = computed(() => (parsed.value.ok ? parsed.value.steps : []));
+const view = ref("canvas");
 const lines = computed(() => yamlLines(yaml.value));
 
 // The highlight layer sits behind the textarea and never scrolls by itself, so
@@ -123,36 +125,12 @@ function syncScroll(event: Event): void {
       <Label for="workflow-id">ID</Label>
       <Input id="workflow-id" v-model="id" name="workflow-id" required autocomplete="off" class="max-w-sm font-mono" />
     </div>
-    <div class="space-y-1.5">
-      <!-- The steps the YAML actually declares, as the server would read them:
-           a parser's answer, never a scan for lines that look like steps. -->
-      <span class="text-sm leading-none font-medium">Steps</span>
-      <div
-        class="flex h-9 flex-nowrap items-center gap-1.5 overflow-hidden"
-        role="list"
-        aria-label="Steps"
-      >
-        <template v-if="steps.length">
-          <template v-for="(step, i) in steps" :key="step.index">
-            <span
-              role="listitem"
-              class="shrink-0 rounded border border-border bg-secondary px-2 py-0.5 font-mono text-xs"
-              :title="step.type"
-              >{{ step.type }}</span
-            >
-            <ArrowRight
-              v-if="i < steps.length - 1"
-              class="size-3.5 shrink-0 text-fg-subtle"
-              aria-hidden="true"
-            />
-          </template>
-        </template>
-        <span v-else class="text-xs text-fg-subtle">No steps yet</span>
-      </div>
-    </div>
-    <div class="space-y-1.5">
-      <div class="flex items-baseline gap-2">
-        <Label for="workflow-yaml">YAML</Label>
+    <Tabs v-model="view" class="space-y-1.5">
+      <div class="flex items-center gap-2">
+        <TabsList>
+          <TabsTrigger value="canvas">Canvas</TabsTrigger>
+          <TabsTrigger value="yaml">YAML</TabsTrigger>
+        </TabsList>
         <!-- Step settings are the server's to check, on save. -->
         <span
           class="ml-auto text-xs"
@@ -161,6 +139,10 @@ function syncScroll(event: Event): void {
           >{{ parsed.ok ? "✓" : "✕" }} {{ validationLabel(parsed) }}</span
         >
       </div>
+      <TabsContent value="canvas">
+        <WorkflowCanvas :yaml="yaml" />
+      </TabsContent>
+      <TabsContent value="yaml">
       <!--
         A gutter and a highlighted layer behind the live textarea, so the YAML
         is numbered and coloured where it is edited rather than in a second,
@@ -201,6 +183,7 @@ function syncScroll(event: Event): void {
         </div>
         <Textarea
           id="workflow-yaml"
+          aria-label="Workflow YAML"
           v-model="yaml"
           name="workflow-yaml"
           required
@@ -209,7 +192,8 @@ function syncScroll(event: Event): void {
           @scroll="syncScroll"
         />
       </div>
-    </div>
+      </TabsContent>
+    </Tabs>
     <details v-if="vocabulary.length" class="text-sm">
       <summary class="cursor-pointer text-fg-subtle">Step types ({{ vocabulary.length }})</summary>
       <ul class="mt-2 flex flex-wrap gap-1.5" aria-label="Step types">
