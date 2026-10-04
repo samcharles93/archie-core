@@ -16,57 +16,58 @@ import (
 // password, holding a session, or writing any of the protocol itself: discovery,
 // the code exchange, PKCE and token verification are the libraries'.
 type Flow struct {
-	verifier *Verifier
-	oauth    oauth2.Config
-	audience string
+	provider     *Provider
+	verifier     *Verifier
+	clientID     string
+	clientSecret string
+	redirectURL  string
 }
 
-// NewFlow discovers the provider and builds the browser flow. ClientID and the
-// secret are the provider's registration for this dashboard; the secret is read
-// from wherever the operator keeps it and is never logged or stored.
-func NewFlow(ctx context.Context, cfg Config, clientID, clientSecret, redirectURL string) (*Flow, error) {
-	issuer := strings.TrimSpace(cfg.Issuer)
-	audience := strings.TrimSpace(cfg.Audience)
-	if issuer == "" {
-		return nil, fmt.Errorf("oidc: issuer is required")
-	}
-	if audience == "" {
-		return nil, fmt.Errorf("oidc: audience is required")
-	}
+// NewFlow builds the browser flow over provider. ClientID and the secret are
+// the provider's registration for this dashboard; the secret is read from
+// wherever the operator keeps it and is never logged or stored.
+func NewFlow(provider *Provider, clientID, clientSecret, redirectURL string) (*Flow, error) {
 	if strings.TrimSpace(clientID) == "" {
 		return nil, fmt.Errorf("oidc: client id is required for the browser flow")
 	}
 	if strings.TrimSpace(redirectURL) == "" {
 		return nil, fmt.Errorf("oidc: redirect URL is required for the browser flow")
 	}
-	provider, err := gooidc.NewProvider(ctx, issuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidc: discover %q: %w", issuer, err)
-	}
 	return &Flow{
-		verifier: &Verifier{verifier: provider.Verifier(&gooidc.Config{ClientID: audience})},
-		oauth: oauth2.Config{
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			Endpoint:     provider.Endpoint(),
-			RedirectURL:  redirectURL,
-			// openid is what makes the provider return a subject at all; profile
-			// and email are what make a name available for a display.
-			Scopes: []string{gooidc.ScopeOpenID, "profile", "email"},
-		},
-		audience: audience,
+		provider: provider, verifier: NewVerifier(provider),
+		clientID: clientID, clientSecret: clientSecret, redirectURL: redirectURL,
+	}, nil
+}
+
+func (f *Flow) oauth(ctx context.Context) (oauth2.Config, error) {
+	discovered, err := f.provider.get(ctx)
+	if err != nil {
+		return oauth2.Config{}, err
+	}
+	return oauth2.Config{
+		ClientID:     f.clientID,
+		ClientSecret: f.clientSecret,
+		Endpoint:     discovered.Endpoint(),
+		RedirectURL:  f.redirectURL,
+		// openid is what makes the provider return a subject at all; profile
+		// and email are what make a name available for a display.
+		Scopes: []string{gooidc.ScopeOpenID, "profile", "email"},
 	}, nil
 }
 
 // AuthCodeURL returns the provider URL to send a browser to, with the
 // audience requested, and the PKCE verifier.
-func (f *Flow) AuthCodeURL(state string) (string, string) {
+func (f *Flow) AuthCodeURL(ctx context.Context, state string) (string, string, error) {
+	config, err := f.oauth(ctx)
+	if err != nil {
+		return "", "", err
+	}
 	codeVerifier := oauth2.GenerateVerifier()
-	url := f.oauth.AuthCodeURL(state,
+	url := config.AuthCodeURL(state,
 		oauth2.S256ChallengeOption(codeVerifier),
-		oauth2.SetAuthURLParam("audience", f.audience),
+		oauth2.SetAuthURLParam("audience", f.provider.audience),
 	)
-	return url, codeVerifier
+	return url, codeVerifier, nil
 }
 
 // Exchange completes the flow: it trades the code for the provider's tokens and
@@ -74,7 +75,11 @@ func (f *Flow) AuthCodeURL(state string) (string, string) {
 // through. There is no second verification path here, so a token obtained by the
 // browser cannot be accepted on terms a presented token would be refused on.
 func (f *Flow) Exchange(ctx context.Context, code, codeVerifier string) (identity.ProviderSession, error) {
-	token, err := f.oauth.Exchange(ctx, strings.TrimSpace(code), oauth2.VerifierOption(codeVerifier))
+	config, err := f.oauth(ctx)
+	if err != nil {
+		return identity.ProviderSession{}, err
+	}
+	token, err := config.Exchange(ctx, strings.TrimSpace(code), oauth2.VerifierOption(codeVerifier))
 	if err != nil {
 		return identity.ProviderSession{}, fmt.Errorf("oidc: exchange code: %w", err)
 	}

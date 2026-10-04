@@ -72,11 +72,12 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 
-	authenticate, err := dashboardAuthenticator(ctx, opts, tasks, log)
+	provider, err := signInProvider(opts)
 	if err != nil {
 		return err
 	}
-	login, err := dashboardLoginFlow(ctx, opts)
+	authenticate := dashboardAuthenticator(provider, opts, tasks, log)
+	login, err := dashboardLoginFlow(provider, opts)
 	if err != nil {
 		return err
 	}
@@ -86,7 +87,7 @@ func Run(ctx context.Context, options Options) error {
 		Log:          log,
 		Store:        tasks,
 		Chat:         chat,
-		Health:       newReadinessRegistry(opts, tasks, chat, chain),
+		Health:       newReadinessRegistry(opts, tasks, chat, chain, provider),
 		ControlPlane: tasks.ControlPlane(),
 		Identities:   tasks,
 		Authenticate: authenticate,

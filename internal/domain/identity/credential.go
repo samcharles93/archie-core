@@ -55,7 +55,7 @@ type SubjectBinding interface {
 type LoginFlow interface {
 	// AuthCodeURL returns the provider URL for a sign-in and the PKCE verifier the
 	// callback must present with the code.
-	AuthCodeURL(state string) (string, string)
+	AuthCodeURL(ctx context.Context, state string) (string, string, error)
 	// Exchange completes the flow and returns what the provider proved. It
 	// verifies through the same path a presented token takes, so a token obtained
 	// by browser cannot be accepted on terms a presented token would be refused on.
@@ -88,6 +88,9 @@ var (
 	// verify: wrong signature, expired, wrong issuer, wrong audience, or
 	// malformed. It never means the credential was merely unrecognised.
 	ErrCredentialRejected = errors.New("credential rejected")
+	// ErrProviderUnavailable means the identity provider could not be reached,
+	// so a credential could be neither accepted nor refused.
+	ErrProviderUnavailable = errors.New("identity provider unavailable")
 	// ErrSubjectUnbound means a verified subject has no identity bound to it.
 	// The provider authenticated someone archie does not know.
 	ErrSubjectUnbound = errors.New("credential subject is not bound to an identity")

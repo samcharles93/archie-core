@@ -206,7 +206,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not start sign-in", http.StatusInternalServerError)
 		return
 	}
-	url, verifier := s.Login.AuthCodeURL(state)
+	url, verifier, err := s.Login.AuthCodeURL(r.Context(), state)
+	if err != nil {
+		s.refuseUnidentified(w, r, err)
+		return
+	}
 	setFlowCookie(w, r, loginStateCookie, state)
 	setFlowCookie(w, r, loginVerifierCookie, verifier)
 	http.Redirect(w, r, url, http.StatusSeeOther)
@@ -286,6 +290,10 @@ func (s *Server) refuseUnidentified(w http.ResponseWriter, r *http.Request, err 
 	status := http.StatusUnauthorized
 	reason := "That credential was not accepted."
 	switch {
+	case errors.Is(err, identity.ErrProviderUnavailable):
+		// Signing in again cannot help until the provider is back.
+		http.Error(w, "The sign-in provider is unavailable. Try again shortly.", http.StatusServiceUnavailable)
+		return
 	case errors.Is(err, identity.ErrIdentityInactive):
 		status, reason = http.StatusForbidden, "That identity may not act."
 	case errors.Is(err, identity.ErrSubjectUnbound):

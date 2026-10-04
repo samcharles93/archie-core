@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 
@@ -22,15 +23,19 @@ type Config struct {
 	Audience string
 }
 
-// Verifier validates tokens against the provider's published signing keys.
-type Verifier struct {
-	verifier *gooidc.IDTokenVerifier
+// Provider discovers the identity provider on first use and keeps the result.
+// A provider that is down at startup does not stop the dashboard: discovery
+// is retried on the next request, and Check reports the outage as health.
+type Provider struct {
+	issuer   string
+	audience string
+
+	mu         sync.Mutex
+	discovered *gooidc.Provider
 }
 
-// New discovers the provider and builds a verifier from its published keys.
-// Discovery happens once, at construction: an unreachable provider is a
-// startup failure the operator sees, not a request-time surprise.
-func New(ctx context.Context, cfg Config) (*Verifier, error) {
+// NewProvider validates cfg without contacting the provider.
+func NewProvider(cfg Config) (*Provider, error) {
 	issuer := strings.TrimSpace(cfg.Issuer)
 	audience := strings.TrimSpace(cfg.Audience)
 	if issuer == "" {
@@ -39,21 +44,55 @@ func New(ctx context.Context, cfg Config) (*Verifier, error) {
 	if audience == "" {
 		return nil, fmt.Errorf("oidc: audience is required")
 	}
-	provider, err := gooidc.NewProvider(ctx, issuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidc: discover %q: %w", issuer, err)
+	return &Provider{issuer: issuer, audience: audience}, nil
+}
+
+// get returns the discovered provider, discovering it now if no earlier
+// attempt succeeded.
+func (p *Provider) get(ctx context.Context) (*gooidc.Provider, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.discovered != nil {
+		return p.discovered, nil
 	}
-	return &Verifier{verifier: provider.Verifier(&gooidc.Config{ClientID: audience})}, nil
+	discovered, err := gooidc.NewProvider(ctx, p.issuer)
+	if err != nil {
+		return nil, fmt.Errorf("%w: discover %q: %w", identity.ErrProviderUnavailable, p.issuer, err)
+	}
+	p.discovered = discovered
+	return discovered, nil
+}
+
+// Check fetches the provider's discovery document afresh, so an outage after
+// startup shows as well as one before it.
+func (p *Provider) Check(ctx context.Context) error {
+	_, err := gooidc.NewProvider(ctx, p.issuer)
+	return err
+}
+
+// Verifier validates tokens against the provider's published signing keys.
+type Verifier struct {
+	provider *Provider
+}
+
+// NewVerifier returns a verifier for provider's tokens.
+func NewVerifier(provider *Provider) *Verifier {
+	return &Verifier{provider: provider}
 }
 
 // Verify checks the token's signature, issuer, audience and expiry against the
 // provider's keys, and returns what it proved. Every check is the library's:
 // signature comparison, claim validation and key rotation are not archie's code.
 func (v *Verifier) Verify(ctx context.Context, rawToken string) (identity.Credential, error) {
-	if v == nil || v.verifier == nil {
+	if v == nil || v.provider == nil {
 		return identity.Credential{}, fmt.Errorf("oidc: no verifier is configured")
 	}
-	token, err := v.verifier.Verify(ctx, strings.TrimSpace(rawToken))
+	discovered, err := v.provider.get(ctx)
+	if err != nil {
+		return identity.Credential{}, err
+	}
+	verifier := discovered.Verifier(&gooidc.Config{ClientID: v.provider.audience})
+	token, err := verifier.Verify(ctx, strings.TrimSpace(rawToken))
 	if err != nil {
 		return identity.Credential{}, fmt.Errorf("oidc: verify: %w", err)
 	}

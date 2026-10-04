@@ -10,13 +10,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
+	"github.com/samcharles93/archie-core/internal/infrastructure/oidc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 )
 
-// newReadinessRegistry builds the readiness probes for the Gateway and State
-// Store.
-func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messaging.ChatContract, chain *infraaccess.Live) *health.Registry {
-	return health.NewRegistry(
+// newReadinessRegistry builds the readiness probes for the Gateway, the State
+// Store and, when one is configured, the sign-in provider.
+func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messaging.ChatContract, chain *infraaccess.Live, provider *oidc.Provider) *health.Registry {
+	probes := []health.Probe{
 		readiness.NewProblemProbe("access_policies", problemSource(chain)),
 		captureRefusalProbe{store: refusalStore(tasks)},
 		readiness.NewContractProbe("state_db", o.DependencyTimeout, func(ctx context.Context) error {
@@ -27,7 +28,11 @@ func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messagi
 			_, err := chat.Snapshot(ctx)
 			return err
 		}),
-	)
+	}
+	if provider != nil {
+		probes = append(probes, readiness.NewContractProbe("sign_in_provider", o.DependencyTimeout, provider.Check))
+	}
+	return health.NewRegistry(probes...)
 }
 
 // problemSource keeps a missing chain a nil source, which the probe reports
