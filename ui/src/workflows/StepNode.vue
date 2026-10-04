@@ -37,7 +37,7 @@ function duration(ms?: number): string {
 <template>
   <div
     class="w-60 rounded-lg border bg-card px-3 py-2 text-left shadow-sm"
-    :class="[stateClass, data.run ? '' : data.kind === 'step' && 'opacity-90']"
+    :class="[stateClass, data.selected && 'ring-2 ring-ring', data.kind === 'step' && 'cursor-pointer']"
   >
     <Handle v-if="data.kind !== 'start'" type="target" :position="Position.Top" />
     <Handle id="data-in" type="target" :position="Position.Right" class="!opacity-0" />

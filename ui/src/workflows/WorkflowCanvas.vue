@@ -9,13 +9,21 @@ import "@vue-flow/controls/dist/style.css";
 import StepNode from "./StepNode.vue";
 import { withRuns, workflowGraph, type StageRun } from "./workflow-graph";
 
-const props = defineProps<{ yaml: string; stages?: StageRun[] }>();
+const props = defineProps<{ yaml: string; stages?: StageRun[]; selected?: (string | number)[] | null }>();
+const emit = defineEmits<{ select: [(string | number)[] | null] }>();
 
 const NODE_WIDTH = 240;
 
 const container = ref<HTMLElement | null>(null);
 const graph = computed(() => withRuns(workflowGraph(props.yaml), props.stages ?? []));
-const nodes = computed(() => graph.value.nodes);
+const selectedKey = computed(() => JSON.stringify(props.selected ?? null));
+const nodes = computed(() =>
+  graph.value.nodes.map((node) =>
+    JSON.stringify(node.data.path ?? null) === selectedKey.value && props.selected
+      ? { ...node, data: { ...node.data, selected: true } }
+      : node,
+  ),
+);
 const edges = computed(() =>
   graph.value.edges.map(({ label, offset, ...edge }) => ({
     ...edge,
@@ -50,7 +58,6 @@ watch(() => nodes.value.filter((node) => node.data.run).length, () => place());
 <template>
   <div ref="container" class="workflow-canvas h-[560px] overflow-hidden rounded-lg border border-border bg-background">
     <VueFlow
-      :key="yaml"
       class="h-full"
       :nodes="nodes"
       :edges="edges"
@@ -61,6 +68,8 @@ watch(() => nodes.value.filter((node) => node.data.run).length, () => place());
       :max-zoom="1.5"
       pan-on-scroll
       @pane-ready="place"
+      @node-click="({ node }) => emit('select', node.data.path ?? null)"
+      @pane-click="emit('select', null)"
     >
       <template #node-step="nodeProps">
         <StepNode v-bind="nodeProps" />

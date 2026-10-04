@@ -22,6 +22,9 @@ export interface StepNodeData {
   stage?: string;
   occurrence?: number;
   run?: StageRun;
+  /** Where the step lives in the YAML document, for editing it. */
+  path?: (string | number)[];
+  selected?: boolean;
 }
 
 /** One recorded run of a step, from the task's attempts view. */
@@ -167,6 +170,7 @@ export function workflowGraph(source: string): WorkflowGraph {
     y: number,
     branch?: string,
     recorded?: { stage: string; occurrence: number },
+    path?: (string | number)[],
   ): string => {
     const record = isMapping(step) ? step : {};
     const type = typeof record.type === "string" ? record.type : "";
@@ -187,6 +191,7 @@ export function workflowGraph(source: string): WorkflowGraph {
         retry: isMapping(record.retry) && typeof record.retry.attempts === "number" ? record.retry.attempts : undefined,
         continues: record.on_failure === "continue",
         branch,
+        path,
         ...(recorded ?? { stage: stepID || type, occurrence: occurrenceOf(stepID || type) }),
       },
     });
@@ -210,7 +215,7 @@ export function workflowGraph(source: string): WorkflowGraph {
         const x = (column - (branches.length - 1) / 2) * COLUMN;
         let tail = previous;
         (Array.isArray(branchSteps) ? branchSteps : []).forEach((branchStep, j) => {
-          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, recorded);
+          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, recorded, ["steps", i, "parallel", name, j]);
           link(tail, id);
           tail = [id];
           depth = Math.max(depth, j + 1);
@@ -221,7 +226,7 @@ export function workflowGraph(source: string): WorkflowGraph {
       row += Math.max(depth, 1);
       continue;
     }
-    const id = addStep(step, String(i + 1), 0, row * ROW);
+    const id = addStep(step, String(i + 1), 0, row * ROW, undefined, undefined, ["steps", i]);
     link(previous, id);
     previous = [id];
     row++;

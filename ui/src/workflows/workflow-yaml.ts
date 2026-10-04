@@ -83,25 +83,50 @@ export function parseWorkflowYaml(
       ? value.repository.trim()
       : "required";
   const chips: WorkflowStepChip[] = [];
+  const declared = new Set<string>();
   for (const [i, step] of steps.entries()) {
     const where = `workflow ${id} step ${i + 1}`;
     if (isMapping(step) && isMapping(step.parallel)) {
       for (const [branch, branchSteps] of Object.entries(step.parallel)) {
         if (!Array.isArray(branchSteps) || !branchSteps.length)
           return { ok: false, message: `${where}: branch ${branch} needs a list of steps` };
+        const visible = new Set(declared);
         for (const [j, branchStep] of branchSteps.entries()) {
-          const problem = checkStepType(branchStep, `${where} branch ${branch} step ${j + 1}`, known, repository);
+          const branchWhere = `${where} branch ${branch} step ${j + 1}`;
+          const problem =
+            checkStepType(branchStep, branchWhere, known, repository) ||
+            laterReference(branchStep, branchWhere, visible);
           if (problem) return { ok: false, message: problem };
+          declareID(branchStep, visible);
         }
+        for (const branchStep of branchSteps) declareID(branchStep, declared);
       }
+      declareID(step, declared);
       chips.push({ index: i + 1, type: "parallel" });
       continue;
     }
-    const problem = checkStepType(step, where, known, repository);
+    const problem = checkStepType(step, where, known, repository) || laterReference(step, where, declared);
     if (problem) return { ok: false, message: problem };
+    declareID(step, declared);
     chips.push({ index: i + 1, type: (step as { type: string }).type.trim() });
   }
   return { ok: true, id, steps: chips };
+}
+
+const STEP_REFERENCE = /steps\.([A-Za-z0-9_-]+)/g;
+
+/** A reference to a step that has not run yet: the server refuses it, so the
+ * page says so before save. */
+function laterReference(step: unknown, where: string, declared: Set<string>): string {
+  if (!isMapping(step)) return "";
+  const text = JSON.stringify(step.settings ?? {}) + " " + (typeof step.when === "string" ? step.when : "");
+  for (const [, ref] of text.matchAll(STEP_REFERENCE))
+    if (!declared.has(ref)) return `${where}: no earlier step has id "${ref}"`;
+  return "";
+}
+
+function declareID(step: unknown, declared: Set<string>): void {
+  if (isMapping(step) && typeof step.id === "string") declared.add(step.id);
 }
 
 /** What is wrong with one typed step, or "" when nothing the page can see. */

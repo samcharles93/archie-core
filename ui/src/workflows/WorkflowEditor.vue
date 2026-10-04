@@ -8,7 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import StepPanel from "./StepPanel.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
+import type { StepPath } from "./workflow-edit";
 import { useWorkflowRuns } from "./workflow-runs";
 import {
   cloneControlPlaneValue,
@@ -38,6 +40,7 @@ const shipped = computed<WorkflowDefinitionCollection>(() =>
 const selected = defineModel<string>("selected", { required: true });
 const id = ref("");
 const yaml = ref("");
+const selectedStep = ref<StepPath | null>(null);
 const localError = ref("");
 
 const { runs, watched, stages, pick } = useWorkflowRuns(selected);
@@ -51,7 +54,8 @@ function load(value: string): void {
     (candidate) => candidate.id === value,
   );
   id.value = entry?.id ?? value;
-  yaml.value = entry?.yaml ?? `id: ${value}\nsteps:\n  - type: `;
+  yaml.value = entry?.yaml ?? `id: ${value}\nsteps: []\n`;
+  selectedStep.value = null;
   localError.value = "";
 }
 
@@ -157,7 +161,10 @@ function syncScroll(event: Event): void {
           </select>
           <span v-if="!runs.length" class="text-xs text-fg-subtle">This workflow has not run yet.</span>
         </label>
-        <WorkflowCanvas :yaml="yaml" :stages="stages" />
+        <div class="grid gap-3 lg:grid-cols-[1fr_20rem]">
+          <WorkflowCanvas :yaml="yaml" :stages="stages" :selected="selectedStep" @select="selectedStep = $event" />
+          <StepPanel v-model:yaml="yaml" :path="selectedStep" :vocabulary="vocabulary" @select="selectedStep = $event" />
+        </div>
       </TabsContent>
       <TabsContent value="yaml">
       <!--
