@@ -56,9 +56,17 @@ func (commandSteps) StepTypes() []workflow.StepType {
 	return []workflow.StepType{workflow.CommandRunStepType()}
 }
 
+// repositorySteps provides the general repository step types: prepare,
+// commit, open a PR, and the repository and diff-size gates.
+type repositorySteps struct{}
+
+func (repositorySteps) Name() string { return "repository" }
+
+func (repositorySteps) StepTypes() []workflow.StepType { return workflow.RepoStepTypes() }
+
 // Providers returns the step-type providers to register.
 func Providers() []workflow.StepTypeProvider {
-	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}, commandSteps{}}
+	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}, commandSteps{}, repositorySteps{}}
 }
 
 // NewManager returns a new manager with Providers registered.

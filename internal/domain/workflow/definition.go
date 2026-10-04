@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -262,7 +266,7 @@ func ShippedDefinitions() WorkflowDefinitionCollection {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	collection := WorkflowDefinitionCollection{Definitions: make([]WorkflowDefinitionEntry, 0, len(ids))}
+	collection := WorkflowDefinitionCollection{Definitions: shippedYAML()}
 	for _, id := range ids {
 		wf := workflows[id]
 		var builder strings.Builder
@@ -281,7 +285,26 @@ func ShippedDefinitions() WorkflowDefinitionCollection {
 		}
 		collection.Definitions = append(collection.Definitions, WorkflowDefinitionEntry{ID: id, YAML: builder.String()})
 	}
+	slices.SortFunc(collection.Definitions, func(a, b WorkflowDefinitionEntry) int { return strings.Compare(a.ID, b.ID) })
 	return collection
+}
+
+//go:embed shipped/*.yaml
+var shippedFiles embed.FS
+
+// shippedYAML is the shipped workflows written in the general step types.
+func shippedYAML() []WorkflowDefinitionEntry {
+	files, _ := fs.Glob(shippedFiles, "shipped/*.yaml")
+	entries := make([]WorkflowDefinitionEntry, 0, len(files))
+	for _, name := range files {
+		data, err := shippedFiles.ReadFile(name)
+		if err != nil {
+			panic(err) // embedded at build time; unreadable means a broken binary
+		}
+		id := strings.TrimSuffix(path.Base(name), ".yaml")
+		entries = append(entries, WorkflowDefinitionEntry{ID: id, YAML: string(data)})
+	}
+	return entries
 }
 
 // sortedInputNames returns a Workflow.Interface's declared input names in a
@@ -298,7 +321,6 @@ func sortedInputNames(inputs map[string]task.InputSpec) []string {
 
 func legacyBuiltinWorkflows() Registry {
 	return Registry{
-		"implement": Implement(), "tdd": TDD(),
 		"feasibility": Feasibility(), "triage": Triage(), "remediate": Remediate(),
 		"pr-review": PRReview(),
 	}

@@ -63,7 +63,7 @@ func checkReference(path string, earlier map[string]bool) error {
 	return fmt.Errorf("reference {{ %s }} must start with task, inputs or steps", path)
 }
 
-var taskFields = map[string]bool{"title": true, "body": true, "prompt": true, "repository": true, "kind": true, "issue": true, "pr": true}
+var taskFields = map[string]bool{"plan": true, "title": true, "body": true, "prompt": true, "repository": true, "kind": true, "issue": true, "pr": true}
 
 // renderSettings returns a copy of settings with every reference replaced by
 // its value in this run. A reference to an absent value renders empty: a
@@ -90,7 +90,7 @@ func referenceScope(tc *TaskContext) map[string]any {
 	maps.Copy(inputs, t.Inputs)
 	return map[string]any{
 		"task": map[string]any{
-			"title": t.Title, "body": t.Body, "prompt": taskPromptBlock(t),
+			"plan": approvedPlan(t), "title": t.Title, "body": t.Body, "prompt": taskPromptBlock(t),
 			"repository": tc.Repo.FullName(), "kind": taskKind(t),
 			"issue": t.IssueNumber, "pr": t.PRNumber,
 		},
@@ -157,4 +157,12 @@ func checkStepID(id string, seen map[string]bool) error {
 		return fmt.Errorf("step id %q is declared twice", id)
 	}
 	return nil
+}
+
+// approvedPlan is the PRD a feasibility run handed over, framed for a mission.
+func approvedPlan(t *Task) string {
+	if t.Plan == "" {
+		return ""
+	}
+	return "<approved_prd>\n" + t.Plan + "\n</approved_prd>"
 }

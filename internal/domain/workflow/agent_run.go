@@ -29,9 +29,14 @@ type agentRunSettings struct {
 	Role string `yaml:"role"`
 	// ReadOnly restricts the agent to read-only tools.
 	ReadOnly bool `yaml:"read_only"`
-	// Gate is "repository" to hold the agent to the repository's gate
-	// commands before it may finish; empty means ungated.
+	// Gate holds the agent to the repository's gate before it may finish:
+	// "repository", or "test-failure" where the test command must fail
+	// (writing a failing reproduction). Empty means ungated.
 	Gate string `yaml:"gate"`
+	// ProtectTests write-blocks the repository's test files.
+	ProtectTests bool `yaml:"protect_tests"`
+	// ExtraRules is appended to the agent's system prompt.
+	ExtraRules string `yaml:"extra_rules"`
 	// Result is a JSON Schema object. When set, the agent must return a value
 	// matching it, which later steps read as steps.<id>.result.
 	Result map[string]any `yaml:"result"`
@@ -50,11 +55,8 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 	if err := settings.Decode(&s); err != nil {
 		return Stage{}, fmt.Errorf("%s: %w", AgentRunStepName, err)
 	}
-	if strings.TrimSpace(s.Mission) == "" {
-		return Stage{}, fmt.Errorf("%s: settings.mission is required", AgentRunStepName)
-	}
-	if s.Gate != "" && s.Gate != "repository" {
-		return Stage{}, fmt.Errorf("%s: settings.gate is repository or empty, not %q", AgentRunStepName, s.Gate)
+	if err := s.check(); err != nil {
+		return Stage{}, fmt.Errorf("%s: %w", AgentRunStepName, err)
 	}
 	resultTool, err := agentResultTool(s.Result)
 	if err != nil {
@@ -65,10 +67,11 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 		role = "builder"
 	}
 	agent := AgentStage{
-		Name:     AgentRunStepName,
-		Role:     role,
-		ReadOnly: s.ReadOnly,
-		Mission:  func(*TaskContext) string { return s.Mission },
+		Name:       AgentRunStepName,
+		Role:       role,
+		ReadOnly:   s.ReadOnly,
+		Mission:    func(*TaskContext) string { return s.Mission },
+		ExtraRules: s.ExtraRules,
 		OnResult: func(tc *TaskContext, res agentrun.Result) error {
 			tc.stepResult.Summary = res.Summary
 			if resultTool == nil {
@@ -81,9 +84,7 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 			return json.Unmarshal(calls[0], &tc.stepResult.Result)
 		},
 	}
-	if s.Gate == "repository" {
-		agent.Gate = func(tc *TaskContext) agentrun.Gate { return GateFromRepo(tc.Repo, tc.Cfg.Budgets) }
-	}
+	applyRepositoryControls(&agent, s)
 	if resultTool != nil {
 		agent.CaptureTools = func(*TaskContext) []agentrun.CaptureTool { return []agentrun.CaptureTool{*resultTool} }
 	}
@@ -98,6 +99,34 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 		}
 		return stage.Run(ctx, tc)
 	}}, nil
+}
+
+func (s agentRunSettings) check() error {
+	if strings.TrimSpace(s.Mission) == "" {
+		return fmt.Errorf("settings.mission is required")
+	}
+	if s.Gate != "" && s.Gate != "repository" && s.Gate != gateExpectTestFailure {
+		return fmt.Errorf("settings.gate is repository, test-failure or empty, not %q", s.Gate)
+	}
+	return nil
+}
+
+// applyRepositoryControls sets the agent's gate and write protection.
+func applyRepositoryControls(agent *AgentStage, s agentRunSettings) {
+	switch s.Gate {
+	case "repository":
+		agent.Gate = func(tc *TaskContext) agentrun.Gate { return GateFromRepo(tc.Repo, tc.Cfg.Budgets) }
+	case gateExpectTestFailure:
+		agent.Gate = func(tc *TaskContext) agentrun.Gate { return tddReproGate(tc.Repo, tc.Cfg.Budgets) }
+	}
+	if s.ProtectTests {
+		agent.ProtectGlobs = func(tc *TaskContext) []string {
+			if glob := tc.Repo.ResolvedTestGlob(); glob != "" {
+				return []string{glob}
+			}
+			return nil
+		}
+	}
 }
 
 // agentResultTool is the capture tool for a result schema, or nil for none.

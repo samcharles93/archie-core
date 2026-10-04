@@ -1,0 +1,64 @@
+id: tdd
+steps:
+  - type: repo.prepare
+  - type: gate.repository
+    settings:
+      repair: true
+  - id: analyse
+    type: agent.run
+    settings:
+      role: planner
+      read_only: true
+      mission: |
+        Analyse this {{ task.kind }} for the repository {{ task.repository }} and determine the problem surface.
+
+        {{ task.prompt }}
+
+        Explore the code read-only and call finish with status "passed" and a summary containing: the root cause (file and function), the exact conditions that trigger it, the expected vs actual behaviour, and which test cases would prove the bug. Call finish with status "blocked" if you cannot locate a plausible cause.
+  - id: repro
+    type: agent.run
+    settings:
+      gate: test-failure
+      mission: |
+        Write tests that REPRODUCE this bug in the repository {{ task.repository }}. Do NOT fix the bug yet.
+
+        {{ task.prompt }}
+
+        <analysis>
+        {{ steps.analyse.summary }}
+        </analysis>
+
+        Add tests that pass once the bug is fixed but FAIL today because of it. The gate is inverted for this step: every gate command must pass except the test command, which must FAIL. Do not touch non-test files. Call finish with status "passed" once the failing repro is in place, summarising which tests capture the bug.
+  - id: proof
+    type: gate.repository
+    settings:
+      expect: test-failure
+  - type: repo.commit
+    settings:
+      message: "test: failing repro"
+      reference: Refs
+  - id: fix
+    type: agent.run
+    settings:
+      gate: repository
+      protect_tests: true
+      extra_rules: The repro tests written earlier are the bug's specification. Test files are write-protected in this step; make them pass by fixing the code they exercise.
+      mission: |
+        Fix the bug in the repository {{ task.repository }}. Failing repro tests are already committed; make them pass.
+
+        {{ task.prompt }}
+
+        <analysis>
+        {{ steps.analyse.summary }}
+        </analysis>
+
+        The full quality gate must pass. Make the smallest fix that makes the repro tests pass without changing them. Call finish with status "passed" and a summary for the PR reviewer: root cause, the fix, and verification.
+  - type: repo.commit
+    settings:
+      message: "fix: {{ task.title }} (archie)"
+      reference: Fixes
+      push: true
+  - type: gate.diff-size
+  - type: repo.open-pr
+    settings:
+      body: "{{ steps.fix.summary }}"
