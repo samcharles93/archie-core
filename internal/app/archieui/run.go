@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
-	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -23,26 +23,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// buildAccessChain loads stored policies and builds the access engine. With
-// no policies it returns nil and logs a warning.
-func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (access.Authorizer, []infraaccess.Problem, error) {
-	stored, err := store.ListPolicies(ctx)
+// buildAccessChain builds the live access engine over the stored policies.
+// An unreachable State Store returns nil and logs a warning.
+func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (*infraaccess.Live, error) {
+	live, err := infraaccess.NewLive(ctx, store.ListPolicies, log)
+	if status.Code(err) == codes.Unavailable {
+		log.Warn("access chain unavailable; the credential check is the gate", "err", err)
+		return nil, nil
+	}
 	if err != nil {
-		if status.Code(err) == codes.Unavailable {
-			log.Warn("access chain unavailable; the credential check is the gate", "err", err)
-			return nil, nil, nil
-		}
-		return nil, nil, err
+		return nil, err
 	}
-	engine, err := infraaccess.New(stored)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, problem := range engine.Problems() {
-		log.Error("stored access policy is invalid and denies its level",
-			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
-	}
-	return engine, engine.Problems(), nil
+	go live.Run(ctx, applystatus.RestampInterval)
+	return live, nil
 }
 
 // Run serves the dashboard until ctx is cancelled. It resolves its own
@@ -74,13 +67,9 @@ func Run(ctx context.Context, options Options) error {
 	}
 	cleanups = append(cleanups, closeGateway)
 
-	chain, problems, err := buildAccessChain(ctx, tasks, log)
+	chain, err := buildAccessChain(ctx, tasks, log)
 	if err != nil {
 		return err
-	}
-	for _, problem := range problems {
-		log.Error("stored access policy is invalid and denies its level",
-			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
 	}
 
 	authenticate, err := dashboardAuthenticator(ctx, opts, tasks, log)
@@ -97,7 +86,7 @@ func Run(ctx context.Context, options Options) error {
 		Log:          log,
 		Store:        tasks,
 		Chat:         chat,
-		Health:       newReadinessRegistry(opts, tasks, chat, problems),
+		Health:       newReadinessRegistry(opts, tasks, chat, chain),
 		ControlPlane: tasks.ControlPlane(),
 		Identities:   tasks,
 		Authenticate: authenticate,

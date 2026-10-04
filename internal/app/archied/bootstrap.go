@@ -100,8 +100,8 @@ type boot struct {
 	// accessChain is the daemon's policy engine, built once from the stored
 	// policies (openAccessChain); accessProblems is what the readiness
 	// surface reports. Both are nil when no policy store is wired.
-	accessChain    access.Authorizer
-	accessProblems []infraaccess.Problem
+	accessChain access.Authorizer
+	accessLive  *infraaccess.Live
 	// stateStoreGrants issues per-task, scoped State Store credentials for
 	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
 	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
@@ -296,20 +296,12 @@ func (b *boot) openAccessChain(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	stored, err := source.Policies(ctx)
+	live, err := infraaccess.NewLive(ctx, source.Policies, b.log)
 	if err != nil {
 		return fmt.Errorf("load stored policies: %w", err)
 	}
-	engine, err := infraaccess.New(stored)
-	if err != nil {
-		return fmt.Errorf("validate stored policies: %w", err)
-	}
-	b.accessChain = engine
-	b.accessProblems = engine.Problems()
-	for _, problem := range b.accessProblems {
-		b.log.Error("stored access policy is invalid and denies its level",
-			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)
-	}
+	b.accessChain, b.accessLive = live, live
+	go live.Run(ctx, applystatus.RestampInterval)
 	return nil
 }
 

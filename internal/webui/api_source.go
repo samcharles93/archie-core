@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -29,7 +30,7 @@ func (s *Server) handleSourcesList(w http.ResponseWriter, r *http.Request) {
 	for i := range list {
 		list[i].Secret = ""
 	}
-	writeJSON(w, map[string]any{"sources": list})
+	writeJSON(w, map[string]any{"sources": list, "refusals": s.recentRefusals(r)})
 }
 
 func (s *Server) handleSourceCreate(w http.ResponseWriter, r *http.Request) {
@@ -178,4 +179,22 @@ func (s *Server) unsignedSources(ctx context.Context) (map[string]bool, error) {
 		}
 	}
 	return out, nil
+}
+
+// recentRefusals maps each source to what the network rules refused on it in
+// the last day. Unavailable refusals leave the map empty.
+func (s *Server) recentRefusals(r *http.Request) map[string]storecontract.CaptureRefusals {
+	out := map[string]storecontract.CaptureRefusals{}
+	if s.Refusals == nil {
+		return out
+	}
+	list, err := s.Refusals.CaptureRefusals(r.Context(), s.clock().Add(-24*time.Hour))
+	if err != nil {
+		s.Log.Warn("capture refusals unavailable", "err", err)
+		return out
+	}
+	for _, c := range list {
+		out[c.Source] = c
+	}
+	return out
 }

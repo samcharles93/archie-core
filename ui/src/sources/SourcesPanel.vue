@@ -45,6 +45,7 @@ const {
   requestUnsigned,
   requireSigning,
   approveUnsigned,
+  refusals,
 } = useSources();
 
 const customPath = ref("");
@@ -137,7 +138,15 @@ function url(source: Source): string {
               <TableCell
                 class="max-w-0 truncate font-mono text-fg-muted"
                 :title="url(source)"
-                >{{ source.path }}</TableCell
+                >{{ source.path }}
+                <div
+                  v-if="refusals[source.path]"
+                  class="text-xs font-sans text-destructive"
+                  :title="refusals[source.path].addrs.join(', ')"
+                >
+                  {{ refusals[source.path].refused }} refused in 24h from
+                  {{ refusals[source.path].addrs.slice(0, 3).join(", ") }}
+                </div></TableCell
               >
               <TableCell>
                 <Badge :variant="signingKind(source.signing)">{{

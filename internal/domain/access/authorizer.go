@@ -3,7 +3,12 @@
 // policy source the engine is built from.
 package access
 
-import "context"
+import (
+	"context"
+
+	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/org"
+)
 
 // Authorizer evaluates the policy chain for a request. It never fails open:
 // an unparsable stored policy denies its whole level.
@@ -26,4 +31,13 @@ type Validator interface {
 // with its own refresh).
 type PolicySource interface {
 	Policies(ctx context.Context) ([]Policy, error)
+}
+
+// SenderID is the principal an inbound event's sender is evaluated as.
+const SenderID identity.IdentityID = "sender"
+
+// DeliveryAuthorizer decides whether an address may deliver an event to a
+// source. Only the capture receiver asks.
+type DeliveryAuthorizer interface {
+	AuthorizeDelivery(orgID org.OrgID, sourcePath, addr string) Decision
 }

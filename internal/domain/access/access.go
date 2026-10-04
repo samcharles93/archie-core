@@ -45,12 +45,14 @@ func (l Level) Validate() error {
 type Action string
 
 const (
-	ActionRead             Action = "read"
-	ActionCreate           Action = "create"
-	ActionUpdate           Action = "update"
-	ActionDelete           Action = "delete"
-	ActionApprove          Action = "approve"
-	ActionRun              Action = "run"
+	ActionRead    Action = "read"
+	ActionCreate  Action = "create"
+	ActionUpdate  Action = "update"
+	ActionDelete  Action = "delete"
+	ActionApprove Action = "approve"
+	ActionRun     Action = "run"
+	// ActionDeliver is an inbound event arriving at a source.
+	ActionDeliver          Action = "deliver"
 	ActionReadLogs         Action = "read_logs"
 	ActionReadSecret       Action = "read_secret"
 	ActionManageMembers    Action = "manage_members"
@@ -63,7 +65,7 @@ const (
 func Actions() []Action {
 	return []Action{
 		ActionRead, ActionCreate, ActionUpdate, ActionDelete, ActionApprove,
-		ActionRun, ActionReadLogs, ActionReadSecret,
+		ActionRun, ActionDeliver, ActionReadLogs, ActionReadSecret,
 		ActionManageMembers, ActionManageIdentities, ActionManagePolicies,
 	}
 }
@@ -135,8 +137,8 @@ func (p Policy) Validate() error {
 			return fmt.Errorf("%w: workspace policy carries no org or workspace", ErrInvalidPolicy)
 		}
 	case LevelObject:
-		if p.OrgID == "" || p.WorkspaceID == "" || p.ObjectKind == "" || p.ObjectID == "" {
-			return fmt.Errorf("%w: object policy carries no org, workspace, kind or ID", ErrInvalidPolicy)
+		if p.OrgID == "" || p.ObjectKind == "" || p.ObjectID == "" {
+			return fmt.Errorf("%w: object policy carries no org, kind or ID", ErrInvalidPolicy)
 		}
 	}
 	if strings.TrimSpace(p.Text) == "" {

@@ -124,6 +124,10 @@ service StateStoreService {
   // record past the staleness window means that instance is down.
   // Administrative.
   rpc PutPresence(PutPresenceRequest) returns (PutPresenceResponse);
+  // Capture refusals: events the network rules refused at the receiver,
+  // counted per source. Administrative.
+  rpc RecordCaptureRefusal(RecordCaptureRefusalRequest) returns (RecordCaptureRefusalResponse);
+  rpc ListCaptureRefusals(ListCaptureRefusalsRequest) returns (ListCaptureRefusalsResponse);
   rpc ListPresence(ListPresenceRequest) returns (ListPresenceResponse);
 
   // Task log: one task attempt's persisted log. Task log files live in the
@@ -893,6 +897,20 @@ message Presence {
   bool ready = 7;
   string detail = 8;
 }
+message RecordCaptureRefusalRequest {
+  string source = 1;
+  string addr = 2;
+  google.protobuf.Timestamp refused_at = 3;
+}
+message RecordCaptureRefusalResponse {}
+message ListCaptureRefusalsRequest { google.protobuf.Timestamp since = 1; }
+message CaptureRefusals {
+  string source = 1;
+  int64 refused = 2;
+  int64 accepted = 3;
+  repeated string addrs = 4;
+}
+message ListCaptureRefusalsResponse { repeated CaptureRefusals sources = 1; }
 message PutPresenceRequest { Presence presence = 1; }
 message PutPresenceResponse {}
 message ListPresenceRequest {}

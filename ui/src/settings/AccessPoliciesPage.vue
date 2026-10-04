@@ -16,7 +16,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 
-type Level = "org" | "workspace" | "object";
+type Level = "instance" | "org" | "workspace" | "object";
 
 interface Policy {
   id: string;
@@ -139,6 +139,7 @@ onMounted(load);
           <Select v-model="draft.level">
             <SelectTrigger class="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="instance">instance</SelectItem>
               <SelectItem value="org">org</SelectItem>
               <SelectItem value="workspace">workspace</SelectItem>
               <SelectItem value="object">object</SelectItem>

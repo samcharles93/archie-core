@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -47,7 +49,12 @@ type Receiver struct {
 	// handler, before the 202 is written, so the request's lifetime bounds
 	// it. Nil records the capture without announcing it.
 	Publish func(ctx context.Context, e events.Event)
-	Log     *slog.Logger
+	// Delivery applies the network rules and the source's policies to the
+	// sender's address. Nil admits every sender.
+	Delivery access.DeliveryAuthorizer
+	// Refusals counts what Delivery refused. Nil refuses without counting.
+	Refusals storecontract.CaptureRefusalStore
+	Log      *slog.Logger
 }
 
 // SourceResolver is the one SourceStore read intake needs.
@@ -73,6 +80,11 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Rate limit by remote address; the source segment is attacker-chosen.
 	if rc.Limiter != nil && !rc.Limiter.Allow(remoteAddrHost(r)) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
+	if rc.refused(r, path) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -131,6 +143,24 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// refused applies the network rules before the body is read. A refused event
+// is not stored, only counted on its source with the sender's address.
+func (rc *Receiver) refused(r *http.Request, path string) bool {
+	if rc.Delivery == nil {
+		return false
+	}
+	addr := remoteAddrHost(r)
+	if rc.Delivery.AuthorizeDelivery(org.DefaultOrgID, path, addr).Allowed {
+		return false
+	}
+	if rc.Refusals != nil {
+		if err := rc.Refusals.RecordCaptureRefusal(r.Context(), path, addr, time.Now()); err != nil {
+			rc.logger().Warn("capture refusal not counted", "source", path, "err", err)
+		}
+	}
+	return true
 }
 
 // resolveSource looks up the source a path names. A lookup error is logged

@@ -140,6 +140,21 @@ type CaptureStore interface {
 	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
 }
 
+// CaptureRefusalStore counts the events network rules refused, per source.
+type CaptureRefusalStore interface {
+	RecordCaptureRefusal(ctx context.Context, source, addr string, at time.Time) error
+	CaptureRefusals(ctx context.Context, since time.Time) ([]CaptureRefusals, error)
+}
+
+// CaptureRefusals is one source's refusals and accepted captures since a
+// time, and the addresses it refused.
+type CaptureRefusals struct {
+	Source   string   `json:"source"`
+	Refused  int64    `json:"refused"`
+	Accepted int64    `json:"accepted"`
+	Addrs    []string `json:"addrs"`
+}
+
 // ConfigSnapshotStore holds the published configuration view.
 type ConfigSnapshotStore interface {
 	PutConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error

@@ -95,6 +95,12 @@ type Capture struct {
 	WorkspaceID   string
 }
 
+type CaptureRefusal struct {
+	Source    string
+	Addr      string
+	RefusedAt time.Time
+}
+
 type ChannelStatus struct {
 	ID              string
 	Name            string

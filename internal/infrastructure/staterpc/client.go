@@ -61,6 +61,7 @@ var (
 	_ storecontract.ChannelStatusStore   = (*Client)(nil)
 	_ storecontract.ApplyStatusStore     = (*Client)(nil)
 	_ storecontract.PresenceStore        = (*Client)(nil)
+	_ storecontract.CaptureRefusalStore  = (*Client)(nil)
 	_ storecontract.ExecutionCanceller   = (*Client)(nil)
 	_ identity.Repository                = (*Client)(nil)
 	_ storepkg.Manager                   = (*Client)(nil)
@@ -450,6 +451,25 @@ func (c *Client) ListPresence(ctx context.Context) ([]storecontract.Presence, er
 	out := make([]storecontract.Presence, 0, len(reply.Presences))
 	for _, presence := range reply.Presences {
 		out = append(out, presenceValue(presence))
+	}
+	return out, nil
+}
+
+// RecordCaptureRefusal counts one event the network rules refused.
+func (c *Client) RecordCaptureRefusal(ctx context.Context, source, addr string, at time.Time) error {
+	_, err := c.client.RecordCaptureRefusal(ctx, &pb.RecordCaptureRefusalRequest{Source: source, Addr: addr, RefusedAt: timestamp(at)})
+	return unmapError(err)
+}
+
+// CaptureRefusals reads each source's refusals since a time.
+func (c *Client) CaptureRefusals(ctx context.Context, since time.Time) ([]storecontract.CaptureRefusals, error) {
+	reply, err := c.client.ListCaptureRefusals(ctx, &pb.ListCaptureRefusalsRequest{Since: timestamp(since)})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	out := make([]storecontract.CaptureRefusals, 0, len(reply.Sources))
+	for _, s := range reply.Sources {
+		out = append(out, storecontract.CaptureRefusals{Source: s.Source, Refused: s.Refused, Accepted: s.Accepted, Addrs: s.Addrs})
 	}
 	return out, nil
 }

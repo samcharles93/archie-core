@@ -32,6 +32,7 @@ const schemaText = `namespace Archie {
   action read_secret appliesTo { principal: Identity, resource: Object, context: {signature: String, addr: ipaddr, time: datetime, run: String, step: String} };
   action manage_members appliesTo { principal: Identity, resource: Object, context: {signature: String, addr: ipaddr, time: datetime, run: String, step: String} };
   action manage_identities appliesTo { principal: Identity, resource: Object, context: {signature: String, addr: ipaddr, time: datetime, run: String, step: String} };
+  action deliver appliesTo { principal: Identity, resource: Object, context: {signature: String, addr: ipaddr, time: datetime, run: String, step: String} };
   action manage_policies appliesTo { principal: Identity, resource: Object, context: {signature: String, addr: ipaddr, time: datetime, run: String, step: String} };
 }`
 
@@ -73,7 +74,6 @@ type (
 	}
 	objectKey struct {
 		org  org.OrgID
-		ws   org.WorkspaceID
 		kind access.ResourceKind
 		id   string
 	}
@@ -142,7 +142,7 @@ func (e *Engine) level(p access.Policy) *levelSet {
 		e.spaces[id] = lvl
 		return lvl
 	case access.LevelObject:
-		id := objectKey{p.OrgID, p.WorkspaceID, p.ObjectKind, p.ObjectID}
+		id := objectKey{p.OrgID, p.ObjectKind, p.ObjectID}
 		if lvl, ok := e.objects[id]; ok {
 			return lvl
 		}
@@ -198,10 +198,27 @@ func (e *Engine) Authorize(p access.Principal, a access.Action, r access.Resourc
 		return access.DeniedAt(access.LevelInstance, []string{access.CrossOrgForbidID})
 	}
 
-	request := buildRequest(p, a, r, c)
-	entities := buildEntities(p, r)
+	return evaluate(e.chain(r), buildEntities(p, r), buildRequest(p, a, r, c))
+}
 
-	for _, lvl := range e.chain(r) {
+// AuthorizeDelivery decides whether addr may deliver an event to a source:
+// the instance network rules, then the source's own object policies. A
+// sender has no identity or role, so the org and workspace role policies
+// never apply to it.
+func (e *Engine) AuthorizeDelivery(orgID org.OrgID, sourcePath, addr string) access.Decision {
+	sender := access.Principal{IdentityID: access.SenderID, Org: orgID}
+	resource := access.Resource{Kind: access.KindSource, ID: sourcePath, Org: orgID}
+	levels := []*levelSet{e.instance}
+	if l, ok := e.objects[objectKey{orgID, access.KindSource, sourcePath}]; ok {
+		levels = append(levels, l)
+	}
+	return evaluate(levels, buildEntities(sender, resource), buildRequest(sender, access.ActionDeliver, resource, access.Context{Addr: addr}))
+}
+
+// evaluate runs a request through levels: a level with policies must permit
+// and any forbid wins.
+func evaluate(levels []*levelSet, entities types.EntityMap, request types.Request) access.Decision {
+	for _, lvl := range levels {
 		if !lvl.active() {
 			continue
 		}
@@ -242,7 +259,7 @@ func (e *Engine) chain(r access.Resource) []*levelSet {
 		}
 	}
 	if r.Org != "" && r.ID != "" {
-		if l, ok := e.objects[objectKey{r.Org, r.Workspace, r.Kind, r.ID}]; ok {
+		if l, ok := e.objects[objectKey{r.Org, r.Kind, r.ID}]; ok {
 			out = append(out, l)
 		}
 	}

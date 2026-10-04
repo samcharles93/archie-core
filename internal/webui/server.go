@@ -93,9 +93,15 @@ type Server struct {
 	// card. Nil answers 503.
 	Presence storecontract.PresenceStore
 
+	// Refusals counts the events the network rules refused, per source.
+	Refusals storecontract.CaptureRefusalStore
+
 	// Policies is the stored access policy chain, behind the policies page.
 	// Nil answers 503.
 	Policies access.PolicyStore
+	// ReloadAccess rebuilds Access from the stored policies, so an edit here
+	// applies to the next request. Nil leaves the periodic reload.
+	ReloadAccess func(context.Context) error
 	// now is the clock applyState reads staleness against. Nil means
 	// time.Now; tests set it to pin a record's age.
 	now func() time.Time

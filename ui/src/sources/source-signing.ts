@@ -12,6 +12,13 @@ export interface Source {
   created_at?: string;
 }
 
+/** What the network rules refused on one source in the last day. */
+export interface SourceRefusals {
+  refused: number;
+  accepted: number;
+  addrs: string[];
+}
+
 export type SigningKind = "ok" | "info" | "warn" | "idle";
 
 const LABELS: Record<string, string> = {

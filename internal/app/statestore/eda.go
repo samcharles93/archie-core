@@ -10,6 +10,7 @@ import (
 // event-capture tables, plus the tool_call projection it writes through.
 type eventCaptureStore interface { //nolint:interfacebloat // composite of the store contracts the event-capture tables serve
 	storecontract.CaptureStore
+	storecontract.CaptureRefusalStore
 	storecontract.MappingStore
 	storecontract.BindingStore
 	storecontract.BindingDispatcher

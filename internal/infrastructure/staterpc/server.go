@@ -37,6 +37,7 @@ var (
 	errChannelStatusUnavailable      = status.Error(codes.Unavailable, "channel status store unavailable")
 	errApplyStatusUnavailable        = status.Error(codes.Unavailable, "apply status store unavailable")
 	errPresenceUnavailable           = status.Error(codes.Unavailable, "presence store unavailable")
+	errRefusalsUnavailable           = status.Error(codes.Unavailable, "capture refusal store unavailable")
 	errMappingUnavailable            = status.Error(codes.Unavailable, "mapping store unavailable")
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
 	errSourceUnavailable             = status.Error(codes.Unavailable, "source store unavailable")
@@ -78,6 +79,7 @@ type Deps struct {
 	ChannelStatus storecontract.ChannelStatusStore
 	ApplyStatus   storecontract.ApplyStatusStore
 	Presence      storecontract.PresenceStore
+	Refusals      storecontract.CaptureRefusalStore
 	Mappings      storecontract.MappingStore
 	EventTypes    storecontract.EventTypeStore
 	// MappingMatches counts the events each mapping resolved. Optional: nil
@@ -590,6 +592,31 @@ func (s *server) ListPresence(ctx context.Context, _ *pb.ListPresenceRequest) (*
 		out = append(out, presenceProto(presence))
 	}
 	return &pb.ListPresenceResponse{Presences: out}, nil
+}
+
+func (s *server) RecordCaptureRefusal(ctx context.Context, r *pb.RecordCaptureRefusalRequest) (*pb.RecordCaptureRefusalResponse, error) {
+	if s.deps.Refusals == nil {
+		return nil, errRefusalsUnavailable
+	}
+	if err := s.deps.Refusals.RecordCaptureRefusal(ctx, r.Source, r.Addr, timeValue(r.RefusedAt)); err != nil {
+		return nil, s.logErr("RecordCaptureRefusal", err)
+	}
+	return &pb.RecordCaptureRefusalResponse{}, nil
+}
+
+func (s *server) ListCaptureRefusals(ctx context.Context, r *pb.ListCaptureRefusalsRequest) (*pb.ListCaptureRefusalsResponse, error) {
+	if s.deps.Refusals == nil {
+		return nil, errRefusalsUnavailable
+	}
+	sources, err := s.deps.Refusals.CaptureRefusals(ctx, timeValue(r.Since))
+	if err != nil {
+		return nil, s.logErr("ListCaptureRefusals", err)
+	}
+	out := make([]*pb.CaptureRefusals, 0, len(sources))
+	for _, c := range sources {
+		out = append(out, &pb.CaptureRefusals{Source: c.Source, Refused: c.Refused, Accepted: c.Accepted, Addrs: c.Addrs})
+	}
+	return &pb.ListCaptureRefusalsResponse{Sources: out}, nil
 }
 
 func (s *server) channelStatuses() (storecontract.ChannelStatusStore, error) {

@@ -581,3 +581,32 @@ func (s *EDA) TaskToolCalls(ctx context.Context, taskID int64) ([]ToolCall, erro
 	}
 	return out, nil
 }
+
+// refusalRetention is how long a refusal is kept for the source page.
+const refusalRetention = 24 * time.Hour
+
+// RecordCaptureRefusal counts one refused event and drops refusals older
+// than a day.
+func (s *EDA) RecordCaptureRefusal(ctx context.Context, source, addr string, at time.Time) error {
+	if err := s.q.InsertCaptureRefusal(ctx, postgresdb.InsertCaptureRefusalParams{Source: source, Addr: addr, RefusedAt: at.UTC()}); err != nil {
+		return fmt.Errorf("store: record capture refusal: %w", err)
+	}
+	if err := s.q.DeleteCaptureRefusalsBefore(ctx, at.Add(-refusalRetention).UTC()); err != nil {
+		return fmt.Errorf("store: prune capture refusals: %w", err)
+	}
+	return nil
+}
+
+// CaptureRefusals summarises refusals since a time for every source that had
+// one, beside the captures it accepted in the same window.
+func (s *EDA) CaptureRefusals(ctx context.Context, since time.Time) ([]storecontract.CaptureRefusals, error) {
+	rows, err := s.q.CaptureRefusalSummary(ctx, since.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("store: capture refusals: %w", err)
+	}
+	out := make([]storecontract.CaptureRefusals, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, storecontract.CaptureRefusals{Source: r.Source, Refused: r.Refused, Accepted: r.Accepted, Addrs: r.Addrs})
+	}
+	return out, nil
+}

@@ -69,6 +69,50 @@ func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]
 	return items, nil
 }
 
+const captureRefusalSummary = `-- name: CaptureRefusalSummary :many
+WITH r AS (
+    SELECT source, count(*) AS refused, array_agg(DISTINCT addr ORDER BY addr)::text[] AS addrs
+    FROM capture_refusals WHERE refused_at >= $1 GROUP BY source
+), a AS (
+    SELECT source, count(*) AS accepted FROM captures WHERE received_at >= $1 GROUP BY source
+)
+SELECT r.source, r.refused, COALESCE(a.accepted, 0)::bigint AS accepted, r.addrs
+FROM r LEFT JOIN a ON a.source = r.source
+ORDER BY r.source
+`
+
+type CaptureRefusalSummaryRow struct {
+	Source   string
+	Refused  int64
+	Accepted int64
+	Addrs    []string
+}
+
+func (q *Queries) CaptureRefusalSummary(ctx context.Context, refusedAt time.Time) ([]CaptureRefusalSummaryRow, error) {
+	rows, err := q.db.Query(ctx, captureRefusalSummary, refusedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CaptureRefusalSummaryRow
+	for rows.Next() {
+		var i CaptureRefusalSummaryRow
+		if err := rows.Scan(
+			&i.Source,
+			&i.Refused,
+			&i.Accepted,
+			&i.Addrs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteBinding = `-- name: DeleteBinding :execrows
 DELETE FROM bindings WHERE id = $1
 `
@@ -79,6 +123,15 @@ func (q *Queries) DeleteBinding(ctx context.Context, id string) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteCaptureRefusalsBefore = `-- name: DeleteCaptureRefusalsBefore :exec
+DELETE FROM capture_refusals WHERE refused_at < $1
+`
+
+func (q *Queries) DeleteCaptureRefusalsBefore(ctx context.Context, refusedAt time.Time) error {
+	_, err := q.db.Exec(ctx, deleteCaptureRefusalsBefore, refusedAt)
+	return err
 }
 
 const deleteCapturesBeyondCount = `-- name: DeleteCapturesBeyondCount :exec
@@ -396,6 +449,21 @@ func (q *Queries) InsertCapture(ctx context.Context, arg InsertCaptureParams) er
 		arg.Unsigned,
 		arg.EventType,
 	)
+	return err
+}
+
+const insertCaptureRefusal = `-- name: InsertCaptureRefusal :exec
+INSERT INTO capture_refusals (source, addr, refused_at) VALUES ($1, $2, $3)
+`
+
+type InsertCaptureRefusalParams struct {
+	Source    string
+	Addr      string
+	RefusedAt time.Time
+}
+
+func (q *Queries) InsertCaptureRefusal(ctx context.Context, arg InsertCaptureRefusalParams) error {
+	_, err := q.db.Exec(ctx, insertCaptureRefusal, arg.Source, arg.Addr, arg.RefusedAt)
 	return err
 }
 

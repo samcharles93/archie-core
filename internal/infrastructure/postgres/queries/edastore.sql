@@ -153,3 +153,20 @@ SELECT EXISTS (SELECT 1 FROM sources WHERE path = $1);
 
 -- name: DeriveSources :exec
 SELECT derive_sources();
+
+-- name: InsertCaptureRefusal :exec
+INSERT INTO capture_refusals (source, addr, refused_at) VALUES ($1, $2, $3);
+
+-- name: DeleteCaptureRefusalsBefore :exec
+DELETE FROM capture_refusals WHERE refused_at < $1;
+
+-- name: CaptureRefusalSummary :many
+WITH r AS (
+    SELECT source, count(*) AS refused, array_agg(DISTINCT addr ORDER BY addr)::text[] AS addrs
+    FROM capture_refusals WHERE refused_at >= $1 GROUP BY source
+), a AS (
+    SELECT source, count(*) AS accepted FROM captures WHERE received_at >= $1 GROUP BY source
+)
+SELECT r.source, r.refused, COALESCE(a.accepted, 0)::bigint AS accepted, r.addrs
+FROM r LEFT JOIN a ON a.source = r.source
+ORDER BY r.source;

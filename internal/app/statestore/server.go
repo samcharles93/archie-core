@@ -310,6 +310,7 @@ func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	// task store, because creating a task is the one thing it still does.
 	if b.eda != nil {
 		deps.Captures = b.eda
+		deps.Refusals = b.eda
 		deps.Mappings = b.eda
 		deps.Bindings = b.eda
 		deps.BindingDispatcher = b.eda

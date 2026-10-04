@@ -17,8 +17,8 @@ func policyOrg(r *http.Request) org.OrgID {
 	return access.SharedTokenOwner().Org
 }
 
-// handleListPolicies lists the caller's org policies at every level an org
-// edits. Instance policies span orgs and are not listed.
+// handleListPolicies lists the caller's org policies, and the instance
+// policies when the caller is the instance owner.
 func (s *Server) handleListPolicies(w http.ResponseWriter, r *http.Request) {
 	if s.Policies == nil {
 		http.Error(w, "policies unavailable", http.StatusServiceUnavailable)
@@ -32,7 +32,7 @@ func (s *Server) handleListPolicies(w http.ResponseWriter, r *http.Request) {
 	orgID := policyOrg(r)
 	out := []access.Policy{}
 	for _, p := range policies {
-		if p.Level != access.LevelInstance && p.OrgID == orgID {
+		if (p.Level == access.LevelInstance && instanceOwner(r)) || (p.Level != access.LevelInstance && p.OrgID == orgID) {
 			out = append(out, p)
 		}
 	}
@@ -49,6 +49,7 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		writePolicyError(w, err)
 		return
 	}
+	s.reloadAccess(r)
 	writeJSON(w, map[string]int64{"version": version})
 }
 
@@ -61,7 +62,17 @@ func (s *Server) handleDeletePolicy(w http.ResponseWriter, r *http.Request) {
 		writePolicyError(w, err)
 		return
 	}
+	s.reloadAccess(r)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) reloadAccess(r *http.Request) {
+	if s.ReloadAccess == nil {
+		return
+	}
+	if err := s.ReloadAccess(r.Context()); err != nil && s.Log != nil {
+		s.Log.Warn("access chain not reloaded after a policy edit; the periodic reload will apply it", "err", err)
+	}
 }
 
 // decodePolicy reads a policy and pins it to the caller's org: no request
@@ -77,8 +88,13 @@ func (s *Server) decodePolicy(w http.ResponseWriter, r *http.Request) (access.Po
 		return access.Policy{}, false
 	}
 	if p.Level == access.LevelInstance {
-		http.Error(w, "instance policies are not edited from an org", http.StatusForbidden)
-		return access.Policy{}, false
+		// Instance policies span orgs; only the instance owner edits them.
+		if !instanceOwner(r) {
+			http.Error(w, "instance policies are edited by the instance owner", http.StatusForbidden)
+			return access.Policy{}, false
+		}
+		p.OrgID, p.WorkspaceID, p.ObjectKind, p.ObjectID = "", "", "", ""
+		return p, true
 	}
 	p.OrgID = policyOrg(r)
 	return p, true
@@ -94,4 +110,14 @@ func writePolicyError(w http.ResponseWriter, err error) {
 
 func shippedPolicyIDs() []string {
 	return []string{access.PolicyOrgRead, access.PolicyOrgEdit, access.PolicyOrgAdmin, access.PolicyOrgOwner}
+}
+
+// instanceOwner reports whether the request acts as the instance owner: the
+// shared-token principal of a single-operator install.
+func instanceOwner(r *http.Request) bool {
+	principal, ok := RequestPrincipal(r.Context())
+	if !ok {
+		principal = access.SharedTokenOwner()
+	}
+	return principal.IdentityID == access.SharedTokenOwner().IdentityID
 }

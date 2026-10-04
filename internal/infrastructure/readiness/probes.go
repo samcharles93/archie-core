@@ -92,8 +92,6 @@ type PolicyProblems interface {
 }
 
 // ProblemProbe reports the stored policies the engine could not validate.
-// It is a static probe: the engine is immutable for the life of the process,
-// so the problems it names do not change under it.
 type ProblemProbe struct {
 	ProbeName string
 	Source    PolicyProblems
@@ -101,13 +99,9 @@ type ProblemProbe struct {
 
 // NewProblemProbe returns an access_policies probe over a problem source.
 // A nil source degrades the probe rather than lying about the chain.
-func NewProblemProbe(name string, problems []access.Problem) *ProblemProbe {
-	return &ProblemProbe{ProbeName: name, Source: staticProblemSource(problems)}
+func NewProblemProbe(name string, source PolicyProblems) *ProblemProbe {
+	return &ProblemProbe{ProbeName: name, Source: source}
 }
-
-type staticProblemSource []access.Problem
-
-func (s staticProblemSource) Problems() []access.Problem { return s }
 
 func (p *ProblemProbe) Name() string { return p.ProbeName }
 

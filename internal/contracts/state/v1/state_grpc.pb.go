@@ -76,6 +76,8 @@ const (
 	StateStoreService_PutApplyStatus_FullMethodName             = "/state.v1.StateStoreService/PutApplyStatus"
 	StateStoreService_ListApplyStatus_FullMethodName            = "/state.v1.StateStoreService/ListApplyStatus"
 	StateStoreService_PutPresence_FullMethodName                = "/state.v1.StateStoreService/PutPresence"
+	StateStoreService_RecordCaptureRefusal_FullMethodName       = "/state.v1.StateStoreService/RecordCaptureRefusal"
+	StateStoreService_ListCaptureRefusals_FullMethodName        = "/state.v1.StateStoreService/ListCaptureRefusals"
 	StateStoreService_ListPresence_FullMethodName               = "/state.v1.StateStoreService/ListPresence"
 	StateStoreService_ReadTaskLog_FullMethodName                = "/state.v1.StateStoreService/ReadTaskLog"
 	StateStoreService_StreamTaskLogContent_FullMethodName       = "/state.v1.StateStoreService/StreamTaskLogContent"
@@ -236,6 +238,10 @@ type StateStoreServiceClient interface {
 	// record past the staleness window means that instance is down.
 	// Administrative.
 	PutPresence(ctx context.Context, in *PutPresenceRequest, opts ...grpc.CallOption) (*PutPresenceResponse, error)
+	// Capture refusals: events the network rules refused at the receiver,
+	// counted per source. Administrative.
+	RecordCaptureRefusal(ctx context.Context, in *RecordCaptureRefusalRequest, opts ...grpc.CallOption) (*RecordCaptureRefusalResponse, error)
+	ListCaptureRefusals(ctx context.Context, in *ListCaptureRefusalsRequest, opts ...grpc.CallOption) (*ListCaptureRefusalsResponse, error)
 	ListPresence(ctx context.Context, in *ListPresenceRequest, opts ...grpc.CallOption) (*ListPresenceResponse, error)
 	// Task log: one task attempt's persisted log. Task log files live in the
 	// state directory this process owns, so the dashboard reads them over this
@@ -895,6 +901,26 @@ func (c *stateStoreServiceClient) PutPresence(ctx context.Context, in *PutPresen
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) RecordCaptureRefusal(ctx context.Context, in *RecordCaptureRefusalRequest, opts ...grpc.CallOption) (*RecordCaptureRefusalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordCaptureRefusalResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecordCaptureRefusal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListCaptureRefusals(ctx context.Context, in *ListCaptureRefusalsRequest, opts ...grpc.CallOption) (*ListCaptureRefusalsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCaptureRefusalsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListCaptureRefusals_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) ListPresence(ctx context.Context, in *ListPresenceRequest, opts ...grpc.CallOption) (*ListPresenceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPresenceResponse)
@@ -1449,6 +1475,10 @@ type StateStoreServiceServer interface {
 	// record past the staleness window means that instance is down.
 	// Administrative.
 	PutPresence(context.Context, *PutPresenceRequest) (*PutPresenceResponse, error)
+	// Capture refusals: events the network rules refused at the receiver,
+	// counted per source. Administrative.
+	RecordCaptureRefusal(context.Context, *RecordCaptureRefusalRequest) (*RecordCaptureRefusalResponse, error)
+	ListCaptureRefusals(context.Context, *ListCaptureRefusalsRequest) (*ListCaptureRefusalsResponse, error)
 	ListPresence(context.Context, *ListPresenceRequest) (*ListPresenceResponse, error)
 	// Task log: one task attempt's persisted log. Task log files live in the
 	// state directory this process owns, so the dashboard reads them over this
@@ -1708,6 +1738,12 @@ func (UnimplementedStateStoreServiceServer) ListApplyStatus(context.Context, *Li
 }
 func (UnimplementedStateStoreServiceServer) PutPresence(context.Context, *PutPresenceRequest) (*PutPresenceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PutPresence not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RecordCaptureRefusal(context.Context, *RecordCaptureRefusalRequest) (*RecordCaptureRefusalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordCaptureRefusal not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListCaptureRefusals(context.Context, *ListCaptureRefusalsRequest) (*ListCaptureRefusalsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCaptureRefusals not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ListPresence(context.Context, *ListPresenceRequest) (*ListPresenceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPresence not implemented")
@@ -2879,6 +2915,42 @@ func _StateStoreService_PutPresence_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_RecordCaptureRefusal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordCaptureRefusalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecordCaptureRefusal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecordCaptureRefusal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecordCaptureRefusal(ctx, req.(*RecordCaptureRefusalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListCaptureRefusals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCaptureRefusalsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListCaptureRefusals(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListCaptureRefusals_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListCaptureRefusals(ctx, req.(*ListCaptureRefusalsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_ListPresence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPresenceRequest)
 	if err := dec(in); err != nil {
@@ -3830,6 +3902,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PutPresence",
 			Handler:    _StateStoreService_PutPresence_Handler,
+		},
+		{
+			MethodName: "RecordCaptureRefusal",
+			Handler:    _StateStoreService_RecordCaptureRefusal_Handler,
+		},
+		{
+			MethodName: "ListCaptureRefusals",
+			Handler:    _StateStoreService_ListCaptureRefusals_Handler,
 		},
 		{
 			MethodName: "ListPresence",

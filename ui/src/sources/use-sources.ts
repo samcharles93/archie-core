@@ -1,7 +1,7 @@
 import { ref } from "vue";
 
 import { api } from "@/lib/api";
-import type { Source } from "./source-signing";
+import type { Source, SourceRefusals } from "./source-signing";
 
 /**
  * The sources list and its writes. A write that generates a secret keeps the
@@ -13,6 +13,7 @@ export function useSources() {
   const sources = ref<Source[] | null>(null);
   const failure = ref<string | null>(null);
   const revealed = ref<Source | null>(null);
+  const refusals = ref<Record<string, SourceRefusals>>({});
   const busy = ref(false);
 
   function message(err: unknown): string {
@@ -21,8 +22,12 @@ export function useSources() {
 
   async function load(): Promise<void> {
     try {
-      const res = await api.sources<{ sources?: Source[] }>();
+      const res = await api.sources<{
+        sources?: Source[];
+        refusals?: Record<string, SourceRefusals>;
+      }>();
       sources.value = res.sources || [];
+      refusals.value = res.refusals || {};
       failure.value = null;
     } catch (err) {
       failure.value = message(err);
@@ -47,6 +52,7 @@ export function useSources() {
     sources,
     failure,
     revealed,
+    refusals,
     busy,
     load,
     create: (path: string) => run(() => api.sourceCreate<Source>(path.trim())),
