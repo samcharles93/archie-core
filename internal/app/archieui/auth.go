@@ -26,6 +26,11 @@ func dashboardAuthenticator(ctx context.Context, opts Options, subjects identity
 	}
 	log.Info("dashboard authenticates provider credentials", "issuer", opts.OidcIssuer, "audience", opts.OidcAudience)
 	return func(ctx context.Context, credential string) (identity.Identity, error) {
+		// A personal token is bound in the State Store, not issued by the
+		// provider, so it resolves without the provider's verifier.
+		if subject, ok := identity.PersonalTokenSubject(credential); ok {
+			return identity.Resolve(ctx, subjects, identity.Credential{Subject: subject})
+		}
 		value, _, err := identity.Authenticate(ctx, subjects, verifier, credential)
 		return value, err
 	}, nil

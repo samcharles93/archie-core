@@ -46,3 +46,11 @@ ON CONFLICT (issuer, subject) DO UPDATE SET identity_id = excluded.identity_id, 
 
 -- name: UpdateTaskIdentity :exec
 UPDATE tasks SET identity = $1 WHERE identity = $2;
+
+-- name: ListIdentitySubjects :many
+SELECT subject, bound_at FROM identity_subjects
+WHERE identity_id = $1 AND issuer = $2
+ORDER BY bound_at DESC;
+
+-- name: DeleteIdentitySubject :execrows
+DELETE FROM identity_subjects WHERE identity_id = $1 AND issuer = $2 AND subject = $3;

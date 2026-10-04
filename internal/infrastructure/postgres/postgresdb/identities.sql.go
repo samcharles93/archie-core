@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+const deleteIdentitySubject = `-- name: DeleteIdentitySubject :execrows
+DELETE FROM identity_subjects WHERE identity_id = $1 AND issuer = $2 AND subject = $3
+`
+
+type DeleteIdentitySubjectParams struct {
+	IdentityID string
+	Issuer     string
+	Subject    string
+}
+
+func (q *Queries) DeleteIdentitySubject(ctx context.Context, arg DeleteIdentitySubjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteIdentitySubject, arg.IdentityID, arg.Issuer, arg.Subject)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getIdentity = `-- name: GetIdentity :one
 SELECT id, kind, display_name, lifecycle, version, created_at, updated_at
 FROM identities WHERE id = $1
@@ -146,6 +164,42 @@ func (q *Queries) ListIdentities(ctx context.Context) ([]Identity, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIdentitySubjects = `-- name: ListIdentitySubjects :many
+SELECT subject, bound_at FROM identity_subjects
+WHERE identity_id = $1 AND issuer = $2
+ORDER BY bound_at DESC
+`
+
+type ListIdentitySubjectsParams struct {
+	IdentityID string
+	Issuer     string
+}
+
+type ListIdentitySubjectsRow struct {
+	Subject string
+	BoundAt time.Time
+}
+
+func (q *Queries) ListIdentitySubjects(ctx context.Context, arg ListIdentitySubjectsParams) ([]ListIdentitySubjectsRow, error) {
+	rows, err := q.db.Query(ctx, listIdentitySubjects, arg.IdentityID, arg.Issuer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIdentitySubjectsRow
+	for rows.Next() {
+		var i ListIdentitySubjectsRow
+		if err := rows.Scan(&i.Subject, &i.BoundAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -65,6 +65,7 @@ var (
 	_ storecontract.ExecutionCanceller   = (*Client)(nil)
 	_ identity.Repository                = (*Client)(nil)
 	_ storepkg.Installations             = (*Client)(nil)
+	_ identity.PersonalTokens            = (*Client)(nil)
 )
 
 // Lifecycle

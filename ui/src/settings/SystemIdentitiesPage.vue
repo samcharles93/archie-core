@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { Bot, KeyRound, Plus, ShieldCheck, User } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
+import PersonalTokensCard from "@/settings/PersonalTokensCard.vue";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,6 +67,8 @@ const lifecycle = {
 <template>
   <div>
     <PageHeader title="Identities" />
+
+    <PersonalTokensCard />
 
     <p v-if="store.error" role="alert" class="mb-4 text-sm text-danger">{{ store.error }}</p>
 

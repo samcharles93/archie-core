@@ -35,6 +35,9 @@ const (
 	StateStoreService_RetireIdentity_FullMethodName             = "/state.v1.StateStoreService/RetireIdentity"
 	StateStoreService_ResolveIdentitySubject_FullMethodName     = "/state.v1.StateStoreService/ResolveIdentitySubject"
 	StateStoreService_BindIdentitySubject_FullMethodName        = "/state.v1.StateStoreService/BindIdentitySubject"
+	StateStoreService_AddPersonalToken_FullMethodName           = "/state.v1.StateStoreService/AddPersonalToken"
+	StateStoreService_ListPersonalTokens_FullMethodName         = "/state.v1.StateStoreService/ListPersonalTokens"
+	StateStoreService_RevokePersonalToken_FullMethodName        = "/state.v1.StateStoreService/RevokePersonalToken"
 	StateStoreService_EnqueueIssue_FullMethodName               = "/state.v1.StateStoreService/EnqueueIssue"
 	StateStoreService_EnqueueChatTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueChatTask"
 	StateStoreService_ClaimNext_FullMethodName                  = "/state.v1.StateStoreService/ClaimNext"
@@ -158,6 +161,11 @@ type StateStoreServiceClient interface {
 	// identity store.
 	ResolveIdentitySubject(ctx context.Context, in *ResolveIdentitySubjectRequest, opts ...grpc.CallOption) (*ResolveIdentitySubjectResponse, error)
 	BindIdentitySubject(ctx context.Context, in *BindIdentitySubjectRequest, opts ...grpc.CallOption) (*BindIdentitySubjectResponse, error)
+	// Personal API tokens act on the caller's own principal: the State Store
+	// refuses a call that carries none.
+	AddPersonalToken(ctx context.Context, in *AddPersonalTokenRequest, opts ...grpc.CallOption) (*AddPersonalTokenResponse, error)
+	ListPersonalTokens(ctx context.Context, in *ListPersonalTokensRequest, opts ...grpc.CallOption) (*ListPersonalTokensResponse, error)
+	RevokePersonalToken(ctx context.Context, in *RevokePersonalTokenRequest, opts ...grpc.CallOption) (*RevokePersonalTokenResponse, error)
 	// Lifecycle
 	EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(ctx context.Context, in *EnqueueChatTaskRequest, opts ...grpc.CallOption) (*EnqueueChatTaskResponse, error)
@@ -485,6 +493,36 @@ func (c *stateStoreServiceClient) BindIdentitySubject(ctx context.Context, in *B
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BindIdentitySubjectResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_BindIdentitySubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) AddPersonalToken(ctx context.Context, in *AddPersonalTokenRequest, opts ...grpc.CallOption) (*AddPersonalTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddPersonalTokenResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_AddPersonalToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListPersonalTokens(ctx context.Context, in *ListPersonalTokensRequest, opts ...grpc.CallOption) (*ListPersonalTokensResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPersonalTokensResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListPersonalTokens_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RevokePersonalToken(ctx context.Context, in *RevokePersonalTokenRequest, opts ...grpc.CallOption) (*RevokePersonalTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokePersonalTokenResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RevokePersonalToken_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1395,6 +1433,11 @@ type StateStoreServiceServer interface {
 	// identity store.
 	ResolveIdentitySubject(context.Context, *ResolveIdentitySubjectRequest) (*ResolveIdentitySubjectResponse, error)
 	BindIdentitySubject(context.Context, *BindIdentitySubjectRequest) (*BindIdentitySubjectResponse, error)
+	// Personal API tokens act on the caller's own principal: the State Store
+	// refuses a call that carries none.
+	AddPersonalToken(context.Context, *AddPersonalTokenRequest) (*AddPersonalTokenResponse, error)
+	ListPersonalTokens(context.Context, *ListPersonalTokensRequest) (*ListPersonalTokensResponse, error)
+	RevokePersonalToken(context.Context, *RevokePersonalTokenRequest) (*RevokePersonalTokenResponse, error)
 	// Lifecycle
 	EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error)
@@ -1615,6 +1658,15 @@ func (UnimplementedStateStoreServiceServer) ResolveIdentitySubject(context.Conte
 }
 func (UnimplementedStateStoreServiceServer) BindIdentitySubject(context.Context, *BindIdentitySubjectRequest) (*BindIdentitySubjectResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BindIdentitySubject not implemented")
+}
+func (UnimplementedStateStoreServiceServer) AddPersonalToken(context.Context, *AddPersonalTokenRequest) (*AddPersonalTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddPersonalToken not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListPersonalTokens(context.Context, *ListPersonalTokensRequest) (*ListPersonalTokensResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPersonalTokens not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RevokePersonalToken(context.Context, *RevokePersonalTokenRequest) (*RevokePersonalTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokePersonalToken not implemented")
 }
 func (UnimplementedStateStoreServiceServer) EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueIssue not implemented")
@@ -2173,6 +2225,60 @@ func _StateStoreService_BindIdentitySubject_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).BindIdentitySubject(ctx, req.(*BindIdentitySubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_AddPersonalToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddPersonalTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).AddPersonalToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_AddPersonalToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).AddPersonalToken(ctx, req.(*AddPersonalTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListPersonalTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPersonalTokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListPersonalTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListPersonalTokens_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListPersonalTokens(ctx, req.(*ListPersonalTokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RevokePersonalToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokePersonalTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RevokePersonalToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RevokePersonalToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RevokePersonalToken(ctx, req.(*RevokePersonalTokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3738,6 +3844,18 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BindIdentitySubject",
 			Handler:    _StateStoreService_BindIdentitySubject_Handler,
+		},
+		{
+			MethodName: "AddPersonalToken",
+			Handler:    _StateStoreService_AddPersonalToken_Handler,
+		},
+		{
+			MethodName: "ListPersonalTokens",
+			Handler:    _StateStoreService_ListPersonalTokens_Handler,
+		},
+		{
+			MethodName: "RevokePersonalToken",
+			Handler:    _StateStoreService_RevokePersonalToken_Handler,
 		},
 		{
 			MethodName: "EnqueueIssue",

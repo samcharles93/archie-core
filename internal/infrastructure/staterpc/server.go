@@ -68,6 +68,9 @@ type Deps struct {
 	// authenticating path needs. Unset means this process cannot resolve a
 	// verified subject, and the RPCs answer Unavailable rather than pretending.
 	SubjectBindings identity.SubjectBinding
+	// PersonalTokens stores the caller-owned personal API tokens. Optional:
+	// nil answers Unavailable.
+	PersonalTokens  identity.PersonalTokenStore
 	Grants          *TaskGrants
 	Packages        storepkg.Manager
 	Tasks           storecontract.TaskStore

@@ -291,6 +291,9 @@ func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if bindings, ok := b.st.(identity.SubjectBinding); ok {
 		deps.SubjectBindings = bindings
 	}
+	if tokens, ok := b.st.(identity.PersonalTokenStore); ok {
+		deps.PersonalTokens = tokens
+	}
 	// Task logs live in the state directory, which this process owns, and the
 	// dashboard process owns no such directory -- so this is where a task-log
 	// read is served from. The reader is

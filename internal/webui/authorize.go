@@ -146,7 +146,10 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 		return access.ActionRead, access.KindSecret, "", true
 	case matchPrefix(path, "/api/channels/"):
 		return actionManage(action), access.KindDashboard, segmentValue(path, 2), true
-	case matchPrefix(path, "/api/config"), matchPrefix(path, "/api/logs"):
+	case matchPrefix(path, "/api/config"), matchPrefix(path, "/api/logs"),
+		// A person's own tokens act only as that person, so managing them
+		// needs no more than reading the dashboard.
+		matchPrefix(path, "/api/tokens"):
 		return access.ActionRead, access.KindDashboard, "", true
 	}
 	return action, "", "", false

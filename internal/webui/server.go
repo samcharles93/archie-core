@@ -114,6 +114,10 @@ type Server struct {
 	// replaces the shared token.
 	Authenticate func(context.Context, string) (identity.Identity, error)
 
+	// PersonalTokens manages the signed-in person's API tokens. Nil answers
+	// Unavailable.
+	PersonalTokens identity.PersonalTokens
+
 	// Login drives the provider's browser sign-in. Nil removes the sign-in
 	// routes.
 	Login identity.LoginFlow
@@ -307,6 +311,9 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
 	mux.HandleFunc("GET /api/control-plane/audit", s.handleAudit)
 	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
+	mux.HandleFunc("GET /api/tokens", s.handlePersonalTokensList)
+	mux.HandleFunc("POST /api/tokens", s.handlePersonalTokenCreate)
+	mux.HandleFunc("DELETE /api/tokens/{id}", s.handlePersonalTokenRevoke)
 	mux.HandleFunc("POST /api/identities", s.handleIdentityCreate)
 	mux.HandleFunc("POST /api/identities/{id}/{command}", s.handleIdentityCommand)
 	mux.HandleFunc("GET /api/config", s.handleConfig)

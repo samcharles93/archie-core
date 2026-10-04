@@ -64,6 +64,9 @@ func compose(d deps) *webui.Server {
 	if packages, ok := d.Store.(storepkg.Installations); ok {
 		srv.Packages = packages
 	}
+	if tokens, ok := d.Store.(identity.PersonalTokens); ok {
+		srv.PersonalTokens = tokens
+	}
 	if steps, ok := d.Store.(storecontract.StepReader); ok {
 		srv.Steps = steps
 	}

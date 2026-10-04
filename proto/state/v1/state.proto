@@ -37,6 +37,11 @@ service StateStoreService {
   // identity store.
   rpc ResolveIdentitySubject(ResolveIdentitySubjectRequest) returns (ResolveIdentitySubjectResponse);
   rpc BindIdentitySubject(BindIdentitySubjectRequest) returns (BindIdentitySubjectResponse);
+  // Personal API tokens act on the caller's own principal: the State Store
+  // refuses a call that carries none.
+  rpc AddPersonalToken(AddPersonalTokenRequest) returns (AddPersonalTokenResponse);
+  rpc ListPersonalTokens(ListPersonalTokensRequest) returns (ListPersonalTokensResponse);
+  rpc RevokePersonalToken(RevokePersonalTokenRequest) returns (RevokePersonalTokenResponse);
   // Lifecycle
   rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
   rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
@@ -280,6 +285,19 @@ message BindIdentitySubjectRequest {
   IdentityAudit audit = 4;
 }
 message BindIdentitySubjectResponse { Identity identity = 1; }
+
+// PersonalToken identifies a token by the SHA-256 it binds as; the token
+// itself never reaches the State Store.
+message PersonalToken {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+message AddPersonalTokenRequest { string id = 1; }
+message AddPersonalTokenResponse {}
+message ListPersonalTokensRequest {}
+message ListPersonalTokensResponse { repeated PersonalToken tokens = 1; }
+message RevokePersonalTokenRequest { string id = 1; }
+message RevokePersonalTokenResponse {}
 
 // Task mirrors internal/domain/workflow.Task.
 message Task {

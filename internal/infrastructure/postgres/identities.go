@@ -230,6 +230,56 @@ func (s *Store) BindSubject(ctx context.Context, id identity.IdentityID, subject
 	return tx.Commit(ctx)
 }
 
+var _ identity.PersonalTokenStore = (*Store)(nil)
+
+// SubjectsOf lists an identity's bindings under one issuer, newest first.
+func (s *Store) SubjectsOf(ctx context.Context, id identity.IdentityID, issuer string) ([]identity.PersonalToken, error) {
+	rows, err := postgresdb.New(s.pool).ListIdentitySubjects(ctx, postgresdb.ListIdentitySubjectsParams{IdentityID: string(id), Issuer: issuer})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]identity.PersonalToken, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, identity.PersonalToken{ID: row.Subject, CreatedAt: row.BoundAt})
+	}
+	return out, nil
+}
+
+// UnbindSubject removes one of an identity's bindings; a binding the
+// identity does not hold is ErrNotFound, so no caller can remove another's.
+func (s *Store) UnbindSubject(ctx context.Context, id identity.IdentityID, subject identity.Subject, audit identity.Audit) error {
+	if audit.ActorID == "" || audit.Source == "" || audit.RequestID == "" {
+		return fmt.Errorf("%w: audit actor, source, and request ID are required", identity.ErrInvalid)
+	}
+	now := audit.At.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := postgresdb.New(tx)
+		current, err := q.GetIdentity(ctx, string(id))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return identity.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		deleted, err := q.DeleteIdentitySubject(ctx, postgresdb.DeleteIdentitySubjectParams{
+			IdentityID: string(id), Issuer: subject.Issuer, Subject: subject.Subject,
+		})
+		if err != nil {
+			return err
+		}
+		if deleted == 0 {
+			return identity.ErrNotFound
+		}
+		cur := identityFromRow(current)
+		return insertIdentityEvent(ctx, q, id, identity.Event{
+			IdentityID: id, Type: "unbind_subject", From: cur.Lifecycle, To: cur.Lifecycle, DisplayName: subject.Subject,
+		}, audit, now)
+	})
+}
+
 // BootstrapIdentities seeds the system identity and the legacy names, and
 // moves tasks carrying a legacy name to its stable id. Invalid names are
 // errors.
