@@ -62,7 +62,6 @@ export interface RepoView {
   ecosystem?: string;
   allow_concurrent: boolean;
   max_retries: number;
-  review_enabled: boolean;
 }
 
 /** A provider's shape, never its key: api_key_env is the NAME of an

@@ -48,7 +48,6 @@ interface Repo {
   persistent_storage: boolean;
   max_retries: number;
   allow_concurrent: boolean;
-  review_enabled: boolean;
 }
 
 const store = useControlPlaneStore();
@@ -66,7 +65,7 @@ function addRepo() {
   if (!repos.value || !owner || !name) return;
   repos.value.push({
     owner, name, base: "main", ecosystem: "go", gate: [], preflight: null, protect: null,
-    test_glob: "", persistent_storage: false, max_retries: 0, allow_concurrent: false, review_enabled: false,
+    test_glob: "", persistent_storage: false, max_retries: 0, allow_concurrent: false,
   });
   newRepo.value = "";
 }
@@ -150,12 +149,6 @@ const protectOf = (repo: Repo) => repo.protect ?? [];
               </NumberFieldContent>
             </NumberField>
             <DraftHint :kind="KIND" :path="`${i}.max_retries`" />
-          </div>
-        </SettingRow>
-        <SettingRow label="Adversarial review">
-          <div class="flex flex-wrap items-center gap-3">
-            <Switch v-model="repo.review_enabled" :aria-label="`Adversarial review for ${repo.name}`" />
-            <DraftHint :kind="KIND" :path="`${i}.review_enabled`" />
           </div>
         </SettingRow>
         <SettingRow label="Persistent storage" hint="Kept across tasks.">
