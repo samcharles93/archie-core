@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -27,16 +28,22 @@ type YAMLDefinition struct {
 // workflow whose repository is not required may use only these, since it may
 // run with no worktree at all. workflow.call needs none of the caller's own:
 // the callee's own repository mode decides whether its run clones.
-var repoFreeStepTypes = map[string]bool{AgentRunStepName: true, WorkflowCallStepName: true}
+var repoFreeStepTypes = map[string]bool{AgentRunStepName: true, WorkflowCallStepName: true, FinishStepName: true}
 
 // NeedsRepository reports whether a step type can run only with a worktree.
 func NeedsRepository(stepType string) bool { return !repoFreeStepTypes[stepType] }
 
 // StepRecord selects one registered step type and supplies its typed settings.
 type StepRecord struct {
+	// ID names the step so later steps can reference its result.
+	ID       string    `yaml:"id,omitempty" json:"id,omitempty"`
 	Type     string    `yaml:"type" json:"type"`
 	Settings yaml.Node `yaml:"settings,omitempty" json:"-"`
+	// OnFailure is "park" (the default) or "continue".
+	OnFailure string `yaml:"on_failure,omitempty" json:"on_failure,omitempty"`
 }
+
+const onFailureContinue = "continue"
 
 type StepFactory func(yaml.Node) (Stage, error)
 
@@ -61,19 +68,40 @@ func ParseDefinition(src string, registry StepRegistry) (YAMLDefinition, error) 
 		return YAMLDefinition{}, fmt.Errorf("workflow %q: %w", definition.ID, err)
 	}
 	mode := definition.RepositoryMode()
+	earlier := map[string]bool{}
 	for i, step := range definition.Steps {
-		factory, ok := registry[step.Type]
-		if !ok {
-			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: unknown type %q", definition.ID, i+1, step.Type)
+		if err := checkStep(step, mode, earlier, registry); err != nil {
+			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: %w", definition.ID, i+1, err)
 		}
-		if mode != task.RepositoryRequired && NeedsRepository(step.Type) {
-			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: %q needs a repository, but the workflow's repository is %s", definition.ID, i+1, step.Type, mode)
-		}
-		if _, err := factory(step.Settings); err != nil {
-			return YAMLDefinition{}, fmt.Errorf("workflow %q step %q settings: %w", definition.ID, step.Type, err)
+		if step.ID != "" {
+			earlier[step.ID] = true
 		}
 	}
 	return definition, nil
+}
+
+// checkStep validates one step against the vocabulary and the steps before it.
+func checkStep(step StepRecord, mode task.RepositoryMode, earlier map[string]bool, registry StepRegistry) error {
+	if err := checkStepID(step.ID, earlier); err != nil {
+		return err
+	}
+	if step.OnFailure != "" && step.OnFailure != "park" && step.OnFailure != onFailureContinue {
+		return fmt.Errorf("on_failure is park or continue, not %q", step.OnFailure)
+	}
+	factory, ok := registry[step.Type]
+	if !ok {
+		return fmt.Errorf("unknown type %q", step.Type)
+	}
+	if mode != task.RepositoryRequired && NeedsRepository(step.Type) {
+		return fmt.Errorf("%q needs a repository, but the workflow's repository is %s", step.Type, mode)
+	}
+	if err := checkReferences(step.Settings, earlier); err != nil {
+		return err
+	}
+	if _, err := factory(step.Settings); err != nil {
+		return fmt.Errorf("%q settings: %w", step.Type, err)
+	}
+	return nil
 }
 
 // Compile resolves a validated YAML definition to executable stages.
@@ -88,9 +116,29 @@ func Compile(definition YAMLDefinition, registry StepRegistry) (Workflow, error)
 		if err != nil {
 			return Workflow{}, fmt.Errorf("build workflow step %q: %w", step.Type, err)
 		}
-		stages = append(stages, stage)
+		stages = append(stages, compiledStep(step, stage.Name, factory))
 	}
 	return Workflow{Name: definition.ID, Stages: stages, Interface: definition.WorkflowInterface}, nil
+}
+
+// compiledStep builds the step's stage at run time from its settings with
+// every reference resolved, and records what it leaves for later steps.
+func compiledStep(step StepRecord, name string, factory StepFactory) Stage {
+	return Stage{Name: name, ContinueOnFailure: step.OnFailure == onFailureContinue, Run: func(ctx context.Context, tc *TaskContext) error {
+		tc.stepResult = StepResult{}
+		stage, err := factory(renderSettings(step.Settings, tc))
+		if err != nil {
+			return fmt.Errorf("step %q settings: %w", step.Type, err)
+		}
+		err = stage.Run(ctx, tc)
+		if step.ID != "" {
+			if tc.stepResults == nil {
+				tc.stepResults = map[string]StepResult{}
+			}
+			tc.stepResults[step.ID] = tc.stepResult
+		}
+		return err
+	}}
 }
 
 // ParseAndCompile validates and compiles one definition in a single operation.

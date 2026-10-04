@@ -74,6 +74,11 @@ type Trees interface {
 // forward by mutating Task (persisted after every stage) and the
 // scratch fields below.
 type TaskContext struct {
+	// stepResult is what the running step leaves for later steps;
+	// stepResults holds each finished step's, by step id.
+	stepResult  StepResult
+	stepResults map[string]StepResult
+
 	Task  *Task
 	Repo  config.Repo
 	Cfg   config.Config
@@ -219,6 +224,9 @@ type Outcome struct {
 type Stage struct {
 	Name string
 	Run  func(ctx context.Context, tc *TaskContext) error
+	// ContinueOnFailure records a failed run and moves to the next stage
+	// instead of parking.
+	ContinueOnFailure bool
 }
 
 // Workflow is a named, ordered stage list.
@@ -350,21 +358,34 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		}
 		publishEvent(tc, finishEvent)
 
-		if err != nil {
-			// Parking here publishes the failure; the store has already
-			// recorded the step that produced it.
-			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
-			park(ctx, tc, t.ParkReason)
-			return
-		}
-		if tc.Outcome.Status != "" {
-			finish(ctx, tc, log)
+		if ended := endsRun(ctx, tc, stage, err, log, stageLog); ended {
 			return
 		}
 	}
-	// A workflow must end with an explicit outcome; not doing so is a
-	// definition bug, which still must not vanish silently.
-	park(ctx, tc, "workflow ended without an outcome (definition bug)")
+	// Running out of steps is success: the last step's summary says what was done.
+	tc.Outcome = Outcome{Status: StatusCompleted, Detail: tc.stepResult.Summary}
+	finish(ctx, tc, log)
+}
+
+// endsRun applies a recorded stage's result: a failure parks unless the stage
+// continues on failure, and an outcome finishes the run.
+func endsRun(ctx context.Context, tc *TaskContext, stage Stage, err error, log, stageLog *slog.Logger) bool {
+	if err != nil && stage.ContinueOnFailure {
+		stageLog.Warn("stage failed; continuing", "err", err)
+		return false
+	}
+	if err != nil {
+		// Parking here publishes the failure; the store has already
+		// recorded the step that produced it.
+		tc.Task.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
+		park(ctx, tc, tc.Task.ParkReason)
+		return true
+	}
+	if tc.Outcome.Status != "" {
+		finish(ctx, tc, log)
+		return true
+	}
+	return false
 }
 
 // publishEvent puts an already-persisted event on the run's bus after its
