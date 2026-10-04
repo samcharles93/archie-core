@@ -264,6 +264,8 @@ var runtimeResourceKinds = []string{
 	controlplane.ReviewSettingsKind,
 	controlplane.ChannelSettingsKind,
 	controlplane.ContainerRuntimePoliciesKind,
+	controlplane.CredentialBindingsKind,
+	controlplane.IdentityGrantsKind,
 }
 
 // startRuntimeResourceWatches keeps a watch per live kind established for the

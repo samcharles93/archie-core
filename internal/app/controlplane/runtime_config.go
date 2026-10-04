@@ -213,19 +213,8 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	// CredentialBindingsKind is likewise its own resource: a binding applies
-	// without a restart, and a stored value replaces the file's outright.
-	if err := layerResource(ctx, reader, versions, CredentialBindingsKind, func(value []byte) error {
-		var bindings []credentialBinding
-		if err := json.Unmarshal(value, &bindings); err != nil {
-			return err
-		}
-		out.Containers.Credentials = credentialBindingsSettings(bindings)
-		return nil
-	}); err != nil {
-		return config.Config{}, nil, err
-	}
-	return out, versions, nil
+	err := layerCredentials(ctx, reader, versions, &out)
+	return out, versions, err
 }
 
 // layerResource decodes a stored resource and records its version. A kind
