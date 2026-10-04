@@ -20,9 +20,8 @@ type KindWorkflows map[workintake.Kind]string
 
 // defaultKindWorkflows maps each intake kind to its default workflow.
 var defaultKindWorkflows = KindWorkflows{
-	workintake.KindBug:       "tdd",
-	workintake.KindFeature:   "feasibility",
-	workintake.KindBootstrap: "bootstrap",
+	workintake.KindBug:     "tdd",
+	workintake.KindFeature: "feasibility",
 }
 
 // activeKindWorkflows overrides defaultKindWorkflows. Set once at startup by
@@ -206,7 +205,7 @@ func MergeLabelWorkflows(base, extra LabelWorkflows) (LabelWorkflows, error) {
 func workflowForLabels(reg Registry, labels string) (Workflow, bool) {
 	// Arbitrary-label bindings first: a playbook-declared label is an
 	// explicit, load-time-error-checked signal, so it wins over the kind
-	// defaults (which cover only bug/feature/bootstrap).
+	// defaults (which cover only bug/feature).
 	if lb := activeLabelWorkflows; lb != nil {
 		for _, label := range workintake.SplitLabels(labels) {
 			name, ok := lb[label]

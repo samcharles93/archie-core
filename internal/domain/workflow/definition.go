@@ -250,7 +250,7 @@ func sortedInputNames(inputs map[string]task.InputSpec) []string {
 
 func legacyBuiltinWorkflows() Registry {
 	return Registry{
-		"bootstrap": Bootstrap(), "implement": Implement(), "tdd": TDD(),
+		"implement": Implement(), "tdd": TDD(),
 		"feasibility": Feasibility(), "triage": Triage(), "remediate": Remediate(),
 		"pr-review": PRReview(),
 	}

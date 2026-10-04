@@ -3,9 +3,6 @@ package workflow
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -260,33 +257,4 @@ func commitIssueReference(verb string, task *Task) string {
 		return ""
 	}
 	return fmt.Sprintf("\n\n%s #%d", verb, task.IssueNumber)
-}
-
-// Bootstrap is the deterministic no-LLM workflow that proves the
-// plumbing: it adds a marker file and opens a PR referencing the issue.
-// It stays registered as a diagnostics workflow (label a test issue and
-// you exercise invites, clone, push, and PR mechanics end to end).
-func Bootstrap() Workflow {
-	return Workflow{
-		Name: "bootstrap",
-		Stages: []Stage{
-			StagePrepareWorktree(),
-			{Name: "apply", Run: func(ctx context.Context, tc *TaskContext) error {
-				dir := filepath.Join(tc.Dir, ".archie")
-				if err := os.MkdirAll(dir, 0o755); err != nil {
-					return err
-				}
-				content := fmt.Sprintf("# archie bootstrap\n\n%s\nTime: %s\n\nThis file proves the archie pipeline (queue → worktree → push → PR) works for this repository.\n",
-					taskPromptBlock(tc.Task), time.Now().UTC().Format(time.RFC3339))
-				return os.WriteFile(filepath.Join(dir, "bootstrap.md"), []byte(content), 0o644)
-			}},
-			StageCommitPush(func(tc *TaskContext) string {
-				return "chore: archie bootstrap marker" + commitIssueReference("Refs", tc.Task)
-			}),
-			StageDiffCap(),
-			StageOpenPR(func(tc *TaskContext) string {
-				return "Deterministic bootstrap PR from archie's plumbing walk-through."
-			}),
-		},
-	}
 }

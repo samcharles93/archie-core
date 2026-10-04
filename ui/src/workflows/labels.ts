@@ -1,7 +1,6 @@
 /** Naming and numbers shared by the workflow tables. */
 
 const WORKFLOW_LABELS: Record<string, string> = {
-  bootstrap: "Bootstrap",
   implement: "Implement",
   tdd: "TDD",
   feasibility: "Feasibility check",

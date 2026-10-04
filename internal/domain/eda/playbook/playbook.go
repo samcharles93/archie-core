@@ -62,7 +62,7 @@ type Playbook struct {
 // existing workintake label/kind vocabulary -- no second label-matching
 // mechanism is invented here.
 type Trigger struct {
-	// Kind is the routing kind (bug/feature/bootstrap); empty matches the
+	// Kind is the routing kind (bug/feature); empty matches the
 	// default (unlabelled) flow.
 	Kind workintake.Kind
 	// Labels is the closed label set this trigger matches; an empty set

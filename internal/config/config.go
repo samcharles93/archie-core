@@ -360,10 +360,10 @@ type Config struct {
 	// override built-ins, and Kits mount it read-only.
 	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
 	// WorkflowRoutingFile is an optional path to a YAML file rebinding which
-	// registered workflow an intake Kind (bug/feature/bootstrap) prefers.
+	// registered workflow an intake Kind (bug/feature) prefers.
 	WorkflowRoutingFile string `toml:"workflow_routing_file" yaml:"workflow_routing_file"`
 	// WorkflowLabelsFile is an optional path to a YAML file binding forge issue
-	// labels outside the closed bug/feature/bootstrap kind set to registered
+	// labels outside the closed bug/feature kind set to registered
 	// workflows (e.g. A label already owned by the kind set, or a duplicate
 	// binding, is a load failure per the design doc's collision rule.
 	WorkflowLabelsFile string `toml:"workflow_labels_file" yaml:"workflow_labels_file"`

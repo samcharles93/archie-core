@@ -9,10 +9,9 @@ import (
 // Task subjects. Each encodes the routing kind so a multi-daemon deployment
 // can filter by the work it wants.
 const (
-	SubjectTaskBug       = "archie.task.bug"
-	SubjectTaskFeature   = "archie.task.feature"
-	SubjectTaskBootstrap = "archie.task.bootstrap"
-	SubjectTaskDefault   = "archie.task.default"
+	SubjectTaskBug     = "archie.task.bug"
+	SubjectTaskFeature = "archie.task.feature"
+	SubjectTaskDefault = "archie.task.default"
 
 	// SubjectTaskWildcard matches every task subject.
 	SubjectTaskWildcard = "archie.task.>"
@@ -29,9 +28,8 @@ var ErrUnknownKind = errors.New("workintake: unknown task kind")
 type Kind string
 
 const (
-	KindBug       Kind = "bug"
-	KindFeature   Kind = "feature"
-	KindBootstrap Kind = "bootstrap"
+	KindBug     Kind = "bug"
+	KindFeature Kind = "feature"
 
 	// KindDefault routes issues carrying no recognised label.
 	KindDefault Kind = "default"
@@ -40,17 +38,15 @@ const (
 // labelKinds maps a forge issue label to its routing kind. This is the one
 // place the label vocabulary is defined.
 var labelKinds = map[string]Kind{
-	"bug":       KindBug,
-	"feature":   KindFeature,
-	"bootstrap": KindBootstrap,
+	"bug":     KindBug,
+	"feature": KindFeature,
 }
 
 // kindSubjects is the closed set of routable kinds.
 var kindSubjects = map[Kind]string{
-	KindBug:       SubjectTaskBug,
-	KindFeature:   SubjectTaskFeature,
-	KindBootstrap: SubjectTaskBootstrap,
-	KindDefault:   SubjectTaskDefault,
+	KindBug:     SubjectTaskBug,
+	KindFeature: SubjectTaskFeature,
+	KindDefault: SubjectTaskDefault,
 }
 
 // Validate reports whether the kind is routable. The zero kind is accepted
