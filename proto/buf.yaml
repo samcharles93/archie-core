@@ -23,6 +23,10 @@ breaking:
   # A third, deliberate break removes the superseded unary ListCaptures and
   # ListUndispatchedCaptures RPCs and the unused Binding.secret field (number
   # and name reserved). Nothing outside this repository speaks the contract.
+  #
+  # Control-plane requests stopped naming their org or raw audit records: the
+  # State Store derives the org from the caller, so those fields are removed
+  # (numbers and names reserved).
   ignore_only:
     FIELD_SAME_TYPE:
       - state/v1/state.proto
@@ -32,3 +36,4 @@ breaking:
       - state/v1/state.proto
     FIELD_NO_DELETE:
       - state/v1/state.proto
+      - controlplane/v1/controlplane.proto

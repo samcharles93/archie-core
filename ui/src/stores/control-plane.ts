@@ -464,9 +464,9 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     return response.revisions ?? [];
   }
 
-  async function audit(table: string, keys: string[]): Promise<AuditEntry[]> {
-    const query = new URLSearchParams({ table });
-    for (const key of keys) query.append("key", key);
+  async function audit(kinds: string[]): Promise<AuditEntry[]> {
+    const query = new URLSearchParams();
+    for (const kind of kinds) query.append("kind", kind);
     const response = await request<{ entries?: AuditEntry[] }>(
       `/api/control-plane/audit?${query}`,
     );

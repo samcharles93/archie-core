@@ -4,6 +4,7 @@ package controlplane
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -115,22 +116,38 @@ func (s *Server) History(ctx context.Context, request *pb.HistoryRequest) (*pb.H
 // whole trail.
 const defaultAuditLimit = 500
 
+// resourcesAuditTable is the sys_audit table name resource writes record
+// under.
+const resourcesAuditTable = "resources"
+
 func (s *Server) Audit(ctx context.Context, request *pb.AuditRequest) (*pb.AuditResponse, error) {
-	if request.GetTable() == "" || len(request.GetRecordKeys()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "table and record keys are required")
+	orgID := requestOrg(ctx)
+	keys := make([]string, 0, len(request.GetKinds()))
+	kindOf := make(map[string]string, len(request.GetKinds()))
+	for _, kind := range request.GetKinds() {
+		// A slash would let a kind spell another org's record key.
+		if kind == "" || strings.Contains(kind, "/") {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid kind %q", kind)
+		}
+		key := storecontract.ResourceAuditKey(orgID, kind)
+		keys = append(keys, key)
+		kindOf[key] = kind
+	}
+	if len(keys) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "kinds are required")
 	}
 	limit := int(request.GetLimit())
 	if limit <= 0 || limit > defaultAuditLimit {
 		limit = defaultAuditLimit
 	}
-	entries, err := s.store.Audit(ctx, request.GetTable(), request.GetRecordKeys(), limit)
+	entries, err := s.store.Audit(ctx, resourcesAuditTable, keys, limit)
 	if err != nil {
 		return nil, mapError(err)
 	}
 	out := make([]*pb.AuditEntry, 0, len(entries))
 	for _, entry := range entries {
 		out = append(out, &pb.AuditEntry{
-			Id: entry.ID, Table: entry.Table, RecordKey: entry.RecordKey, Field: entry.Field,
+			Id: entry.ID, Table: entry.Table, RecordKey: kindOf[entry.RecordKey], Field: entry.Field,
 			OldValueJson: entry.OldValue, NewValueJson: entry.NewValue, Version: entry.Version,
 			Actor: entry.Actor, Source: entry.Source, RequestId: entry.RequestID, At: timestamp(entry.At),
 		})

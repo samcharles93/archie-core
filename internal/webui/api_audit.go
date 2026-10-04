@@ -23,16 +23,17 @@ type auditEntryView struct {
 	At        *time.Time      `json:"at,omitempty"`
 }
 
-// handleAudit is GET /api/control-plane/audit?table=T&key=K1&key=K2: the
-// field-level audit of the named records of one table, newest first. A page
-// passes the records it shows, so its audit list is scoped to that page.
+// handleAudit is GET /api/control-plane/audit?kind=K1&kind=K2: the
+// field-level audit of the named resources in the caller's org, newest
+// first. A page passes the kinds it shows, so its audit list is scoped to
+// that page.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if s.ControlPlane == nil {
 		http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	query := r.URL.Query()
-	response, err := s.ControlPlane.Audit(r.Context(), &controlpb.AuditRequest{Table: query.Get("table"), RecordKeys: query["key"]})
+	response, err := s.ControlPlane.Audit(r.Context(), &controlpb.AuditRequest{Kinds: query["kind"]})
 	if err != nil {
 		writeControlPlaneError(w, err)
 		return

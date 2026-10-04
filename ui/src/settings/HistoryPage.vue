@@ -38,7 +38,7 @@ const kinds = computed(() => catalog.value.map((r) => r.kind));
 async function load(): Promise<void> {
   if (!kinds.value.length) return;
   try {
-    entries.value = await store.audit("resources", kinds.value);
+    entries.value = await store.audit(kinds.value);
     error.value = "";
   } catch (err) {
     error.value = String((err as Error).message || err);

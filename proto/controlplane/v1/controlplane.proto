@@ -80,9 +80,12 @@ message AuditEntry {
   string request_id = 10;
   google.protobuf.Timestamp at = 11;
 }
+// AuditRequest names resource kinds; the trail returned is theirs in the
+// caller's org, so no request can name another org's records.
 message AuditRequest {
-  string table = 1;
-  repeated string record_keys = 2;
+  reserved 1, 2;
+  reserved "table", "record_keys";
+  repeated string kinds = 4;
   // Limit caps the entries returned, newest first. Zero means the server's
   // own default.
   int32 limit = 3;

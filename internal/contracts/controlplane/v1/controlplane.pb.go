@@ -699,10 +699,11 @@ func (x *AuditEntry) GetAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// AuditRequest names resource kinds; the trail returned is theirs in the
+// caller's org, so no request can name another org's records.
 type AuditRequest struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Table      string                 `protobuf:"bytes,1,opt,name=table,proto3" json:"table,omitempty"`
-	RecordKeys []string               `protobuf:"bytes,2,rep,name=record_keys,json=recordKeys,proto3" json:"record_keys,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kinds []string               `protobuf:"bytes,4,rep,name=kinds,proto3" json:"kinds,omitempty"`
 	// Limit caps the entries returned, newest first. Zero means the server's
 	// own default.
 	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -740,16 +741,9 @@ func (*AuditRequest) Descriptor() ([]byte, []int) {
 	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *AuditRequest) GetTable() string {
+func (x *AuditRequest) GetKinds() []string {
 	if x != nil {
-		return x.Table
-	}
-	return ""
-}
-
-func (x *AuditRequest) GetRecordKeys() []string {
-	if x != nil {
-		return x.RecordKeys
+		return x.Kinds
 	}
 	return nil
 }
@@ -1125,12 +1119,10 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\n" +
 	" \x01(\tR\trequestId\x12*\n" +
-	"\x02at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"[\n" +
+	"\x02at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"Z\n" +
 	"\fAuditRequest\x12\x14\n" +
-	"\x05table\x18\x01 \x01(\tR\x05table\x12\x1f\n" +
-	"\vrecord_keys\x18\x02 \x03(\tR\n" +
-	"recordKeys\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"F\n" +
+	"\x05kinds\x18\x04 \x03(\tR\x05kinds\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05tableR\vrecord_keys\"F\n" +
 	"\rAuditResponse\x125\n" +
 	"\aentries\x18\x01 \x03(\v2\x1b.controlplane.v1.AuditEntryR\aentries\"\xec\x01\n" +
 	"\x0eCommandRequest\x12\x12\n" +
