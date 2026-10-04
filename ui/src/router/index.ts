@@ -16,6 +16,7 @@ import PluginsPage from "@/settings/PluginsPage.vue";
 import ContainerRuntimePage from "@/settings/ContainerRuntimePage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
+import AccessPoliciesPage from "@/settings/AccessPoliciesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
 import SystemModelsPage from "@/settings/SystemModelsPage.vue";
 import SystemReposPage from "@/settings/SystemReposPage.vue";
@@ -185,6 +186,18 @@ const routes = [
       settings: true,
       label: "Identities",
       description: "Persistent actors and lifecycle.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/access-policies",
+    name: "access-policies",
+    component: AccessPoliciesPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "Access policies",
+      description: "Who may do what, written as Cedar policies.",
       section: "settings",
     },
   },

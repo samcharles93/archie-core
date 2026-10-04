@@ -137,6 +137,32 @@ func (q *Queries) ListMembershipsByIdentity(ctx context.Context, identityID stri
 	return items, nil
 }
 
+const listOrgOwners = `-- name: ListOrgOwners :many
+SELECT identity_id FROM memberships
+WHERE org_id = $1 AND workspace_id IS NULL AND role = 'owner'
+ORDER BY identity_id
+`
+
+func (q *Queries) ListOrgOwners(ctx context.Context, orgID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listOrgOwners, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var identity_id string
+		if err := rows.Scan(&identity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, identity_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgs = `-- name: ListOrgs :many
 SELECT id, name, created_at, updated_at FROM orgs ORDER BY created_at, id
 `

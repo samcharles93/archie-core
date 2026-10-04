@@ -76,6 +76,9 @@ func compose(d deps) *webui.Server {
 	// client already carries them: withholding them would degrade two pages
 	// that have an owner, which is a different thing from the intake surfaces
 	// below.
+	if policies, ok := d.Store.(access.PolicyStore); ok {
+		srv.Policies = policies
+	}
 	if presence, ok := d.Store.(storecontract.PresenceStore); ok {
 		srv.Presence = presence
 	}

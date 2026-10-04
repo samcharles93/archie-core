@@ -170,6 +170,9 @@ func accessStatus(err error) error {
 	if errors.Is(err, access.ErrPolicyNotFound) {
 		return status.Error(codes.NotFound, access.ErrPolicyNotFound.Error())
 	}
+	if errors.Is(err, access.ErrPolicyInvalidText) {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
 	if errors.Is(err, access.ErrInvalidPolicy) {
 		return status.Error(codes.InvalidArgument, access.ErrInvalidPolicy.Error())
 	}

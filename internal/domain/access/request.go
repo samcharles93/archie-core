@@ -150,3 +150,14 @@ type Denial struct {
 	// coalesces identical denials within a minute into one row with a count.
 	Count int64 `json:"count"`
 }
+
+// SharedTokenOwner is the principal the single-operator shared token acts as:
+// the system identity, owner of the default org, with no membership row.
+func SharedTokenOwner() Principal {
+	return Principal{
+		IdentityID:  identity.SystemID,
+		Kind:        identity.KindSystem,
+		Org:         org.DefaultOrgID,
+		Memberships: []org.Membership{{IdentityID: identity.SystemID, OrgID: org.DefaultOrgID, Role: org.RoleOwner}},
+	}
+}

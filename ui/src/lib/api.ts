@@ -140,6 +140,11 @@ async function request<T = unknown>(
 export const api = {
   health: <T = unknown>() => request<T>("/health/detailed"),
   services: <T = unknown>() => request<T>("/api/services"),
+  policies: <T = unknown>() => request<T>("/api/access/policies"),
+  putPolicy: (policy: unknown) =>
+    request<{ version: number }>("/api/access/policies", { method: "PUT", body: policy }),
+  deletePolicy: (policy: unknown) =>
+    request<void>("/api/access/policies", { method: "DELETE", body: policy, parse: false }),
   summary: <T = unknown>() => request<T>("/api/summary"),
   tasks: <T = unknown>() => request<T>("/api/tasks"),
   taskMeta: <T = unknown>() => request<T>("/api/task-meta"),

@@ -379,6 +379,9 @@ func (b *server) accessDeps(deps *staterpc.Deps) {
 	}
 	if ps, ok := b.st.(access.PolicyStore); ok {
 		deps.Policies = ps
+		if owners, ok := b.st.(ownerDirectory); ok {
+			deps.Policies = guardedPolicies{PolicyStore: ps, owners: owners}
+		}
 	}
 	if ds, ok := b.st.(access.DenialStore); ok {
 		deps.Denials = ds

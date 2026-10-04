@@ -7,22 +7,8 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
-	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
-
-// TokenOwnerPrincipal is the principal the shared token acts as: the owner
-// of the default org, per the single-operator credential rule.
-func TokenOwnerPrincipal() access.Principal {
-	return access.Principal{
-		IdentityID: identity.SystemID,
-		Kind:       identity.KindSystem,
-		Org:        org.DefaultOrgID,
-		Memberships: []org.Membership{
-			{IdentityID: identity.SystemID, OrgID: org.DefaultOrgID, Role: org.RoleOwner},
-		},
-	}
-}
 
 // principalContextKey carries the assembled principal of a request.
 type principalContextKey struct{}
@@ -91,7 +77,7 @@ func (s *Server) requestPrincipal(ctx context.Context) (access.Principal, error)
 		}
 		return s.Principals.PrincipalFor(ctx, acting.ID)
 	}
-	return TokenOwnerPrincipal(), nil
+	return access.SharedTokenOwner(), nil
 }
 
 func (s *Server) recordDenial(ctx context.Context, p access.Principal, action access.Action, r access.Resource, decision access.Decision) {
@@ -151,6 +137,8 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 		return access.ActionApprove, access.KindBinding, segmentValue(path, 2), true
 	case matchSegment(path, "/api/tasks/", "/logs"):
 		return access.ActionReadLogs, access.KindTask, segmentValue(path, 2), true
+	case matchPrefix(path, "/api/access/policies"):
+		return policyAction(action), access.KindPolicy, "", true
 	case matchPrefix(path, "/api/identities"):
 		return actionManage(action), access.KindIdentity, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/extensions"):
@@ -200,6 +188,14 @@ func kindOf(path string) access.ResourceKind {
 
 // actionManage lifts a create or update on a managed surface to the manage
 // action the role vocabulary carries.
+// policyAction lifts every write on the policy routes to manage_policies.
+func policyAction(action access.Action) access.Action {
+	if action == access.ActionRead {
+		return action
+	}
+	return access.ActionManagePolicies
+}
+
 func actionManage(action access.Action) access.Action {
 	switch action {
 	case access.ActionCreate, access.ActionUpdate:

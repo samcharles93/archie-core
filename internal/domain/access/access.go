@@ -176,4 +176,7 @@ var (
 	ErrPolicyNotFound = errors.New("access: policy not found")
 	// ErrPolicyInvalidText is returned when a policy's text does not parse.
 	ErrPolicyInvalidText = errors.New("access: policy text does not parse")
+	// ErrPolicyLockout is returned when a change would leave an org with no
+	// owner who may manage its policies.
+	ErrPolicyLockout = errors.New("access: change leaves no owner able to manage policies")
 )

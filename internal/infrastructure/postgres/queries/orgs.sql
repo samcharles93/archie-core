@@ -50,3 +50,8 @@ SELECT COALESCE(
 INSERT INTO memberships (identity_id, org_id, role)
 SELECT a.identity_id, a.org_id, 'developer' FROM org_agents a
 ON CONFLICT (identity_id, org_id, COALESCE(workspace_id, '')) DO NOTHING;
+
+-- name: ListOrgOwners :many
+SELECT identity_id FROM memberships
+WHERE org_id = $1 AND workspace_id IS NULL AND role = 'owner'
+ORDER BY identity_id;

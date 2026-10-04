@@ -43,6 +43,7 @@ const settings: NavSpec = {
         "/settings/channels",
         "/settings/repositories",
         "/settings/identities",
+        "/settings/access-policies",
         "/settings/tools",
         "/settings/extensions",
         "/settings/plugins",

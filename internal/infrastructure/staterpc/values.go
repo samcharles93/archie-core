@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
@@ -478,6 +479,7 @@ var wireErrors = []struct {
 	message  string
 }{
 	{storecontract.ErrStaleTransition, codes.FailedPrecondition, msgStaleTransition},
+	{access.ErrPolicyLockout, codes.FailedPrecondition, access.ErrPolicyLockout.Error()},
 	{storecontract.ErrIllegalTransition, codes.FailedPrecondition, msgIllegalTransition},
 	{storecontract.ErrInvalidStep, codes.InvalidArgument, msgInvalidStep},
 	{storecontract.ErrBindingOverlap, codes.FailedPrecondition, msgBindingOverlap},

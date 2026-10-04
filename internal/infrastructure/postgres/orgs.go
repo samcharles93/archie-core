@@ -264,3 +264,16 @@ func (s *Store) runUpgradePhase(ctx context.Context, name string, stamps []func(
 	}
 	return tx.Commit(ctx)
 }
+
+// OrgOwners returns the identities holding the org-wide owner role.
+func (s *Store) OrgOwners(ctx context.Context, orgID org.OrgID) ([]identity.IdentityID, error) {
+	rows, err := s.queries().ListOrgOwners(ctx, string(orgID))
+	if err != nil {
+		return nil, fmt.Errorf("store: list org owners: %w", err)
+	}
+	out := make([]identity.IdentityID, 0, len(rows))
+	for _, id := range rows {
+		out = append(out, identity.IdentityID(id))
+	}
+	return out, nil
+}
