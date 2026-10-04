@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -151,10 +153,23 @@ func agentResultTool(schema map[string]any) (*agentrun.CaptureTool, error) {
 			required = append(required, name)
 		}
 	}
-	return &agentrun.CaptureTool{
+	tool := &agentrun.CaptureTool{
 		Name: resultToolName, Description: "Return this step's result. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: required, MaxCalls: 1,
-	}, nil
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(properties)) {
+		property, _ := properties[name].(map[string]any)
+		switch property["type"] {
+		case "boolean":
+			tool.BooleanFields = append(tool.BooleanFields, name)
+		case "string":
+			if slices.Contains(required, name) {
+				tool.NonEmptyStrings = append(tool.NonEmptyStrings, name)
+			}
+		}
+	}
+	return tool, nil
 }
 
 // missionWithInputs appends the task's workflow inputs to a mission as a JSON

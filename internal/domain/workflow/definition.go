@@ -32,7 +32,10 @@ type YAMLDefinition struct {
 // workflow whose repository is not required may use only these, since it may
 // run with no worktree at all. workflow.call needs none of the caller's own:
 // the callee's own repository mode decides whether its run clones.
-var repoFreeStepTypes = map[string]bool{AgentRunStepName: true, WorkflowCallStepName: true, FinishStepName: true}
+var repoFreeStepTypes = map[string]bool{
+	AgentRunStepName: true, WorkflowCallStepName: true, FinishStepName: true,
+	HandoffStepName: true, ApproveStepName: true, CloseIssueStepName: true, CommentStepName: true,
+}
 
 // NeedsRepository reports whether a step type can run only with a worktree.
 func NeedsRepository(stepType string) bool { return !repoFreeStepTypes[stepType] }
@@ -43,6 +46,9 @@ type StepRecord struct {
 	ID       string    `yaml:"id,omitempty" json:"id,omitempty"`
 	Type     string    `yaml:"type" json:"type"`
 	Settings yaml.Node `yaml:"settings,omitempty" json:"-"`
+	// When skips the step unless the condition holds: a reference that must
+	// be truthy, negated with !, or compared with == or != to a literal.
+	When string `yaml:"when,omitempty" json:"when,omitempty"`
 	// OnFailure is "park" (the default) or "continue".
 	OnFailure string `yaml:"on_failure,omitempty" json:"on_failure,omitempty"`
 }
@@ -102,6 +108,15 @@ func checkStep(step StepRecord, mode task.RepositoryMode, earlier map[string]boo
 	if err := checkReferences(step.Settings, earlier); err != nil {
 		return err
 	}
+	if step.When != "" {
+		c, err := parseCondition(step.When)
+		if err != nil {
+			return err
+		}
+		if err := checkReference(c.path, earlier); err != nil {
+			return fmt.Errorf("when: %w", err)
+		}
+	}
 	if _, err := factory(step.Settings); err != nil {
 		return fmt.Errorf("%q settings: %w", step.Type, err)
 	}
@@ -128,8 +143,14 @@ func Compile(definition YAMLDefinition, registry StepRegistry) (Workflow, error)
 // compiledStep builds the step's stage at run time from its settings with
 // every reference resolved, and records what it leaves for later steps.
 func compiledStep(step StepRecord, name string, factory StepFactory) Stage {
+	// ParseDefinition has already refused a condition that does not parse.
+	when, _ := parseCondition(step.When)
 	return Stage{Name: name, ContinueOnFailure: step.OnFailure == onFailureContinue, Run: func(ctx context.Context, tc *TaskContext) error {
 		tc.stepResult = StepResult{}
+		if step.When != "" && !when.holds(tc) {
+			tc.Log.Info("step skipped", "when", step.When)
+			return nil
+		}
 		stage, err := factory(renderSettings(step.Settings, tc))
 		if err != nil {
 			return fmt.Errorf("step %q settings: %w", step.Type, err)
@@ -321,7 +342,7 @@ func sortedInputNames(inputs map[string]task.InputSpec) []string {
 
 func legacyBuiltinWorkflows() Registry {
 	return Registry{
-		"feasibility": Feasibility(), "triage": Triage(), "remediate": Remediate(),
+		"remediate": Remediate(),
 		"pr-review": PRReview(),
 	}
 }

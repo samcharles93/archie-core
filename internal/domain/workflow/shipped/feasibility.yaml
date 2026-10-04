@@ -1,0 +1,50 @@
+id: feasibility
+steps:
+  - type: repo.prepare
+  - id: assess
+    type: agent.run
+    settings:
+      role: planner
+      read_only: true
+      mission: |
+        Assess whether this feature request fits the project {{ task.repository }}.
+
+        {{ task.prompt }}
+
+        Read the repository's AGENT.md, ROADMAP.md and README (whichever exist) plus enough code to judge scope and architectural fit. Return your result exactly once, then call finish with status "passed" summarising the assessment.
+      result:
+        type: object
+        properties:
+          fit:
+            type: boolean
+            description: "true: fits the project and is worth a PRD. false: close as won't-do."
+          reasons:
+            type: string
+            description: The rationale, written for the human who filed the request.
+        required: [fit, reasons]
+  - type: forge.close-issue
+    when: "!steps.assess.result.fit"
+  - type: workflow.finish
+    when: "!steps.assess.result.fit"
+    settings:
+      status: declined
+      detail: "{{ steps.assess.result.reasons }}"
+  - id: prd
+    type: agent.run
+    settings:
+      role: planner
+      read_only: true
+      mission: |
+        Write a PRD for this accepted feature request on {{ task.repository }}.
+
+        {{ task.prompt }}
+
+        <assessment>
+        {{ steps.assess.result.reasons }}
+        </assessment>
+
+        Explore the affected code surface, then call finish with status "passed" and the PRD as the summary: problem, proposed solution, files and components affected, acceptance criteria, explicit non-goals, and estimated diff size. It will be read by a human deciding whether to green-light implementation.
+  - type: human.approve
+    settings:
+      plan: "{{ steps.prd.summary }}"
+      then: implement

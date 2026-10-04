@@ -64,9 +64,17 @@ func (repositorySteps) Name() string { return "repository" }
 
 func (repositorySteps) StepTypes() []workflow.StepType { return workflow.RepoStepTypes() }
 
+// controlSteps provides the step types that route the task: handoff, human
+// approval, and forge issue actions.
+type controlSteps struct{}
+
+func (controlSteps) Name() string { return "control" }
+
+func (controlSteps) StepTypes() []workflow.StepType { return workflow.ControlStepTypes() }
+
 // Providers returns the step-type providers to register.
 func Providers() []workflow.StepTypeProvider {
-	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}, commandSteps{}, repositorySteps{}}
+	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}, commandSteps{}, repositorySteps{}, controlSteps{}}
 }
 
 // NewManager returns a new manager with Providers registered.

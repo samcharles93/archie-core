@@ -95,9 +95,8 @@ type TaskContext struct {
 	// stages.
 	PRSource PRSource
 	// prReview is the pr-review workflow's cross-stage scratch state (see
-	// prreview_stages.go). It is unexported, following the pattern set by
-	// the feasibility workflow's decision field: pipeline-private state has
-	// no business being read or set outside its own stages.
+	// prreview_stages.go). Pipeline-private state has no business being read
+	// or set outside its own stages.
 	prReview *prReviewState
 	Bus      *events.Bus // nil-safe via Emit
 	Log      *slog.Logger
@@ -128,8 +127,6 @@ type TaskContext struct {
 	// ReproProof is the captured failing-test output from a TDD repro
 	// stage, posted on the PR as evidence the bug was reproduced.
 	ReproProof string
-	// decision is the feasibility assess stage's verdict.
-	decision *decision
 	// reviewUnit is the remediate workflow's decoded Task.ReviewPayload,
 	// stashed by its build stage so the commit-push and reply stages that
 	// follow don't each re-decode the same JSON.

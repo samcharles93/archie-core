@@ -64,6 +64,16 @@ steps:
 			wantErr: `step id "a" is declared twice`,
 		},
 		{
+			name: "when may only read earlier steps",
+			yaml: `id: w
+repository: none
+steps:
+  - {type: workflow.finish, when: "!steps.later.result.fit"}
+  - {id: later, type: workflow.finish}
+`,
+			wantErr: `when: reference {{ steps.later.result.fit }}: no earlier step has id "later"`,
+		},
+		{
 			name: "on_failure takes park or continue",
 			yaml: `id: w
 repository: none
