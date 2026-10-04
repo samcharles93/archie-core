@@ -807,6 +807,25 @@ func (c ContainerConfig) BoundCredentials(org string, granted, declared []string
 	return out
 }
 
+// CredentialAccess returns the org and granted credential services of the
+// identity named name: the root's, each overridden by the identity's own when
+// it sets one. An unknown name is the root.
+func (c Config) CredentialAccess(name string) (org string, granted []string) {
+	org, granted = c.Org, c.GrantedCredentials
+	for _, id := range c.Identities {
+		if id.Name != name {
+			continue
+		}
+		if id.Org != "" {
+			org = id.Org
+		}
+		if id.GrantedCredentials != nil {
+			granted = *id.GrantedCredentials
+		}
+	}
+	return org, granted
+}
+
 // ValidateCredentialBindings rejects a binding with an empty service name or
 // duplicated (service, org) pair: two bindings resolving the same Kit
 // credential in the same org is ambiguous, not a fallback chain.

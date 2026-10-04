@@ -75,6 +75,7 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 		GateRetries:     iface.Needs().GateRetries,
 		Org:             taskCfg.Org,
 		GrantedServices: taskCfg.GrantedCredentials,
+		RunCredential:   credential,
 	})
 	if err != nil {
 		park("kit launch failed", err)

@@ -31,14 +31,6 @@ type SecretResolver interface {
 	Resolve(config.SecretRef) (string, error)
 }
 
-// Grants is what Launch and Release tell the egress proxy's resolver about a
-// run's credentials: exactly the intersection Launch computed, and nothing
-// once the run ends. *egress.GrantResolver satisfies it.
-type Grants interface {
-	Grant(run string, secrets map[string]string)
-	RevokeGrant(run string)
-}
-
 // OAuthSecrets reads an org's stored OAuth token set for a bound service, so a
 // Kit's credential file can render that set's expiry. It is the store's read
 // half only: kitrun never writes a token set, and nothing but the expiry
@@ -62,11 +54,12 @@ type Launcher struct {
 	// Kit container: the worker's own binary and the egress CA.
 	AgentBinary string
 	CAFile      string
-	// Config is read on every Launch. Nil Secrets or Grants leave every
+	// Config and Secrets decide, at launch, which declared credentials the run
+	// is bound for and of which kind. The values themselves are resolved by
+	// the proxy's Resolver per request. Nil Secrets leaves every API-key
 	// credential unbound.
 	Config  *config.Holder
 	Secrets SecretResolver
-	Grants  Grants
 	// OAuth reads the stored token set whose expiry a Kit's credential file
 	// renders. A nil OAuth refuses the launch of a Kit that renders one, the
 	// same way a nil OAuthStore makes the proxy refuse a required OAuth
@@ -96,6 +89,8 @@ type Request struct {
 	// other.
 	Org             string
 	GrantedServices []string
+	// RunCredential is the run's credential: the container's proxy password.
+	RunCredential string
 }
 
 // Run is a started Kit task.
@@ -126,19 +121,13 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	granted, kinds := l.resolveCredentials(req, k.creds)
+	kinds := l.boundKinds(req, k.creds)
 	facts, err := l.oauthFacts(ctx, req.Org, k.creds, kinds)
 	if err != nil {
 		return nil, err
 	}
-	if l.Grants != nil {
-		l.Grants.Grant(req.Execution, granted)
-	}
-	session, err := l.Proxy.Register(egress.SessionOptions{Run: req.Execution, Org: req.Org, Network: k.network, Credentials: k.creds, Bound: kinds})
+	session, err := l.Proxy.Register(egress.SessionOptions{Token: req.RunCredential, Org: req.Org, Network: k.network, Credentials: k.creds, Bound: kinds})
 	if err != nil {
-		if l.Grants != nil {
-			l.Grants.RevokeGrant(req.Execution)
-		}
 		return nil, err
 	}
 	run := &Run{network: "archie-kit-" + req.Execution, token: session.Token(), execution: req.Execution}
@@ -174,19 +163,18 @@ func (l *Launcher) Launch(ctx context.Context, req Request) (*Run, error) {
 	return run, nil
 }
 
-// resolveCredentials resolves the run's credentials: services declared by
-// the Kit, bound in config, and granted to the identity's org. granted maps
-// run/service to value; kinds maps service to bound kind. A binding with a
-// secret is an API key; one without is the org's OAuth token set.
-func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapability) (granted map[string]string, kinds map[string]egress.CredentialKind) {
-	granted = map[string]string{}
-	kinds = map[string]egress.CredentialKind{}
+// boundKinds is the kind of each declared credential the run is bound for:
+// declared by the Kit, granted to the run's identity, bound in its org, and
+// for an API key, resolvable now. The proxy resolves the value itself per
+// request, through the same intersection.
+func (l *Launcher) boundKinds(req Request, creds []spec.CredentialCapability) map[string]egress.CredentialKind {
+	kinds := map[string]egress.CredentialKind{}
 	if l.Config == nil {
-		return granted, kinds
+		return kinds
 	}
 	current := l.Config.Get().Containers.Credentials
 	if len(current) == 0 {
-		return granted, kinds
+		return kinds
 	}
 	declared := make([]string, len(creds))
 	oauth := map[string]bool{}
@@ -196,26 +184,19 @@ func (l *Launcher) resolveCredentials(req Request, creds []spec.CredentialCapabi
 	}
 	bindings := config.ContainerConfig{Credentials: current}.BoundCredentials(req.Org, req.GrantedServices, declared)
 	for service, binding := range bindings {
-		if binding.Secret == (config.SecretRef{}) {
+		switch {
+		case binding.Secret == (config.SecretRef{}):
 			// No secret: only OAuth gives the service a value.
-			if !oauth[service] {
-				continue
+			if oauth[service] {
+				kinds[service] = egress.CredentialOAuth
 			}
-			granted[service] = ""
-			kinds[service] = egress.CredentialOAuth
-			continue
+		case l.Secrets != nil:
+			if _, err := l.Secrets.Resolve(binding.Secret); err == nil {
+				kinds[service] = egress.CredentialAPIKey
+			}
 		}
-		if l.Secrets == nil {
-			continue
-		}
-		value, err := l.Secrets.Resolve(binding.Secret)
-		if err != nil {
-			continue
-		}
-		granted[service] = value
-		kinds[service] = egress.CredentialAPIKey
 	}
-	return granted, kinds
+	return kinds
 }
 
 // oauthFacts reads the stored scopes and expiry for each OAuth-bound
@@ -238,14 +219,10 @@ func (l *Launcher) oauthFacts(ctx context.Context, org string, creds []spec.Cred
 	return facts, nil
 }
 
-// release undoes what Launch already did for run: the egress grant, then the
-// session. Call sites past this point pass the network/container errors
+// release undoes what Launch already did for run: its proxy session. Call sites past this point pass the network/container errors
 // through their own cleanup; release only ever needs to run once per Launch
 // failure, so it takes no error to join.
 func (l *Launcher) release(run *Run) {
-	if l.Grants != nil {
-		l.Grants.RevokeGrant(run.execution)
-	}
 	l.Proxy.Revoke(run.token)
 }
 

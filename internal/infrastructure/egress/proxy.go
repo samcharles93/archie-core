@@ -2,11 +2,9 @@ package egress
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -36,7 +34,6 @@ var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 // it to runtime before the workload's entrypoint starts.
 type Session struct {
 	token      string
-	run        string
 	org        string
 	install    rules
 	runtime    rules
@@ -45,7 +42,8 @@ type Session struct {
 	atRun      atomic.Bool
 }
 
-// Token is the secret the container presents as its proxy password.
+// Token is the secret the container presents as its proxy password: its run
+// credential.
 func (s *Session) Token() string { return s.token }
 
 // EnterRuntime switches the session from install-phase to runtime-phase
@@ -77,7 +75,9 @@ type ProxyOptions struct {
 // under, the org whose OAuth token sets it uses, and its Kit's network
 // policy and credential requests.
 type SessionOptions struct {
-	Run     string
+	// Token is the run credential: the container's proxy password, and what
+	// the Resolver resolves the run from.
+	Token   string
 	Org     string
 	Network *spec.PhasedNetwork
 	// Credentials are what the Kit declares; Bound maps each service the run
@@ -118,12 +118,11 @@ func NewProxy(ca *CA, opts ProxyOptions) *Proxy {
 // Register opens a session for one container. A nil network policy allows
 // no egress in either phase.
 func (p *Proxy) Register(opts SessionOptions) (*Session, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, err
+	if opts.Token == "" {
+		return nil, errors.New("egress session needs the run credential")
 	}
 	s := &Session{
-		token: hex.EncodeToString(raw), run: opts.Run, org: opts.Org,
+		token: opts.Token, org: opts.Org,
 		injections: compileInjections(opts.Credentials, opts.Bound), oauth: compileOAuthRules(opts.Credentials, opts.Bound),
 	}
 	for _, rule := range s.oauth {

@@ -1,0 +1,67 @@
+package archied
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
+)
+
+type runsByToken map[string]*workflow.Task
+
+func (r runsByToken) TaskForCredential(_ context.Context, token string) (*workflow.Task, error) {
+	if task, ok := r[token]; ok {
+		return task, nil
+	}
+	return nil, errors.New("unknown")
+}
+
+type secretValues map[string]string
+
+func (s secretValues) Resolve(ref config.SecretRef) (string, error) { return s[ref.Key], nil }
+
+// TestEgressResolvesOnlyGrantedCredentials pins that the proxy hands a run
+// only a secret its identity is granted and bound for in its own org.
+func TestEgressResolvesOnlyGrantedCredentials(t *testing.T) {
+	own := []string{"anthropic"}
+	cfg := config.Config{
+		GrantedCredentials: []string{"github"},
+		Identities:         []config.IdentityConfig{{Name: "acme-bot", Org: "acme", GrantedCredentials: &own}},
+		Containers: config.ContainerConfig{Credentials: []config.CredentialBinding{
+			{Service: "github", Secret: config.SecretRef{Engine: "env", Key: "GH"}},
+			{Service: "anthropic", Secret: config.SecretRef{Engine: "env", Key: "ROOT_AI"}},
+			{Service: "anthropic", Org: "acme", Secret: config.SecretRef{Engine: "env", Key: "ACME_AI"}},
+		}},
+	}
+	r := runCredentialResolver{
+		runs:    runsByToken{"root-run": {ID: 1}, "acme-run": {ID: 2, Identity: "acme-bot"}},
+		config:  config.NewHolder(cfg),
+		secrets: secretValues{"GH": "gh-secret", "ROOT_AI": "root-ai", "ACME_AI": "acme-ai"},
+	}
+	tests := []struct {
+		name, credential, service, want string
+	}{
+		{"root run, granted", "root-run", "github", "gh-secret"},
+		{"root run, not granted", "root-run", "anthropic", ""},
+		{"identity run gets its own org's binding", "acme-run", "anthropic", "acme-ai"},
+		{"identity grants replace the root's", "acme-run", "github", ""},
+		{"unknown credential", "gone", "github", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := r.Resolve(context.Background(), tt.credential, tt.service)
+			if tt.want == "" {
+				if !errors.Is(err, egress.ErrUnbound) {
+					t.Fatalf("got %q, %v; want ErrUnbound", got, err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("got %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}

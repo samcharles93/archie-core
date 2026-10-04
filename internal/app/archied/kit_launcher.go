@@ -59,13 +59,13 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 		log.Warn("kit harness runs disabled: egress relay", "err", err)
 		return
 	}
-	// grants is the production Resolver: Launch/Release Grant/RevokeGrant it
-	// per run with exactly the declared-and-granted intersection
-	grants := egress.NewGrantResolver()
+	// The proxy resolves each credential from the run credential the
+	// container logs in with, against the live grants and bindings.
+	resolver := runCredentialResolver{runs: b.stateStoreGrants.Client, config: b.cfgHolder, secrets: b.secrets}
 	// Without a harness secret store, Register refuses a Kit with a
 	// required OAuth credential.
 	oauthStore, _ := b.stateStore.(egress.OAuthStore)
-	proxy := egress.NewProxy(ca, egress.ProxyOptions{Resolver: grants, OAuthStore: oauthStore})
+	proxy := egress.NewProxy(ca, egress.ProxyOptions{Resolver: resolver, OAuthStore: oauthStore})
 	srv := &http.Server{Handler: proxy, ReadHeaderTimeout: 30 * time.Second}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -80,7 +80,7 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 	b.kitLauncher = &kitrun.Launcher{
 		Pool: pool, Fetch: fetcher, Proxy: proxy, Networks: networks,
 		AgentBinary: agentBinary, CAFile: egress.CACertPath(caDir),
-		Config: b.cfgHolder, Secrets: b.secrets, Grants: grants, OAuth: oauthStore,
+		Config: b.cfgHolder, Secrets: b.secrets, OAuth: oauthStore,
 	}
 	log.Info("kit harness runs enabled", "proxy", ln.Addr().String())
 }

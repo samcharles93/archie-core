@@ -2041,12 +2041,7 @@ func configForIdentity(root config.Config, identity config.IdentityConfig) confi
 	if identity.DiffCapLines != nil {
 		root.DiffCapLines = identity.DiffCapLines
 	}
-	if identity.Org != "" {
-		root.Org = identity.Org
-	}
-	if identity.GrantedCredentials != nil {
-		root.GrantedCredentials = *identity.GrantedCredentials
-	}
+	root.Org, root.GrantedCredentials = root.CredentialAccess(identity.Name)
 	root.Forge = identity.Forge
 	root.Dispatch = identity.Dispatch
 	root.Models = identity.Models

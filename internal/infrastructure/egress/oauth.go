@@ -109,7 +109,7 @@ func (p *Proxy) granted(ctx context.Context, s *Session, rule oauthRule) (bool, 
 	case p.resolver == nil:
 		err = ErrUnbound
 	default:
-		_, err = p.resolver.Resolve(ctx, s.run, rule.service)
+		_, err = p.resolver.Resolve(ctx, s.token, rule.service)
 	}
 	switch {
 	case err == nil:

@@ -32,18 +32,18 @@ const (
 // stops the request.
 var ErrUnbound = errors.New("egress: credential not bound")
 
-// Resolver supplies a credential's real value for one run. An implementation
-// returns only secrets the run's credential carries, so what a Kit declares
-// is always narrowed by what the org granted the run's identity.
+// Resolver supplies a credential's real value for the run a run credential
+// names. An implementation returns only secrets the run's identity is
+// granted, so what a Kit declares is always narrowed by what the org granted.
 type Resolver interface {
-	Resolve(ctx context.Context, run, service string) (string, error)
+	Resolve(ctx context.Context, credential, service string) (string, error)
 }
 
 // ResolverFunc adapts a function to Resolver.
-type ResolverFunc func(ctx context.Context, run, service string) (string, error)
+type ResolverFunc func(ctx context.Context, credential, service string) (string, error)
 
-func (f ResolverFunc) Resolve(ctx context.Context, run, service string) (string, error) {
-	return f(ctx, run, service)
+func (f ResolverFunc) Resolve(ctx context.Context, credential, service string) (string, error) {
+	return f(ctx, credential, service)
 }
 
 // injection is one compiled credential@1 apiKey inject rule.
@@ -103,7 +103,7 @@ func (p *Proxy) inject(ctx context.Context, s *Session, r *http.Request, host st
 			}
 			continue
 		}
-		secret, err := p.resolver.Resolve(ctx, s.run, rule.service)
+		secret, err := p.resolver.Resolve(ctx, s.token, rule.service)
 		switch {
 		case errors.Is(err, ErrUnbound) && !rule.required:
 			continue
