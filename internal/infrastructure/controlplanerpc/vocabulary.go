@@ -12,17 +12,14 @@ import (
 // ChannelSettings is the channel-settings resource document, with
 // snake_case JSON keys.
 type ChannelSettings struct {
-	Operator               string                 `json:"operator"`
-	ShowToolCalls          bool                   `json:"show_tool_calls"`
-	MaxSteps               int                    `json:"max_steps"`
-	Models                 []string               `json:"models"`
-	Email                  EmailSettings          `json:"email"`
-	WebhookAddr            string                 `json:"webhook_addr"`
-	Webhook                WebhookChannelSettings `json:"webhook"`
-	Telegram               TelegramSettings       `json:"telegram"`
-	RateLimit              RateLimitSettings      `json:"rate_limit"`
-	UnrestrictedFilesystem bool                   `json:"unrestricted_filesystem"`
-	Workspace              string                 `json:"workspace"`
+	Operator               string            `json:"operator"`
+	ShowToolCalls          bool              `json:"show_tool_calls"`
+	MaxSteps               int               `json:"max_steps"`
+	Models                 []string          `json:"models"`
+	Telegram               TelegramSettings  `json:"telegram"`
+	RateLimit              RateLimitSettings `json:"rate_limit"`
+	UnrestrictedFilesystem bool              `json:"unrestricted_filesystem"`
+	Workspace              string            `json:"workspace"`
 }
 
 type TelegramSettings struct {
@@ -31,39 +28,9 @@ type TelegramSettings struct {
 	CredentialConfigured bool             `json:"credential_configured"`
 }
 
-type WebhookChannelSettings struct {
-	Path                 string           `json:"path"`
-	Secret               config.SecretRef `json:"secret_ref"`
-	CredentialConfigured bool             `json:"credential_configured"`
-	Template             string           `json:"template"`
-	DeliverTo            string           `json:"deliver_to"`
-}
-
-// EmailSettings is the email object. It reads the Go-cased keys an earlier
-// revision stored as well as its own, because json tags alone would not: the
-// decoder's case-insensitive fallback compares whole keys, so "ListenAddr"
-// never matches "listen_addr".
-type EmailSettings struct {
-	ListenAddr string `json:"listen_addr"`
-	RelayAddr  string `json:"relay_addr"`
-}
-
-func (e *EmailSettings) UnmarshalJSON(data []byte) error {
-	type document EmailSettings
-	var decoded document
-	err := DecodeRenamingLegacyKeys(data, map[string]string{
-		"ListenAddr": "listen_addr",
-		"RelayAddr":  "relay_addr",
-	}, &decoded)
-	if err != nil {
-		return err
-	}
-	*e = EmailSettings(decoded)
-	return nil
-}
-
 // RateLimitSettings is the inbound rate-limit object, and it reads the Go-cased
-// keys for the reason EmailSettings does.
+// keys: the decoder's case-insensitive fallback compares whole keys, so "MaxRequests"
+// never matches "max_requests".
 type RateLimitSettings struct {
 	Window      ChannelDuration `json:"window"`
 	MaxRequests int             `json:"max_requests"`

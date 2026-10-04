@@ -1,7 +1,5 @@
 package config
 
-import "strings"
-
 // ChatFrontEnd is one conversational front-end [chat] can enable. ID is its
 // stable identifier.
 type ChatFrontEnd struct {
@@ -18,16 +16,6 @@ func (c ChatConfig) FrontEnds() []ChatFrontEnd {
 			ID:         "telegram",
 			Name:       "Telegram",
 			Configured: c.Telegram.Token != (SecretRef{}),
-		},
-		{
-			ID:         "email",
-			Name:       "Email",
-			Configured: strings.TrimSpace(c.Email.ListenAddr) != "",
-		},
-		{
-			ID:         "webhook",
-			Name:       "Webhook gateway",
-			Configured: strings.TrimSpace(c.WebhookAddr) != "",
 		},
 	}
 }

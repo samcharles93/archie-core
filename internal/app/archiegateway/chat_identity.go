@@ -11,8 +11,7 @@ import (
 // user id, an SMTP from address). The dashboard ("web") has one bearer token,
 // not users, and a webhook carries no per-caller identity at all: its route path
 // is a source, not a person, and never enters SenderID
-// (internal/channels/webhook/webhook.go -- it travels in the transport-only
-// Inbound.BudgetKey instead). Treating a URL or a shared token as an identity
+// (it travels in the transport-only Inbound.BudgetKey instead). Treating a URL or a shared token as an identity
 // would give it the same standing as a real user, which the read path's
 // isolation guarantee depends on never happening.
 //

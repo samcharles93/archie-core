@@ -2,7 +2,7 @@
 import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { storeToRefs } from "pinia";
-import { Globe, Mail, Send } from "@lucide/vue";
+import { Send } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,6 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "@/components/ui/number-field";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingRow } from "@/components/ui/setting-row";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
@@ -42,9 +41,6 @@ interface ChannelSettings {
   show_tool_calls: boolean;
   max_steps: number;
   models: string[] | null;
-  email: { listen_addr: string; relay_addr: string };
-  webhook_addr: string;
-  webhook: { path: string; secret_ref: SecretRef; credential_configured: boolean; template: string; deliver_to: string };
   telegram: { allowed_user_ids: number[] | null; token_ref: SecretRef; credential_configured: boolean };
   rate_limit: { window: string; max_requests: number };
   unrestricted_filesystem: boolean;
@@ -90,16 +86,12 @@ function statusOf(id: string) {
 // daemon applies when it decides what to start.
 const configured = computed(() => ({
   telegram: !!chat.value?.telegram.token_ref.key,
-  email: !!chat.value?.email.listen_addr,
-  webhook: !!chat.value?.webhook_addr,
 }));
-const opened = reactive({ telegram: false, email: false, webhook: false });
+const opened = reactive({ telegram: false });
 const shown = (id: keyof typeof opened) => configured.value[id] || opened[id];
 
 const channels = [
   { id: "telegram", title: "Telegram", icon: Send },
-  { id: "email", title: "Email", icon: Mail },
-  { id: "webhook", title: "Webhook", icon: Globe },
 ] as const;
 
 const allowedUsers = computed({
@@ -115,10 +107,6 @@ const models = computed({
     if (chat.value) chat.value.models = list;
   },
 });
-const replyModes = [
-  { value: "", label: "No reply" },
-  { value: "origin", label: "HTTP response" },
-];
 </script>
 
 <template>
@@ -172,40 +160,6 @@ const replyModes = [
                 </TagsInputItem>
                 <TagsInputInput placeholder="Add user ID" />
               </TagsInput>
-            </SettingRow>
-          </template>
-
-          <template v-else-if="channel.id === 'email'">
-            <SettingRow label="Listen address" for="em-listen" hint="Empty disables email.">
-              <Input id="em-listen" v-model="chat.email.listen_addr" class="max-w-sm font-mono" placeholder=":2525" />
-            </SettingRow>
-            <SettingRow label="Relay address" for="em-relay">
-              <Input id="em-relay" v-model="chat.email.relay_addr" class="max-w-sm font-mono" />
-            </SettingRow>
-          </template>
-
-          <template v-else>
-            <SettingRow label="Listen address" for="wh-addr" hint="Empty disables the webhook.">
-              <Input id="wh-addr" v-model="chat.webhook_addr" class="max-w-sm font-mono" placeholder=":8686" />
-            </SettingRow>
-            <SettingRow label="Path" for="wh-path">
-              <Input id="wh-path" v-model="chat.webhook.path" class="max-w-sm font-mono" placeholder="/webhook" />
-            </SettingRow>
-            <SettingRow label="Message field" for="wh-template" hint="Dot path. Empty: whole body.">
-              <Input id="wh-template" v-model="chat.webhook.template" class="max-w-sm font-mono" placeholder="issue.title" />
-            </SettingRow>
-            <SettingRow label="Replies">
-              <SegmentedControl v-model="chat.webhook.deliver_to" label="Replies" :options="replyModes" />
-            </SettingRow>
-            <SettingRow
-              label="Signing secret"
-              hint="Unset accepts unsigned requests."
-              :tone="chat.webhook.secret_ref.key ? 'default' : 'danger'"
-            >
-              <SecretRefField
-                v-model="chat.webhook.secret_ref"
-                id-prefix="wh-secret"
-              />
             </SettingRow>
           </template>
         </div>

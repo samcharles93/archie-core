@@ -60,7 +60,7 @@ func Run(ctx context.Context, o Options) error {
 		extensions := extension.Source{Query: controlPlaneClient, Packages: stateStore}
 		defer superviseSecretEngines(ctx, extensions, secrets, reporter, log)()
 		chatSettings, channelVersion, settingsErr := controlPlaneClient.RuntimeChatConfig(ctx, config.ChatConfig{
-			Telegram: cfg.Telegram, Email: cfg.Email, Webhook: cfg.Webhook, WebhookAddr: cfg.WebhookAddr, ShowToolCalls: cfg.ShowToolCalls,
+			Telegram: cfg.Telegram, ShowToolCalls: cfg.ShowToolCalls,
 		})
 		if settingsErr != nil {
 			return fmt.Errorf("load channel settings: %w", settingsErr)
@@ -68,14 +68,10 @@ func Run(ctx context.Context, o Options) error {
 		reporter.Report(ctx, controlplanerpc.ChannelSettingsKind, channelVersion, nil)
 		go reporter.Run(ctx)
 		go presence.Run(ctx, presence.Messaging, servicekit.Build(), stateStore, health, log)
-		cfg.Telegram, cfg.Email, cfg.Webhook, cfg.WebhookAddr, cfg.ShowToolCalls = chatSettings.Telegram, chatSettings.Email, chatSettings.Webhook, chatSettings.WebhookAddr, chatSettings.ShowToolCalls
+		cfg.Telegram, cfg.ShowToolCalls = chatSettings.Telegram, chatSettings.ShowToolCalls
 		cfg.TelegramToken, settingsErr = resolveTelegramToken(chatSettings.Telegram, secrets)
 		if settingsErr != nil {
 			return fmt.Errorf("resolve database telegram token: %w", settingsErr)
-		}
-		cfg.WebhookSecret, settingsErr = resolveWebhookSecret(chatSettings.Webhook, secrets)
-		if settingsErr != nil {
-			return fmt.Errorf("resolve database webhook secret: %w", settingsErr)
 		}
 		extensionChannels = openExtensionChannels(ctx, extensions, secrets, log)
 		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
@@ -84,7 +80,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 
 	if cfg.Options.StateStore.Target == "" {
-		if err := cfg.resolveTokens(secrets, log); err != nil {
+		if err := cfg.resolveTokens(secrets); err != nil {
 			return err
 		}
 	}

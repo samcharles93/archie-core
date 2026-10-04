@@ -934,14 +934,7 @@ type ChatConfig struct {
 	// Models is the optional interactive-chat model catalog. When empty,
 	// chat falls back to the distinct model references assigned to workflow
 	// roles in the top-level [models] table.
-	Models []string `toml:"models" yaml:"models"`
-	// Email configures the inbound email gateway via SMTP.
-	Email EmailConfig `toml:"email" yaml:"email"`
-	// WebhookAddr is the host:port for the inbound webhook gateway.
-	// Empty disables the webhook gateway.
-	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
-	// Webhook configures the inbound webhook route.
-	Webhook  WebhookRoute   `toml:"webhook" yaml:"webhook"`
+	Models   []string       `toml:"models" yaml:"models"`
 	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
 	// RateLimit budgets inbound messages per channel and sender. Off unless set.
 	// Seeds the channel-settings resource.
@@ -980,35 +973,6 @@ type TelegramConfig struct {
 	// are argv arrays, never shell snippets.
 	UpdateCheckCommand   []string `toml:"update_check_command" yaml:"update_check_command"`
 	UpdateInstallCommand []string `toml:"update_install_command" yaml:"update_install_command"`
-}
-
-// EmailConfig configures the inbound email channel via SMTP.
-type EmailConfig struct {
-	// ListenAddr is the host:port for the inbound SMTP server.
-	// Empty disables the email channel.
-	ListenAddr string `toml:"listen_addr" yaml:"listen_addr"`
-	// RelayAddr is the SMTP relay for outbound replies.
-	RelayAddr string `toml:"relay_addr" yaml:"relay_addr"`
-}
-
-// WebhookRoute configures the inbound webhook gateway's single route.
-// Every field is optional: an absent [chat.webhook] section runs the
-// gateway exactly as before this existed -- default path, no signature
-// validation, raw body as message text, no reply.
-type WebhookRoute struct {
-	// Path is the URL path the gateway listens on. Empty means "/webhook".
-	Path string `toml:"path" yaml:"path"`
-	// Secret is the HMAC-SHA256 secret validating inbound payloads. Empty
-	// (the zero SecretRef) disables signature validation, so any unsigned
-	// POST is accepted -- set this to make the gateway actually verify
-	// what it claims to.
-	Secret SecretRef `toml:"secret" yaml:"secret"`
-	// Template extracts the message text from the JSON payload via
-	// dot-notation (e.g. "issue.title"). Empty uses the raw body.
-	Template string `toml:"template" yaml:"template"`
-	// DeliverTo routes replies: "origin" sends the reply back as the HTTP
-	// response; empty sends no reply.
-	DeliverTo string `toml:"deliver_to" yaml:"deliver_to"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).

@@ -173,32 +173,9 @@ class = "ollama"
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
 
-# Inbound email as a chat channel, via SMTP. Empty listen_addr disables it.
-# [chat.email]
-# listen_addr = "0.0.0.0:2525"          # inbound SMTP server
-# relay_addr  = "smtp.example.com:587"  # outbound relay for replies
-
-# Generic inbound webhook gateway: external services push messages into
-# chat for LLM processing. This is a distinct surface from
-# [forge].webhook_addr (forge issue events) and [capture] (unbound event
-# storage for later binding) -- three different inbound HTTP concerns that
-# happen to share the word "webhook".
-# webhook_addr = "0.0.0.0:8646"   # under [chat], not [chat.telegram]
-#
-# [chat.webhook] configures the single route the gateway serves. Every
-# field is optional; an absent section runs with the pre-existing
-# behaviour: path "/webhook", no signature validation, raw body as message
-# text, no reply.
-# [chat.webhook]
-# path = "/webhook"
-# secret = { engine = "bws", key = "CHAT_WEBHOOK_SECRET" }  # verifies
-#   # X-Hub-Signature-256 on inbound payloads. Empty (the default) accepts
-#   # any unsigned POST -- set this to make the gateway actually verify
-#   # what it claims to.
-# template = "issue.title"  # dot-notation extraction of the message text
-#   # from the JSON payload. Empty uses the raw body.
-# deliver_to = "origin"     # "origin" writes the reply as the HTTP
-#   # response; empty (the default) sends no reply.
+# Email and the generic inbound webhook are archipelago channel extensions
+# (channels/email, channels/webhook): install, accept and enable them from the
+# Extensions page, with their settings there.
 
 # Per-(channel, sender) inbound rate limiting, shared by every chat channel:
 # Telegram keys by numeric user ID, email by SMTP from address, webhook by

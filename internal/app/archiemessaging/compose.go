@@ -4,18 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"slices"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
-	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
-	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/health"
@@ -158,20 +154,6 @@ func composeChannels(ctx context.Context, d deps) ([]*channelInstance, error) {
 		}
 		instances = append(instances, instance)
 	}
-	if d.Config.Email.ListenAddr != "" {
-		instance, err := composeEmail(d)
-		if err != nil {
-			return nil, err
-		}
-		instances = append(instances, instance)
-	}
-	if d.Config.WebhookAddr != "" {
-		instance, err := composeWebhook(d)
-		if err != nil {
-			return nil, err
-		}
-		instances = append(instances, instance)
-	}
 	for _, instance := range d.ExtensionChannels {
 		if slices.ContainsFunc(instances, func(have *channelInstance) bool { return have.name == instance.name }) {
 			d.Log.Warn("channel extension skipped: a built-in channel has the same name", "channel", instance.name)
@@ -206,46 +188,6 @@ func composeTelegram(ctx context.Context, d deps) (*channelInstance, error) {
 	return &channelInstance{name: "telegram", channel: ch, rebuild: build}, nil
 }
 
-func composeEmail(d deps) (*channelInstance, error) {
-	build := func(cfg ResolvedConfig) (channels.Channel, error) {
-		if cfg.Email.ListenAddr == "" {
-			return nil, nil
-		}
-		em := email.New(cfg.Email.ListenAddr, cfg.Email.RelayAddr, d.Log)
-		if err := em.ValidateConfig(map[string]any{
-			"listen_addr": cfg.Email.ListenAddr,
-			"relay_addr":  cfg.Email.RelayAddr,
-		}); err != nil {
-			return nil, fmt.Errorf("chat.email config invalid: %w", err)
-		}
-		return em, nil
-	}
-	ch, err := build(d.Config)
-	if err != nil {
-		return nil, err
-	}
-	return &channelInstance{name: "email", channel: ch, rebuild: build}, nil
-}
-
-func composeWebhook(d deps) (*channelInstance, error) {
-	build := func(cfg ResolvedConfig) (channels.Channel, error) {
-		if cfg.WebhookAddr == "" {
-			return nil, nil
-		}
-		host, port := parseListenAddr(cfg.WebhookAddr, "0.0.0.0", 8644)
-		wh := webhook.New(host, port, webhookRoutes(cfg.Webhook, cfg.WebhookSecret), d.Log)
-		if err := wh.ValidateConfig(map[string]any{"host": host, "port": port}); err != nil {
-			return nil, fmt.Errorf("chat.webhook config invalid: %w", err)
-		}
-		return wh, nil
-	}
-	ch, err := build(d.Config)
-	if err != nil {
-		return nil, err
-	}
-	return &channelInstance{name: "webhook", channel: ch, rebuild: build}, nil
-}
-
 // telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
 // from the typed config.
 func telegramValidateConfigMap(cfg config.TelegramConfig) map[string]any {
@@ -254,34 +196,6 @@ func telegramValidateConfigMap(cfg config.TelegramConfig) map[string]any {
 		m["token"] = map[string]any{"engine": cfg.Token.Engine, "key": cfg.Token.Key}
 	}
 	return m
-}
-
-func webhookRoutes(route config.WebhookRoute, secretValue string) []webhook.RouteConfig {
-	path := route.Path
-	if path == "" {
-		path = "/webhook"
-	}
-	return []webhook.RouteConfig{{
-		Path:      path,
-		Secret:    secretValue,
-		Template:  route.Template,
-		DeliverTo: route.DeliverTo,
-	}}
-}
-
-func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
-	if addr == "" {
-		return defaultHost, defaultPort
-	}
-	host, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		return defaultHost, defaultPort
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return defaultHost, defaultPort
-	}
-	return host, port
 }
 
 // Start launches the configured messaging channels.

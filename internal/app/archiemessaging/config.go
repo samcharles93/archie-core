@@ -17,10 +17,6 @@ type ResolvedConfig struct {
 	Options       Options
 	TelegramToken string
 	Telegram      config.TelegramConfig
-	Email         config.EmailConfig
-	Webhook       config.WebhookRoute
-	WebhookSecret string
-	WebhookAddr   string
 	// WorkDir, BotUser and HealthURL are not channel transport settings. They
 	// locate this identity's release-announcement and update-report state
 	// files, and give the update installer the daemon health endpoint to poll
@@ -35,9 +31,6 @@ type projection struct {
 	gateway       ServiceTarget
 	stateStore    ServiceTarget
 	telegram      config.TelegramConfig
-	email         config.EmailConfig
-	webhook       config.WebhookRoute
-	webhookAddr   string
 	workDir       string
 	botUser       string
 	healthURL     string
@@ -69,9 +62,6 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 	return ResolvedConfig{
 		Options:       o,
 		Telegram:      proj.telegram,
-		Email:         proj.email,
-		Webhook:       proj.webhook,
-		WebhookAddr:   proj.webhookAddr,
 		WorkDir:       proj.workDir,
 		BotUser:       proj.botUser,
 		HealthURL:     proj.healthURL,
@@ -98,9 +88,6 @@ func project(cfg config.Config) projection {
 		},
 		stateStore:    ServiceTarget{Target: cfg.Services.Get(config.ServiceNameState).Target, Token: cfg.Services.Get(config.ServiceNameState).TargetToken},
 		telegram:      cfg.Chat.Telegram,
-		email:         cfg.Chat.Email,
-		webhook:       cfg.Chat.Webhook,
-		webhookAddr:   cfg.Chat.WebhookAddr,
 		workDir:       cfg.WorkDir,
 		botUser:       cfg.BotUser,
 		healthURL:     cfg.Health.URL(),
@@ -143,27 +130,12 @@ func resolveTelegramToken(cfg config.TelegramConfig, secrets *secret.Registry) (
 	return secrets.Resolve(cfg.Token)
 }
 
-func resolveWebhookSecret(route config.WebhookRoute, secrets *secret.Registry) (string, error) {
-	if route.Secret != (secret.SecretRef{}) {
-		return secrets.Resolve(route.Secret)
-	}
-	return "", nil
-}
-
-// resolveTokens fills the channel credentials from the file configuration. An
-// unresolvable webhook secret is not fatal: the route still serves, with
-// signature validation off, which is what it did before a secret was ever
-// configurable. It is logged so the degradation is visible.
-func (c *ResolvedConfig) resolveTokens(secrets *secret.Registry, log *slog.Logger) error {
+// resolveTokens fills the channel credentials from the file configuration.
+func (c *ResolvedConfig) resolveTokens(secrets *secret.Registry) error {
 	token, err := resolveTelegramToken(c.Telegram, secrets)
 	if err != nil {
 		return fmt.Errorf("resolve telegram token: %w", err)
 	}
 	c.TelegramToken = token
-	c.WebhookSecret, err = resolveWebhookSecret(c.Webhook, secrets)
-	if err != nil {
-		log.Error("webhook secret unresolvable; starting with signature validation disabled",
-			"engine", c.Webhook.Secret.Engine, "key", c.Webhook.Secret.Key, "err", err)
-	}
 	return nil
 }

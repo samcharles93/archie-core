@@ -120,7 +120,7 @@ func telegramReloader(o Options, secrets *secret.Registry, log *slog.Logger) fun
 		if err != nil {
 			return fmt.Errorf("reload config: %w", err)
 		}
-		if err := reloaded.resolveTokens(secrets, log); err != nil {
+		if err := reloaded.resolveTokens(secrets); err != nil {
 			return fmt.Errorf("reload config: %w", err)
 		}
 		if reloaded.TelegramToken == "" {

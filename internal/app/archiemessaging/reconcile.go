@@ -45,8 +45,7 @@ func (s *Service) reconcileOnce(ctx context.Context) error {
 		return err
 	}
 	layered, version, err := s.settingsSource.RuntimeChatConfig(ctx, config.ChatConfig{
-		Telegram: base.Telegram, Email: base.Email, Webhook: base.Webhook,
-		WebhookAddr: base.WebhookAddr, ShowToolCalls: base.ShowToolCalls,
+		Telegram: base.Telegram, ShowToolCalls: base.ShowToolCalls,
 	})
 	if err != nil {
 		return err
@@ -76,19 +75,13 @@ func (s *Service) reconcileOnce(ctx context.Context) error {
 // (the startup rule, config.go resolveTelegramToken).
 func resolveChatSecrets(base ResolvedConfig, layered config.ChatConfig, secrets *secret.Registry) (ResolvedConfig, error) {
 	next := base
-	next.Telegram, next.Email, next.Webhook = layered.Telegram, layered.Email, layered.Webhook
-	next.WebhookAddr, next.ShowToolCalls = layered.WebhookAddr, layered.ShowToolCalls
+	next.Telegram, next.ShowToolCalls = layered.Telegram, layered.ShowToolCalls
 
 	token, err := resolveTelegramToken(layered.Telegram, secrets)
 	if err != nil {
 		return next, fmt.Errorf("resolve database telegram token: %w", err)
 	}
 	next.TelegramToken = token
-	webhookSecret, err := resolveWebhookSecret(layered.Webhook, secrets)
-	if err != nil {
-		return next, fmt.Errorf("resolve database webhook secret: %w", err)
-	}
-	next.WebhookSecret = webhookSecret
 	return next, nil
 }
 
@@ -134,7 +127,7 @@ func (s *Service) applyShowToolCalls(show bool) {
 }
 
 // pinProcessBindings holds the values a running process cannot change in place:
-// the listen addresses it already bound, and the set of channels it composed.
+// the set of channels it composed.
 // The returned configuration keeps the running value for each, and the returned
 // problems name what the operator changed and when it takes effect.
 func pinProcessBindings(current, next ResolvedConfig) (ResolvedConfig, []string) {
@@ -144,23 +137,6 @@ func pinProcessBindings(current, next ResolvedConfig) (ResolvedConfig, []string)
 	if (current.TelegramToken != "") != (next.TelegramToken != "") {
 		problems = append(problems, "chat.telegram enabled/disabled; takes effect on restart")
 		effective.Telegram, effective.TelegramToken = current.Telegram, current.TelegramToken
-	}
-	if (current.Email.ListenAddr != "") != (next.Email.ListenAddr != "") {
-		problems = append(problems, "chat.email enabled/disabled; takes effect on restart")
-		effective.Email = current.Email
-	}
-	if (current.WebhookAddr != "") != (next.WebhookAddr != "") {
-		problems = append(problems, "chat.webhook enabled/disabled; takes effect on restart")
-		effective.Webhook, effective.WebhookAddr, effective.WebhookSecret = current.Webhook, current.WebhookAddr, current.WebhookSecret
-	}
-
-	if current.Email.ListenAddr != "" && next.Email.ListenAddr != current.Email.ListenAddr {
-		problems = append(problems, "chat.email.listen_addr changed; takes effect on restart")
-		effective.Email.ListenAddr = current.Email.ListenAddr
-	}
-	if current.WebhookAddr != "" && next.WebhookAddr != current.WebhookAddr {
-		problems = append(problems, "chat.webhook_addr changed; takes effect on restart")
-		effective.WebhookAddr = current.WebhookAddr
 	}
 	return effective, problems
 }
@@ -174,12 +150,6 @@ func channelChanges(current, next ResolvedConfig) []string {
 	if current.TelegramToken != "" &&
 		(current.TelegramToken != next.TelegramToken || !slices.Equal(current.Telegram.AllowedUserIDs, next.Telegram.AllowedUserIDs)) {
 		changed = append(changed, "telegram")
-	}
-	if current.Email.ListenAddr != "" && current.Email.RelayAddr != next.Email.RelayAddr {
-		changed = append(changed, "email")
-	}
-	if current.WebhookAddr != "" && (current.Webhook != next.Webhook || current.WebhookSecret != next.WebhookSecret) {
-		changed = append(changed, "webhook")
 	}
 	return changed
 }
