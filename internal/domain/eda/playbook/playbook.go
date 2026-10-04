@@ -46,7 +46,7 @@ type Store struct {
 
 // Playbook is one trigger+actions document.
 type Playbook struct {
-	// ID is the playbook's path relative to the directory root.
+	// ID is the playbook's stable name.
 	ID string
 	// Version is a content hash of the loaded file, recomputed on every
 	// load. It pins dispatched-run provenance to the exact definition active
@@ -198,6 +198,12 @@ func validateModuleActionIDs(path string, actions []rawAction) error {
 	return nil
 }
 
+// Document is one playbook's source text under its stable id.
+type Document struct {
+	ID   string
+	YAML []byte
+}
+
 // Load reads and compiles every playbook in dir. Any invalid playbook fails
 // the load. A missing directory is an empty store.
 func Load(dir string, modules Modules) (*Store, error) {
@@ -209,21 +215,30 @@ func Load(dir string, modules Modules) (*Store, error) {
 		return nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
 	}
 
-	var names []string
+	var docs []Document
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		if ext := strings.ToLower(filepath.Ext(e.Name())); ext == ".yaml" || ext == ".yml" {
-			names = append(names, e.Name())
+		if ext := strings.ToLower(filepath.Ext(e.Name())); ext != ".yaml" && ext != ".yml" {
+			continue
 		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("read playbook %s: %w", e.Name(), err)
+		}
+		docs = append(docs, Document{ID: e.Name(), YAML: data})
 	}
-	sort.Strings(names)
+	return Compile(docs, modules)
+}
 
+// Compile validates and compiles playbook documents in id order. Any invalid
+// playbook fails the whole set: a partially valid set never runs.
+func Compile(docs []Document, modules Modules) (*Store, error) {
+	sort.Slice(docs, func(i, j int) bool { return docs[i].ID < docs[j].ID })
 	store := &Store{modules: modules}
-	for _, name := range names {
-		path := filepath.Join(dir, name)
-		pb, err := loadOne(dir, path, modules)
+	for _, doc := range docs {
+		pb, err := compileOne(doc, modules)
 		if err != nil {
 			return nil, err
 		}
@@ -232,27 +247,17 @@ func Load(dir string, modules Modules) (*Store, error) {
 	return store, nil
 }
 
-// loadOne loads and validates a single playbook file, deriving its stable ID
-// (path relative to the configured root) and a content-hash Version.
-func loadOne(dir, path string, schemas KindSchemas) (*Playbook, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read playbook %s: %w", path, err)
-	}
-
-	id := path
-	if rel, relErr := filepath.Rel(dir, path); relErr == nil {
-		id = rel
-	}
-
+// compileOne validates a single playbook, deriving its content-hash Version.
+func compileOne(doc Document, schemas KindSchemas) (*Playbook, error) {
+	path := doc.ID
 	var raw rawPlaybook
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	if err := yaml.Unmarshal(doc.YAML, &raw); err != nil {
 		return nil, fmt.Errorf("parse playbook %s: %w", path, err)
 	}
 
 	pb := &Playbook{
-		ID:      filepath.ToSlash(id),
-		Version: fmt.Sprintf("%x", sha256.Sum256(data)),
+		ID:      path,
+		Version: fmt.Sprintf("%x", sha256.Sum256(doc.YAML)),
 		Trigger: Trigger{
 			Kind:   workintake.Kind(strings.TrimSpace(raw.Trigger.Kind)),
 			Labels: raw.Trigger.Labels,

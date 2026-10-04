@@ -36,6 +36,8 @@ type Contributions struct {
 	Skills     []string `yaml:"skills"`
 	MCPServers []string `yaml:"mcpServers"`
 	Defaults   []string `yaml:"defaults"`
+	Playbooks  []string `yaml:"playbooks"`
+	Profiles   []string `yaml:"profiles"`
 	// Extensions are executable plugins the host launches as processes. They
 	// are the only package files allowed to carry an executable mode.
 	Extensions []Extension `yaml:"extensions"`
@@ -171,7 +173,8 @@ func (d Descriptor) validateExtensions() (map[string]bool, error) {
 
 func (d Descriptor) hasContribution() bool {
 	return len(d.Contributes.Workflows)+len(d.Contributes.Prompts)+len(d.Contributes.Skills)+
-		len(d.Contributes.MCPServers)+len(d.Contributes.Defaults)+len(d.Contributes.Extensions) > 0
+		len(d.Contributes.MCPServers)+len(d.Contributes.Defaults)+len(d.Contributes.Playbooks)+
+		len(d.Contributes.Profiles)+len(d.Contributes.Extensions) > 0
 }
 
 func validForgePermission(permission string) bool {

@@ -1,6 +1,6 @@
 # An agent profile image: the archie-agent image plus network lookup tools,
 # for a workflow that investigates addresses rather than code. Select it with
-# [containers.profiles.network-investigator] image = "archie-agent-net:local".
+# the network-investigator profile package (archipelago: profiles/network-investigator).
 #
 # Build: docker compose build agent-net
 ARG AGENT_IMAGE=ghcr.io/samcharles93/archie-agent:latest

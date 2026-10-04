@@ -37,8 +37,8 @@ func Lint(dirs []string, stderr io.Writer) Result {
 	return Result{ExitCode: 0, Findings: nil}
 }
 
-// LintEDA validates an EDA playbook directory (the daemon's eda_playbook_dir)
-// with playbook.Load, the loader the daemon runs at startup.
+// LintEDA validates a directory of EDA playbook documents with the compiler
+// the eda-playbooks resource validates against.
 func LintEDA(dir string, stderr io.Writer) Result {
 	if _, err := playbook.Load(dir, module.New()); err != nil {
 		fmt.Fprintln(stderr, err)

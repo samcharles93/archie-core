@@ -33,8 +33,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
-	"github.com/samcharles93/archie-core/internal/domain/eda/module"
-	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
@@ -87,10 +85,6 @@ type boot struct {
 	secrets     *secret.Registry
 	forgeClient forge.Forge
 	token       string
-
-	modules *module.ModuleRegistry
-
-	playbooks *playbook.Store
 
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
@@ -479,10 +473,6 @@ func (b *boot) loadWorkflows() error {
 	if err := b.loadWorkflowRouting(cfg, log); err != nil {
 		return err
 	}
-	b.modules = module.New()
-	if err := b.loadEDAPlaybooks(cfg, log); err != nil {
-		return err
-	}
 
 	log.Info("workflow step registry built", "shipped_workflows", len(workflow.ShippedDefinitions().Definitions))
 	return nil
@@ -521,24 +511,6 @@ func (b *boot) loadWorkflowRouting(cfg config.Config, log *slog.Logger) error {
 	workflow.SetLabelWorkflows(labelWorkflows)
 	b.kindWorkflows = kindWorkflows
 	b.labelWorkflows = labelWorkflows
-	return nil
-}
-
-// loadEDAPlaybooks loads the EDA playbook documents: trigger + workflow-kind
-// actions and module-kind action playbooks with CEL when conditions and args
-// values. Loaded at startup with the same reject-at-load rule -- any malformed
-// playbook, mixed/unsupported action shape, unknown module kind, when compile
-// failure, or args key failure aborts startup, matching the routing-file load
-// pattern (not degrade-and-skip). A nonexistent dir is an empty store. Action
-// playbooks run through the daemon once buildDaemon wires the dispatch ledger.
-func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
-	var err error
-	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir, b.modules)
-	if err != nil {
-		log.Error("eda playbook load failed", "dir", cfg.EDAPlaybookDir, "err", err)
-		return err
-	}
-	log.Info("eda playbooks loaded", "dir", cfg.EDAPlaybookDir, "playbooks", len(b.playbooks.Playbooks))
 	return nil
 }
 
@@ -644,7 +616,7 @@ func (b *boot) buildDaemon() {
 		LabelWorkflows:      b.labelWorkflows,
 		WorkflowDefinitions: b.workflowDefinitions,
 		WorkflowEnablement:  b.controlPlane,
-		Playbooks:           b.playbooks,
+		Playbooks:           controlplane.NewLivePlaybooks(b.controlPlaneRPC, b.log),
 	}
 
 	if identities, ok := b.stateStore.(identity.Repository); ok {
@@ -680,19 +652,15 @@ func (b *boot) buildDaemon() {
 			b.d.Denials = denials
 		}
 	}
-	b.d.PlaybookLedger = playbookLedger(b.stateStore, b.playbooks, b.log)
+	b.d.PlaybookLedger = playbookLedger(b.stateStore, b.log)
 	b.setupForgeWebhook()
 }
 
-func playbookLedger(source any, playbooks *playbook.Store, log *slog.Logger) storecontract.PlaybookDispatcher {
+func playbookLedger(source any, log *slog.Logger) storecontract.PlaybookDispatcher {
 	if pd, ok := source.(storecontract.PlaybookDispatcher); ok {
 		return pd
 	}
-	for _, pb := range playbooks.Playbooks {
-		if pb.IsActionPlaybook() {
-			log.Warn("eda action playbook will not run: no dispatch ledger is wired", "playbook", pb.ID)
-		}
-	}
+	log.Warn("eda action playbooks will not run: no dispatch ledger is wired")
 	return nil
 }
 

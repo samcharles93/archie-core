@@ -370,9 +370,6 @@ type Config struct {
 	// PlaybookDirs are optional directories of kind/label-to-workflow binding
 	// files. A key bound in more than one file is a load error.
 	PlaybookDirs []string `toml:"playbook_dirs" yaml:"playbook_dirs"`
-	// EDAPlaybookDir is an optional directory of EDA playbook documents: a
-	// trigger plus ordered actions with CEL conditions.
-	EDAPlaybookDir string `toml:"eda_playbook_dir" yaml:"eda_playbook_dir"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`

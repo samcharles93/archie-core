@@ -44,7 +44,7 @@ func runLint(args []string, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	var dirs multiFlag
 	flags.Var(&dirs, "dir", "routing binding directory to lint (repeatable)")
-	edaDir := flags.String("eda-dir", "", "EDA playbook directory to lint (the daemon's eda_playbook_dir)")
+	edaDir := flags.String("eda-dir", "", "EDA playbook directory to lint")
 	if err := flags.Parse(args); err != nil {
 		return 2 // flag.ContinueOnError already printed the message
 	}

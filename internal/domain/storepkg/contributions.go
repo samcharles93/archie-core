@@ -13,11 +13,13 @@ const (
 	FamilySkills    = "skills"
 	FamilyMCPServer = "mcpServers"
 	FamilyDefaults  = "defaults"
+	FamilyPlaybooks = "playbooks"
+	FamilyProfiles  = "profiles"
 )
 
 // families is the family order projection follows, for a deterministic
 // install and withdrawal.
-var families = []string{FamilyWorkflows, FamilyPrompts, FamilySkills, FamilyMCPServer, FamilyDefaults}
+var families = []string{FamilyWorkflows, FamilyPrompts, FamilySkills, FamilyMCPServer, FamilyDefaults, FamilyPlaybooks, FamilyProfiles}
 
 // familyNames returns the names one descriptor family contributes.
 func (c Contributions) familyNames(family string) []string {
@@ -32,6 +34,10 @@ func (c Contributions) familyNames(family string) []string {
 		return c.MCPServers
 	case FamilyDefaults:
 		return c.Defaults
+	case FamilyPlaybooks:
+		return c.Playbooks
+	case FamilyProfiles:
+		return c.Profiles
 	default:
 		return nil
 	}
