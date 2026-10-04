@@ -1,0 +1,25 @@
+id: remediate
+steps:
+  - type: review.start-round
+  - type: repo.prepare
+    settings:
+      branch: task
+  - id: build
+    type: agent.run
+    settings:
+      gate: repository
+      mission: |
+        Address the review comments below on pull request #{{ task.pr }} for {{ task.repository }} with the smallest change that satisfies them, then run the gate.
+
+        {{ task.review }}
+
+        Do not run git: the orchestrator commits and pushes for you. When done, call finish with status "passed" and a summary written for the human who will read your reply: what changed and why. If nothing here actually requires a code change, call finish with status "passed" and say so in the summary.
+  - type: repo.commit
+    settings:
+      message: "fix: address review feedback (archie)"
+      reference: Refs
+      push: true
+      if_empty: skip
+  - type: review.reply
+    settings:
+      body: "{{ steps.build.summary }}"

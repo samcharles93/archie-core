@@ -4,26 +4,16 @@ package workflowsteps
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
-// shippedStages provides every stage of the shipped workflows as a step
-// type.
-type shippedStages struct{}
+// reviewSteps provides the pull request review and remediation step types.
+type reviewSteps struct{}
 
-func (shippedStages) Name() string { return "shipped" }
+func (reviewSteps) Name() string { return "review" }
 
-func (shippedStages) StepTypes() []workflow.StepType {
-	registry := workflow.BuiltinStepRegistry()
-	stepTypes := make([]workflow.StepType, 0, len(registry))
-	for _, name := range slices.Sorted(maps.Keys(registry)) {
-		stepTypes = append(stepTypes, workflow.StepType{Name: name, Factory: registry[name]})
-	}
-	return stepTypes
-}
+func (reviewSteps) StepTypes() []workflow.StepType { return workflow.ReviewStepTypes() }
 
 // repoHooks provides the gate.diff-rules step type.
 type repoHooks struct{}
@@ -74,7 +64,7 @@ func (controlSteps) StepTypes() []workflow.StepType { return workflow.ControlSte
 
 // Providers returns the step-type providers to register.
 func Providers() []workflow.StepTypeProvider {
-	return []workflow.StepTypeProvider{shippedStages{}, repoHooks{}, eventSteps{}, commandSteps{}, repositorySteps{}, controlSteps{}}
+	return []workflow.StepTypeProvider{reviewSteps{}, repoHooks{}, eventSteps{}, commandSteps{}, repositorySteps{}, controlSteps{}}
 }
 
 // NewManager returns a new manager with Providers registered.

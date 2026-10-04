@@ -120,23 +120,6 @@ func skipPhase(tc *TaskContext, phase string) {
 // never has more than three lenses to begin with.
 const prReviewConcurrency = 8
 
-// PRReview is the pull request reviewer, a fixed pipeline of stages. The
-// precision gate and operator approval are optional, each behind its own
-// config flag.
-func PRReview() Workflow {
-	return Workflow{
-		Name: "pr-review",
-		// pr_number is required so a binding or chat task must name a pull request.
-		Interface: task.WorkflowInterface{
-			Inputs: map[string]task.InputSpec{
-				"pr_number": {Type: "number", Required: true},
-				"depth":     {Type: "string"},
-			},
-		},
-		Stages: prReviewStandaloneStages(),
-	}
-}
-
 // prReviewDecisionStages are the review stages without the operator gate, so
 // the implement workflow can run them before opening its PR.
 func prReviewDecisionStages() []Stage {

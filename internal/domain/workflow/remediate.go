@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // ErrNoReviewPayload is returned when a remediate run starts on a task that
@@ -110,13 +108,6 @@ func orUnknown(s string) string {
 // other clipped park reasons in this package.
 const remediationRoundCapBytes = 2000
 
-// retiredResumeStep is an inert stage kept so stored definitions that name it
-// still parse. The daemon now positions the worktree before the container
-// starts.
-func retiredResumeStep() Stage {
-	return Stage{Name: "resume", Run: func(context.Context, *TaskContext) error { return nil }}
-}
-
 // StageRemediationRoundCap parks the task with a comment once
 // Task.RemediationRounds reaches the cap; otherwise it counts the round.
 func StageRemediationRoundCap() Stage {
@@ -145,45 +136,6 @@ func postRemediationComment(ctx context.Context, tc *TaskContext, body string) {
 	}
 }
 
-// remediateMission builds the builder agent's mission from the task's
-// decoded review unit, stashing it on tc.reviewUnit so later stages
-// (commit-push, reply) don't re-decode the payload. StageCheckReviewPayload
-// already guarantees the payload decodes before this stage runs.
-func remediateMission(tc *TaskContext) string {
-	unit, _ := DecodeReviewUnit(tc.Task.ReviewPayload)
-	tc.reviewUnit = unit
-	return fmt.Sprintf(
-		"Address the review comments below on pull request #%d for %s with the smallest change that "+
-			"satisfies them, then run the gate.\n\n%s\n\n"+
-			"Do not run git  --  the orchestrator commits and pushes for you. When done, call finish with "+
-			"status \"passed\" and a summary written for the human who will read your reply: what changed and "+
-			"why. If nothing here actually requires a code change, call finish with status \"passed\" and say "+
-			"so in the summary.",
-		tc.Task.PRNumber, tc.Repo.FullName(), renderReviewUnitMission(unit),
-	)
-}
-
-// remediateBuildStage runs the builder agent against the task's review
-// unit. StageCheckReviewPayload runs first, so a decode failure parks the
-// run before the builder ever sees an empty mission.
-func remediateBuildStage() Stage {
-	return AgentStage{
-		Name: "remediate-build",
-		Role: "builder",
-		Gate: func(tc *TaskContext) agentrun.Gate {
-			return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
-		},
-		Mission: remediateMission,
-		OnResult: func(tc *TaskContext, res agentrun.Result) error {
-			tc.BuildSummary = res.Summary
-			if res.Status == agentrun.StatusPassed && len(res.Changes) == 0 {
-				tc.BuildNoChanges = true
-			}
-			return nil
-		},
-	}.Stage()
-}
-
 // StageCheckReviewPayload fails the run before any worktree or agent work
 // starts if the task's review payload cannot be decoded -- a dispatch bug
 // upstream, not something a builder run can recover from.
@@ -192,72 +144,4 @@ func StageCheckReviewPayload() Stage {
 		_, err := DecodeReviewUnit(tc.Task.ReviewPayload)
 		return err
 	}}
-}
-
-// StageRemediationCommitPush commits and pushes the remediation to the PR
-// branch. No changes is a normal outcome.
-func StageRemediationCommitPush() Stage {
-	return Stage{Name: "remediate-commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
-		if tc.BuildNoChanges {
-			return nil
-		}
-		changed, err := tc.Trees.CommitAll(ctx, tc.Dir, remediationCommitMessage(tc))
-		if err != nil {
-			return err
-		}
-		if !changed {
-			return nil
-		}
-		if err := tc.Trees.Push(ctx, tc.Dir, tc.Branch); err != nil {
-			return err
-		}
-		tc.captureChanges(ctx, capturedAfterCommitPush)
-		return nil
-	}}
-}
-
-func remediationCommitMessage(tc *TaskContext) string {
-	return fmt.Sprintf("fix: address review feedback (archie)%s", commitIssueReference("Refs", tc.Task))
-}
-
-// StageRemediationReply replies to the review this run addressed, then
-// returns the task to pr_open and clears the consumed review payload so a
-// later crash-and-resume cannot reprocess it. It is the workflow's only
-// terminal stage: it always sets Outcome, so it always ends the run.
-func StageRemediationReply() Stage {
-	return Stage{Name: "remediate-reply", Run: func(ctx context.Context, tc *TaskContext) error {
-		summary := tc.BuildSummary
-		if tc.BuildNoChanges {
-			summary = "Reviewed -- no code change was required."
-		}
-		reply := fmt.Sprintf("%s\n\n---\n*archie remediation, round %d*", summary, tc.Task.RemediationRounds)
-
-		if id, ok := tc.reviewUnit.replyTarget(); ok {
-			if err := tc.Forge.ReplyToReview(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, id, reply); err != nil {
-				tc.Log.Warn("remediation reply not posted", "pr", tc.Task.PRNumber, "comment", id, "err", err)
-			}
-		} else {
-			postRemediationComment(ctx, tc, reply)
-		}
-
-		tc.Task.ReviewPayload = ""
-		tc.Outcome = Outcome{Status: StatusPROpen, Detail: fmt.Sprintf("remediated review round %d", tc.Task.RemediationRounds)}
-		return nil
-	}}
-}
-
-// Remediate runs one remediation round on an open archie-owned pull request in
-// response to a review, reusing the task's worktree and branch.
-func Remediate() Workflow {
-	return Workflow{
-		Name: "remediate",
-		Stages: []Stage{
-			StageCheckReviewPayload(),
-			StageRemediationRoundCap(),
-			StagePrepareWorktreeOnBranch(),
-			remediateBuildStage(),
-			StageRemediationCommitPush(),
-			StageRemediationReply(),
-		},
-	}
 }

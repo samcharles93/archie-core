@@ -63,7 +63,7 @@ func checkReference(path string, earlier map[string]bool) error {
 	return fmt.Errorf("reference {{ %s }} must start with task, inputs or steps", path)
 }
 
-var taskFields = map[string]bool{"plan": true, "title": true, "body": true, "prompt": true, "repository": true, "kind": true, "issue": true, "pr": true}
+var taskFields = map[string]bool{"review": true, "plan": true, "title": true, "body": true, "prompt": true, "repository": true, "kind": true, "issue": true, "pr": true}
 
 // renderSettings returns a copy of settings with every reference replaced by
 // its value in this run. A reference to an absent value renders empty: a
@@ -90,7 +90,7 @@ func referenceScope(tc *TaskContext) map[string]any {
 	maps.Copy(inputs, t.Inputs)
 	return map[string]any{
 		"task": map[string]any{
-			"plan": approvedPlan(t), "title": t.Title, "body": t.Body, "prompt": taskPromptBlock(t),
+			"review": reviewMission(t), "plan": approvedPlan(t), "title": t.Title, "body": t.Body, "prompt": taskPromptBlock(t),
 			"repository": tc.Repo.FullName(), "kind": taskKind(t),
 			"issue": t.IssueNumber, "pr": t.PRNumber,
 		},
@@ -165,4 +165,14 @@ func approvedPlan(t *Task) string {
 		return ""
 	}
 	return "<approved_prd>\n" + t.Plan + "\n</approved_prd>"
+}
+
+// reviewMission is the review a remediation round addresses, as the builder
+// reads it.
+func reviewMission(t *Task) string {
+	unit, err := DecodeReviewUnit(t.ReviewPayload)
+	if err != nil || t.ReviewPayload == "" {
+		return ""
+	}
+	return renderReviewUnitMission(unit)
 }

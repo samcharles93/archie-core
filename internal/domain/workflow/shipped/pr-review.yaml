@@ -1,0 +1,10 @@
+id: pr-review
+inputs:
+  pr_number:
+    type: number
+    required: true
+  depth:
+    type: string
+    required: false
+steps:
+  - type: review.pr

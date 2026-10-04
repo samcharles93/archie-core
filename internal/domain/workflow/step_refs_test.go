@@ -74,6 +74,50 @@ steps:
 			wantErr: `when: reference {{ steps.later.result.fit }}: no earlier step has id "later"`,
 		},
 		{
+			name: "a branch cannot read a sibling branch",
+			yaml: `id: w
+repository: none
+steps:
+  - parallel:
+      a: [{id: x, type: agent.run, settings: {mission: m, read_only: true}}]
+      b: [{type: agent.run, settings: {mission: "{{ steps.x.summary }}", read_only: true}}]
+`,
+			wantErr: `branch "b" step 1: reference {{ steps.x.summary }}: no earlier step has id "x"`,
+		},
+		{
+			name: "a branch step must not write the worktree",
+			yaml: `id: w
+repository: none
+steps:
+  - parallel:
+      a: [{type: agent.run, settings: {mission: m}}]
+      b: [{type: agent.run, settings: {mission: m, read_only: true}}]
+`,
+			wantErr: "cannot run in a parallel branch",
+		},
+		{
+			name: "every branch result is visible after the parallel step",
+			yaml: `id: w
+repository: none
+steps:
+  - parallel:
+      a: [{id: plan, type: agent.run, settings: {mission: m, read_only: true}}]
+      b: [{id: other, type: agent.run, settings: {mission: m, read_only: true}}]
+  - type: agent.run
+    settings: {mission: "build {{ steps.plan.summary }} / {{ steps.plan.result.verdict }} / {{ steps.plan.result.missing }}"}
+`,
+			rendered: "build the plan / go / ",
+		},
+		{
+			name: "retry attempts are bounded",
+			yaml: `id: w
+repository: none
+steps:
+  - {type: workflow.finish, retry: {attempts: 50}}
+`,
+			wantErr: "retry.attempts is 1 to 10",
+		},
+		{
 			name: "on_failure takes park or continue",
 			yaml: `id: w
 repository: none

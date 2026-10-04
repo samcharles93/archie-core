@@ -71,29 +71,40 @@ export function parseWorkflowYaml(
       : "required";
   const chips: WorkflowStepChip[] = [];
   for (const [i, step] of steps.entries()) {
-    if (!isMapping(step) || !isNonEmptyString(step.type)) {
-      return {
-        ok: false,
-        message: `workflow ${id} step ${i + 1} needs a type`,
-      };
+    const where = `workflow ${id} step ${i + 1}`;
+    if (isMapping(step) && isMapping(step.parallel)) {
+      for (const [branch, branchSteps] of Object.entries(step.parallel)) {
+        if (!Array.isArray(branchSteps) || !branchSteps.length)
+          return { ok: false, message: `${where}: branch ${branch} needs a list of steps` };
+        for (const [j, branchStep] of branchSteps.entries()) {
+          const problem = checkStepType(branchStep, `${where} branch ${branch} step ${j + 1}`, known, repository);
+          if (problem) return { ok: false, message: problem };
+        }
+      }
+      chips.push({ index: i + 1, type: "parallel" });
+      continue;
     }
-    const type = step.type.trim();
-    const info = known.get(type);
-    if (known.size && !info) {
-      return {
-        ok: false,
-        message: `workflow ${id} step ${i + 1}: unknown step type "${type}"`,
-      };
-    }
-    if (info?.needs_repository && repository !== "required") {
-      return {
-        ok: false,
-        message: `workflow ${id} step ${i + 1}: "${type}" needs a repository, but the workflow's repository is ${repository}`,
-      };
-    }
-    chips.push({ index: i + 1, type });
+    const problem = checkStepType(step, where, known, repository);
+    if (problem) return { ok: false, message: problem };
+    chips.push({ index: i + 1, type: (step as { type: string }).type.trim() });
   }
   return { ok: true, id, steps: chips };
+}
+
+/** What is wrong with one typed step, or "" when nothing the page can see. */
+function checkStepType(
+  step: unknown,
+  where: string,
+  known: Map<string, StepTypeInfo>,
+  repository: string,
+): string {
+  if (!isMapping(step) || !isNonEmptyString(step.type)) return `${where} needs a type`;
+  const type = step.type.trim();
+  const info = known.get(type);
+  if (known.size && !info) return `${where}: unknown step type "${type}"`;
+  if (info?.needs_repository && repository !== "required")
+    return `${where}: "${type}" needs a repository, but the workflow's repository is ${repository}`;
+  return "";
 }
 
 // --- the editor's own rendering ---------------------------------------------
