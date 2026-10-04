@@ -31,7 +31,7 @@ func RunStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "archied status: %v\n", err)
 		return 1
 	}
-	client, cleanup, err := servicekit.StateStoreClient(doc.Config.Services, secret.NewRegistry())
+	client, cleanup, err := servicekit.StateStoreClient(presence.Daemon, doc.Config.Services, secret.NewRegistry())
 	if err != nil {
 		fmt.Fprintf(stderr, "archied status: %v\n", err)
 		return 1

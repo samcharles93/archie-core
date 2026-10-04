@@ -477,7 +477,7 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 	}
 	keepalive := staterpc.ServerKeepaliveOption()
 	if loopback {
-		return []grpc.ServerOption{keepalive}, true, nil
+		return []grpc.ServerOption{keepalive, grpc.ChainUnaryInterceptor(staterpc.UnaryActorInterceptor())}, true, nil
 	}
 	if token == "" {
 		return nil, false, fmt.Errorf(
@@ -491,7 +491,9 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 	// than the single all-or-nothing token check this replaced.
 	return []grpc.ServerOption{
 		keepalive,
-		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(token)),
+		// The actor interceptor runs first so a task grant's own attribution
+		// replaces whatever service name the container claimed.
+		grpc.ChainUnaryInterceptor(staterpc.UnaryActorInterceptor(), grants.UnaryInterceptor(token)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token)),
 	}, false, nil
 }

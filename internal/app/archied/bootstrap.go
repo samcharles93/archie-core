@@ -37,6 +37,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -265,7 +266,7 @@ func (b *boot) openStateStoreAdapter(ctx context.Context) error {
 	if target == "" {
 		return fmt.Errorf("services.state.target is required: archied/archie-gateway no longer own archie.db; the standalone archie-state-store process owns it (docs/prds/state-store-contract.md §12 step 7)")
 	}
-	client, cleanup, err := servicekit.StateStoreClient(b.cfg.Services, b.secrets)
+	client, cleanup, err := servicekit.StateStoreClient(presence.Daemon, b.cfg.Services, b.secrets)
 	if err != nil {
 		b.log.Error("state store adapter", "err", err)
 		return err

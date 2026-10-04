@@ -85,7 +85,7 @@ func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, 
 		conn.Close()
 		return nil, fmt.Errorf("state store target is required: archie-agent no longer supports the legacy NATS storerpc path (docs/prds/state-store-contract.md §12 step 4)")
 	}
-	state, closeState, err := staterpc.Dial(config.StateStoreURL, config.StateStoreToken)
+	state, closeState, err := staterpc.Dial(config.StateStoreURL, "archie-agent", config.StateStoreToken)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("connect state store: %w", err)

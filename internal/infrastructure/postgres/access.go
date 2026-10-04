@@ -107,8 +107,8 @@ func (s *Store) PutPolicy(ctx context.Context, p access.Policy) (int64, error) {
 			RecordKey:     auditKey(p),
 			NewValue:      textJSON(p.Text),
 			RecordVersion: version,
-			Actor:         "archied",
-			Source:        "archied",
+			Actor:         access.ActorFromContext(ctx),
+			Source:        access.ActorFromContext(ctx),
 			RequestID:     "",
 		})
 	})

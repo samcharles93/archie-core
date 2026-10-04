@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
@@ -170,7 +172,7 @@ func (g *TaskGrants) UnaryInterceptor(adminToken string) grpc.UnaryServerInterce
 		if !authorizesTaskScopedCall(info.FullMethod, req, taskID) {
 			return nil, status.Error(codes.PermissionDenied, "task grant does not authorize this operation")
 		}
-		return handler(ctx, req)
+		return handler(access.WithActor(ctx, fmt.Sprintf("task/%d", taskID)), req)
 	}
 }
 

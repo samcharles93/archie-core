@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-// Dial returns a State Store client for target. A loopback target dials
-// insecure; any other target requires a token. The cleanup closes the
-// connection.
-func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), error) {
+// Dial returns a State Store client for target, attributed to the caller
+// service. A loopback target dials insecure; any other target requires a
+// token. The cleanup closes the connection.
+func Dial(target, caller, token string, options ...grpc.DialOption) (*Client, func(), error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return nil, nil, fmt.Errorf("state store target is required")
@@ -36,16 +36,11 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 		// GetInstalledPackage returns the whole layer, which for an extension is
 		// a plugin binary well past gRPC's default 4 MiB receive limit.
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxPackageResponseBytes)),
-	}
-	if token != "" {
 		// Both call shapes need the credential: the server's interceptors
 		// guard unary RPCs and the streaming capture reads separately, so a
 		// unary-only interceptor leaves the streams unauthenticated.
-		opts = append(
-			opts,
-			grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)),
-			grpc.WithStreamInterceptor(StreamClientTokenInterceptor(token)),
-		)
+		grpc.WithUnaryInterceptor(UnaryClientCredentialInterceptor(caller, token)),
+		grpc.WithStreamInterceptor(StreamClientCredentialInterceptor(caller, token)),
 	}
 	conn, err := grpc.NewClient(target, append(opts, options...)...)
 	if err != nil {

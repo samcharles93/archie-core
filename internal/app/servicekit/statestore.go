@@ -6,16 +6,16 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
-// StateStoreClient dials the State Store gRPC service the daemon's own
-// capture/mapping/binding consumers call. Token resolution is the daemon's
+// StateStoreClient dials the State Store gRPC service as the caller service.
+// Token resolution is the daemon's
 // (it owns the config keys and the secret registry); the dial itself and the
 // fail-closed non-loopback rule belong to the transport, so they come
 // from staterpc.Dial. Calls wait for the State Store rather than fail while it
 // is down, so boot order between services does not matter.
-func StateStoreClient(services config.Services, secrets *secret.Registry) (*staterpc.Client, func(), error) {
+func StateStoreClient(caller string, services config.Services, secrets *secret.Registry) (*staterpc.Client, func(), error) {
 	target, err := services.RequireTarget(config.ServiceNameState)
 	if err != nil {
 		return nil, nil, err
 	}
-	return staterpc.Dial(target, services.ResolvedToken(config.ServiceNameState, secrets.Getenv), staterpc.WaitForPeer)
+	return staterpc.Dial(target, caller, services.ResolvedToken(config.ServiceNameState, secrets.Getenv), staterpc.WaitForPeer)
 }

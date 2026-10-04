@@ -49,7 +49,7 @@ func Run(ctx context.Context, o Options) error {
 	var applyReporter *applystatus.Reporter
 	var appliedVersion int64
 	if cfg.Options.StateStore.Target != "" {
-		stateStore, closeClient, dialErr := staterpc.Dial(cfg.Options.StateStore.Target, cfg.Options.StateStore.Token, staterpc.WaitForPeer)
+		stateStore, closeClient, dialErr := staterpc.Dial(cfg.Options.StateStore.Target, presence.Messaging, cfg.Options.StateStore.Token, staterpc.WaitForPeer)
 		if dialErr != nil {
 			return fmt.Errorf("dial state store control plane (%s): %w", cfg.Options.StateStore.Target, dialErr)
 		}

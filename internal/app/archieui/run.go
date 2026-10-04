@@ -56,7 +56,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}()
 
-	tasks, closeState, err := staterpc.Dial(opts.State.Target, opts.State.Token)
+	tasks, closeState, err := staterpc.Dial(opts.State.Target, presence.UI, opts.State.Token)
 	if err != nil {
 		return err
 	}

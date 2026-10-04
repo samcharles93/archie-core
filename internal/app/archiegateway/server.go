@@ -170,7 +170,7 @@ func (b *server) openState(ctx context.Context) error {
 	if err := b.claimGatewayOwnership(ctx); err != nil {
 		return err
 	}
-	client, cleanup, err := servicekit.StateStoreClient(b.cfg.Services, b.secrets)
+	client, cleanup, err := servicekit.StateStoreClient(presence.Gateway, b.cfg.Services, b.secrets)
 	if err != nil {
 		return fmt.Errorf("state store client: %w", err)
 	}
