@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
+import { useWorkflowRuns } from "./workflow-runs";
 import {
   cloneControlPlaneValue,
   removeWorkflowDefinition,
@@ -38,6 +39,8 @@ const selected = defineModel<string>("selected", { required: true });
 const id = ref("");
 const yaml = ref("");
 const localError = ref("");
+
+const { runs, watched, stages, pick } = useWorkflowRuns(selected);
 
 const shippedEntry = computed(() =>
   shipped.value.definitions.find((entry) => entry.id === id.value),
@@ -139,8 +142,22 @@ function syncScroll(event: Event): void {
           >{{ parsed.ok ? "✓" : "✕" }} {{ validationLabel(parsed) }}</span
         >
       </div>
-      <TabsContent value="canvas">
-        <WorkflowCanvas :yaml="yaml" />
+      <TabsContent value="canvas" class="space-y-2">
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">Watching</span>
+          <select
+            :value="watched"
+            class="h-8 max-w-md min-w-60 rounded-md border border-input bg-background px-2 text-sm"
+            @change="pick(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">No run, definition only</option>
+            <option v-for="run in runs" :key="run.id" :value="String(run.id)">
+              #{{ run.id }} {{ run.title || "untitled" }}{{ run.status ? ` · ${run.status}` : "" }}
+            </option>
+          </select>
+          <span v-if="!runs.length" class="text-xs text-fg-subtle">This workflow has not run yet.</span>
+        </label>
+        <WorkflowCanvas :yaml="yaml" :stages="stages" />
       </TabsContent>
       <TabsContent value="yaml">
       <!--

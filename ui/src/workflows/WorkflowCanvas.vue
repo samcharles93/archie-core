@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { VueFlow, type VueFlowStore } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import { Controls } from "@vue-flow/controls";
@@ -7,14 +7,14 @@ import "@vue-flow/core/dist/style.css";
 import "@vue-flow/controls/dist/style.css";
 
 import StepNode from "./StepNode.vue";
-import { workflowGraph } from "./workflow-graph";
+import { withRuns, workflowGraph, type StageRun } from "./workflow-graph";
 
-const props = defineProps<{ yaml: string }>();
+const props = defineProps<{ yaml: string; stages?: StageRun[] }>();
 
 const NODE_WIDTH = 240;
 
 const container = ref<HTMLElement | null>(null);
-const graph = computed(() => workflowGraph(props.yaml));
+const graph = computed(() => withRuns(workflowGraph(props.yaml), props.stages ?? []));
 const nodes = computed(() => graph.value.nodes);
 const edges = computed(() =>
   graph.value.edges.map(({ label, offset, ...edge }) => ({
@@ -27,18 +27,31 @@ const edges = computed(() =>
   })),
 );
 
-// Start at the top at a readable size; a long workflow scrolls down rather
-// than shrinking until nothing on it can be read.
-function place(flow: VueFlowStore): void {
+const ZOOM = 0.9;
+let flow: VueFlowStore | undefined;
+
+// Start at a readable size rather than shrinking a long workflow until
+// nothing on it can be read, scrolled to the furthest step the watched run has
+// reached so the step that is moving stays in view.
+function place(store?: VueFlowStore): void {
+  const animate = !store;
+  flow = store ?? flow;
+  if (!flow) return;
   const width = container.value?.clientWidth ?? 800;
-  void flow.setViewport({ x: width / 2 - NODE_WIDTH / 2, y: 24, zoom: 0.9 });
+  const height = container.value?.clientHeight ?? 560;
+  const reached = nodes.value.filter((node) => node.data.run).at(-1);
+  const y = reached ? Math.min(24, height / 3 - reached.position.y * ZOOM) : 24;
+  void flow.setViewport({ x: width / 2 - NODE_WIDTH / 2, y, zoom: ZOOM }, { duration: animate ? 300 : 0 });
 }
+
+watch(() => nodes.value.filter((node) => node.data.run).length, () => place());
 </script>
 
 <template>
   <div ref="container" class="workflow-canvas h-[560px] overflow-hidden rounded-lg border border-border bg-background">
     <VueFlow
       :key="yaml"
+      class="h-full"
       :nodes="nodes"
       :edges="edges"
       :nodes-draggable="false"
@@ -67,6 +80,14 @@ function place(flow: VueFlowStore): void {
   stroke: var(--color-primary);
   stroke-dasharray: 5 4;
   stroke-width: 1.25;
+}
+@keyframes step-running {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-info) 30%, transparent);
+  }
+}
+.step-running {
+  animation: step-running 1.6s ease-in-out infinite;
 }
 .workflow-canvas .vue-flow__controls {
   box-shadow: none;

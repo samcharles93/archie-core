@@ -17,6 +17,33 @@ export interface StepNodeData {
   retry?: number;
   continues?: boolean;
   branch?: string;
+  /** The name the engine records this step's run under, and which run of
+   * that name it is: two unnamed repo.commit steps are commit 0 and 1. */
+  stage?: string;
+  occurrence?: number;
+  run?: StageRun;
+}
+
+/** One recorded run of a step, from the task's attempts view. */
+export interface StageRun {
+  name: string;
+  status: "ok" | "failed" | "interrupted" | "running" | "unknown" | string;
+  duration_ms?: number;
+  error?: string;
+}
+
+/** Puts each recorded stage run on the node it belongs to. */
+export function withRuns(graph: WorkflowGraph, stages: StageRun[]): WorkflowGraph {
+  const byName = new Map<string, StageRun[]>();
+  for (const stage of stages) byName.set(stage.name, [...(byName.get(stage.name) ?? []), stage]);
+  return {
+    edges: graph.edges,
+    nodes: graph.nodes.map((node) => {
+      const { stage, occurrence } = node.data;
+      const run = stage === undefined ? undefined : byName.get(stage)?.[occurrence ?? 0];
+      return run ? { ...node, data: { ...node.data, run } } : node;
+    }),
+  };
 }
 
 export interface GraphNode {
@@ -127,7 +154,20 @@ export function workflowGraph(source: string): WorkflowGraph {
 
   let previous = [start];
   let row = 1;
-  const addStep = (step: unknown, key: string, x: number, y: number, branch?: string): string => {
+  const seen = new Map<string, number>();
+  const occurrenceOf = (stage: string): number => {
+    const count = seen.get(stage) ?? 0;
+    seen.set(stage, count + 1);
+    return count;
+  };
+  const addStep = (
+    step: unknown,
+    key: string,
+    x: number,
+    y: number,
+    branch?: string,
+    recorded?: { stage: string; occurrence: number },
+  ): string => {
     const record = isMapping(step) ? step : {};
     const type = typeof record.type === "string" ? record.type : "";
     const settings = isMapping(record.settings) ? record.settings : {};
@@ -147,6 +187,7 @@ export function workflowGraph(source: string): WorkflowGraph {
         retry: isMapping(record.retry) && typeof record.retry.attempts === "number" ? record.retry.attempts : undefined,
         continues: record.on_failure === "continue",
         branch,
+        ...(recorded ?? { stage: stepID || type, occurrence: occurrenceOf(stepID || type) }),
       },
     });
     if (stepID) byStepID.set(stepID, id);
@@ -160,13 +201,16 @@ export function workflowGraph(source: string): WorkflowGraph {
   for (const [i, step] of steps.entries()) {
     if (isMapping(step) && isMapping(step.parallel)) {
       const branches = Object.entries(step.parallel);
+      // Branch steps run inside the parallel step, which is what gets recorded.
+      const parallelName = typeof step.id === "string" ? step.id : "parallel";
+      const recorded = { stage: parallelName, occurrence: occurrenceOf(parallelName) };
       const ends: string[] = [];
       let depth = 0;
       branches.forEach(([name, branchSteps], column) => {
         const x = (column - (branches.length - 1) / 2) * COLUMN;
         let tail = previous;
         (Array.isArray(branchSteps) ? branchSteps : []).forEach((branchStep, j) => {
-          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name);
+          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, recorded);
           link(tail, id);
           tail = [id];
           depth = Math.max(depth, j + 1);
