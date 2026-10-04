@@ -29,6 +29,9 @@ type YAMLDefinition struct {
 // the callee's own repository mode decides whether its run clones.
 var repoFreeStepTypes = map[string]bool{AgentRunStepName: true, WorkflowCallStepName: true}
 
+// NeedsRepository reports whether a step type can run only with a worktree.
+func NeedsRepository(stepType string) bool { return !repoFreeStepTypes[stepType] }
+
 // StepRecord selects one registered step type and supplies its typed settings.
 type StepRecord struct {
 	Type     string    `yaml:"type" json:"type"`
@@ -63,7 +66,7 @@ func ParseDefinition(src string, registry StepRegistry) (YAMLDefinition, error) 
 		if !ok {
 			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: unknown type %q", definition.ID, i+1, step.Type)
 		}
-		if mode != task.RepositoryRequired && !repoFreeStepTypes[step.Type] {
+		if mode != task.RepositoryRequired && NeedsRepository(step.Type) {
 			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: %q needs a repository, but the workflow's repository is %s", definition.ID, i+1, step.Type, mode)
 		}
 		if _, err := factory(step.Settings); err != nil {

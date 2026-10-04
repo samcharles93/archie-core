@@ -31,11 +31,13 @@ func durationLike(t reflect.Type) bool {
 
 // schemaJSON derives a resource's JSON Schema from its document type: keys,
 // types and tag annotations. It never emits required.
-func schemaJSON(document any) string {
+func schemaJSON(document any, extensions map[string]any) string {
 	if document == nil {
 		return bareObjectSchema
 	}
-	encoded, err := json.Marshal(schemaOf(reflect.TypeOf(document)))
+	schema := schemaOf(reflect.TypeOf(document))
+	maps.Copy(schema, extensions)
+	encoded, err := json.Marshal(schema)
 	if err != nil {
 		// Unreachable: the tree below holds only strings, maps, slices and
 		// booleans. A boot must not fail over documentation, so degrade to the

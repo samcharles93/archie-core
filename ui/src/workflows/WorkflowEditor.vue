@@ -99,12 +99,12 @@ async function restoreOne(): Promise<void> {
   );
 }
 
-// What is typed, read by the rules this page can answer (workflow-yaml.ts). The
-// Steps preview, the gutter and the validity indicator are three readings of
-// one parse, so they cannot disagree about the same text. The server remains
-// the authority: step types and their settings are not served to the dashboard,
-// so a save it refuses still reports its own reason below.
-const parsed = computed(() => parseWorkflowYaml(yaml.value));
+// What is typed, read against the served step vocabulary (workflow-yaml.ts).
+// The Steps preview, the gutter and the validity indicator are three readings
+// of one parse, so they cannot disagree about the same text. Step settings are
+// not served, so a save the server refuses still reports its own reason below.
+const vocabulary = computed(() => store.stepTypes());
+const parsed = computed(() => parseWorkflowYaml(yaml.value, vocabulary.value));
 const steps = computed(() => (parsed.value.ok ? parsed.value.steps : []));
 const lines = computed(() => yamlLines(yaml.value));
 
@@ -153,9 +153,7 @@ function syncScroll(event: Event): void {
     <div class="space-y-1.5">
       <div class="flex items-baseline gap-2">
         <Label for="workflow-yaml">YAML</Label>
-        <!-- What the page can check: the YAML parses, it carries an id, and it
-             names at least one step with a type. Step types and settings are
-             the server's to check, on save. -->
+        <!-- Step settings are the server's to check, on save. -->
         <span
           class="ml-auto text-xs"
           :class="parsed.ok ? 'text-ok' : 'text-danger'"
@@ -212,6 +210,17 @@ function syncScroll(event: Event): void {
         />
       </div>
     </div>
+    <details v-if="vocabulary.length" class="text-sm">
+      <summary class="cursor-pointer text-fg-subtle">Step types ({{ vocabulary.length }})</summary>
+      <ul class="mt-2 flex flex-wrap gap-1.5" aria-label="Step types">
+        <li
+          v-for="info in vocabulary"
+          :key="info.name"
+          class="rounded border border-border bg-secondary px-2 py-0.5 font-mono text-xs"
+          :title="info.needs_repository ? 'Needs a repository' : 'Runs without a repository'"
+        >{{ info.name }}<span v-if="!info.needs_repository" class="text-fg-subtle"> · no repo</span></li>
+      </ul>
+    </details>
     <p v-if="localError || state.error" class="text-sm text-danger" role="alert">
       {{ localError || state.error }}
     </p>

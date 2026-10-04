@@ -3,16 +3,19 @@ import { parseDocument } from "yaml";
 /**
  * The workflow YAML editor's reading of what is typed.
  *
- * The server is the authority on a definition: `workflow.ParseDefinition`
- * parses with known fields, requires an id and at least one step, and checks
- * every step type against its registry and every step's settings against that
- * type's own rules. The registry is not served to the dashboard, so this module
- * answers the part the page can answer without inventing a second vocabulary:
- * does the YAML parse, does it carry an id, and does it name at least one step
- * that has a type. "Valid" here means exactly those three things -- a save the
- * server refuses still reports the server's own reason, and that path is
- * unchanged.
+ * The server is the authority on a definition. The page checks what it can
+ * from the served step vocabulary: the YAML parses, carries an id, names at
+ * least one step, every step type is registered, and a workflow whose
+ * repository is not required uses only steps that run without one. Step
+ * settings stay the server's to check, so a save it refuses still reports the
+ * server's own reason.
  */
+
+/** One registered step type, as the control-plane catalog serves it. */
+export interface StepTypeInfo {
+  name: string;
+  needs_repository: boolean;
+}
 
 /** One chip in the read-only Steps preview. */
 export interface WorkflowStepChip {
@@ -31,7 +34,10 @@ export function validationLabel(parsed: WorkflowParse): string {
   return parsed.line ? `Line ${parsed.line}: ${parsed.message}` : parsed.message;
 }
 
-export function parseWorkflowYaml(source: string): WorkflowParse {
+export function parseWorkflowYaml(
+  source: string,
+  vocabulary: StepTypeInfo[] = [],
+): WorkflowParse {
   const document = parseDocument(source);
   const problem = document.errors[0];
   if (problem) {
@@ -58,6 +64,11 @@ export function parseWorkflowYaml(source: string): WorkflowParse {
   if (!steps.length)
     return { ok: false, message: `workflow ${id} has no steps` };
 
+  const known = new Map(vocabulary.map((info) => [info.name, info]));
+  const repository =
+    typeof value.repository === "string" && value.repository.trim()
+      ? value.repository.trim()
+      : "required";
   const chips: WorkflowStepChip[] = [];
   for (const [i, step] of steps.entries()) {
     if (!isMapping(step) || !isNonEmptyString(step.type)) {
@@ -66,7 +77,21 @@ export function parseWorkflowYaml(source: string): WorkflowParse {
         message: `workflow ${id} step ${i + 1} needs a type`,
       };
     }
-    chips.push({ index: i + 1, type: step.type.trim() });
+    const type = step.type.trim();
+    const info = known.get(type);
+    if (known.size && !info) {
+      return {
+        ok: false,
+        message: `workflow ${id} step ${i + 1}: unknown step type "${type}"`,
+      };
+    }
+    if (info?.needs_repository && repository !== "required") {
+      return {
+        ok: false,
+        message: `workflow ${id} step ${i + 1}: "${type}" needs a repository, but the workflow's repository is ${repository}`,
+      };
+    }
+    chips.push({ index: i + 1, type });
   }
   return { ok: true, id, steps: chips };
 }

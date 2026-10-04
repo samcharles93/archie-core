@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -35,7 +37,18 @@ func workflowDefinitionsDefinition(steps workflow.StepRegistry) Definition {
 			_, err := workflow.DecodeDefinitionCollection(input, steps)
 			return err
 		},
+		SchemaExtensions: map[string]any{"x-step-types": stepTypeVocabulary(steps)},
 	}
+}
+
+// stepTypeVocabulary is the registered step types as the dashboard editor
+// checks them: each name and whether it needs a repository.
+func stepTypeVocabulary(steps workflow.StepRegistry) []map[string]any {
+	vocabulary := make([]map[string]any, 0, len(steps))
+	for _, name := range slices.Sorted(maps.Keys(steps)) {
+		vocabulary = append(vocabulary, map[string]any{"name": name, "needs_repository": workflow.NeedsRepository(name)})
+	}
+	return vocabulary
 }
 
 func encodeWorkflowDefinitions(collection workflow.WorkflowDefinitionCollection, steps workflow.StepRegistry) ([]byte, error) {

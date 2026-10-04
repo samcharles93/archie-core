@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, onScopeDispose, reactive, ref, watch } from "vue";
 import { useLiveUpdatesStore } from "./live-updates.ts";
+import type { StepTypeInfo } from "../workflows/workflow-yaml.ts";
 
 import { diffValues, saveInOrder, type Change } from "../settings/changes.ts";
 import {
@@ -486,7 +487,21 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
+  /** The registered workflow step types, served in the definitions schema. */
+  function stepTypes(): StepTypeInfo[] {
+    const schema = catalog.value.find(
+      (resource) => resource.kind === "workflow-definitions",
+    )?.schema_json;
+    if (!schema) return [];
+    try {
+      return (JSON.parse(schema)["x-step-types"] ?? []) as StepTypeInfo[];
+    } catch {
+      return [];
+    }
+  }
+
   return {
+    stepTypes,
     applyStatusFor,
     changesFor,
     changeFor,

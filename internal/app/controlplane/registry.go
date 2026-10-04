@@ -28,10 +28,13 @@ type Definition struct {
 	// Defaults is the factory value clients offer as "restore shipped". Only
 	// resources that ship with content set it.
 	Defaults func() any
+	// SchemaExtensions are merged into the derived schema's top level, for
+	// vocabulary the document type alone cannot express.
+	SchemaExtensions map[string]any
 }
 
 func (d Definition) Descriptor() *pb.ResourceDescriptor {
-	descriptor := &pb.ResourceDescriptor{Kind: d.Kind, Title: d.Title, SchemaJson: schemaJSON(d.Document), Commands: []string{"replace"}, ApplyMode: d.ApplyMode}
+	descriptor := &pb.ResourceDescriptor{Kind: d.Kind, Title: d.Title, SchemaJson: schemaJSON(d.Document, d.SchemaExtensions), Commands: []string{"replace"}, ApplyMode: d.ApplyMode}
 	if d.Defaults != nil {
 		if defaults, err := json.Marshal(d.Defaults()); err == nil {
 			descriptor.DefaultsJson = string(defaults)
