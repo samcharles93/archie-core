@@ -4,13 +4,11 @@ package worktreerpc
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -41,54 +39,27 @@ type Response struct {
 	natsrpc.Envelope
 }
 
-type grant struct {
-	identity    string
-	owner, repo string
-	issue       int
-	branch      string
+// Runs resolves a run credential to the task it was issued for. The State
+// Store answers it, so a push survives a restart of archied mid-task.
+type Runs interface {
+	TaskForCredential(ctx context.Context, token string) (*workflow.Task, error)
 }
 
-// Grants owns short-lived publication capabilities issued for one dispatched
-// task. A grant is useful only on the identity-scoped server that issued it.
-type Grants struct {
-	mu     sync.RWMutex
-	grants map[string]grant
-}
-
-func NewGrants() *Grants { return &Grants{grants: make(map[string]grant)} }
-
-// Issue creates a per-dispatch grant and a revocation function.
-func (g *Grants) Issue(task *workflow.Task) (string, func(), error) {
-	if task == nil || task.ID <= 0 || task.Branch == "" ||
+// publishable returns the task a credential authorizes this identity's
+// server to push for.
+func publishable(ctx context.Context, runs Runs, token, identity string) (*workflow.Task, error) {
+	if runs == nil || token == "" {
+		return nil, errors.New("worktree publication grant is required")
+	}
+	task, err := runs.TaskForCredential(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("worktree publication grant is invalid: %w", err)
+	}
+	if task.Identity != identity || task.Branch == "" ||
 		!worktree.ValidCoordinates(task.Owner, task.Repo, task.IssueNumber) {
-		return "", nil, errors.New("task is not ready for worktree publication")
+		return nil, errors.New("worktree publication grant is invalid")
 	}
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", nil, fmt.Errorf("generate worktree grant: %w", err)
-	}
-	token := fmt.Sprintf("%x", raw)
-	g.mu.Lock()
-	g.grants[token] = grant{identity: task.Identity, owner: task.Owner, repo: task.Repo, issue: task.IssueNumber, branch: task.Branch}
-	g.mu.Unlock()
-	return token, func() {
-		g.mu.Lock()
-		delete(g.grants, token)
-		g.mu.Unlock()
-	}, nil
-}
-
-func (g *Grants) resolve(token, identity string) (grant, error) {
-	if g == nil || token == "" {
-		return grant{}, errors.New("worktree publication grant is required")
-	}
-	g.mu.RLock()
-	item, ok := g.grants[token]
-	g.mu.RUnlock()
-	if !ok || item.identity != identity {
-		return grant{}, errors.New("worktree publication grant is invalid")
-	}
-	return item, nil
+	return task, nil
 }
 
 // defaultHandlerTimeout bounds one publication request when the Server has no
@@ -98,9 +69,9 @@ const defaultHandlerTimeout = 15 * time.Minute
 // Server proxies push requests to a real worktree.Manager holding the
 // forge push token.
 type Server struct {
-	Trees  *worktree.Manager
-	Grants *Grants
-	Log    *slog.Logger
+	Trees *worktree.Manager
+	Runs  Runs
+	Log   *slog.Logger
 	// Timeout bounds a single publication. Zero uses
 	// defaultHandlerTimeout.
 	Timeout time.Duration
@@ -136,13 +107,13 @@ func (s *Server) handlePush(identity string, msg *nats.Msg) {
 	}
 	ctx, cancel := s.handlerContext()
 	defer cancel()
-	item, err := s.Grants.resolve(req.Grant, identity)
+	task, err := publishable(ctx, s.Runs, req.Grant, identity)
 	if err != nil {
 		s.respond(msg, err)
 		return
 	}
-	dir := s.Trees.Dir(item.owner, item.repo, item.issue)
-	s.respond(msg, s.Trees.Push(ctx, dir, item.branch))
+	dir := s.Trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+	s.respond(msg, s.Trees.Push(ctx, dir, task.Branch))
 }
 
 func (s *Server) respond(msg *nats.Msg, err error) {

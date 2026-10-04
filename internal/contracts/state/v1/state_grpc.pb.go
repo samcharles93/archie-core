@@ -26,6 +26,7 @@ const (
 	StateStoreService_RemoveInstalledPackage_FullMethodName     = "/state.v1.StateStoreService/RemoveInstalledPackage"
 	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
 	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
+	StateStoreService_ResolveTaskGrant_FullMethodName           = "/state.v1.StateStoreService/ResolveTaskGrant"
 	StateStoreService_ListIdentities_FullMethodName             = "/state.v1.StateStoreService/ListIdentities"
 	StateStoreService_GetIdentity_FullMethodName                = "/state.v1.StateStoreService/GetIdentity"
 	StateStoreService_CreateIdentity_FullMethodName             = "/state.v1.StateStoreService/CreateIdentity"
@@ -148,6 +149,7 @@ type StateStoreServiceClient interface {
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error)
+	ResolveTaskGrant(ctx context.Context, in *ResolveTaskGrantRequest, opts ...grpc.CallOption) (*ResolveTaskGrantResponse, error)
 	// Identity domain. Task-scoped grants cannot call these administrative RPCs.
 	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
 	GetIdentity(ctx context.Context, in *GetIdentityRequest, opts ...grpc.CallOption) (*GetIdentityResponse, error)
@@ -403,6 +405,16 @@ func (c *stateStoreServiceClient) RevokeTaskGrant(ctx context.Context, in *Revok
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RevokeTaskGrantResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RevokeTaskGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ResolveTaskGrant(ctx context.Context, in *ResolveTaskGrantRequest, opts ...grpc.CallOption) (*ResolveTaskGrantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveTaskGrantResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ResolveTaskGrant_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1420,6 +1432,7 @@ type StateStoreServiceServer interface {
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error)
+	ResolveTaskGrant(context.Context, *ResolveTaskGrantRequest) (*ResolveTaskGrantResponse, error)
 	// Identity domain. Task-scoped grants cannot call these administrative RPCs.
 	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
 	GetIdentity(context.Context, *GetIdentityRequest) (*GetIdentityResponse, error)
@@ -1631,6 +1644,9 @@ func (UnimplementedStateStoreServiceServer) RegisterTaskGrant(context.Context, *
 }
 func (UnimplementedStateStoreServiceServer) RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeTaskGrant not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ResolveTaskGrant(context.Context, *ResolveTaskGrantRequest) (*ResolveTaskGrantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveTaskGrant not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListIdentities not implemented")
@@ -2063,6 +2079,24 @@ func _StateStoreService_RevokeTaskGrant_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RevokeTaskGrant(ctx, req.(*RevokeTaskGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ResolveTaskGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveTaskGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ResolveTaskGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ResolveTaskGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ResolveTaskGrant(ctx, req.(*ResolveTaskGrantRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3808,6 +3842,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeTaskGrant",
 			Handler:    _StateStoreService_RevokeTaskGrant_Handler,
+		},
+		{
+			MethodName: "ResolveTaskGrant",
+			Handler:    _StateStoreService_ResolveTaskGrant_Handler,
 		},
 		{
 			MethodName: "ListIdentities",

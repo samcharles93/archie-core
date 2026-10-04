@@ -316,6 +316,12 @@ type ResourceHistory struct {
 	OrgID           string
 }
 
+type RunCredential struct {
+	Digest    []byte
+	TaskID    int64
+	ExpiresAt time.Time
+}
+
 type Session struct {
 	SessionID       string
 	Platform        string

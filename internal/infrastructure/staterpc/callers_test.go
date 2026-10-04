@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -12,7 +13,30 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
+
+// credentials is an in-memory RunCredentialStore.
+type credentials map[[32]byte]int64
+
+func (c credentials) PutRunCredential(_ context.Context, d [32]byte, id int64, _ time.Time) error {
+	c[d] = id
+	return nil
+}
+
+func (c credentials) DeleteRunCredential(_ context.Context, d [32]byte) error {
+	delete(c, d)
+	return nil
+}
+
+func (c credentials) RunCredentialTask(_ context.Context, d [32]byte, _ time.Time) (int64, error) {
+	if id, ok := c[d]; ok {
+		return id, nil
+	}
+	return 0, storecontract.ErrRunCredentialUnknown
+}
+
+func (credentials) DeleteExpiredRunCredentials(context.Context, time.Time) error { return nil }
 
 type principalsByID map[identity.IdentityID]org.OrgID
 
@@ -25,8 +49,8 @@ func (p principalsByID) PrincipalFor(_ context.Context, id identity.IdentityID) 
 func TestCallerAttribution(t *testing.T) {
 	const admin = "admin-token"
 	taskToken := strings.Repeat("ab", 32)
-	grants := &TaskGrants{}
-	if err := grants.register(7, taskToken, 3600e9); err != nil {
+	grants := &TaskGrants{Store: credentials{}}
+	if err := grants.register(context.Background(), 7, taskToken, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	callers := Callers{Principals: principalsByID{"alice": "acme"}}

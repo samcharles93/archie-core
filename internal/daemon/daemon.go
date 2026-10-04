@@ -50,17 +50,11 @@ type TaskBus interface {
 	Request(ctx context.Context, subject string, payload []byte) ([]byte, error)
 }
 
-// WorktreeGrantIssuer gives one container dispatch the narrow authority to
-// publish its already-prepared branch. The daemon owns grant lifetime; the
-// transport implementation owns token mechanics.
-type WorktreeGrantIssuer interface {
-	Issue(task *workflow.Task) (token string, revoke func(), err error)
-}
-
-// StateStoreGrantIssuer issues a State Store credential scoped to one task's
-// own Update, Transition and InsertEvent calls.
-type StateStoreGrantIssuer interface {
-	Issue(task *workflow.Task) (token string, revoke func(), err error)
+// RunCredentialIssuer issues the one credential a task's container holds: it
+// authorizes the task's own State Store calls and the push of its branch.
+// It lapses at the task's time limit plus a margin if never revoked.
+type RunCredentialIssuer interface {
+	Issue(task *workflow.Task, limit time.Duration) (token string, revoke func(), err error)
 }
 
 // NATSEndpoint is the broker address and credential archied connected with at
@@ -132,13 +126,11 @@ type Daemon struct {
 	reactionPublisher ReactionPublisher
 	// Reactions is the review-reaction stream, drained into remediate runs each
 	// cycle. Nil disables it.
-	Reactions      ReactionSource
-	WorktreeGrants WorktreeGrantIssuer
-	// StateStoreGrants issues per-task State Store credentials for container
-	// env (see containerEnv). Required whenever ConnectedStateStore.URL is
-	// set -- acquireTaskContainer parks the task rather than fall back to
-	// forwarding the daemon's own administrative token.
-	StateStoreGrants StateStoreGrantIssuer
+	Reactions ReactionSource
+	// RunCredentials issues each task's run credential (see runCredential).
+	// Required whenever ConnectedStateStore.URL is set: the task is parked
+	// rather than handed the daemon's own administrative token.
+	RunCredentials RunCredentialIssuer
 	// KitLauncher starts tasks whose agent profile is a Kit. Nil parks them.
 	KitLauncher KitLauncher
 	// TaskRunReadyTimeout bounds how long runViaAgent retries a taskrun request
@@ -1331,18 +1323,18 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 		d.cleanupTerminalTaskWorktree(ctx, task, trees)
 		return
 	}
-	ctr, revokeStateStoreGrant, ok := d.acquireTaskContainer(ctx, task, repo, workDir, profile.Image)
+	ctr, credential, revokeCredential, ok := d.acquireTaskContainer(ctx, task, repo, workDir, profile.Image)
 	if !ok {
 		return
 	}
 	defer d.ContainerPool.Release(ctx, ctr)
-	defer revokeStateStoreGrant()
+	defer revokeCredential()
 
 	// Run the whole task in archie-agent, which calls back to the daemon for
 	// store, forge and push operations.
 	limitCtx, stopLimit := withTaskTimeLimit(ctx, d.configFor(task).Budgets.TaskWallClock.Std())
 	runCtx, stopWatch := withContainerExit(limitCtx, ctr.Exited())
-	d.runViaAgent(runCtx, task, repo, profile, nil)
+	d.runViaAgent(runCtx, task, repo, profile, nil, credential)
 	stopWatch()
 	stopLimit()
 
@@ -1488,7 +1480,7 @@ func (d *Daemon) acquireTaskContainer(
 	repo config.Repo,
 	workDir string,
 	image string,
-) (*container.Container, func(), bool) {
+) (*container.Container, string, func(), bool) {
 	park := func(reason string, err error) {
 		d.Log.Error(reason, "err", err)
 		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error(), taskstate.ParkTransient)
@@ -1501,7 +1493,7 @@ func (d *Daemon) acquireTaskContainer(
 
 	if err := writeTaskBrief(workDir, task); err != nil {
 		park("task.json write failed", err)
-		return nil, nil, false
+		return nil, "", nil, false
 	}
 
 	// Fetch the pull request with the daemon's forge credential into workDir,
@@ -1509,7 +1501,7 @@ func (d *Daemon) acquireTaskContainer(
 	if task.Workflow == "pr-review" {
 		if err := prefetchPRReview(ctx, d.forgeFor(task), task.Owner, task.Repo, task.PRNumber, workDir); err != nil {
 			park("pr-review prefetch failed", err)
-			return nil, nil, false
+			return nil, "", nil, false
 		}
 	}
 
@@ -1518,7 +1510,7 @@ func (d *Daemon) acquireTaskContainer(
 	if d.Storage == nil {
 		d.Log.Error("storage backend is nil  --  cannot acquire container")
 		d.parkRunningTask(ctx, task.ID, "storage backend not configured", taskstate.ParkTransient)
-		return nil, nil, false
+		return nil, "", nil, false
 	}
 
 	mounts, err := d.Storage.Setup(ctx, storage.TaskRef{
@@ -1530,10 +1522,10 @@ func (d *Daemon) acquireTaskContainer(
 	})
 	if err != nil {
 		park("storage setup failed", err)
-		return nil, nil, false
+		return nil, "", nil, false
 	}
 
-	stateStoreToken, revokeStateStoreGrant, err := d.stateStoreGrantToken(task)
+	credential, revokeCredential, err := d.runCredential(task)
 	if err != nil {
 		if terr := d.Storage.Teardown(ctx, storage.TaskRef{
 			WorktreeDir:       workDir,
@@ -1542,15 +1534,15 @@ func (d *Daemon) acquireTaskContainer(
 			Owner:             task.Owner,
 			Repo:              task.Repo,
 		}); terr != nil {
-			d.Log.Warn("storage teardown after state store grant failure failed", "err", terr)
+			d.Log.Warn("storage teardown after run credential failure failed", "err", terr)
 		}
-		park("state store grant failed", err)
-		return nil, nil, false
+		park("run credential failed", err)
+		return nil, "", nil, false
 	}
 
-	ctr, err := d.ContainerPool.Acquire(ctx, image, mounts, d.containerEnv(task, stateStoreToken))
+	ctr, err := d.ContainerPool.Acquire(ctx, image, mounts, d.containerEnv(task, credential))
 	if err != nil {
-		revokeStateStoreGrant()
+		revokeCredential()
 		// Roll back the storage we just set up: the mounts were created
 		// for this task but no container will use them. Leaking them until
 		// a later TTL sweep is not acceptable on a backend that allocates
@@ -1565,9 +1557,9 @@ func (d *Daemon) acquireTaskContainer(
 			d.Log.Warn("storage teardown after acquire failure failed", "err", terr)
 		}
 		park("container acquire failed", err)
-		return nil, nil, false
+		return nil, "", nil, false
 	}
-	return ctr, revokeStateStoreGrant, true
+	return ctr, credential, revokeCredential, true
 }
 
 // writeTaskBrief writes task.json, the container's boot-time brief.
@@ -1643,12 +1635,10 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 // runViaAgent hands a task to archie-agent and waits for its result. It parks
 // the task only when the agent never answered or failed before recording an
 // outcome.
-func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentrun.HarnessSpec) {
-	grant, revoke, ok := d.publicationGrant(ctx, task)
-	if !ok {
-		return
-	}
-	defer revoke()
+//
+// credential is the task's run credential; the agent presents it to push the
+// task's branch.
+func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentrun.HarnessSpec, credential string) {
 	cfg := d.configFor(task)
 	taskCfg := cfg.ForTask()
 	d.captureAttemptConfig(ctx, task, taskCfg)
@@ -1658,7 +1648,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		Cfg:                taskCfg,
 		Providers:          agentexec.ProvidersFromConfig(cfg.Providers),
 		MCPServers:         cfg.Tools.MCPServers,
-		WorktreeGrant:      grant,
+		WorktreeGrant:      credential,
 		KindWorkflows:      d.KindWorkflows,
 		LabelWorkflows:     d.LabelWorkflows,
 		WorkflowDefinition: task.WorkflowDefinitionYAML,
@@ -1744,27 +1734,6 @@ func validateProfileMeetsNeeds(profile config.AgentProfile, needs workflowtask.W
 		return fmt.Errorf("needs.captures is set, but profile adapter %q serves no capture tools", profile.Adapter)
 	}
 	return nil
-}
-
-// publicationGrant issues the capability to publish the task's branch. A task
-// with no repository has nothing to publish and gets none.
-func (d *Daemon) publicationGrant(ctx context.Context, task *workflow.Task) (string, func(), bool) {
-	if !task.HasRepository() {
-		return "", func() {}, true
-	}
-	if d.WorktreeGrants == nil {
-		const reason = "worktree publication grants are unavailable"
-		d.Log.Error(reason, "task", task.ID)
-		d.parkRunningTask(ctx, task.ID, reason, taskstate.ParkTransient)
-		return "", nil, false
-	}
-	grant, revoke, err := d.WorktreeGrants.Issue(task)
-	if err != nil {
-		d.Log.Error("worktree publication grant failed", "task", task.ID, "err", err)
-		d.parkRunningTask(ctx, task.ID, "worktree publication grant failed: "+err.Error(), taskstate.ParkTransient)
-		return "", nil, false
-	}
-	return grant, revoke, true
 }
 
 // pinWorkflowDefinition ensures the task carries a valid definition pin for
@@ -1989,16 +1958,16 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 	return env
 }
 
-// stateStoreGrantToken issues the task's scoped State Store token, or "" when
-// no State Store is configured. It fails when no issuer is wired.
-func (d *Daemon) stateStoreGrantToken(task *workflow.Task) (string, func(), error) {
+// runCredential issues the task's run credential, or "" when no State Store
+// is configured. It fails when no issuer is wired.
+func (d *Daemon) runCredential(task *workflow.Task) (string, func(), error) {
 	if d.ConnectedStateStore.URL == "" {
 		return "", func() {}, nil
 	}
-	if d.StateStoreGrants == nil {
-		return "", nil, fmt.Errorf("state store is configured but no task-scoped grant issuer is wired")
+	if d.RunCredentials == nil {
+		return "", nil, fmt.Errorf("state store is configured but no run credential issuer is wired")
 	}
-	return d.StateStoreGrants.Issue(task)
+	return d.RunCredentials.Issue(task, d.configFor(task).Budgets.TaskWallClock.Std())
 }
 
 func (d *Daemon) configFor(task *workflow.Task) config.Config {

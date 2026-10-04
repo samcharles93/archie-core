@@ -111,11 +111,11 @@ func Run(ctx context.Context, options Options) error { //nolint:cyclop // the co
 	}
 	b.reportUnseededResources(skipped)
 
-	token := options.Token
-	if token == "" {
-		token = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
+	token := b.instanceToken(options)
+	grants, err := b.runCredentials(ctx)
+	if err != nil {
+		return err
 	}
-	grants := &staterpc.TaskGrants{}
 	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; TaskGrants.StreamInterceptor derives its context from stream.Context() instead
 	opts, loopback, err := stateStoreServerOpts(listen, token, grants, b.callers())
 	if err != nil {
@@ -371,6 +371,29 @@ func (b *server) executionDeps(deps *staterpc.Deps) {
 	if sr, ok := b.st.(storecontract.StepReader); ok {
 		deps.StepReader = sr
 	}
+}
+
+// instanceToken is the bearer token a non-loopback listener requires: the
+// flag, else [services.state].target_token.
+func (b *server) instanceToken(options Options) string {
+	if options.Token != "" {
+		return options.Token
+	}
+	return b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
+}
+
+// runCredentials builds the run-credential check over this store and drops
+// the credentials that expired while nothing revoked them.
+func (b *server) runCredentials(ctx context.Context) (*staterpc.TaskGrants, error) {
+	store, ok := b.st.(storecontract.RunCredentialStore)
+	if !ok {
+		return nil, fmt.Errorf("state store does not support run credentials")
+	}
+	grants := &staterpc.TaskGrants{Store: store}
+	if err := grants.Sweep(ctx); err != nil {
+		return nil, fmt.Errorf("sweep expired run credentials: %w", err)
+	}
+	return grants, nil
 }
 
 // callers resolves the service and principal of each call against this

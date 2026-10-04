@@ -38,15 +38,15 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 		park("task.json write failed", err)
 		return
 	}
-	stateStoreToken, revokeStateStoreGrant, err := d.stateStoreGrantToken(task)
+	credential, revokeCredential, err := d.runCredential(task)
 	if err != nil {
-		park("state store grant failed", err)
+		park("run credential failed", err)
 		return
 	}
-	defer revokeStateStoreGrant()
+	defer revokeCredential()
 	env, err := kitrun.WorkerEnv(kitrun.Endpoints{
 		NATS: d.ConnectedNATS.URL, NATSToken: d.ConnectedNATS.Token,
-		StateStore: d.ConnectedStateStore.URL, StateStoreToken: stateStoreToken,
+		StateStore: d.ConnectedStateStore.URL, StateStoreToken: credential,
 	}, os.Getuid(), os.Getgid())
 	if err != nil {
 		park("kit worker environment", err)
@@ -83,7 +83,7 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 
 	limitCtx, stopLimit := withTaskTimeLimit(ctx, d.configFor(task).Budgets.TaskWallClock.Std())
 	runCtx, stopWatch := withContainerExit(limitCtx, run.Container.Exited())
-	d.runViaAgent(runCtx, task, repo, profile, &run.Harness)
+	d.runViaAgent(runCtx, task, repo, profile, &run.Harness, credential)
 	stopWatch()
 	stopLimit()
 

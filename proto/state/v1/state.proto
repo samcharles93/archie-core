@@ -24,6 +24,7 @@ service StateStoreService {
   // Administrative task credential lifecycle. Worker credentials cannot call these.
   rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
   rpc RevokeTaskGrant(RevokeTaskGrantRequest) returns (RevokeTaskGrantResponse);
+  rpc ResolveTaskGrant(ResolveTaskGrantRequest) returns (ResolveTaskGrantResponse);
   // Identity domain. Task-scoped grants cannot call these administrative RPCs.
   rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse);
   rpc GetIdentity(GetIdentityRequest) returns (GetIdentityResponse);
@@ -234,6 +235,10 @@ message RevokeTaskGrantRequest {
   string token = 1;
 }
 message RevokeTaskGrantResponse {}
+// ResolveTaskGrantRequest names a run credential; the response is the task
+// it was issued for.
+message ResolveTaskGrantRequest { string token = 1; }
+message ResolveTaskGrantResponse { int64 task_id = 1; }
 
 message Identity {
   string id = 1;

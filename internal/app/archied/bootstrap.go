@@ -56,7 +56,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
-	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
 // boot is the mutable wiring state assembled by the run() composition
@@ -99,11 +98,9 @@ type boot struct {
 	// surface reports. Both are nil when no policy store is wired.
 	accessChain access.Authorizer
 	accessLive  *infraaccess.Live
-	// stateStoreGrants issues per-task, scoped State Store credentials for
-	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
-	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
-	// the remote gRPC client (never true in production; state_store.go's
-	// standalone-only compose leaves no other case).
+	// stateStoreGrants issues each task's run credential
+	// (daemon.RunCredentialIssuer), wrapping the same *staterpc.Client as
+	// stateStore, which also verifies a credential for a worktree push.
 	stateStoreGrants *staterpc.GrantIssuer
 	stateStoreToken  string
 	controlPlane     *controlplane.Client
@@ -173,7 +170,6 @@ type boot struct {
 
 	startGateways   []func()
 	trees           *worktree.Manager
-	worktreeGrants  *worktreerpc.Grants
 	identityRunners []*daemon.IdentityRunner
 	d               *daemon.Daemon
 	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
@@ -565,8 +561,7 @@ func (b *boot) registerNATSRPC() error {
 		log.Error("nats connection unavailable for task RPC", "err", err)
 		return err
 	}
-	b.worktreeGrants = worktreerpc.NewGrants()
-	unsubscribe, err := registerTaskRPCServers(coreConn, b.forgeClient, b.trees, b.identityRunners, b.worktreeGrants, log)
+	unsubscribe, err := registerTaskRPCServers(coreConn, b.forgeClient, b.trees, b.identityRunners, b.stateStoreGrants.Client, log)
 	if err != nil {
 		log.Error("task RPC server registration failed", "err", err)
 		return err
@@ -610,8 +605,7 @@ func (b *boot) buildDaemon() {
 		Log:                 log,
 		Tasks:               b.natsClient,
 		Reactions:           b.reactionClient,
-		WorktreeGrants:      b.worktreeGrants,
-		StateStoreGrants:    b.stateStoreGrants,
+		RunCredentials:      b.stateStoreGrants,
 		ContainerPool:       b.containerPool,
 		KitLauncher:         b.kitLauncher,
 		Identities:          b.identityRunners,

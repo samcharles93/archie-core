@@ -518,3 +518,17 @@ type ResourceWrite struct {
 	ExpectedVersion int64
 	At              time.Time
 }
+
+// ErrRunCredentialUnknown is a run credential that was never issued, was
+// revoked, or has expired.
+var ErrRunCredentialUnknown = errors.New("run credential unknown or expired")
+
+// RunCredentialStore keeps run credentials by digest: the SHA-256 of the
+// token a task's container presents. A lookup of an unknown or expired
+// digest reports ErrRunCredentialUnknown.
+type RunCredentialStore interface {
+	PutRunCredential(ctx context.Context, digest [32]byte, taskID int64, expires time.Time) error
+	DeleteRunCredential(ctx context.Context, digest [32]byte) error
+	RunCredentialTask(ctx context.Context, digest [32]byte, now time.Time) (int64, error)
+	DeleteExpiredRunCredentials(ctx context.Context, now time.Time) error
+}
