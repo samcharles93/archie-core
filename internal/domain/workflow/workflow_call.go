@@ -36,9 +36,9 @@ var callPollInterval = 2 * time.Second
 // a literal or "inputs.<name>", a reference to the calling workflow's declared
 // input.
 type workflowCallSettings struct {
-	Workflow string         `yaml:"workflow"`
+	Workflow string         `yaml:"workflow" doc:"The workflow to start as a child run."`
 	Inputs   map[string]any `yaml:"inputs,omitempty"`
-	Wait     bool           `yaml:"wait,omitempty"`
+	Wait     bool           `yaml:"wait,omitempty" doc:"Wait for the child run to finish before continuing."`
 	// Outputs publishes a callee output as one of the caller's own: the key
 	// names the callee's declared output, the value an outputs.<name>
 	// reference naming the caller's declared output
@@ -61,7 +61,7 @@ var refName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // WorkflowCallStepType contributes the workflow.call step type.
 func WorkflowCallStepType() StepType {
-	return StepType{Name: WorkflowCallStepName, Factory: newWorkflowCallStage}
+	return StepType{Name: WorkflowCallStepName, Factory: newWorkflowCallStage, Settings: workflowCallSettings{}}
 }
 
 func newWorkflowCallStage(settings yaml.Node) (Stage, error) {

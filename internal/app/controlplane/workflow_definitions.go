@@ -21,7 +21,7 @@ func stepRegistry(steps *workflow.Manager) (workflow.StepRegistry, error) {
 	return steps.Registry(), nil
 }
 
-func workflowDefinitionsDefinition(steps workflow.StepRegistry) Definition {
+func workflowDefinitionsDefinition(steps workflow.StepRegistry, settings map[string]any) Definition {
 	return Definition{
 		Kind:      WorkflowDefinitionsKind,
 		Title:     "Workflow definitions",
@@ -37,16 +37,21 @@ func workflowDefinitionsDefinition(steps workflow.StepRegistry) Definition {
 			_, err := workflow.DecodeDefinitionCollection(input, steps)
 			return err
 		},
-		SchemaExtensions: map[string]any{"x-step-types": stepTypeVocabulary(steps)},
+		SchemaExtensions: map[string]any{"x-step-types": stepTypeVocabulary(steps, settings)},
 	}
 }
 
 // stepTypeVocabulary is the registered step types as the dashboard editor
-// checks them: each name and whether it needs a repository.
-func stepTypeVocabulary(steps workflow.StepRegistry) []map[string]any {
+// reads them: each name, whether it needs a repository, and the schema of its
+// settings (absent for a step that takes none).
+func stepTypeVocabulary(steps workflow.StepRegistry, settings map[string]any) []map[string]any {
 	vocabulary := make([]map[string]any, 0, len(steps))
 	for _, name := range slices.Sorted(maps.Keys(steps)) {
-		vocabulary = append(vocabulary, map[string]any{"name": name, "needs_repository": workflow.NeedsRepository(name)})
+		entry := map[string]any{"name": name, "needs_repository": workflow.NeedsRepository(name)}
+		if schema := settingsSchema(settings[name]); schema != nil {
+			entry["settings"] = schema
+		}
+		vocabulary = append(vocabulary, entry)
 	}
 	return vocabulary
 }

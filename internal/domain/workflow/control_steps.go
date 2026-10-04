@@ -19,16 +19,16 @@ const (
 // ControlStepTypes contributes the control and forge step types.
 func ControlStepTypes() []StepType {
 	return []StepType{
-		{Name: HandoffStepName, Factory: newHandoffStage},
-		{Name: ApproveStepName, Factory: newApproveStage},
+		{Name: HandoffStepName, Factory: newHandoffStage, Settings: handoffSettings{}},
+		{Name: ApproveStepName, Factory: newApproveStage, Settings: approveSettings{}},
 		{Name: CloseIssueStepName, Factory: newCloseIssueStage},
-		{Name: CommentStepName, Factory: newCommentStage},
+		{Name: CommentStepName, Factory: newCommentStage, Settings: commentSettings{}},
 	}
 }
 
 type handoffSettings struct {
-	Workflow string `yaml:"workflow"`
-	Detail   string `yaml:"detail"`
+	Workflow string `yaml:"workflow" doc:"The workflow the task is requeued under."`
+	Detail   string `yaml:"detail" doc:"Why the task was handed off."`
 }
 
 // newHandoffStage requeues the task under another workflow: the same task,
@@ -51,9 +51,9 @@ func newHandoffStage(settings yaml.Node) (Stage, error) {
 type approveSettings struct {
 	// Plan is what the human decides on. It is kept on the task, and the
 	// workflow named by Then reads it as task.plan.
-	Plan string `yaml:"plan"`
+	Plan string `yaml:"plan" doc:"What the human decides on; the next workflow reads it as task.plan."`
 	// Then is the workflow the task is requeued under once approved.
-	Then string `yaml:"then"`
+	Then string `yaml:"then" doc:"The workflow the task runs once approved."`
 }
 
 // newApproveStage delivers the plan to the decision surfaces and waits: the
@@ -85,9 +85,9 @@ func newCloseIssueStage(yaml.Node) (Stage, error) {
 }
 
 type commentSettings struct {
-	Body string `yaml:"body"`
+	Body string `yaml:"body" doc:"The comment text."`
 	// On is "issue" (the default) or "pr".
-	On string `yaml:"on"`
+	On string `yaml:"on" enum:"issue,pr" doc:"Comment on the issue or the pull request. Empty means issue."`
 }
 
 func newCommentStage(settings yaml.Node) (Stage, error) {

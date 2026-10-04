@@ -54,7 +54,7 @@ type DiffRule struct {
 	ID string `yaml:"id"`
 	// Level is DiffRuleLevelError or DiffRuleLevelWarn, and is required: a rule
 	// that does not say whether it blocks is refused rather than defaulted.
-	Level string `yaml:"level"`
+	Level string `yaml:"level" enum:"error,warn"`
 	// Pattern is the RE2 expression matched against each added line's text
 	// (without its leading "+"). Required.
 	Pattern string `yaml:"pattern"`
@@ -73,14 +73,14 @@ type DiffRule struct {
 // so the decode is strict: a settings key the step does not read is refused
 // where the definition is validated, not ignored at run time.
 type diffRulesSettings struct {
-	Rules []DiffRule `yaml:"rules"`
+	Rules []DiffRule `yaml:"rules" doc:"Patterns the change must not match."`
 }
 
 // DiffRulesStepType returns the registered step type for DiffRulesStepName, the
 // way the shipped stages are declared: the factory builds the stage the
 // executing side runs from the settings the validating side accepted.
 func DiffRulesStepType() StepType {
-	return StepType{Name: DiffRulesStepName, Factory: newDiffRulesStage}
+	return StepType{Name: DiffRulesStepName, Factory: newDiffRulesStage, Settings: diffRulesSettings{}}
 }
 
 // newDiffRulesStage decodes and compiles the step's settings, refusing every

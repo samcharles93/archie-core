@@ -35,7 +35,7 @@ func schemaJSON(document any, extensions map[string]any) string {
 	if document == nil {
 		return bareObjectSchema
 	}
-	schema := schemaOf(reflect.TypeOf(document))
+	schema := schemaOf(reflect.TypeOf(document), "json")
 	maps.Copy(schema, extensions)
 	encoded, err := json.Marshal(schema)
 	if err != nil {
@@ -47,9 +47,19 @@ func schemaJSON(document any, extensions map[string]any) string {
 	return string(encoded)
 }
 
-// schemaOf is the JSON Schema for one type, following json tags for keys and the
-// Go type for everything else.
-func schemaOf(t reflect.Type) map[string]any {
+// settingsSchema is the JSON Schema of a workflow step's settings type, keyed by
+// its yaml tags because step settings are written in YAML. Nil means the step
+// takes no settings.
+func settingsSchema(settings any) map[string]any {
+	if settings == nil {
+		return nil
+	}
+	return schemaOf(reflect.TypeOf(settings), "yaml")
+}
+
+// schemaOf is the JSON Schema for one type, following the keyTag struct tags
+// for keys and the Go type for everything else.
+func schemaOf(t reflect.Type, keyTag string) map[string]any {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -65,11 +75,11 @@ func schemaOf(t reflect.Type) map[string]any {
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		return objectSchemaOf(t)
+		return objectSchemaOf(t, keyTag)
 	case reflect.Slice, reflect.Array:
-		return map[string]any{"type": "array", "items": schemaOf(t.Elem())}
+		return map[string]any{"type": "array", "items": schemaOf(t.Elem(), keyTag)}
 	case reflect.Map:
-		return map[string]any{"type": "object", "additionalProperties": schemaOf(t.Elem())}
+		return map[string]any{"type": "object", "additionalProperties": schemaOf(t.Elem(), keyTag)}
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
@@ -77,19 +87,21 @@ func schemaOf(t reflect.Type) map[string]any {
 		return map[string]any{"type": "integer"}
 	case reflect.Float32, reflect.Float64:
 		return map[string]any{"type": "number"}
+	case reflect.Interface:
+		return map[string]any{} // any JSON value
 	default:
 		return map[string]any{"type": "string"}
 	}
 }
 
-func objectSchemaOf(t reflect.Type) map[string]any {
+func objectSchemaOf(t reflect.Type, keyTag string) map[string]any {
 	properties := map[string]any{}
 	for field := range t.Fields() {
 		if field.Anonymous {
 			// encoding/json promotes an embedded struct's fields into the
 			// enclosing object, so the schema lists them there too. Dropping
 			// them would leave document keys nothing describes.
-			embedded, ok := schemaOf(field.Type)["properties"].(map[string]any)
+			embedded, ok := schemaOf(field.Type, keyTag)["properties"].(map[string]any)
 			if !ok {
 				continue
 			}
@@ -99,11 +111,11 @@ func objectSchemaOf(t reflect.Type) map[string]any {
 		if field.PkgPath != "" {
 			continue // unexported: not part of any document
 		}
-		name, ok := documentKey(field)
+		name, ok := documentKey(field, keyTag)
 		if !ok {
 			continue
 		}
-		properties[name] = documented(schemaOf(field.Type), field)
+		properties[name] = documented(schemaOf(field.Type, keyTag), field)
 	}
 	return map[string]any{"type": "object", "properties": properties}
 }
@@ -112,8 +124,8 @@ func objectSchemaOf(t reflect.Type) map[string]any {
 // or the Go field name when the tag declares none, because that fallback is what
 // encoding/json uses and therefore what the document really holds. Reporting the
 // tag instead of the fallback would describe a document nobody stores.
-func documentKey(field reflect.StructField) (string, bool) {
-	name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+func documentKey(field reflect.StructField, keyTag string) (string, bool) {
+	name, _, _ := strings.Cut(field.Tag.Get(keyTag), ",")
 	switch name {
 	case "-":
 		return "", false
@@ -135,6 +147,9 @@ func documented(schema map[string]any, field reflect.StructField) map[string]any
 		if value := field.Tag.Get(annotation.tag); value != "" {
 			schema[annotation.key] = value
 		}
+	}
+	if values := field.Tag.Get("enum"); values != "" {
+		schema["enum"] = strings.Split(values, ",")
 	}
 	return schema
 }

@@ -24,18 +24,18 @@ type commandRunSettings struct {
 	// Level is "error" (the default) or "warn". At "warn" a non-zero exit is
 	// logged and the workflow continues, which is what makes the step usable
 	// for a check the operator wants to see without being stopped by it.
-	Level string `yaml:"level"`
+	Level string `yaml:"level" enum:"error,warn" doc:"error stops the run on a failing command; warn reports it and continues."`
 	// Run is the commands to execute, in order. The first failure ends the
 	// step, so a later command does not run after an earlier one failed.
-	Run []commandRunCommand `yaml:"run"`
+	Run []commandRunCommand `yaml:"run" doc:"The commands to run in order; the first failure ends the step."`
 }
 
 // commandRunCommand is one command in a command.run step's settings. It is
 // the YAML shape of agentrun.Command.
 type commandRunCommand struct {
 	Name          string   `yaml:"name"`
-	Argv          []string `yaml:"argv"`
-	ExpectFailure bool     `yaml:"expect_failure"`
+	Argv          []string `yaml:"argv" doc:"The program and its arguments."`
+	ExpectFailure bool     `yaml:"expect_failure" title:"Expect failure" doc:"The command must exit non-zero."`
 }
 
 // command converts the settings shape into the type the execution path takes,
@@ -46,7 +46,7 @@ func (c commandRunCommand) command() agentrun.Command {
 
 // CommandRunStepType contributes the command.run step type.
 func CommandRunStepType() StepType {
-	return StepType{Name: CommandRunStepName, Factory: newCommandRunStage}
+	return StepType{Name: CommandRunStepName, Factory: newCommandRunStage, Settings: commandRunSettings{}}
 }
 
 func newCommandRunStage(settings yaml.Node) (Stage, error) {

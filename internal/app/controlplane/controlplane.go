@@ -59,7 +59,7 @@ func NewServer(resources ResourceStore, steps *workflow.Manager) (*Server, error
 	if err != nil {
 		return nil, err
 	}
-	definitions := builtinDefinitions(registry)
+	definitions := builtinDefinitions(registry, steps.Settings())
 	byKind := make(map[string]Definition, len(definitions))
 	for _, definition := range definitions {
 		byKind[definition.Kind] = definition

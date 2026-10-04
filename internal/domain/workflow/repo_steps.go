@@ -25,10 +25,10 @@ const (
 // RepoStepTypes contributes the general repository step types.
 func RepoStepTypes() []StepType {
 	return []StepType{
-		{Name: RepoPrepareStepName, Factory: newRepoPrepareStage},
-		{Name: RepoCommitStepName, Factory: newRepoCommitStage},
-		{Name: RepoOpenPRStepName, Factory: newRepoOpenPRStage},
-		{Name: GateRepositoryName, Factory: newGateRepositoryStage},
+		{Name: RepoPrepareStepName, Factory: newRepoPrepareStage, Settings: repoPrepareSettings{}},
+		{Name: RepoCommitStepName, Factory: newRepoCommitStage, Settings: repoCommitSettings{}},
+		{Name: RepoOpenPRStepName, Factory: newRepoOpenPRStage, Settings: repoOpenPRSettings{}},
+		{Name: GateRepositoryName, Factory: newGateRepositoryStage, Settings: gateRepositorySettings{}},
 		{Name: GateDiffSizeStepName, Factory: func(yaml.Node) (Stage, error) {
 			stage := StageDiffCap()
 			stage.Name = GateDiffSizeStepName
@@ -51,7 +51,7 @@ func decodeSettings(step string, settings yaml.Node, into any) error {
 type repoPrepareSettings struct {
 	// Branch is "fresh" (the default, a new branch from the base) or "task",
 	// the branch an earlier run of this task pushed.
-	Branch string `yaml:"branch"`
+	Branch string `yaml:"branch" enum:"fresh,task" doc:"fresh starts a new branch from the base; task resumes the branch this task pushed."`
 }
 
 func newRepoPrepareStage(settings yaml.Node) (Stage, error) {
@@ -73,14 +73,14 @@ func newRepoPrepareStage(settings yaml.Node) (Stage, error) {
 }
 
 type repoCommitSettings struct {
-	Message string `yaml:"message"`
+	Message string `yaml:"message" doc:"The commit message."`
 	// Reference is the verb that links the commit to the task's issue
 	// ("Fixes", "Implements", "Refs"); empty links nothing.
-	Reference string `yaml:"reference"`
-	Push      bool   `yaml:"push"`
+	Reference string `yaml:"reference" enum:"Fixes,Implements,Refs" doc:"How the commit links to the task issue."`
+	Push      bool   `yaml:"push" doc:"Push the branch after committing."`
 	// IfEmpty is what an empty worktree does: "fail" (the default), "skip",
 	// or "complete", which closes the issue and completes the workflow.
-	IfEmpty string `yaml:"if_empty"`
+	IfEmpty string `yaml:"if_empty" title:"If nothing changed" enum:"fail,skip,complete" doc:"fail stops the run, skip moves on, complete closes the issue and ends the run."`
 }
 
 func newRepoCommitStage(settings yaml.Node) (Stage, error) {
@@ -128,10 +128,10 @@ func newRepoCommitStage(settings yaml.Node) (Stage, error) {
 }
 
 type repoOpenPRSettings struct {
-	Body string `yaml:"body"`
+	Body string `yaml:"body" doc:"The pull request description."`
 	// Review runs the PR review pipeline on the change first; a blocking
 	// finding parks the task instead of opening the PR.
-	Review bool `yaml:"review"`
+	Review bool `yaml:"review" doc:"Review the change first; a blocking finding parks the task instead of opening the PR."`
 }
 
 func newRepoOpenPRStage(settings yaml.Node) (Stage, error) {
@@ -154,9 +154,9 @@ func newRepoOpenPRStage(settings yaml.Node) (Stage, error) {
 type gateRepositorySettings struct {
 	// Expect is "pass" (the default) or "test-failure": every gate command
 	// passes except the test command, which must fail.
-	Expect string `yaml:"expect"`
+	Expect string `yaml:"expect" enum:"pass,test-failure" doc:"pass requires every gate command to pass; test-failure requires the test command to fail."`
 	// Repair lets the builder fix a failing gate before the step fails.
-	Repair bool `yaml:"repair"`
+	Repair bool `yaml:"repair" doc:"Let the builder fix a failing gate before the step fails."`
 }
 
 // newGateRepositoryStage runs the repository's gate commands in the worktree.

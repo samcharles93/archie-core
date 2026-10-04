@@ -16,6 +16,10 @@ import (
 type StepType struct {
 	Name    string
 	Factory StepFactory
+	// Settings is a zero value of the step's settings type, from which the
+	// control plane derives the settings schema editors build forms from.
+	// Nil means the step takes no settings.
+	Settings any
 }
 
 // StepTypeProvider is the typed extension point through which a plugin
@@ -38,6 +42,7 @@ type Manager struct {
 	registry StepRegistry
 	// owners maps each step type to the provider that registered it.
 	owners    map[string]string
+	settings  map[string]any
 	providers []string
 }
 
@@ -46,7 +51,7 @@ type Manager struct {
 // composition root, so the vocabulary every side resolves is the one that was
 // actually registered.
 func NewManager() *Manager {
-	return &Manager{registry: StepRegistry{}, owners: map[string]string{}}
+	return &Manager{registry: StepRegistry{}, owners: map[string]string{}, settings: map[string]any{}}
 }
 
 // Register validates a provider's whole contribution and applies all of it or
@@ -63,6 +68,7 @@ func (m *Manager) Register(provider StepTypeProvider) error {
 
 	contributed := provider.StepTypes()
 	pending := make(StepRegistry, len(contributed))
+	settings := make(map[string]any, len(contributed))
 	order := make([]string, 0, len(contributed))
 	for _, stepType := range contributed {
 		switch {
@@ -75,6 +81,7 @@ func (m *Manager) Register(provider StepTypeProvider) error {
 			return fmt.Errorf("workflow step type provider %q declares step type %q twice", name, stepType.Name)
 		}
 		pending[stepType.Name] = stepType.Factory
+		settings[stepType.Name] = stepType.Settings
 		order = append(order, stepType.Name)
 	}
 
@@ -87,6 +94,7 @@ func (m *Manager) Register(provider StepTypeProvider) error {
 	}
 	for _, stepType := range order {
 		m.registry[stepType] = pending[stepType]
+		m.settings[stepType] = settings[stepType]
 		m.owners[stepType] = name
 	}
 	m.providers = append(m.providers, name)
@@ -102,6 +110,14 @@ func (m *Manager) Registry() StepRegistry {
 	registry := make(StepRegistry, len(m.registry))
 	maps.Copy(registry, m.registry)
 	return registry
+}
+
+// Settings returns each registered step type's settings value (see
+// StepType.Settings), keyed by type name.
+func (m *Manager) Settings() map[string]any {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return maps.Clone(m.settings)
 }
 
 // StepTypes returns every registered step type name, sorted.

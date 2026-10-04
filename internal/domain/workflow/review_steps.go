@@ -21,7 +21,7 @@ func ReviewStepTypes() []StepType {
 	return []StepType{
 		{Name: ReviewPRStepName, Factory: newReviewPRStage},
 		{Name: ReviewRoundStepName, Factory: newReviewRoundStage},
-		{Name: ReviewReplyStepName, Factory: newReviewReplyStage},
+		{Name: ReviewReplyStepName, Factory: newReviewReplyStage, Settings: reviewReplySettings{}},
 	}
 }
 
@@ -62,7 +62,7 @@ func newReviewRoundStage(yaml.Node) (Stage, error) {
 }
 
 type reviewReplySettings struct {
-	Body string `yaml:"body"`
+	Body string `yaml:"body" doc:"The reply to the review."`
 }
 
 // newReviewReplyStage answers the review this round addressed, in its own

@@ -19,13 +19,13 @@ var finishStatuses = map[string]string{
 }
 
 type finishSettings struct {
-	Status string `yaml:"status"`
-	Detail string `yaml:"detail"`
+	Status string `yaml:"status" enum:"completed,parked,waiting_human,declined" doc:"How the run ends. Empty means completed."`
+	Detail string `yaml:"detail" doc:"What the operator reads about the outcome."`
 }
 
 // FinishStepType contributes the workflow.finish step type.
 func FinishStepType() StepType {
-	return StepType{Name: FinishStepName, Factory: newFinishStage}
+	return StepType{Name: FinishStepName, Factory: newFinishStage, Settings: finishSettings{}}
 }
 
 func newFinishStage(settings yaml.Node) (Stage, error) {

@@ -11,10 +11,23 @@ import { parseDocument } from "yaml";
  * server's own reason.
  */
 
+/** A JSON Schema node, as the control plane derives it from Go types. */
+export interface SettingsSchema {
+  type?: string;
+  title?: string;
+  description?: string;
+  enum?: string[];
+  properties?: Record<string, SettingsSchema>;
+  items?: SettingsSchema;
+  additionalProperties?: SettingsSchema;
+}
+
 /** One registered step type, as the control-plane catalog serves it. */
 export interface StepTypeInfo {
   name: string;
   needs_repository: boolean;
+  /** Absent for a step that takes no settings. */
+  settings?: SettingsSchema;
 }
 
 /** One chip in the read-only Steps preview. */
@@ -104,6 +117,45 @@ function checkStepType(
   if (known.size && !info) return `${where}: unknown step type "${type}"`;
   if (info?.needs_repository && repository !== "required")
     return `${where}: "${type}" needs a repository, but the workflow's repository is ${repository}`;
+  if (!info || step.settings === undefined || step.settings === null) return "";
+  if (!info.settings) return `${where}: "${type}" takes no settings`;
+  return settingsProblem(step.settings, info.settings, `${where} settings`);
+}
+
+/** The first way a settings value breaks its schema, or "". A string holding a
+ * {{ reference }} is resolved at run time, so it is not held to an enum. */
+export function settingsProblem(value: unknown, schema: SettingsSchema, path: string): string {
+  const actual = Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
+  switch (schema.type) {
+    case "object": {
+      if (!isMapping(value)) return `${path} must be a mapping`;
+      for (const [key, child] of Object.entries(value)) {
+        const childSchema = schema.properties?.[key] ?? schema.additionalProperties;
+        if (!childSchema) return `${path}: unknown setting "${key}"`;
+        const problem = settingsProblem(child, childSchema, `${path}.${key}`);
+        if (problem) return problem;
+      }
+      return "";
+    }
+    case "array": {
+      if (!Array.isArray(value)) return `${path} must be a list`;
+      for (const [i, item] of value.entries()) {
+        const problem = schema.items ? settingsProblem(item, schema.items, `${path}[${i}]`) : "";
+        if (problem) return problem;
+      }
+      return "";
+    }
+    case "string":
+      if (actual !== "string") return `${path} must be text`;
+      if (schema.enum && !schema.enum.includes(value as string) && !(value as string).includes("{{"))
+        return `${path} must be one of ${schema.enum.join(", ")}`;
+      return "";
+    case "boolean":
+      return actual === "boolean" ? "" : `${path} must be true or false`;
+    case "integer":
+    case "number":
+      return actual === "number" ? "" : `${path} must be a number`;
+  }
   return "";
 }
 

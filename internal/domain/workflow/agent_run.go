@@ -26,27 +26,27 @@ const resultToolName = "result"
 type agentRunSettings struct {
 	// Mission is what the agent is asked to do. The workflow's inputs are
 	// appended to it as structured data.
-	Mission string `yaml:"mission"`
+	Mission string `yaml:"mission" doc:"What the agent is asked to do. May reference {{ task.* }}, {{ inputs.* }} and {{ steps.<id>.* }}."`
 	// Role selects the model (cfg.Models[Role]); empty means builder.
-	Role string `yaml:"role"`
+	Role string `yaml:"role" doc:"Which configured model role runs the agent, e.g. builder or planner. Empty means builder."`
 	// ReadOnly restricts the agent to read-only tools.
-	ReadOnly bool `yaml:"read_only"`
+	ReadOnly bool `yaml:"read_only" title:"Read only" doc:"Restrict the agent to read-only tools."`
 	// Gate holds the agent to the repository's gate before it may finish:
 	// "repository", or "test-failure" where the test command must fail
 	// (writing a failing reproduction). Empty means ungated.
-	Gate string `yaml:"gate"`
+	Gate string `yaml:"gate" enum:"repository,test-failure" doc:"Hold the agent to the repository gate before it may finish; test-failure requires the tests to fail."`
 	// ProtectTests write-blocks the repository's test files.
-	ProtectTests bool `yaml:"protect_tests"`
+	ProtectTests bool `yaml:"protect_tests" title:"Protect tests" doc:"Write-block the repository test files."`
 	// ExtraRules is appended to the agent's system prompt.
-	ExtraRules string `yaml:"extra_rules"`
+	ExtraRules string `yaml:"extra_rules" title:"Extra rules" doc:"Appended to the agent system prompt."`
 	// Result is a JSON Schema object. When set, the agent must return a value
 	// matching it, which later steps read as steps.<id>.result.
-	Result map[string]any `yaml:"result"`
+	Result map[string]any `yaml:"result" doc:"A JSON Schema object the agent must return; later steps read it as steps.<id>.result."`
 }
 
 // AgentRunStepType contributes the agent.run step type.
 func AgentRunStepType() StepType {
-	return StepType{Name: AgentRunStepName, Factory: newAgentRunStage}
+	return StepType{Name: AgentRunStepName, Factory: newAgentRunStage, Settings: agentRunSettings{}}
 }
 
 func newAgentRunStage(settings yaml.Node) (Stage, error) {
