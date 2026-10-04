@@ -146,11 +146,6 @@ tasks:
     cmds:
       - bash tools/webhook-send.sh {{.CLI_ARGS}}
 
-  bench:prreview:
-    desc: Review or rescore the Martian benchmark (-- -review-model PROVIDER/MODEL -classification-model PROVIDER/MODEL; --help for flags)
-    cmds:
-      - go run ./cmd/archie-prbench {{.CLI_ARGS}}
-
   dev:
     desc: Run development services and Vite at http://localhost:5173
     deps: [dev:daemon, dev:gateway, dev:messaging, dev:state-store, dev:dashboard, dev:ui]
