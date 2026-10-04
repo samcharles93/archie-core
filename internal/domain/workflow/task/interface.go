@@ -56,6 +56,10 @@ type WorkflowInterface struct {
 	// Profile names a [containers.profiles] entry. It is resolved when a task
 	// is dispatched, not when the workflow is saved.
 	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
+	// Identity names the identity every run of this workflow acts as,
+	// whatever dispatched it; the dispatcher needs run on the workflow. Empty
+	// runs as the dispatcher.
+	Identity string `yaml:"identity,omitempty" json:"identity,omitempty"`
 	// DeclaredNeeds is what the definition's needs: block declares. Read
 	// Needs, not this, when deciding a harness requirement: a declared output
 	// forces the captures capability and Needs resolves it.

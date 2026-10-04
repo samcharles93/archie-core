@@ -1278,6 +1278,11 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 }
 
 func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
+	// The workflow may name the identity the run acts as, which everything
+	// below is chosen by, so it is settled before anything else.
+	if !d.adoptWorkflowIdentity(ctx, task) {
+		return
+	}
 	// Register first so the task can be stopped during setup.
 	ctx, finished := d.running.begin(ctx, task.ID, task.Identity)
 	defer finished()
