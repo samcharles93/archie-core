@@ -166,7 +166,10 @@ type Message struct {
 	// file. The bytes ride only on the inbound request (see Media.data); a
 	// stored Media with tool_name empty is a sender attachment, and the
 	// tool_name on tool-produced events stays a stream-only field.
-	Media         []*Media `protobuf:"bytes,11,rep,name=media,proto3" json:"media,omitempty"`
+	Media []*Media `protobuf:"bytes,11,rep,name=media,proto3" json:"media,omitempty"`
+	// sender_id is the channel-native stable ID of the person who sent the
+	// message; the Gateway keys per-person rate limits and slash access on it.
+	SenderId      string `protobuf:"bytes,12,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -276,6 +279,13 @@ func (x *Message) GetMedia() []*Media {
 		return x.Media
 	}
 	return nil
+}
+
+func (x *Message) GetSenderId() string {
+	if x != nil {
+		return x.SenderId
+	}
+	return ""
 }
 
 type ToolCall struct {
@@ -1185,9 +1195,12 @@ func (x *RouteRequest) GetMessage() *Message {
 }
 
 type RouteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Text      string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	SessionId string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// rate_limited marks text as the inbound rate-limit reply, not a dispatch
+	// outcome.
+	RateLimited   bool `protobuf:"varint,3,opt,name=rate_limited,json=rateLimited,proto3" json:"rate_limited,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1234,6 +1247,13 @@ func (x *RouteResponse) GetSessionId() string {
 		return x.SessionId
 	}
 	return ""
+}
+
+func (x *RouteResponse) GetRateLimited() bool {
+	if x != nil {
+		return x.RateLimited
+	}
+	return false
 }
 
 type StreamRequest struct {
@@ -2892,7 +2912,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12@\n" +
 	"\x0elast_active_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xcd\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xea\x02\n" +
 	"\aMessage\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1b\n" +
@@ -2908,7 +2928,8 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"budget_key\x18\t \x01(\tR\tbudgetKey\x12\x1a\n" +
 	"\bplatform\x18\n" +
 	" \x01(\tR\bplatform\x12'\n" +
-	"\x05media\x18\v \x03(\v2\x11.gateway.v1.MediaR\x05media\"|\n" +
+	"\x05media\x18\v \x03(\v2\x11.gateway.v1.MediaR\x05media\x12\x1b\n" +
+	"\tsender_id\x18\f \x01(\tR\bsenderId\"|\n" +
 	"\bToolCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1e\n" +
@@ -2999,11 +3020,12 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x13RecentTurnsResponse\x12&\n" +
 	"\x05turns\x18\x01 \x03(\v2\x10.gateway.v1.TurnR\x05turns\"=\n" +
 	"\fRouteRequest\x12-\n" +
-	"\amessage\x18\x01 \x01(\v2\x13.gateway.v1.MessageR\amessage\"B\n" +
+	"\amessage\x18\x01 \x01(\v2\x13.gateway.v1.MessageR\amessage\"e\n" +
 	"\rRouteResponse\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\">\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
+	"\frate_limited\x18\x03 \x01(\bR\vrateLimited\">\n" +
 	"\rStreamRequest\x12-\n" +
 	"\amessage\x18\x01 \x01(\v2\x13.gateway.v1.MessageR\amessage\"\xaa\x01\n" +
 	"\x0eStreamResponse\x12\x12\n" +

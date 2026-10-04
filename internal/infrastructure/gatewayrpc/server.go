@@ -72,7 +72,7 @@ func (s *server) Route(ctx context.Context, r *pb.RouteRequest) (*pb.RouteRespon
 	if err != nil {
 		return nil, err
 	}
-	return &pb.RouteResponse{Text: v.Text, SessionId: v.SessionID}, nil
+	return &pb.RouteResponse{Text: v.Text, SessionId: v.SessionID, RateLimited: v.RateLimited}, nil
 }
 
 func (s *server) Cancel(ctx context.Context, r *pb.CancelRequest) (*pb.CancelResponse, error) {

@@ -63,7 +63,7 @@ func (c *Client) Route(ctx context.Context, in messaging.Inbound) (messaging.Cha
 	if err != nil {
 		return messaging.ChatReply{}, err
 	}
-	return messaging.ChatReply{Text: v.Text, SessionID: v.SessionId}, nil
+	return messaging.ChatReply{Text: v.Text, SessionID: v.SessionId, RateLimited: v.RateLimited}, nil
 }
 
 func (c *Client) Cancel(ctx context.Context, id string) (messaging.ChatCancellation, error) {
