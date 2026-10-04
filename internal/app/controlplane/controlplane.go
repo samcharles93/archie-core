@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
@@ -78,7 +79,7 @@ func (s *Server) Query(ctx context.Context, request *pb.QueryRequest) (*pb.Query
 	if _, ok := s.definitions[request.GetKind()]; !ok {
 		return nil, status.Error(codes.NotFound, "resource not found")
 	}
-	resource, err := s.store.Resource(ctx, requestOrg(request.GetOrgId()), request.Kind)
+	resource, err := s.store.Resource(ctx, requestOrg(ctx), request.Kind)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -96,7 +97,7 @@ func (s *Server) History(ctx context.Context, request *pb.HistoryRequest) (*pb.H
 	if limit <= 0 || limit > defaultHistoryLimit {
 		limit = defaultHistoryLimit
 	}
-	revisions, err := s.store.ResourceHistory(ctx, requestOrg(request.GetOrgId()), request.Kind, limit)
+	revisions, err := s.store.ResourceHistory(ctx, requestOrg(ctx), request.Kind, limit)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -149,7 +150,7 @@ func (s *Server) Command(ctx context.Context, request *pb.CommandRequest) (*pb.C
 	if err != nil {
 		return nil, mapError(err)
 	}
-	resource, err := s.store.PutResource(ctx, storecontract.ResourceWrite{OrgID: requestOrg(request.GetOrgId()), Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
+	resource, err := s.store.PutResource(ctx, storecontract.ResourceWrite{OrgID: requestOrg(ctx), Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -164,7 +165,7 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		resource, err := s.store.Resource(stream.Context(), requestOrg(request.GetOrgId()), request.Kind)
+		resource, err := s.store.Resource(stream.Context(), requestOrg(stream.Context()), request.Kind)
 		if err == nil && resource.Version > version {
 			if err := stream.Send(&pb.WatchResponse{Resource: resourceProto(resource)}); err != nil {
 				return err
@@ -185,13 +186,10 @@ func resourceProto(resource storecontract.Resource) *pb.Resource {
 	return &pb.Resource{OrgId: resource.OrgID, Kind: resource.Kind, Version: resource.Version, ValueJson: resource.Value, UpdatedAt: timestamp(resource.At)}
 }
 
-// requestOrg is the org a request acts in. Until the caller's org is derived
-// server-side (access), a request that names none acts in the default org.
-func requestOrg(orgID string) string {
-	if orgID == "" {
-		return storecontract.DefaultOrgID
-	}
-	return orgID
+// requestOrg is the org a request acts in, derived from the caller's
+// principal when the call carried one (staterpc.Callers).
+func requestOrg(ctx context.Context) string {
+	return string(org.OrgFromContext(ctx))
 }
 
 func timestamp(value time.Time) *timestamppb.Timestamp {

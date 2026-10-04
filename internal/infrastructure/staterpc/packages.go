@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 )
 
@@ -15,7 +16,7 @@ func (s *server) InstallPackage(ctx context.Context, request *pb.InstallPackageR
 	if s.deps.Packages == nil {
 		return nil, status.Error(codes.Unavailable, "package store unavailable")
 	}
-	p, err := s.deps.Packages.InstallPackage(ctx, request.GetOrgId(), request.GetName(), request.GetReference(), request.GetDigest())
+	p, err := s.deps.Packages.InstallPackage(ctx, string(org.OrgFromContext(ctx)), request.GetName(), request.GetReference(), request.GetDigest())
 	if err != nil {
 		return nil, s.logErr("InstallPackage", err)
 	}
@@ -26,7 +27,7 @@ func (s *server) GetInstalledPackage(ctx context.Context, request *pb.GetInstall
 	if s.deps.Packages == nil {
 		return nil, status.Error(codes.Unavailable, "package store unavailable")
 	}
-	p, err := s.deps.Packages.GetInstalled(ctx, request.GetOrgId(), request.GetName())
+	p, err := s.deps.Packages.GetInstalled(ctx, string(org.OrgFromContext(ctx)), request.GetName())
 	if err != nil {
 		return nil, s.logErr("GetInstalledPackage", err)
 	}
@@ -37,7 +38,7 @@ func (s *server) ListInstalledPackages(ctx context.Context, request *pb.ListInst
 	if s.deps.Packages == nil {
 		return nil, status.Error(codes.Unavailable, "package store unavailable")
 	}
-	packages, err := s.deps.Packages.ListInstalled(ctx, request.GetOrgId())
+	packages, err := s.deps.Packages.ListInstalled(ctx, string(org.OrgFromContext(ctx)))
 	if err != nil {
 		return nil, s.logErr("ListInstalledPackages", err)
 	}
@@ -52,7 +53,7 @@ func (s *server) AcceptPackageAuthority(ctx context.Context, request *pb.AcceptP
 	if s.deps.Packages == nil {
 		return nil, status.Error(codes.Unavailable, "package store unavailable")
 	}
-	p, err := s.deps.Packages.AcceptPackageAuthority(ctx, request.GetOrgId(), request.GetName(), authorityValue(request.GetAccepted()))
+	p, err := s.deps.Packages.AcceptPackageAuthority(ctx, string(org.OrgFromContext(ctx)), request.GetName(), authorityValue(request.GetAccepted()))
 	if err != nil {
 		return nil, s.logErr("AcceptPackageAuthority", err)
 	}
@@ -63,7 +64,7 @@ func (s *server) RemoveInstalledPackage(ctx context.Context, request *pb.RemoveI
 	if s.deps.Packages == nil {
 		return nil, status.Error(codes.Unavailable, "package store unavailable")
 	}
-	if err := s.deps.Packages.RemoveInstalled(ctx, request.GetOrgId(), request.GetName()); err != nil {
+	if err := s.deps.Packages.RemoveInstalled(ctx, string(org.OrgFromContext(ctx)), request.GetName()); err != nil {
 		return nil, s.logErr("RemoveInstalledPackage", err)
 	}
 	return &pb.RemoveInstalledPackageResponse{}, nil

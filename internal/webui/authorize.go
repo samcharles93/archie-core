@@ -10,20 +10,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
-// principalContextKey carries the assembled principal of a request.
-type principalContextKey struct{}
-
-// WithRequestPrincipal attaches the principal a request was authorized for.
-func WithPrincipal(ctx context.Context, p access.Principal) context.Context {
-	return context.WithValue(ctx, principalContextKey{}, p)
-}
-
-// RequestPrincipal returns the principal a request was authorized as.
-func RequestPrincipal(ctx context.Context) (access.Principal, bool) {
-	value, ok := ctx.Value(principalContextKey{}).(access.Principal)
-	return value, ok
-}
-
 // authorize wraps h with the policy chain. Optional: a server with no
 // Authorizer keeps the credential check as the whole gate, which is the
 // documented behaviour of an install that has not built the chain.
@@ -60,10 +46,9 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		// The org the request acts in is the principal's, attached on the same
-		// context the handler receives so every control-plane call downstream
-		// inherits it (org.OrgFromContext).
-		h.ServeHTTP(w, r.WithContext(org.WithOrg(WithPrincipal(r.Context(), principal), principal.Org)))
+		// The principal rides the context into every State Store call, which
+		// derives the org it acts in from it.
+		h.ServeHTTP(w, r.WithContext(org.WithOrg(access.WithPrincipal(r.Context(), principal), principal.Org)))
 	})
 }
 

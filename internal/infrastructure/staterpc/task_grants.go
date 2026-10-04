@@ -172,6 +172,9 @@ func (g *TaskGrants) UnaryInterceptor(adminToken string) grpc.UnaryServerInterce
 		if !authorizesTaskScopedCall(info.FullMethod, req, taskID) {
 			return nil, status.Error(codes.PermissionDenied, "task grant does not authorize this operation")
 		}
+		// A container's metadata is its own claim: drop it so no later
+		// interceptor attributes the call to a service or principal.
+		ctx = metadata.NewIncomingContext(ctx, metadata.MD{})
 		return handler(access.WithActor(ctx, fmt.Sprintf("task/%d", taskID)), req)
 	}
 }

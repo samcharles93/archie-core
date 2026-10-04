@@ -117,7 +117,7 @@ func Run(ctx context.Context, options Options) error { //nolint:cyclop // the co
 	}
 	grants := &staterpc.TaskGrants{}
 	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; TaskGrants.StreamInterceptor derives its context from stream.Context() instead
-	opts, loopback, err := stateStoreServerOpts(listen, token, grants)
+	opts, loopback, err := stateStoreServerOpts(listen, token, grants, b.callers())
 	if err != nil {
 		return err
 	}
@@ -370,6 +370,13 @@ func (b *server) executionDeps(deps *staterpc.Deps) {
 	}
 }
 
+// callers resolves the service and principal of each call against this
+// store's principals.
+func (b *server) callers() staterpc.Callers {
+	ps, _ := b.st.(access.PrincipalSource)
+	return staterpc.Callers{Principals: ps}
+}
+
 // accessDeps wires the policy chain and its denial records from the same
 // store. A store without them -- one that owns
 // no tenant boundary yet -- degrades the access RPCs rather than failing the
@@ -470,14 +477,18 @@ func (b *server) startOptionalSurfaces(ctx context.Context, options Options) err
 // as a remote one (staterpc.Dial installs the client keepalive on every target,
 // loopback included), and grpc's default policy would answer their idle
 // watches with GOAWAY too_many_pings. See staterpc.ServerKeepaliveOption.
-func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (opts []grpc.ServerOption, loopback bool, err error) {
+func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants, callers staterpc.Callers) (opts []grpc.ServerOption, loopback bool, err error) {
 	loopback, err = staterpc.TargetIsLoopback(listen)
 	if err != nil {
 		return nil, false, err
 	}
 	keepalive := staterpc.ServerKeepaliveOption()
 	if loopback {
-		return []grpc.ServerOption{keepalive, grpc.ChainUnaryInterceptor(staterpc.UnaryActorInterceptor())}, true, nil
+		return []grpc.ServerOption{
+			keepalive,
+			grpc.ChainUnaryInterceptor(callers.Unary()),
+			grpc.ChainStreamInterceptor(callers.Stream()),
+		}, true, nil
 	}
 	if token == "" {
 		return nil, false, fmt.Errorf(
@@ -491,10 +502,10 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 	// than the single all-or-nothing token check this replaced.
 	return []grpc.ServerOption{
 		keepalive,
-		// The actor interceptor runs first so a task grant's own attribution
-		// replaces whatever service name the container claimed.
-		grpc.ChainUnaryInterceptor(staterpc.UnaryActorInterceptor(), grants.UnaryInterceptor(token)),
-		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token)),
+		// Authentication runs before attribution: callers trusts the metadata
+		// only of a call the grants check admitted as the instance.
+		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(token), callers.Unary()),
+		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token), callers.Stream()),
 	}, false, nil
 }
 

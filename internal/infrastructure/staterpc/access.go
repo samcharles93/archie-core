@@ -154,7 +154,7 @@ func (s *server) ListDenials(ctx context.Context, request *pb.ListDenialsRequest
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	values, err := s.deps.Denials.ListDenials(ctx, org.OrgID(request.OrgId), limit)
+	values, err := s.deps.Denials.ListDenials(ctx, org.OrgFromContext(ctx), limit)
 	if err != nil {
 		return nil, accessStatus(err)
 	}

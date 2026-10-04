@@ -11,7 +11,7 @@ import (
 
 // policyOrg is the org a policy request acts in: the caller's.
 func policyOrg(r *http.Request) org.OrgID {
-	if principal, ok := RequestPrincipal(r.Context()); ok {
+	if principal, ok := access.PrincipalFromContext(r.Context()); ok {
 		return principal.Org
 	}
 	return access.SharedTokenOwner().Org
@@ -115,7 +115,7 @@ func shippedPolicyIDs() []string {
 // instanceOwner reports whether the request acts as the instance owner: the
 // shared-token principal of a single-operator install.
 func instanceOwner(r *http.Request) bool {
-	principal, ok := RequestPrincipal(r.Context())
+	principal, ok := access.PrincipalFromContext(r.Context())
 	if !ok {
 		principal = access.SharedTokenOwner()
 	}
