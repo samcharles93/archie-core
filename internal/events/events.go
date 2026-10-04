@@ -96,6 +96,11 @@ const (
 	// started its callee run. data:
 	// callee_task_id, workflow, wait.
 	KindWorkflowCallStarted = "workflow_call_started"
+	// KindIdentityStarted marks a run starting as its identity, stamped by
+	// the State Store when the run credential is registered: ActorID is the
+	// service that started it, PrincipalID the identity it acts as.
+	// data: org.
+	KindIdentityStarted = "identity_started"
 	// KindWorkflowCallFinished carries the terminal state of a waited-on
 	// callee back onto the caller's timeline. data: callee_task_id,
 	// workflow, status, detail. Only a call the caller waited on records

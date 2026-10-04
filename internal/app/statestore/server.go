@@ -264,7 +264,11 @@ func (b *server) openStateStore(ctx context.Context) error {
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.
 func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
-	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
+	deps := staterpc.Deps{
+		Tasks: b.st, Log: b.log, Grants: grants,
+		// The same root archied dispatches as (servicekit.IdentityNames).
+		RootIdentity: identity.StableID(servicekit.IdentityNames(b.cfg)[0]),
+	}
 	if b.pg != nil {
 		packages := storepkg.Service{
 			Registry: registry.OCIRegistry{},

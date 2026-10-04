@@ -17,8 +17,10 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // TaskGrants verifies run credentials: the one token a task's container
@@ -190,6 +192,12 @@ func (s *server) RegisterTaskGrant(ctx context.Context, r *pb.RegisterTaskGrantR
 		}
 		return nil, status.Error(codes.Unavailable, "run credentials unavailable")
 	}
+	// No run starts unaudited: a start whose audit cannot be written is
+	// undone.
+	if err := s.auditIdentityStart(ctx, r.TaskId); err != nil {
+		_ = s.deps.Grants.revoke(context.WithoutCancel(ctx), r.Token)
+		return nil, status.Errorf(codes.Unavailable, "audit identity start: %v", err)
+	}
 	return &pb.RegisterTaskGrantResponse{}, nil
 }
 
@@ -289,4 +297,31 @@ func (c *Client) TaskForCredential(ctx context.Context, token string) (*task.Tas
 		return nil, err
 	}
 	return c.TaskByID(ctx, id)
+}
+
+// auditIdentityStart records the run starting as its identity. Every field is
+// the server's: the caller from the authenticated call, the identity from the
+// task row, the org from the identity.
+func (s *server) auditIdentityStart(ctx context.Context, taskID int64) error {
+	t, err := s.deps.Tasks.TaskByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	principal := s.deps.RootIdentity
+	if t.Identity != "" {
+		principal = identity.StableID(t.Identity)
+	}
+	data := map[string]any{}
+	if s.deps.Principals != nil {
+		p, err := s.deps.Principals.PrincipalFor(ctx, principal)
+		if err != nil {
+			return err
+		}
+		data["org"] = string(p.Org)
+	}
+	_, err = s.deps.Tasks.InsertEvent(ctx, events.Event{
+		At: time.Now(), Kind: events.KindIdentityStarted, TaskID: t.ID, Workflow: t.Workflow, Attempt: t.Attempt,
+		ActorID: access.ActorFromContext(ctx), PrincipalID: string(principal), Data: data,
+	})
+	return err
 }

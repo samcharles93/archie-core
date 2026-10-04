@@ -123,6 +123,8 @@ type Deps struct {
 	// serves and its memberships. Optional: nil answers GetPrincipal with
 	// codes.Unavailable.
 	Principals access.PrincipalSource
+	// RootIdentity is the identity a task with no identity name runs as.
+	RootIdentity identity.IdentityID
 	// Policies is the stored policy chain.
 	// Optional: nil answers the access RPCs with codes.Unavailable. The reset
 	// surface is deliberately not an RPC: `archie-state-store access reset` runs on the
